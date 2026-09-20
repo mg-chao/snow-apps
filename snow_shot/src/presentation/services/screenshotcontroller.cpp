@@ -378,6 +378,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void startScrollingScreenshot() override;
     void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode mode) override;
     void setScrollingScreenshotAutoScroll(bool enabled) override;
+    void beginScrollingSelectionMove(ScreenshotScrollingRecognitionMode axis,
+                                     QPoint position) override;
+    void updateScrollingSelectionMove(QPoint position) override;
+    void endScrollingSelectionMove() override;
+    QPoint scrollingMovePhysicalPointer(QPoint position) const;
     void pinSelectionToScreen() override;
     void pinClipboardContentToScreen();
     void pinSelectedFilesToScreen(snow_shot::platform::windows::SelectedFileTarget target);
@@ -2681,6 +2686,37 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
     hideImageExportPresentation();
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
     detachCaptureForExport(ExportDetachMode::DeferredPresentation);
+}
+
+QPoint ScreenshotController::Impl::scrollingMovePhysicalPointer(QPoint position) const {
+    if (m_physicalCursor) {
+        if (const auto physical = m_physicalCursor->position())
+            return *physical;
+    }
+    return m_geometry.physicalPositionForLogicalPoint(m_displaySession, position);
+}
+
+void ScreenshotController::Impl::beginScrollingSelectionMove(
+    ScreenshotScrollingRecognitionMode axis, QPoint position) {
+    if (m_scrollingCaptureController && m_scrollingCaptureController->beginSelectionMove(
+                                            axis, scrollingMovePhysicalPointer(position)))
+        m_presentationServices->setSelectionMovementActive(true);
+}
+
+void ScreenshotController::Impl::updateScrollingSelectionMove(QPoint position) {
+    if (!m_scrollingCaptureController || !m_scrollingCaptureController->movingSelection())
+        return;
+    m_scrollingCaptureController->updateSelectionMove(scrollingMovePhysicalPointer(position));
+    m_selection.setSelectionRect(m_scrollingCaptureController->canvasSelection());
+    m_presentationServices->updateOverlayState();
+}
+
+void ScreenshotController::Impl::endScrollingSelectionMove() {
+    m_presentationServices->setSelectionMovementActive(false);
+    if (!m_scrollingCaptureController || !m_scrollingCaptureController->movingSelection())
+        return;
+    m_scrollingCaptureController->endSelectionMove();
+    m_presentationServices->updateOverlayState();
 }
 
 void ScreenshotController::Impl::setScrollingScreenshotAutoScroll(bool enabled) {

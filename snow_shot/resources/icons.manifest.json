@@ -543,6 +543,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "MoveSelectionHorizontal",
+      "name": "move-selection-horizontal",
+      "source": "../src/presentation/components/icons/resources/move-selection-horizontal.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "MoveSelectionVertical",
+      "name": "move-selection-vertical",
+      "source": "../src/presentation/components/icons/resources/move-selection-vertical.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "OcrTranslate",
       "name": "ocr-translate",
       "source": "../src/presentation/components/icons/resources/ocr-translate.svg",

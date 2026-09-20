@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 
 #include <QString>
+#include <QPoint>
 
 namespace adqt::widgets {
 class AdColorPicker;
@@ -71,6 +72,9 @@ class ScreenshotToolbarCommandSink {
     virtual void startScrollingScreenshot() = 0;
     virtual void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode) {}
     virtual void setScrollingScreenshotAutoScroll(bool) {}
+    virtual void beginScrollingSelectionMove(ScreenshotScrollingRecognitionMode, QPoint) {}
+    virtual void updateScrollingSelectionMove(QPoint) {}
+    virtual void endScrollingSelectionMove() {}
     virtual void pinSelectionToScreen() = 0;
     virtual void saveSelectionToFile() {}
     virtual void quickSaveSelection() {}

@@ -72,6 +72,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void updateScrollingThumbnail(const QImage& previewImage, const QSize& sourceSize,
                                   ScreenshotScrollingStitchChange change, int addedRows,
                                   bool replacePreview = false, int replacedPreviewRows = 0);
+    void reanchorScrollingThumbnail(const QRect& localSelection);
     void clearScrollingThumbnail();
     [[nodiscard]] ScreenshotScrollingTrimRange scrollingThumbnailTrim() const;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)

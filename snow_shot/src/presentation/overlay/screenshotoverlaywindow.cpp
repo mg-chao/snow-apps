@@ -386,6 +386,11 @@ void ScreenshotOverlayWindow::updateScrollingThumbnail(const QImage& previewImag
     layoutScrollingThumbnail();
 }
 
+void ScreenshotOverlayWindow::reanchorScrollingThumbnail(const QRect& localSelection) {
+    m_scrollingThumbnailAnchor = localSelection;
+    layoutScrollingThumbnail();
+}
+
 void ScreenshotOverlayWindow::clearScrollingThumbnail() {
     m_scrollingThumbnailSessionActive = false;
     m_scrollingThumbnailAnchor = {};

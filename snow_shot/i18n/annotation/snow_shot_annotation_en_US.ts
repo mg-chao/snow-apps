@@ -528,6 +528,14 @@
             <translation>Mouse trail color transparent</translation>
         </message>
         <message>
+            <source>Move selection horizontally (press and hold to drag)</source>
+            <translation>Move selection horizontally (press and hold to drag)</translation>
+        </message>
+        <message>
+            <source>Move selection vertically (press and hold to drag)</source>
+            <translation>Move selection vertically (press and hold to drag)</translation>
+        </message>
+        <message>
             <source>No templates yet</source>
             <translation>No templates yet</translation>
         </message>

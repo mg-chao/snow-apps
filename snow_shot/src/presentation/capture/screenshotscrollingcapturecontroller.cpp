@@ -17,6 +17,7 @@
 
 #include "adaptivescrollingcapturecadence.h"
 #include "screenshotscrollingautoscroller.h"
+#include "scrollingselectionmovement.h"
 #include "snow_shot/platform/screenshotnative.h"
 #include "screenshotscrollingpipeline.h"
 #include "screenshotscrollingdiagnostics.h"
@@ -62,7 +63,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         : owner(ownerValue), context(contextValue) {
         previewWatchdog.setSingleShot(true);
         QObject::connect(&previewWatchdog, &QTimer::timeout, &owner, [this] {
-            if (active && !exportPaused && !previewReceived) {
+            if (active && !exportPaused && !movement.active() && !previewReceived) {
                 logScrollingEvent(
                     "scrolling.preview_timeout", generation,
                     {{QStringLiteral("duration_ms"), previewClock.elapsed()},
@@ -187,6 +188,8 @@ struct ScreenshotScrollingCaptureController::Impl {
                         nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors,
                                               exclusionWindowIds, generation),
                         requestCadenceConfig);
+        if (exportPaused)
+            updatePausedState();
         return true;
     }
 
@@ -209,12 +212,14 @@ struct ScreenshotScrollingCaptureController::Impl {
         // A direction change invalidates the axis-specific capture and stitch state, but the
         // selection, overlay presentation, and window exclusion must remain active. Advancing
         // the generation drops work from the previous axis without briefly restoring the canvas.
+        movement.end();
         mode = requestedMode;
         ++generation;
         watchPreview();
         logScrollingEvent("scrolling.mode_changed", generation,
                           {{QStringLiteral("mode"), static_cast<int>(mode)}});
         autoScroller.setMode(mode);
+        autoScroller.setPaused(exportPaused);
         pendingResultRequestId.reset();
         if (pipeline)
             pipeline->reset(generation);
@@ -237,6 +242,8 @@ struct ScreenshotScrollingCaptureController::Impl {
                         nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors,
                                               exclusionWindowIds, generation),
                         requestCadenceConfig);
+        if (exportPaused)
+            updatePausedState();
         return true;
     }
 
@@ -256,6 +263,7 @@ struct ScreenshotScrollingCaptureController::Impl {
                  {QStringLiteral("restore_presentation"), restoreScreenshotPresentation}});
         }
         active = false;
+        movement.end();
         exportPaused = false;
         ++generation;
         pendingResultRequestId.reset();
@@ -357,7 +365,7 @@ struct ScreenshotScrollingCaptureController::Impl {
     }
 
     void handleFrame(ScrollingPipelineFrame result) {
-        if (!active || exportPaused || result.generation != generation)
+        if (!active || result.generation != generation)
             return;
         if (result.fatalError) {
             handleCaptureError(result.generation, QStringLiteral("scrolling stitching failed"));
@@ -464,12 +472,50 @@ struct ScreenshotScrollingCaptureController::Impl {
         return invoked;
     }
 
+    bool beginSelectionMove(ScreenshotScrollingRecognitionMode axis, QPoint pointer) {
+        if (!active || exportPaused || !movement.begin(axis, mode, canvasSelection, pointer))
+            return false;
+        updatePausedState();
+        return true;
+    }
+
+    void updateSelectionMove(QPoint pointer) {
+        if (!active || !movement.active())
+            return;
+        canvasSelection = movement.update(pointer, context.geometry.canvasBounds().toAlignedRect());
+        context.overlayCoordinator.setScrollingCaptureMode(context.displaySession, canvasSelection,
+                                                           true);
+        autoScroller.setSelection(canvasSelection.translated(context.geometry.canvasOrigin()));
+        context.displaySession.forEachActiveOverlay([this](qsizetype,
+                                                           const CapturedDisplayModel& display,
+                                                           ScreenshotOverlayWindow* overlay) {
+            if (overlay == thumbnailHost) {
+                thumbnailHost->reanchorScrollingThumbnail(
+                    logicalSelectionRect(context.geometry, display, canvasSelection)
+                        .translated(-thumbnailHost->geometry().topLeft()));
+            }
+        });
+    }
+
+    void endSelectionMove() {
+        if (!movement.active())
+            return;
+        movement.end();
+        if (active)
+            updatePausedState();
+    }
+
     void setExportPaused(bool paused) {
         if (!active || exportPaused == paused)
             return;
         exportPaused = paused;
         logScrollingEvent("scrolling.export_pause", generation,
                           {{QStringLiteral("status"), paused}});
+        updatePausedState();
+    }
+
+    void updatePausedState() {
+        const bool paused = exportPaused || movement.active();
         if (paused)
             previewWatchdog.stop();
         else if (!previewReceived)
@@ -486,6 +532,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         }
     }
 
+    snow_shot::capture_detail::ScrollingSelectionMovement movement;
     ScreenshotScrollingCaptureController& owner;
     snow_shot::capture_detail::ScreenshotScrollingAutoScroller autoScroller{
         [this](const QRect& selection, const QPoint& delta) {
@@ -623,4 +670,18 @@ void ScreenshotScrollingCaptureController::detachPendingResultRequest() {
 
 QRect ScreenshotScrollingCaptureController::canvasSelection() const {
     return m_impl->canvasSelection;
+}
+
+bool ScreenshotScrollingCaptureController::beginSelectionMove(
+    ScreenshotScrollingRecognitionMode axis, QPoint physicalPointer) {
+    return m_impl->beginSelectionMove(axis, physicalPointer);
+}
+void ScreenshotScrollingCaptureController::updateSelectionMove(QPoint physicalPointer) {
+    m_impl->updateSelectionMove(physicalPointer);
+}
+void ScreenshotScrollingCaptureController::endSelectionMove() {
+    m_impl->endSelectionMove();
+}
+bool ScreenshotScrollingCaptureController::movingSelection() const {
+    return m_impl->movement.active();
 }

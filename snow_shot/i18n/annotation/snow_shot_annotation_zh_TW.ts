@@ -528,6 +528,14 @@
             <translation>滑鼠軌跡顏色 透明</translation>
         </message>
         <message>
+            <source>Move selection horizontally (press and hold to drag)</source>
+            <translation>水平移動選取範圍（按住並拖曳）</translation>
+        </message>
+        <message>
+            <source>Move selection vertically (press and hold to drag)</source>
+            <translation>垂直移動選取範圍（按住並拖曳）</translation>
+        </message>
+        <message>
             <source>No templates yet</source>
             <translation>尚無範本</translation>
         </message>

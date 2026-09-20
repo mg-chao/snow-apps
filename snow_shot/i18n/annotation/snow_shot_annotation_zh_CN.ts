@@ -528,6 +528,14 @@
             <translation>鼠标轨迹颜色 透明</translation>
         </message>
         <message>
+            <source>Move selection horizontally (press and hold to drag)</source>
+            <translation>水平移动选区（按住并拖动）</translation>
+        </message>
+        <message>
+            <source>Move selection vertically (press and hold to drag)</source>
+            <translation>垂直移动选区（按住并拖动）</translation>
+        </message>
+        <message>
             <source>No templates yet</source>
             <translation>暂无模板</translation>
         </message>

@@ -2884,6 +2884,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/scrolling_capture_cadence_tests.cpp
         src/presentation/capture/adaptivescrollingcapturecadence.h
     )
+    add_executable(snow-shot-scrolling-selection-movement-tests
+        tests/scrolling_selection_movement_tests.cpp)
+    target_include_directories(snow-shot-scrolling-selection-movement-tests PRIVATE include src)
+    target_link_libraries(snow-shot-scrolling-selection-movement-tests PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME snow-shot-scrolling-selection-movement-tests
+        COMMAND snow-shot-scrolling-selection-movement-tests)
+
     add_executable(snow-shot-scrolling-auto-scroll-tests
         tests/scrolling_auto_scroll_tests.cpp
         src/platform/windows/scrollinput.cpp
@@ -3800,6 +3807,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests
     )
+    add_test(NAME snow-shot-scrolling-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --scrolling-only -platform offscreen)
+    set_tests_properties(snow-shot-scrolling-toolbar-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-screenshot-tool-palette-remembered-drawing-tool-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --remembered-drawing-tool-only
             -platform offscreen)

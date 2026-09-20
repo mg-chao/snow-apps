@@ -440,6 +440,10 @@ class ScreenshotToolPalette final : public QWidget {
     void saveRequested();
     void quickSaveRequested();
     void scrollingRecognitionModeChanged(ScreenshotScrollingRecognitionMode mode);
+    void scrollingSelectionMoveStarted(ScreenshotScrollingRecognitionMode axis,
+                                       QPoint globalPosition);
+    void scrollingSelectionMoveUpdated(QPoint globalPosition);
+    void scrollingSelectionMoveFinished();
     void scrollingAutoScrollChanged(bool enabled);
     void screenRecordRequested();
     void serialNumberDecrementRequested();
@@ -794,6 +798,10 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
     adqt::widgets::AdButton* m_saveButton = nullptr;
     adqt::widgets::AdButton* m_quickSaveButton = nullptr;
+    void finishScrollingSelectionMove();
+    adqt::widgets::AdButton* m_scrollingMoveHorizontalButton = nullptr;
+    adqt::widgets::AdButton* m_scrollingMoveVerticalButton = nullptr;
+    QPointer<adqt::widgets::AdButton> m_scrollingMoveButton;
     QWidget* m_scrollingRecognitionControls = nullptr;
     adqt::widgets::AdButton* m_scrollingVerticalButton = nullptr;
     adqt::widgets::AdButton* m_scrollingHorizontalButton = nullptr;

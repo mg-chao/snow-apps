@@ -36,6 +36,10 @@ class ScreenshotScrollingAutoScroller final : public QObject {
         m_mode = mode;
     }
 
+    void setSelection(const QRect& physicalSelection) {
+        m_selection = physicalSelection;
+    }
+
     void setMode(ScreenshotScrollingRecognitionMode mode) {
         m_mode = mode;
     }

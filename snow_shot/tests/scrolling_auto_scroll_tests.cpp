@@ -144,9 +144,15 @@ int main(int argc, char** argv) {
     scroller.setPaused(true);
     tick();
     require(steps == 3 && !timer->isActive(), "export pause must suppress scrolling");
+    const QRect movedSelection(1200, 400, 800, 600);
+    scroller.setSelection(movedSelection);
+    tick();
+    require(steps == 3 && !timer->isActive(),
+            "moving the selection must not resume paused scrolling");
     scroller.setPaused(false);
     tick();
-    require(steps == 4, "export cancellation must resume enabled auto-scroll");
+    require(steps == 4 && target == movedSelection,
+            "resume must preserve activation and target the moved selection");
     scroller.setPaused(true);
     scroller.setEnabled(false);
     scroller.setPaused(false);

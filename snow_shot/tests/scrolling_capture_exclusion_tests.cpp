@@ -22,6 +22,7 @@ using namespace snow_shot::capture_detail;
 using snow_shot::presentation::WindowCaptureExclusion;
 std::mutex recordsMutex;
 std::vector<QVector<std::uint32_t>> capturedIds;
+std::vector<QRect> capturedRegions;
 std::atomic<int> liveStreams = 0;
 std::atomic<bool> failCreate = false;
 void require(bool condition, const char* message) {
@@ -77,11 +78,14 @@ void streamRecreationPreservesSuccessfulExclusions(bool overlaySucceeds, bool to
         pipeline.pause(2);
         until([] { return liveStreams == 0; });
         require(restored.empty(), "export pause must retain sharing policies");
-        pipeline.resume(2, QSize(64, 64), nativeScrollingSource(QRect(0, 0, 64, 64), false, ids));
+        pipeline.resume(2, QSize(64, 64),
+                        nativeScrollingSource(QRect(128, -256, 64, 64), false, ids));
         until([&] { return creates() == baseline + 3 && liveStreams == 1; });
         require(overlay.isVisible() && toolbar.isVisible(), "exclusion never hides capture UI");
         {
             std::lock_guard lock(recordsMutex);
+            require(capturedRegions[baseline + 2] == QRect(128, -256, 64, 64),
+                    "resumed native source must capture the moved physical rectangle");
             for (auto index = baseline; index < capturedIds.size(); ++index)
                 require(capturedIds[index] == ids, "every recreated stream retains successful IDs");
         }
@@ -115,6 +119,8 @@ SnowCaptureStream* snow_capture_stream_create_region(const SnowCaptureStreamConf
     {
         std::lock_guard lock(recordsMutex);
         capturedIds.push_back(ids);
+        capturedRegions.emplace_back(config->x, config->y, static_cast<int>(config->width),
+                                     static_cast<int>(config->height));
     }
     if (failCreate)
         return nullptr;

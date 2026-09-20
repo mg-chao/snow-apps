@@ -429,6 +429,14 @@ void ScreenshotToolbarWindow::connectScrollingScreenshotCommands(
     ScreenshotToolPalette& toolPalette) {
     connect(&toolPalette, &ScreenshotToolPalette::scrollingScreenshotRequested, this,
             [this]() { m_commands.startScrollingScreenshot(); });
+    connect(&toolPalette, &ScreenshotToolPalette::scrollingSelectionMoveStarted, this,
+            [this](ScreenshotScrollingRecognitionMode axis, QPoint position) {
+                m_commands.beginScrollingSelectionMove(axis, position);
+            });
+    connect(&toolPalette, &ScreenshotToolPalette::scrollingSelectionMoveUpdated, this,
+            [this](QPoint position) { m_commands.updateScrollingSelectionMove(position); });
+    connect(&toolPalette, &ScreenshotToolPalette::scrollingSelectionMoveFinished, this,
+            [this]() { m_commands.endScrollingSelectionMove(); });
     connect(&toolPalette, &ScreenshotToolPalette::scrollingAutoScrollChanged, this,
             [this](bool enabled) { m_commands.setScrollingScreenshotAutoScroll(enabled); });
     connect(&toolPalette, &ScreenshotToolPalette::scrollingRecognitionModeChanged, this,

@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "../src/presentation/toolbar/screenshottoolbarplacement.h"
+#include "../src/presentation/capture/scrollingselectionmovement.h"
 
 #include <QRectF>
 
@@ -509,6 +510,13 @@ void globalMouseDesktopPointsMapAcrossMixedScaleDisplays() {
         "cross-display global drags must preserve capture pixel endpoints and negative origins");
     require(geometry.physicalPositionForLogicalPoint(displays, QPoint(0, 50)) == QPoint(0, 50),
             "the logical shared edge belongs to the adjacent display without double scaling");
+    snow_shot::capture_detail::ScrollingSelectionMovement movement;
+    require(movement.begin(ScreenshotScrollingRecognitionMode::Horizontal,
+                           ScreenshotScrollingRecognitionMode::Horizontal,
+                           QRect(199, 199, 600, 400), begin),
+            "begin mixed-DPI scrolling movement");
+    require(movement.update(finish, QRect(0, 0, 4320, 1800)) == QRect(2700, 199, 600, 400),
+            "scrolling movement must cross mixed-DPI displays without scaling or off-axis drift");
     ScreenshotDisplaySession empty;
     require(geometry.physicalPositionForLogicalPoint(empty, QPoint(-10, 20)) == QPoint(-10, 20),
             "coordinate conversion must have a stable fallback before display capture is ready");

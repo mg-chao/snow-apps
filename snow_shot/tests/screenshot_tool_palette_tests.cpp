@@ -4317,6 +4317,92 @@ void ocrControlReflectsLoadingState() {
     palette.setTableBusy(false);
 }
 
+void scrollingSelectionButtonsDragAndLockAxis() {
+    ScreenshotToolPalette::Options options;
+    options.showScrollingScreenshotTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.setScrollingScreenshotMode(true);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* horizontal = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotScrollingMoveHorizontalButton"));
+    auto* vertical = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotScrollingMoveVerticalButton"));
+    auto* separator =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotScrollingMovementSeparator"));
+    require(horizontal && vertical && separator, "movement controls and separator must exist");
+    require(!horizontal->isEnabled() && vertical->isEnabled(),
+            "vertical mode must lock horizontal movement");
+    auto* layout = separator->parentWidget()->layout();
+    require(layout->itemAt(8)->widget() == separator &&
+                layout->itemAt(10)->widget() == horizontal &&
+                layout->itemAt(12)->widget() == vertical,
+            "movement controls must follow direction controls");
+    require(!vertical->toolTip().isEmpty() && !vertical->accessibleName().isEmpty(),
+            "movement button must explain its interaction accessibly");
+    auto& languages = snow_shot::presentation::LanguageManager::instance();
+    require(languages.setLanguage(QStringLiteral("en_US")), "load English movement labels");
+    const QString english = vertical->toolTip();
+    for (const auto& language : {QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(languages.setLanguage(language), "load translated movement labels");
+        QCoreApplication::processEvents();
+        require(vertical->toolTip() != english && vertical->accessibleName() == vertical->toolTip(),
+                "movement tooltip and accessible name must retranslate together");
+    }
+    require(languages.setLanguage(QStringLiteral("en_US")), "restore English labels");
+    QCoreApplication::processEvents();
+    int starts = 0, updates = 0, finishes = 0;
+    QPoint latest;
+    ScreenshotScrollingRecognitionMode axis = ScreenshotScrollingRecognitionMode::Horizontal;
+    QObject::connect(&palette, &ScreenshotToolPalette::scrollingSelectionMoveStarted,
+                     [&](ScreenshotScrollingRecognitionMode value, QPoint position) {
+                         ++starts;
+                         axis = value;
+                         latest = position;
+                     });
+    QObject::connect(&palette, &ScreenshotToolPalette::scrollingSelectionMoveUpdated,
+                     [&](QPoint position) {
+                         ++updates;
+                         latest = position;
+                     });
+    QObject::connect(&palette, &ScreenshotToolPalette::scrollingSelectionMoveFinished,
+                     [&] { ++finishes; });
+    const auto send = [](QWidget* button, QEvent::Type type, QPoint position) {
+        const auto changed = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+        const auto buttons = type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton;
+        QMouseEvent event(type, QPointF(button->mapFromGlobal(position)), QPointF(position),
+                          changed, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(button, &event);
+    };
+    send(horizontal, QEvent::MouseButtonPress, QPoint(30, 40));
+    require(starts == 0, "disabled axis must not start a gesture");
+    send(vertical, QEvent::MouseButtonPress, QPoint(30, 40));
+    require(starts == 1 && axis == ScreenshotScrollingRecognitionMode::Vertical &&
+                vertical->isDown(),
+            "press must start movement immediately");
+    send(vertical, QEvent::MouseMove, QPoint(-500, 900));
+    require(updates == 1 && latest == QPoint(-500, 900),
+            "movement outside the button must use global coordinates");
+    send(vertical, QEvent::MouseButtonRelease, QPoint(-500, 910));
+    require(finishes == 1 && updates == 2 && !vertical->isDown(),
+            "release outside must end the gesture");
+    send(vertical, QEvent::MouseButtonPress, QPoint(30, 40));
+    QEvent ungrab(QEvent::UngrabMouse);
+    QCoreApplication::sendEvent(vertical, &ungrab);
+    require(finishes == 2, "lost mouse grab must balance movement");
+    send(vertical, QEvent::MouseButtonPress, QPoint(30, 40));
+    palette.setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Horizontal);
+    require(finishes == 3 && horizontal->isEnabled() && !vertical->isEnabled(),
+            "direction changes must end dragging and swap the locked axis");
+    send(horizontal, QEvent::MouseButtonPress, QPoint(30, 40));
+    horizontal->hide();
+    require(finishes == 4, "hiding an active control must end dragging");
+    horizontal->show();
+    send(horizontal, QEvent::MouseButtonPress, QPoint(30, 40));
+    palette.setScrollingScreenshotMode(false);
+    require(finishes == 5, "session exit must end dragging once");
+}
+
 void scrollingScreenshotExposesAxisRecognitionModes() {
     ScreenshotToolPalette::Options options;
     options.showScrollingScreenshotTool = true;
@@ -4352,7 +4438,7 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
                                  : nullptr;
     require(controls != nullptr &&
                 controls->findChild<adqt::widgets::AdRadioButtonGroup*>() == nullptr &&
-                modeButtons.size() == 3 && verticalButton != nullptr && horizontalButton != nullptr,
+                modeButtons.size() == 5 && verticalButton != nullptr && horizontalButton != nullptr,
             "scrolling screenshot should expose two independent mode buttons");
     auto* autoScroll = controls->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotScrollingAutoScrollButton"));
@@ -11633,6 +11719,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--scrolling-only"))) {
+        scrollingSelectionButtonsDragAndLockAxis();
         scrollingScreenshotExposesAxisRecognitionModes();
         scrollingScreenshotKeepsDrawingToolsAvailable();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -11659,6 +11746,7 @@ int main(int argc, char** argv) {
     fontFamilyListIsCachedForEditorBuilds();
     scrollingScreenshotKeepsDrawingToolsAvailable();
     recognitionToolsKeepDrawingToolsAvailable();
+    scrollingSelectionButtonsDragAndLockAxis();
     scrollingScreenshotExposesAxisRecognitionModes();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
     moveToolPresentationUsesTheOwningShortcutScope();
