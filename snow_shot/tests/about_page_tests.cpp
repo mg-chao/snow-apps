@@ -571,6 +571,13 @@ void traySettingsAndFunctionNavigation() {
                 sidebar->currentRoute() == QStringLiteral("/settings/functionSettings"),
             "function settings action must show a hidden window and navigate from another page");
     window.hide();
+    window.showAbout();
+    flushEvents();
+    require(window.isVisible() && card->currentLocation().pageId == QStringLiteral("about") &&
+                card->currentLocation().sectionId.isEmpty() &&
+                sidebar->currentRoute() == QStringLiteral("/about"),
+            "about navigation must show a hidden window and leave the settings pages");
+    window.hide();
 }
 
 void mainNavigationSearchThemesAndLanguages() {

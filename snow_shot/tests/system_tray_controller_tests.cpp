@@ -539,6 +539,10 @@ int main(int argc, char* argv[]) {
     QObject::connect(&controller,
                      &snow_shot::presentation::SystemTrayController::openFunctionSettingsRequested,
                      [&functionSettingsRequests]() { ++functionSettingsRequests; });
+    int aboutRequests = 0;
+    QObject::connect(&controller,
+                     &snow_shot::presentation::SystemTrayController::openAboutRequested,
+                     [&aboutRequests]() { ++aboutRequests; });
     require(controller.middleClickAction() == QStringLiteral("screenshot_fixed"),
             "middle click must default to capture and pin");
     const QStringList clickActions{QStringLiteral("screenshot"), QStringLiteral("show_main_window"),
@@ -599,6 +603,28 @@ int main(int argc, char* argv[]) {
     controller.setLeftClickAction(QStringLiteral("unsupported"));
     require(controller.leftClickAction() == QStringLiteral("screenshot"),
             "an unsupported tray left-click action should fall back to Screenshot");
+
+    const int screenshotRequestsBeforeMessageClicks = screenshotRequests;
+    const int showMainWindowRequestsBeforeMessageClicks = showMainWindowRequests;
+    const int functionSettingsRequestsBeforeMessageClicks = functionSettingsRequests;
+    controller.showUpdateMessage(QStringLiteral("An update is ready."));
+    trayIcon->messageClicked();
+    require(aboutRequests == 1 && screenshotRequests == screenshotRequestsBeforeMessageClicks &&
+                showMainWindowRequests == showMainWindowRequestsBeforeMessageClicks &&
+                functionSettingsRequests == functionSettingsRequestsBeforeMessageClicks,
+            "clicking an update balloon must request only the About page");
+    controller.showCaptureMessage(QStringLiteral("Capture failed"), false);
+    controller.showWarningMessage(QStringLiteral("Feature unavailable"),
+                                  QStringLiteral("Screenshot is unavailable"));
+    trayIcon->messageClicked();
+    require(aboutRequests == 1,
+            "capture and warning balloon clicks must not request the About page");
+    controller.setEnabled(false);
+    controller.showUpdateMessage(QStringLiteral("Ignored while disabled"));
+    trayIcon->messageClicked();
+    controller.setEnabled(true);
+    require(aboutRequests == 1,
+            "a balloon suppressed while the tray is disabled must stay unclickable");
 
     screenshotMenuAction->trigger();
     showMainWindowMenuAction->trigger();

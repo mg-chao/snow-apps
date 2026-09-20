@@ -97,6 +97,8 @@ class ApplicationController::Impl {
         QObject::connect(&systemTray,
                          &presentation::SystemTrayController::openFunctionSettingsRequested, &q,
                          [this]() { ensureMainWindow().showFunctionSettings(); });
+        QObject::connect(&systemTray, &presentation::SystemTrayController::openAboutRequested, &q,
+                         [this]() { ensureMainWindow().showAbout(); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::exitRequested, &q,
                          [this]() {
                              systemTray.hide();

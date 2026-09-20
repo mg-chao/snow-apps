@@ -302,6 +302,13 @@ void MainWindow::showInterfaceSettings() {
     showAndActivate();
 }
 
+void MainWindow::showAbout() {
+    showAndActivate();
+    if (m_contentCard != nullptr) {
+        m_contentCard->navigateTo({QStringLiteral("about"), {}, {}});
+    }
+}
+
 void MainWindow::showTranslation(const QString& text) {
     if (m_contentCard != nullptr) {
         m_contentCard->showTranslation(text);

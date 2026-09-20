@@ -71,6 +71,10 @@ QString normalizedClickAction(const QString& action, const char* defaultAction) 
                : QString::fromLatin1(defaultAction);
 }
 
+// Balloons share one QSystemTrayIcon, so messageClicked only reports that some
+// balloon was clicked; routing follows the kind shown last.
+enum class BalloonKind { None, Capture, Warning, Update };
+
 class TrayImageCache final {
   public:
     QIcon load(const QString& path) {
@@ -241,6 +245,11 @@ class SystemTrayController::Impl {
                                  dispatchClickAction(middleClickAction);
                              }
                          });
+        QObject::connect(trayIcon, &QSystemTrayIcon::messageClicked, &q, [this]() {
+            if (lastBalloonKind == BalloonKind::Update) {
+                emit q.openAboutRequested();
+            }
+        });
         QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &q,
                          [this](const QString&, const QLocale&) { retranslateUi(); });
         QObject::connect(&shortcuts::ShortcutDisplayService::instance(),
@@ -269,10 +278,11 @@ class SystemTrayController::Impl {
     }
 
     void showBalloon(const QString& title, const QString& message,
-                     QSystemTrayIcon::MessageIcon icon) {
+                     QSystemTrayIcon::MessageIcon icon, BalloonKind kind) {
         if (!enabled) {
             return;
         }
+        lastBalloonKind = kind;
         trayIcon->setProperty("lastBalloonTitle", title);
         trayIcon->setProperty("lastBalloonMessage", message);
         trayIcon->setProperty("lastBalloonIcon", static_cast<int>(icon));
@@ -546,6 +556,7 @@ class SystemTrayController::Impl {
     QString leftClickAction = QString::fromLatin1(DEFAULT_LEFT_CLICK_ACTION);
     QString middleClickAction = QString::fromLatin1(DEFAULT_MIDDLE_CLICK_ACTION);
     int screenshotDelaySeconds = 3;
+    BalloonKind lastBalloonKind = BalloonKind::None;
     bool enabled = true;
 };
 
@@ -597,15 +608,16 @@ void SystemTrayController::hide() {
 
 void SystemTrayController::showCaptureMessage(const QString& message, bool warning) {
     m_impl->showBalloon(tr("Capture"), message,
-                        warning ? QSystemTrayIcon::Warning : QSystemTrayIcon::Critical);
+                        warning ? QSystemTrayIcon::Warning : QSystemTrayIcon::Critical,
+                        BalloonKind::Capture);
 }
 
 void SystemTrayController::showWarningMessage(const QString& title, const QString& message) {
-    m_impl->showBalloon(title, message, QSystemTrayIcon::Warning);
+    m_impl->showBalloon(title, message, QSystemTrayIcon::Warning, BalloonKind::Warning);
 }
 
 void SystemTrayController::showUpdateMessage(const QString& message) {
-    m_impl->showBalloon(tr("Update"), message, QSystemTrayIcon::Information);
+    m_impl->showBalloon(tr("Update"), message, QSystemTrayIcon::Information, BalloonKind::Update);
 }
 
 bool SystemTrayController::canShowMessages() const {

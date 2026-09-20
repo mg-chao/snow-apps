@@ -58,6 +58,7 @@ class SystemTrayController final : public QObject {
     void screenshotRequested();
     void showMainWindowRequested();
     void openFunctionSettingsRequested();
+    void openAboutRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void globalHotkeysDisabledChanged(bool disabled);
     void exitRequested();
