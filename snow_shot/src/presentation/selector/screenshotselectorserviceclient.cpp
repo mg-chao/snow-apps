@@ -218,7 +218,8 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
                 result.ok && result.mode == ScreenshotSelectorHitTestMode::WindowSubElement &&
                 (result.stopReason == ScreenshotSelectorStopReason::BudgetExhausted ||
                  result.stopReason == ScreenshotSelectorStopReason::DecodingPending ||
-                 result.stopReason == ScreenshotSelectorStopReason::ProviderTimeout);
+                 result.stopReason == ScreenshotSelectorStopReason::ProviderTimeout ||
+                 result.stopReason == ScreenshotSelectorStopReason::AccessibilityPending);
             if (client->m_callbacks.resultReady)
                 client->m_callbacks.resultReady(result);
         },

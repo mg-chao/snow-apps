@@ -150,11 +150,11 @@ void ScreenshotSelectorWorkflow::handleTargetChanged() {
 }
 
 void ScreenshotSelectorWorkflow::handleRefinement(const QVector<QRectF>& hitRects,
-                                                  quint32 displayId, bool permissionRequired) {
+                                                  quint32 displayId, bool replacePath) {
     if (!m_context.interaction.intelligentSelecting() ||
         m_context.intelligentSelection.pressActive())
         return;
-    if (permissionRequired) {
+    if (replacePath) {
         applyHitPath(hitRects, displayId);
         if (m_context.presentation.updateOverlayState)
             m_context.presentation.updateOverlayState();

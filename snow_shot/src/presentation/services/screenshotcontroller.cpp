@@ -1953,12 +1953,11 @@ void ScreenshotController::Impl::connectSelectorSignals() {
                          if (!m_globalMouseDrag.active())
                              m_selectorWorkflow->handleInitialResult(ok, hitRects, displayId);
                      });
-    QObject::connect(
-        m_selectorCoordinator, &ScreenshotSelectorCoordinator::refinementReady, &owner,
-        [this](const QVector<QRectF>& rects, quint32 displayId, bool permissionRequired) {
-            if (!m_globalMouseDrag.active())
-                m_selectorWorkflow->handleRefinement(rects, displayId, permissionRequired);
-        });
+    QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refinementReady, &owner,
+                     [this](const QVector<QRectF>& rects, quint32 displayId, bool replacePath) {
+                         if (!m_globalMouseDrag.active())
+                             m_selectorWorkflow->handleRefinement(rects, displayId, replacePath);
+                     });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::targetChanged, &owner,
                      [this]() { m_selectorWorkflow->handleTargetChanged(); });
 }

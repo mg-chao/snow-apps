@@ -41,3 +41,7 @@ windows-examples = []
 name = "hit_bench"
 path = "examples/hit_bench.rs"
 required-features = ["windows-examples"]
+
+[[example]]
+name = "macos_probe"
+path = "examples/macos_probe.rs"

@@ -40,6 +40,9 @@ struct Fake {
     pid: i32,
     root: usize,
     calls: usize,
+    children: std::collections::HashMap<usize, Vec<usize>>,
+    hidden: Vec<usize>,
+    hit_unavailable: bool,
 }
 impl Fake {
     fn new() -> Self {
@@ -61,6 +64,9 @@ impl Fake {
             pid: 42,
             root: 1,
             calls: 0,
+            children: Default::default(),
+            hidden: vec![],
+            hit_unavailable: false,
         }
     }
 }
@@ -69,15 +75,20 @@ impl AxProvider for Fake {
     fn trusted(&self) -> bool {
         self.trusted
     }
-    fn hit(&mut self, _: &WindowInfo, _: (f64, f64), _: &Budget<'_>) -> Result<usize, StopReason> {
+    fn hit(
+        &mut self,
+        _: &WindowInfo,
+        _: (f64, f64),
+        _: &Budget<'_>,
+    ) -> Result<Option<usize>, StopReason> {
         self.calls += 1;
         if let Some(e) = self.error {
             Err(e)
         } else {
-            Ok(0)
+            Ok((!self.hit_unavailable).then_some(0))
         }
     }
-    fn window(&mut self, _: &usize, _: &Budget<'_>) -> Result<usize, StopReason> {
+    fn window_at(&mut self, _: &WindowInfo, _: &Budget<'_>) -> Result<usize, StopReason> {
         Ok(self.root)
     }
     fn pid(&mut self, _: &usize, _: &Budget<'_>) -> Result<i32, StopReason> {
@@ -88,6 +99,26 @@ impl AxProvider for Fake {
     }
     fn is_window(&mut self, e: &usize, _: &Budget<'_>) -> Result<bool, StopReason> {
         Ok(self.nodes[*e].window)
+    }
+    fn hidden(&mut self, e: &usize, _: &Budget<'_>) -> Result<bool, StopReason> {
+        Ok(self.hidden.contains(e))
+    }
+    fn children(
+        &mut self,
+        e: &usize,
+        offset: usize,
+        _: &Budget<'_>,
+    ) -> Result<traversal::Children<usize>, StopReason> {
+        let children = self.children.get(e).cloned().unwrap_or_default();
+        Ok(traversal::Children {
+            elements: children
+                .iter()
+                .skip(offset)
+                .take(traversal::CHILD_BATCH)
+                .copied()
+                .collect(),
+            more: offset + traversal::CHILD_BATCH < children.len(),
+        })
     }
     fn parent(&mut self, e: &usize, _: &Budget<'_>) -> Result<Option<usize>, StopReason> {
         Ok(self.nodes[*e].parent)
@@ -194,6 +225,7 @@ fn window_mode_uses_z_order_and_snapshot_without_accessibility() {
             window(),
         ],
         displays: vec![display()],
+        ..WindowSnapshot::default()
     };
     let mut service = ElementRegionService::from_snapshot(&snapshot).unwrap();
     snapshot.windows.clear(); // independent plain snapshot ownership
@@ -371,6 +403,7 @@ fn dock_surface_does_not_mask_application_windows_or_their_children() {
     let snapshot = WindowSnapshot {
         windows,
         displays: vec![display()],
+        ..WindowSnapshot::default()
     };
     let mut service = ElementRegionService::from_snapshot(&snapshot).unwrap();
     let result = service
@@ -432,6 +465,7 @@ fn empty_dock_area_selects_only_the_queried_display_in_both_modes() {
     let snapshot = WindowSnapshot {
         windows: vec![],
         displays: vec![display(), secondary.clone()],
+        ..WindowSnapshot::default()
     };
     let mut service = ElementRegionService::from_snapshot(&snapshot).unwrap();
     for mode in [HitTestMode::Window, HitTestMode::UiElement] {
@@ -499,4 +533,251 @@ fn dock_filter_preserves_other_owners_and_other_dock_levels() {
         20,
         Some("/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock")
     ));
+}
+
+fn add_child(p: &mut Fake, parent: usize, bounds: Option<Rect>) -> usize {
+    let index = p.nodes.len();
+    p.nodes.push(Node {
+        bounds,
+        parent: Some(parent),
+        window: false,
+    });
+    p.children.entry(parent).or_default().push(index);
+    index
+}
+#[test]
+fn coarse_hit_descends_through_geometryless_nodes_and_preserves_actual_ancestors() {
+    let mut p = Fake::new();
+    p.nodes[0].bounds = Some(rect(0., 0., 90., 90.));
+    let group = add_child(&mut p, 0, None);
+    let pane = add_child(&mut p, group, Some(rect(5., 5., 60., 60.)));
+    add_child(&mut p, pane, Some(rect(10., 10., 20., 20.)));
+    let r = run(&mut p, &QueryControl::foreground());
+    assert_eq!(r.reason, StopReason::Complete);
+    assert_eq!(
+        r.path
+            .unwrap()
+            .iter()
+            .map(ElementRect::width)
+            .collect::<Vec<_>>(),
+        [40, 120, 180, 200]
+    );
+}
+#[test]
+fn overlap_ranking_uses_depth_then_area_then_provider_order() {
+    let mut p = Fake::new();
+    p.nodes[0].bounds = Some(rect(0., 0., 90., 90.));
+    add_child(&mut p, 0, Some(rect(0., 0., 40., 40.)));
+    let small = add_child(&mut p, 0, Some(rect(10., 10., 20., 20.)));
+    add_child(&mut p, 0, Some(rect(5., 5., 20., 20.)));
+    assert_eq!(
+        run(&mut p, &QueryControl::foreground()).path.unwrap()[0].left(),
+        20
+    );
+    // A deeper exposed node wins even if its clipped area is larger.
+    add_child(&mut p, small, Some(rect(0., 0., 30., 30.)));
+    assert_eq!(
+        run(&mut p, &QueryControl::foreground()).path.unwrap()[0].width(),
+        60
+    );
+}
+#[test]
+fn hidden_off_pointer_disappeared_and_foreign_children_are_not_selected() {
+    let mut p = Fake::new();
+    let hidden = add_child(&mut p, 0, Some(rect(14., 14., 2., 2.)));
+    p.hidden.push(hidden);
+    let outside = add_child(&mut p, 0, Some(rect(70., 70., 10., 10.)));
+    add_child(&mut p, outside, Some(rect(14., 14., 2., 2.)));
+    let gone = add_child(&mut p, 0, Some(rect(14., 14., 2., 2.)));
+    p.nodes[gone].parent = None;
+    let foreign = add_child(&mut p, 0, Some(rect(14., 14., 2., 2.)));
+    p.nodes[foreign].parent = Some(99);
+    let r = run(&mut p, &QueryControl::foreground());
+    assert_eq!(r.reason, StopReason::Complete);
+    assert_eq!(r.path.unwrap().len(), 2);
+}
+#[test]
+fn native_hit_branch_excludes_smaller_siblings_outside_that_branch() {
+    let mut p = Fake::new();
+    add_child(&mut p, 1, Some(rect(14., 14., 2., 2.)));
+    let r = run(&mut p, &QueryControl::foreground());
+    assert_eq!(r.path.unwrap()[0].width(), 41);
+}
+#[test]
+fn child_pages_cycles_duplicates_and_node_limit_are_bounded() {
+    let mut p = Fake::new();
+    for _ in 0..40 {
+        add_child(&mut p, 0, Some(rect(70., 70., 10., 10.)));
+    }
+    let leaf = add_child(&mut p, 0, Some(rect(14., 14., 2., 2.)));
+    p.children.get_mut(&0).unwrap().push(leaf); // duplicate edge, not a cycle
+    assert_eq!(
+        run(&mut p, &QueryControl::foreground()).path.unwrap()[0].width(),
+        4
+    );
+    p.children.insert(leaf, vec![0]);
+    assert_eq!(
+        run(&mut p, &QueryControl::foreground()).reason,
+        StopReason::TraversalLimit
+    );
+    p.children.remove(&leaf);
+    for _ in 0..600 {
+        add_child(&mut p, 0, Some(rect(70., 70., 10., 10.)));
+    }
+    let mut metrics = traversal::Metrics::default();
+    let r = traversal::query_with_metrics(
+        &mut p,
+        &window(),
+        &display(),
+        (15., 15.),
+        &QueryControl::foreground(),
+        &mut |_| {},
+        &mut metrics,
+    );
+    assert_eq!(r.reason, StopReason::TraversalLimit);
+    assert_eq!(metrics.visited, traversal::MAX_NODES);
+    assert_eq!(r.path.unwrap()[0].width(), 4);
+}
+#[test]
+fn child_depth_limit_keeps_a_valid_bounded_path() {
+    let mut p = Fake::new();
+    let mut parent = 0;
+    for _ in 0..100 {
+        parent = add_child(&mut p, parent, Some(rect(10., 10., 20., 20.)));
+    }
+    let r = run(&mut p, &QueryControl::foreground());
+    assert_eq!(r.reason, StopReason::TraversalLimit);
+    assert!(r.path.unwrap().len() <= MAX_RECTS);
+}
+
+#[test]
+fn hidden_hit_ancestors_suppress_all_child_frames() {
+    let mut p = Fake::new();
+    p.hidden.push(p.root);
+    let r = run(&mut p, &QueryControl::foreground());
+    assert_eq!(r.reason, StopReason::Complete);
+    assert_eq!(r.path.unwrap().len(), 1);
+}
+
+#[test]
+fn missing_native_hit_uses_validated_window_and_descends_to_the_leaf() {
+    let mut p = Fake::new();
+    p.hit_unavailable = true;
+    p.children.insert(1, vec![0]);
+    add_child(&mut p, 0, Some(rect(14., 14., 2., 2.)));
+    let r = run(&mut p, &QueryControl::foreground());
+    assert_eq!(r.reason, StopReason::Complete);
+    assert_eq!(
+        r.path
+            .unwrap()
+            .iter()
+            .map(ElementRect::width)
+            .collect::<Vec<_>>(),
+        [4, 41, 200]
+    );
+    p.pid = 99;
+    let r = run(&mut p, &QueryControl::foreground());
+    assert_eq!(r.reason, StopReason::ProviderFailure);
+    assert_eq!(r.path.unwrap().len(), 1);
+}
+
+#[test]
+fn initialization_keeps_valid_partial_frames_but_never_keeps_identity_failures() {
+    let path = run(&mut Fake::new(), &QueryControl::foreground());
+    for reason in [
+        StopReason::BudgetExhausted,
+        StopReason::ProviderTimeout,
+        StopReason::TraversalLimit,
+        StopReason::ProviderFailure,
+        StopReason::PermissionRequired,
+    ] {
+        let fallback = QueryResult {
+            path: Some(vec![*path.path.as_ref().unwrap().last().unwrap()]),
+            reason,
+        };
+        let result = retain_partial(path.clone(), fallback);
+        let expected = if matches!(
+            reason,
+            StopReason::ProviderFailure | StopReason::PermissionRequired
+        ) {
+            1
+        } else {
+            2
+        };
+        assert_eq!(result.path.unwrap().len(), expected);
+        assert_eq!(result.reason, reason);
+    }
+}
+
+#[test]
+fn valid_parent_chain_does_not_require_a_window_attribute() {
+    let mut p = Fake::new();
+    // WebKit exposes a valid parent chain even when AXWindow is a stale proxy.
+    p.nodes.insert(
+        1,
+        Node {
+            bounds: None,
+            parent: Some(2),
+            window: false,
+        },
+    );
+    p.root = 2;
+    let result = run(&mut p, &QueryControl::foreground());
+    assert_eq!(result.reason, StopReason::Complete);
+    assert_eq!(result.path.unwrap().len(), 2);
+}
+
+#[test]
+fn missing_parent_or_wrong_nearest_window_never_publishes_children() {
+    for missing_parent in [true, false] {
+        let mut p = Fake::new();
+        if missing_parent {
+            p.nodes[0].parent = None;
+        } else {
+            // A foreign window cannot be skipped on the way to the expected root.
+            p.nodes.insert(
+                1,
+                Node {
+                    bounds: Some(rect(2., 2., 50., 50.)),
+                    parent: Some(2),
+                    window: true,
+                },
+            );
+            p.root = 2;
+        }
+        let mut control = QueryControl::refinement(&|| false);
+        control.publication_interval = Some(Duration::ZERO);
+        let result = traversal::query(
+            &mut p,
+            &window(),
+            &display(),
+            (15., 15.),
+            &control,
+            &mut |_| panic!("unvalidated ancestry published"),
+        );
+        assert_eq!(result.reason, StopReason::ProviderFailure);
+        assert_eq!(result.path.unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn native_control_readiness_is_local_and_requires_a_complete_validated_path() {
+    let mut result = run(&mut Fake::new(), &QueryControl::foreground());
+    assert!(has_usable_control(&result, true));
+    // A different branch containing only containers still needs initialization.
+    assert!(!has_usable_control(&result, false));
+    for reason in [
+        StopReason::ProviderFailure,
+        StopReason::PermissionRequired,
+        StopReason::Cancelled,
+        StopReason::BudgetExhausted,
+        StopReason::ProviderTimeout,
+        StopReason::TraversalLimit,
+    ] {
+        result.reason = reason;
+        assert!(!has_usable_control(&result, true));
+    }
+    result.reason = StopReason::Complete;
+    result.path.as_mut().unwrap().remove(0);
+    assert!(!has_usable_control(&result, true));
 }

@@ -164,8 +164,10 @@ pub(crate) fn is_window_cloaked(hwnd: HWND) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::rect_to_aabb;
-    use crate::spatial::{IndexedWindow, SMALL_WINDOW_LINEAR_SCAN_THRESHOLD, WindowSpatialIndex};
+    use crate::windows::geometry::rect_to_aabb;
+    use crate::windows::spatial::{
+        IndexedWindow, SMALL_WINDOW_LINEAR_SCAN_THRESHOLD, WindowSpatialIndex,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DestroyWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
         SetWindowPos, WS_EX_NOACTIVATE, WS_POPUP, WS_VISIBLE,

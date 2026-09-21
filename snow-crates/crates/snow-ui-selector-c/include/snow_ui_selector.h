@@ -28,7 +28,8 @@ typedef enum SnowUiSelectorStopReason {
     SNOW_UI_SELECTOR_PROVIDER_FAILURE,
     SNOW_UI_SELECTOR_CANCELLED,
     SNOW_UI_SELECTOR_TRAVERSAL_LIMIT,
-    SNOW_UI_SELECTOR_PERMISSION_REQUIRED
+    SNOW_UI_SELECTOR_PERMISSION_REQUIRED,
+    SNOW_UI_SELECTOR_ACCESSIBILITY_PENDING
 } SnowUiSelectorStopReason;
 typedef struct SnowUiSelectorRect {
     int32_t left, top, right, bottom;

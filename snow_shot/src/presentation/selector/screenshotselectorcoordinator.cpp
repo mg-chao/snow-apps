@@ -213,6 +213,14 @@ void ScreenshotSelectorCoordinator::handleResult(const ScreenshotSelectorResult&
         if (!m_hitTestInFlight || result.requestId != m_hitTestRequestId)
             return;
         m_hitTestInFlight = false;
+#ifdef Q_OS_MACOS
+        if (!m_hasTarget || result.generation != m_targetGeneration ||
+            result.point != m_pendingHitTestPoint || result.mode != m_pendingHitTestMode ||
+            result.displayId != m_pendingDisplayId) {
+            startNextHitTest();
+            return;
+        }
+#endif
         m_initial = result.canRefine ? result : ScreenshotSelectorResult{};
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_finished");
         SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.hit_test_ok", result.ok ? 1 : 0);
@@ -229,9 +237,13 @@ void ScreenshotSelectorCoordinator::handleResult(const ScreenshotSelectorResult&
         return;
     if (result.ok && result.stopReason != ScreenshotSelectorStopReason::Cancelled &&
         !result.rects.isEmpty()) {
-        const bool permissionRequired =
-            result.stopReason == ScreenshotSelectorStopReason::PermissionRequired;
-        emit refinementReady(result.rects, result.displayId, permissionRequired);
+        const bool replacePath =
+            result.stopReason == ScreenshotSelectorStopReason::PermissionRequired
+#ifdef Q_OS_MACOS
+            || result.stopReason == ScreenshotSelectorStopReason::ProviderFailure
+#endif
+            ;
+        emit refinementReady(result.rects, result.displayId, replacePath);
         warnIfPermissionRequired();
     }
 }

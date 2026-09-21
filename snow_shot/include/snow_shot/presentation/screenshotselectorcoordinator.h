@@ -40,8 +40,7 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
   signals:
     void refreshFinished(bool ok);
     void initialResultReady(bool ok, QVector<QRectF> hitRects, quint32 displayId = 0);
-    void refinementReady(QVector<QRectF> hitRects, quint32 displayId = 0,
-                         bool permissionRequired = false);
+    void refinementReady(QVector<QRectF> hitRects, quint32 displayId = 0, bool replacePath = false);
     void targetChanged();
     void accessibilityPermissionRequired();
 

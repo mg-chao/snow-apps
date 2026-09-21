@@ -23,7 +23,8 @@ enum class ScreenshotSelectorStopReason {
     ProviderFailure,
     Cancelled,
     TraversalLimit,
-    PermissionRequired
+    PermissionRequired,
+    AccessibilityPending
 };
 struct ScreenshotSelectorResult {
     quint64 epoch = 0;
