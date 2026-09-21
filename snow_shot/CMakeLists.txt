@@ -3102,6 +3102,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    add_executable(snow-shot-pinned-geometry-mapping-tests
+        tests/screenshot_pinned_geometry_mapping_tests.cpp)
+    target_include_directories(snow-shot-pinned-geometry-mapping-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned")
+    target_link_libraries(snow-shot-pinned-geometry-mapping-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-pinned-geometry-mapping-tests COMMAND snow-shot-pinned-geometry-mapping-tests)
+    set_tests_properties(snow-shot-pinned-geometry-mapping-tests PROPERTIES
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE)
+
     add_executable(snow-shot-pinned-resize-geometry-tests
         tests/screenshot_pinned_resize_geometry_tests.cpp
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
@@ -6874,6 +6883,29 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-save-dialog-tests
         snow-shot-pinned-hidden-text-selection-restore-tests
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" SNOW_TEST_CROSS_PLATFORM TRUE)
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-pinned-physical-authority-tests
+        COMMAND snow-shot-pinned-window-tests --physical-authority-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-physical-authority-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+endif()
+
+if(WIN32 AND SNOW_SHOT_BUILD_TESTS)
+    # Qt does not activate a screen-factor override of 1 by itself. Use an
+    # explicit 2x screen factor and a global multiplier to test exact DPRs,
+    # independently of the host monitor's configured scale.
+    set(_pin_dprs 1.0 1.25 1.5 1.75 2.0)
+    set(_pin_factors 0.5 0.625 0.75 0.875 1.0)
+    foreach(_pin_scale _pin_factor IN ZIP_LISTS _pin_dprs _pin_factors)
+        add_test(NAME snow-shot-pinned-pixel-alignment-${_pin_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --pixel-alignment-only -platform windows)
+        set_tests_properties(snow-shot-pinned-pixel-alignment-${_pin_scale}-tests PROPERTIES
+            LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_pin_factor};SNOW_PIN_TEST_DPR=${_pin_scale}")
+    endforeach()
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)

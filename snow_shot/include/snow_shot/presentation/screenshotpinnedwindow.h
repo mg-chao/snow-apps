@@ -310,6 +310,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceRecord() const;
     void restorePersistentState(const Config& config);
     [[nodiscard]] QRect intendedNativeGeometry() const;
+    [[nodiscard]] QRect authoritativeNativeGeometry() const;
+    [[nodiscard]] QRect observedNativeGeometry() const;
     void toggleHideToTop();
     void exitHideToTop();
     [[nodiscard]] bool hideToTopActive() const;
@@ -328,10 +330,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     void restoreFromThumbnailImmediately();
     void animateGeometryTo(const QRect& nativeTarget);
     bool applyWindowGeometry(const QRect& nativeGeometry, GeometryMutation mutation);
+    bool applyAndVerifyNativeGeometry(const QRect& target, bool discardContents = false);
+    void commitNativeGeometry(bool adoptScale = false);
+    void handleNativeGeometryObservation();
     bool finishNativeGeometryInteraction();
     bool reconcilePassiveNativeGeometry();
     bool restoreCommittedNativeGeometry(bool closeOnFailure = true);
-    QRect nativeRectForLogicalRect(const QRect& logical, QScreen* screen) const;
     void showAllPinnedWindows();
     void hideOtherPinnedWindows();
     void closeOtherPinnedWindows();
@@ -479,6 +483,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;
     QPointF m_viewportCenter;
+    bool m_synchronizingViewportGeometry = false;
     // Derived value: 100 * expanded native width / oriented initial physical
     // width. In thumbnail mode the saved expansion rectangle supplies that
     // width. Never carries an externally computed or DPI-translated percent.

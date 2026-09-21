@@ -162,10 +162,74 @@ class FailingPinnedPlatform final : public snow_shot::presentation::PinnedWindow
     std::unique_ptr<PinnedWindowPlatform> m_backend;
 };
 
+// Exercises the Windows geometry contract without an HWND or a real monitor.
+// Notifications may arrive synchronously before applyPixelGeometry returns.
+class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindowPlatform {
+  public:
+    explicit ObservedPinnedPlatform(QWidget* window) : PinnedWindowPlatform(window, Role::Image) {}
+    QRect observed;
+    bool readFails = false;
+    bool rejectNext = false;
+    bool biasNext = false;
+    int applications = 0;
+    std::function<void()> notification;
+    bool attach() override {
+        return true;
+    }
+    void detach() override {}
+    bool applyPixelGeometry(const QRect& rect, QScreen*, GeometryUpdate) override {
+        ++applications;
+        if (std::exchange(rejectNext, false))
+            return false;
+        observed = std::exchange(biasNext, false) ? rect.translated(1, 0) : rect;
+        if (notification)
+            notification();
+        return true;
+    }
+    QRect pixelGeometry() const override {
+        return readFails ? QRect() : observed;
+    }
+    bool applyPlacement(const snow_shot::presentation::PinnedPlacement&, QScreen*,
+                        GeometryUpdate) override {
+        throw std::runtime_error("physical geometry must not round-trip through placement");
+    }
+    std::optional<snow_shot::presentation::PinnedPlacement> placement() const override {
+        return {};
+    }
+    bool setInputTransparent(bool) override {
+        return true;
+    }
+    bool activate() override {
+        return true;
+    }
+};
+
 // Offscreen tests exercise restored state and queued DPI notifications without
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static ObservedPinnedPlatform* installObservedPlatform(ScreenshotPinnedWindow& window) {
+        auto platform = std::make_unique<ObservedPinnedPlatform>(&window);
+        auto* result = platform.get();
+        window.m_platform = std::move(platform);
+        result->notification = [&window] { window.handleNativeGeometryObservation(); };
+        return result;
+    }
+    static QRect authority(const ScreenshotPinnedWindow& window) {
+        return window.authoritativeNativeGeometry();
+    }
+    static QRect observation(const ScreenshotPinnedWindow& window) {
+        return window.observedNativeGeometry();
+    }
+    static void observe(ScreenshotPinnedWindow& window) {
+        window.handleNativeGeometryObservation();
+    }
+    static void settle(ScreenshotPinnedWindow& window) {
+        window.adoptSettledNativeScale();
+    }
+    static bool dpiTarget(ScreenshotPinnedWindow& window, const QRect& rect) {
+        return window.m_nativeGeometryController->adoptDpiTarget(rect, std::nullopt);
+    }
     static FailingPinnedPlatform* installFailingPlatform(ScreenshotPinnedWindow& window) {
         auto platform =
             std::make_unique<FailingPinnedPlatform>(&window, std::move(window.m_platform));
@@ -2825,8 +2889,9 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
         QSize(321, 181),
         QSize(323, 183),
         QSize(319, 179),
+        QSize(1000, 667),
     };
-    for (int iteration = 0; iteration < 3; ++iteration) {
+    for (int iteration = 0; iteration < 4; ++iteration) {
         const QSize physicalSize = physicalSizes[iteration];
         QImage background(physicalSize, QImage::Format_RGBA8888);
         for (int y = 0; y < background.height(); ++y) {
@@ -4647,11 +4712,74 @@ void pinnedControlsHideBelowMinimumNativeSize(SnowCanvasRuntime&) {
     verifyControls(QSize(383, 382), false);
 }
 
+void pinnedPhysicalAuthoritySurvivesObservations() {
+    ScreenshotPinnedWindow window;
+    auto* platform = ScreenshotPinnedWindowTestAccess::installObservedPlatform(window);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(-1901, -311, 1000, 667);
+    config.canvasSourceRect = QRectF(0, 0, 1000, 667);
+    config.fullResolutionScaleBasis = config.nativeGeometry.size();
+    QImage image(config.nativeGeometry.size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    const QRect original = config.nativeGeometry;
+    require(ScreenshotPinnedWindowTestAccess::authority(window) == original,
+            "initial physical rectangle must be authoritative");
+    window.resize(333, 222);
+    platform->readFails = true;
+    require(!ScreenshotPinnedWindowTestAccess::observation(window).isValid() &&
+                window.currentNativeGeometry() == original,
+            "failed observations must fall back only to authoritative physical state");
+    platform->readFails = false;
+    platform->observed = original.translated(1, 1);
+    require(window.currentNativeGeometry() == platform->observed &&
+                ScreenshotPinnedWindowTestAccess::authority(window) == original,
+            "painting observations must remain separate from geometry authority");
+    ScreenshotPinnedWindowTestAccess::settle(window);
+    require(qFuzzyCompare(ScreenshotPinnedWindowTestAccess::scale(window), 100.0) &&
+                window.persistenceSnapshot().nativeGeometry == original,
+            "DPI settlement and persistence must not adopt passive drift");
+    ScreenshotPinnedWindowTestAccess::observe(window);
+    require(platform->observed == original &&
+                ScreenshotPinnedWindowTestAccess::geometrySettled(window),
+            "stable native drift must reconcile without changing authority");
+
+    const QRect moved = original.translated(17, 23);
+    const int beforeMove = platform->applications;
+    require(ScreenshotPinnedWindowTestAccess::moveWindow(window, moved) &&
+                ScreenshotPinnedWindowTestAccess::authority(window) == moved &&
+                platform->applications == beforeMove + 1,
+            "reentrant notifications must not start another geometry transaction");
+    platform->biasNext = true;
+    require(!ScreenshotPinnedWindowTestAccess::moveWindow(window, original) &&
+                ScreenshotPinnedWindowTestAccess::authority(window) == moved &&
+                platform->observed == moved,
+            "successful platform calls with the wrong rectangle must roll back");
+    platform->rejectNext = true;
+    require(!ScreenshotPinnedWindowTestAccess::moveWindow(window, original) &&
+                ScreenshotPinnedWindowTestAccess::geometrySettled(window),
+            "failed native application must preserve the last committed rectangle");
+
+    const QRect dpiRect(-1884, -288, 1250, 834);
+    require(ScreenshotPinnedWindowTestAccess::dpiTarget(window, dpiRect),
+            "DPI proposal must be accepted");
+    platform->observed = dpiRect;
+    ScreenshotPinnedWindowTestAccess::observe(window);
+    ScreenshotPinnedWindowTestAccess::settle(window);
+    require(ScreenshotPinnedWindowTestAccess::authority(window) == dpiRect &&
+                qFuzzyCompare(ScreenshotPinnedWindowTestAccess::scale(window), 125.0),
+            "accepted system DPI sizing must remain unchanged by the refactor");
+    platform->notification = {};
+    window.close();
+}
+
 void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     ScreenshotPinnedWindow window;
     window.setAttribute(Qt::WA_DeleteOnClose, false);
     require(window.internalWinId() == 0, "the geometry fixture must start without a native window");
-    static_cast<void>(window.currentNativeGeometry());
+    require(!window.currentNativeGeometry().isValid(),
+            "uninitialized geometry must not fall back to logical QWidget coordinates");
     require(window.internalWinId() == 0, "reading pinned geometry must not create a native window");
     QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
     QCoreApplication::sendEvent(&window, &enter);
@@ -9174,37 +9302,43 @@ void pinnedAutoFilterPreservesBackgroundAndSession() {
 
 void pinnedOddPixelExtentRemainsSharp() {
     QScreen* screen = QGuiApplication::primaryScreen();
-    ScreenshotPinnedWindow window;
-    window.setAttribute(Qt::WA_DeleteOnClose, false);
-    QImage source(321, 181, QImage::Format_ARGB32_Premultiplied);
-    for (int y = 0; y < source.height(); ++y) {
-        for (int x = 0; x < source.width(); ++x)
-            source.setPixel(x, y, (x + y) % 2 ? qRgb(255, 255, 255) : qRgb(0, 0, 0));
+    for (const QSize extent : {QSize(321, 181), QSize(1000, 667)}) {
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        QImage source(extent, QImage::Format_ARGB32_Premultiplied);
+        for (int y = 0; y < source.height(); ++y) {
+            for (int x = 0; x < source.width(); ++x)
+                source.setPixel(
+                    x, y,
+                    qRgb((x * 37 + y * 17) % 256, (x * 13 + y * 43) % 256, (x * 53 + y * 7) % 256));
+        }
+        ScreenshotPinnedWindow::Config config;
+        config.screen = screen;
+        config.placement = {screen->name(), screen->serialNumber(), QPointF(120.5, 120.5),
+                            source.size()};
+        config.canvasSourceRect = source.rect();
+        config.imageSource = ScreenshotImageSource::fromImage(source, source.rect());
+        config.automaticTextRecognition = false;
+        require(window.present(config), "odd-pixel fixture presentation failed");
+        waitForUi(50);
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        require(canvas != nullptr && window.currentNativeGeometry().size() == source.size(),
+                "native extent must preserve odd pixels");
+        const qreal dpr = canvas->devicePixelRatioF();
+        QImage rendered(QSize(qRound(canvas->width() * dpr), qRound(canvas->height() * dpr)),
+                        QImage::Format_ARGB32_Premultiplied);
+        rendered.setDevicePixelRatio(dpr);
+        rendered.fill(Qt::transparent);
+        canvas->render(&rendered);
+        require(rendered.width() >= source.width() && rendered.height() >= source.height(),
+                "Qt paint extent must cover the entire physical client");
+        for (int y = 0; y < source.height(); ++y) {
+            for (int x = 0; x < source.width(); ++x)
+                require(rendered.pixel(x, y) == source.pixel(x, y),
+                        "odd backing extent must not shift or blur image pixels");
+        }
+        window.close();
     }
-    ScreenshotPinnedWindow::Config config;
-    config.screen = screen;
-    config.placement = {screen->name(), screen->serialNumber(), QPointF(120.5, 120.5),
-                        source.size()};
-    config.canvasSourceRect = source.rect();
-    config.imageSource = ScreenshotImageSource::fromImage(source, source.rect());
-    config.automaticTextRecognition = false;
-    require(window.present(config), "odd-pixel fixture presentation failed");
-    waitForUi(50);
-    auto* canvas = window.findChild<SnowCanvasWidget*>();
-    require(canvas != nullptr && window.currentNativeGeometry().size() == source.size(),
-            "native extent must preserve odd pixels");
-    const qreal dpr = canvas->devicePixelRatioF();
-    QImage rendered(QSize(qRound(canvas->width() * dpr), qRound(canvas->height() * dpr)),
-                    QImage::Format_ARGB32_Premultiplied);
-    rendered.setDevicePixelRatio(dpr);
-    rendered.fill(Qt::transparent);
-    canvas->render(&rendered);
-    for (int y = 10; y < 170; ++y) {
-        for (int x = 10; x < 310; ++x)
-            require(rendered.pixel(x, y) == source.pixel(x, y),
-                    "odd backing extent must not shift or blur image pixels");
-    }
-    window.close();
 }
 
 void pinnedControlledInteractionAndGestures() {
@@ -9359,8 +9493,24 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--physical-authority-only"))) {
+            pinnedPhysicalAuthoritySurvivesObservations();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--pixel-alignment-only"))) {
+            const double expectedDpr = qEnvironmentVariable("SNOW_PIN_TEST_DPR").toDouble();
+            if (expectedDpr > 0)
+                require(qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(),
+                                      expectedDpr),
+                        "pixel fixture must run at the registered DPR, independently of monitor "
+                        "settings");
             pinnedOddPixelExtentRemainsSharp();
+            if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+                SnowCanvasRuntime pixelRuntime;
+                require(pixelRuntime.isValid(), "pixel fixture runtime creation failed");
+                pinnedPhysicalPixelsFillClientArea(pixelRuntime);
+                pinnedBorderUsesTwoPhysicalPixels(pixelRuntime);
+            }
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--controlled-interaction-only"))) {

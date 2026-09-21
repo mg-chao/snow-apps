@@ -180,6 +180,38 @@ void failedTransactionsRollBackDeterministically() {
                 controller.phase() == ScreenshotPinnedNativeGeometryController::Phase::Stable,
             "rollback must return the controller to stable state");
 }
+
+void observationsCannotReplaceAuthoritativeTargets() {
+    auto controller = initializedController();
+    const QRect committed = controller.committedGeometry();
+    require(controller.authoritativeGeometry() == committed, "stable authority must be committed");
+    require(!controller.acceptAppliedGeometry(committed.translated(1, 0)) &&
+                controller.authoritativeGeometry() == committed,
+            "passive observations must not become geometry decisions");
+    require(controller.beginMove(QPoint(1200, 1000)), "move must begin");
+    require(controller.authoritativeGeometry() == committed,
+            "pending movement must retain authority");
+    const QRect moved = committed.translated(7, 9);
+    require(controller.acceptInteractiveGeometry(moved) &&
+                controller.authoritativeGeometry() == moved,
+            "accepted interactive geometry must become authoritative before native application");
+    controller.prepareRollback();
+    static_cast<void>(controller.finishRollback());
+
+    const QRect requested(-1901, -311, 1000, 667);
+    require(controller.beginProgrammatic(requested,
+                                         ScreenshotPinnedNativeGeometryController::Origin::Scale),
+            "programmatic transaction must begin");
+    require(!controller.acceptAppliedGeometry({}) &&
+                !controller.acceptAppliedGeometry(QRect(-1900, -311, 1001, 667)) &&
+                controller.authoritativeGeometry() == requested &&
+                controller.committedGeometry() == committed,
+            "failed or rounded native observations must not alter transaction state");
+    require(controller.constrainWindowPos(committed, true, true) == requested,
+            "reentrant proposals must see the active authoritative target");
+    require(controller.acceptAppliedGeometry(requested), "an exact native observation must verify");
+    require(controller.commitTarget().geometry == requested, "verified target must commit");
+}
 } // namespace
 
 int main() {
@@ -194,6 +226,7 @@ int main() {
         midDragDpiTargetKeepsTheSystemGeometry();
         shortcutMovementAfterDpiUsesTheAdoptedTargetAsItsAnchor();
         failedTransactionsRollBackDeterministically();
+        observationsCannotReplaceAuthoritativeTargets();
     } catch (const std::exception& error) {
         std::cerr << "screenshot pinned native geometry controller test failure: " << error.what()
                   << '\n';

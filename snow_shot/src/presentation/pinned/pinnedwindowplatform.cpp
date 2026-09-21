@@ -284,20 +284,29 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
                                       invalidate ? PaintSynchronization::InvalidateAndUpdate
                                                  : PaintSynchronization::FlushAlreadyPainted);
     }
-    bool applyPlacement(const PinnedPlacement& placement, QScreen* screen,
-                        GeometryUpdate update) override {
-        return m_window && screen && placement.isValid() &&
+    bool applyPixelGeometry(const QRect& pixels, QScreen*, GeometryUpdate update) override {
+        return m_window && m_window->internalWinId() &&
                screenshot_pinned_window_native::applyClientGeometry(
-                   m_window->internalWinId(), pinnedPixelRect(placement, *screen),
+                   m_window->internalWinId(), pixels,
                    update == GeometryUpdate::DiscardContents
                        ? screenshot_pinned_window_native::GeometryUpdate::DiscardClientPixels
                        : screenshot_pinned_window_native::GeometryUpdate::PreserveClientPixels);
     }
+    QRect pixelGeometry() const override {
+        return m_window && m_window->internalWinId()
+                   ? screenshot_pinned_window_native::currentClientGeometry(
+                         m_window->internalWinId())
+                   : QRect();
+    }
+    bool applyPlacement(const PinnedPlacement& placement, QScreen* screen,
+                        GeometryUpdate update) override {
+        return screen && placement.isValid() &&
+               applyPixelGeometry(pinnedPixelRect(placement, *screen), screen, update);
+    }
     std::optional<PinnedPlacement> placement() const override {
         if (!m_window || !m_window->screen())
             return std::nullopt;
-        const QRect rect =
-            screenshot_pinned_window_native::currentClientGeometry(m_window->internalWinId());
+        const QRect rect = pixelGeometry();
         return rect.isValid() ? std::optional(pinnedPlacement(rect, *m_window->screen()))
                               : std::nullopt;
     }

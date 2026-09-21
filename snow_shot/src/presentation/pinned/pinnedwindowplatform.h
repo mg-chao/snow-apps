@@ -79,9 +79,10 @@ class PinnedWindowPlatform : public QObject {
     [[nodiscard]] bool
     applyStablePlacement(PinnedPlacement placement, QScreen* screen,
                          GeometryUpdate update = GeometryUpdate::PreserveContents);
-    [[nodiscard]] bool applyPixelGeometry(const QRect& pixels, QScreen* screen,
-                                          GeometryUpdate update = GeometryUpdate::PreserveContents);
-    [[nodiscard]] QRect pixelGeometry() const;
+    [[nodiscard]] virtual bool
+    applyPixelGeometry(const QRect& pixels, QScreen* screen,
+                       GeometryUpdate update = GeometryUpdate::PreserveContents);
+    [[nodiscard]] virtual QRect pixelGeometry() const;
     std::function<void()> environmentChanged;
 
   protected:

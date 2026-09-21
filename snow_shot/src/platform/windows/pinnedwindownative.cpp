@@ -221,8 +221,8 @@ QRect screenshot_pinned_window_native::currentClientGeometry(WId windowId) {
         return {};
     }
     return QRect(clientTopLeft.x, clientTopLeft.y,
-                 std::max(1, static_cast<int>(clientRect.right - clientRect.left)),
-                 std::max(1, static_cast<int>(clientRect.bottom - clientRect.top)));
+                 static_cast<int>(clientRect.right - clientRect.left),
+                 static_cast<int>(clientRect.bottom - clientRect.top));
 #else
     Q_UNUSED(windowId);
     return {};

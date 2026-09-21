@@ -72,8 +72,10 @@ int main() {
     require(controller.beginProgrammatic(QRect(-320, 0, 642, 362),
                                          ScreenshotPinnedNativeGeometryController::Origin::Scale),
             "programmatic transaction failed");
-    require(controller.acceptAppliedGeometry(QRect(-319, 0, 642, 362)),
-            "native rounding readback was rejected");
+    require(!controller.acceptAppliedGeometry(QRect(-319, 0, 642, 362)),
+            "exact physical application must reject placement rounding");
+    require(controller.acceptAppliedGeometry(QRect(-319, 0, 642, 362), true),
+            "controlled platform placement must retain its explicit adjustment policy");
     require(controller.committedGeometry() == QRect(-321, 0, 642, 362),
             "readback must not commit before the shared transaction finishes");
     static_cast<void>(controller.commitTarget());
