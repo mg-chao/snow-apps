@@ -88,7 +88,7 @@ pub enum AccessibilityBackend {
     #[cfg_attr(not(windows), default)]
     Accessibility,
 }
-/// Plain geometry only: safe to send to a worker that creates its own native state.
+/// Transferable geometry and session metadata; native handles remain worker-local.
 #[derive(Clone, Debug, Default)]
 pub struct WindowSnapshot {
     #[cfg(windows)]
@@ -97,4 +97,6 @@ pub struct WindowSnapshot {
     pub(crate) windows: Vec<macos::WindowInfo>,
     #[cfg(target_os = "macos")]
     pub(crate) displays: Vec<macos::DisplayInfo>,
+    #[cfg(target_os = "macos")]
+    pub(crate) activation: std::sync::Arc<macos::activation::Session>,
 }

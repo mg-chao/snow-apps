@@ -94,6 +94,7 @@ class ScreenshotOcrController final : public QObject {
     void undoTextEdit();
     void redoTextEdit();
 
+    void setShowOriginalImage(bool show);
     void beginTextEditing();
     void beginTextTranslation();
     void endTextEditing();

@@ -198,11 +198,23 @@ bool ScreenshotIntelligentSelectionModel::applyCanvasRefinementPath(
         boundedPath(canvasHitRects, selectableBounds, minimumSelectionSize);
     if (refined.size() <= m_hitRects.size())
         return false;
+#ifdef Q_OS_MACOS
+    // Newly exposed accessibility containers can occur between known frames.
+    // Keep every existing frame in order, including the explicitly selected one.
+    qsizetype matched = 0;
+    for (const QRectF& rect : refined) {
+        if (matched < m_hitRects.size() && rect == m_hitRects.at(matched))
+            ++matched;
+    }
+    if (matched != m_hitRects.size() || refined.constLast() != m_hitRects.constLast())
+        return false;
+#else
     const qsizetype added = refined.size() - m_hitRects.size();
     for (qsizetype i = 0; i < m_hitRects.size(); ++i) {
         if (refined.at(added + i) != m_hitRects.at(i))
             return false;
     }
+#endif
     const QRectF selected = currentSelection();
     m_hitRects = refined;
     return setIndex(m_explicitSelection ? static_cast<int>(m_hitRects.indexOf(selected)) : 0);

@@ -1,5 +1,7 @@
+use super::activation::Backend;
+use super::activation_flags::{self, ActivationState, Flag, Flags};
 use super::geometry::{DisplayInfo, Rect, WindowInfo, visible_window};
-use super::traversal::{AxProvider, Budget};
+use super::traversal::{AxProvider, Budget, CHILD_BATCH, Children};
 use crate::{SelectorResult, StopReason, WindowSnapshot};
 use accessibility_sys::*;
 use core_foundation::base::{CFType, TCFType};
@@ -218,12 +220,100 @@ pub(super) fn snapshot(excluded: &[usize]) -> SelectorResult<WindowSnapshot> {
             windows.push(window);
         }
     }
-    Ok(WindowSnapshot { windows, displays })
+    Ok(WindowSnapshot {
+        windows,
+        displays,
+        ..WindowSnapshot::default()
+    })
 }
 
 #[derive(Clone, PartialEq)]
 pub(super) struct Element(CFType);
 impl Element {
+    fn application(pid: i32) -> Result<Self, StopReason> {
+        Self::from_value(
+            owned(unsafe { AXUIElementCreateApplication(pid) }.cast())
+                .ok_or(StopReason::ProviderFailure)?,
+        )
+    }
+    fn elements(
+        &self,
+        name: &str,
+        offset: usize,
+        budget: &Budget<'_>,
+    ) -> Result<Option<Children<Element>>, StopReason> {
+        self.timeout(budget)?;
+        let key = CFString::new(name);
+        let mut count = 0;
+        let code = unsafe {
+            AXUIElementGetAttributeValueCount(self.raw(), key.as_concrete_TypeRef(), &mut count)
+        };
+        budget.check()?;
+        if code == kAXErrorAttributeUnsupported || code == kAXErrorNotImplemented {
+            return Ok(None);
+        }
+        if code == kAXErrorNoValue
+            || code == kAXErrorInvalidUIElement
+            || offset >= count.max(0) as usize
+        {
+            // Do not hide errors just because the count out-parameter stayed zero.
+            if code != kAXErrorNoValue && code != kAXErrorInvalidUIElement {
+                status(code)?;
+            }
+            return Ok(Some(Children {
+                elements: vec![],
+                more: false,
+            }));
+        }
+        status(code)?;
+        let length = CHILD_BATCH.min(count as usize - offset);
+        self.timeout(budget)?;
+        let mut raw = ptr::null();
+        let code = unsafe {
+            AXUIElementCopyAttributeValues(
+                self.raw(),
+                key.as_concrete_TypeRef(),
+                offset as isize,
+                length as isize,
+                &mut raw,
+            )
+        };
+        let value = owned(raw.cast());
+        budget.check()?;
+        if code == kAXErrorInvalidUIElement
+            || code == kAXErrorIllegalArgument
+            || code == kAXErrorNoValue
+        {
+            return Ok(Some(Children {
+                elements: vec![],
+                more: false,
+            }));
+        }
+        status(code)?;
+        let value = value.ok_or(StopReason::ProviderFailure)?;
+        if value.type_of() != unsafe { CFArrayGetTypeID() } {
+            return Err(StopReason::ProviderFailure);
+        }
+        let array = value.as_CFTypeRef() as CFArrayRef;
+        let count_returned = unsafe { CFArrayGetCount(array) } as usize;
+        if count_returned > length {
+            return Err(StopReason::ProviderFailure);
+        }
+        let mut elements = Vec::with_capacity(count_returned);
+        for index in 0..count_returned {
+            let raw = unsafe { CFArrayGetValueAtIndex(array, index as isize) };
+            if raw.is_null() {
+                return Err(StopReason::ProviderFailure);
+            }
+            elements.push(Self::from_value(unsafe {
+                CFType::wrap_under_get_rule(raw)
+            })?);
+        }
+        Ok(Some(Children {
+            elements,
+            more: offset + count_returned < count as usize,
+        }))
+    }
     fn from_value(value: CFType) -> Result<Self, StopReason> {
         if value.type_of() != unsafe { AXUIElementGetTypeID() } {
             return Err(StopReason::ProviderFailure);
@@ -251,6 +341,7 @@ impl Element {
         if code == kAXErrorAttributeUnsupported
             || code == kAXErrorNoValue
             || code == kAXErrorNotImplemented
+            || code == kAXErrorInvalidUIElement
         {
             return Ok(None);
         }
@@ -283,7 +374,35 @@ fn decode<T: Default>(value: &CFType, kind: AXValueType) -> Result<T, StopReason
     }
     Ok(result)
 }
-pub(super) struct Provider;
+// These roles expose actual controls/content at the queried branch. Generic
+// containers alone do not establish that an asynchronously created tree is ready.
+fn is_concrete_control(role: &str) -> bool {
+    matches!(
+        role,
+        "AXButton"
+            | "AXCheckBox"
+            | "AXRadioButton"
+            | "AXPopUpButton"
+            | "AXMenuButton"
+            | "AXTextField"
+            | "AXTextArea"
+            | "AXStaticText"
+            | "AXLink"
+            | "AXImage"
+            | "AXSlider"
+            | "AXIncrementor"
+            | "AXComboBox"
+            | "AXColorWell"
+            | "AXProgressIndicator"
+            | "AXMenuItem"
+            | "AXCell"
+    )
+}
+#[derive(Default)]
+pub(super) struct Provider {
+    pub web_content: bool,
+    pub concrete_control: bool,
+}
 impl AxProvider for Provider {
     type Element = Element;
     fn trusted(&self) -> bool {
@@ -294,33 +413,58 @@ impl AxProvider for Provider {
         window: &WindowInfo,
         (x, y): (f64, f64),
         budget: &Budget<'_>,
-    ) -> Result<Element, StopReason> {
+    ) -> Result<Option<Element>, StopReason> {
         // Target the cached owner directly so excluded capture overlays cannot steal
         // the hit. Setting a system-wide AX timeout would change process-global state
         // shared by the foreground and refinement workers.
-        let app = Element::from_value(
-            owned(unsafe { AXUIElementCreateApplication(window.pid) }.cast())
-                .ok_or(StopReason::ProviderFailure)?,
-        )?;
+        let app = Element::application(window.pid)?;
         app.timeout(budget)?;
         let mut raw = ptr::null_mut();
         let code =
             unsafe { AXUIElementCopyElementAtPosition(app.raw(), x as f32, y as f32, &mut raw) };
         let value = owned(raw.cast());
-        status(code)?;
         budget.check()?;
-        Element::from_value(value.ok_or(StopReason::ProviderFailure)?)
+        if code == kAXErrorNotImplemented
+            || code == kAXErrorNoValue
+            || code == kAXErrorAttributeUnsupported
+        {
+            return Ok(None);
+        }
+        status(code)?;
+        Element::from_value(value.ok_or(StopReason::ProviderFailure)?).map(Some)
     }
 
-    fn window(&mut self, e: &Element, b: &Budget<'_>) -> Result<Element, StopReason> {
-        if self.is_window(e, b)? {
-            return Ok(e.clone());
+    fn window_at(
+        &mut self,
+        window: &WindowInfo,
+        budget: &Budget<'_>,
+    ) -> Result<Element, StopReason> {
+        let app = Element::application(window.pid)?;
+        // Some providers expose a tree but no native hit testing. Locate the
+        // exact snapshot window, not the application's currently focused one.
+        let mut offset = 0;
+        while offset < super::traversal::MAX_NODES {
+            let Some(page) = app.elements(kAXWindowsAttribute, offset, budget)? else {
+                break;
+            };
+            offset += page.elements.len();
+            for candidate in page.elements {
+                if self.pid(&candidate, budget)? == window.pid
+                    && self.is_window(&candidate, budget)?
+                    && self
+                        .bounds(&candidate, budget)?
+                        .is_some_and(|r| r.matches(window.bounds))
+                {
+                    return Ok(candidate);
+                }
+            }
+            if !page.more {
+                break;
+            }
         }
-        Element::from_value(
-            e.attribute(kAXWindowAttribute, b)?
-                .ok_or(StopReason::ProviderFailure)?,
-        )
+        Err(StopReason::ProviderFailure)
     }
+
     fn pid(&mut self, e: &Element, b: &Budget<'_>) -> Result<i32, StopReason> {
         e.timeout(b)?;
         let mut pid = 0;
@@ -346,13 +490,35 @@ impl AxProvider for Provider {
         Ok(rect.valid().then_some(rect))
     }
     fn is_window(&mut self, e: &Element, b: &Budget<'_>) -> Result<bool, StopReason> {
-        let value = e
-            .attribute(kAXRoleAttribute, b)?
-            .ok_or(StopReason::ProviderFailure)?;
+        let Some(value) = e.attribute(kAXRoleAttribute, b)? else {
+            return Ok(false);
+        };
         let role = value
             .downcast_into::<CFString>()
             .ok_or(StopReason::ProviderFailure)?;
+        self.web_content |= role == CFString::new("AXWebArea");
+        self.concrete_control |= is_concrete_control(&role.to_string());
         Ok(role == CFString::new(kAXWindowRole))
+    }
+    fn hidden(&mut self, e: &Element, b: &Budget<'_>) -> Result<bool, StopReason> {
+        Ok(e.attribute("AXHidden", b)?
+            .and_then(|v| boolean(&v))
+            .unwrap_or(false))
+    }
+    fn children(
+        &mut self,
+        e: &Element,
+        offset: usize,
+        b: &Budget<'_>,
+    ) -> Result<Children<Element>, StopReason> {
+        if let Some(page) = e.elements(kAXVisibleChildrenAttribute, offset, b)? {
+            return Ok(page);
+        }
+        Ok(e.elements(kAXChildrenAttribute, offset, b)?
+            .unwrap_or(Children {
+                elements: vec![],
+                more: false,
+            }))
     }
     fn parent(&mut self, e: &Element, b: &Budget<'_>) -> Result<Option<Element>, StopReason> {
         e.attribute(kAXParentAttribute, b)?
@@ -374,6 +540,45 @@ mod tests {
     }
 
     #[test]
+    fn native_process_identity_has_a_start_time_and_rejects_missing_processes() {
+        let backend = Activation::default();
+        let identity = backend.identity(std::process::id() as i32).unwrap();
+        assert!(identity.started.0 > 0);
+        assert_eq!(backend.identity(identity.pid), Some(identity));
+        assert!(backend.identity(-1).is_none());
+    }
+    #[test]
+    fn overlapping_sessions_share_owned_activation_until_last_release() {
+        use super::super::activation::{Identity, Outcome};
+        let id = Identity {
+            pid: -456,
+            started: (123, 0),
+        };
+        let first = Activation::default();
+        let second = Activation::default();
+        // Seed an owned activation without contacting any application.
+        let record = activation_record(id);
+        *record.lock().unwrap() = ActivationOwners {
+            users: 1,
+            state: ActivationState {
+                outcome: Outcome::Owned,
+                flag: Some(Flag::Enhanced),
+            },
+        };
+        first.leases.lock().unwrap().insert(id, record.clone());
+        let control = crate::QueryControl::foreground();
+        assert_eq!(
+            second.enable(id, &Budget::new(&control)).unwrap(),
+            Outcome::Owned
+        );
+        assert_eq!(record.lock().unwrap().users, 2);
+        assert_eq!(record.lock().unwrap().state.flag, Some(Flag::Enhanced));
+        first.restore(id);
+        assert_eq!(record.lock().unwrap().users, 1);
+        second.restore(id);
+        assert_eq!(record.lock().unwrap().users, 0);
+    }
+    #[test]
     fn ax_values_require_correct_type_and_payload() {
         let p = CGPoint { x: -12.5, y: 3.25 };
         let value = owned(
@@ -384,5 +589,216 @@ mod tests {
         assert_eq!((decoded.x, decoded.y), (-12.5, 3.25));
         assert!(decode::<CGSize>(&value, kAXValueTypeCGSize).is_err());
         assert!(decode::<CGPoint>(&CFString::new("bad").as_CFType(), kAXValueTypeCGPoint).is_err());
+    }
+}
+
+fn boolean(value: &CFType) -> Option<bool> {
+    if let Some(value) = value.downcast::<CFBoolean>() {
+        return Some(value.into());
+    }
+    if value.type_of() == unsafe { CFNumberGetTypeID() } {
+        let mut out = 0i64;
+        if unsafe {
+            CFNumberGetValue(
+                value.as_CFTypeRef() as CFNumberRef,
+                kCFNumberSInt64Type,
+                (&mut out as *mut i64).cast(),
+            )
+        } {
+            return Some(out != 0);
+        }
+    }
+    None
+}
+
+// Per-process leases prevent a closing capture from disabling accessibility
+// that a newer capture is already using. This registry contains no AX handles.
+type ActivationRecord = std::sync::Arc<std::sync::Mutex<ActivationOwners>>;
+#[derive(Debug)]
+struct ActivationOwners {
+    users: usize,
+    state: ActivationState,
+}
+#[derive(Default, Debug)]
+pub(crate) struct Activation {
+    leases:
+        std::sync::Mutex<std::collections::HashMap<super::activation::Identity, ActivationRecord>>,
+}
+fn activation_record(id: super::activation::Identity) -> ActivationRecord {
+    type Registry = std::collections::HashMap<
+        super::activation::Identity,
+        std::sync::Weak<std::sync::Mutex<ActivationOwners>>,
+    >;
+    static REGISTRY: std::sync::OnceLock<std::sync::Mutex<Registry>> = std::sync::OnceLock::new();
+    let mut registry = REGISTRY.get_or_init(Default::default).lock().unwrap();
+    registry.retain(|_, value| value.strong_count() > 0);
+    if let Some(record) = registry.get(&id).and_then(std::sync::Weak::upgrade) {
+        return record;
+    }
+    let record = std::sync::Arc::new(std::sync::Mutex::new(ActivationOwners {
+        users: 0,
+        state: ActivationState::default(),
+    }));
+    registry.insert(id, std::sync::Arc::downgrade(&record));
+    record
+}
+impl super::activation::Backend for Activation {
+    fn identity(&self, pid: i32) -> Option<super::activation::Identity> {
+        // Darwin's public proc_bsdinfo (PROC_PIDTBSDINFO). Start time distinguishes PID reuse.
+        #[repr(C)]
+        struct BsdInfo {
+            ids: [u32; 12],
+            comm: [u8; 16],
+            name: [u8; 32],
+            fields: [u32; 6],
+            seconds: u64,
+            micros: u64,
+        }
+        unsafe extern "C" {
+            fn proc_pidinfo(pid: i32, flavor: i32, arg: u64, buffer: *mut c_void, size: i32)
+            -> i32;
+        }
+        let mut info: BsdInfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<BsdInfo>() as i32;
+        if unsafe { proc_pidinfo(pid, 3, 0, (&mut info as *mut BsdInfo).cast(), size) } != size {
+            return None;
+        }
+        Some(super::activation::Identity {
+            pid,
+            started: (info.seconds, info.micros),
+        })
+    }
+    fn enable(
+        &self,
+        id: super::activation::Identity,
+        budget: &Budget<'_>,
+    ) -> Result<super::activation::Outcome, StopReason> {
+        let record = activation_record(id);
+        let mut owners = loop {
+            budget.check()?;
+            match record.try_lock() {
+                Ok(owners) => break owners,
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    std::thread::sleep(std::time::Duration::from_millis(1))
+                }
+                Err(std::sync::TryLockError::Poisoned(_)) => {
+                    return Err(StopReason::ProviderFailure);
+                }
+            }
+        };
+        if owners.users == 0 {
+            owners.state = self.enable_native(id, budget)?;
+        }
+        owners.users += 1;
+        let outcome = owners.state.outcome;
+        self.leases.lock().unwrap().insert(id, record.clone());
+        Ok(outcome)
+    }
+    fn restore(&self, id: super::activation::Identity) {
+        let Some(record) = self.leases.lock().unwrap().remove(&id) else {
+            return;
+        };
+        let mut owners = record.lock().unwrap();
+        owners.users -= 1;
+        if owners.users == 0
+            && owners.state.outcome == super::activation::Outcome::Owned
+            && let Some(flag) = owners.state.flag
+        {
+            self.restore_native(id, flag);
+        }
+    }
+}
+struct NativeFlags<'a, 'b> {
+    backend: &'a Activation,
+    id: super::activation::Identity,
+    app: Element,
+    budget: &'a Budget<'b>,
+}
+impl Flags for NativeFlags<'_, '_> {
+    fn read(&self, flag: Flag) -> Result<Option<bool>, StopReason> {
+        Ok(self
+            .app
+            .attribute(flag.name(), self.budget)?
+            .and_then(|v| boolean(&v)))
+    }
+    fn writable(&self, flag: Flag) -> Result<bool, StopReason> {
+        self.app.timeout(self.budget)?;
+        let key = CFString::new(flag.name());
+        let mut writable = 0;
+        let code = unsafe {
+            AXUIElementIsAttributeSettable(self.app.raw(), key.as_concrete_TypeRef(), &mut writable)
+        };
+        self.budget.check()?;
+        if code == kAXErrorAttributeUnsupported || code == kAXErrorNotImplemented {
+            return Ok(false);
+        }
+        status(code)?;
+        Ok(writable != 0)
+    }
+    fn write(&self, flag: Flag, enabled: bool) -> Result<(), StopReason> {
+        if self.backend.identity(self.id.pid) != Some(self.id) {
+            return Err(StopReason::ProviderFailure);
+        }
+        self.app.timeout(self.budget)?;
+        let key = CFString::new(flag.name());
+        let value = if enabled {
+            CFBoolean::true_value()
+        } else {
+            CFBoolean::false_value()
+        };
+        let code = unsafe {
+            AXUIElementSetAttributeValue(
+                self.app.raw(),
+                key.as_concrete_TypeRef(),
+                value.as_CFTypeRef(),
+            )
+        };
+        // Success must retain ownership even if the write exhausted the budget.
+        activation_flags::verify_write(flag, enabled, code, || self.read(flag), status)
+    }
+    fn rollback(&self, flag: Flag) {
+        // Cleanup has its own bounded budget even after cancellation or timeout.
+        self.backend.restore_native(self.id, flag);
+    }
+}
+impl Activation {
+    fn enable_native(
+        &self,
+        id: super::activation::Identity,
+        budget: &Budget<'_>,
+    ) -> Result<ActivationState, StopReason> {
+        activation_flags::enable(&NativeFlags {
+            backend: self,
+            id,
+            app: Element::application(id.pid)?,
+            budget,
+        })
+    }
+    fn restore_native(&self, id: super::activation::Identity, flag: Flag) {
+        if self.identity(id.pid) != Some(id) {
+            return;
+        }
+        let control = crate::QueryControl::foreground();
+        let budget = Budget::new(&control);
+        let result = (|| {
+            let flags = NativeFlags {
+                backend: self,
+                id,
+                app: Element::application(id.pid)?,
+                budget: &budget,
+            };
+            match flags.read(flag)? {
+                Some(false) => Ok(()),
+                Some(true) => flags.write(flag, false),
+                None => Err(StopReason::ProviderFailure),
+            }
+        })();
+        if let Err(reason) = result {
+            eprintln!(
+                "selector activation restore pid={} flag={} reason={reason:?}",
+                id.pid,
+                flag.name()
+            );
+        }
     }
 }

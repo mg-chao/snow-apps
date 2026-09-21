@@ -333,6 +333,11 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
     qint64 now = 0;
     ScreenshotSelectorCoordinator coordinator(nullptr, [&now]() { return now; });
     int initialCount = 0, refinementCount = 0;
+#ifdef Q_OS_MACOS
+    constexpr int staleInitials = 0;
+#else
+    constexpr int staleInitials = 1;
+#endif
     QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
                      [&](bool ok, const QVector<QRectF>& rects) {
                          require(ok && rects.first().width() == 10,
@@ -361,17 +366,18 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
     now = 170;
     deliver(a);
     QCoreApplication::sendPostedEvents();
-    require(initialCount == 1 && submissions.size() == 2 && submissions.last().query.x == 3 &&
-                refinements.isEmpty(),
-            "A must display before C starts; B and A refinement must be skipped");
+    require(initialCount == staleInitials && submissions.size() == 2 &&
+                submissions.last().query.x == 3 && refinements.isEmpty(),
+            "C must start after A finishes; stale macOS frames must not display");
     const Submission c = submissions.last();
     deliver(c);
     QCoreApplication::sendPostedEvents();
-    require(initialCount == 2 && refinements.size() == 1,
+    require(initialCount == 1 + staleInitials && refinements.size() == 1,
             "slow initial response must not add another stability delay");
     deliver(c, SNOW_UI_SELECTOR_REFINEMENT);
     QCoreApplication::sendPostedEvents();
-    require(refinementCount == 1 && initialCount == 2 && !coordinator.hitTestInFlight(),
+    require(refinementCount == 1 && initialCount == 1 + staleInitials &&
+                !coordinator.hitTestInFlight(),
             "refinement must not act as initial completion");
     request(3);
     require(submissions.size() == 2 && refinements.size() == 1,
@@ -387,7 +393,7 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
     deliver(d);
     QCoreApplication::sendPostedEvents();
     const Submission newC = submissions.last();
-    require(newC.query.generation != c.query.generation && initialCount == 3,
+    require(newC.query.generation != c.query.generation && initialCount == 1 + 2 * staleInitials,
             "returning to a position needs a fresh generation");
     now = 190;
     deliver(newC);
@@ -414,14 +420,15 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
     coordinator.resetHitTestState();
     deliver(window);
     QCoreApplication::sendPostedEvents();
-    require(initialCount == 5, "reset must reject old initial results");
+    require(initialCount == 3 + 2 * staleInitials, "reset must reject old initial results");
     now = 300;
     request(7);
     const Submission oldEpoch = submissions.last();
     require(coordinator.startRefresh({}), "second refresh failed");
     deliver(oldEpoch);
     QCoreApplication::sendPostedEvents();
-    require(initialCount == 5 && coordinator.ready(), "refresh must reject prior capture events");
+    require(initialCount == 3 + 2 * staleInitials && coordinator.ready(),
+            "refresh must reject prior capture events");
     // Continuous switching must keep displaying the active initial results.
     const int invalidationsBeforeMovement = invalidations;
     request(10);
@@ -431,8 +438,8 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
         deliver(active);
         QCoreApplication::sendPostedEvents();
     }
-    require(initialCount == 25 && coordinator.hitTestInFlight(),
-            "continuous movement must not starve foreground display");
+    require(initialCount == 3 + 22 * staleInitials && coordinator.hitTestInFlight(),
+            "continuous movement must submit latest targets without displaying stale macOS frames");
     require(
         invalidations == invalidationsBeforeMovement,
         "foreground movement with no submitted refinement must not access the refinement queue");
@@ -504,6 +511,49 @@ void permissionRevocationDuringRefinementAppliesFallback() {
     QCoreApplication::sendPostedEvents();
     require(warnings == 1 && fallbacks == 1,
             "revoked permission must warn and apply window fallback");
+    automaticReply = true;
+}
+
+void accessibilityInitializationRefinesAndCancelsWithCapture() {
+    automaticReply = false;
+    submissions.clear();
+    refinements.clear();
+    qint64 now = 0;
+    ScreenshotSelectorCoordinator coordinator(nullptr, [&] { return now; });
+    int initial = 0, refined = 0;
+    bool replaced = false;
+    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
+                     [&](bool, const QVector<QRectF>&) { ++initial; });
+    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::refinementReady, &coordinator,
+                     [&](const QVector<QRectF>&, quint32, bool replacePath) {
+                         ++refined;
+                         replaced = replacePath;
+                     });
+    require(coordinator.startRefresh({}), "initialization fixture refresh failed");
+    QCoreApplication::sendPostedEvents();
+    require(
+        coordinator.requestHitTest(QPoint(10, 20), ScreenshotSelectorHitTestMode::WindowSubElement),
+        "initialization query failed");
+    const Submission query = submissions.last();
+    now = 100;
+    deliver(query, SNOW_UI_SELECTOR_INITIAL, SNOW_UI_SELECTOR_ACCESSIBILITY_PENDING);
+    QCoreApplication::sendPostedEvents();
+    require(initial == 1 && refinements.size() == 1, "pending activation must admit refinement");
+    deliver(query, SNOW_UI_SELECTOR_REFINEMENT, SNOW_UI_SELECTOR_DECODING_PENDING);
+    deliver(query, SNOW_UI_SELECTOR_FINISHED, SNOW_UI_SELECTOR_COMPLETE);
+    QCoreApplication::sendPostedEvents();
+    require(refined == 2, "initialized tree must deliver progressive and terminal frames");
+    deliver(query, SNOW_UI_SELECTOR_FINISHED, SNOW_UI_SELECTOR_PROVIDER_FAILURE);
+    QCoreApplication::sendPostedEvents();
+#ifdef Q_OS_MACOS
+    require(replaced, "failed window identity must discard previously displayed child frames");
+#else
+    require(!replaced, "Windows refinement behavior must remain unchanged");
+#endif
+    coordinator.releaseCache();
+    deliver(query, SNOW_UI_SELECTOR_FINISHED, SNOW_UI_SELECTOR_COMPLETE);
+    QCoreApplication::sendPostedEvents();
+    require(refined == 3, "capture cancellation must reject initialization results");
     automaticReply = true;
 }
 
@@ -623,6 +673,7 @@ int main(int argc, char** argv) {
     phasedSchedulingPreservesLatestPendingAndInitialCadence();
     permissionFallbackIsAppliedAndWarningIsThrottled();
     permissionRevocationDuringRefinementAppliesFallback();
+    accessibilityInitializationRefinesAndCancelsWithCapture();
     require(created == destroyed, "selector leaked a native service");
     applicationStorage.shutdown();
     return 0;

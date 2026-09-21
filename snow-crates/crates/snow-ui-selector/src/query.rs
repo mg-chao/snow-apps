@@ -13,6 +13,7 @@ pub enum StopReason {
     Cancelled,
     TraversalLimit,
     PermissionRequired,
+    AccessibilityPending,
 }
 
 #[derive(Clone, Debug)]

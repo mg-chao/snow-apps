@@ -46,6 +46,7 @@ struct Spec {
     bounds: RECT,
     offscreen: bool,
     error: bool,
+    structural: bool,
 }
 
 impl Spec {
@@ -55,6 +56,7 @@ impl Spec {
             bounds,
             offscreen: false,
             error: false,
+            structural: false,
         }
     }
 }
@@ -83,6 +85,7 @@ impl Batch for FakeBatch {
             element: Element::new(spec.id, self.live.clone()),
             bounds: spec.bounds,
             offscreen: spec.offscreen,
+            structural: spec.structural,
         })
     }
 }
@@ -645,4 +648,91 @@ fn total_refinement_budget_caps_calls_and_preserves_partial_siblings() {
             .all(|&r| r == Duration::from_millis(500))
     );
     assert_eq!(clock.now(), Duration::from_millis(1500));
+}
+
+fn structural(id: usize, bounds: RECT) -> Spec {
+    Spec {
+        structural: true,
+        ..Spec::new(id, bounds)
+    }
+}
+
+#[test]
+fn redundant_structural_branches_do_not_hide_content_in_either_index() {
+    for count in [2, 17] {
+        let bounds = rect(0, 0, 100, 100);
+        let leaf = rect(1, 1, 10, 10);
+        let mut provider = FakeProvider::default();
+        provider
+            .children
+            .insert(0, (1..=count).map(|id| structural(id, bounds)).collect());
+        provider
+            .children
+            .insert(count, vec![structural(count + 1, bounds)]);
+        provider
+            .children
+            .insert(1, vec![Spec::new(count + 2, leaf)]);
+        let mut tree = tree(bounds);
+        assert_eq!(hit(&mut tree, &mut provider, 5, 5), [leaf, bounds]);
+        let calls = provider.calls.clone();
+        assert_eq!(hit(&mut tree, &mut provider, 5, 5), [leaf, bounds]);
+        assert_eq!(
+            provider.calls, calls,
+            "cached alternatives need no provider calls"
+        );
+    }
+}
+
+#[test]
+fn concrete_controls_and_distinct_structural_frames_keep_precedence() {
+    let bounds = rect(0, 0, 100, 100);
+    for front in [Spec::new(2, bounds), structural(2, rect(0, 0, 50, 50))] {
+        let expected = front.bounds;
+        let mut provider = FakeProvider::default();
+        provider
+            .children
+            .insert(0, vec![structural(1, bounds), front]);
+        provider
+            .children
+            .insert(1, vec![Spec::new(3, rect(1, 1, 10, 10))]);
+        let result = hit(&mut tree(bounds), &mut provider, 5, 5);
+        assert_eq!(result[0], expected);
+        assert_eq!(provider.calls, [0, 2]);
+    }
+}
+
+#[test]
+fn alternative_search_preserves_failures_and_budget() {
+    let bounds = rect(0, 0, 100, 100);
+    for failure in [None, Some(2)] {
+        let mut provider = FakeProvider {
+            failure,
+            call_cost: Duration::from_millis(60),
+            ..FakeProvider::default()
+        };
+        provider
+            .children
+            .insert(0, vec![structural(1, bounds), structural(2, bounds)]);
+        provider
+            .children
+            .insert(1, vec![Spec::new(3, rect(1, 1, 10, 10))]);
+        let clock = provider.clock.clone();
+        let result = tree(bounds).query(
+            &mut provider,
+            POINT { x: 5, y: 5 },
+            &clock,
+            &QueryControl::foreground(),
+            &mut |_| {},
+        );
+        assert_eq!(
+            result.1,
+            if failure.is_some() {
+                StopReason::ProviderFailure
+            } else {
+                StopReason::DecodingPending
+            }
+        );
+        assert_eq!(result.0, [bounds]);
+        assert!(!provider.calls.contains(&3));
+    }
 }

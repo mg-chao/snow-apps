@@ -4694,7 +4694,57 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
             "each new scrolling screenshot session should reset to vertical recognition");
 }
 
-void imageConversionToolsExposeOnlySettings() {
+void originalImageToggleLeadsRecognitionActions() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    options.showOcrTool = true;
+    options.showQrTool = true;
+    options.showTableTool = true;
+    options.showImageConversionTools = true;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    int requests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::showOriginalImageRequested, &palette,
+                     [&](bool show) {
+                         ++requests;
+                         palette.setShowOriginalImage(show);
+                     });
+    for (const auto tool :
+         {Tool::Qr, Tool::Ocr, Tool::Markdown, Tool::Table, Tool::Html, Tool::Qr}) {
+        palette.setShowOriginalImage(false);
+        palette.setActiveTool(tool);
+        QCoreApplication::processEvents();
+        auto* button = palette.findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotShowOriginalImageButton"));
+        require(button && button->isVisible() && button->isEnabled() &&
+                    palette.actionToolbarVisible(),
+                "every recognition tool exposes original-image toggle");
+        require(palette.actionPanel()->layout()->itemAt(0)->widget() == button,
+                "original-image toggle remains first after lazy toolbar creation");
+        require(button->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral,
+                "original-image toggle starts inactive");
+        require(adqt::icons::describeIcon(button->iconRef()).key ==
+                    adqt::icons::describeIcon(adqt::icons::antd::outlined::Eye()).key,
+                "original-image toggle uses Ant Design outlined Eye");
+        require(button->accessibleName() == QStringLiteral("Show original image"),
+                "original-image toggle has an accessible label");
+        button->click();
+        require(button->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
+                "activation uses the shared selected appearance");
+        button->click();
+        require(button->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral,
+                "a second click restores inactive appearance");
+    }
+    require(requests == 12, "each toggle click dispatches exactly one request");
+    palette.setActiveTool(Tool::Select);
+    auto* button = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotShowOriginalImageButton"));
+    require(button == nullptr || !button->isVisible(),
+            "selection toolbar does not show the toggle");
+}
+
+void imageConversionToolsExposeRecognitionActions() {
     require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
             "recognition group fixture starts with the remembered barcode entry");
     ScreenshotToolPalette::Options options;
@@ -4790,8 +4840,10 @@ void imageConversionToolsExposeOnlySettings() {
         QStringLiteral("screenshotImageConversionSettingsButton"));
     require(settings && !settings->isHidden(), "conversion activation exposes Settings");
     for (auto* button : palette.actionPanel()->findChildren<adqt::widgets::AdButton*>()) {
-        require(button == settings || button->isHidden(),
-                "conversion sub-toolbar contains only Settings");
+        require(button == settings ||
+                    button->objectName() == QStringLiteral("screenshotShowOriginalImageButton") ||
+                    button->isHidden(),
+                "conversion sub-toolbar contains original-image toggle and Settings");
     }
     settings->click();
     require(settingsRequests == 1, "Settings routes to conversion settings");
@@ -4805,7 +4857,7 @@ void imageConversionToolsExposeOnlySettings() {
                 !settings->isHidden() && !group->busy() &&
                 group->accessibleName() == QStringLiteral("Convert to HTML") &&
                 adqt::icons::describeIcon(group->iconRef()).key.name == QStringLiteral("html"),
-            "HTML switches format and retains the Settings-only sub-toolbar");
+            "HTML switches format and retains the conversion sub-toolbar");
     const QString snapshots = qEnvironmentVariable("SNOW_SHOT_CONVERSION_SNAPSHOTS");
     if (!snapshots.isEmpty()) {
         require(QDir().mkpath(snapshots), "create conversion toolbar snapshot directory");
@@ -4835,6 +4887,10 @@ void imageConversionToolsExposeOnlySettings() {
     require(language.setLanguage(QStringLiteral("zh_CN")),
             "load Simplified Chinese toolbar labels");
     QCoreApplication::processEvents();
+    require(palette.findChild<adqt::widgets::AdButton*>(
+                       QStringLiteral("screenshotShowOriginalImageButton"))
+                    ->accessibleName() == QStringLiteral("显示原图"),
+            "original-image button retranslates to Simplified Chinese");
     require(markdown->accessibleName() == QStringLiteral("转换为 Markdown") &&
                 html->accessibleName() == QStringLiteral("转换为 HTML") &&
                 group->accessibleName() == QStringLiteral("转换为 HTML") &&
@@ -4843,6 +4899,10 @@ void imageConversionToolsExposeOnlySettings() {
     require(language.setLanguage(QStringLiteral("zh_TW")),
             "load Traditional Chinese toolbar labels");
     QCoreApplication::processEvents();
+    require(palette.findChild<adqt::widgets::AdButton*>(
+                       QStringLiteral("screenshotShowOriginalImageButton"))
+                    ->accessibleName() == QStringLiteral("顯示原圖"),
+            "original-image button retranslates to Traditional Chinese");
     require(markdown->accessibleName() == QStringLiteral("轉換為 Markdown") &&
                 html->accessibleName() == QStringLiteral("轉換為 HTML") &&
                 group->accessibleName() == QStringLiteral("轉換為 HTML") &&
@@ -11721,6 +11781,11 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--original-image-only"))) {
+        originalImageToggleLeadsRecognitionActions();
+        imageConversionToolsExposeRecognitionActions();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--remembered-drawing-tool-only"))) {
         rememberedDrawingModesPersistAcrossPaletteInstances();
         rememberedDrawingToolRecordedAndRestored();
@@ -11877,7 +11942,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--image-conversion-only"))) {
-        imageConversionToolsExposeOnlySettings();
+        imageConversionToolsExposeRecognitionActions();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -3441,6 +3441,11 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     connect(toolbar, &ScreenshotToolPalette::imageConversionSettingsRequested, this,
             [this]() { m_recognitionSession->openImageConversionSettings(); });
 
+    connect(toolbar, &ScreenshotToolPalette::showOriginalImageRequested, this, [this](bool show) {
+        if (m_recognitionSession != nullptr) {
+            m_recognitionSession->setShowOriginalImage(show);
+        }
+    });
     connect(toolbar, &ScreenshotToolPalette::textEditRequested, this,
             &ScreenshotPinnedWindow::handleTextEditingRequested);
     connect(toolbar, &ScreenshotToolPalette::textTranslateRequested, this,
@@ -3459,24 +3464,8 @@ void ScreenshotPinnedWindow::configureEditToolbar(
             &ScreenshotPinnedWindow::handleTableSplitRequested);
     connect(toolbar, &ScreenshotToolPalette::tableResetRequested, this,
             &ScreenshotPinnedWindow::handleTableResetRequested);
-    const auto leaveRecognition = [this]() { deactivateRecognition(); };
-    connect(toolbar, &ScreenshotToolPalette::moveRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::selectRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::shapeRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::arrowRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::lineRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::freeDrawRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::highlightRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::penHighlightRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::spotlightRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::eraserRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::filterRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::rectangleFilterRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::penFilterRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::watermarkRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::textRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::serialNumberRequested, this, leaveRecognition);
-    connect(toolbar, &ScreenshotToolPalette::confirmRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::confirmRequested, this,
+            [this]() { deactivateRecognition(); });
 
     updateRecognitionToolbarState();
 }
@@ -3842,7 +3831,7 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                                        ScreenshotRecognitionSessionController::Mode::Html)) {
                             host->setActiveTool(ScreenshotToolPalette::Tool::Html);
                         } else if (controller->editMode()) {
-                            controller->restoreDrawingToolState();
+                            controller->recognitionDeactivated();
                         } else {
                             host->clearActiveTool();
                         }
@@ -3964,6 +3953,16 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                         palette->setImageConversionBusy(
                             busy && format == SnowShotImageConversionFormat::Markdown,
                             busy && format == SnowShotImageConversionFormat::Html);
+                    }
+                }
+            },
+            [this](bool show) {
+                if (m_screenshotRenderer != nullptr) {
+                    m_screenshotRenderer->setOcrVisible(!show);
+                }
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette()) {
+                        palette->setShowOriginalImage(show);
                     }
                 }
             },

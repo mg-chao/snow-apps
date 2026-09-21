@@ -39,7 +39,11 @@ impl WorkerService for FakeService {
             block.entered.send(()).unwrap();
             let _ = block.resume.lock().unwrap().recv();
         }
-        Ok(empty(StopReason::BudgetExhausted))
+        Ok(empty(if self.refinement {
+            StopReason::Complete
+        } else {
+            StopReason::AccessibilityPending
+        }))
     }
 }
 #[derive(Debug, PartialEq, Eq)]
@@ -71,7 +75,7 @@ fn receive<T>(receiver: &mpsc::Receiver<T>) -> T {
 }
 
 #[test]
-fn blocked_refinement_never_blocks_foreground_replacement_or_shutdown() {
+fn pending_accessibility_refinement_never_blocks_foreground_replacement_or_shutdown() {
     let (entered, starts) = mpsc::channel();
     let (resume, permits) = mpsc::channel();
     assert!(
@@ -122,7 +126,11 @@ fn blocked_refinement_never_blocks_foreground_replacement_or_shutdown() {
         assert_eq!(snow_ui_selector_service_query(service, &query), 1);
         assert_eq!(
             receive(&events),
-            Delivery::Event(2, SnowUiSelectorPhase::Initial, StopReason::BudgetExhausted)
+            Delivery::Event(
+                2,
+                SnowUiSelectorPhase::Initial,
+                StopReason::AccessibilityPending
+            )
         );
         // The blocked provider has still not been released.
         query.request_id = 3;

@@ -377,6 +377,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
                               bool canSplit, bool canReset);
+    void setShowOriginalImage(bool show);
     void setTextEditingState(bool available, bool editing, bool canUndo = false,
                              bool canRedo = false);
     void setTextTranslationState(bool available, bool translating, bool streaming,
@@ -442,6 +443,7 @@ class ScreenshotToolPalette final : public QWidget,
     void tableMergeRequested();
     void tableSplitRequested();
     void tableResetRequested();
+    void showOriginalImageRequested(bool show);
     void textEditRequested();
     void textTranslateRequested();
     void jumpToTranslationPageRequested();
@@ -535,6 +537,7 @@ class ScreenshotToolPalette final : public QWidget,
     void createSecondaryToolbarShell();
     void createMoveActionFamily();
     void createSelectionActionFamily();
+    void createShowOriginalImageButton();
     void createTextRecognitionActionFamily();
     void createTableRecognitionActionFamily();
     void createImageConversionActionFamily();
@@ -802,6 +805,9 @@ class ScreenshotToolPalette final : public QWidget,
     QVector<adqt::widgets::AdButton*> m_tableQrOptionButtons;
     QVector<int> m_tableQrOptionValues;
     Tool m_tableQrEntryTool = Tool::Table;
+    bool m_showOriginalImage = false;
+    adqt::widgets::AdButton* m_showOriginalImageButton = nullptr;
+    QSpacerItem* m_showOriginalImageSpacing = nullptr;
     adqt::widgets::AdButton* m_textEditButton = nullptr;
     adqt::widgets::AdButton* m_textTranslateButton = nullptr;
     adqt::widgets::AdButton* m_jumpToTranslationPageButton = nullptr;

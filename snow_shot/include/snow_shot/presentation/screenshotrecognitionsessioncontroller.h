@@ -80,6 +80,7 @@ struct ScreenshotRecognitionSessionActions {
         applyOcrBackgroundImage;
     std::function<void(int, const QString&)> updateOcrText;
     std::function<void(bool, bool, SnowShotImageConversionFormat)> setConversionState;
+    std::function<void(bool)> setShowOriginalImage;
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
@@ -138,7 +139,12 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool originalImageTranslationActive() const;
+    // Image-based OCR presentation is visible and eligible for recognition-image export.
     [[nodiscard]] bool originalImageVisible() const;
+    void setShowOriginalImage(bool show);
+    [[nodiscard]] bool showOriginalImage() const {
+        return m_showOriginalImage;
+    }
     [[nodiscard]] bool hasTextResult() const;
     [[nodiscard]] QString textDraft() const;
     [[nodiscard]] QString sourceTextDraft() const;
@@ -261,6 +267,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     quint64 m_translationGeneration = 0;
     Mode m_mode = Mode::Text;
     bool m_active = false;
+    bool m_showOriginalImage = false;
     // "Shown" tracks the visible download prompt; "in progress" tracks that
     // asset acquisition is still pending for the in-flight text request, even
     // while only cache verification or helper start-up is running.

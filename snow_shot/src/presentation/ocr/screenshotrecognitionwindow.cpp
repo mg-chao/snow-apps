@@ -217,7 +217,8 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     : QWidget(parent, presentationMode == PresentationMode::EmbeddedChild
                           ? Qt::Widget
                           : Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint),
-      m_actions(std::move(actions)), m_stack(new QStackedLayout(this)),
+      m_actions(std::move(actions)), m_contentContainer(new QWidget(this)),
+      m_stack(new QStackedLayout(m_contentContainer)),
       m_textLayer(new ScreenshotOcrTextLayer(this)), m_presentationMode(presentationMode) {
     if (shortcutManager == nullptr) {
         m_ownedShortcutManager = std::make_unique<snow_shot::presentation::WindowShortcutManager>();
@@ -240,6 +241,11 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
 
+    auto* outerLayout = new QStackedLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->setSizeConstraint(QLayout::SetNoConstraint);
+    outerLayout->addWidget(m_contentContainer);
+    m_contentContainer->setObjectName(QStringLiteral("screenshotRecognitionContent"));
     m_stack->setContentsMargins(0, 0, 0, 0);
     // This window is an exact overlay for the screenshot selection. Child pages such as
     // QGraphicsView and AdTextEdit have useful standalone minimum size hints, but those hints
@@ -344,7 +350,7 @@ std::optional<ScreenshotRecognitionImageSnapshot>
 ScreenshotRecognitionWindow::imageSnapshot(QImage image, const QRectF& canvasRect,
                                            QImage filteredImage, const QRectF& filteredCanvasRect,
                                            const ScreenshotResultStyle& style) const {
-    if (m_stack->currentWidget() != m_textLayer || image.isNull())
+    if (m_showOriginalImage || m_stack->currentWidget() != m_textLayer || image.isNull())
         return std::nullopt;
     ScreenshotRecognitionImageSnapshot snapshot;
     snapshot.image = std::move(image);
@@ -357,6 +363,14 @@ ScreenshotRecognitionWindow::imageSnapshot(QImage image, const QRectF& canvasRec
     snapshot.textColor = m_textLayer->textColor();
     snapshot.resultStyle = style;
     return snapshot;
+}
+
+void ScreenshotRecognitionWindow::setShowOriginalImage(bool show) {
+    m_showOriginalImage = show;
+    m_contentContainer->setVisible(!show);
+    if (show) {
+        setFocus(Qt::OtherFocusReason);
+    }
 }
 
 void ScreenshotRecognitionWindow::setOcrPresentation(
@@ -372,7 +386,7 @@ void ScreenshotRecognitionWindow::setOcrPresentation(
     m_textLayer->setPresentation(m_ocrPresentation, mode);
     m_stack->setCurrentWidget(m_textLayer);
     synchronizeTextLayer();
-    if (takeFocus) {
+    if (takeFocus && !m_showOriginalImage) {
         setFocus(Qt::OtherFocusReason);
     }
 }
@@ -421,7 +435,9 @@ void ScreenshotRecognitionWindow::showFormattedText(std::shared_ptr<QTextDocumen
                                       m_formattedTextDevicePixelRatio);
     m_stack->setCurrentWidget(m_formattedTextLayer);
     synchronizeTextLayer();
-    m_formattedTextLayer->focusText();
+    if (!m_showOriginalImage) {
+        m_formattedTextLayer->focusText();
+    }
 }
 
 void ScreenshotRecognitionWindow::clearFormattedText() {
@@ -465,7 +481,9 @@ void ScreenshotRecognitionWindow::setTableSession(
     }
     m_tableEditor->setSession(std::move(session));
     m_stack->setCurrentWidget(m_tableEditor);
-    m_tableEditor->setFocus(Qt::OtherFocusReason);
+    if (!m_showOriginalImage) {
+        m_tableEditor->setFocus(Qt::OtherFocusReason);
+    }
 }
 
 void ScreenshotRecognitionWindow::clearTableSession() {
@@ -574,7 +592,7 @@ void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool r
     document->setDefaultFont(editorFont);
     m_stack->setCurrentWidget(m_textEditorContainer);
     setTextEditorStreaming(streaming);
-    if (!readOnly) {
+    if (!readOnly && !m_showOriginalImage) {
         static_cast<adqt::widgets::AdTextEdit*>(m_textEditor)->focusEditor();
     }
 }
@@ -602,8 +620,8 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     cancelEdit.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_Escape)};
     cancelEdit.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
     cancelEdit.canActivate = [this](const auto& context) {
-        return context.scopeWindow == this && isVisible() && m_tableEditor &&
-               m_tableEditor->isEditingCell();
+        return context.scopeWindow == this && isVisible() && !m_showOriginalImage &&
+               m_tableEditor && m_tableEditor->isEditingCell();
     };
     cancelEdit.activate = [this](const auto&) { return m_tableEditor->cancelActiveEdit(); };
     cancelEdit.release = [](const auto&) { return true; };
@@ -613,7 +631,7 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     const auto recognitionCommandsAllowed =
         [this](const ShortcutManager::ActivationContext& context) {
             QWidget* focus = context.focusWidget;
-            if (context.scopeWindow != this || !isVisible()) {
+            if (context.scopeWindow != this || !isVisible() || m_showOriginalImage) {
                 return false;
             }
 
@@ -636,6 +654,11 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
         QWidget* focus = context.focusWidget;
         if (context.scopeWindow != this || !isVisible()) {
             return false;
+        }
+        if (m_showOriginalImage) {
+            return m_conversionView != nullptr || m_tableEditor != nullptr ||
+                   m_textEditor != nullptr || m_qrBrowser != nullptr ||
+                   m_ocrPresentation != nullptr;
         }
         if (m_conversionView != nullptr) {
             return focusInside(m_conversionView, focus);
@@ -831,7 +854,9 @@ void ScreenshotRecognitionWindow::showQrContents(const QStringList& contents) {
     // every payload without requiring a manual Select All first.
     m_qrBrowser->selectAll();
     m_stack->setCurrentWidget(m_qrBrowser);
-    m_qrBrowser->setFocus(Qt::OtherFocusReason);
+    if (!m_showOriginalImage) {
+        m_qrBrowser->setFocus(Qt::OtherFocusReason);
+    }
 }
 
 void ScreenshotRecognitionWindow::clearQrContents() {
@@ -860,7 +885,9 @@ void ScreenshotRecognitionWindow::showImageConversion(SnowShotImageConversionFor
                 &ScreenshotRecognitionWindow::imageConversionRetryRequested);
         connect(m_conversionView, &ScreenshotImageConversionView::linkActivated, this,
                 [this](const QUrl& url) { m_actions.handleLinkActivated(url); });
-        m_conversionView->setFocus(Qt::OtherFocusReason);
+        if (!m_showOriginalImage) {
+            m_conversionView->setFocus(Qt::OtherFocusReason);
+        }
     }
     m_conversionView->setContent(format, source, busy, error);
     m_stack->setCurrentWidget(m_conversionView);
@@ -1152,7 +1179,7 @@ void ScreenshotRecognitionWindow::contextMenuEvent(QContextMenuEvent* event) {
     if (event == nullptr) {
         return;
     }
-    if (m_ocrPresentation != nullptr) {
+    if (!m_showOriginalImage && m_ocrPresentation != nullptr) {
         showOcrContextMenu(event->globalPos());
         event->accept();
         return;
@@ -1169,7 +1196,8 @@ void ScreenshotRecognitionWindow::mousePressEvent(QMouseEvent* event) {
     if (handleSelectionResizeEvent(this, event)) {
         return;
     }
-    if (event != nullptr && event->button() == Qt::LeftButton && m_ocrPresentation != nullptr) {
+    if (event != nullptr && event->button() == Qt::LeftButton && !m_showOriginalImage &&
+        m_ocrPresentation != nullptr) {
         setFocus(Qt::MouseFocusReason);
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
         m_ocrPresentation->beginTextSelection(
@@ -1184,8 +1212,9 @@ void ScreenshotRecognitionWindow::mousePressEvent(QMouseEvent* event) {
 }
 
 bool ScreenshotRecognitionWindow::isOcrBackgroundAt(const QPointF& localPosition) const {
-    return m_ocrPresentation != nullptr && m_stack->currentWidget() == m_textLayer &&
-           !m_ocrPresentation->textSelectionActive() && rect().contains(localPosition.toPoint()) &&
+    return !m_showOriginalImage && m_ocrPresentation != nullptr &&
+           m_stack->currentWidget() == m_textLayer && !m_ocrPresentation->textSelectionActive() &&
+           rect().contains(localPosition.toPoint()) &&
            !m_textLayer->textPositionAt(canvasPositionForLocalPoint(localPosition), false).valid();
 }
 
@@ -1193,7 +1222,7 @@ void ScreenshotRecognitionWindow::mouseMoveEvent(QMouseEvent* event) {
     if (handleSelectionResizeEvent(this, event)) {
         return;
     }
-    if (event != nullptr && m_ocrPresentation != nullptr) {
+    if (event != nullptr && !m_showOriginalImage && m_ocrPresentation != nullptr) {
         const QPointF canvasPosition = canvasPositionForLocalPoint(event->position());
         const ScreenshotOcrTextPosition exactPosition =
             m_textLayer->textPositionAt(canvasPosition, false);
@@ -1217,8 +1246,8 @@ void ScreenshotRecognitionWindow::mouseReleaseEvent(QMouseEvent* event) {
     if (handleSelectionResizeEvent(this, event)) {
         return;
     }
-    if (event != nullptr && event->button() == Qt::LeftButton && m_ocrPresentation != nullptr &&
-        m_ocrPresentation->textSelectionActive()) {
+    if (event != nullptr && event->button() == Qt::LeftButton && !m_showOriginalImage &&
+        m_ocrPresentation != nullptr && m_ocrPresentation->textSelectionActive()) {
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
         m_ocrPresentation->updateTextSelection(
             m_textLayer->textPositionAt(canvasPositionForLocalPoint(event->position()), true));

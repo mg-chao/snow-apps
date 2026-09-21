@@ -260,7 +260,7 @@ bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool, bool showMoveOption
            tool == ScreenshotToolPalette::Tool::Select ||
            tool == ScreenshotToolPalette::Tool::Ocr ||
            tool == ScreenshotToolPalette::Tool::TextTranslation ||
-           tool == ScreenshotToolPalette::Tool::Table ||
+           tool == ScreenshotToolPalette::Tool::Qr || tool == ScreenshotToolPalette::Tool::Table ||
            tool == ScreenshotToolPalette::Tool::Markdown ||
            tool == ScreenshotToolPalette::Tool::Html ||
            tool == ScreenshotToolPalette::Tool::ScrollingScreenshot;
@@ -1190,11 +1190,14 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool tableVisible = m_activeTool == Tool::Table;
     const bool qrVisible = m_activeTool == Tool::Qr;
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
+    const bool originalVisible = ocrVisible || tableVisible || qrVisible || conversionVisible;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
     const bool moveVisible = m_activeTool == Tool::Move && m_options.showMoveOptionsToolbar;
     const bool recognitionActionVisible = ocrVisible || tableVisible || qrVisible ||
                                           scrollingVisible || conversionVisible || moveVisible;
     const bool recognitionControlsMatch =
+        (m_showOriginalImageButton == nullptr ||
+         m_showOriginalImageButton->isHidden() == !originalVisible) &&
         (m_moveActionControls == nullptr || m_moveActionControls->isHidden() == !moveVisible) &&
         (m_conversionSettingsButton == nullptr ||
          m_conversionSettingsButton->isHidden() == !conversionVisible) &&
@@ -1210,6 +1213,10 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
         return false;
     }
 
+    if (m_showOriginalImageButton != nullptr) {
+        m_showOriginalImageButton->setVisible(originalVisible);
+        setStyleToolbarSpacingVisible(m_showOriginalImageSpacing, originalVisible && !qrVisible);
+    }
     m_actionToolbarTargetVisible = actionToolbarVisible;
     m_styleToolbarTargetVisible = styleToolbarVisible;
     if (m_moveActionControls != nullptr) {
@@ -6164,6 +6171,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
 
     m_selectionOpacityIcon = nullptr;
     m_selectionOpacitySlider = nullptr;
+    m_showOriginalImageButton = nullptr;
+    m_showOriginalImageSpacing = nullptr;
     m_textEditButton = nullptr;
     m_textTranslateButton = nullptr;
     m_jumpToTranslationPageButton = nullptr;
@@ -6496,6 +6505,10 @@ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
         return false;
     }
     m_actionFamilyStates.insert(key, MaterializationState::Constructing);
+    if (family == ActionFamily::TextRecognition || family == ActionFamily::TableRecognition ||
+        family == ActionFamily::ImageConversion) {
+        createShowOriginalImageButton();
+    }
     switch (family) {
     case ActionFamily::Move:
         createMoveActionFamily();
@@ -6641,6 +6654,30 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
     m_selectionActionAvailabilityInitialized = false;
     updateSelectionActionAvailability(m_hasSelectedElements, m_selectedElementCount);
     setSelectionOpacity(m_selectionOpacity, m_selectionOpacityMixed);
+}
+
+void ScreenshotToolPalette::setShowOriginalImage(bool show) {
+    m_showOriginalImage = show;
+    if (m_showOriginalImageButton != nullptr) {
+        setScreenshotToolPaletteButtonActive(m_showOriginalImageButton, show);
+    }
+}
+
+void ScreenshotToolPalette::createShowOriginalImageButton() {
+    if (m_showOriginalImageButton != nullptr) {
+        return;
+    }
+    m_showOriginalImageButton = createScreenshotToolPaletteStyleActionButton(
+        m_selectActionPanel, QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show original image"),
+        adqt::icons::antd::outlined::Eye(), actionButtonMetrics(m_physicalScale));
+    m_showOriginalImageButton->setObjectName(QStringLiteral("screenshotShowOriginalImageButton"));
+    m_showOriginalImageSpacing = addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
+    m_selectActionLayout->removeItem(m_showOriginalImageSpacing);
+    m_selectActionLayout->insertWidget(0, m_showOriginalImageButton);
+    m_selectActionLayout->insertSpacerItem(1, m_showOriginalImageSpacing);
+    connect(m_showOriginalImageButton, &adqt::widgets::AdButton::clicked, this,
+            [this]() { emit showOriginalImageRequested(!m_showOriginalImage); });
+    setShowOriginalImage(m_showOriginalImage);
 }
 
 void ScreenshotToolPalette::createTextRecognitionActionFamily() {

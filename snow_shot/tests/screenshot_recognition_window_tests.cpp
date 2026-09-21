@@ -1329,6 +1329,86 @@ void emptyOcrResultCopiesEmptyText() {
                 recognitionCopyCalls == 1,
             "Ctrl+C should directly copy empty text for a completed OCR result with no lines");
 }
+void originalImageOverrideHidesEveryContentPage() {
+    for (const auto mode : {ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+                            ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}) {
+        QWidget parent;
+        parent.resize(320, 200);
+        parent.show();
+        ScreenshotRecognitionWindow window({}, &parent, mode);
+        window.resize(320, 200);
+        window.show();
+        auto* content = window.findChild<QWidget*>(QStringLiteral("screenshotRecognitionContent"));
+        require(content != nullptr, "recognition has a common content surface");
+        const auto check = [&](const std::function<void()>& update) {
+            window.setShowOriginalImage(true);
+            update();
+            QCoreApplication::processEvents();
+            require(content->isHidden(),
+                    "content updates cannot override original-image visibility");
+            for (auto* widget : content->findChildren<QWidget*>()) {
+                require(!widget->isVisible(), "all recognition descendants stay hidden");
+            }
+            window.setShowOriginalImage(false);
+            require(content->isVisible(), "disabling original-image mode reveals current page");
+        };
+        auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+        presentation->selection = QRect(0, 0, 320, 200);
+        presentation->prepareForRendering();
+        check([&]() { window.setOcrPresentation(presentation); });
+        QImage image(320, 200, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::blue);
+        window.setShowOriginalImage(true);
+        require(!window.imageSnapshot(image, image.rect(), {}, {}, {}),
+                "hidden recognition is excluded from image snapshots");
+        QTextDocument document;
+        document.setPlainText(QStringLiteral("Preserved draft"));
+        check([&]() {
+            window.showTextEditor(&document, true, true);
+            document.setPlainText(QStringLiteral("Streaming translation"));
+            window.setTextEditorStreaming(false);
+        });
+        check([&]() { window.showTextEditor(&document); });
+        auto* editor = window.findChild<QTextEdit*>();
+        window.setShowOriginalImage(true);
+        window.setShowOriginalImage(false);
+        require(window.findChild<QTextEdit*>() == editor && editor->document() == &document,
+                "visibility toggle retains the text editor and document");
+        auto formatted = std::make_shared<QTextDocument>();
+        formatted->setPlainText(QStringLiteral("Formatted content"));
+        check([&]() { window.showFormattedText(formatted); });
+        auto table = std::make_shared<ScreenshotTableEditingSession>(
+            ScreenshotTableDocument::fromPlainText(QStringLiteral("A\tB\nC\tD")));
+        check([&]() { window.setTableSession(table); });
+        auto* tableEditor = window.findChild<ScreenshotTableEditor*>();
+        require(tableEditor->model()->setData(tableEditor->model()->index(0, 0),
+                                              QStringLiteral("Edited cell"), Qt::EditRole),
+                "table accepts cell edit");
+        QCoreApplication::processEvents();
+        window.setShowOriginalImage(true);
+        window.setShowOriginalImage(false);
+        require(window.findChild<ScreenshotTableEditor*>() == tableEditor,
+                "visibility toggle retains the table editor and its session");
+        require(table->document.cellText(0, 0) == QStringLiteral("Edited cell"),
+                "table edits survive original-image viewing");
+        window.undoTableEdit();
+        require(table->document.cellText(0, 0) == QStringLiteral("A"),
+                "table undo history survives");
+        window.redoTableEdit();
+        require(table->document.cellText(0, 0) == QStringLiteral("Edited cell"),
+                "table redo history survives");
+        check([&]() { window.showQrContents({QStringLiteral("QR payload")}); });
+        for (const auto format :
+             {SnowShotImageConversionFormat::Markdown, SnowShotImageConversionFormat::Html}) {
+            check(
+                [&]() { window.showImageConversion(format, QStringLiteral("content"), true, {}); });
+            check([&]() {
+                window.showImageConversion(format, QStringLiteral("completed"), false, {});
+            });
+        }
+    }
+}
+
 void imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult() {
     ScreenshotRecognitionWindow window({});
     QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
@@ -1925,6 +2005,13 @@ void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--original-image-only"))) {
+        originalImageOverrideHidesEveryContentPage();
+        embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer();
+        shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes();
+        imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--message-shadow-only"))) {
         recognitionMessageUsesOnlyItsPaintedShadow();
         return 0;

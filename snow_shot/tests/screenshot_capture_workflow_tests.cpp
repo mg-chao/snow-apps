@@ -863,6 +863,18 @@ void phasedSelectionPreservesUserIntent() {
 }
 
 void intelligentSelectionTargetsPreserveElementPathBehavior() {
+#ifdef Q_OS_MACOS
+    {
+        ScreenshotIntelligentSelectionModel model;
+        const QRectF window(0, 0, 100, 100), pane(0, 0, 80, 80), text(10, 10, 20, 20);
+        model.beginCaptureSession(true);
+        require(model.applyCanvasHitPath({text, window}, window, 1), "initial AX path failed");
+        require(model.selectIndex(1), "explicit AX window selection failed");
+        require(model.applyCanvasRefinementPath({text, pane, window}, window, 1) &&
+                    model.currentSelection() == window,
+                "new AX containers must preserve an explicitly chosen enclosing frame");
+    }
+#endif
     ScreenshotIntelligentSelectionModel selection;
     const QRectF nestedElement(30, 30, 20, 10);
     const QRectF childElement(20, 20, 60, 40);

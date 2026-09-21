@@ -218,6 +218,17 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                         busy && format == SnowShotImageConversionFormat::Html);
                 }
             },
+            [this](bool show) {
+                if (auto* toolbar = m_context.overlayCoordinator.toolbar()) {
+                    toolbar->setShowOriginalImage(show);
+                }
+                m_context.displaySession.forEachOverlay(
+                    [show](qsizetype, ScreenshotOverlayWindow* overlay) {
+                        if (overlay != nullptr) {
+                            overlay->setScreenshotOcrVisible(!show);
+                        }
+                    });
+            },
         },
         this);
     connect(m_session.get(), &ScreenshotRecognitionSessionController::textEditingChanged, this,
@@ -432,6 +443,10 @@ void ScreenshotOcrController::redoTextEdit() {
     m_session->redoTextEdit();
 }
 
+void ScreenshotOcrController::setShowOriginalImage(bool show) {
+    m_session->setShowOriginalImage(show);
+}
+
 void ScreenshotOcrController::beginTextEditing() {
     m_session->beginTextEditing();
 }
@@ -592,10 +607,11 @@ void ScreenshotOcrController::applyOcrBackgroundToOverlays(
                 ? filteredImageCanvasRect.normalized()
                 : (presentation != nullptr ? QRectF(presentation->selection) : QRectF());
     }
-    m_context.displaySession.forEachOverlay([&presentation, &filteredImage,
+    m_context.displaySession.forEachOverlay([this, &presentation, &filteredImage,
                                              &filteredImageCanvasRect](
                                                 qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay != nullptr) {
+            overlay->setScreenshotOcrVisible(!m_session->showOriginalImage());
             overlay->setScreenshotOcrBackground(presentation);
             if (!filteredImage.isNull()) {
                 const QRectF canvasRect =

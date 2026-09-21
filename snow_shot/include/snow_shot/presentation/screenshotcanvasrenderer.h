@@ -110,6 +110,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void clearSelection();
     void setOcrPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation,
                             OcrPresentationMode mode = OcrPresentationMode::BackgroundAndText);
+    // Suppress rendering without discarding the latest presentation or filtered image.
+    void setOcrVisible(bool visible);
     void setOcrFilteredImage(QImage image, const QRectF& canvasRect);
     void clearOcrFilteredImage();
     [[nodiscard]] QImage ocrFilteredImage() const {
@@ -171,6 +173,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QColor m_cursorGuideLineColor = QColor(0, 0, 0, 0);
     QColor m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     bool m_guideLinesVisible = false;
+    bool m_ocrVisible = true;
     std::shared_ptr<ScreenshotOcrPresentation> m_ocrPresentation;
     QImage m_ocrFilteredImage;
     QRectF m_ocrFilteredCanvasRect;

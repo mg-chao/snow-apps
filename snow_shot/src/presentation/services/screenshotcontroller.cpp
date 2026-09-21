@@ -375,6 +375,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void mergeTableSelection() override;
     void splitTableSelection() override;
     void resetTable() override;
+    void setShowOriginalImage(bool show) override;
     void toggleTextEditing() override;
     void toggleTextTranslation() override;
     void jumpToTranslationPage() override;
@@ -1953,12 +1954,11 @@ void ScreenshotController::Impl::connectSelectorSignals() {
                          if (!m_globalMouseDrag.active())
                              m_selectorWorkflow->handleInitialResult(ok, hitRects, displayId);
                      });
-    QObject::connect(
-        m_selectorCoordinator, &ScreenshotSelectorCoordinator::refinementReady, &owner,
-        [this](const QVector<QRectF>& rects, quint32 displayId, bool permissionRequired) {
-            if (!m_globalMouseDrag.active())
-                m_selectorWorkflow->handleRefinement(rects, displayId, permissionRequired);
-        });
+    QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refinementReady, &owner,
+                     [this](const QVector<QRectF>& rects, quint32 displayId, bool replacePath) {
+                         if (!m_globalMouseDrag.active())
+                             m_selectorWorkflow->handleRefinement(rects, displayId, replacePath);
+                     });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::targetChanged, &owner,
                      [this]() { m_selectorWorkflow->handleTargetChanged(); });
 }
@@ -2245,6 +2245,12 @@ void ScreenshotController::Impl::splitTableSelection() {
 void ScreenshotController::Impl::resetTable() {
     if (m_ocrController != nullptr) {
         m_ocrController->resetTable();
+    }
+}
+
+void ScreenshotController::Impl::setShowOriginalImage(bool show) {
+    if (m_ocrController != nullptr) {
+        m_ocrController->setShowOriginalImage(show);
     }
 }
 

@@ -1,5 +1,8 @@
 #include "snow_shot/platform/screenshotnative.h"
 #include "screenshotwindowtarget_p.h"
+#include "screenshotinputregion_p.h"
+#include <QCursor>
+#include <QTimer>
 #include "snow_shot/platform/macos/recapturefocus.h"
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -327,6 +330,133 @@ void registerScreenshotLayer(QWidget* widget, int layer) {
     synchronizeScreenshotLayers();
 }
 
+// AppKit's per-window ignoresMouseEvents controls WindowServer routing. A Qt
+// mask only clips the view; rejecting an event there cannot deliver it to another
+// application's window. Observe pointer movement on both sides of the hole so
+// native routing is already correct when the next wheel/trackpad event arrives.
+class ScreenshotInputPassThrough final : public QObject {
+  public:
+    explicit ScreenshotInputPassThrough(QWidget* widget) : QObject(widget), m_widget(widget) {
+        widget->installEventFilter(this);
+    }
+    ~ScreenshotInputPassThrough() override {
+        stopMonitoring();
+        restore();
+    }
+
+    void setRegion(const QRegion& region) {
+        m_region.passThrough = region;
+        if (region.isEmpty()) {
+            stopMonitoring();
+            m_region.heldButtons = 0;
+        } else if (!m_localMonitor) {
+            constexpr NSEventMask events =
+                NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged |
+                NSEventMaskOtherMouseDragged | NSEventMaskLeftMouseDown |
+                NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown | NSEventMaskLeftMouseUp |
+                NSEventMaskRightMouseUp | NSEventMaskOtherMouseUp;
+            m_localMonitor =
+                [NSEvent addLocalMonitorForEventsMatchingMask:events
+                                                      handler:^NSEvent*(NSEvent* event) {
+                                                        handlePointerEvent(event, true);
+                                                        return event;
+                                                      }];
+            // Mouse monitoring requires no Accessibility/Input Monitoring permission.
+            // Once transparent, movement is delivered to the application underneath.
+            m_globalMonitor =
+                [NSEvent addGlobalMonitorForEventsMatchingMask:events
+                                                       handler:^(NSEvent* event) {
+                                                         handlePointerEvent(event, false);
+                                                       }];
+        }
+        synchronize(); // Also handles activation with a stationary pointer.
+    }
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        switch (event->type()) {
+        case QEvent::Hide:
+            m_region.heldButtons = 0;
+            restore();
+            break;
+        case QEvent::Show:
+        case QEvent::Move:
+        case QEvent::Resize:
+        case QEvent::WinIdChange:
+            synchronize();
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+  private:
+    void handlePointerEvent(NSEvent* event, bool local) {
+        const bool down = event.type == NSEventTypeLeftMouseDown ||
+                          event.type == NSEventTypeRightMouseDown ||
+                          event.type == NSEventTypeOtherMouseDown;
+        const bool up = event.type == NSEventTypeLeftMouseUp ||
+                        event.type == NSEventTypeRightMouseUp ||
+                        event.type == NSEventTypeOtherMouseUp;
+        if (down && local && event.window == nativeWindow())
+            m_region.press(static_cast<unsigned>(event.buttonNumber));
+        if (up) {
+            m_region.release(static_cast<unsigned>(event.buttonNumber));
+            // Let Qt dispatch the release before making its NSWindow transparent.
+            QTimer::singleShot(0, this, [this] { synchronize(); });
+            return;
+        }
+        synchronize();
+    }
+
+    NSWindow* nativeWindow() const {
+        if (!m_widget || !m_widget->internalWinId())
+            return nil;
+        return reinterpret_cast<NSView*>(m_widget->internalWinId()).window;
+    }
+
+    void synchronize() {
+        if (m_region.passThrough.isEmpty()) {
+            restore();
+            return;
+        }
+        NSWindow* window = nativeWindow();
+        if (m_native != window) {
+            restore();
+            m_native = window;
+            m_originalIgnoresMouse = window.ignoresMouseEvents;
+        }
+        if (!window)
+            return;
+        const bool transparent =
+            m_region.transparentAt(m_widget->mapFromGlobal(QCursor::pos()), m_widget->isVisible());
+        window.ignoresMouseEvents = transparent || m_originalIgnoresMouse;
+    }
+
+    void restore() {
+        if (m_native && m_native == nativeWindow())
+            m_native.ignoresMouseEvents = m_originalIgnoresMouse;
+        m_native = nil;
+    }
+
+    void stopMonitoring() {
+        if (m_localMonitor)
+            [NSEvent removeMonitor:m_localMonitor];
+        if (m_globalMonitor)
+            [NSEvent removeMonitor:m_globalMonitor];
+        m_localMonitor = nil;
+        m_globalMonitor = nil;
+    }
+
+    QPointer<QWidget> m_widget;
+    detail::ScreenshotInputRegion m_region;
+    NSWindow* m_native = nil;
+    BOOL m_originalIgnoresMouse = NO;
+    id m_localMonitor = nil;
+    id m_globalMonitor = nil;
+};
+
 detail::WindowTarget windowTarget(pid_t owner, const QPoint* point) {
     CFArrayRef windows = CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
@@ -344,6 +474,20 @@ void configureScreenshotOverlayWindow(QWidget* widget) {
 
 void configureScreenshotRecognitionWindow(QWidget* widget) {
     registerScreenshotLayer(widget, kRecognitionLayer);
+}
+
+void setScreenshotInputPassThroughRegion(QWidget* widget, const QRegion& region) {
+    if (!widget || QGuiApplication::platformName() != QStringLiteral("cocoa"))
+        return;
+    ScreenshotInputPassThrough* policy = nullptr;
+    for (QObject* child : widget->children()) {
+        if ((policy = dynamic_cast<ScreenshotInputPassThrough*>(child)))
+            break;
+    }
+    if (!policy && !region.isEmpty())
+        policy = new ScreenshotInputPassThrough(widget);
+    if (policy)
+        policy->setRegion(region);
 }
 
 void configureScreenshotToolbarWindow(QWidget* widget) {

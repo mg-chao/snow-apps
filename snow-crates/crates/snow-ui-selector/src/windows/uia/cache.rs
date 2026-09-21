@@ -35,6 +35,7 @@ pub(super) struct Candidate<E> {
     pub(super) element: E,
     pub(super) bounds: RECT,
     pub(super) offscreen: bool,
+    pub(super) structural: bool,
 }
 
 pub(super) trait Batch {
@@ -55,6 +56,7 @@ struct Node<E, B> {
     parent: Option<usize>,
     children: Children<E, B>,
     timeout_retried: bool,
+    structural: bool,
 }
 
 enum Children<E, B> {
@@ -96,16 +98,16 @@ impl ChildIndex {
         }
     }
 
-    fn hit(&self, point: POINT) -> Option<usize> {
+    fn hit_before(&self, point: POINT, before: usize) -> Option<usize> {
         match self {
             Self::Linear(entries) => entries
                 .iter()
                 .rev()
-                .find(|entry| contains_point(entry.bounds, point))
+                .find(|entry| entry.node < before && contains_point(entry.bounds, point))
                 .map(|entry| entry.node),
             Self::Tree(tree) => tree
                 .locate_in_envelope_intersecting(&AABB::from_point([point.x, point.y]))
-                .filter(|entry| contains_point(entry.bounds, point))
+                .filter(|entry| entry.node < before && contains_point(entry.bounds, point))
                 .map(|entry| entry.node)
                 .max(),
         }
@@ -124,6 +126,7 @@ impl<P: Provider> WindowTree<P> {
                 parent: None,
                 children: Children::Root(hwnd),
                 timeout_retried: false,
+                structural: false,
             }],
         }
     }
@@ -169,7 +172,15 @@ impl<P: Provider> WindowTree<P> {
             let Children::Loaded(children) = &self.nodes[current].children else {
                 unreachable!()
             };
-            let Some(child) = children.hit(point) else {
+            let Some(child) = children.hit_before(point, usize::MAX) else {
+                // UIA sibling order is not a stacking guarantee. A redundant structural
+                // leaf may cover the content branch (for example in Chromium windows).
+                // Only backtrack through equal-bounds structural nodes; actual controls
+                // and distinct container frames retain their existing precedence.
+                if let Some(alternative) = self.structural_alternative(current, point) {
+                    current = alternative;
+                    continue;
+                }
                 reason = StopReason::Complete;
                 break;
             };
@@ -187,6 +198,24 @@ impl<P: Provider> WindowTree<P> {
             }
         }
         (self.path(current), reason)
+    }
+
+    fn structural_alternative(&self, mut current: usize, point: POINT) -> Option<usize> {
+        while let Some(parent) = self.nodes[current].parent {
+            if !self.nodes[current].structural
+                || !same_rect(self.nodes[current].bounds, self.nodes[parent].bounds)
+            {
+                return None;
+            }
+            let Children::Loaded(children) = &self.nodes[parent].children else {
+                return None;
+            };
+            if let Some(sibling) = children.hit_before(point, current) {
+                return Some(sibling);
+            }
+            current = parent;
+        }
+        None
     }
 
     fn path(&self, mut current: usize) -> Vec<RECT> {
@@ -300,6 +329,7 @@ impl<P: Provider> WindowTree<P> {
                 parent: Some(node),
                 children: Children::Unloaded(candidate.element),
                 timeout_retried: false,
+                structural: candidate.structural,
             });
             entries.push(ChildEntry {
                 bounds,
