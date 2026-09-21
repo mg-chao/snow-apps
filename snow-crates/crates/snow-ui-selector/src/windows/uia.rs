@@ -2,14 +2,15 @@ mod cache;
 
 use std::time::Duration;
 
-use windows::Win32::Foundation::{E_POINTER, HWND, POINT, RECT};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::UI::Accessibility::{
     AutomationElementMode_Full, CUIAutomation8, IUIAutomation2, IUIAutomationCacheRequest,
     IUIAutomationElement, IUIAutomationElementArray, TreeScope, TreeScope_Children,
-    TreeScope_Element, UIA_BoundingRectanglePropertyId, UIA_IsOffscreenPropertyId,
+    TreeScope_Element, UIA_BoundingRectanglePropertyId, UIA_ControlTypePropertyId,
+    UIA_GroupControlTypeId, UIA_IsOffscreenPropertyId, UIA_PaneControlTypeId,
 };
-use windows::core::Result;
+use windows::core::{HRESULT, Interface, Result};
 
 use crate::windows::geometry::*;
 use crate::windows::spatial::*;
@@ -144,6 +145,7 @@ impl NativeProvider {
             request.SetAutomationElementMode(AutomationElementMode_Full)?;
             request.AddProperty(UIA_BoundingRectanglePropertyId)?;
             request.AddProperty(UIA_IsOffscreenPropertyId)?;
+            request.AddProperty(UIA_ControlTypePropertyId)?;
         }
         Ok(Self {
             request,
@@ -190,18 +192,29 @@ struct NativeBatch {
 
 impl NativeBatch {
     fn new(element: IUIAutomationElement) -> Result<Self> {
-        let children = match unsafe { element.GetCachedChildren() } {
-            Ok(children) => Some(children),
-            // UIA returns S_OK + null for an empty cached collection; windows-rs maps it to E_POINTER.
-            Err(error) if error.code() == E_POINTER => None,
-            Err(error) => return Err(error),
-        };
+        // The generated non-null interface wrapper rejects S_OK + null. Preserve
+        // the native HRESULT so an empty collection is not a provider failure.
+        let children = cached_children(|output| unsafe {
+            (element.vtable().GetCachedChildren)(element.as_raw(), output)
+        })?;
         let count = match &children {
             Some(children) => unsafe { children.Length()? }.max(0) as usize,
             None => 0,
         };
         Ok(Self { children, count })
     }
+}
+
+fn cached_children(
+    call: impl FnOnce(*mut *mut std::ffi::c_void) -> HRESULT,
+) -> Result<Option<IUIAutomationElementArray>> {
+    let mut output = std::ptr::null_mut();
+    call(&mut output).ok()?;
+    Ok(if output.is_null() {
+        None
+    } else {
+        Some(unsafe { IUIAutomationElementArray::from_raw(output) })
+    })
 }
 
 impl Batch for NativeBatch {
@@ -224,10 +237,13 @@ impl Batch for NativeBatch {
         } else {
             unsafe { element.CachedBoundingRectangle()? }
         };
+        let structural = unsafe { element.CachedControlType() }
+            .is_ok_and(|kind| kind == UIA_PaneControlTypeId || kind == UIA_GroupControlTypeId);
         Ok(Candidate {
             element,
             bounds,
             offscreen,
+            structural,
         })
     }
 }
@@ -284,6 +300,18 @@ mod tests {
     use crate::windows::com::ComApartment;
 
     static UIA_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn native_empty_children_succeeds_but_failed_calls_remain_errors() {
+        assert!(cached_children(|_| HRESULT(0)).unwrap().is_none());
+        for failure in [
+            windows::Win32::Foundation::E_POINTER,
+            windows::Win32::Foundation::E_FAIL,
+            HRESULT(windows::Win32::UI::Accessibility::UIA_E_TIMEOUT as i32),
+        ] {
+            assert_eq!(cached_children(|_| failure).unwrap_err().code(), failure);
+        }
+    }
 
     fn hwnd(value: usize) -> HWND {
         HWND(value as *mut _)

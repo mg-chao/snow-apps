@@ -1,5 +1,24 @@
 # Native element selection
 
+## Windows behavior and limits
+
+UIA selection lazily caches one level at a time in Control View. Sibling order is
+used as the default precedence, but is not assumed to describe visual stacking:
+when a hit branch ends without a matching child, selection can search earlier
+overlapping siblings through `Pane` and `Group` ancestors whose clipped bounds
+equal their parent's bounds. This allows content behind redundant structural
+branches (including Chromium containers) to remain reachable. Concrete controls
+and containers with distinct bounds retain their precedence. Structural containers
+are traversed, not removed by a control-type blacklist.
+
+Successful native calls returning a null child collection represent a leaf.
+Actual provider failures are preserved. Alternative searches share the existing
+168 ms foreground budget, 1,500 ms refinement budget, 500 ms refinement call limit,
+80-step traversal limit, cancellation, and lazy cache. These limits are not extended
+to accommodate a particular application.
+
+## macOS selection
+
 The macOS backend selects the native element under the pointer and searches its exposed
 children for finer frames. When hit testing is unsupported, it searches the AX window
 matching the Quartz snapshot instead. Results run from the deepest eligible element to
