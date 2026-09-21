@@ -456,6 +456,7 @@ void ScreenshotRecognitionSessionController::deactivate() {
         return;
     }
     clearTextEditingState();
+    const bool wasActive = m_active;
     m_active = false;
     m_conversion->deactivate();
     hideModelDownloadMessage();
@@ -480,10 +481,12 @@ void ScreenshotRecognitionSessionController::deactivate() {
     if (m_actions.clearOcrBackground) {
         m_actions.clearOcrBackground();
     }
-    if (m_actions.setRecognitionVisualState) {
+    // The content widget is retained between sessions. Repeated cleanup must not
+    // announce another exit and overwrite the host's newly selected drawing tool.
+    if (wasActive && m_actions.setRecognitionVisualState) {
         m_actions.setRecognitionVisualState(false);
     }
-    if (m_actions.setActiveMode) {
+    if (wasActive && m_actions.setActiveMode) {
         m_actions.setActiveMode(-1);
     }
     hideRecognitionMessage();

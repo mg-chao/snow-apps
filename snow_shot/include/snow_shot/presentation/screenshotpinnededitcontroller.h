@@ -51,7 +51,7 @@ class ScreenshotPinnedEditController final : public QObject {
     void prepareRecognitionToolActivation();
     void beginNativeWindowInteraction();
     void endNativeWindowInteraction();
-    void restoreDrawingToolState();
+    void recognitionDeactivated();
     void syncCanvasInteractionState();
     void updatePlacement();
     void updateAfterPinnedWindowMove(const QPoint& logicalDelta);
@@ -80,6 +80,7 @@ class ScreenshotPinnedEditController final : public QObject {
     void syncPaletteFromCanvasTool();
     void syncPaletteFromCanvasStyle();
     void activateCanvasTool(SnowCanvasTool tool);
+    void applyResizeWindowTool();
     void applyShapeStyleFromPalette(const SnowCanvasShapeStyle& style, quint32 properties,
                                     SnowCanvasShapeKind kind);
     void applyTextStyleFromPalette(const SnowCanvasTextStyle& style);
@@ -113,7 +114,6 @@ class ScreenshotPinnedEditController final : public QObject {
     bool m_updatingPlacement = false;
     bool m_resizeWindowToolActive = false;
     bool m_nativeWindowInteractionActive = false;
-    bool m_drawingToolRequestedDuringRecognition = false;
     bool m_recognitionToolActivationPending = false;
     std::optional<int> m_toolBeforeWindowResize;
     bool m_canvasColorSamplingCursorOverridden = false;

@@ -313,6 +313,34 @@ void originalImageOverridePreservesSessionState() {
             "disabling original-image override restores translation presentation");
 }
 
+void deactivationNotifiesOnlyOnStateTransition() {
+    ScreenshotRecognitionWindow content({});
+    int visualExits = 0;
+    int modeExits = 0;
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &content; };
+    actions.setRecognitionVisualState = [&](bool active) { visualExits += !active; };
+    actions.setActiveMode = [&](int mode) { modeExits += mode == -1; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    QImage image(32, 32, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    session.setTarget({QStringLiteral("deactivation"), image, QRectF(0, 0, 32, 32)});
+    ScreenshotRecognitionResults results;
+    results.key = QStringLiteral("deactivation");
+    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}};
+    session.seedRecognitionResults(results);
+    for (int cycle = 1; cycle <= 2; ++cycle) {
+        session.activate(ScreenshotRecognitionSessionController::Mode::Qr);
+        session.deactivate();
+        require(!session.active() && visualExits == cycle && modeExits == cycle,
+                "leaving an active session must notify the host exactly once");
+        session.deactivate();
+        session.deactivate();
+        require(visualExits == cycle && modeExits == cycle,
+                "retained recognition content must not cause repeated exit notifications");
+    }
+}
+
 void cachedVerificationStaysSilent() {
     ControllableOcrRecognition recognition;
     PromptRecorder recorder;
@@ -689,6 +717,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    deactivationNotifiesOnlyOnStateTransition();
     tablePreparationPreservesSessionAndSiblingPopovers();
     cachedRecognitionUsesTheSelectedFillStyle();
     translationLanguageSelectsUseCodePrefixGroups();

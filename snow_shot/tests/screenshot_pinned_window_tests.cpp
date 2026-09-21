@@ -1644,7 +1644,7 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
     require(palette->activeToolForTests() == ScreenshotToolPalette::Tool::Ocr &&
                 !canvas.interactionEnabled(),
             "ending recognition edge adjustment must restore its tool without enabling canvas");
-    controller.restoreDrawingToolState();
+    controller.recognitionDeactivated();
     require(controller.resizeWindowToolActive() &&
                 palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
                 !canvas.interactionEnabled(),
@@ -1799,6 +1799,113 @@ void pinnedEditStartsWithRememberedDrawingTool() {
                 controller.toolbarWindow()->palette()->activeToolForTests() == Tool::Move,
             "an empty remembered tool must fall back to the Resize window tool");
     controller.setEditMode(false);
+}
+
+void pinnedDrawingToolsRemainUsableAfterRecognition() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using Access = ScreenshotPinnedWindowTestAccess;
+    for (const Tool recognitionTool : {Tool::Qr, Tool::Ocr}) {
+        ScreenshotPinnedWindow window;
+        auto config = cachedOcrPinConfig(nullptr);
+        config.recognitionResults.qr =
+            ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}};
+        auto* session = Access::hiddenSelectionOffscreen(window, config);
+        const snow_shot::storage::ScreenshotToolbarSettings settings;
+        const QString previousFilter = settings.lastFilterTool();
+        const auto restoreFilter =
+            qScopeGuard([&]() { static_cast<void>(settings.setLastFilterTool(previousFilter)); });
+        require(settings.setLastFilterTool(QStringLiteral("auto-filter")),
+                "select Auto Filter as the remembered filter variant");
+        Access::editSelectionOffscreen(window, true);
+        auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        require(controller != nullptr && canvas != nullptr, "drawing fixture is initialized");
+        auto* palette = controller->toolbarWindow()->palette();
+        const auto toolChanges =
+            QObject::connect(canvas, &SnowCanvasWidget::activeToolChanged, &window, [session]() {
+                require(!session->active(),
+                        "recognition teardown must precede every canvas tool change");
+            });
+        require(palette->activateToolShortcut(recognitionTool) && session->active(),
+                "cached recognition must activate through the real pinned toolbar");
+        for (int repeat = 0; repeat < 3; ++repeat) {
+            require(palette->activateToolShortcut(Tool::Shape) && !session->active() &&
+                        palette->activeTool() == Tool::Shape &&
+                        canvas->canvasTool() == SnowCanvasTool::Shape &&
+                        canvas->interactionEnabled() && !controller->resizeWindowToolActive(),
+                    "Shape must remain usable after leaving recognition");
+            require(palette->activateToolShortcut(Tool::Shape) &&
+                        palette->activeTool() == Tool::Select &&
+                        canvas->canvasTool() == SnowCanvasTool::Select &&
+                        canvas->interactionEnabled() && !controller->resizeWindowToolActive(),
+                    "repeating Shape must select without restoring Move");
+        }
+        require(palette->activateToolShortcut(recognitionTool) && session->active(),
+                "recognition must remain usable after repeated drawing tool changes");
+        const SnowCanvasAutoFilterRecord regions{
+            config.canvasSourceRect, {{1, QRectF(680, 405, 180, 30), QStringLiteral("text")}}};
+        require(canvas->setAutoFilterRegions(regions), "seed cached Auto Filter regions");
+        require(palette->activateToolShortcut(Tool::AutoFilter) && !session->active() &&
+                    palette->activeTool() == Tool::AutoFilter && canvas->interactionEnabled(),
+                "Auto Filter must leave recognition just like other drawing tools");
+        struct ToolRequest {
+            void (ScreenshotToolPalette::*request)();
+            SnowCanvasTool canvasTool;
+            Tool paletteTool;
+        };
+        const ToolRequest requests[] = {
+            {&ScreenshotToolPalette::selectRequested, SnowCanvasTool::Select, Tool::Select},
+            {&ScreenshotToolPalette::shapeRequested, SnowCanvasTool::Shape, Tool::Shape},
+            {&ScreenshotToolPalette::arrowRequested, SnowCanvasTool::Arrow, Tool::Arrow},
+            {&ScreenshotToolPalette::lineRequested, SnowCanvasTool::Line, Tool::Line},
+            {&ScreenshotToolPalette::freeDrawRequested, SnowCanvasTool::FreeDraw, Tool::FreeDraw},
+            {&ScreenshotToolPalette::highlightRequested, SnowCanvasTool::RectangleHighlight,
+             Tool::RectangleHighlight},
+            {&ScreenshotToolPalette::penHighlightRequested, SnowCanvasTool::PenHighlight,
+             Tool::PenHighlight},
+            {&ScreenshotToolPalette::spotlightRequested, SnowCanvasTool::Spotlight,
+             Tool::Spotlight},
+            {&ScreenshotToolPalette::eraserRequested, SnowCanvasTool::Eraser, Tool::Eraser},
+            {&ScreenshotToolPalette::filterRequested, SnowCanvasTool::RectangleFilter,
+             Tool::RectangleFilter},
+            {&ScreenshotToolPalette::rectangleFilterRequested, SnowCanvasTool::RectangleFilter,
+             Tool::RectangleFilter},
+            {&ScreenshotToolPalette::autoFilterRequested, SnowCanvasTool::AutoFilter,
+             Tool::AutoFilter},
+            {&ScreenshotToolPalette::penFilterRequested, SnowCanvasTool::PenFilter,
+             Tool::PenFilter},
+            {&ScreenshotToolPalette::watermarkRequested, SnowCanvasTool::Watermark,
+             Tool::Watermark},
+            {&ScreenshotToolPalette::textRequested, SnowCanvasTool::Text, Tool::Text},
+            {&ScreenshotToolPalette::serialNumberRequested, SnowCanvasTool::SerialNumber,
+             Tool::SerialNumber},
+        };
+        for (const auto& request : requests) {
+            require(palette->activateToolShortcut(recognitionTool) && session->active(),
+                    "recognition must activate before each drawing command");
+            // Exercise the command without the palette preselecting the destination.
+            (palette->*request.request)();
+            require(!session->active() && palette->activeTool() == request.paletteTool &&
+                        canvas->canvasTool() == request.canvasTool && canvas->interactionEnabled(),
+                    "each drawing command must own recognition exit and final tool state");
+        }
+        require(palette->activateToolShortcut(recognitionTool) && session->active() &&
+                    controller->beginTemporaryResizeWindowTool() && session->active(),
+                "temporary resize must preserve the active recognition session");
+        controller->endTemporaryResizeWindowTool();
+        require(session->active() && palette->activeTool() == recognitionTool,
+                "temporary resize must restore the recognition tool");
+        controller->activateResizeWindowTool();
+        require(!session->active() && palette->activeTool() == Tool::Move &&
+                    controller->resizeWindowToolActive() && !canvas->interactionEnabled(),
+                "direct Resize window commands must also own recognition teardown");
+        require(palette->activateToolShortcut(recognitionTool) && session->active() &&
+                    palette->activateToolShortcut(recognitionTool) && !session->active() &&
+                    palette->activeTool() == Tool::Select && canvas->interactionEnabled(),
+                "toggling a recognition tool must commit Select after recognition exits");
+        QObject::disconnect(toolChanges);
+        Access::editSelectionOffscreen(window, false);
+    }
 }
 
 void pinnedRecognitionShortcutTogglesResults() {
@@ -10053,6 +10160,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {
+            pinnedDrawingToolsRemainUsableAfterRecognition();
             pinnedEditingRecognitionShortcutsUsePaletteCommands();
             pinnedRecognitionShortcutTogglesResults();
             return 0;
@@ -10162,6 +10270,7 @@ int main(int argc, char* argv[]) {
         restoredPinnedSelectionRendersCachedOcrAfterStorageRestart();
         pinnedSnapshotRetainsRecognitionBeforeDeferredSetup();
         restoredInvalidOcrDoesNotSuppressRecognition();
+        pinnedDrawingToolsRemainUsableAfterRecognition();
         pinnedRecognitionShortcutTogglesResults();
         pinnedEditingRecognitionShortcutsUsePaletteCommands();
         pinnedEditingRemembersLastFilterToolAcrossSessions();
