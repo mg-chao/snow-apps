@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLPALETTE_H
 
 #include "icon_core.h"
+#include "widgets/control_scale.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -55,7 +56,8 @@ class ScreenshotToolPaletteStyleControls;
 class ScreenshotToolbarMainPanel;
 class IconNumericValuePreviewButton;
 
-class ScreenshotToolPalette final : public QWidget {
+class ScreenshotToolPalette final : public QWidget,
+                                    public adqt::widgets::AdControlScaleParticipant {
     Q_OBJECT
 
   public:
@@ -281,6 +283,10 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     bool setShadowMargins(const QMargins& margins);
     bool setPhysicalScale(qreal scale);
+    bool setScaleContext(const adqt::widgets::AdControlScaleContext& context);
+    void prepareControlScale(const adqt::widgets::AdControlScaleContext& context) override;
+    void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override;
+    void finishControlScale(const adqt::widgets::AdControlScaleContext& context) override;
     qreal physicalScale() const;
     void setToolbarLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
     void setActionToolsLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
@@ -886,6 +892,8 @@ class ScreenshotToolPalette final : public QWidget {
     QMargins m_shadowMargins;
     QHash<QWidget*, quint64> m_styleMetricRevisions;
     quint64 m_metricProfileRevision = 1;
+    adqt::widgets::AdControlScaleScope* m_scaleScope = nullptr;
+    bool m_scaleCommitActive = false;
     qreal m_physicalScale = 1.0;
     qreal m_selectionOpacity = 1.0;
     bool m_selectionOpacityMixed = false;

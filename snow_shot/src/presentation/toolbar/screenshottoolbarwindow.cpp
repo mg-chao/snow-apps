@@ -452,7 +452,8 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
     resetPhysicalSizeInvariant();
     if (ScreenshotToolPaletteHost* host = paletteHost()) {
         const QSignalBlocker blocker(host);
-        host->setPhysicalScale(paletteScaleMultiplier());
+        host->setScaleContext(adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+            1.0, 1.0, paletteScaleMultiplier()));
         host->setShadowMargins(ScreenshotToolPaletteHost::defaultShadowMargins());
         setStyleToolbarAboveMain(false);
         host->setStyleToolbarVisible(false);

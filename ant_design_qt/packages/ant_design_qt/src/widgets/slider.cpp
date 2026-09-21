@@ -1156,13 +1156,7 @@ void AdMultiSlider::commitControlScale(const AdControlScaleContext& context) {
     referenceFontCaptured_ = true;
   }
   controlScale_ = context;
-  QFont scaledFont = referenceFont_;
-  if (scaledFont.pixelSize() > 0) {
-    scaledFont.setPixelSize(qMax(1, qRound(scaledFont.pixelSize() * context.logicalScale)));
-  } else if (scaledFont.pointSizeF() > 0.0) {
-    scaledFont.setPointSizeF(scaledFont.pointSizeF() * context.logicalScale);
-  }
-  setFont(scaledFont);
+  setFont(scaleControlFont(referenceFont_, context.logicalScale));
   invalidateLayoutCache();
   requestTooltipSync();
 }

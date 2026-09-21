@@ -106,9 +106,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void refreshStablePhysicalWindowSize();
     void refreshGeometryForVisibleContent(bool preserveContentPosition, bool forceRepaint = false);
     bool commitGeometryUpdate(bool preserveContentPosition);
-    static QRect nativeWindowGeometryForPhysicalDrag(const QPointF& physicalCursorPosition,
-                                                     const QPointF& physicalCursorToWindowOffset,
-                                                     const QSize& stablePhysicalWindowSize);
     QRect mainToolbarContentRect() const;
     void updateMainToolbarPositionSnapshot();
     qreal currentWindowDevicePixelRatio() const;
@@ -134,19 +131,16 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
                                  const QPointF& physicalPosition) const;
 
     ScreenshotToolPaletteHost* m_paletteHost = nullptr;
-    adqt::widgets::AdControlScaleScope* m_scaleScope = nullptr;
     adqt::widgets::AdDpiStableWindowController* m_dpiController = nullptr;
     QRect m_movementLogicalBounds;
     QRect m_movementPhysicalBounds;
     QPoint m_lastRequestedContentPosition;
     QPointF m_lastDragPosition;
     QPointF m_dragContentPosition;
-    QPointF m_dragPhysicalCursorToWindowOffset;
     QPoint m_lastMainToolbarGlobalTopLeft;
     QPointer<QScreen> m_placementScreen;
     QPointer<QWidget> m_transientOwnerWindow;
     QPointer<QWidget> m_keyboardFocusEditor;
-    QSize m_stablePhysicalWindowSize;
     qreal m_referenceDevicePixelRatio = 0.0;
     qreal m_committedWindowDevicePixelRatio = 0.0;
     qreal m_paletteScaleMultiplier = 1.0;
@@ -159,7 +153,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QPoint m_lastAppliedContentOffset;
     QRect m_lastAppliedMainToolbarContentRect;
     bool m_draggingPalette = false;
-    bool m_dragPhysicalAnchorValid = false;
     bool m_lastRequestedContentPositionValid = false;
     bool m_lastMainToolbarGlobalTopLeftValid = false;
     bool m_processingNativeDpiChange = false;

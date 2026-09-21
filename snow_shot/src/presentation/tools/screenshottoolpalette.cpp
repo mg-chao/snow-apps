@@ -828,6 +828,18 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                     }
                 });
     }
+    m_scaleScope = new adqt::widgets::AdControlScaleScope(this, this);
+    connect(this, &ScreenshotToolPalette::materializedScope, this, [this](QWidget* scope) {
+        if (!m_scaleScope->applyCurrentScaleToSubtree(scope)) {
+            // Detached popup contents intentionally retain monitor-scaled metrics.
+            auto* popupScope = scope->findChild<adqt::widgets::AdControlScaleScope*>(
+                QString(), Qt::FindDirectChildrenOnly);
+            if (popupScope == nullptr)
+                popupScope = new adqt::widgets::AdControlScaleScope(scope, scope);
+            popupScope->applyCurrentScaleToSubtree(scope);
+        }
+    });
+    m_scaleScope->applyCurrentScaleToSubtree(this);
 }
 
 ScreenshotToolPalette::~ScreenshotToolPalette() {
@@ -949,19 +961,44 @@ bool ScreenshotToolPalette::setShadowMargins(const QMargins& margins) {
 }
 
 bool ScreenshotToolPalette::setPhysicalScale(qreal scale) {
-    if (!std::isfinite(scale) || scale <= 0.0) {
-        scale = 1.0;
-    }
-    scale = std::clamp<qreal>(scale, 0.25, 4.0);
-    if (qFuzzyCompare(m_physicalScale + 1.0, scale + 1.0)) {
-        return false;
-    }
+    return setScaleContext(
+        adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, scale));
+}
 
-    m_physicalScale = scale;
+bool ScreenshotToolPalette::setScaleContext(const adqt::widgets::AdControlScaleContext& context) {
+    return m_scaleScope != nullptr && m_scaleScope->publishScale(context);
+}
+
+void ScreenshotToolPalette::prepareControlScale(const adqt::widgets::AdControlScaleContext&) {
+    m_scaleCommitActive = true;
+    for (const auto& binding : m_styleEditorBindings) {
+        m_scaleScope->setSubtreeDeferred(binding.controls,
+                                         binding.controls != m_activeStyleControlsWidget);
+    }
+    // Popup content is independent even when the offscreen/InWindow backend
+    // represents it as a descendant rather than a native top-level surface.
+    for (auto* popover : findChildren<adqt::widgets::AdPopover*>()) {
+        QWidget* content = popover->contentWidget();
+        if (content != nullptr && content->findChild<adqt::widgets::AdControlScaleScope*>(
+                                      QString(), Qt::FindDirectChildrenOnly) == nullptr) {
+            new adqt::widgets::AdControlScaleScope(content, content);
+        }
+    }
+}
+
+void ScreenshotToolPalette::commitControlScale(
+    const adqt::widgets::AdControlScaleContext& context) {
+    if (qFuzzyCompare(m_physicalScale, context.logicalScale))
+        return;
+    m_physicalScale = context.logicalScale;
     ++m_metricProfileRevision;
     applyScaledToolbarMetrics();
+}
+
+void ScreenshotToolPalette::finishControlScale(const adqt::widgets::AdControlScaleContext&) {
+    m_scaleCommitActive = false;
+    markLayoutDirty();
     ensureLayoutApplied();
-    return true;
 }
 
 qreal ScreenshotToolPalette::physicalScale() const {
@@ -2554,7 +2591,7 @@ void ScreenshotToolPalette::markLayoutDirty(bool rowOrderChanged) {
 
 void ScreenshotToolPalette::ensureLayoutApplied() const {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.ensure_layout_applied");
-    if (!m_layoutDirty) {
+    if (!m_layoutDirty || m_scaleCommitActive) {
         return;
     }
 
@@ -2735,7 +2772,7 @@ int ScreenshotToolPalette::scaledMetric(int value) const {
     if (value <= 0) {
         return 0;
     }
-    return qMax(1, qRound(static_cast<qreal>(value) * m_physicalScale));
+    return adqt::widgets::scaleControlMetric(value, m_physicalScale);
 }
 
 qreal ScreenshotToolPalette::scaledMetric(qreal value) const {
@@ -2757,7 +2794,10 @@ QMargins ScreenshotToolPalette::scaledPanelMargins(int horizontalMargin, int ver
     // above the row so those two rounding decisions do not accumulate upward.
     const int top = (verticalSpace + 1) / 2;
     const int bottom = verticalSpace - top;
-    return QMargins(horizontal, top, horizontal, bottom);
+    // Round the pair of margins together so it cannot add an extra logical
+    // pixel to an otherwise cumulatively rounded row at fractional scales.
+    const int right = scaledMetric(horizontalMargin * 2) - horizontal;
+    return QMargins(horizontal, top, right, bottom);
 }
 
 void ScreenshotToolPalette::addMainToolbarSpacing(int baseSpacing) {
@@ -2846,9 +2886,6 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     m_shadowMargins = scaledMargins(m_baseShadowMargins.left(), m_baseShadowMargins.top(),
                                     m_baseShadowMargins.right(), m_baseShadowMargins.bottom());
 
-    if (m_mainPanel != nullptr) {
-        m_mainPanel->setPhysicalScale(m_physicalScale);
-    }
     const auto configureGroups = [this](const auto& groups) {
         for (const auto& group : groups) {
             if (group.ownsTrigger) {
@@ -3195,9 +3232,37 @@ void ScreenshotToolPalette::applyCumulativeStyleLayoutMetrics(QWidget* scope) {
             qMax(0, qRound(std::max(0, activeReferenceWidth) * m_physicalScale));
         const QVector<int> edges =
             adqt::widgets::scaleCumulativeWidths(referenceWidths, m_physicalScale, targetWidth);
+        QVector<int> widths;
+        for (qsizetype i = 1; i < edges.size(); ++i)
+            widths.append(edges.at(i) - edges.at(i - 1));
+        qsizetype separatorIndex = 0;
+        for (qsizetype i = 0; i < profile.segments.size(); ++i) {
+            const auto& segment = profile.segments.at(i);
+            if (activeSegments.at(i) && segment.widget &&
+                m_styleSeparatorFrames.contains(qobject_cast<QFrame*>(segment.widget)) &&
+                widths.at(separatorIndex) == 0) {
+                // A visible separator must remain at least one logical pixel wide.
+                // Borrow that pixel from the nearest nonempty segment so the
+                // container's cumulative extent remains unchanged.
+                for (qsizetype distance = 1; distance < widths.size(); ++distance) {
+                    const qsizetype before = separatorIndex - distance;
+                    const qsizetype after = separatorIndex + distance;
+                    const qsizetype donor =
+                        before >= 0 && widths.at(before) > 1
+                            ? before
+                            : (after < widths.size() && widths.at(after) > 1 ? after : -1);
+                    if (donor >= 0) {
+                        --widths[donor];
+                        ++widths[separatorIndex];
+                        break;
+                    }
+                }
+            }
+            separatorIndex += i < profile.automaticGaps.size() ? 2 : 1;
+        }
         qsizetype edgeIndex = 0;
         for (qsizetype index = 0; index < profile.segments.size(); ++index) {
-            const int activeWidth = edges.at(edgeIndex + 1) - edges.at(edgeIndex);
+            const int activeWidth = widths.at(edgeIndex);
             StyleLayoutSegment& segment = profile.segments[index];
             if (segment.widget != nullptr) {
                 const int standaloneWidth =
@@ -3214,7 +3279,7 @@ void ScreenshotToolPalette::applyCumulativeStyleLayoutMetrics(QWidget* scope) {
             ++edgeIndex;
 
             if (index < profile.automaticGaps.size()) {
-                const int gapWidth = edges.at(edgeIndex + 1) - edges.at(edgeIndex);
+                const int gapWidth = widths.at(edgeIndex);
                 profile.automaticGaps.at(index)->changeSize(gapWidth, 0, QSizePolicy::Fixed,
                                                             QSizePolicy::Minimum);
                 ++edgeIndex;
@@ -3599,7 +3664,7 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
     ScreenshotToolbarMainPanel::Options panelOptions;
     panelOptions.showDragHandle = options.showDragHandle;
     m_mainPanel = new ScreenshotToolbarMainPanel(panelOptions, this);
-    m_mainPanel->setPhysicalScale(m_physicalScale);
+    m_mainPanel->commitControlScale(adqt::widgets::controlScaleContextFor(this));
     QBoxLayout* panelLayout = m_mainPanel->contentLayout();
 
     if (options.showRecordingControls) {
@@ -4637,6 +4702,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         setActiveToolButton(actionToolEntryButton(actionToolItemId(*m_activeTool)));
     }
 
+    if (m_scaleScope != nullptr)
+        m_scaleScope->applyCurrentScaleToSubtree(m_mainPanel);
     updateToolbarGeometry();
     if (notify) {
         emit visibleContentChanged();
@@ -7453,7 +7520,13 @@ bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
     applyStyleMetricsForScope(m_activeStyleControlsWidget);
     for (const StyleEditorBinding& binding : std::as_const(m_styleEditorBindings)) {
         if (binding.controls != nullptr) {
-            binding.controls->setVisible(binding.controls == m_activeStyleControlsWidget);
+            const bool active = binding.controls == m_activeStyleControlsWidget;
+            if (m_scaleScope != nullptr) {
+                m_scaleScope->setSubtreeDeferred(binding.controls, !active);
+                if (active)
+                    m_scaleScope->applyCurrentScaleToSubtree(binding.controls);
+            }
+            binding.controls->setVisible(active);
         }
     }
     if (m_rectangleStyleLayout != nullptr) {

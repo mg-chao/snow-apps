@@ -363,7 +363,6 @@ class IconNumericValuePreviewButton final : public adqt::widgets::AdButton {
     adqt::icons::IconRef m_iconRef;
     QString m_valueWidthReference = QStringLiteral("88");
     QString m_valueSuffix;
-    QFont m_baseFont;
     qreal m_physicalScale = 1.0;
     bool m_mixed = false;
 };

@@ -2958,6 +2958,15 @@ QSize AdSelect::minimumSizeHint() const {
   return QSize(qMax(1, qRound(120 * controlScale_.logicalScale)), qMax(1, height));
 }
 
+void AdSelect::setReferenceFont(const QFont& font) {
+  if (referenceFontCaptured_ && referenceFont_ == font) return;
+  referenceFont_ = font;
+  referenceFontCaptured_ = true;
+  commitControlScale(controlScale_);
+  updateGeometry();
+  update();
+}
+
 void AdSelect::prepareControlScale(const AdControlScaleContext& context) { Q_UNUSED(context) }
 
 void AdSelect::commitControlScale(const AdControlScaleContext& context) {

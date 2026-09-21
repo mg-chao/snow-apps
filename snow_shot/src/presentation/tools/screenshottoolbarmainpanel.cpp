@@ -77,7 +77,7 @@ QString cssColor(const QColor& color) {
 }
 
 int scaledMetric(int value, qreal scale) {
-    return value <= 0 ? 0 : qMax(1, qRound(static_cast<qreal>(value) * scale));
+    return adqt::widgets::scaleControlMetric(value, scale);
 }
 
 ScreenshotToolPaletteButtonMetrics buttonMetrics(qreal scale) {
@@ -306,15 +306,20 @@ void ScreenshotToolbarMainPanel::addTrailingDragHandle() {
 }
 
 void ScreenshotToolbarMainPanel::setPhysicalScale(qreal scale) {
-    if (!std::isfinite(scale) || scale <= 0.0) {
-        scale = 1.0;
-    }
-    scale = std::clamp<qreal>(scale, 0.25, 4.0);
-    if (qFuzzyCompare(m_physicalScale + 1.0, scale + 1.0)) {
+    const auto context =
+        adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, scale);
+    if (qFuzzyCompare(m_physicalScale, context.logicalScale))
         return;
-    }
+    adqt::widgets::AdControlScaleScope scope(this);
+    if (!scope.publishScale(context))
+        scope.applyCurrentScaleToSubtree(this);
+}
 
-    m_physicalScale = scale;
+void ScreenshotToolbarMainPanel::commitControlScale(
+    const adqt::widgets::AdControlScaleContext& context) {
+    if (qFuzzyCompare(m_physicalScale, context.logicalScale))
+        return;
+    m_physicalScale = context.logicalScale;
     applyMetrics();
 }
 

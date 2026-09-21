@@ -122,10 +122,16 @@ void translucentColorSwatchesShowCheckerboardUnderlay() {
             snow_shot::presentation::createScreenshotToolPaletteColorPickerTrigger(
                 &drawingPicker, QString(), Qt::transparent, metrics,
                 ColorPickerTrigger::Preview::Fill);
+        adqt::widgets::AdControlScaleScope triggerScope(drawingTrigger);
+        const auto context =
+            adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, scale);
+        triggerScope.publishScale(context);
         const QImage triggerImage = renderButton(*drawingTrigger);
         for (const bool summary : {false, true}) {
             std::unique_ptr<ColorSwatchButton> button(createScreenshotToolPaletteColorButton(
                 nullptr, nullptr, Qt::red, summary, true, metrics));
+            adqt::widgets::AdControlScaleScope buttonScope(button.get());
+            buttonScope.publishScale(context);
             for (const int alpha : {128, 254, 255, 0}) {
                 const QColor color(255, 0, 0, alpha);
                 button->setSwatchColor(color);
@@ -940,6 +946,9 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         std::unique_ptr<ColorSwatchButton> reference(createScreenshotToolPaletteColorButton(
             trigger->parentWidget(), nullptr, picker->value().solidColor, true, true,
             {28, 18, scale}));
+        // Reference metrics are configured by the factory; content scaling is
+        // now applied by the same context used for the live toolbar control.
+        reference->commitControlScale(adqt::widgets::controlScaleContextFor(trigger));
         require(renderButton(*trigger) == renderButton(*reference),
                 "export triggers should render RGBA colors exactly like drawing summary swatches");
     };
@@ -9776,11 +9785,8 @@ void popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit() {
     const QSize strokeHint = strokeStyle->sizeHint();
     const QSize fillHint = fillPreset->sizeHint();
 
-    adqt::widgets::AdControlScaleScope scope(&palette);
-    require(scope.publishScale(1.5, 1.0),
-            "toolbar control scale should publish a mixed-DPI transition");
-    require(palette.setPhysicalScale(1.5),
-            "toolbar physical scale should follow the mixed-DPI transition");
+    require(palette.setScaleContext(adqt::widgets::AdControlScaleContext::fromDprs(1.5, 1.0)),
+            "toolbar should publish one mixed-DPI context to its layout and controls");
 
     require(strokeStyle->font() == strokeFont && strokeStyle->iconSize() == strokeIconSize &&
                 strokeStyle->sizeHint() == strokeHint,
@@ -10390,6 +10396,29 @@ void familiesHydratedAfterScaleKeepTheSamePhysicalSize() {
         require(secondarySize(rematerialized) == expectedShape,
                 "rebuilding the shape family after a tool eviction must keep the destination "
                 "physical size");
+    }
+}
+
+void secondaryRowsDoNotDriftAcrossScaleRoundTrips() {
+    for (auto tool : {ScreenshotToolPalette::Tool::Select, ScreenshotToolPalette::Tool::Shape}) {
+        ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+        palette.setActiveTool(tool);
+        static_cast<void>(palette.contentSizeHint());
+        QCoreApplication::processEvents();
+        QWidget* panel = tool == ScreenshotToolPalette::Tool::Select ? palette.actionPanel()
+                                                                     : palette.stylePanel();
+        const QSize initial = panel->size();
+        for (qreal scale : {1.5, 1.0 / 1.5, 1.0}) {
+            palette.setPhysicalScale(scale);
+            static_cast<void>(palette.contentSizeHint());
+            QCoreApplication::processEvents();
+        }
+        if (panel->size() != initial) {
+            std::cerr << "row round trip " << static_cast<int>(tool) << " initial "
+                      << initial.width() << 'x' << initial.height() << " final " << panel->width()
+                      << 'x' << panel->height() << '\\n';
+        }
+        require(panel->size() == initial, "secondary row accumulated geometry drift");
     }
 }
 
@@ -11707,6 +11736,7 @@ int main(int argc, char** argv) {
         translucentColorSwatchesShowCheckerboardUnderlay();
         configurationDrivenStyleEditorsShareStructuralContracts();
         mixedColorsKeepUniformStyleButtonsActive();
+        secondaryRowsDoNotDriftAcrossScaleRoundTrips();
         toolbarScalingDoesNotRelayoutPopupContent();
         popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
         familiesHydratedAfterScaleKeepTheSamePhysicalSize();
@@ -11716,6 +11746,17 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
         screenshotProductStyleProfileIsComplete();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (QApplication::arguments().contains(QStringLiteral("--dpi-scaling-only"))) {
+        secondaryRowsDoNotDriftAcrossScaleRoundTrips();
+        toolbarScalingDoesNotRelayoutPopupContent();
+        popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
+        familiesHydratedAfterScaleKeepTheSamePhysicalSize();
+        physicalScaleDefersHiddenStyleGroupGeometry();
+        watermarkControlsFollowPhysicalScale();
+        styleToolbarRowSpacingFollowsPhysicalScale();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

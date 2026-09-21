@@ -365,6 +365,7 @@ class AdSelect final : public QWidget,
   SizeAdjustPolicy sizeAdjustPolicy() const;
   void setSizeAdjustPolicy(SizeAdjustPolicy policy);
   QSize minimumSizeHint() const override;
+  void setReferenceFont(const QFont& font);
   void prepareControlScale(const AdControlScaleContext& context) override;
   void commitControlScale(const AdControlScaleContext& context) override;
 

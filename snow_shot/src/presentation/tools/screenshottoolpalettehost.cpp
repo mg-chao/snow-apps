@@ -227,15 +227,10 @@ qreal ScreenshotToolPaletteHost::physicalScale() const {
     return m_palette != nullptr ? m_palette->physicalScale() : 1.0;
 }
 
-void ScreenshotToolPaletteHost::commitDpiScale(qreal scale, const QMargins& shadowMargins) {
-    if (m_palette == nullptr) {
-        return;
-    }
-
-    m_palette->setShadowMargins(shadowMargins);
-    m_palette->setPhysicalScale(scale);
-    m_palette->prepareForDisplay();
-    syncHostSize();
+void ScreenshotToolPaletteHost::setScaleContext(
+    const adqt::widgets::AdControlScaleContext& context) {
+    if (m_palette != nullptr && m_palette->setScaleContext(context))
+        syncHostSize();
 }
 
 void ScreenshotToolPaletteHost::setFrameSize(const QSize& frameSize, bool anchorToBottom) {

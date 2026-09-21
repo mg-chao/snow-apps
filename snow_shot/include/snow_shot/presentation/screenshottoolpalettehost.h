@@ -48,7 +48,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     void setShadowMargins(const QMargins& margins);
     void setPhysicalScale(qreal scale);
     qreal physicalScale() const;
-    void commitDpiScale(qreal scale, const QMargins& shadowMargins);
+    void setScaleContext(const adqt::widgets::AdControlScaleContext& context);
     void setFrameSize(const QSize& frameSize, bool anchorToBottom);
     void setStyleToolbarAboveMain(bool above);
     void setStyleToolbarVisible(bool visible);

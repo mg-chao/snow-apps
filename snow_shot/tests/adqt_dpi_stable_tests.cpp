@@ -18,6 +18,7 @@
 #include <QtMath>
 
 #include <cmath>
+#include <functional>
 #include <atomic>
 #include <iostream>
 #include <memory>
@@ -120,12 +121,18 @@ class ParticipantWidget final : public QWidget, public adqt::widgets::AdControlS
         ++prepareCount;
         lastPreparedContext = context;
         lastPreparedRevision = context.revision;
+        if (onPrepare)
+            onPrepare();
     }
     void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override {
         ++commitCount;
         lastCommittedContext = context;
         lastCommittedRevision = context.revision;
+        if (onCommit)
+            onCommit();
     }
+    std::function<void()> onPrepare;
+    std::function<void()> onCommit;
     int prepareCount = 0;
     int commitCount = 0;
     adqt::widgets::AdControlScaleContext lastPreparedContext;
@@ -183,6 +190,28 @@ void scopeIsBatchedAndNoOpsRepeatRequests() {
             "unchanged scale publication should be a no-op");
     require(participant->commitCount == 1 && signalCount == 1,
             "no-op scale publication produced work");
+}
+
+void replacementParticipantsCommitBeforePresentation() {
+    QWidget root;
+    ParticipantWidget owner(&root);
+    QPointer<ParticipantWidget> child = new ParticipantWidget(&owner);
+    adqt::widgets::AdControlScaleScope scope(&root);
+    owner.onCommit = [&]() {
+        delete child.data();
+        child = new ParticipantWidget(&owner);
+    };
+    require(scope.publishScale(1.0, 1.5), "replacement scale publication failed");
+    require(child && child->prepareCount == 1 && child->commitCount == 1 &&
+                child->lastCommittedContext.equivalentTo(scope.context()),
+            "replacement participant missed the presentation transaction");
+
+    QWidget otherRoot;
+    ParticipantWidget otherOwner(&otherRoot);
+    auto* temporaryScope = new adqt::widgets::AdControlScaleScope(&otherRoot);
+    otherOwner.onCommit = [temporaryScope]() { delete temporaryScope; };
+    temporaryScope->publishScale(1.0, 2.0);
+    require(otherRoot.updatesEnabled(), "deleting the scope stranded update suppression");
 }
 
 void contentScaleComposesWithDpiAndParticipatesInEquivalence() {
@@ -396,6 +425,168 @@ void completionHandlersCanEstablishTheNextFrameBaseline() {
     adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller);
     adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
     require(completed, "queued scale change must notify its completion handler");
+}
+
+void scopesRespectBoundariesAndParticipantLifetimes() {
+    QWidget root;
+    ParticipantWidget outer(&root);
+    QWidget nested(&root);
+    ParticipantWidget inner(&nested);
+    QWidget popup(&root, Qt::Tool);
+    ParticipantWidget popupChild(&popup);
+    adqt::widgets::AdControlScaleScope scope(&root);
+    adqt::widgets::AdControlScaleScope nestedScope(&nested);
+    nestedScope.publishScale(1.25, 1.0);
+    scope.publishScale(1.5, 1.0);
+    require(outer.commitCount == 1 && inner.commitCount == 1 && popupChild.commitCount == 0,
+            "scale publication crossed a nested scope or native popup boundary");
+    require(!scope.applyCurrentScaleToSubtree(&inner) &&
+                !scope.applyCurrentScaleToSubtree(&popupChild),
+            "lazy scaling crossed a scope boundary");
+    require(qFuzzyCompare(adqt::widgets::controlScaleContextFor(&popupChild).logicalScale, 1.0),
+            "a detached popup inherited its owner's counter-scale");
+    auto* victim = new ParticipantWidget(&root);
+    QPointer<ParticipantWidget> guardedVictim(victim);
+    outer.onPrepare = [&]() { delete guardedVictim.data(); };
+    scope.publishScale(2.0, 1.0);
+    require(guardedVictim.isNull() && outer.commitCount == 2,
+            "deleting a participant during prepare broke the remaining commit");
+    outer.onPrepare = {};
+    ParticipantWidget late(&root);
+    require(scope.applyCurrentScaleToSubtree(&late) &&
+                qFuzzyCompare(late.lastCommittedContext.logicalScale, 2.0),
+            "a lazy participant did not receive the current context");
+}
+
+void referenceMetricsSurviveFractionalRoundTrips() {
+    QWidget root;
+    adqt::widgets::AdButton button(&root);
+    adqt::widgets::AdRadio radio(&root);
+    QFont reference;
+    reference.setPixelSize(18);
+    button.setReferenceFont(reference);
+    radio.setReferenceFont(reference);
+    button.setReferenceIconSize(QSize(24, 24));
+    radio.setReferenceIconSize(QSize(24, 24));
+    adqt::widgets::AdControlScaleScope scope(&root);
+    for (qreal userScale : {1.0, 0.8}) {
+        for (int round = 0; round < 3; ++round) {
+            for (qreal dpr : {1.0, 1.25, 1.5, 2.0, 1.5, 1.25, 1.0}) {
+                const auto context = adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+                    1.5, dpr, userScale);
+                scope.publishScale(context);
+                const QSize expectedIcon =
+                    adqt::widgets::scaleControlSize(QSize(24, 24), context.logicalScale);
+                require(button.iconSize() == expectedIcon && radio.iconSize() == expectedIcon,
+                        "reference icons accumulated scaling during a monitor round trip");
+                require(button.font().pixelSize() == qRound(18 * context.logicalScale) &&
+                            radio.font().pixelSize() == qRound(18 * context.logicalScale),
+                        "reference fonts accumulated scaling during a monitor round trip");
+            }
+        }
+    }
+    scope.publishScale(1.0, 2.0);
+    reference.setPixelSize(22);
+    button.setReferenceFont(reference);
+    radio.setReferenceFont(reference);
+    button.setReferenceIconSize(QSize(30, 30));
+    radio.setReferenceIconSize(QSize(30, 30));
+    require(button.font().pixelSize() == 11 && radio.font().pixelSize() == 11 &&
+                button.iconSize() == QSize(15, 15) && radio.iconSize() == QSize(15, 15),
+            "reference changes at a non-unit scale were not applied immediately");
+    require(!scope.publishScale(1.0, 2.0), "equivalent publication unexpectedly changed the scope");
+    scope.publishScale(1.0, 1.0);
+    require(button.font().pixelSize() == 22 && radio.font().pixelSize() == 22 &&
+                button.iconSize() == QSize(30, 30) && radio.iconSize() == QSize(30, 30),
+            "reference edits were lost on the next DPI transition");
+    adqt::widgets::AdButton late(&root);
+    late.setReferenceFont(reference);
+    late.setReferenceIconSize(QSize(30, 30));
+    scope.applyCurrentScaleToSubtree(&late);
+    require(late.font() == button.font() && late.iconSize() == button.iconSize(),
+            "a lazy button disagrees with a previously scaled button");
+}
+
+void presentationCommitsOnlyTheLatestGeneration() {
+    QWidget window;
+    window.resize(320, 80);
+    adqt::widgets::AdDpiStableWindowController controller(&window);
+    int readyCount = 0;
+    int completedCount = 0;
+    QObject::connect(
+        &controller, &adqt::widgets::AdDpiStableWindowController::scaleCommitReady,
+        [&](const adqt::widgets::AdDpiStableWindowTransition& transition) {
+            ++readyCount;
+            require(!window.updatesEnabled(), "ready stage allowed intermediate painting");
+            require(transition.windowId == window.winId() &&
+                        transition.physicalClientSize == controller.stablePhysicalClientSize(),
+                    "ready stage delivered an inconsistent native snapshot");
+            if (readyCount == 1)
+                controller.requestScaleCommit();
+        });
+    QObject::connect(
+        &controller, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted, [&]() {
+            ++completedCount;
+            require(window.updatesEnabled(), "completion ran before presentation resumed");
+        });
+    controller.requestScaleCommit();
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(completedCount == 0 && !window.updatesEnabled(),
+            "a superseded generation completed or resumed presentation");
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(readyCount == 2 && completedCount == 1 && window.updatesEnabled(),
+            "the latest generation did not finish exactly once");
+    require(controller.diagnostics().reconciliationCount == 2 &&
+                controller.diagnostics().committedGeneration > 0,
+            "transaction diagnostics did not describe the final generation");
+}
+
+void resetAndExternalUpdateSuppressionArePreserved() {
+    QWidget window;
+    window.resize(320, 80);
+    adqt::widgets::AdDpiStableWindowController controller(&window);
+    controller.requestScaleCommit();
+    controller.resetBaseline();
+    require(window.updatesEnabled(), "baseline reset left presentation suspended");
+    require(controller.captureBaseline(), "replacement baseline was not captured");
+    window.setUpdatesEnabled(false);
+    controller.requestScaleCommit();
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(!window.updatesEnabled(), "DPI commit overrode external update suppression");
+    window.setUpdatesEnabled(true);
+    const QSize baseline = controller.stablePhysicalFrameSize();
+    window.resize(321, 80);
+    require(controller.beginPhysicalDrag(QPointF(10, 10)), "could not start physical drag");
+    require(controller.stablePhysicalFrameSize() == baseline,
+            "drag start replaced the baseline with a rounded observed size");
+    controller.endPhysicalDrag();
+}
+
+void intentionalExtentPrecedesPlacementAndRecreationInvalidatesCommit() {
+    QWidget window;
+    window.resize(320, 80);
+    adqt::widgets::AdDpiStableWindowController controller(&window);
+    require(controller.captureBaseline(1.5, QSize(640, 120)) &&
+                controller.stablePhysicalClientSize() == QSize(640, 120),
+            "intentional placement did not establish its size before native movement");
+    int readyCount = 0;
+    int completedCount = 0;
+    QObject::connect(&controller, &adqt::widgets::AdDpiStableWindowController::scaleCommitReady,
+                     [&](const auto&) {
+                         if (++readyCount == 1) {
+                             controller.resetBaseline();
+                             controller.captureBaseline(1.0, QSize(240, 80));
+                             controller.requestScaleCommit();
+                         }
+                     });
+    QObject::connect(&controller, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
+                     [&]() { ++completedCount; });
+    controller.requestScaleCommit();
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(completedCount == 0, "a retired baseline completed its stale transaction");
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(completedCount == 1 && controller.stablePhysicalClientSize() == QSize(240, 80),
+            "replacement baseline did not complete its own transaction");
 }
 
 void componentHintsFollowTheScope() {
@@ -702,6 +893,7 @@ int main(int argc, char** argv) {
     try {
         cumulativeEdgesAreStable();
         scopeIsBatchedAndNoOpsRepeatRequests();
+        replacementParticipantsCommitBeforePresentation();
         contentScaleComposesWithDpiAndParticipatesInEquivalence();
         currentScaleCanBeAppliedToANewSubtree();
         controllerCoalescesToTheLatestPendingScale();
@@ -710,6 +902,11 @@ int main(int argc, char** argv) {
         staleQueuedScaleIsRejectedAfterBaselineChanges();
         baselineCaptureIsBlockedDuringNativeTransition();
         completionHandlersCanEstablishTheNextFrameBaseline();
+        scopesRespectBoundariesAndParticipantLifetimes();
+        referenceMetricsSurviveFractionalRoundTrips();
+        presentationCommitsOnlyTheLatestGeneration();
+        resetAndExternalUpdateSuppressionArePreserved();
+        intentionalExtentPrecedesPlacementAndRecreationInvalidatesCommit();
         componentHintsFollowTheScope();
         radioIconUsesDirectPaintingAfterScaleChanges();
         buttonExplicitIconSizeSurvivesDpiScale();

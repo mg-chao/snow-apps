@@ -70,7 +70,7 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
 
     static bool hasPhysicalBaseline(const ScreenshotFloatingToolPaletteWindow& window) {
         return window.m_referenceDevicePixelRatio > 0.0 ||
-               window.m_stablePhysicalWindowSize.isValid();
+               (window.m_dpiController != nullptr && window.m_dpiController->hasBaseline());
     }
 
     static void beginKeyboardFocus(ScreenshotFloatingToolPaletteWindow& window, QWidget* editor) {
@@ -90,7 +90,8 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
     static void beginLogicalDrag(ScreenshotFloatingToolPaletteWindow& window,
                                  const QPoint& globalPosition) {
         window.m_draggingPalette = true;
-        window.m_dragPhysicalAnchorValid = false;
+        if (window.m_dpiController != nullptr)
+            window.m_dpiController->endPhysicalDrag();
         window.m_lastDragPosition = QPointF(globalPosition);
         window.m_dragContentPosition = QPointF(window.contentPosition());
     }
@@ -110,7 +111,7 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
     }
 
     static bool hasPhysicalDragAnchor(const ScreenshotFloatingToolPaletteWindow& window) {
-        return window.m_dragPhysicalAnchorValid;
+        return window.physicalDragActive();
     }
 
     static quint64 geometryRefreshCount(const ScreenshotFloatingToolPaletteWindow& window) {
@@ -802,6 +803,23 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(
             "failed to position the toolbar on the source monitor");
 
     const QSize stablePhysicalSize = nativeWindowSize(nativeWindow);
+    auto* controller = window.findChild<adqt::widgets::AdDpiStableWindowController*>();
+    require(controller != nullptr, "toolbar has no native geometry controller");
+    const QSize referencePhysicalSize = controller->stablePhysicalFrameSize();
+    const auto physicalFrameMatchesReference = [&](const QSize& actual) {
+        // The reference must never be recaptured from a rounded drag frame.
+        if (controller->stablePhysicalFrameSize() != referencePhysicalSize)
+            return false;
+        const qreal dpr = GetDpiForWindow(nativeWindow) / 96.0;
+        const auto matches = [dpr](int value, int reference) {
+            // Windows can preserve the exact native extent; a complete Qt layered
+            // repaint can instead round through its integer logical client extent.
+            // Exactly representable dimensions still require exact equality.
+            return value == reference || value == qRound(qRound(reference / dpr) * dpr);
+        };
+        return matches(actual.width(), referencePhysicalSize.width()) &&
+               matches(actual.height(), referencePhysicalSize.height());
+    };
     const QRect initialNativeGeometry = nativeWindowGeometry(nativeWindow);
     const QPoint physicalCursorToWindowOffset = start - initialNativeGeometry.topLeft();
     ScreenshotFloatingToolPaletteWindowTestAccess::beginPhysicalDrag(window, QCursor::pos());
@@ -836,14 +854,16 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(
         expectedFinalTopLeft = expectedTopLeft;
         waitForNativePosition(nativeWindow, expectedTopLeft, 10);
         const QRect settledNativeGeometry = nativeWindowGeometry(nativeWindow);
-        if (settledNativeGeometry.size() != stablePhysicalSize) {
-            failures.push_back("toolbar physical pixel size changed from " +
-                               std::to_string(stablePhysicalSize.width()) + "x" +
-                               std::to_string(stablePhysicalSize.height()) + " to " +
-                               std::to_string(settledNativeGeometry.width()) + "x" +
-                               std::to_string(settledNativeGeometry.height()) +
-                               " during the monitor move at DPI " +
-                               std::to_string(GetDpiForWindow(nativeWindow)));
+        if (!physicalFrameMatchesReference(settledNativeGeometry.size())) {
+            failures.push_back(
+                "toolbar physical pixel size changed from " +
+                std::to_string(stablePhysicalSize.width()) + "x" +
+                std::to_string(stablePhysicalSize.height()) + " to " +
+                std::to_string(settledNativeGeometry.width()) + "x" +
+                std::to_string(settledNativeGeometry.height()) +
+                " during the monitor move at DPI " + std::to_string(GetDpiForWindow(nativeWindow)) +
+                " drag=" + std::to_string(window.physicalDragActive()) +
+                " baseline=" + std::to_string(controller->stablePhysicalFrameSize().height()));
             break;
         }
         const UINT currentWindowDpi = GetDpiForWindow(nativeWindow);
@@ -869,7 +889,7 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(
             std::to_string(actualFinalTopLeft.x()) + "," + std::to_string(actualFinalTopLeft.y()));
     }
     ScreenshotFloatingToolPaletteWindowTestAccess::finishDrag(window);
-    if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+    if (!physicalFrameMatchesReference(nativeWindowSize(nativeWindow))) {
         failures.push_back("toolbar physical pixel size changed after crossing monitors");
     }
     window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
@@ -885,7 +905,7 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(
     if (!window.palette()->styleToolbarVisible() || window.palette()->actionToolbarVisible()) {
         failures.push_back("Shape should show only the style toolbar on the destination display");
     }
-    if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+    if (!physicalFrameMatchesReference(nativeWindowSize(nativeWindow))) {
         failures.push_back("toolbar physical frame size changed after activating Shape");
     }
     const QWidget* shapeControls =
@@ -916,7 +936,7 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(
     if (!window.palette()->actionToolbarVisible() || window.palette()->styleToolbarVisible()) {
         failures.push_back("Select should show only the action toolbar on the destination display");
     }
-    if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+    if (!physicalFrameMatchesReference(nativeWindowSize(nativeWindow))) {
         failures.push_back("toolbar physical frame size changed after activating Select");
     }
     appendSecondaryPanelLayoutFailure(selectActionPanel, destinationWindowDpi,
@@ -968,7 +988,7 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(
         expectedReturnTopLeft = QPoint(actualCursor.x - returnCursorToWindowOffset.x(),
                                        actualCursor.y - returnCursorToWindowOffset.y());
         waitForNativePosition(nativeWindow, expectedReturnTopLeft, 10);
-        if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+        if (!physicalFrameMatchesReference(nativeWindowSize(nativeWindow))) {
             failures.push_back(
                 "toolbar physical frame size changed during the return monitor move");
         }
@@ -1276,9 +1296,7 @@ void dpiCommitReconcilesTheActualFrameBeforePainting() {
     // Model a native transition retaining an older, smaller frame while the
     // pooled toolbar has already prepared the new capture's content extent.
     window.resize(expected.width() / 2, expected.height());
-    controller->scaleCommitCompleted(adqt::widgets::AdControlScaleContext::fromDprs(
-                                         window.devicePixelRatioF(), window.devicePixelRatioF()),
-                                     window.size());
+    controller->requestScaleCommit();
     settleQueuedRefreshes();
     require(window.size() == expected && window.rect().contains(window.paletteHost()->geometry()),
             "a DPI commit must reconcile the actual frame with the prepared content");
@@ -1301,10 +1319,7 @@ void dpiCommitPresentsContentWhenUpdatesResume() {
             window.hide();
         }
         monitor.painted = false;
-        controller->scaleCommitCompleted(
-            adqt::widgets::AdControlScaleContext::fromDprs(window.devicePixelRatioF(),
-                                                           window.devicePixelRatioF()),
-            window.size());
+        controller->requestScaleCommit();
         if (hiddenDuringCommit) {
             window.show();
         }

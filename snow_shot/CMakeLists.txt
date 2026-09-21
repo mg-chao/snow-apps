@@ -4462,6 +4462,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-adqt-dpi-stable-tests
         COMMAND snow-shot-adqt-dpi-stable-tests
     )
+    add_test(NAME snow-shot-toolbar-control-scaling-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --dpi-scaling-only -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-control-scaling-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-adqt-dpi-stable-offscreen-tests
+        COMMAND snow-shot-adqt-dpi-stable-tests -platform offscreen)
+    set_tests_properties(snow-shot-adqt-dpi-stable-offscreen-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-floating-toolbar-dpi-transaction-offscreen-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --dpi-frame-reconcile-only -platform offscreen)
+    set_tests_properties(snow-shot-floating-toolbar-dpi-transaction-offscreen-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     if(WIN32)
         set_tests_properties(snow-shot-adqt-dpi-stable-tests PROPERTIES
             ENVIRONMENT

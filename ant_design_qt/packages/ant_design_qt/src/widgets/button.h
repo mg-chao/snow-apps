@@ -152,6 +152,9 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
 
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
+  // Unscaled design metrics; inherited Qt setters retain their usual semantics.
+  void setReferenceFont(const QFont& font);
+  void setReferenceIconSize(const QSize& size);
   void prepareControlScale(const AdControlScaleContext& context) override;
   void commitControlScale(const AdControlScaleContext& context) override;
 

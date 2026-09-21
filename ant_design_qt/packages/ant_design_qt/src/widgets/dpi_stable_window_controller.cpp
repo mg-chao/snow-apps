@@ -98,6 +98,7 @@ LRESULT CALLBACK dpiStableSubclassProc(HWND hwnd, UINT message, WPARAM wParam, L
 AdDpiStableWindowController::AdDpiStableWindowController(QWidget* window, QObject* parent)
     : QObject(parent ? parent : window), window_(window) {
   qRegisterMetaType<AdDpiStableWindowDiagnostics>();
+  qRegisterMetaType<AdDpiStableWindowTransition>();
   if (window_) {
     window_->installEventFilter(this);
     installForCurrentWinId();
@@ -105,7 +106,10 @@ AdDpiStableWindowController::AdDpiStableWindowController(QWidget* window, QObjec
   }
 }
 
-AdDpiStableWindowController::~AdDpiStableWindowController() { removeSubclass(); }
+AdDpiStableWindowController::~AdDpiStableWindowController() {
+  removeSubclass();
+  finishNativeTransition();
+}
 
 QWidget* AdDpiStableWindowController::window() const { return window_; }
 
@@ -113,7 +117,8 @@ void AdDpiStableWindowController::setScaleScope(AdControlScaleScope* scope) { sc
 
 AdControlScaleScope* AdDpiStableWindowController::scaleScope() const { return scaleScope_; }
 
-bool AdDpiStableWindowController::captureBaseline(qreal referenceDpr) {
+bool AdDpiStableWindowController::captureBaseline(qreal referenceDpr,
+                                                  const QSize& physicalClientExtent) {
   if (!window_) {
     return false;
   }
@@ -151,12 +156,18 @@ bool AdDpiStableWindowController::captureBaseline(qreal referenceDpr) {
     next.frameSize = next.clientSize;
     next.frameGeometry = QRect(window_->pos(), next.frameSize);
   }
+  if (physicalClientExtent.isValid() && !physicalClientExtent.isEmpty()) {
+    const QSize frameMargins = next.frameSize - next.clientSize;
+    next.clientSize = physicalClientExtent;
+    next.frameSize = physicalClientExtent + frameMargins;
+  }
   baseline_ = next;
   diagnostics_.finalPhysicalGeometry = baseline_.frameGeometry;
   return true;
 }
 
 void AdDpiStableWindowController::resetBaseline() {
+  ++transitionGeneration_;
   const quint64 nextGeneration = baseline_.generation + 1;
   baseline_ = PhysicalBaseline{};
   baseline_.generation = nextGeneration;
@@ -170,7 +181,36 @@ bool AdDpiStableWindowController::hasBaseline() const { return baseline_.valid()
 qreal AdDpiStableWindowController::referenceDpr() const { return baseline_.referenceDpr; }
 QSize AdDpiStableWindowController::stablePhysicalFrameSize() const { return baseline_.frameSize; }
 QSize AdDpiStableWindowController::stablePhysicalClientSize() const { return baseline_.clientSize; }
-QRect AdDpiStableWindowController::nativeFrameGeometry() const { return baseline_.frameGeometry; }
+QRect AdDpiStableWindowController::nativeFrameGeometry() const {
+  return currentNativeFrameGeometry();
+}
+
+void AdDpiStableWindowController::setPhysicalContentOffset(const QPointF& offset) {
+  physicalContentOffset_ = offset;
+}
+
+bool AdDpiStableWindowController::restorePhysicalContentAnchor(const QPointF& anchor,
+                                                               const QPointF& offset) {
+  if (!window_ || physicalDragActive()) return false;
+  const QRect frame = currentNativeFrameGeometry();
+  const QPoint topLeft = stableNativeTopLeft((anchor - offset).toPoint(), frame.size());
+#if defined(Q_OS_WIN) || defined(_WIN32)
+  if (usesWindowsNativeWindows()) {
+    if (!SetWindowPos(nativePointerFromInteger<HWND>(subclassWinId_), nullptr, topLeft.x(),
+                      topLeft.y(), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE))
+      return false;
+  } else
+#endif
+  {
+    window_->move(topLeft);
+  }
+  physicalContentOffset_ = offset;
+  baseline_.frameGeometry = currentNativeFrameGeometry();
+  syncAuxiliarySurfaces(baseline_.frameGeometry.topLeft() - frame.topLeft());
+  return true;
+}
+
+void AdDpiStableWindowController::requestScaleCommit() { queueScaleCommit(); }
 
 bool AdDpiStableWindowController::beginPhysicalDrag() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -198,9 +238,6 @@ bool AdDpiStableWindowController::beginPhysicalDrag(const QPointF& cursor) {
     }
     baseline_.frameGeometry = QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
                                     std::max(1L, frame.bottom - frame.top));
-    baseline_.frameSize = baseline_.frameGeometry.size();
-    baseline_.clientSize =
-        QSize(std::max(1L, client.right - client.left), std::max(1L, client.bottom - client.top));
   }
 #endif
   PhysicalDragSession drag;
@@ -235,6 +272,7 @@ bool AdDpiStableWindowController::moveForPhysicalCursor(const QPointF& cursor) {
 }
 
 QPoint AdDpiStableWindowController::dragFrameTopLeft() const {
+  if (!dragSession_) return currentNativeFrameGeometry().topLeft();
   const QPointF origin = dragSession_->lastCursor - dragSession_->cursorToFrameOffset;
   return stableNativeTopLeft(QPoint(qRound(origin.x()), qRound(origin.y())), baseline_.frameSize);
 }
@@ -333,8 +371,11 @@ bool AdDpiStableWindowController::eventFilter(QObject* watched, QEvent* event) {
         resetBaseline();
       } else if (baseline_.windowId != subclassWinId_) {
         resetBaseline();
-        QTimer::singleShot(0, this, [this]() {
-          if (window_ && subclassWinId_ && baseline_.windowId != subclassWinId_) {
+        const WId windowId = subclassWinId_;
+        const quint64 generation = transitionGeneration_;
+        QTimer::singleShot(0, this, [this, windowId, generation]() {
+          if (window_ && windowId == subclassWinId_ && generation == transitionGeneration_ &&
+              baseline_.windowId != subclassWinId_) {
             captureBaseline();
           }
         });
@@ -394,6 +435,8 @@ qreal AdDpiStableWindowController::currentDpr() const {
 }
 
 void AdDpiStableWindowController::queueScaleCommit() {
+  ++transitionGeneration_;
+  suspendPresentation();
   pendingCommit_.baselineGeneration = baseline_.generation;
   if (pendingCommit_.queued) {
     ++diagnostics_.coalescedCount;
@@ -419,7 +462,7 @@ QRect AdDpiStableWindowController::currentNativeFrameGeometry() const {
 }
 
 void AdDpiStableWindowController::commitPendingScale() {
-  if (!pendingCommit_.queued) return;
+  if (!pendingCommit_.queued || committing_) return;
   QElapsedTimer commitTimer;
   commitTimer.start();
   const PendingScaleCommit commit = pendingCommit_;
@@ -428,35 +471,75 @@ void AdDpiStableWindowController::commitPendingScale() {
     finishNativeTransition();
     return;
   }
-  // The commit publishes the DPR the window actually renders with right now. Native
-  // transitions can chain (nested WM_DPICHANGED, screen changes Qt applies on its own),
-  // so the state observed when the commit was queued may already be stale.
+  committing_ = true;
   const qreal dpr = AdControlScaleContext::normalizeDpr(currentDpr());
-  const QSize logicalExtent(std::max(1, qRound(baseline_.clientSize.width() / dpr)),
-                            std::max(1, qRound(baseline_.clientSize.height() / dpr)));
-  AdControlScaleContext context = AdControlScaleContext::fromDprs(baseline_.referenceDpr, dpr,
-                                                                  diagnostics_.transitionCount + 1);
-  if (scaleScope_) scaleScope_->publishScale(context, logicalExtent);
+  AdDpiStableWindowTransition transition;
+  transition.generation = transitionGeneration_;
+  transition.baselineGeneration = baseline_.generation;
+  transition.windowId = subclassWinId_;
+  transition.context =
+      AdControlScaleContext::fromDprs(baseline_.referenceDpr, dpr, transition.generation);
+  transition.physicalFrame = currentNativeFrameGeometry();
+  transition.physicalClientSize = baseline_.clientSize;
+  transition.logicalClientExtent = QSize(std::max(1, qRound(baseline_.clientSize.width() / dpr)),
+                                         std::max(1, qRound(baseline_.clientSize.height() / dpr)));
+  transition.physicalContentAnchor =
+      QPointF(transition.physicalFrame.topLeft()) + physicalContentOffset_;
+  // Geometry can now be reconciled, but no intermediate layout may paint.
+  nativeTransitionActive_ = false;
+  QPointer<AdDpiStableWindowController> guard(this);
+  if (scaleScope_) scaleScope_->publishScale(transition.context, transition.logicalClientExtent);
+  if (!guard) return;
+  emit scaleCommitReady(transition);
+  if (!guard) return;
+  ++diagnostics_.reconciliationCount;
+  committing_ = false;
+  if (!window_ || !hasBaseline() || transition.windowId != subclassWinId_ ||
+      transition.baselineGeneration != baseline_.generation ||
+      transition.generation != transitionGeneration_) {
+    // Reset/surface retirement already released presentation. A nested native
+    // transition owns the suspension until its latest commit is processed.
+    if (hasBaseline()) {
+      if (!pendingCommit_.queued)
+        queueScaleCommit();
+      else
+        QCoreApplication::postEvent(this, new QEvent(kScaleCommitEvent), Qt::HighEventPriority);
+    }
+    return;
+  }
+  syncAuxiliarySurfaces();
   lastCommittedDpr_ = dpr;
   baseline_.frameGeometry = currentNativeFrameGeometry();
   diagnostics_.newDpr = dpr;
   diagnostics_.finalPhysicalGeometry = baseline_.frameGeometry;
-  // Completion handlers own subsequent geometry and repaint decisions. Release
-  // the native resize/update guard before handing control back to them.
-  finishNativeTransition();
-  emit scaleCommitCompleted(context, logicalExtent);
-  syncAuxiliarySurfaces();
+  diagnostics_.committedGeneration = transition.generation;
   ++diagnostics_.transitionCount;
   diagnostics_.queuedCommitNanoseconds = commitTimer.nsecsElapsed();
+  finishNativeTransition();
+  if (!guard) return;
+  emit scaleCommitCompleted(transition.context, transition.logicalClientExtent);
+}
+
+void AdDpiStableWindowController::suspendPresentation() {
+  if (!window_ || presentationSuspended_) return;
+  presentationSuspended_ = true;
+  windowUpdatesWereEnabled_ = window_->updatesEnabled();
+  if (windowUpdatesWereEnabled_) window_->setUpdatesEnabled(false);
 }
 
 void AdDpiStableWindowController::finishNativeTransition() {
-  if (window_ && nativeTransitionActive_ && windowUpdatesWereEnabled_) {
-    window_->setUpdatesEnabled(true);
-    window_->update();
-  }
   nativeTransitionActive_ = false;
+  const bool resume = presentationSuspended_ && windowUpdatesWereEnabled_;
+  presentationSuspended_ = false;
   windowUpdatesWereEnabled_ = true;
+  if (window_ && resume) {
+    window_->setUpdatesEnabled(true);
+    // Layered windows must present even when the logical extent did not change.
+    if (window_->isVisible())
+      window_->repaint();
+    else
+      window_->update();
+  }
 }
 
 void AdDpiStableWindowController::syncAuxiliarySurfaces(const QPoint& physicalDelta) {
@@ -508,23 +591,26 @@ bool AdDpiStableWindowController::handleNativeMessage(void* message, qintptr* re
   const QPoint topLeft =
       dragSession_.has_value()
           ? dragFrameTopLeft()
-          : stableNativeTopLeft(QPoint(rect->left, rect->top), baseline_.frameSize);
+          : stableNativeTopLeft(currentNativeFrameGeometry().topLeft(), baseline_.frameSize);
   rect->left = topLeft.x();
   rect->top = topLeft.y();
   rect->right = rect->left + baseline_.frameSize.width();
   rect->bottom = rect->top + baseline_.frameSize.height();
   diagnostics_.oldDpr = lastCommittedDpr_;
   diagnostics_.newDpr = std::max<qreal>(1.0 / 96.0, HIWORD(msg->wParam) / 96.0);
-  if (window_ && !nativeTransitionActive_) {
-    windowUpdatesWereEnabled_ = window_->updatesEnabled();
-    if (windowUpdatesWereEnabled_) window_->setUpdatesEnabled(false);
-  }
+  suspendPresentation();
   nativeTransitionActive_ = true;
   // Qt's handler may re-enter this function: its SetWindowPos() can flip the window's
   // majority monitor again and deliver a nested WM_DPICHANGED before it returns. The
   // message payload therefore only describes an intermediate state; the commit reads
   // the window's final DPR and geometry once the message chain has unwound.
+  QPointer<AdDpiStableWindowController> guard(this);
+  const WId windowId = subclassWinId_;
   DefSubclassProc(msg->hwnd, msg->message, msg->wParam, msg->lParam);
+  if (!guard || windowId != subclassWinId_ || !hasBaseline()) {
+    if (result) *result = 0;
+    return true;
+  }
   if (!dragSession_.has_value()) {
     // Outside a drag the frame position is owned by the native transition itself; track it
     // immediately so a nested transition measures its delta from the frame it actually moved.

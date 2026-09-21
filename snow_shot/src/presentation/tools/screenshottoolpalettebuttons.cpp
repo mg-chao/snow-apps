@@ -260,10 +260,7 @@ class StyleButtonIconBinding final : public QObject {
 };
 
 int scaledMetric(int value, qreal physicalScale) {
-    if (value <= 0) {
-        return 0;
-    }
-    return qMax(1, qRound(static_cast<qreal>(value) * physicalScale));
+    return adqt::widgets::scaleControlMetric(value, physicalScale);
 }
 
 QColor strokeWidthPreviewColor(bool active) {
@@ -849,7 +846,8 @@ void IconValuePreviewTrigger::paintEvent(QPaintEvent* event) {
         return;
     }
 
-    const int iconSide = qMin(m_iconSize, qMin(width(), height()));
+    const int iconSide = qMin(adqt::widgets::scaleControlMetric(m_iconSize, m_physicalScale),
+                              qMin(width(), height()));
     const QRect iconRect((width() - iconSide) / 2, (height() - iconSide) / 2, iconSide, iconSide);
     const QPixmap icon = snow_shot::presentation::icons::renderTintedIconPixmap(
         m_valueIconRef, iconRect.size(), devicePixelRatioF(), color);
@@ -1104,7 +1102,7 @@ void FillStylePreviewButton::paintEvent(QPaintEvent* event) {
 }
 
 IconNumericValuePreviewButton::IconNumericValuePreviewButton(QWidget* parent)
-    : adqt::widgets::AdButton(parent), m_baseFont(font()) {}
+    : adqt::widgets::AdButton(parent) {}
 
 void IconNumericValuePreviewButton::setValue(int value) {
     if (m_value == value) {
@@ -1168,14 +1166,6 @@ void IconNumericValuePreviewButton::setPhysicalScale(qreal scale) {
     }
     m_physicalScale = scale;
 
-    QFont scaledFont = m_baseFont;
-    if (scaledFont.pointSizeF() > 0.0) {
-        scaledFont.setPointSizeF(scaledFont.pointSizeF() * m_physicalScale);
-    } else if (scaledFont.pixelSize() > 0) {
-        scaledFont.setPixelSize(
-            std::max(1, qRound(static_cast<qreal>(scaledFont.pixelSize()) * m_physicalScale)));
-    }
-    setFont(scaledFont);
     update();
 }
 
@@ -1605,12 +1595,6 @@ void configureScreenshotToolPaletteSelectEditor(ScreenshotToolPaletteSelectEdito
         tokens.metrics.controlHeight = metrics.buttonSize;
         editor.select->setComponentTokens(tokens);
     }
-    // Editors can be materialized after the host publishes its scale. Apply the
-    // current toolbar scale to their contents as well as their outer geometry.
-    auto context = adqt::widgets::controlScaleContextFor(editor.select);
-    context.logicalScale = metrics.physicalScale;
-    editor.select->prepareControlScale(context);
-    editor.select->commitControlScale(context);
     editor.select->setFixedSize(qMax(1, qRound(editor.baseWidth * metrics.physicalScale)),
                                 qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
     stampScreenshotToolbarReferenceWidth(editor.select, editor.baseWidth);
@@ -1644,8 +1628,7 @@ void configureToolbarButton(adqt::widgets::AdButton* button, const char* tooltip
 
     applySharedButtonAccessibility(button, tooltip);
     button->setSizeClass(sizeClass);
-    button->setIconSize(QSize(scaledMetric(metrics.iconSize, metrics.physicalScale),
-                              scaledMetric(metrics.iconSize, metrics.physicalScale)));
+    button->setReferenceIconSize(QSize(metrics.iconSize, metrics.iconSize));
     button->setFixedSize(scaledMetric(metrics.buttonSize, metrics.physicalScale),
                          scaledMetric(metrics.buttonSize, metrics.physicalScale));
     stampScreenshotToolbarReferenceWidth(button, metrics.buttonSize);
@@ -1692,8 +1675,7 @@ void configureScreenshotToolPaletteStyleRadioButtonGroup(
             radio->setProperty(STYLE_RADIO_BASE_ICON_SIZE_PROPERTY, baseIconSize);
         }
 
-        radio->setIconSize(QSize(scaledMetric(baseIconSize.width(), metrics.physicalScale),
-                                 scaledMetric(baseIconSize.height(), metrics.physicalScale)));
+        radio->setReferenceIconSize(baseIconSize);
         radio->setFixedSize(scaledMetric(baseSize.width(), metrics.physicalScale),
                             scaledMetric(baseSize.height(), metrics.physicalScale));
         stampScreenshotToolbarReferenceWidth(radio, baseSize.width());
@@ -1793,7 +1775,6 @@ createScreenshotToolPaletteStrokeWidthButton(QWidget* parent, const char* toolti
     button->setStrokeWidth(strokeWidth);
     button->setActiveStrokeWidth(summary);
     button->setTextFallbackEnabled(summary);
-    button->setPhysicalScale(metrics.physicalScale);
     if (summary) {
         button->setCursor(Qt::SplitVCursor);
     }
@@ -1808,7 +1789,6 @@ createScreenshotToolPaletteNumericValueButton(QWidget* parent, const char* toolt
     configureScreenshotToolPaletteStyleButton(button, tooltip, metrics);
     button->setValue(value);
     button->setSuffix(suffix);
-    button->setPhysicalScale(metrics.physicalScale);
     button->setCursor(Qt::SplitVCursor);
     return button;
 }
@@ -1824,7 +1804,6 @@ createScreenshotToolPaletteColorButton(QWidget* parent, const char* tooltip, con
     button->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
     button->setSwatchColor(color);
     button->setSwatchBorderVisible(swatchBorderVisible);
-    button->setPhysicalScale(metrics.physicalScale);
     return button;
 }
 
@@ -1863,8 +1842,7 @@ void configureScreenshotToolPaletteIconValuePreviewTrigger(
     }
 
     configureScreenshotToolPaletteStyleButton(trigger, nullptr, metrics);
-    trigger->setIconSize(scaledMetric(metrics.iconSize, metrics.physicalScale));
-    trigger->setPhysicalScale(metrics.physicalScale);
+    trigger->setIconSize(metrics.iconSize);
 }
 
 StrokeStylePreviewButton*
@@ -1876,7 +1854,6 @@ createScreenshotToolPaletteStrokeStyleButton(QWidget* parent, const char* toolti
     button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
     button->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
     button->setStrokeStyle(strokeStyle);
-    button->setPhysicalScale(metrics.physicalScale);
     return button;
 }
 
@@ -1890,7 +1867,6 @@ FillStylePreviewButton* createScreenshotToolPaletteFillStyleButton(
     button->setFillColor(color);
     button->setFillStyle(fillStyle);
     button->setOuterBorderVisible(summary);
-    button->setPhysicalScale(metrics.physicalScale);
     return button;
 }
 
@@ -1917,7 +1893,6 @@ void configureScreenshotToolPaletteCornerRadiusEditor(
     configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
     button->setFixedWidth(scaledMetric(CORNER_RADIUS_EDITOR_WIDTH, metrics.physicalScale));
     stampScreenshotToolbarReferenceWidth(button, CORNER_RADIUS_EDITOR_WIDTH);
-    button->setPhysicalScale(metrics.physicalScale);
 }
 
 IconNumericValuePreviewButton* createScreenshotToolPaletteIconNumericValueButton(
@@ -1943,7 +1918,6 @@ void configureScreenshotToolPaletteIconNumericValueButton(
     configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
     button->setFixedWidth(scaledMetric(WATERMARK_NUMERIC_EDITOR_WIDTH, metrics.physicalScale));
     stampScreenshotToolbarReferenceWidth(button, WATERMARK_NUMERIC_EDITOR_WIDTH);
-    button->setPhysicalScale(metrics.physicalScale);
 }
 
 IconNumericValuePreviewButton*
@@ -1971,7 +1945,6 @@ void configureScreenshotToolPaletteRecordingDelayEditor(
     configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
     button->setFixedWidth(scaledMetric(RECORDING_DELAY_EDITOR_WIDTH, metrics.physicalScale));
     stampScreenshotToolbarReferenceWidth(button, RECORDING_DELAY_EDITOR_WIDTH);
-    button->setPhysicalScale(metrics.physicalScale);
 }
 
 void StrokeWidthPreviewButton::commitControlScale(

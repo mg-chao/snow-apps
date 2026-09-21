@@ -105,15 +105,15 @@ popupButtonMetrics(const ScreenshotToolPaletteButtonMetrics& toolbarMetrics) {
     return metrics;
 }
 
-void resetPopupButtonControlScale(adqt::widgets::AdButton* button) {
-    if (button == nullptr) {
+void ensurePopupControlScope(QWidget* content) {
+    if (content == nullptr)
         return;
+    auto* scope = content->findChild<adqt::widgets::AdControlScaleScope*>(
+        QString(), Qt::FindDirectChildrenOnly);
+    if (scope == nullptr) {
+        scope = new adqt::widgets::AdControlScaleScope(content, content);
+        scope->applyCurrentScaleToSubtree(content);
     }
-
-    const adqt::widgets::AdControlScaleContext popupContext =
-        adqt::widgets::AdControlScaleContext::fromDprs(1.0, 1.0);
-    button->prepareControlScale(popupContext);
-    button->commitControlScale(popupContext);
 }
 
 void observePopupLifecycle(QObject* popup, const ScreenshotToolPaletteEditorServices& services) {
@@ -225,15 +225,13 @@ void connectColorPickerChanges(adqt::widgets::AdColorPicker* picker, QObject* re
     }
 }
 
-void resetPickerPopupContent(adqt::widgets::AdColorPicker* picker,
-                             const ScreenshotToolPaletteButtonMetrics& metrics) {
+void ensurePickerPopupScope(adqt::widgets::AdColorPicker* picker,
+                            const ScreenshotToolPaletteButtonMetrics& metrics) {
     if (picker == nullptr) {
         return;
     }
     if (QWidget* content = picker->popupContent()) {
-        for (adqt::widgets::AdButton* button : content->findChildren<adqt::widgets::AdButton*>()) {
-            resetPopupButtonControlScale(button);
-        }
+        ensurePopupControlScope(content);
     }
     if (screenshotToolPaletteMetricsApplyTo(metrics, picker)) {
         activateWidgetLayoutTree(picker);
@@ -321,7 +319,6 @@ void refreshScreenshotToolPaletteColorPickerMetrics(
     auto* trigger = dynamic_cast<ColorPickerTrigger*>(picker->triggerContent());
     if (trigger != nullptr && screenshotToolPaletteMetricsApplyTo(metrics, trigger)) {
         configureScreenshotToolPaletteStyleButton(trigger, nullptr, metrics);
-        trigger->setPhysicalScale(metrics.physicalScale);
     }
     configureColorPickerMetrics(picker, metrics);
 }
@@ -368,7 +365,6 @@ void ScreenshotToolPaletteColorPresets::refreshMetrics(
     for (ColorSwatchButton* button : m_buttons) {
         if (screenshotToolPaletteMetricsApplyTo(metrics, button)) {
             configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
-            button->setPhysicalScale(metrics.physicalScale);
         }
     }
 }
@@ -540,7 +536,7 @@ void ScreenshotToolPaletteColorEditor::refreshMetrics(
 
 void ScreenshotToolPaletteColorEditor::resetPopupMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    resetPickerPopupContent(m_picker, metrics);
+    ensurePickerPopupScope(m_picker, metrics);
 }
 
 void ScreenshotToolPaletteColorEditor::release() {
@@ -709,7 +705,7 @@ void ScreenshotToolPaletteStrokeEditor::refreshMetrics(
 
 void ScreenshotToolPaletteStrokeEditor::resetPopupMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    resetPickerPopupContent(m_picker, metrics);
+    ensurePickerPopupScope(m_picker, metrics);
 }
 
 void ScreenshotToolPaletteStrokeEditor::release() {
@@ -881,13 +877,12 @@ void ScreenshotToolPaletteFillEditor::refreshMetrics(
             continue;
         }
         configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
-        button->setPhysicalScale(metrics.physicalScale);
     }
 }
 
 void ScreenshotToolPaletteFillEditor::resetPopupMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    resetPickerPopupContent(m_picker, metrics);
+    ensurePickerPopupScope(m_picker, metrics);
 }
 
 void ScreenshotToolPaletteFillEditor::release() {
@@ -1068,7 +1063,7 @@ void ScreenshotToolPaletteWidthColorEditor::refreshMetrics(
 
 void ScreenshotToolPaletteWidthColorEditor::resetPopupMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    resetPickerPopupContent(m_picker, metrics);
+    ensurePickerPopupScope(m_picker, metrics);
 }
 
 void ScreenshotToolPaletteWidthColorEditor::release() {
@@ -1203,21 +1198,12 @@ void ScreenshotToolPaletteNumericPresetEditor::refreshMetrics(
     refreshRootMetrics(metrics);
     if (screenshotToolPaletteMetricsApplyTo(metrics, m_summary)) {
         configureScreenshotToolPaletteStyleButton(m_summary, nullptr, metrics);
-        if (auto* stroke = dynamic_cast<StrokeWidthPreviewButton*>(m_summary)) {
-            stroke->setPhysicalScale(metrics.physicalScale);
-        }
-        if (auto* numeric = dynamic_cast<NumericValuePreviewButton*>(m_summary)) {
-            numeric->setPhysicalScale(metrics.physicalScale);
-        }
     }
     for (adqt::widgets::AdButton* button : m_presets) {
         if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
             continue;
         }
         configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
-        if (auto* stroke = dynamic_cast<StrokeWidthPreviewButton*>(button)) {
-            stroke->setPhysicalScale(metrics.physicalScale);
-        }
     }
 }
 
@@ -1427,7 +1413,6 @@ void ScreenshotToolPaletteFontEditor::refreshMetrics(
     };
     if (applies(m_sizeSummary)) {
         configureScreenshotToolPaletteStyleButton(m_sizeSummary, nullptr, metrics);
-        m_sizeSummary->setPhysicalScale(metrics.physicalScale);
     }
     for (adqt::widgets::AdButton* button : m_sizePresets) {
         if (applies(button)) {
@@ -1585,7 +1570,7 @@ void ScreenshotToolPaletteIconOptionEditor::refreshMetrics(
         configureScreenshotToolPaletteIconValuePreviewTrigger(m_trigger, metrics);
     }
     for (adqt::widgets::AdButton* button : m_buttons) {
-        resetPopupButtonControlScale(button);
+        ensurePopupControlScope(button->parentWidget());
     }
 }
 
@@ -1593,7 +1578,7 @@ void ScreenshotToolPaletteIconOptionEditor::resetPopupMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     static_cast<void>(metrics);
     for (adqt::widgets::AdButton* button : m_buttons) {
-        resetPopupButtonControlScale(button);
+        ensurePopupControlScope(button->parentWidget());
     }
 }
 

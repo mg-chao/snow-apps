@@ -1052,6 +1052,32 @@ QSize AdButton::sizeHint() const {
 
 QSize AdButton::minimumSizeHint() const { return sizeHint(); }
 
+void AdButton::setReferenceFont(const QFont& font) {
+  if (!d_->referenceMetricsCaptured) {
+    d_->referenceIconSize = iconSize();
+    d_->referenceMetricsCaptured = true;
+  }
+  if (d_->referenceFont == font) return;
+  d_->referenceFont = font;
+  prepareControlScale(d_->controlScale);
+  commitControlScale(d_->controlScale);
+  updateGeometry();
+  update();
+}
+
+void AdButton::setReferenceIconSize(const QSize& size) {
+  if (!d_->referenceMetricsCaptured) {
+    d_->referenceFont = font();
+    d_->referenceMetricsCaptured = true;
+  }
+  if (d_->referenceIconSize == size) return;
+  d_->referenceIconSize = size;
+  prepareControlScale(d_->controlScale);
+  commitControlScale(d_->controlScale);
+  updateGeometry();
+  update();
+}
+
 void AdButton::prepareControlScale(const AdControlScaleContext& context) {
   Q_UNUSED(context)
   d_->sizeHintCacheValid = false;
@@ -1065,17 +1091,9 @@ void AdButton::commitControlScale(const AdControlScaleContext& context) {
     d_->referenceMetricsCaptured = true;
   }
   d_->controlScale = context;
-  const qreal scale = context.logicalScale;
-  QFont scaledFont = d_->referenceFont;
-  if (scaledFont.pixelSize() > 0) {
-    scaledFont.setPixelSize(qMax(1, qRound(scaledFont.pixelSize() * scale)));
-  } else if (scaledFont.pointSizeF() > 0.0) {
-    scaledFont.setPointSizeF(scaledFont.pointSizeF() * scale);
-  }
-  setFont(scaledFont);
+  setFont(scaleControlFont(d_->referenceFont, d_->controlScale.logicalScale));
   if (d_->referenceIconSize.isValid()) {
-    setIconSize(QSize(qMax(1, qRound(d_->referenceIconSize.width() * scale)),
-                      qMax(1, qRound(d_->referenceIconSize.height() * scale))));
+    setIconSize(scaleControlSize(d_->referenceIconSize, d_->controlScale.logicalScale));
   }
   d_->sizeHintCacheValid = false;
   syncIsolatedBusyIndicatorSurface();

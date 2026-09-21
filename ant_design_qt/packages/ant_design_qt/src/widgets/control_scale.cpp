@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QLayout>
+#include <QScopeGuard>
 #include <QVariant>
 #include <QWidget>
 
@@ -83,110 +84,153 @@ bool AdControlScaleScope::publishScale(qreal referenceDpr, qreal currentDpr,
 
 bool AdControlScaleScope::publishScale(const AdControlScaleContext& requested,
                                        const QSize& logicalClientExtent) {
-  if (!root_) {
+  if (!root_) return false;
+  if (publishing_) {
+    pendingContext_ = requested;
+    pendingExtent_ = logicalClientExtent;
+    pending_ = true;
     return false;
   }
-
-  AdControlScaleContext next = AdControlScaleContext::fromDprsAndContentScale(
+  const auto next = AdControlScaleContext::fromDprsAndContentScale(
       requested.referenceDpr, requested.currentDpr, requested.contentScale, context_.revision + 1);
-  if (context_.equivalentTo(next) && logicalClientExtent_ == logicalClientExtent) {
-    return false;
-  }
-
-  const QList<AdControlScaleParticipant*> participants = participantsInSubtree(root_);
-
-  const bool updatesWereEnabled = root_->updatesEnabled();
-  const QWidget* topLevel = root_->window();
-  const bool submitRootUpdate = updatesWereEnabled && (topLevel == root_ || topLevel == nullptr ||
-                                                       topLevel->updatesEnabled());
-  if (updatesWereEnabled) {
-    root_->setUpdatesEnabled(false);
-  }
-
+  if (context_.equivalentTo(next) && logicalClientExtent_ == logicalClientExtent) return false;
+  publishing_ = true;
   context_ = next;
   logicalClientExtent_ = logicalClientExtent;
   root_->setProperty(kScaleContextProperty, contextVariant(context_));
-  for (AdControlScaleParticipant* participant : participants) {
-    participant->prepareControlScale(context_);
+  QPointer<AdControlScaleScope> guard(this);
+  applyScale(root_);
+  if (!guard) return true;
+  emit scaleCommitted(context_, logicalClientExtent_);
+  if (!guard) return true;
+  publishing_ = false;
+  if (pending_) {
+    const auto pendingContext = pendingContext_;
+    const auto pendingExtent = pendingExtent_;
+    pending_ = false;
+    publishScale(pendingContext, pendingExtent);
   }
-  for (AdControlScaleParticipant* participant : participants) {
-    participant->commitControlScale(context_);
-  }
+  return true;
+}
 
-  if (logicalClientExtent_.isValid() && !logicalClientExtent_.isEmpty()) {
-    root_->resize(logicalClientExtent_);
-  }
+AdControlScaleScope::~AdControlScaleScope() {
+  if (root_) root_->setProperty(kScaleContextProperty, QVariant());
+}
 
-  // Committing a select scale can rebuild its tag widgets. Enumerate the live
-  // subtree after commits so event cleanup never visits deleted children.
-  for (QWidget* widget : root_->findChildren<QWidget*>()) {
-    QCoreApplication::removePostedEvents(widget, QEvent::LayoutRequest);
+bool AdControlScaleScope::ownsWidget(const QWidget* widget) const {
+  for (const QWidget* current = widget; current; current = current->parentWidget()) {
+    if (current == root_) return true;
+    if (current->isWindow() || current->property(kScaleContextProperty).isValid()) return false;
   }
-  QCoreApplication::removePostedEvents(root_, QEvent::LayoutRequest);
+  return false;
+}
 
-  if (QLayout* layout = root_->layout()) {
-    layout->invalidate();
-    layout->activate();
+void AdControlScaleScope::setSubtreeDeferred(QWidget* subtree, bool deferred) {
+  deferredSubtrees_.erase(
+      std::remove_if(deferredSubtrees_.begin(), deferredSubtrees_.end(),
+                     [subtree](const auto& item) { return !item || item == subtree; }),
+      deferredSubtrees_.end());
+  if (deferred && subtree && subtree != root_ && ownsWidget(subtree))
+    deferredSubtrees_.append(subtree);
+}
+
+bool AdControlScaleScope::isDeferred(const QWidget* widget, const QWidget* subtree) const {
+  for (const QWidget* current = widget; current && current != subtree;
+       current = current->parentWidget()) {
+    for (const auto& deferred : deferredSubtrees_)
+      if (deferred == current) return true;
   }
-  QCoreApplication::removePostedEvents(root_, QEvent::LayoutRequest);
+  return false;
+}
 
-  if (updatesWereEnabled) {
-    root_->setUpdatesEnabled(true);
-    if (submitRootUpdate) {
-      root_->update();
+QList<QPointer<QWidget>> AdControlScaleScope::widgetsInSubtree(QWidget* subtree) const {
+  QList<QPointer<QWidget>> widgets;
+  if (!subtree || !ownsWidget(subtree)) return widgets;
+  widgets.append(subtree);
+  for (QWidget* child : subtree->findChildren<QWidget*>()) {
+    if (ownsWidget(child)) widgets.append(child);
+  }
+  return widgets;
+}
+
+void AdControlScaleScope::applyScale(QWidget* subtree) {
+  QPointer<AdControlScaleScope> guard(this);
+  QPointer<QWidget> guardedRoot(subtree);
+  auto widgets = widgetsInSubtree(subtree);
+  if (widgets.isEmpty()) return;
+  const bool updatesWereEnabled = subtree->updatesEnabled();
+  if (updatesWereEnabled) subtree->setUpdatesEnabled(false);
+  const auto restoreUpdates = qScopeGuard([guardedRoot, updatesWereEnabled]() {
+    if (guardedRoot && updatesWereEnabled) {
+      guardedRoot->setUpdatesEnabled(true);
+      if (guardedRoot->window()->updatesEnabled()) guardedRoot->update();
+    }
+  });
+  const auto context = context_;
+  QList<QPointer<QWidget>> visited;
+  while (!widgets.isEmpty()) {
+    for (const auto& widget : widgets) {
+      if (!widget || !ownsWidget(widget) || isDeferred(widget, subtree)) continue;
+      if (auto* participant = dynamic_cast<AdControlScaleParticipant*>(widget.data()))
+        participant->prepareControlScale(context);
+      if (!guard) return;
+    }
+    for (const auto& widget : widgets) {
+      if (!widget || !ownsWidget(widget) || isDeferred(widget, subtree)) continue;
+      if (auto* participant = dynamic_cast<AdControlScaleParticipant*>(widget.data()))
+        participant->commitControlScale(context);
+      if (!guard) return;
+    }
+    visited.append(widgets);
+    widgets.clear();
+    if (!guardedRoot) return;
+    // A participant may replace its subtree during commit. The replacement
+    // must receive both phases before layout or the first resumed paint.
+    for (const auto& widget : widgetsInSubtree(subtree)) {
+      if (!visited.contains(widget)) widgets.append(widget);
     }
   }
-  emit scaleCommitted(context_, logicalClientExtent_);
-  return true;
+  if (!guardedRoot) return;
+  if (subtree == root_ && logicalClientExtent_.isValid() && !logicalClientExtent_.isEmpty())
+    subtree->resize(logicalClientExtent_);
+  // Work from leaves to containers, including children rebuilt by a commit. Never
+  // discard unrelated LayoutRequest events or cross popup/nested-scope boundaries.
+  const auto liveWidgets = widgetsInSubtree(subtree);
+  for (auto it = liveWidgets.crbegin(); it != liveWidgets.crend(); ++it) {
+    if (!*it || !ownsWidget(*it) || isDeferred(*it, subtree)) continue;
+    if (auto* participant = dynamic_cast<AdControlScaleParticipant*>(it->data()))
+      participant->finishControlScale(context);
+    if (!guard) return;
+    if (*it && (*it)->layout()) {
+      (*it)->layout()->invalidate();
+      (*it)->layout()->activate();
+      if (!guard) return;
+    }
+  }
 }
 
 bool AdControlScaleScope::applyCurrentScaleToSubtree(QWidget* subtree) {
-  if (!root_ || !subtree || (subtree != root_ && !root_->isAncestorOf(subtree))) {
-    return false;
-  }
-
-  const QList<AdControlScaleParticipant*> participants = participantsInSubtree(subtree);
-  if (participants.isEmpty()) {
-    return false;
-  }
-
-  const bool updatesWereEnabled = subtree->updatesEnabled();
-  if (updatesWereEnabled) {
-    subtree->setUpdatesEnabled(false);
-  }
-  for (AdControlScaleParticipant* participant : participants) {
-    participant->prepareControlScale(context_);
-  }
-  for (AdControlScaleParticipant* participant : participants) {
-    participant->commitControlScale(context_);
-  }
-  if (QLayout* layout = subtree->layout()) {
-    layout->invalidate();
-    layout->activate();
-  }
-  if (updatesWereEnabled) {
-    subtree->setUpdatesEnabled(true);
-    subtree->update();
-  }
+  if (!subtree || !ownsWidget(subtree)) return false;
+  applyScale(subtree);
   return true;
 }
 
-QList<AdControlScaleParticipant*> AdControlScaleScope::participantsInSubtree(
-    QWidget* subtree) const {
-  QList<AdControlScaleParticipant*> participants;
-  if (!subtree) {
-    return participants;
-  }
-  const auto appendParticipant = [&participants](QWidget* widget) {
-    if (auto* participant = dynamic_cast<AdControlScaleParticipant*>(widget)) {
-      participants.append(participant);
-    }
-  };
-  appendParticipant(subtree);
-  for (QWidget* widget : subtree->findChildren<QWidget*>()) {
-    appendParticipant(widget);
-  }
-  return participants;
+int scaleControlMetric(int reference, qreal scale, int minimum) {
+  return reference <= 0 ? 0 : qMax(minimum, qRound(reference * scale));
+}
+
+QSize scaleControlSize(const QSize& reference, qreal scale) {
+  return QSize(scaleControlMetric(reference.width(), scale),
+               scaleControlMetric(reference.height(), scale));
+}
+
+QFont scaleControlFont(const QFont& reference, qreal scale) {
+  QFont font = reference;
+  if (font.pixelSize() > 0)
+    font.setPixelSize(scaleControlMetric(font.pixelSize(), scale));
+  else if (font.pointSizeF() > 0.0)
+    font.setPointSizeF(font.pointSizeF() * scale);
+  return font;
 }
 
 QVector<int> scaleCumulativeEdges(const QVector<qreal>& referenceEdges, qreal logicalScale,
@@ -234,6 +278,7 @@ AdControlScaleContext controlScaleContextFor(const QWidget* widget) {
     if (value.isValid() && value.canConvert<AdControlScaleContext>()) {
       return value.value<AdControlScaleContext>();
     }
+    if (current->isWindow()) break;
     current = current->parentWidget();
   }
   return AdControlScaleContext();

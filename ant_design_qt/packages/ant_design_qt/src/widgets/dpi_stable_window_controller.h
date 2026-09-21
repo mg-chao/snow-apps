@@ -25,9 +25,22 @@ struct AdDpiStableWindowDiagnostics {
   qint64 queuedCommitNanoseconds = 0;
   quint64 transitionCount = 0;
   quint64 coalescedCount = 0;
+  quint64 committedGeneration = 0;
+  quint64 reconciliationCount = 0;
   qreal oldDpr = 1.0;
   qreal newDpr = 1.0;
   QRect finalPhysicalGeometry;
+};
+
+struct AdDpiStableWindowTransition {
+  quint64 generation = 0;
+  quint64 baselineGeneration = 0;
+  WId windowId = 0;
+  AdControlScaleContext context;
+  QRect physicalFrame;
+  QSize physicalClientSize;
+  QSize logicalClientExtent;
+  QPointF physicalContentAnchor;
 };
 
 class AdDpiStableWindowController final : public QObject {
@@ -44,13 +57,19 @@ class AdDpiStableWindowController final : public QObject {
   // A non-positive referenceDpr uses the window's current display. A positive
   // value keeps logical scaling anchored to the caller's reference display
   // while the physical baseline is measured from the current window.
-  bool captureBaseline(qreal referenceDpr = 0.0);
+  // An explicit client extent establishes an intentional physical size before
+  // placement can generate nested DPI messages (frameless clients have no margins).
+  bool captureBaseline(qreal referenceDpr = 0.0, const QSize& physicalClientExtent = QSize());
   void resetBaseline();
   bool hasBaseline() const;
   qreal referenceDpr() const;
   QSize stablePhysicalFrameSize() const;
   QSize stablePhysicalClientSize() const;
   QRect nativeFrameGeometry() const;
+  void setPhysicalContentOffset(const QPointF& offset);
+  bool restorePhysicalContentAnchor(const QPointF& anchor, const QPointF& offset);
+  // Coalesces programmatic reconciliation with pending native DPI changes.
+  void requestScaleCommit();
 
   bool beginPhysicalDrag();
   bool beginPhysicalDrag(const QPointF& physicalCursor);
@@ -72,6 +91,8 @@ class AdDpiStableWindowController final : public QObject {
   bool handleNativeMessage(void* nativeMessage, qintptr* result);
 
  signals:
+  // Direct GUI-thread handlers reconcile content while presentation is suspended.
+  void scaleCommitReady(const adqt::widgets::AdDpiStableWindowTransition& transition);
   void scaleCommitCompleted(const adqt::widgets::AdControlScaleContext& context,
                             const QSize& logicalClientExtent);
 
@@ -118,6 +139,7 @@ class AdDpiStableWindowController final : public QObject {
   void queueScaleCommit();
   void commitPendingScale();
   void finishNativeTransition();
+  void suspendPresentation();
   void syncAuxiliarySurfaces(const QPoint& physicalDelta = QPoint());
 
   QPointer<QWidget> window_;
@@ -128,6 +150,10 @@ class AdDpiStableWindowController final : public QObject {
   std::optional<PhysicalDragSession> dragSession_;
   PendingScaleCommit pendingCommit_;
   qreal lastCommittedDpr_ = 1.0;
+  QPointF physicalContentOffset_;
+  quint64 transitionGeneration_ = 0;
+  bool presentationSuspended_ = false;
+  bool committing_ = false;
   bool nativeTransitionActive_ = false;
   bool windowUpdatesWereEnabled_ = true;
   AdDpiStableWindowDiagnostics diagnostics_;
@@ -136,3 +162,4 @@ class AdDpiStableWindowController final : public QObject {
 }  // namespace adqt::widgets
 
 Q_DECLARE_METATYPE(adqt::widgets::AdDpiStableWindowDiagnostics)
+Q_DECLARE_METATYPE(adqt::widgets::AdDpiStableWindowTransition)

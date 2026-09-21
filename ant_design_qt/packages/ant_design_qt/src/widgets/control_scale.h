@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QFont>
 #include <QObject>
 #include <QPointer>
 #include <QSize>
@@ -34,6 +35,8 @@ class AdControlScaleParticipant {
   // belong in commit, after every participant has observed the new context.
   virtual void prepareControlScale(const AdControlScaleContext& context) = 0;
   virtual void commitControlScale(const AdControlScaleContext& context) = 0;
+  // Containers finish layout only after descendants have committed their metrics.
+  virtual void finishControlScale(const AdControlScaleContext&) {}
 };
 
 class AdControlScaleScope final : public QObject {
@@ -41,6 +44,7 @@ class AdControlScaleScope final : public QObject {
 
  public:
   explicit AdControlScaleScope(QWidget* root, QObject* parent = nullptr);
+  ~AdControlScaleScope() override;
 
   QWidget* rootWidget() const;
   AdControlScaleContext context() const;
@@ -51,18 +55,33 @@ class AdControlScaleScope final : public QObject {
   bool publishScale(const AdControlScaleContext& requested,
                     const QSize& logicalClientExtent = QSize());
   bool applyCurrentScaleToSubtree(QWidget* subtree);
+  // Retained lazy editor rows receive the latest context explicitly on activation.
+  void setSubtreeDeferred(QWidget* subtree, bool deferred);
 
  signals:
   void scaleCommitted(const adqt::widgets::AdControlScaleContext& context,
                       const QSize& logicalClientExtent);
 
  private:
-  QList<AdControlScaleParticipant*> participantsInSubtree(QWidget* subtree) const;
+  bool ownsWidget(const QWidget* widget) const;
+  bool isDeferred(const QWidget* widget, const QWidget* subtree) const;
+  QList<QPointer<QWidget>> widgetsInSubtree(QWidget* subtree) const;
+  void applyScale(QWidget* subtree);
 
   QPointer<QWidget> root_;
   AdControlScaleContext context_;
   QSize logicalClientExtent_;
+  QList<QPointer<QWidget>> deferredSubtrees_;
+  bool publishing_ = false;
+  bool pending_ = false;
+  AdControlScaleContext pendingContext_;
+  QSize pendingExtent_;
 };
+
+// Reference metrics are never overwritten with their scaled result.
+int scaleControlMetric(int reference, qreal scale, int minimum = 1);
+QSize scaleControlSize(const QSize& reference, qreal scale);
+QFont scaleControlFont(const QFont& reference, qreal scale);
 
 // Rounds absolute reference-coordinate boundaries. Supplying targetExtent
 // forces the final edge to the native-derived logical client boundary.

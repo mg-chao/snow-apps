@@ -857,6 +857,32 @@ QSize AdRadio::sizeHint() const {
 
 QSize AdRadio::minimumSizeHint() const { return sizeHint(); }
 
+void AdRadio::setReferenceFont(const QFont& font) {
+  if (!referenceFontCaptured_) {
+    referenceIconSize_ = iconSize();
+    referenceFontCaptured_ = true;
+  }
+  if (referenceFont_ == font) return;
+  referenceFont_ = font;
+  prepareControlScale(controlScale_);
+  commitControlScale(controlScale_);
+  updateGeometry();
+  update();
+}
+
+void AdRadio::setReferenceIconSize(const QSize& size) {
+  if (!referenceFontCaptured_) {
+    referenceFont_ = font();
+    referenceFontCaptured_ = true;
+  }
+  if (referenceIconSize_ == size) return;
+  referenceIconSize_ = size;
+  prepareControlScale(controlScale_);
+  commitControlScale(controlScale_);
+  updateGeometry();
+  update();
+}
+
 void AdRadio::prepareControlScale(const AdControlScaleContext& context) {
   Q_UNUSED(context)
   styleCache_.reset();
@@ -869,16 +895,9 @@ void AdRadio::commitControlScale(const AdControlScaleContext& context) {
     referenceFontCaptured_ = true;
   }
   controlScale_ = context;
-  QFont scaledFont = referenceFont_;
-  if (scaledFont.pixelSize() > 0) {
-    scaledFont.setPixelSize(qMax(1, qRound(scaledFont.pixelSize() * context.logicalScale)));
-  } else if (scaledFont.pointSizeF() > 0.0) {
-    scaledFont.setPointSizeF(scaledFont.pointSizeF() * context.logicalScale);
-  }
-  setFont(scaledFont);
+  setFont(scaleControlFont(referenceFont_, controlScale_.logicalScale));
   if (referenceIconSize_.isValid()) {
-    setIconSize(QSize(qMax(1, qRound(referenceIconSize_.width() * context.logicalScale)),
-                      qMax(1, qRound(referenceIconSize_.height() * context.logicalScale))));
+    setIconSize(scaleControlSize(referenceIconSize_, controlScale_.logicalScale));
   }
   styleCache_.reset();
 }

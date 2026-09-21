@@ -50,10 +50,10 @@ FeatureFamily featureFamilyFor(presentation::settings::SettingsGlobalMouseAction
 }
 
 bool isFeatureAvailable(FeatureFamily feature) {
-    (void)feature;
 #ifdef Q_OS_MACOS
-    return feature == FeatureFamily::Screenshot;
+    return feature != FeatureFamily::ScreenRecording;
 #else
+    (void)feature;
     return true;
 #endif
 }
