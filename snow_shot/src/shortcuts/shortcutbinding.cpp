@@ -3,6 +3,7 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QRegularExpression>
 #include <QSet>
 
 #include <algorithm>
@@ -211,20 +212,39 @@ QString canonicalPortableText(const QString& text, bool allowModifierOnlyShift) 
     if (trimmed.isEmpty()) {
         return {};
     }
-    const auto replaceModifier = [&trimmed](const QString& pattern, const QString& replacement) {
-        trimmed.replace(QRegularExpression(pattern, QRegularExpression::CaseInsensitiveOption),
-                        replacement);
+    struct ModifierReplacement {
+        QRegularExpression pattern;
+        QString replacement;
     };
     // Accept common human/native spellings, but always store Qt PortableText.
     // In the shared domain Ctrl is the primary shortcut modifier (Command on
     // macOS); physical Control remains explicitly represented by Meta.
-    replaceModifier(QStringLiteral("\\b(?:control|ctrl)\\b"), QStringLiteral("Ctrl"));
-    replaceModifier(QStringLiteral("\\b(?:command|cmd)\\b"), QStringLiteral("Ctrl"));
-    replaceModifier(QStringLiteral("\\boption\\b"), QStringLiteral("Alt"));
-    replaceModifier(QStringLiteral("\\balt\\b"), QStringLiteral("Alt"));
-    replaceModifier(QStringLiteral("\\bshift\\b"), QStringLiteral("Shift"));
-    replaceModifier(QStringLiteral("\\b(?:windows|win|super|meta)\\b"), QStringLiteral("Meta"));
-    replaceModifier(QStringLiteral("\\bnum\\b"), QStringLiteral("Num"));
+    // Reuse the fixed expressions across all shortcut consumers. Per-thread storage
+    // keeps lazy regex compilation local while avoiding compilation on every call.
+    static thread_local const ModifierReplacement replacements[] = {
+        {QRegularExpression(QStringLiteral("\\b(?:control|ctrl)\\b"),
+                            QRegularExpression::CaseInsensitiveOption),
+         QStringLiteral("Ctrl")},
+        {QRegularExpression(QStringLiteral("\\b(?:command|cmd)\\b"),
+                            QRegularExpression::CaseInsensitiveOption),
+         QStringLiteral("Ctrl")},
+        {QRegularExpression(QStringLiteral("\\boption\\b"),
+                            QRegularExpression::CaseInsensitiveOption),
+         QStringLiteral("Alt")},
+        {QRegularExpression(QStringLiteral("\\balt\\b"), QRegularExpression::CaseInsensitiveOption),
+         QStringLiteral("Alt")},
+        {QRegularExpression(QStringLiteral("\\bshift\\b"),
+                            QRegularExpression::CaseInsensitiveOption),
+         QStringLiteral("Shift")},
+        {QRegularExpression(QStringLiteral("\\b(?:windows|win|super|meta)\\b"),
+                            QRegularExpression::CaseInsensitiveOption),
+         QStringLiteral("Meta")},
+        {QRegularExpression(QStringLiteral("\\bnum\\b"), QRegularExpression::CaseInsensitiveOption),
+         QStringLiteral("Num")},
+    };
+    for (const auto& replacement : replacements) {
+        trimmed.replace(replacement.pattern, replacement.replacement);
+    }
     if (allowModifierOnlyShift &&
         trimmed.compare(QStringLiteral("Shift"), Qt::CaseInsensitive) == 0) {
         return QStringLiteral("Shift");

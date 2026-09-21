@@ -27,6 +27,29 @@ void require(bool condition, const char* message) {
 
 void sharedShortcutDomainCanonicalizesIdentityAndDisplay() {
     namespace shortcut_domain = snow_shot::shortcuts;
+    const std::pair<QString, QString> aliases[] = {
+        {QStringLiteral(" control+c "), QStringLiteral("Ctrl+C")},
+        {QStringLiteral("cTrL+c"), QStringLiteral("Ctrl+C")},
+        {QStringLiteral("COMMAND+c"), QStringLiteral("Ctrl+C")},
+        {QStringLiteral("cmd+c"), QStringLiteral("Ctrl+C")},
+        {QStringLiteral("oPtIoN+a"), QStringLiteral("Alt+A")},
+        {QStringLiteral("ALT+a"), QStringLiteral("Alt+A")},
+        {QStringLiteral("sHiFt+a"), QStringLiteral("Shift+A")},
+        {QStringLiteral("WINDOWS+a"), QStringLiteral("Meta+A")},
+        {QStringLiteral("win+a"), QStringLiteral("Meta+A")},
+        {QStringLiteral("SuPeR+a"), QStringLiteral("Meta+A")},
+        {QStringLiteral("meta+a"), QStringLiteral("Meta+A")},
+        {QStringLiteral("nUm+1"), QStringLiteral("Num+1")},
+        {QStringLiteral("command+option+shift+a"), QStringLiteral("Ctrl+Alt+Shift+A")},
+        {QStringLiteral("Ctrl++"), QStringLiteral("Ctrl++")},
+        {QStringLiteral("Ctrl+Num+1"), QStringLiteral("Ctrl+Num+1")},
+    };
+    for (int pass = 0; pass < 2; ++pass) {
+        for (const auto& [input, expected] : aliases) {
+            require(shortcut_domain::canonicalPortableText(input) == expected,
+                    "modifier aliases must retain their meaning on first and repeated use");
+        }
+    }
     require(shortcut_domain::canonicalPortableText(QStringLiteral(" control+c ")) ==
                     QStringLiteral("Ctrl+C") &&
                 shortcut_domain::canonicalPortableText(QStringLiteral("Command+C")) ==
