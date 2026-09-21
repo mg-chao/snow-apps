@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotimageconversionview.h"
+#include "snow_shot/platform/screenshotnative.h"
 
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrtextlayer.h"
@@ -290,6 +291,11 @@ bool ScreenshotRecognitionWindow::present(const Config& config) {
     m_formattedTextDevicePixelRatio = config.formattedTextDevicePixelRatio;
     m_presentationMode = config.presentationMode;
     if (m_presentationMode == PresentationMode::TopLevelWindow) {
+#ifdef Q_OS_MACOS
+        // Recognition is selection content: keep it below the toolbar and popovers,
+        // even when showing or activating this window raises its native surface.
+        snow_shot::platform::configureScreenshotRecognitionWindow(this);
+#endif
         static_cast<void>(winId());
         if (QWindow* handle = windowHandle()) {
             handle->setScreen(config.screen);

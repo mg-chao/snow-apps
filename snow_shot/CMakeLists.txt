@@ -4300,6 +4300,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-floating-toolbar-drag-tests)
+    add_test(NAME snow-shot-toolbar-stable-tool-frame-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --stable-tool-frame-only -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-stable-tool-frame-tests PROPERTIES
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE)
     add_test(NAME snow-shot-border-cursor-tool-restoration-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --border-cursor-only -platform offscreen)
     set_tests_properties(snow-shot-border-cursor-tool-restoration-tests PROPERTIES LABELS "unit")
@@ -6975,7 +6979,7 @@ if(APPLE)
     get_property(_screenshot_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
     foreach(_target IN LISTS _screenshot_targets)
         get_target_property(_sources ${_target} SOURCES)
-        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp|screenshotoverlaywindow.cpp")
+        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp|screenshotoverlaywindow.cpp|screenshotrecognitionwindow.cpp")
             if(NOT _sources MATCHES "platform/macos/screenshotnative.mm")
                 target_sources(${_target} PRIVATE src/platform/macos/screenshotnative.mm)
             endif()
@@ -7045,6 +7049,11 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-macos-overlay-initialization-tests)
     set_tests_properties(snow-shot-macos-overlay-initialization-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-recognition-stacking-native-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests --recognition-stacking-only -platform cocoa)
+    set_tests_properties(snow-shot-macos-recognition-stacking-native-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
+        RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-macos-screenshot-stacking-native-tests
         COMMAND snow-shot-macos-overlay-initialization-tests -platform cocoa)
     set_tests_properties(snow-shot-macos-screenshot-stacking-native-tests PROPERTIES

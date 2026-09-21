@@ -1286,6 +1286,56 @@ class ToolbarPaintExtentMonitor final : public QObject {
     ScreenshotFloatingToolPaletteWindow& m_window;
 };
 
+class ToolbarGeometryEventMonitor final : public QObject {
+  public:
+    int moves = 0;
+    int resizes = 0;
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        moves += event->type() == QEvent::Move;
+        resizes += event->type() == QEvent::Resize;
+        return false;
+    }
+};
+
+void toolSwitchPreservesNativeFrame() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "stable toolbar frame tests require isolated settings");
+    {
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow window(commands);
+        window.show();
+        using Tool = ScreenshotToolPalette::Tool;
+        for (const QString& size : {QStringLiteral("normal"), QStringLiteral("small")}) {
+            window.setToolbarSize(size);
+            for (bool above : {false, true}) {
+                window.setActiveTool(Tool::Select);
+                window.setStyleToolbarAboveMain(above);
+                window.moveContentTo(QPoint(300, 300));
+                settleQueuedRefreshes();
+                const QRect frame = window.geometry();
+                const QPoint mainPosition = window.palette()->mainPanel()->mapToGlobal(QPoint());
+                ToolbarGeometryEventMonitor monitor;
+                window.installEventFilter(&monitor);
+                for (Tool tool : {Tool::Qr, Tool::Shape, Tool::Qr, Tool::Select, Tool::Qr}) {
+                    window.setActiveTool(tool);
+                    settleQueuedRefreshes();
+                    require(window.geometry() == frame &&
+                                window.palette()->mainPanel()->mapToGlobal(QPoint()) ==
+                                    mainPosition,
+                            "switching secondary rows must preserve the native frame and main row");
+                    require(monitor.moves == 0 && monitor.resizes == 0,
+                            "tool switches must not expose intermediate native moves or resizes");
+                }
+            }
+        }
+    }
+    storage.shutdown();
+}
+
 void dpiCommitReconcilesTheActualFrameBeforePainting() {
 #if !defined(Q_OS_MACOS)
     ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
@@ -2499,8 +2549,8 @@ void macosToolbarShadowClickThrough() {
                     }
                 }
                 require(popup, "real hover must open the drawing group popover");
-                // Masks cannot forward Cocoa events to a lower window. The native
-                // popup frame itself must not cover any of its trigger's pixels.
+                // Keep the popup's painted body and arrow clear of its trigger; the
+                // toolbar reserve is covered separately by native click-through tests.
                 const QRect triggerRect(trigger->mapToGlobal(QPoint()), trigger->size());
                 require(!popup->frameGeometry().intersects(triggerRect),
                         "popover native input frame must not overlap its trigger");
@@ -2519,6 +2569,44 @@ void macosToolbarShadowClickThrough() {
                 settleQueuedRefreshes();
             }
             for (int cycle = 0; cycle < 2; ++cycle) {
+                using Tool = ScreenshotToolPalette::Tool;
+                for (bool above : {false, true}) {
+                    window.setStyleToolbarAboveMain(above);
+                    for (Tool tool : {Tool::Select, Tool::Qr, Tool::Shape, Tool::Qr}) {
+                        window.setActiveTool(tool);
+                        settleQueuedRefreshes();
+                        require(
+                            macWindowHasShadow(&window),
+                            "fixed-frame click-through must work with the native shadow enabled");
+                        const QRect canvasInWindow(
+                            window.mapFromGlobal(underlying.mapToGlobal(QPoint())),
+                            underlying.size());
+                        const QRegion reserve =
+                            (QRegion(window.rect()) - window.mask())
+                                .intersected(canvasInWindow.adjusted(2, 2, -2, -2));
+                        QRect target;
+                        for (const QRect& rect : reserve) {
+                            if (rect.width() > 16 && rect.height() > 16 &&
+                                rect.width() * rect.height() > target.width() * target.height()) {
+                                target = rect;
+                            }
+                        }
+                        require(!target.isEmpty(),
+                                "fixed toolbar frame must expose a testable transparent reserve");
+                        const int before = canvasClicks;
+                        macPostClick(window.mapToGlobal(target.center()));
+                        require(canvasClicks == before + 1,
+                                "unused native frame must pass a complete click to the canvas");
+                        auto* pin = window.palette()->findChild<adqt::widgets::AdButton*>(
+                            QStringLiteral("screenshotPinToScreenButton"));
+                        require(pin != nullptr, "toolbar Pin button missing");
+                        const int pinBefore = commands.pinSelectionCount;
+                        macPostClick(pin->mapToGlobal(pin->rect().center()));
+                        require(commands.pinSelectionCount == pinBefore + 1 &&
+                                    canvasClicks == before + 1,
+                                "panel mask must retain button input after each row transition");
+                    }
+                }
                 const auto* panel = window.palette()->mainPanel();
                 for (const QPoint point : {QPoint(panel->width() / 2, panel->height() + 4),
                                            QPoint(-4, panel->height() / 2), QPoint(0, 0)}) {
@@ -2573,8 +2661,8 @@ void macosToolbarUsesLogicalGeometry() {
         const auto checkMask = [&]() {
             const QRegion panels = window.paletteHost()->interactiveHostRegion().translated(
                 window.paletteHost()->pos());
-            require(window.mask().boundingRect() == window.rect(),
-                    "macOS toolbar native frame must fit the panel bounds without shadow padding");
+            require(window.mask() == window.paletteHost()->surfaceHostRegion(),
+                    "macOS native mask must follow the panels inside the fixed frame");
             require(window.palette()->mainPanel()->graphicsEffect() == nullptr,
                     "toolbar shadows must not be painted into the native input backing image");
             require(!window.windowFlags().testFlag(Qt::NoDropShadowWindowHint),
@@ -2586,6 +2674,8 @@ void macosToolbarUsesLogicalGeometry() {
                     "unused backing-window space must be excluded from the mask");
             const QRect main =
                 window.palette()->mainPanel()->geometry().translated(window.palette()->pos());
+            require(!window.mask().contains(main.topLeft()),
+                    "fully transparent rounded corners must be excluded from native input");
             require(!window.mask().contains(main.topLeft() - QPoint(1, 1)),
                     "toolbar shadows must be outside the native input mask");
             QWidget* panel = window.palette()->mainPanel();
@@ -2624,6 +2714,8 @@ void macosToolbarUsesLogicalGeometry() {
             window.prepareForDisplay();
             settleQueuedRefreshes();
             const QSize logicalSize = window.size();
+            require(logicalSize == QSize(qRound(1242 * multiplier), qRound(142 * multiplier)),
+                    "macOS must share the fixed normal and small toolbar frame presets");
             const QSize contentSize = window.contentSizeHint();
             const QPoint anchor = window.contentPosition();
             for (const qreal dpr : {1.0, 2.0, 1.0, 2.0}) {
@@ -2781,6 +2873,10 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--stable-tool-frame-only"))) {
+            toolSwitchPreservesNativeFrame();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--border-cursor-only"))) {
             borderCursorSurvivesToolRestoration();
             return 0;
@@ -2791,6 +2887,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--macos-logical-only"))) {
+            toolSwitchPreservesNativeFrame();
             macosToolbarUsesLogicalGeometry();
             return 0;
         }

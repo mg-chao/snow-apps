@@ -3,7 +3,9 @@
 The screenshot drawing, pinned drawing, and recording toolbars share the floating
 palette window. On macOS their logical size depends only on the normal/small
 setting (1.0/0.8). Display DPR still controls raster resolution. The Windows
-physical-size controller is not installed on macOS.
+physical-size controller is not installed on macOS. Both platforms use the fixed
+1242 × 142 frame preset, scaled by the toolbar size setting. On macOS a panel mask
+excludes the unused native frame from input routing, while Cocoa draws the shadow.
 
 Build the affected targets with the provisioned Qt 6.11.1 kit:
 
@@ -70,12 +72,16 @@ shape-aware hit test. A deterministic offscreen proxy style with an inset bevel
 reproduces the original miss and verifies edge clicks, circle corners, and disabled
 buttons independently of the machine's style.
 
-A QWidget mask alone is insufficient: Cocoa's masked-out mouse-down path calls
-its responder chain rather than forwarding the click to the underlying window.
-Top-level macOS popups now have zero shadow margins, and floating toolbar windows
-fit their actual content instead of keeping a large backing-store reserve.
+The earlier investigation inferred that QWidget masks could not provide native
+click-through from Qt's masked-event responder path. That inference was too broad:
+real window-server clicks on an oversized toolbar reached the underlying canvas
+when the panel mask excluded the reserve, with native shadows enabled or disabled.
+Removing the mask blocked those clicks. The earlier content-fitting assertion
+checked a chosen window-size policy, not whether clicks reached their destination.
+Floating toolbars therefore keep the shared fixed frame and panel mask. Top-level
+macOS popups retain their separate zero-shadow-margin layout.
 Toolbar panels no longer paint a QGraphicsDropShadowEffect on macOS. Shadows are
-rendered by Cocoa outside the native frame; Qt window flags own their visibility,
+rendered by Cocoa outside the masked panel surfaces; Qt window flags own their visibility,
 including after recreation. The shared native helper only invalidates the shadow.
 
 Popup hover ownership follows the precise bubble and arrow paths. Native masks
@@ -83,15 +89,18 @@ instead cover their rectangular painted bounds, including border coverage and
 one mask cell for fractional-DPR rounding, so Cocoa cannot clip antialiased
 corners or arrows. These masks still exclude the
 unused arrow gutters; removing the mask entirely regresses native click delivery
-there. Toolbar masks likewise cover rectangular panel bounds to remove gaps
-between rows while retaining antialiased corners. In-window popups and other
+there. Toolbar masks expand the rounded surface paths for antialiased coverage before
+rounding their coordinates to integer mask cells. This excludes fully transparent
+corners as well as row gaps and unused frame space. A rectangular panel mask can
+still intercept clicks at an alpha-zero corner after switching row arrangements;
+repainting does not correct its input shape. In-window popups and other
 platforms retain their painted shadows.
 
 Focused checks (Debug or performance builds):
 
 ```sh
 ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
-  -R '^(adqt-popup-input-(shape|native)|adqt-popup-hover-recovery|snow-shot-macos-toolbar-(logical-[12]x|shadow-input)|snow-shot-toolbar-(popup-recovery|popover-lifecycle))-tests$'
+  -R '^(adqt-popup-input-(shape|native)|adqt-popup-hover-recovery|snow-shot-macos-toolbar-(logical-[12]x|shadow-input)|snow-shot-toolbar-(stable-tool-frame|popup-recovery|popover-lifecycle))-tests$'
 ```
 
 The offscreen tests cover hover ownership, unclipped popup rendering at 1x, 1.5x,
@@ -106,14 +115,24 @@ button activation. The popup fixture verifies both the underlying button and a
 popup option, including clicks through transparent corners and arrow gutters on
 all four sides after native recreation. The toolbar fixture opens real grouped-button
 popovers by hover, clicks trigger edges and centers, and checks shadow/corner
-click-through to the underlying canvas at both sizes and after recreation. It uses
+click-through to the underlying canvas at both sizes and after recreation. It also
+switches selection, barcode, and drawing rows in both row arrangements, clicks the
+unused native reserve with native shadows enabled, and verifies that toolbar
+buttons still receive their clicks. It uses
 production owner-window relationships and screenshot window stacking configuration,
 without artificially raising the popup. It asserts
 that the popup native frame does not overlap its trigger and restores the pointer
 when done.
 
-Negative controls restoring the old popup shadow margins and oversized toolbar
-frame fail respectively at the trigger-overlap and content-fitting assertions.
+The stable-frame test checks the main row and native window geometry while
+switching secondary rows, including barcode recognition with no secondary row. It
+records Move and Resize events, so returning to the right final position does not
+hide an intermediate native geometry change. The same check runs offscreen and
+inside the native toolbar geometry fixture. Main-row anchoring is applied within
+the geometry commit rather than repaired by a second move.
+
+A negative control restoring the old popup shadow margins fails at the
+trigger-overlap assertion.
 The earlier window-number query and mask-only fixtures were insufficient evidence
 of click delivery; native fixtures now verify complete clicks at their destinations.
 These checks do not replace physical-pointer validation on the affected machine.

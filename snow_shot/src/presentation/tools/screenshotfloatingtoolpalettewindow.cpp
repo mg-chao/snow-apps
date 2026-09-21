@@ -45,9 +45,7 @@
 namespace {
 namespace native = screenshot_floating_palette_native;
 
-#if !defined(Q_OS_MACOS)
 constexpr QSize kToolbarWindowPresetSize(1242, 142);
-#endif
 } // namespace
 
 ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
@@ -669,11 +667,13 @@ void ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange() {
 
     const bool restoreMainToolbarPosition =
         mainAnchorChanged && m_lastMainToolbarGlobalTopLeftValid && !m_draggingPalette;
-    const QPoint previousMainToolbarGlobalTopLeft = m_lastMainToolbarGlobalTopLeft;
-    refreshGeometryForVisibleContent(true);
     if (restoreMainToolbarPosition && !newMainRect.isEmpty()) {
-        moveContentTo(previousMainToolbarGlobalTopLeft - newMainRect.topLeft());
+        // Preserve the main row in the geometry commit itself. Restoring it with
+        // a second move exposes an intermediate native position when rows change.
+        m_lastRequestedContentPosition = m_lastMainToolbarGlobalTopLeft - newMainRect.topLeft();
+        m_lastRequestedContentPositionValid = true;
     }
+    refreshGeometryForVisibleContent(true);
     emit visibleContentChanged();
 }
 
@@ -1088,10 +1088,9 @@ void ScreenshotFloatingToolPaletteWindow::updateWindowMask() {
     if (m_paletteHost == nullptr) {
         return;
     }
-    // A QRegion rounds curves to integer rectangles. Cocoa also uses this mask
-    // to clip the backing layer, cutting off antialiased coverage and creating
-    // a stepped rim at the shadow boundary. Mask only the gaps between panels;
-    // their painted alpha supplies the smooth silhouette for AppKit's shadow.
+    // Cocoa uses this mask for input and backing-layer clipping. The host keeps
+    // antialiased edge coverage while excluding corners, gaps and unused frame
+    // space; painted alpha supplies the smooth silhouette for AppKit's shadow.
     const QRegion body =
         m_paletteHost->surfaceHostRegion().translated(m_paletteHost->pos()).intersected(rect());
     if (mask() != body) {
@@ -1252,15 +1251,11 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
 }
 
 QSize ScreenshotFloatingToolPaletteWindow::fixedWindowSizeHint() const {
-#if defined(Q_OS_MACOS)
-    // A native frame is also an input surface on Cocoa. Fit it to the visible
-    // rows; the Windows backing-store reserve must not cover the canvas.
-    return m_paletteHost != nullptr ? m_paletteHost->palette()->size() : QSize(1, 1);
-#else
+    // Keep the native frame stable across tool changes on every platform. Cocoa's
+    // panel mask excludes the transparent reserve from native input routing.
     const qreal scale = m_paletteHost != nullptr ? m_paletteHost->physicalScale() : 1.0;
     return QSize(qMax(1, qRound(kToolbarWindowPresetSize.width() * scale)),
                  qMax(1, qRound(kToolbarWindowPresetSize.height() * scale)));
-#endif
 }
 
 QPoint ScreenshotFloatingToolPaletteWindow::contentOffset() const {

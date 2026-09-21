@@ -40,6 +40,10 @@ struct ScreenshotNativeSettings {
 namespace snow_shot::platform {
 namespace {
 constexpr auto kScreenshotLayer = "snowScreenshotWindowLayer";
+constexpr int kOverlayLayer = 0;
+constexpr int kRecognitionLayer = 1;
+constexpr int kToolbarLayer = 2;
+constexpr int kPopupLayer = 3;
 
 char nativePolicyKey;
 
@@ -149,7 +153,7 @@ int screenshotLayer(QWindow* window, int modalFloor = 0) {
     const int ownerLayer = screenshotLayer(window->transientParent(), modalFloor);
     if (ownerLayer < 0)
         return -1;
-    const int layer = std::max(2, ownerLayer + 1);
+    const int layer = std::max(kPopupLayer, ownerLayer + 1);
     return window->modality() == Qt::NonModal ? layer : std::max(layer, modalFloor);
 }
 
@@ -174,7 +178,7 @@ void applyScreenshotLayer(QWidget* widget, int modalFloor) {
         const int ownerLayer =
             screenshotLayer(widget->parentWidget()->window()->windowHandle(), modalFloor);
         if (ownerLayer >= 0)
-            layer = std::max(2, ownerLayer + 1);
+            layer = std::max(kPopupLayer, ownerLayer + 1);
     }
     NSWindow* window = reinterpret_cast<NSView*>(widget->internalWinId()).window;
     if (layer < 0) {
@@ -203,7 +207,7 @@ void synchronizeScreenshotLayers() {
     // A selection modal and an OCR result can be siblings of the same overlay.
     // Transient depth alone cannot order them. Put modals above every visible
     // non-modal screenshot surface, regardless of its popup nesting depth.
-    int modalFloor = 2;
+    int modalFloor = kPopupLayer;
     for (QWidget* widget : windows) {
         if (!widget->isVisible())
             continue;
@@ -318,7 +322,7 @@ void registerScreenshotLayer(QWidget* widget, int layer) {
     }
     widget->setProperty(kScreenshotLayer, layer);
     static_cast<void>(widget->winId());
-    applyScreenshotLayer(widget, 2);
+    applyScreenshotLayer(widget, kPopupLayer);
     // A toolbar or popup may have been materialized before the overlay was shown.
     synchronizeScreenshotLayers();
 }
@@ -335,11 +339,15 @@ detail::WindowTarget windowTarget(pid_t owner, const QPoint* point) {
 }
 } // namespace
 void configureScreenshotOverlayWindow(QWidget* widget) {
-    registerScreenshotLayer(widget, 0);
+    registerScreenshotLayer(widget, kOverlayLayer);
+}
+
+void configureScreenshotRecognitionWindow(QWidget* widget) {
+    registerScreenshotLayer(widget, kRecognitionLayer);
 }
 
 void configureScreenshotToolbarWindow(QWidget* widget) {
-    registerScreenshotLayer(widget, 1);
+    registerScreenshotLayer(widget, kToolbarLayer);
 }
 
 quint32 screenshotDisplayAtCursor() {

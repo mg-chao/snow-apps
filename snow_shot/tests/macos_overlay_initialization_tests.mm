@@ -383,6 +383,34 @@ void adqtPopupPreservesScreenshotLayers(bool cocoa) {
         require(popup.parentWindow == owner && popup.level > owner.level,
                 "Cocoa popup ownership must preserve the screenshot's explicit layers");
     }
+    ToolFixture recognition;
+    snow_shot::platform::configureScreenshotRecognitionWindow(&recognition);
+    static_cast<void>(recognition.winId());
+    recognition.windowHandle()->setTransientParent(overlay.windowHandle());
+    for (int attempt = 0; attempt != 2; ++attempt) {
+        recognition.show();
+        recognition.raise();
+        recognition.activateWindow();
+        QCoreApplication::processEvents();
+        popover.show();
+        QCoreApplication::processEvents();
+        recognition.raise();
+        toolbar.raise();
+        QCoreApplication::processEvents();
+        require(content->isVisible(), "the toolbar popover must open above recognition results");
+        if (cocoa) {
+            NSWindow* result = reinterpret_cast<NSView*>(recognition.winId()).window;
+            NSWindow* canvas = reinterpret_cast<NSView*>(overlay.winId()).window;
+            NSWindow* owner = reinterpret_cast<NSView*>(toolbar.winId()).window;
+            NSWindow* popup = reinterpret_cast<NSView*>(content->window()->winId()).window;
+            require(result.level > canvas.level && result.level < owner.level &&
+                        owner.level < popup.level,
+                    "recognition results must stay below the toolbar and its open popover");
+        }
+        recognition.recreateSurface();
+        static_cast<void>(recognition.winId());
+        recognition.windowHandle()->setTransientParent(overlay.windowHandle());
+    }
     popover.hide();
 }
 
@@ -391,6 +419,12 @@ void adqtPopupPreservesScreenshotLayers(bool cocoa) {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     const bool cocoa = QGuiApplication::platformName() == QStringLiteral("cocoa");
+    if (app.arguments().contains(QStringLiteral("--recognition-stacking-only"))) {
+        @autoreleasepool {
+            adqtPopupPreservesScreenshotLayers(cocoa);
+        }
+        return 0;
+    }
     for (QScreen* screen : QGuiApplication::screens()) {
         auto display = ScreenshotGeometryMapper::preCaptureDisplayModel(*screen);
         require(display.active && display.image.isNull(), "preparation must not require an image");
