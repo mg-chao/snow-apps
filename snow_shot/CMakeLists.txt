@@ -3017,6 +3017,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-direct-capture-history-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
+    add_test(NAME snow-shot-scrolling-overlay-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --scrolling-overlay -platform offscreen)
+    set_tests_properties(snow-shot-scrolling-overlay-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-overlay-close-release-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --close-release-only -platform offscreen)
     set_tests_properties(snow-shot-direct-capture-history-rendering-tests PROPERTIES
@@ -7033,6 +7036,21 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-macos-recapture-focus-tests PRIVATE Qt6::Core)
     add_test(NAME snow-shot-macos-recapture-focus-tests COMMAND snow-shot-macos-recapture-focus-tests)
     set_tests_properties(snow-shot-macos-recapture-focus-tests PROPERTIES LABELS "unit;macos")
+
+    add_executable(snow-shot-macos-scrolling-input-tests
+        tests/macos_scrolling_input_tests.mm
+        src/platform/macos/screenshotnative.mm)
+    target_include_directories(snow-shot-macos-scrolling-input-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-scrolling-input-tests PRIVATE Qt6::Widgets
+        "-framework AppKit" "-framework ApplicationServices")
+    add_test(NAME snow-shot-macos-scrolling-input-tests
+        COMMAND snow-shot-macos-scrolling-input-tests)
+    set_tests_properties(snow-shot-macos-scrolling-input-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-scrolling-input-native-tests
+        COMMAND snow-shot-macos-scrolling-input-tests -platform cocoa)
+    set_tests_properties(snow-shot-macos-scrolling-input-native-tests PROPERTIES
+        LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 30)
 
     add_executable(snow-shot-macos-overlay-initialization-tests
         tests/macos_overlay_initialization_tests.mm

@@ -796,7 +796,7 @@ void requireChangedPixelsCoveredByDirtyRegion(const QImage& previous, const QIma
 }
 
 QColor sourceOverOpaqueBackground(const QColor& source, const QColor& background) {
-    const qreal alpha = source.alphaF();
+    const qreal alpha = static_cast<qreal>(source.alphaF());
     return QColor(qRound(source.red() * alpha + background.red() * (1.0 - alpha)),
                   qRound(source.green() * alpha + background.green() * (1.0 - alpha)),
                   qRound(source.blue() * alpha + background.blue() * (1.0 - alpha)), 255);
@@ -3879,6 +3879,15 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--overlay-native-surface-retirement"))) {
         overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
         overlayNativeSurfaceRetirementPreservesReusableRenderState();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--scrolling-overlay"))) {
+        scrollingModeClearsPassThroughMaskBeforeRestoringRenderer();
+        scrollingThumbnailIsAnEmbeddedScreenshotWidget();
+        scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits();
+        scrollingThumbnailAlignsWithTopEdgeSelection();
+        horizontalScrollingThumbnailPrefersAboveThenBelowSelection();
+        stableScrollingGeometryDoesNotReapplyWindowMask();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--overlay-pool-prewarm"))) {
