@@ -1,6 +1,7 @@
 #include "app/application_setup.h"
 #include "decoding/image_loader.h"
 #include "ui/viewer_window.h"
+#include "widgets/platform_compatibility.h"
 
 #include <snow/image/service.h>
 
@@ -47,6 +48,7 @@ int main(int argc, char* argv[]) {
     QElapsedTimer applicationTimer;
     applicationTimer.start();
     QApplication app(argc, argv);
+    adqt::widgets::initializePlatformCompatibility(app);
     snow::image_viewer::configureViewerApplicationIdentity(app);
 
     QCommandLineParser parser;

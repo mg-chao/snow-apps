@@ -2492,6 +2492,60 @@ void interruptedToolbarDragStopsMoving() {
 }
 
 #if defined(Q_OS_MACOS)
+void macosToolbarCrossDisplayDrag() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "native drag tests require isolated settings");
+    {
+        NoOpToolbarCommands commands;
+        QWidget owner;
+        QScreen* primary = QGuiApplication::primaryScreen();
+        owner.setGeometry(primary->geometry());
+        owner.show();
+        ScreenshotToolbarWindow window(commands);
+        window.setOwnerWindow(&owner);
+        window.setPlacementContext(primary, primary->geometry(), primary->geometry());
+        window.moveContentTo(primary->availableGeometry().topLeft() + QPoint(300, 200));
+        window.show();
+        settleQueuedRefreshes();
+        snow_shot::platform::configureScreenshotOverlayWindow(&owner);
+        snow_shot::platform::configureScreenshotToolbarWindow(&window);
+        macActivateApplication();
+        for (QScreen* destination : QGuiApplication::screens()) {
+            if (destination == primary)
+                continue;
+            for (QScreen* target : {destination, primary}) {
+                const QPoint start = window.contentPosition();
+                QWidget* handle = window.palette()->dragHandle();
+                const QPoint pointerStart = handle->mapToGlobal(handle->rect().center());
+                const QPoint end = target->availableGeometry().center() - window.rect().center() +
+                                   (window.contentPosition() - window.pos());
+                const QPoint delta = end - start;
+                const int steps = qMax(1, qMax(qAbs(delta.x()), qAbs(delta.y())) / 40);
+                const QSize size = window.size();
+                MacMouseDrag drag(pointerStart);
+                for (int step = 1; step <= steps; ++step) {
+                    const QPoint offset = (QPointF(delta) * step / steps).toPoint();
+                    drag.moveTo(pointerStart + offset);
+                    if (window.contentPosition() != start + offset || window.size() != size)
+                        qWarning() << "Toolbar drag" << "expected" << start + offset << "actual"
+                                   << window.contentPosition() << "size" << window.size() << size
+                                   << "pointer" << pointerStart + offset;
+                    require(window.contentPosition() == start + offset && window.size() == size,
+                            "toolbar must follow the cursor across displays without shifting or "
+                            "scaling");
+                }
+                drag.finish();
+                require(window.screen() == target && window.contentPosition() == end,
+                        "released toolbar must remain on its destination display");
+            }
+        }
+    }
+    storage.shutdown();
+}
+
 void macosToolbarShadowClickThrough() {
     require(macCanPostMouseEvents(),
             "native click test requires Accessibility event-posting access");
@@ -2882,6 +2936,12 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #if defined(Q_OS_MACOS)
+        if (app.arguments().contains(QStringLiteral("--macos-cross-display-only"))) {
+            if (QGuiApplication::screens().size() < 2 || !macCanPostMouseEvents())
+                return 77;
+            macosToolbarCrossDisplayDrag();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--macos-shadow-input-only"))) {
             macosToolbarShadowClickThrough();
             return 0;

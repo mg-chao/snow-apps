@@ -136,3 +136,25 @@ trigger-overlap assertion.
 The earlier window-number query and mask-only fixtures were insufficient evidence
 of click delivery; native fixtures now verify complete clicks at their destinations.
 These checks do not replace physical-pointer validation on the affected machine.
+
+## Controlled dragging across displays
+
+Floating palettes and recording regions own movement through Qt pointer events.
+AppKit server-side dragging must be disabled on their NSWindows; otherwise its
+screen-relative adjustment can move the frame a second time at a display seam.
+`configureControlledWindowDragging` retains this policy across native surface
+recreation and also covers pinned-image drawing palettes independently of their
+stacking owner. Dialogs and unrelated windows retain their native drag policy.
+
+The native toolbar and recording cases drag diagonally to every attached display
+and back, checking the cursor anchor, logical size, and final display. They need
+at least two displays and event-posting access, and otherwise skip with code 77:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-macos-(toolbar|recording)-cross-display-drag-tests$'
+```
+
+Keep the logical-size, interrupted-drag, recording-area, and native stacking
+checks alongside these cases. Offscreen DPR injection cannot reproduce AppKit's
+server-side screen adjustment.

@@ -21,6 +21,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
+#include "widgets/platform_compatibility.h"
 
 #include <functional>
 
@@ -2628,6 +2629,7 @@ class DemoWindow final : public QWidget {
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
+  adqt::widgets::initializePlatformCompatibility(app);
 
   if (QStyleFactory::keys().contains("Fusion", Qt::CaseInsensitive)) {
     app.setStyle(QStyleFactory::create("Fusion"));

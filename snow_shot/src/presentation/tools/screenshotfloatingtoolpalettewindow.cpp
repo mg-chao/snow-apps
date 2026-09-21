@@ -14,6 +14,7 @@
 #include "widgets/button.h"
 #if defined(Q_OS_MACOS)
 #include "widgets/detail/window_surface_mac_p.h"
+#include "snow_shot/platform/screenshotnative.h"
 #endif
 #include "widgets/select.h"
 #include "icon_renderer.h"
@@ -51,6 +52,9 @@ constexpr QSize kToolbarWindowPresetSize(1242, 142);
 ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     const ScreenshotToolPalette::Options& options, QWidget* parent)
     : QWidget(parent, native::windowFlags()) {
+#ifdef Q_OS_MACOS
+    snow_shot::platform::configureControlledWindowDragging(this);
+#endif
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.base_ctor");
     applyWindowAttributes();
 

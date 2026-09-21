@@ -330,6 +330,34 @@ void registerScreenshotLayer(QWidget* widget, int layer) {
     synchronizeScreenshotLayers();
 }
 
+// Custom Qt drags must be the only owner of window movement. AppKit's
+// server-side drag loop otherwise applies its own screen-relative frame change
+// after QWidget::move(), causing a second translation at display boundaries.
+class ControlledWindowDragging final : public QObject {
+  public:
+    explicit ControlledWindowDragging(QWidget* widget) : QObject(widget), m_widget(widget) {
+        widget->installEventFilter(this);
+        apply();
+    }
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::WinIdChange || event->type() == QEvent::Show)
+            apply();
+        return false;
+    }
+
+  private:
+    void apply() {
+        if (!m_widget->internalWinId())
+            return;
+        NSWindow* window = reinterpret_cast<NSView*>(m_widget->internalWinId()).window;
+        window.movable = NO;
+        window.movableByWindowBackground = NO;
+    }
+    QWidget* m_widget;
+};
+
 // AppKit's per-window ignoresMouseEvents controls WindowServer routing. A Qt
 // mask only clips the view; rejecting an event there cannot deliver it to another
 // application's window. Observe pointer movement on both sides of the hole so
@@ -468,7 +496,18 @@ detail::WindowTarget windowTarget(pid_t owner, const QPoint* point) {
     return result;
 }
 } // namespace
+void configureControlledWindowDragging(QWidget* widget) {
+    if (!widget || QGuiApplication::platformName() != QStringLiteral("cocoa"))
+        return;
+    for (QObject* child : widget->children()) {
+        if (dynamic_cast<ControlledWindowDragging*>(child))
+            return;
+    }
+    new ControlledWindowDragging(widget);
+}
+
 void configureScreenshotOverlayWindow(QWidget* widget) {
+    configureControlledWindowDragging(widget);
     registerScreenshotLayer(widget, kOverlayLayer);
 }
 
@@ -491,6 +530,7 @@ void setScreenshotInputPassThroughRegion(QWidget* widget, const QRegion& region)
 }
 
 void configureScreenshotToolbarWindow(QWidget* widget) {
+    configureControlledWindowDragging(widget);
     registerScreenshotLayer(widget, kToolbarLayer);
 }
 

@@ -20,6 +20,10 @@
 #include <QWheelEvent>
 #include <QTimer>
 #include <QDebug>
+#ifdef Q_OS_MACOS
+#include "macos_native_input.h"
+#include <stdexcept>
+#endif
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
 #include <cstdlib>
@@ -104,6 +108,41 @@ QRect testRecordingRegion() {
 }
 
 #ifdef Q_OS_MACOS
+void nativeLogicalDrag() {
+    ScreenRecordingAreaWindow area;
+    QScreen* primary = QGuiApplication::primaryScreen();
+    area.setRecordingRegion(
+        QRect(primary->availableGeometry().topLeft() + QPoint(200, 200), QSize(321, 241)));
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    area.show();
+    QCoreApplication::processEvents();
+    macActivateApplication();
+    for (QScreen* destination : QGuiApplication::screens()) {
+        if (destination == primary)
+            continue;
+        for (QScreen* target : {destination, primary}) {
+            const QRect origin = area.recordingRegion();
+            const QPoint start = origin.center();
+            const QPoint delta = target->availableGeometry().center() - start;
+            const int steps = qMax(1, qMax(qAbs(delta.x()), qAbs(delta.y())) / 40);
+            MacMouseDrag drag(start);
+            for (int step = 1; step <= steps; ++step) {
+                const QPoint offset = (QPointF(delta) * step / steps).toPoint();
+                drag.moveTo(start + offset);
+                if (area.recordingRegion() != origin.translated(offset)) {
+                    qWarning() << "Recording drag" << "expected" << origin.translated(offset)
+                               << "actual" << area.recordingRegion() << "pointer" << start + offset;
+                    throw std::runtime_error("recording drag must preserve the cursor anchor and "
+                                             "logical size across displays");
+                }
+            }
+            drag.finish();
+            require(area.recordingRegion() == origin.translated(delta) && area.screen() == target,
+                    "recording region must remain on the destination display after release");
+        }
+    }
+}
+
 void logicalRegionDragAndResize() {
     ScreenRecordingAreaWindow area;
     area.setRecordingRegion(QRect(-231, -119, 321, 241));
@@ -769,6 +808,21 @@ int main(int argc, char** argv) {
     }
 #endif
 #ifdef Q_OS_MACOS
+    if (application.arguments().contains(QStringLiteral("--native-logical-drag-only"))) {
+        int result = 0;
+        if (QGuiApplication::screens().size() < 2 || !macCanPostMouseEvents()) {
+            result = 77;
+        } else {
+            try {
+                nativeLogicalDrag();
+            } catch (const std::exception& error) {
+                std::cerr << error.what() << '\n';
+                result = 1;
+            }
+        }
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return result;
+    }
     logicalRegionDragAndResize();
 #endif
     geometryAndTransparentCanvasFollowThePhysicalSelection();

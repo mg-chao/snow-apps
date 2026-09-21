@@ -102,7 +102,7 @@ void screenshotNativeSettingsFollowOwnership() {
                                             NSWindowCollectionBehaviorFullScreenAuxiliary;
             require(native.level > reinterpret_cast<NSView*>(overlay.winId()).window.level &&
                         native.collectionBehavior == screenshotBehavior &&
-                        !native.hidesOnDeactivate,
+                        !native.hidesOnDeactivate && native.movable,
                     "capture ownership must immediately apply all screenshot native settings");
             // Repeated synchronization must not replace the saved ordinary settings.
             overlay.raise();
@@ -165,6 +165,14 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
         overlay.show();
         selectionToolbar.show();
         toolbar.show();
+        if (cocoa) {
+            for (QWidget* controlled :
+                 {static_cast<QWidget*>(&overlay), static_cast<QWidget*>(&toolbar)}) {
+                NSWindow* native = reinterpret_cast<NSView*>(controlled->winId()).window;
+                require(!native.movable && !native.movableByWindowBackground,
+                        "Qt-controlled screenshot surfaces must disable AppKit dragging");
+            }
+        }
         static_cast<void>(recognition.winId());
         recognition.windowHandle()->setTransientParent(overlay.windowHandle());
         recognition.show();

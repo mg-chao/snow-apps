@@ -92,18 +92,42 @@ new failure cases were observed before their corrections. No full suite ran.
 
 ## Fractional pointer drag regression — 2026-09-21
 
-Physical pointer events can contain fractional logical coordinates that do not
-land on a backing pixel. The Cocoa adapter aligns the requested frame with the
-target screen's backing grid before verifying native readback. Qt geometry rounds
-the origin independently from the size, so a fractional move cannot enlarge the
-window. Otherwise, the first pointer update is rejected and the drag rolls back.
+Physical pointer events can contain fractional logical coordinates. The Cocoa
+adapter now rounds the origin once to QWidget's integer logical frame, applies
+the menu-bar constraint, and commits through Qt. Writing a second fractional
+NSWindow frame after QWidget::setGeometry created competing geometry authorities:
+AppKit readback could differ from the requested backing-aligned position and
+cancel the drag. Rounding the origin separately preserves the window size.
 
-The offscreen interaction, Cocoa placement, and native pointer drag regressions
-failed before this correction. The native drag case sends repeated gestures with
-fractional intermediate positions and checks movement while the button is held,
-unchanged size, and the committed release position. It skips with code 77 without
-event-posting permission. The focused interaction, Retina interaction, Cocoa
-placement, native drag, and pixel-alignment checks passed after the correction.
+The offscreen interaction case covers fractional movement and cancellation.
+The Cocoa placement case verifies exact logical-frame readback. The native drag
+case sends fractional intermediate positions, crosses each attached display in
+both directions, and verifies the cursor anchor, size, and released position.
+It skips with code 77 without event-posting permission.
+
+## Hidden placement and pin creation regression — 2026-09-22
+
+Pin presentation verifies native geometry before showing its first frame. The
+screenshot export path commonly checks out a prewarmed, hidden window whose
+NSWindow already exists with an older frame. QWidget::setGeometry only updates
+its cached geometry while hidden; using native readback immediately afterward
+therefore rejected creation. A fresh pin could also fail when placement needed
+to apply the menu-bar constraint before show.
+
+The Cocoa adapter commits hidden geometry through QWindow::setGeometry before
+verification. Both widget and native state retain the same integer logical target,
+without a second direct NSWindow frame write or briefly showing the wrong frame.
+
+The native placement fixture now checks hidden placement, show, hide/replacement,
+and every attached display. The creation fixture exercises fresh and prewarmed
+ScreenshotPinnedWindow instances through successful first-frame completion. It
+runs offscreen and on Cocoa; the native fixture reproduced the rejection before
+the correction. Run only these and the related pin drag checks:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-((macos-)?pinned-creation|macos-pinned-(window|drag|pixel-alignment)|pinned-(controlled|retina)-interaction)-tests$'
+```
 
 ## Recorded validation — 2026-09-21
 

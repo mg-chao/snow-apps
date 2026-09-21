@@ -143,20 +143,21 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_window->setScreen(screen);
         if (!attach())
             return false;
-        // Real pointer events carry subpixel coordinates. AppKit aligns window
-        // origins to backing pixels and constrains the top below the menu bar.
-        // Resolve both native policies before verification, rather than treating
-        // their legitimate adjustments as a failed move and cancelling the drag.
-        const NSRect alignedFrame =
-            [nativeScreen backingAlignedRect:cocoaRect(pinnedDesktopRect(placement, *screen))
-                                     options:NSAlignMinXNearest | NSAlignMinYNearest |
-                                             NSAlignWidthNearest | NSAlignHeightNearest];
-        const NSRect frame = [m_native constrainFrameRect:alignedFrame toScreen:nativeScreen];
-        const QRectF target = desktopRect(frame);
-        // Round the origin independently: enclosing a fractional rectangle
-        // would grow the logical extent during an ordinary window move.
-        m_window->setGeometry(QRect(target.topLeft().toPoint(), placement.windowSize));
-        [m_native setFrame:frame display:YES animate:NO];
+        // QWidget owns an integer logical frame. Quantize the pointer-derived
+        // origin once, then apply Cocoa's menu-bar constraint before committing
+        // through Qt. A second, fractional NSWindow write makes Qt and AppKit
+        // disagree about the frame and can cancel an otherwise valid drag.
+        const QRectF requested = pinnedDesktopRect(placement, *screen);
+        const QRect logicalFrame(requested.topLeft().toPoint(), placement.windowSize);
+        const NSRect frame = [m_native constrainFrameRect:cocoaRect(logicalFrame)
+                                                 toScreen:nativeScreen];
+        const QRect target(desktopRect(frame).topLeft().toPoint(), placement.windowSize);
+        m_window->setGeometry(target);
+        // QWidget defers native geometry changes while hidden. Pin creation and
+        // pooled shells must commit their frame before show() and before native
+        // verification; QWindow applies it immediately through the same Qt path.
+        if (!m_window->isVisible())
+            m_window->windowHandle()->setGeometry(target);
         const auto actual = this->placement();
         // Backing-display changes must not alter the logical frame.
         return actual && actual->windowSize == placement.windowSize &&

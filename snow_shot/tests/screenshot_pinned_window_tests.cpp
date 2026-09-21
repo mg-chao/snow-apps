@@ -9633,6 +9633,47 @@ void pinnedOddPixelExtentRemainsSharp() {
 }
 
 #ifdef Q_OS_MACOS
+void pinnedCreationCommitsHiddenGeometry() {
+    for (QScreen* screen : QGuiApplication::screens()) {
+        for (bool prewarmed : {false, true}) {
+            ScreenshotPinnedWindow window;
+            window.setAttribute(Qt::WA_DeleteOnClose, false);
+            if (prewarmed)
+                require(window.prewarm(QGuiApplication::primaryScreen()),
+                        "pin shell prewarming must succeed");
+            require(!window.isVisible(), "a prepared pin must remain hidden");
+            QImage image(321, 181, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::white);
+            ScreenshotPinnedWindow::Config config;
+            config.screen = screen;
+            config.nativeGeometry = physicalPinGeometry(*screen, QPoint(70, 0), image.size());
+            config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+            config.initialWindowSize = image.size();
+            config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+            config.automaticTextRecognition = false;
+            bool completed = false;
+            bool succeeded = false;
+            require(window.present(config,
+                                   [&](bool success, QImage) {
+                                       completed = true;
+                                       succeeded = success;
+                                   }),
+                    "fresh and prewarmed pins must present after hidden native placement");
+            QElapsedTimer timer;
+            timer.start();
+            while (!completed && timer.elapsed() < 5000)
+                waitForUi(5);
+            require(completed && succeeded && window.isVisible(),
+                    "pin creation must publish a successful first frame");
+            const QRect expected(
+                QPoint(config.nativeGeometry.x(), screen->availableGeometry().top()), image.size());
+            require(window.currentNativeGeometry() == expected && window.geometry() == expected,
+                    "pin creation must preserve size and commit the menu-constrained position");
+            window.close();
+        }
+    }
+}
+
 void pinnedNativePointerDragging() {
     CGEventRef current = CGEventCreate(nullptr);
     const CGPoint originalPointer = CGEventGetLocation(current);
@@ -9664,11 +9705,21 @@ void pinnedNativePointerDragging() {
         CFRelease(release);
         waitForUi(100);
     });
-    for (const QPointF delta : {QPointF(30, 20), QPointF(-30, -20), QPointF(30, -20)}) {
+    const QPointF initialPointer = window.mapToGlobal(QPoint(30, 20));
+    QList<QPointF> destinations{initialPointer + QPointF(30, 20), initialPointer,
+                                initialPointer + QPointF(30, -20)};
+    for (QScreen* destination : QGuiApplication::screens()) {
+        if (destination != screen) {
+            destinations.append(QPointF(destination->availableGeometry().center()));
+            destinations.append(initialPointer);
+        }
+    }
+    for (const QPointF& destination : destinations) {
         const QRect before = window.currentNativeGeometry();
-        const QPointF beforePosition = window.persistenceSnapshot().placement.position;
+        const QPointF beforePosition = window.pos();
         const QPointF start = window.mapToGlobal(QPoint(30, 20));
-        const QPointF end = start + delta;
+        const QPointF end = destination;
+        const QPointF delta = end - start;
         for (const auto& [type, point] : {
                  std::pair{kCGEventMouseMoved, start},
                  std::pair{kCGEventLeftMouseDown, start},
@@ -9685,29 +9736,33 @@ void pinnedNativePointerDragging() {
             CGEventPost(kCGHIDEventTap, event);
             CFRelease(event);
             waitForUi(100);
+            if (type == kCGEventLeftMouseDown)
+                require(ScreenshotPinnedWindowTestAccess::interactionActive(window),
+                        "native mouse press must reach the pin before testing drag movement");
             if (type == kCGEventLeftMouseDragged) {
-                const auto actual = window.persistenceSnapshot().placement;
+                const QPointF actual = window.pos();
                 const bool tracking = ScreenshotPinnedWindowTestAccess::interactionActive(window);
                 QPointF expectedPosition = beforePosition + point - start;
                 // AppKit constrains a native window below the menu bar even
                 // when the pointer would place its top edge above that boundary.
-                expectedPosition.setY(
-                    std::max(expectedPosition.y(),
-                             qreal(screen->availableGeometry().top() - screen->geometry().top())));
+                QScreen* target = QGuiApplication::screenAt(point.toPoint());
+                if (target)
+                    expectedPosition.setY(
+                        std::max(expectedPosition.y(), qreal(target->availableGeometry().top())));
                 const bool valid = tracking && window.size() == before.size() &&
-                                   QLineF(actual.position, expectedPosition).length() <=
-                                       1. / screen->devicePixelRatio();
+                                   actual == QPointF(expectedPosition.toPoint());
                 if (!valid)
                     qWarning() << "Native drag mismatch" << "delta" << delta << "pointer" << point
-                               << "expected" << expectedPosition << "actual" << actual.position
-                               << "size" << window.size() << "active" << tracking;
+                               << "expected" << expectedPosition << "actual" << actual << "size"
+                               << window.size() << "active" << tracking;
                 require(
                     valid,
-                    "native pin must track subpixel input on the backing grid without cancelling");
+                    "native pin must round subpixel input to its logical frame without cancelling");
             }
         }
         QRect expected = before.translated(delta.toPoint());
-        expected.moveTop(std::max(expected.top(), screen->availableGeometry().top()));
+        if (QScreen* target = QGuiApplication::screenAt(end.toPoint()))
+            expected.moveTop(std::max(expected.top(), target->availableGeometry().top()));
         require(window.currentNativeGeometry() == expected,
                 "native pointer drag must retain its platform-constrained released position");
     }
@@ -9746,7 +9801,8 @@ void pinnedControlledInteractionAndGestures() {
     const QSize originalWidgetSize = window.size();
     require(ScreenshotPinnedWindowTestAccess::beginControlled(window, cursor),
             "fractional move did not start");
-    for (const QPointF delta : {QPointF(.13, .21), QPointF(15.37, 10.19), QPointF(30, 20)}) {
+    for (const QPointF delta : {QPointF(.13, .21), QPointF(.5, .5), QPointF(-.5, -.5),
+                                QPointF(15.37, 10.19), QPointF(30, 20)}) {
         ScreenshotPinnedWindowTestAccess::updateControlled(window, cursor + delta);
         require(ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
                     window.size() == originalWidgetSize &&
@@ -9942,6 +9998,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--creation-only"))) {
+            pinnedCreationCommitsHiddenGeometry();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--native-controlled-drag-only"))) {
             if (!CGPreflightPostEventAccess())
                 return 77;

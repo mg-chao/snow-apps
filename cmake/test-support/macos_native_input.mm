@@ -68,3 +68,39 @@ MacCursorRestore::MacCursorRestore() {
 MacCursorRestore::~MacCursorRestore() {
     CGWarpMouseCursorPosition(CGPointMake(m_position.x(), m_position.y()));
 }
+
+namespace {
+void postDragEvent(CGEventType type, const QPoint& position) {
+    CGEventRef event = CGEventCreateMouseEvent(
+        nullptr, type, CGPointMake(position.x(), position.y()), kCGMouseButtonLeft);
+    CGEventPost(kCGHIDEventTap, event);
+    CFRelease(event);
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 50) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+}
+} // namespace
+
+MacMouseDrag::MacMouseDrag(const QPoint& start) : m_position(start) {
+    postDragEvent(kCGEventMouseMoved, start);
+    postDragEvent(kCGEventLeftMouseDown, start);
+}
+
+MacMouseDrag::~MacMouseDrag() {
+    finish();
+}
+
+void MacMouseDrag::moveTo(const QPoint& point) {
+    m_position = point;
+    postDragEvent(kCGEventLeftMouseDragged, point);
+}
+
+void MacMouseDrag::finish() {
+    if (m_pressed) {
+        m_pressed = false;
+        postDragEvent(kCGEventLeftMouseUp, m_position);
+    }
+}

@@ -4340,6 +4340,11 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-floating-toolbar-drag-tests --macos-shadow-input-only -platform cocoa)
         set_tests_properties(snow-shot-macos-toolbar-shadow-input-tests PROPERTIES
             LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60)
+        add_test(NAME snow-shot-macos-toolbar-cross-display-drag-tests
+            COMMAND snow-shot-floating-toolbar-drag-tests --macos-cross-display-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-toolbar-cross-display-drag-tests PROPERTIES
+            LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE
+            TIMEOUT 60 SKIP_RETURN_CODE 77)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-floating-toolbar-drag-tests)
     add_test(NAME snow-shot-toolbar-stable-tool-frame-tests
@@ -4954,6 +4959,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
         snow_shot_storage
     )
+    if(APPLE)
+        target_sources(snow-shot-screen-recording-area-window-tests PRIVATE
+            ../cmake/test-support/macos_native_input.mm)
+        target_include_directories(snow-shot-screen-recording-area-window-tests PRIVATE
+            ../cmake/test-support)
+        add_test(NAME snow-shot-macos-recording-cross-display-drag-tests
+            COMMAND snow-shot-screen-recording-area-window-tests --native-logical-drag-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-recording-cross-display-drag-tests PROPERTIES
+            LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE
+            TIMEOUT 60 SKIP_RETURN_CODE 77)
+    endif()
     if(WIN32)
         target_link_libraries(snow-shot-screen-recording-area-window-tests PRIVATE user32)
     endif()
@@ -6991,6 +7007,14 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --controlled-interaction-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-retina-interaction-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE ENVIRONMENT "QT_SCALE_FACTOR=2" RUN_SERIAL TRUE)
+    add_test(NAME snow-shot-pinned-creation-tests
+        COMMAND snow-shot-pinned-window-tests --creation-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-creation-tests PROPERTIES
+        LABELS "unit;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-macos-pinned-creation-tests
+        COMMAND snow-shot-pinned-window-tests --creation-only -platform cocoa)
+    set_tests_properties(snow-shot-macos-pinned-creation-tests PROPERTIES
+        LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-macos-pinned-drag-tests
         COMMAND snow-shot-pinned-window-tests --native-controlled-drag-only -platform cocoa)
     set_tests_properties(snow-shot-macos-pinned-drag-tests PROPERTIES
@@ -7030,7 +7054,7 @@ if(APPLE)
     get_property(_screenshot_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
     foreach(_target IN LISTS _screenshot_targets)
         get_target_property(_sources ${_target} SOURCES)
-        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp|screenshotoverlaywindow.cpp|screenshotrecognitionwindow.cpp|screenrecordingareawindow.cpp|screenrecordingtoolbarwindow.cpp")
+        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp|screenshotoverlaywindow.cpp|screenshotrecognitionwindow.cpp|screenrecordingareawindow.cpp|screenrecordingtoolbarwindow.cpp|screenshotfloatingtoolpalettewindow.cpp")
             if(NOT _sources MATCHES "platform/macos/screenshotnative.mm")
                 target_sources(${_target} PRIVATE src/platform/macos/screenshotnative.mm)
             endif()

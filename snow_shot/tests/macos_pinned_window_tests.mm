@@ -10,7 +10,6 @@
 #include <QTimer>
 #include <QLineEdit>
 #include <QInputMethodEvent>
-#include <QLineF>
 #include <QWindow>
 #include <cstdio>
 #include <iostream>
@@ -91,7 +90,41 @@ bool sessionLocked() {
     CFRelease(session);
     return result;
 }
+void hiddenPlacementCommitsBeforeShow() {
+    for (QScreen* screen : QGuiApplication::screens()) {
+        QWidget widget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        widget.setGeometry(QRect(screen->geometry().topLeft() + QPoint(100, 100), QSize(200, 150)));
+        widget.winId();
+        auto platform = createPinnedWindowPlatform(&widget);
+        require(platform->attach(), "hidden pin platform attachment failed");
+        const int usableTop = screen->availableGeometry().top() - screen->geometry().top();
+        PinnedPlacement requested{screen->name(), screen->serialNumber(),
+                                  QPointF(70.5, usableTop - 10), QSize(321, 181)};
+        for (int presentation = 0; presentation != 2; ++presentation) {
+            require(!widget.isVisible(), "placement preparation must not expose the pin");
+            require(platform->applyStablePlacement(requested, screen),
+                    "hidden placement must commit to the native window before verification");
+            const auto actual = platform->placement();
+            QPoint expectedOrigin =
+                (QPointF(screen->geometry().topLeft()) + requested.position).toPoint();
+            expectedOrigin.setY(qMax(screen->availableGeometry().top(), expectedOrigin.y()));
+            const QRect expected(expectedOrigin, requested.windowSize);
+            require(actual && platform->windowGeometry() == expected &&
+                        widget.geometry() == expected && !widget.isVisible(),
+                    "hidden QWidget and native geometry must agree without showing the window");
+            widget.show();
+            events();
+            require(widget.geometry() == expected && platform->windowGeometry() == expected,
+                    "the first visible frame must preserve the prepared pin geometry");
+            widget.hide();
+            requested.position += QPointF(43.25, 71.5);
+            requested.windowSize += QSize(30, 20);
+        }
+    }
+}
+
 void nativePolicies(bool focus) {
+    hiddenPlacementCommitsBeforeShow();
     QWidget widget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     widget.setAttribute(Qt::WA_TranslucentBackground);
     widget.winId();
@@ -122,20 +155,19 @@ void nativePolicies(bool focus) {
     events();
     const auto actual = platform->placement();
     require(actual && actual->windowSize == placement.windowSize &&
-                actual->position == placement.position,
-            "Cocoa placement readback must preserve logical positions and sizes");
+                actual->position == QPointF(placement.position.toPoint()),
+            "Cocoa placement must quantize the logical origin once and preserve size");
     require(window.frame.size.width == 321 && window.frame.size.height == 181,
             "native Cocoa frame must use logical points even on Retina");
     const auto originalPlacement = placement;
     placement.position += QPointF(.13, .21);
     require(platform->applyPlacement(placement, screen),
-            "subpixel pointer positions must accept Cocoa backing-pixel alignment");
+            "subpixel pointer positions must accept logical-frame rounding");
     const auto aligned = platform->placement();
     require(aligned && aligned->windowSize == placement.windowSize &&
                 widget.size() == placement.windowSize &&
-                QLineF(aligned->position, placement.position).length() <=
-                    1. / window.backingScaleFactor,
-            "subpixel movement must preserve size and read back the aligned native position");
+                aligned->position == QPointF(placement.position.toPoint()),
+            "subpixel movement must preserve size and read back the committed logical position");
     require(platform->applyPlacement(originalPlacement, screen), "restore fractional placement");
     auto edgePlacement = originalPlacement;
     const int usableTop = screen->availableGeometry().top() - screen->geometry().top();

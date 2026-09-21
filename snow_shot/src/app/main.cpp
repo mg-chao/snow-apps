@@ -12,6 +12,7 @@
 #include "snow_shot/platform/windows/autostartregistration.h"
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "widgets/message.h"
+#include "widgets/platform_compatibility.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -108,6 +109,7 @@ int main(int argc, char* argv[]) {
     // Runs the shipped recording bridge with the Cocoa event loop, without user storage.
     if (argc >= 3 && QString::fromLocal8Bit(argv[1]) == u"--recording-macos-probe") {
         QApplication probe(argc, argv);
+        adqt::widgets::initializePlatformCompatibility(probe);
         const QStringList arguments = probe.arguments();
         const QByteArray path = QFileInfo(arguments[2]).absoluteFilePath().toUtf8();
         const QRect screen = probe.primaryScreen()->geometry();
@@ -236,6 +238,7 @@ int main(int argc, char* argv[]) {
         }
         qputenv("QT_QPA_PLATFORM", "offscreen");
         QApplication probe(argc, argv);
+        adqt::widgets::initializePlatformCompatibility(probe);
         QTemporaryDir directory;
         if (!directory.isValid()) {
             return 4;
@@ -348,6 +351,7 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
 
     QApplication app(argc, argv);
+    adqt::widgets::initializePlatformCompatibility(app);
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.platform"),
                                      {{QStringLiteral("backend"), QGuiApplication::platformName()},

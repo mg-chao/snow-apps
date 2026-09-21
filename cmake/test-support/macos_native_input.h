@@ -25,3 +25,19 @@ class MacCursorRestore final {
   private:
     QPointF m_position;
 };
+
+// Own the button and restore the cursor even when a native assertion throws.
+class MacMouseDrag final {
+  public:
+    explicit MacMouseDrag(const QPoint& start);
+    ~MacMouseDrag();
+    MacMouseDrag(const MacMouseDrag&) = delete;
+    MacMouseDrag& operator=(const MacMouseDrag&) = delete;
+    void moveTo(const QPoint& point);
+    void finish();
+
+  private:
+    MacCursorRestore m_restore;
+    QPoint m_position;
+    bool m_pressed = true;
+};
