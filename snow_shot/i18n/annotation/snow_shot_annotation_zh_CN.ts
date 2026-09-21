@@ -320,6 +320,10 @@
             <translation>末端箭头 圆点</translation>
         </message>
         <message>
+            <source>End arrowhead indented triangle</source>
+            <translation>末端箭头 内凹三角形</translation>
+        </message>
+        <message>
             <source>End arrowhead none</source>
             <translation>末端箭头 无</translation>
         </message>
@@ -842,6 +846,10 @@
         <message>
             <source>Start arrowhead dot</source>
             <translation>起始箭头 圆点</translation>
+        </message>
+        <message>
+            <source>Start arrowhead indented triangle</source>
+            <translation>起始箭头 内凹三角形</translation>
         </message>
         <message>
             <source>Start arrowhead none</source>

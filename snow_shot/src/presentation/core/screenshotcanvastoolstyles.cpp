@@ -184,9 +184,9 @@ void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
     readEnum(object, QStringLiteral("fill_style"), static_cast<int>(SnowCanvasFillStyle::Solid),
              &style->fillStyle);
     readEnum(object, QStringLiteral("start_arrowhead"),
-             static_cast<int>(SnowCanvasArrowhead::CrowfootOneOrMany), &style->startArrowhead);
+             static_cast<int>(SnowCanvasArrowhead::IndentedTriangle), &style->startArrowhead);
     readEnum(object, QStringLiteral("end_arrowhead"),
-             static_cast<int>(SnowCanvasArrowhead::CrowfootOneOrMany), &style->endArrowhead);
+             static_cast<int>(SnowCanvasArrowhead::IndentedTriangle), &style->endArrowhead);
     readEnum(object, QStringLiteral("stroke_style"),
              static_cast<int>(SnowCanvasStrokeStyle::Dotted), &style->strokeStyle);
     readEnum(object, QStringLiteral("arrow_type"), static_cast<int>(SnowCanvasArrowType::Elbow),

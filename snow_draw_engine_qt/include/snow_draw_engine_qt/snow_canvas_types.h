@@ -219,6 +219,7 @@ enum class SnowCanvasArrowhead {
     CrowfootOne,
     CrowfootMany,
     CrowfootOneOrMany,
+    IndentedTriangle,
 };
 
 enum class SnowCanvasArrowType {

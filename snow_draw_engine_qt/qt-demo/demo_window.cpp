@@ -6,6 +6,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDoubleSpinBox>
 #include <QFont>
 #include <QFontDatabase>
@@ -145,6 +146,8 @@ QString arrowheadLabel(SnowCanvasArrowhead arrowhead) {
         return "Circle";
     case SnowCanvasArrowhead::CircleOutline:
         return "Circle Outline";
+    case SnowCanvasArrowhead::IndentedTriangle:
+        return QCoreApplication::translate("DemoWindow", "Indented triangle");
     case SnowCanvasArrowhead::Triangle:
         return "Triangle";
     case SnowCanvasArrowhead::TriangleOutline:
@@ -223,6 +226,7 @@ void populateArrowheadComboBox(QComboBox* comboBox) {
         SnowCanvasArrowhead::Dot,
         SnowCanvasArrowhead::Circle,
         SnowCanvasArrowhead::CircleOutline,
+        SnowCanvasArrowhead::IndentedTriangle,
         SnowCanvasArrowhead::Triangle,
         SnowCanvasArrowhead::TriangleOutline,
         SnowCanvasArrowhead::Diamond,

@@ -8,6 +8,7 @@
 #include <QImage>
 #include <QSet>
 #include <QStringList>
+#include <QXmlStreamReader>
 
 #include <cstdlib>
 #include <iostream>
@@ -95,8 +96,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 128,
-            "Snow Shot pack should contain all 128 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 130,
+            "Snow Shot pack should contain all 130 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -276,9 +277,10 @@ void scrollingIconsUseTheRequestedOrientations() {
 void arrowheadIconsFaceTheirRespectiveEndpoints() {
     namespace icons = snow_shot::presentation::icons::custom;
     const auto* pack = icons::pack().staticPack();
-    for (const char* name : {"standard", "bar", "dot", "circle", "circle-outline", "triangle",
-                             "triangle-outline", "diamond", "diamond-outline", "crowfoot-one",
-                             "crowfoot-many", "crowfoot-one-or-many", "none"}) {
+    for (const char* name :
+         {"standard", "bar", "dot", "circle", "circle-outline", "indented-triangle", "triangle",
+          "triangle-outline", "diamond", "diamond-outline", "crowfoot-one", "crowfoot-many",
+          "crowfoot-one-or-many", "none"}) {
         const std::string endName = std::string("arrowhead-") + name;
         const std::string startName = endName + "-start";
         for (const qreal dpr : {1.0, 1.5, 2.0}) {
@@ -287,6 +289,13 @@ void arrowheadIconsFaceTheirRespectiveEndpoints() {
                 render(pack->icon("outlined", startName), QSize(40, 20), dpr).toImage();
             require(!alphaBounds(start).isEmpty() && !alphaBounds(end).isEmpty(),
                     "both arrowhead endpoints should render");
+            const QString previewDirectory = qEnvironmentVariable("SNOW_ARROWHEAD_PREVIEW_DIR");
+            if (!previewDirectory.isEmpty() && std::string_view(name) == "indented-triangle" &&
+                dpr == 2.0) {
+                require(start.save(previewDirectory + QStringLiteral("/indented-start.png")) &&
+                            end.save(previewDirectory + QStringLiteral("/indented-end.png")),
+                        "save requested indented triangle icon previews");
+            }
             qint64 difference = 0;
             for (int y = 0; y < end.height(); ++y) {
                 for (int x = 0; x < end.width(); ++x) {
@@ -305,6 +314,44 @@ void arrowheadIconsFaceTheirRespectiveEndpoints() {
             require(opaquePixelCount(start, leftHalf) > opaquePixelCount(start, rightHalf),
                     "start arrowhead should place its marker on the left of the tail");
         }
+    }
+}
+
+void indentedTriangleCornersAreSymmetric() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const auto* pack = icons::pack().staticPack();
+    for (const char* name : {"arrowhead-indented-triangle", "arrowhead-indented-triangle-start"}) {
+        const auto* descriptor = pack->find("outlined", name);
+        require(descriptor != nullptr, "indented triangle SVG should be registered");
+        QXmlStreamReader xml(
+            QByteArray(descriptor->svg.data(), static_cast<qsizetype>(descriptor->svg.size())));
+        QString headPath;
+        while (!xml.atEnd()) {
+            if (xml.readNext() == QXmlStreamReader::StartElement &&
+                xml.name() == QLatin1String("path")) {
+                headPath = xml.attributes().value(QLatin1String("d")).toString().trimmed();
+            }
+        }
+        // Qt joins coincident endpoints even without Z, but browsers leave two butt caps.
+        require(!xml.hasError() && headPath.endsWith(QLatin1Char('z'), Qt::CaseInsensitive),
+                "the arrowhead outline must explicitly close so all SVG renderers join its corner");
+        const QImage image = render(pack->icon("outlined", name), QSize(400, 200)).toImage();
+        qint64 difference = 0;
+        for (int y = 0; y < image.height() / 2; ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                difference += std::abs(image.pixelColor(x, y).alpha() -
+                                       image.pixelColor(x, image.height() - 1 - y).alpha());
+            }
+        }
+        const QString previewDirectory = qEnvironmentVariable("SNOW_ARROWHEAD_PREVIEW_DIR");
+        if (!previewDirectory.isEmpty()) {
+            require(image.save(previewDirectory + QLatin1Char('/') + QString::fromLatin1(name) +
+                               QStringLiteral("-corners.png")),
+                    "save enlarged arrowhead corner preview");
+        }
+        // A closed stroke joins both base corners identically. Allow only minor raster rounding.
+        require(difference <= image.width() * 2,
+                "indented triangle base corners should be complete and vertically symmetric");
     }
 }
 
@@ -328,6 +375,7 @@ int main(int argc, char** argv) {
         }
         everySnowShotEntryRenders();
         arrowheadIconsFaceTheirRespectiveEndpoints();
+        indentedTriangleCornersAreSymmetric();
         conversionIconsUseTheSuppliedProjectAssets();
         projectIconColorsAndModelsArePreserved();
         ocrTranslateIconUsesTheSuppliedProjectAsset();

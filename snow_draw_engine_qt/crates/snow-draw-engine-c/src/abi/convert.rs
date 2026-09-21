@@ -166,6 +166,7 @@ pub(crate) fn snow_arrowhead_from_rust(value: Option<Arrowhead>) -> SnowArrowhea
         Some(Arrowhead::Dot) => SnowArrowhead::Dot,
         Some(Arrowhead::Circle) => SnowArrowhead::Circle,
         Some(Arrowhead::CircleOutline) => SnowArrowhead::CircleOutline,
+        Some(Arrowhead::IndentedTriangle) => SnowArrowhead::IndentedTriangle,
         Some(Arrowhead::Triangle) => SnowArrowhead::Triangle,
         Some(Arrowhead::TriangleOutline) => SnowArrowhead::TriangleOutline,
         Some(Arrowhead::Diamond) => SnowArrowhead::Diamond,
@@ -186,6 +187,7 @@ pub(crate) fn snow_arrowhead_to_rust(value: SnowArrowhead) -> Option<Arrowhead> 
         SnowArrowhead::Dot => Some(Arrowhead::Dot),
         SnowArrowhead::Circle => Some(Arrowhead::Circle),
         SnowArrowhead::CircleOutline => Some(Arrowhead::CircleOutline),
+        SnowArrowhead::IndentedTriangle => Some(Arrowhead::IndentedTriangle),
         SnowArrowhead::Triangle => Some(Arrowhead::Triangle),
         SnowArrowhead::TriangleOutline => Some(Arrowhead::TriangleOutline),
         SnowArrowhead::Diamond => Some(Arrowhead::Diamond),
@@ -1389,6 +1391,8 @@ mod tests {
     #[test]
     fn reference_arrowheads_round_trip_through_c_abi() {
         for (rust, c) in [
+            (Arrowhead::IndentedTriangle, SnowArrowhead::IndentedTriangle),
+            (Arrowhead::Triangle, SnowArrowhead::Triangle),
             (Arrowhead::Square, SnowArrowhead::Square),
             (Arrowhead::InvertedTriangle, SnowArrowhead::InvertedTriangle),
         ] {

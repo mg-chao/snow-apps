@@ -4,6 +4,7 @@
 #include "snow_canvas_runtime_access.h"
 #include "snow_canvas_text_editor_session.h"
 #include "snow_canvas_text.h"
+#include "snow_canvas_type_conversions.h"
 
 #include <QApplication>
 #include <QImage>
@@ -81,6 +82,74 @@ void openLabel(SnowCanvasWidget& canvas) {
     require(canvas.hasActiveTextEditing(), "double-click opens an attached text editor");
     require(canvas.canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedText,
             "arrow draft exposes text style controls");
+}
+
+void indentedTriangleStyleRoundTrips() {
+    static_assert(static_cast<int>(SnowCanvasArrowhead::Triangle) == 6);
+    static_assert(static_cast<int>(SnowCanvasArrowhead::CrowfootOneOrMany) == 12);
+    static_assert(SNOW_ARROWHEAD_TRIANGLE == 6);
+    static_assert(SNOW_ARROWHEAD_INVERTED_TRIANGLE == 14);
+    require(snow_canvas_types::toEngineArrowhead(SnowCanvasArrowhead::IndentedTriangle) ==
+                    SNOW_ARROWHEAD_INDENTED_TRIANGLE &&
+                snow_canvas_types::toCanvasArrowhead(SNOW_ARROWHEAD_INDENTED_TRIANGLE) ==
+                    SnowCanvasArrowhead::IndentedTriangle,
+            "indented triangle should round-trip through the Qt/C ABI boundary");
+    for (int id = 0; id <= 12; ++id) {
+        require(static_cast<int>(snow_canvas_types::toEngineArrowhead(
+                    static_cast<SnowCanvasArrowhead>(id))) == id &&
+                    static_cast<int>(
+                        snow_canvas_types::toCanvasArrowhead(static_cast<SnowArrowhead>(id))) == id,
+                "existing arrowhead numeric IDs must retain their meanings");
+    }
+    SnowCanvasStyleDefaults defaults;
+    for (auto* shape : {&defaults.rectangle, &defaults.arrow, &defaults.line, &defaults.freeDraw,
+                        &defaults.rectangleHighlight, &defaults.penHighlight}) {
+        shape->fill = Qt::transparent;
+        shape->stroke = Qt::red;
+    }
+    defaults.text.fill = Qt::transparent;
+    defaults.serialNumber.fill = Qt::transparent;
+    defaults.arrow.startArrowhead = SnowCanvasArrowhead::IndentedTriangle;
+    defaults.arrow.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
+    SnowStyleDefaults engineDefaults{};
+    require(snow_canvas_types::toEngineStyleDefaults(defaults, engineDefaults),
+            "indented endpoints should pass style defaults validation");
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setCanvasTool(SnowCanvasTool::Arrow), "activate indented arrow tool");
+    SnowCanvasShapeStyle style;
+    style.startArrowhead = SnowCanvasArrowhead::IndentedTriangle;
+    style.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
+    style.stroke = QColor(255, 40, 30);
+    style.strokeWidth = 4.0;
+    require(canvas.setCanvasShapeStylePatch(style,
+                                            SnowCanvasShapeStylePropertyStartArrowhead |
+                                                SnowCanvasShapeStylePropertyEndArrowhead |
+                                                SnowCanvasShapeStylePropertyStrokeColor |
+                                                SnowCanvasShapeStylePropertyStrokeWidth,
+                                            SnowCanvasShapeKind::Arrow),
+            "indented triangle style should be accepted");
+    mouse(canvas, QEvent::MouseButtonPress, {150.0, 70.0}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseMove, {350.0, 290.0}, Qt::NoButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {350.0, 290.0}, Qt::LeftButton, Qt::NoButton);
+    const auto arrow = payload(runtime, QStringLiteral("Arrow"));
+    require(arrow.value(QStringLiteral("start_arrowhead")).toString() ==
+                    QStringLiteral("indented_triangle") &&
+                arrow.value(QStringLiteral("end_arrowhead")).toString() ==
+                    QStringLiteral("indented_triangle"),
+            "both indented endpoints should survive document serialization");
+    SnowCanvasRuntime restored;
+    require(restored.restoreDocumentSession(runtime.serializeDocumentSession()) &&
+                payload(restored, QStringLiteral("Arrow")) == arrow,
+            "indented endpoints should round-trip through saved documents");
+    const QString previewDirectory = qEnvironmentVariable("SNOW_ARROW_TEXT_PREVIEW_DIR");
+    if (!previewDirectory.isEmpty()) {
+        require(canvas.grab().save(previewDirectory + QStringLiteral("/indented-triangle.png")),
+                "save indented triangle rendering artifact");
+    }
 }
 
 void deleteKeyRemovesEditedText() {
@@ -287,7 +356,7 @@ void gapPreservesBackground() {
          {SNOW_ARROW_TYPE_STRAIGHT, SNOW_ARROW_TYPE_CURVE, SNOW_ARROW_TYPE_ELBOW}) {
         for (const SnowStrokeStyle style :
              {SNOW_STROKE_STYLE_SOLID, SNOW_STROKE_STYLE_DASHED, SNOW_STROKE_STYLE_DOTTED}) {
-            for (int head = SNOW_ARROWHEAD_NONE; head <= SNOW_ARROWHEAD_INVERTED_TRIANGLE; ++head) {
+            for (int head = SNOW_ARROWHEAD_NONE; head <= SNOW_ARROWHEAD_INDENTED_TRIANGLE; ++head) {
                 for (const QColor background : {QColor(19, 103, 157), QColor(Qt::transparent)}) {
                     QImage image(200, 100, QImage::Format_ARGB32_Premultiplied);
                     image.fill(background);
@@ -518,6 +587,7 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    indentedTriangleStyleRoundTrips();
     deleteKeyRemovesEditedText();
     widgetLifecycle();
     wrappingAndFinalPointerPosition();

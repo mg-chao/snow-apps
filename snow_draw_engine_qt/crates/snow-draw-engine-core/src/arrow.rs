@@ -79,6 +79,8 @@ pub enum Arrowhead {
     Square,
     #[serde(rename = "invertedTriangle")]
     InvertedTriangle,
+    #[serde(rename = "indented_triangle")]
+    IndentedTriangle,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -305,5 +307,23 @@ pub fn normalize_engine_context(context: Option<&PartialEngineContext>) -> Engin
             .max_coordinate
             .filter(|max_coordinate| max_coordinate.is_finite())
             .unwrap_or(DEFAULT_ENGINE_CONTEXT.max_coordinate),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Arrowhead;
+
+    #[test]
+    fn indented_triangle_serialization_preserves_existing_triangle_names() {
+        for (style, name) in [
+            (Arrowhead::IndentedTriangle, "indented_triangle"),
+            (Arrowhead::Triangle, "triangle"),
+            (Arrowhead::TriangleOutline, "triangle_outline"),
+        ] {
+            let value = serde_json::to_value(style).unwrap();
+            assert_eq!(value, name);
+            assert_eq!(serde_json::from_value::<Arrowhead>(value).unwrap(), style);
+        }
     }
 }

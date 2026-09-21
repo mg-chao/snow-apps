@@ -500,6 +500,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead crowfoot one"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead crowfoot many"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead crowfoot one or many"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead indented triangle"),
 };
 
 [[maybe_unused]] constexpr const char* kEndArrowheadOptionTranslations[] = {
@@ -516,6 +517,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead crowfoot one"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead crowfoot many"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead crowfoot one or many"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead indented triangle"),
 };
 
 int defaultCornerRadius() {
@@ -589,6 +591,9 @@ adqt::icons::IconRef arrowheadIcon(SnowCanvasArrowhead arrowhead, bool start) {
     case SnowCanvasArrowhead::CircleOutline:
         return start ? custom_outlined_icons::ArrowheadCircleOutlineStart()
                      : custom_outlined_icons::ArrowheadCircleOutline();
+    case SnowCanvasArrowhead::IndentedTriangle:
+        return start ? custom_outlined_icons::ArrowheadIndentedTriangleStart()
+                     : custom_outlined_icons::ArrowheadIndentedTriangle();
     case SnowCanvasArrowhead::Triangle:
         return start ? custom_outlined_icons::ArrowheadTriangleStart()
                      : custom_outlined_icons::ArrowheadTriangle();
@@ -1585,6 +1590,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
         SnowCanvasArrowhead::Dot,
         SnowCanvasArrowhead::Circle,
         SnowCanvasArrowhead::CircleOutline,
+        SnowCanvasArrowhead::IndentedTriangle,
         SnowCanvasArrowhead::Triangle,
         SnowCanvasArrowhead::TriangleOutline,
         SnowCanvasArrowhead::Diamond,

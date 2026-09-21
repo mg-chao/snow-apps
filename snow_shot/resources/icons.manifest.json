@@ -255,6 +255,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowheadIndentedTriangle",
+      "name": "arrowhead-indented-triangle",
+      "source": "../src/presentation/components/icons/resources/arrowhead-indented-triangle.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowheadIndentedTriangleStart",
+      "name": "arrowhead-indented-triangle-start",
+      "source": "../src/presentation/components/icons/resources/arrowhead-indented-triangle-start.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowheadNone",
       "name": "arrowhead-none",
       "source": "../src/presentation/components/icons/resources/arrowhead-none.svg",

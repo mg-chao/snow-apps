@@ -60,6 +60,10 @@ ArrowheadDiamondOutlineStart(const adqt::icons::IconColors& colors = {});
 ArrowheadDiamondStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowheadDot(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowheadDotStart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+ArrowheadIndentedTriangle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+ArrowheadIndentedTriangleStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowheadNone(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowheadNoneStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowheadStandard(const adqt::icons::IconColors& colors = {});

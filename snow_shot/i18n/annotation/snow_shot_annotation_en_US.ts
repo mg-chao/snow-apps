@@ -320,6 +320,10 @@
             <translation>End arrowhead dot</translation>
         </message>
         <message>
+            <source>End arrowhead indented triangle</source>
+            <translation>End arrowhead indented triangle</translation>
+        </message>
+        <message>
             <source>End arrowhead none</source>
             <translation>End arrowhead none</translation>
         </message>
@@ -842,6 +846,10 @@
         <message>
             <source>Start arrowhead dot</source>
             <translation>Start arrowhead dot</translation>
+        </message>
+        <message>
+            <source>Start arrowhead indented triangle</source>
+            <translation>Start arrowhead indented triangle</translation>
         </message>
         <message>
             <source>Start arrowhead none</source>

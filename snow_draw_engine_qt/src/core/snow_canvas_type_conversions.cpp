@@ -36,9 +36,9 @@ template <typename Enum> bool enumInRange(Enum value, Enum first, Enum last) {
 bool validShapeStyleEnums(const SnowCanvasShapeStyle& style) {
     return enumInRange(style.fillStyle, SnowCanvasFillStyle::Line, SnowCanvasFillStyle::Solid) &&
            enumInRange(style.startArrowhead, SnowCanvasArrowhead::None,
-                       SnowCanvasArrowhead::CrowfootOneOrMany) &&
+                       SnowCanvasArrowhead::IndentedTriangle) &&
            enumInRange(style.endArrowhead, SnowCanvasArrowhead::None,
-                       SnowCanvasArrowhead::CrowfootOneOrMany) &&
+                       SnowCanvasArrowhead::IndentedTriangle) &&
            enumInRange(style.strokeStyle, SnowCanvasStrokeStyle::Solid,
                        SnowCanvasStrokeStyle::Dotted) &&
            enumInRange(style.arrowType, SnowCanvasArrowType::Straight,
@@ -227,6 +227,8 @@ SnowCanvasArrowhead toCanvasArrowhead(SnowArrowhead arrowhead) {
         return SnowCanvasArrowhead::Circle;
     case SNOW_ARROWHEAD_CIRCLE_OUTLINE:
         return SnowCanvasArrowhead::CircleOutline;
+    case SNOW_ARROWHEAD_INDENTED_TRIANGLE:
+        return SnowCanvasArrowhead::IndentedTriangle;
     case SNOW_ARROWHEAD_TRIANGLE:
         return SnowCanvasArrowhead::Triangle;
     case SNOW_ARROWHEAD_TRIANGLE_OUTLINE:
@@ -259,6 +261,8 @@ SnowArrowhead toEngineArrowhead(SnowCanvasArrowhead arrowhead) {
         return SNOW_ARROWHEAD_CIRCLE;
     case SnowCanvasArrowhead::CircleOutline:
         return SNOW_ARROWHEAD_CIRCLE_OUTLINE;
+    case SnowCanvasArrowhead::IndentedTriangle:
+        return SNOW_ARROWHEAD_INDENTED_TRIANGLE;
     case SnowCanvasArrowhead::Triangle:
         return SNOW_ARROWHEAD_TRIANGLE;
     case SnowCanvasArrowhead::TriangleOutline:

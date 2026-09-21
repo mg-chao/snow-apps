@@ -47,6 +47,7 @@ snow_c_enum! {
         CrowfootOneOrMany = 12,
         Square = 13,
         InvertedTriangle = 14,
+        IndentedTriangle = 15,
     }
 }
 

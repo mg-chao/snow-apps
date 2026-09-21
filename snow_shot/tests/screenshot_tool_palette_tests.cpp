@@ -75,6 +75,7 @@
 #include "widgets/slider.h"
 #include "widgets/tooltip.h"
 
+#include <tuple>
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
@@ -7723,6 +7724,38 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
             "start arrowhead should update");
     require(emittedStyle.endArrowhead == SnowCanvasArrowhead::DiamondOutline,
             "end arrowhead should update");
+
+    for (const auto& [trigger, label, triangleLabel] : {
+             std::tuple{startArrowheadControl, "Start arrowhead indented triangle",
+                        "Start arrowhead triangle"},
+             std::tuple{endArrowheadControl, "End arrowhead indented triangle",
+                        "End arrowhead triangle"},
+         }) {
+        auto* popover = showPopoverForTrigger(trigger);
+        auto* content = popover->contentWidget();
+        adqt::widgets::AdButton* indented = nullptr;
+        adqt::widgets::AdButton* triangle = nullptr;
+        for (auto* button : content->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->toolTip() == QString::fromLatin1(label)) {
+                indented = button;
+            }
+            if (button->toolTip() == QString::fromLatin1(triangleLabel)) {
+                triangle = button;
+            }
+        }
+        require(indented != nullptr && triangle != nullptr, "both triangle options should exist");
+        require(indented->geometry().top() == triangle->geometry().top() &&
+                    indented->geometry().right() < triangle->geometry().left(),
+                "indented triangle should sit immediately left of the filled triangle");
+        clickPopoverStyleControl(popover, label);
+        showPopoverForTrigger(trigger);
+        require(indented->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal,
+                "reopening the picker should retain the indented triangle selection");
+    }
+    require(styleChangeCount == 8 &&
+                emittedStyle.startArrowhead == SnowCanvasArrowhead::IndentedTriangle &&
+                emittedStyle.endArrowhead == SnowCanvasArrowhead::IndentedTriangle,
+            "both indented endpoints should emit exactly once and preserve each other");
 }
 
 void lineStyleControlsExposeStraightAndCurveTypes() {
@@ -7857,6 +7890,8 @@ void arrowheadOptionsRetranslateInPlace() {
     auto* popover = showPopoverForTrigger(startTrigger);
     auto* noneOption = popoverButtonWithTooltip(popover, "Start arrowhead none");
     require(noneOption != nullptr, "English arrowhead option should be present");
+    auto* indentedOption = popoverButtonWithTooltip(popover, "Start arrowhead indented triangle");
+    require(indentedOption != nullptr, "indented triangle should have an English tooltip");
     auto* standardOption = popoverButtonWithTooltip(popover, "Start arrowhead standard");
     require(standardOption != nullptr &&
                 adqt::icons::describeIcon(standardOption->iconRef()).key.name ==
@@ -7878,6 +7913,8 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Simplified Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u5934 \u65e0"),
             "open arrowhead option should retranslate to Simplified Chinese");
+    require(indentedOption->toolTip() == QStringLiteral("起始箭头 内凹三角形"),
+            "indented triangle should retranslate to Simplified Chinese");
 
     require(languageManager.setLanguage(QStringLiteral("zh_TW")),
             "Traditional Chinese should load for arrowhead retranslation");
@@ -7886,6 +7923,8 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Traditional Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u982d \u7121"),
             "open arrowhead option should retranslate to Traditional Chinese");
+    require(indentedOption->toolTip() == QStringLiteral("起始箭頭 內凹三角形"),
+            "indented triangle should retranslate to Traditional Chinese");
 
     require(languageManager.setLanguage(QStringLiteral("en_US")),
             "English should be restorable after arrowhead retranslation");
@@ -9305,8 +9344,8 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
     QLayout* alignmentLayout = popoverForTrigger(textAlignment)->contentWidget()->layout();
     require(
         qobject_cast<QGridLayout*>(startLayout) != nullptr &&
-            qobject_cast<QGridLayout*>(endLayout) != nullptr && startLayout->count() == 13 &&
-            endLayout->count() == 13 && qobject_cast<QHBoxLayout*>(alignmentLayout) != nullptr &&
+            qobject_cast<QGridLayout*>(endLayout) != nullptr && startLayout->count() == 14 &&
+            endLayout->count() == 14 && qobject_cast<QHBoxLayout*>(alignmentLayout) != nullptr &&
             alignmentLayout->count() == 3 && startLayout->spacing() == alignmentLayout->spacing(),
         "icon-option configuration should preserve arrow grids and the alignment row");
 
@@ -10998,6 +11037,8 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.rectangle.strokeWidth = 3.0;
     styles.arrow.stroke = QColor(5, 6, 7, 8);
     styles.arrow.strokeWidth = 4.0;
+    styles.arrow.startArrowhead = SnowCanvasArrowhead::IndentedTriangle;
+    styles.arrow.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
     styles.line.strokeWidth = 5.0;
     styles.line.arrowType = SnowCanvasArrowType::Straight;
     styles.freeDraw.strokeWidth = 6.0;
@@ -11721,6 +11762,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--arrow-icons-only"))) {
+        arrowStyleControlsExposeAndEmitAllStyleProperties();
         arrowheadOptionsRetranslateInPlace();
         return 0;
     }

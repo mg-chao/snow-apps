@@ -273,6 +273,21 @@ pub fn get_arrowhead_render_primitives(
             ArrowheadFillMode::Background,
             0.5,
         )],
+        Arrowhead::IndentedTriangle => {
+            let tip = to_point(points[0], points[1]);
+            let a = to_point(points[2], points[3]);
+            let b = to_point(points[4], points[5]);
+            let midpoint = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
+            let notch = [
+                midpoint[0] + 0.25 * (tip[0] - midpoint[0]),
+                midpoint[1] + 0.25 * (tip[1] - midpoint[1]),
+            ];
+            vec![polygon(
+                vec![tip, a, notch, b, tip],
+                ArrowheadFillMode::Stroke,
+                1.0,
+            )]
+        }
         Arrowhead::Triangle | Arrowhead::TriangleOutline | Arrowhead::InvertedTriangle => {
             vec![polygon(
                 vec![

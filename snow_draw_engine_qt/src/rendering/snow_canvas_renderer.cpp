@@ -380,11 +380,16 @@ void drawArrowhead(QPainter& painter, const QVector<QPointF>& points, SnowArrowT
         painter.drawEllipse(rect);
         break;
     }
+    case SNOW_ARROWHEAD_INDENTED_TRIANGLE:
     case SNOW_ARROWHEAD_TRIANGLE:
     case SNOW_ARROWHEAD_TRIANGLE_OUTLINE: {
         QPainterPath path;
         path.moveTo(endpoint);
         path.lineTo(wing1);
+        if (head == SNOW_ARROWHEAD_INDENTED_TRIANGLE) {
+            const QPointF midpoint = (wing1 + wing2) * 0.5;
+            path.lineTo(midpoint + (endpoint - midpoint) * 0.25);
+        }
         path.lineTo(wing2);
         path.closeSubpath();
         painter.setBrush((head == SNOW_ARROWHEAD_TRIANGLE_OUTLINE) ? QBrush(background)

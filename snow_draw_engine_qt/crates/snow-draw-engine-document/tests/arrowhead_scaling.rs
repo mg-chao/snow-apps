@@ -4,12 +4,13 @@ use snow_draw_engine_core::arrow::{
 use snow_draw_engine_core::{ColorRgba8, Point};
 use snow_draw_engine_document::{ArrowData, arrowhead_render_primitives};
 
-const STYLES: [Arrowhead; 14] = [
+const STYLES: [Arrowhead; 15] = [
     Arrowhead::Arrow,
     Arrowhead::Bar,
     Arrowhead::Dot,
     Arrowhead::Circle,
     Arrowhead::CircleOutline,
+    Arrowhead::IndentedTriangle,
     Arrowhead::Triangle,
     Arrowhead::TriangleOutline,
     Arrowhead::Diamond,
@@ -118,6 +119,47 @@ fn short_arrow_endpoint_sizes_remain_bounded() {
                 };
                 for point in points {
                     assert!((point[0] - anchor[0]).hypot(point[1] - anchor[1]) <= 10.0 + 1e-8);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn indented_triangle_preserves_triangle_envelope_with_quarter_depth_notch() {
+    use snow_draw_engine_core::arrow::ArrowheadFillMode;
+    for arrow_type in [ArrowType::Straight, ArrowType::Curve, ArrowType::Elbow] {
+        for position in [ArrowEndpointPosition::Start, ArrowEndpointPosition::End] {
+            for width in [2.0, 8.0, 32.0] {
+                let triangle = arrowhead_render_primitives(
+                    &arrow(Arrowhead::Triangle, width, arrow_type),
+                    position,
+                );
+                let indented = arrowhead_render_primitives(
+                    &arrow(Arrowhead::IndentedTriangle, width, arrow_type),
+                    position,
+                );
+                let [ArrowheadRenderPrimitive::Polygon(base)] = triangle.as_slice() else {
+                    panic!("expected one triangle polygon");
+                };
+                let [ArrowheadRenderPrimitive::Polygon(notched)] = indented.as_slice() else {
+                    panic!("expected one indented polygon");
+                };
+                assert_eq!(notched.fill_mode, ArrowheadFillMode::Stroke);
+                assert_eq!(notched.points.len(), 5);
+                assert_eq!(notched.points[0], base.points[0]);
+                assert_eq!(notched.points[1], base.points[1]);
+                assert_eq!(notched.points[3], base.points[2]);
+                assert_eq!(notched.points[4], base.points[0]);
+                for i in 0..4 {
+                    for j in i + 1..4 {
+                        assert_ne!(notched.points[i], notched.points[j]);
+                    }
+                }
+                for axis in 0..2 {
+                    let midpoint = (base.points[1][axis] + base.points[2][axis]) * 0.5;
+                    let expected = midpoint + 0.25 * (base.points[0][axis] - midpoint);
+                    assert!((notched.points[2][axis] - expected).abs() < 1e-8);
                 }
             }
         }
