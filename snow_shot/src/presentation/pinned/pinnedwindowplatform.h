@@ -24,10 +24,10 @@ using PinnedPlacement = storage::PinnedWindowPlacement;
 
 [[nodiscard]] PinnedDisplayGeometry pinnedDisplayGeometry(const QScreen& screen);
 
-// The integer geometry controller operates in pixels of an explicitly supplied
-// display. These boundary conversions must never be used to select a display.
+// Controller rectangles use kPinnedGeometryUnits on an explicitly supplied display.
+// These boundary conversions must never be used to select a display.
 [[nodiscard]] PinnedPlacement pinnedPlacement(const QRect& pixels, const QScreen& screen);
-[[nodiscard]] QRect pinnedPixelRect(const PinnedPlacement& placement, const QScreen& screen);
+[[nodiscard]] QRect pinnedWindowRect(const PinnedPlacement& placement, const QScreen& screen);
 [[nodiscard]] QRectF pinnedDesktopRect(const PinnedPlacement& placement, const QScreen& screen);
 [[nodiscard]] QScreen* pinnedDisplay(const PinnedPlacement& placement, QScreen* fallback = nullptr);
 [[nodiscard]] QScreen* pinnedDisplayAt(const QPointF& desktopPosition);
@@ -63,8 +63,8 @@ class PinnedWindowPlatform : public QObject {
     [[nodiscard]] virtual bool systemInteractionReleased() const {
         return false;
     }
-    [[nodiscard]] virtual QRect framePixelGeometry() const {
-        return pixelGeometry();
+    [[nodiscard]] virtual QRect frameGeometry() const {
+        return windowGeometry();
     }
     [[nodiscard]] virtual bool synchronizePaint(bool) {
         return true;
@@ -74,16 +74,17 @@ class PinnedWindowPlatform : public QObject {
         return false;
     }
     [[nodiscard]] virtual std::optional<bool> pointerInside() const;
-    // Reconcile an AppKit backing-display change while retaining the requested
-    // pixel extent and desktop top-left. Interactive dragging uses its own anchor.
+    // Retain the requested window extent and desktop top-left. Only physical
+    // geometry needs reconciliation when a backing display changes.
     [[nodiscard]] bool
     applyStablePlacement(PinnedPlacement placement, QScreen* screen,
                          GeometryUpdate update = GeometryUpdate::PreserveContents);
     [[nodiscard]] virtual bool
-    applyPixelGeometry(const QRect& pixels, QScreen* screen,
-                       GeometryUpdate update = GeometryUpdate::PreserveContents);
-    [[nodiscard]] virtual QRect pixelGeometry() const;
-    std::function<void()> environmentChanged;
+    applyGeometry(const QRect& pixels, QScreen* screen,
+                  GeometryUpdate update = GeometryUpdate::PreserveContents);
+    [[nodiscard]] virtual QRect windowGeometry() const;
+    // Layout changes may recover offscreen controls; backing changes only refresh rendering.
+    std::function<void(bool layoutChanged)> environmentChanged;
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

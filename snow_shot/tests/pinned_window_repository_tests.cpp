@@ -50,7 +50,7 @@ storage::PinnedWindowRecord recordWithId(const QString& id, const QImage& image)
     value.canvasSourceRect = QRectF(0, 0, 2, 2);
     value.contentCanvasRect = QRectF(0, 0, 2, 2);
     value.surfaceCanvasRect = QRectF(0, 0, 2, 2);
-    value.initialPhysicalSize = image.size();
+    value.initialWindowSize = image.size();
     value.screenDpi = 1.0;
     value.firstCreationTextDpi = 1.0;
     value.scalePercent = 100.0;
@@ -534,7 +534,7 @@ void alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
     auto record = recordWithId(id, patternedImage(QSize(200, 100), 5));
     record.alwaysOnTop = false;
     const QString manifest =
-        QDir(directory.path()).filePath(QStringLiteral("pinned_windows/index.json"));
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows_v2/index.json"));
     {
         storage::PinnedWindowRepository repository(directory.path());
         require(repository.upsert(record).success && repository.flush().success,
@@ -678,6 +678,8 @@ void precisePlacementAndPreviousVersionIsolation() {
     oldFile.close();
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto record = recordWithId(id, patternedImage(QSize(321, 181), 9));
+    record.initialWindowSize = QSize(301, 201);
+    record.screenDpi = 2.;
     record.placement = {QStringLiteral("Retina"), QStringLiteral("display-serial"),
                         QPointF(-10.5, 38.5), QSize(321, 181)};
     record.preThumbnailPlacement = {QStringLiteral("External"), QStringLiteral("external-serial"),
@@ -693,7 +695,10 @@ void precisePlacementAndPreviousVersionIsolation() {
     const auto loaded = restored.loadRecord(id);
     require(loaded && loaded->placement == record.placement &&
                 loaded->preThumbnailPlacement == record.preThumbnailPlacement &&
-                loaded->hideToTopPlacement == record.hideToTopPlacement,
+                loaded->hideToTopPlacement == record.hideToTopPlacement &&
+                loaded->initialWindowSize == record.initialWindowSize &&
+                loaded->image.size() == record.image.size() &&
+                loaded->placement.units == storage::kPinnedGeometryUnits,
             "all placement states must retain display identity and fractional point positions");
     require(readBytes(oldIndex) == oldBytes,
             "version two must not modify or reinterpret previous-version storage");

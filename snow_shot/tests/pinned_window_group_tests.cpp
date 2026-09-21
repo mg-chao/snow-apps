@@ -34,7 +34,7 @@ storage::PinnedWindowRecord record(const QString& id) {
     value.canvasSourceRect = QRectF(0, 0, 2, 2);
     value.contentCanvasRect = QRectF(0, 0, 2, 2);
     value.surfaceCanvasRect = QRectF(0, 0, 2, 2);
-    value.initialPhysicalSize = QSize(2, 2);
+    value.initialWindowSize = QSize(2, 2);
     value.screenDpi = 1.0;
     value.firstCreationTextDpi = 1.0;
     value.scalePercent = 100.0;

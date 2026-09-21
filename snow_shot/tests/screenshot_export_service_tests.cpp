@@ -65,6 +65,8 @@ class ExportFixture final {
         }
         m_displays.appendDisplay(std::move(display));
         m_geometry.rebuild(m_displays);
+        // Synthetic point displays have no NSScreen identity. Bind their test surface explicitly.
+        m_displays.displayAt(0).screen = QGuiApplication::primaryScreen();
 
         m_service = std::make_unique<ScreenshotExportService>(ScreenshotExportServiceContext{
             m_displays,
@@ -360,6 +362,25 @@ void pointSelectionRetainsBackingPixelsAndScalesEffects() {
         });
     require(hasSamePixels(copied, fixture.displaySnapshot()),
             "point-space clipboard resampled native Retina pixels");
+    for (const QRect bounds : {QRect(0, 0, 40, 30), QRect(3, 5, 21, 13)}) {
+        for (const int padding : {0, 3}) {
+            const ScreenshotResultStyle style{0, padding, Qt::black};
+            const auto request = fixture.service().preparePinnedSelection(bounds, style);
+            require(request.has_value(), "point-space pin preparation failed");
+            const auto layout = ScreenshotResultCompositor::layoutForContent(bounds.size(), style);
+            const int inset = layout.effectInsets.left();
+            require(
+                request->geometry.nativeGeometry == bounds.adjusted(-inset, -inset, inset, inset) &&
+                    request->initialWindowSize == layout.outputRect.size(),
+                "pin bounds and 100 percent size must remain logical, including shadow padding");
+            const QImage result = waitForPinnedResult(fixture.service(), *request);
+            const QImage content = fixture.displaySnapshot().copy(
+                bounds.x() * 2, bounds.y() * 2, bounds.width() * 2, bounds.height() * 2);
+            require(hasSamePixels(result, ScreenshotResultCompositor::compose(
+                                              content, {0, padding * 2, Qt::black})),
+                    "pin export must preserve Retina pixels and scale the shadow exactly once");
+        }
+    }
     SnowCanvasWidget canvas(fixture.runtime());
     canvas.resize(40, 30);
     canvas.show();

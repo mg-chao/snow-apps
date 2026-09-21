@@ -82,14 +82,14 @@ ScreenshotResultStyle decodeResultStyle(const QByteArray& bytes) {
     return style;
 }
 
-// Restore display-local positions within the current usable area. Pixel
-// extents remain unchanged while the display scale determines point dimensions.
+// Restore display-local positions within the current usable area. Window
+// extents retain their platform units independently of image density.
 screenshot_pinned_restore_geometry::RestoredState
 reconcileRestoreState(const snow_shot::storage::PinnedWindowRecord& record, QScreen& target) {
     using namespace snow_shot::presentation;
     const auto restore = [&target](const snow_shot::storage::PinnedWindowPlacement& placement) {
         return placement.isValid()
-                   ? pinnedPixelRect(recoverPinnedPlacement(placement, target), target)
+                   ? pinnedWindowRect(recoverPinnedPlacement(placement, target), target)
                    : QRect();
     };
     return {restore(record.placement), restore(record.preThumbnailPlacement),
@@ -573,7 +573,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     // The worker loader returns a fully composited result image. Keep the live
     // renderer neutral so the result style is not applied twice after loading.
     config.resultStyle = ScreenshotResultStyle{};
-    config.fullResolutionScaleBasis = request.fullResolutionScaleBasis;
+    config.initialWindowSize = request.initialWindowSize;
     config.screen = request.screen;
     config.enableEditing = true;
     config.recognition = m_recognition;
@@ -652,11 +652,10 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
     std::shared_ptr<ScreenshotExportArtifact> artifact, QScreen* screen,
-    const QRect& nativeGeometry, const QSize& fullResolutionScaleBasis,
-    PinnedCompletion completion) {
+    const QRect& nativeGeometry, const QSize& initialWindowSize, PinnedCompletion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image_artifact");
     if (artifact == nullptr || !artifact->isValid() || screen == nullptr ||
-        nativeGeometry.isEmpty() || fullResolutionScaleBasis.isEmpty()) {
+        nativeGeometry.isEmpty() || initialWindowSize.isEmpty()) {
         return false;
     }
 
@@ -667,10 +666,10 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = nativeGeometry;
-    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(fullResolutionScaleBasis));
+    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(initialWindowSize));
     config.contentCanvasRect = config.canvasSourceRect;
     config.surfaceCanvasRect = config.canvasSourceRect;
-    config.fullResolutionScaleBasis = fullResolutionScaleBasis;
+    config.initialWindowSize = initialWindowSize;
     config.screen = screen;
     config.enableEditing = true;
     config.recognition = m_recognition;
@@ -742,13 +741,13 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     const QImage& image, QScreen* screen, const QRect& nativeGeometry,
-    const QSize& fullResolutionScaleBasis, std::shared_ptr<QTextDocument> formattedTextDocument,
+    const QSize& initialWindowSize, std::shared_ptr<QTextDocument> formattedTextDocument,
     const QString& formattedPlainText, qreal formattedTextDevicePixelRatio,
     ScreenshotClipboardOriginalContent originalContent, ScreenshotImageLoader imageLoader,
     PinnedCompletion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
-        !image.isNull() && !image.size().isEmpty() ? image.size() : fullResolutionScaleBasis;
+        !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
         nativeGeometry.isEmpty()) {
         return false;
@@ -783,8 +782,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     }
     config.contentCanvasRect = config.canvasSourceRect;
     config.surfaceCanvasRect = config.canvasSourceRect;
-    config.fullResolutionScaleBasis =
-        fullResolutionScaleBasis.isEmpty() ? imageSize : fullResolutionScaleBasis;
+    config.initialWindowSize = initialWindowSize.isEmpty() ? imageSize : initialWindowSize;
     config.screen = screen;
     config.enableEditing = true;
     config.formattedTextDocument = std::move(formattedTextDocument);
@@ -882,7 +880,7 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         // containment contract during setup.
         config.contentCanvasRect = record.canvasSourceRect;
         config.surfaceCanvasRect = record.canvasSourceRect;
-        config.fullResolutionScaleBasis = record.initialPhysicalSize;
+        config.initialWindowSize = record.initialWindowSize;
         config.screen = targetScreen;
         config.enableEditing = true;
         config.resultStyle = decodeResultStyle(record.resultStyle);

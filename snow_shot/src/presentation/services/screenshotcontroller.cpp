@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
@@ -1630,8 +1631,8 @@ bool ScreenshotController::Impl::moveCursorOnePixel(
         return true;
     }
     // A silent native warp dispatches input synchronously and may change the selection.
-    m_colorPickerController->updateAfterCursorMove(
-        result.position.value(), m_presentationServices->colorPickerContext());
+    m_colorPickerController->updateAfterCursorMove(result.position.value(),
+                                                   m_presentationServices->colorPickerContext());
     return true;
 }
 
@@ -2467,14 +2468,21 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.export_scheduled");
         // The detached snapshot owns the shared source used by presentation and both
         // persistence subscribers.
+        const qreal sourceScale =
+            snow_shot::presentation::kPinnedGeometryUnits ==
+                    snow_shot::presentation::PinnedGeometryUnits::LogicalPixels
+                ? m_scrollingCaptureController->sourceScale()
+                : 1.;
+        const QSize windowSize(std::max(1, qRound(sourceSize.width() / sourceScale)),
+                               std::max(1, qRound(sourceSize.height() / sourceScale)));
         const ScreenshotPinnedImageFit fit =
             autoResizeWindow
                 ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                      sourceSize, display->screen->availableGeometry(), display->screen->geometry(),
-                      ScreenshotGeometryMapper::physicalRectForScreen(*display->screen), 16)
+                      windowSize, display->screen->availableGeometry(), display->screen->geometry(),
+                      snow_shot::presentation::pinnedScreenGeometry(*display->screen), 16)
                 : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                      sourceSize, display->screen->availableGeometry(), display->screen->geometry(),
-                      ScreenshotGeometryMapper::physicalRectForScreen(*display->screen));
+                      windowSize, display->screen->availableGeometry(), display->screen->geometry(),
+                      snow_shot::presentation::pinnedScreenGeometry(*display->screen));
         if (!fit.valid || targetScreen == nullptr || m_selectionExportUiServices == nullptr) {
             SNOW_SHOT_PIN_PERF_FINISH(false);
             if (imageExportNotificationCurrent(*exportGeneration)) {
@@ -2512,7 +2520,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                 const bool presented =
                     receiver->m_impl->m_selectionExportUiServices != nullptr &&
                     receiver->m_impl->m_selectionExportUiServices->presentPinnedImageArtifact(
-                        artifact, targetScreen, fit.nativeGeometry, fit.fullResolutionSize,
+                        artifact, targetScreen, fit.nativeGeometry, fit.initialWindowSize,
                         [receiver, artifact, historyCandidate, generation](bool success,
                                                                            QImage) mutable {
                             SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_complete");
@@ -2757,17 +2765,21 @@ ScreenshotFilePinBatch::Present ScreenshotController::Impl::filePinPresenter(QSc
         const auto fit =
             autoResizeWindow
                 ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                      decoded.image.size(), guardedScreen->availableGeometry(),
-                      guardedScreen->geometry(),
-                      ScreenshotGeometryMapper::physicalRectForScreen(*guardedScreen), 16)
+                      snow_shot::presentation::pinnedImageWindowSize(
+                          decoded.image,
+                          decoded.isFormattedText() ? decoded.formattedTextDevicePixelRatio : 0),
+                      guardedScreen->availableGeometry(), guardedScreen->geometry(),
+                      snow_shot::presentation::pinnedScreenGeometry(*guardedScreen), 16)
                 : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                      decoded.image.size(), guardedScreen->availableGeometry(),
-                      guardedScreen->geometry(),
-                      ScreenshotGeometryMapper::physicalRectForScreen(*guardedScreen));
+                      snow_shot::presentation::pinnedImageWindowSize(
+                          decoded.image,
+                          decoded.isFormattedText() ? decoded.formattedTextDevicePixelRatio : 0),
+                      guardedScreen->availableGeometry(), guardedScreen->geometry(),
+                      snow_shot::presentation::pinnedScreenGeometry(*guardedScreen));
         auto* services = receiver->m_impl->m_selectionExportUiServices.get();
         if (fit.valid && services != nullptr) {
             static_cast<void>(services->presentPinnedImage(
-                decoded.image, guardedScreen, fit.nativeGeometry, fit.fullResolutionSize, {}, {},
+                decoded.image, guardedScreen, fit.nativeGeometry, fit.initialWindowSize, {}, {},
                 1.0, std::move(decoded.originalContent)));
         }
         return true;
@@ -2867,13 +2879,17 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     // runs asynchronously. Encoded, file-backed, and text payloads continue
     // through the decode-first path below because their size is not known yet.
     if (clipboardFastPath) {
+        const QSize windowSize =
+            snapshot->nativeDib.has_value()
+                ? nativeSize
+                : snow_shot::presentation::pinnedImageWindowSize(snapshot->detachedImage);
         const ScreenshotPinnedImageFit fit =
             autoResizeWindow ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                                   nativeSize, screen->availableGeometry(), screen->geometry(),
-                                   ScreenshotGeometryMapper::physicalRectForScreen(*screen), 16)
+                                   windowSize, screen->availableGeometry(), screen->geometry(),
+                                   snow_shot::presentation::pinnedScreenGeometry(*screen), 16)
                              : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                                   nativeSize, screen->availableGeometry(), screen->geometry(),
-                                   ScreenshotGeometryMapper::physicalRectForScreen(*screen));
+                                   windowSize, screen->availableGeometry(), screen->geometry(),
+                                   snow_shot::presentation::pinnedScreenGeometry(*screen));
         SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");
         const QPointer<ScreenshotController> receiver(&owner);
         const QPointer<QScreen> guardedScreen(screen);
@@ -2935,7 +2951,7 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
             fit.valid && m_selectionExportUiServices != nullptr &&
             m_selectionExportUiServices->presentPinnedImage(
                 nativeSnapshot ? QImage{} : snapshot->detachedImage, screen, fit.nativeGeometry,
-                fit.fullResolutionSize, {}, {}, 1.0, {}, imageLoader,
+                fit.initialWindowSize, {}, {}, 1.0, {}, imageLoader,
                 [receiver, generation](bool success, QImage) {
                     SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_complete");
                     SNOW_SHOT_PIN_PERF_FINISH(success);
@@ -3006,17 +3022,23 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
             const ScreenshotPinnedImageFit fit =
                 autoResizeWindow
                     ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                          decoded.image.size(), guardedScreen->availableGeometry(),
-                          guardedScreen->geometry(),
-                          ScreenshotGeometryMapper::physicalRectForScreen(*guardedScreen), 16)
+                          snow_shot::presentation::pinnedImageWindowSize(
+                              decoded.image, decoded.isFormattedText()
+                                                 ? decoded.formattedTextDevicePixelRatio
+                                                 : 0),
+                          guardedScreen->availableGeometry(), guardedScreen->geometry(),
+                          snow_shot::presentation::pinnedScreenGeometry(*guardedScreen), 16)
                     : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                          decoded.image.size(), guardedScreen->availableGeometry(),
-                          guardedScreen->geometry(),
-                          ScreenshotGeometryMapper::physicalRectForScreen(*guardedScreen));
+                          snow_shot::presentation::pinnedImageWindowSize(
+                              decoded.image, decoded.isFormattedText()
+                                                 ? decoded.formattedTextDevicePixelRatio
+                                                 : 0),
+                          guardedScreen->availableGeometry(), guardedScreen->geometry(),
+                          snow_shot::presentation::pinnedScreenGeometry(*guardedScreen));
             SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");
             if (!fit.valid || receiver->m_impl->m_selectionExportUiServices == nullptr ||
                 !receiver->m_impl->m_selectionExportUiServices->presentPinnedImage(
-                    decoded.image, guardedScreen, fit.nativeGeometry, fit.fullResolutionSize,
+                    decoded.image, guardedScreen, fit.nativeGeometry, fit.initialWindowSize,
                     std::move(decoded.formattedDocument), decoded.plainText,
                     decoded.formattedTextDevicePixelRatio, std::move(decoded.originalContent), {},
                     [](bool success, QImage) {

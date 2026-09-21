@@ -118,7 +118,7 @@ class FakeDestination final : public ScreenshotSelectionExportDestinationPort {
         if (!presentationSucceeds) {
             return false;
         }
-        QImage image(request.fullResolutionScaleBasis, QImage::Format_ARGB32);
+        QImage image(request.initialWindowSize, QImage::Format_ARGB32);
         image.fill(Qt::white);
         completion(true, std::move(image));
         return true;
@@ -145,8 +145,14 @@ class FakeStore final : public ScreenshotSelectionParamsStorePort {
 
 struct Fixture {
     Fixture()
-        : workflow(ScreenshotSelectionExportWorkflowContext{
-              captureState, geometry, selection, composer, destination, store, callbackContext}) {
+        : workflow(ScreenshotSelectionExportWorkflowContext{captureState,
+                                                            geometry,
+                                                            selection,
+                                                            composer,
+                                                            destination,
+                                                            store,
+                                                            callbackContext,
+                                                            {}}) {
         CapturedDisplayModel display;
         display.physicalRect = QRect(0, 0, 100, 80);
         display.canvasRect = display.physicalRect;

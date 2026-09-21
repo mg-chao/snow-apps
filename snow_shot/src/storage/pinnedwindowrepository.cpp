@@ -363,10 +363,9 @@ PinnedWindowPlacement placementForRecord(const PinnedWindowPlacement& placement,
                                          const QRect& pixels, const PinnedWindowRecord& record) {
     if (placement.isValid())
         return placement;
-    const qreal dpr = record.screenDpi > 0 ? record.screenDpi : 1.;
+    const qreal dpr = pinnedGeometryScale(record.screenDpi > 0 ? record.screenDpi : 1.);
     return {record.screenName, record.screenSerial,
-            QPointF(pixels.topLeft() - record.screenPhysicalGeometry.topLeft()) / dpr,
-            pixels.size()};
+            QPointF(pixels.topLeft() - record.screenWindowGeometry.topLeft()) / dpr, pixels.size()};
 }
 void normalizePlacement(PinnedWindowRecord& record) {
     record.placement = placementForRecord(record.placement, record.nativeGeometry, record);
@@ -382,7 +381,10 @@ QJsonObject placementToJson(const PinnedWindowPlacement& placement) {
             {QStringLiteral("display_serial"), placement.displaySerial},
             {QStringLiteral("x_points"), placement.position.x()},
             {QStringLiteral("y_points"), placement.position.y()},
-            {QStringLiteral("pixel_size"), sizeToJson(placement.pixelSize)}};
+            {QStringLiteral("window_size"), sizeToJson(placement.windowSize)},
+            {QStringLiteral("geometry_units"), placement.units == PinnedGeometryUnits::LogicalPixels
+                                                   ? QStringLiteral("logical_pixels")
+                                                   : QStringLiteral("physical_pixels")}};
 }
 bool placementFromJson(const QJsonValue& value, PinnedWindowPlacement* placement,
                        bool optional = false) {
@@ -391,10 +393,17 @@ bool placementFromJson(const QJsonValue& value, PinnedWindowPlacement* placement
     const auto object = value.toObject();
     if (optional && object.isEmpty())
         return true;
+    const QString units = object.value(QStringLiteral("geometry_units")).toString();
+    const QString expected = kPinnedGeometryUnits == PinnedGeometryUnits::LogicalPixels
+                                 ? QStringLiteral("logical_pixels")
+                                 : QStringLiteral("physical_pixels");
+    if (units != expected)
+        return false;
+    placement->units = kPinnedGeometryUnits;
     double x = 0, y = 0;
     if (!finiteNumber(object.value(QStringLiteral("x_points")), -10000000, 10000000, &x) ||
         !finiteNumber(object.value(QStringLiteral("y_points")), -10000000, 10000000, &y) ||
-        !sizeFromJson(object.value(QStringLiteral("pixel_size")), &placement->pixelSize))
+        !sizeFromJson(object.value(QStringLiteral("window_size")), &placement->windowSize))
         return false;
     placement->displayName = object.value(QStringLiteral("display_name")).toString();
     placement->displaySerial = object.value(QStringLiteral("display_serial")).toString();
@@ -410,7 +419,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("canvas_source_rect"), rectFToJson(record.canvasSourceRect)},
         {QStringLiteral("content_canvas_rect"), rectFToJson(record.contentCanvasRect)},
         {QStringLiteral("surface_canvas_rect"), rectFToJson(record.surfaceCanvasRect)},
-        {QStringLiteral("initial_physical_size"), sizeToJson(record.initialPhysicalSize)},
+        {QStringLiteral("initial_window_size"), sizeToJson(record.initialWindowSize)},
         {QStringLiteral("placement"),
          placementToJson(placementForRecord(record.placement, record.nativeGeometry, record))},
         {QStringLiteral("pre_thumbnail_placement"),
@@ -423,7 +432,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("screen_name"), record.screenName},
         {QStringLiteral("screen_serial"), record.screenSerial},
         {QStringLiteral("screen_logical_geometry"), rectToJson(record.screenLogicalGeometry)},
-        {QStringLiteral("screen_physical_geometry"), rectToJson(record.screenPhysicalGeometry)},
+        {QStringLiteral("screen_window_geometry"), rectToJson(record.screenWindowGeometry)},
         {QStringLiteral("screen_dpi"), record.screenDpi},
         {QStringLiteral("first_creation_text_dpi"), record.firstCreationTextDpi},
         {QStringLiteral("scale_percent"), record.scalePercent},
@@ -720,8 +729,8 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
         !rectFFromJson(object.value(QStringLiteral("surface_canvas_rect")),
                        &record.surfaceCanvasRect) ||
         !rectFromJson(object.value(QStringLiteral("native_geometry")), &record.nativeGeometry) ||
-        !sizeFromJson(object.value(QStringLiteral("initial_physical_size")),
-                      &record.initialPhysicalSize)) {
+        !sizeFromJson(object.value(QStringLiteral("initial_window_size")),
+                      &record.initialWindowSize)) {
         return false;
     }
     double number = 0.0;
@@ -781,9 +790,9 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
                               &record.screenLogicalGeometry)) {
         return false;
     }
-    if (!object.value(QStringLiteral("screen_physical_geometry")).isUndefined() &&
-        !optionalRectFromJson(object.value(QStringLiteral("screen_physical_geometry")),
-                              &record.screenPhysicalGeometry)) {
+    if (!object.value(QStringLiteral("screen_window_geometry")).isUndefined() &&
+        !optionalRectFromJson(object.value(QStringLiteral("screen_window_geometry")),
+                              &record.screenWindowGeometry)) {
         return false;
     }
     record.originalFileName = object.value(QStringLiteral("original_file_name")).toString();
@@ -1267,8 +1276,8 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
         record.nativeGeometry.isEmpty() || !record.canvasSourceRect.isValid() ||
         record.canvasSourceRect.isEmpty() || !record.contentCanvasRect.isValid() ||
         record.contentCanvasRect.isEmpty() || !record.surfaceCanvasRect.isValid() ||
-        record.surfaceCanvasRect.isEmpty() || !record.initialPhysicalSize.isValid() ||
-        record.initialPhysicalSize.isEmpty() ||
+        record.surfaceCanvasRect.isEmpty() || !record.initialWindowSize.isValid() ||
+        record.initialWindowSize.isEmpty() ||
         record.sourceKind != PinnedWindowSourceKind::ImageData || record.image.isNull() ||
         record.image.size() != sourceImage.pixelSize()) {
         return StorageResult::failure(QStringLiteral("Pinned-window source is invalid"));
@@ -1318,7 +1327,7 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record) {
         !record.canvasSourceRect.isValid() || record.canvasSourceRect.isEmpty() ||
         !record.contentCanvasRect.isValid() || record.contentCanvasRect.isEmpty() ||
         !record.surfaceCanvasRect.isValid() || record.surfaceCanvasRect.isEmpty() ||
-        !record.initialPhysicalSize.isValid() || record.initialPhysicalSize.isEmpty()) {
+        !record.initialWindowSize.isValid() || record.initialWindowSize.isEmpty()) {
         return StorageResult::failure(QStringLiteral("Pinned-window source is invalid"));
     }
     if (record.sourceKind == PinnedWindowSourceKind::ClipboardImageFile &&
@@ -1367,7 +1376,7 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
         !record.canvasSourceRect.isValid() || record.canvasSourceRect.isEmpty() ||
         !record.contentCanvasRect.isValid() || record.contentCanvasRect.isEmpty() ||
         !record.surfaceCanvasRect.isValid() || record.surfaceCanvasRect.isEmpty() ||
-        !record.initialPhysicalSize.isValid() || record.initialPhysicalSize.isEmpty() ||
+        !record.initialWindowSize.isValid() || record.initialWindowSize.isEmpty() ||
         record.canvasSession.size() > kMaximumPayloadBytes ||
         record.recognitionResults.size() > kMaximumPayloadBytes) {
         return StorageResult::failure(QStringLiteral("Pinned-window state is invalid"));
@@ -1460,7 +1469,7 @@ StorageResult PinnedWindowRepository::upsert(PinnedWindowRecord record) {
         !record.canvasSourceRect.isValid() || record.canvasSourceRect.isEmpty() ||
         !record.contentCanvasRect.isValid() || record.contentCanvasRect.isEmpty() ||
         !record.surfaceCanvasRect.isValid() || record.surfaceCanvasRect.isEmpty() ||
-        !record.initialPhysicalSize.isValid() || record.initialPhysicalSize.isEmpty()) {
+        !record.initialWindowSize.isValid() || record.initialWindowSize.isEmpty()) {
         return StorageResult::failure(QStringLiteral("Pinned-window record is invalid"));
     }
     if (record.updatedUtc.isNull()) {

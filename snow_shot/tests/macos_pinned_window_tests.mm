@@ -77,11 +77,13 @@ void nativePolicies(bool focus) {
     require(platform->applyPlacement(placement, screen), "fractional Cocoa placement failed");
     events();
     const auto actual = platform->placement();
-    require(actual && actual->pixelSize == placement.pixelSize &&
+    require(actual && actual->windowSize == placement.windowSize &&
                 actual->position == placement.position,
-            "Cocoa placement readback must preserve half points and odd pixel sizes");
+            "Cocoa placement readback must preserve logical positions and sizes");
     NSView* view = reinterpret_cast<NSView*>(widget.internalWinId());
     NSWindow* window = view.window;
+    require(window.frame.size.width == 321 && window.frame.size.height == 181,
+            "native Cocoa frame must use logical points even on Retina");
     require(window.level == NSFloatingWindowLevel && !window.hidesOnDeactivate,
             "pin must float and remain visible in inactive applications");
     require((window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces) &&
@@ -129,7 +131,7 @@ void nativePolicies(bool focus) {
             "surface recreation must restore platform ownership");
     NSWindow* recreated = [reinterpret_cast<NSView*>(widget.winId()).window retain];
     int notifications = 0;
-    platform->environmentChanged = [&] { ++notifications; };
+    platform->environmentChanged = [&](bool) { ++notifications; };
     platform.reset();
     require(!recreated.ignoresMouseEvents,
             "backend cleanup must restore the original input policy");
@@ -177,10 +179,12 @@ int delivery() {
     pin.show();
     events();
     require(platform->attach() && platform->setInputTransparent(true), "delivery pin setup failed");
+    events(); // Commit input transparency before the next native gesture.
     const auto click = [] {
-        for (CGEventType type : {kCGEventLeftMouseDown, kCGEventLeftMouseUp}) {
+        for (CGEventType type : {kCGEventMouseMoved, kCGEventLeftMouseDown, kCGEventLeftMouseUp}) {
             CGEventRef event =
                 CGEventCreateMouseEvent(nullptr, type, CGPointMake(230, 230), kCGMouseButtonLeft);
+            CGEventSetIntegerValueField(event, kCGMouseEventClickState, 1);
             CGEventPost(kCGHIDEventTap, event);
             CFRelease(event);
             events(100);
@@ -194,6 +198,9 @@ int delivery() {
             "native click-through did not deliver a complete click to another application");
     require(platform->setInputTransparent(false) && platform->activate(),
             "interactive pin setup failed");
+    // Deliver the AppKit input-policy/activation transaction before posting the
+    // next gesture, just as separate user interactions yield to the event loop.
+    events();
     click();
     events(100);
     receiver.waitForReadyRead(300);

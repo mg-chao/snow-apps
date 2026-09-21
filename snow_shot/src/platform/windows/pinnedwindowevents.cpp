@@ -279,7 +279,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
 
         if (nativeMessage->message == WM_GETMINMAXINFO &&
             window.nativeTrackSizeConstraintsEnabled()) {
-            const QSize baseline = window.orientedInitialPhysicalSize();
+            const QSize baseline = window.orientedInitialWindowSize();
             auto* limits = pointerFromLParam<MINMAXINFO>(nativeMessage->lParam);
             if (limits != nullptr && baseline.isValid() && !baseline.isEmpty()) {
                 const QSize minimumSize = physicalSizeAtScale(baseline, kMinimumScalePercent);
@@ -536,7 +536,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             window.m_preserveScaleForSettledGeometry = false;
             resize_geometry::DragHandle handle = resize_geometry::DragHandle::BottomRight;
             auto* proposedNativeRect = pointerFromLParam<RECT>(nativeMessage->lParam);
-            const QSize baseline = window.orientedInitialPhysicalSize();
+            const QSize baseline = window.orientedInitialWindowSize();
             if (proposedNativeRect != nullptr &&
                 dragHandleForSizingEdge(nativeMessage->wParam, &handle) &&
                 window.m_nativeGeometryController != nullptr) {

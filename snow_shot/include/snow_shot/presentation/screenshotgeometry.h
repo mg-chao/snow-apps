@@ -55,9 +55,10 @@ struct ScreenshotHalfOpenRect {
 };
 
 struct ScreenshotPinnedImageGeometry {
+    // Platform window units: logical pixels on macOS, physical pixels on Windows.
     QRect nativeGeometry;
     QRectF canvasSourceRect;
-    QSize initialPhysicalSize;
+    QSize initialWindowSize;
 };
 
 struct ScreenshotPinnedImagePlacement {
@@ -68,7 +69,7 @@ struct ScreenshotPinnedImagePlacement {
 
 struct ScreenshotPinnedImageFit {
     QRect nativeGeometry;
-    QSize fullResolutionSize;
+    QSize initialWindowSize;
     double scalePercent = 0.0;
     bool valid = false;
 };
@@ -178,12 +179,12 @@ class ScreenshotGeometryMapper final {
                                                         const QRect& ownerLogicalBounds,
                                                         const QRect& ownerPhysicalBounds);
     [[nodiscard]] static ScreenshotPinnedImageFit
-    fitImageToAvailableGeometry(const QSize& fullResolutionSize,
+    fitImageToAvailableGeometry(const QSize& initialWindowSize,
                                 const QRect& availableLogicalGeometry,
                                 const QRect& screenLogicalGeometry,
                                 const QRect& screenNativeGeometry, int logicalMargin = 16);
     [[nodiscard]] static ScreenshotPinnedImageFit centerImageAtFullResolution(
-        const QSize& fullResolutionSize, const QRect& availableLogicalGeometry,
+        const QSize& initialWindowSize, const QRect& availableLogicalGeometry,
         const QRect& screenLogicalGeometry, const QRect& screenNativeGeometry);
     [[nodiscard]] static QPoint clampContentPositionToRect(const QPoint& desiredPosition,
                                                            const QRect& contentRect,

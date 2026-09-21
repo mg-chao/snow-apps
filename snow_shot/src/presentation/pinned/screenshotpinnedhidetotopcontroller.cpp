@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/pinnedgeometry.h"
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinnedpointerpresence.h"
 #include "pinnedwindowplatform.h"
@@ -44,7 +45,7 @@ class Handle final : public QWidget {
   protected:
     void paintEvent(QPaintEvent*) override {
         const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(m_owner);
-        const qreal dpr = devicePixelRatioF();
+        const qreal dpr = snow_shot::presentation::pinnedGeometryScale(devicePixelRatioF());
         const QRectF visual(visualRect.x() / dpr, visualRect.y() / dpr, visualRect.width() / dpr,
                             visualRect.height() / dpr);
         QPainter painter(this);
@@ -65,7 +66,11 @@ class Handle final : public QWidget {
             qRound(mappedExtent.top() + mappedExtent.height()) - qRound(mappedExtent.top()));
         if (internalWinId() != 0) {
             const auto* backend = snow_shot::presentation::configurePinnedAuxiliary(this);
-            const QRect client = backend->pixelGeometry();
+            QRect client = backend->windowGeometry();
+            if (snow_shot::presentation::kPinnedGeometryUnits ==
+                snow_shot::presentation::PinnedGeometryUnits::LogicalPixels)
+                client.setSize(QSize(qRound(client.width() * devicePixelRatioF()),
+                                     qRound(client.height() * devicePixelRatioF())));
             if (client.isValid() && !client.isEmpty()) {
                 deviceRect = deviceRect.intersected(QRect(QPoint(), client.size()));
             }
@@ -110,11 +115,12 @@ geometry::Screen geometry::screenGeometry(QScreen* screen) {
     if (screen == nullptr) {
         return {};
     }
-    const QRect physical = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    const QRect physical = snow_shot::presentation::pinnedScreenGeometry(*screen);
     const QRect logical = screen->geometry();
     const QRect available =
         snow_shot::presentation::pinnedDisplayGeometry(*screen).usableBounds.toRect();
-    const qreal dpi = screen->devicePixelRatio() > 0 ? screen->devicePixelRatio() : 1.0;
+    const qreal dpi = snow_shot::presentation::pinnedGeometryScale(
+        screen->devicePixelRatio() > 0 ? screen->devicePixelRatio() : 1.0);
     return {screen,
             QRect(physical.left() + qRound((available.left() - logical.left()) * dpi),
                   physical.top() + qRound((available.top() - logical.top()) * dpi),
@@ -428,7 +434,7 @@ void ScreenshotPinnedHideToTopController::showHandle() {
     auto* backend = snow_shot::presentation::configurePinnedAuxiliary(handle);
     handle->winId();
     if (m_screen.screen) {
-        if (!backend->attach() || !backend->applyPixelGeometry(hit, m_screen.screen)) {
+        if (!backend->attach() || !backend->applyGeometry(hit, m_screen.screen)) {
             exit();
             return;
         }
@@ -437,7 +443,7 @@ void ScreenshotPinnedHideToTopController::showHandle() {
         handle->move(hit.topLeft());
     }
     handle->show();
-    if (m_screen.screen && !backend->applyPixelGeometry(hit, m_screen.screen)) {
+    if (m_screen.screen && !backend->applyGeometry(hit, m_screen.screen)) {
         exit();
         return;
     }

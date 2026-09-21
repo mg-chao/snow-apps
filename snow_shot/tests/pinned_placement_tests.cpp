@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/pinnedgeometry.h"
 #include "presentation/pinned/pinnedplacementgeometry.h"
 #include "presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include <cstdlib>
@@ -15,6 +16,15 @@ void require(bool condition, const char* message) {
 }
 } // namespace
 int main() {
+    QImage raster(QSize(600, 400), QImage::Format_RGB32);
+    require(pinnedImageWindowSize(raster) == QSize(600, 400),
+            "images without a source DPR use one pixel per window unit");
+    raster.setDevicePixelRatio(2);
+    const QSize expectedImageSize = kPinnedGeometryUnits == PinnedGeometryUnits::LogicalPixels
+                                        ? QSize(300, 200)
+                                        : QSize(600, 400);
+    require(pinnedImageWindowSize(raster) == expectedImageSize && raster.size() == QSize(600, 400),
+            "imported image geometry must honor source DPR without downsampling");
     const PinnedDisplayGeometry retina{QStringLiteral("retina"), QStringLiteral("a"),
                                        QRectF(-1600, -300, 1600, 1000),
                                        QRectF(-1600, -262, 1600, 930), 2};
@@ -26,13 +36,14 @@ int main() {
                 pinnedDisplayContains(external, QPointF(0, 100)),
             "fractional boundary positions must select displays using half-open logical bounds");
     PinnedWindowPlacement placement{retina.name, retina.serial, QPointF(100.5, 200.5),
-                                    QSize(321, 181)};
+                                    QSize(321, 181),
+                                    snow_shot::storage::PinnedGeometryUnits::PhysicalPixels};
     require(pinnedDesktopRect(placement, retina) == QRectF(-1499.5, -99.5, 160.5, 90.5),
             "negative display origins and half-point geometry must remain exact");
     const QPointF anchor(137, 61);
     const QPointF pointer(120, 160);
     const auto moved = pinnedPlacementAtPointer(placement, external, pointer, anchor);
-    require(moved.pixelSize == placement.pixelSize && moved.position == QPointF(-17, 99),
+    require(moved.windowSize == placement.windowSize && moved.position == QPointF(-17, 99),
             "display changes must preserve pixel size and grabbed image pixel");
     const auto back = pinnedPlacementAtPointer(
         moved, retina,
@@ -42,16 +53,34 @@ int main() {
         placement = pinnedPlacementAtPointer(placement, external, pointer, anchor);
         placement = pinnedPlacementAtPointer(placement, retina, QPointF(-1431, -69), anchor);
     }
-    require(placement.pixelSize == QSize(321, 181),
+    require(placement.windowSize == QSize(321, 181),
             "repeated display changes must preserve physical extent");
     placement.position = QPointF(10000, -10000);
     const auto recovered = recoverPinnedPlacement(placement, retina);
     require(retina.usableBounds.contains(pinnedDesktopRect(recovered, retina)),
             "display recovery must keep the complete pin below the menu bar and above the Dock");
-    placement.pixelSize = QSize(10000, 10000);
+    placement.windowSize = QSize(10000, 10000);
     require(pinnedDesktopRect(recoverPinnedPlacement(placement, external), external).topLeft() ==
                 external.usableBounds.topLeft(),
             "oversized pins must retain reachable top-left controls without rescaling");
+    // Logical geometry is independent of the display's raster backing scale.
+    using Units = snow_shot::storage::PinnedGeometryUnits;
+    PinnedWindowPlacement logical{retina.name, retina.serial, QPointF(100, 80), QSize(301, 201),
+                                  Units::LogicalPixels};
+    const auto logicalOrigin = logical;
+    require(pinnedDesktopRect(logical, retina) == QRectF(-1500, -220, 301, 201),
+            "Retina must not divide logical position or size");
+    for (int i = 0; i < 1000; ++i) {
+        logical = pinnedPlacementAtPointer(logical, external, QPointF(300, 250), QPointF(30, 20));
+        require(pinnedDesktopRect(logical, external) == QRectF(270, 230, 301, 201),
+                "logical drag must preserve size and pointer anchor on a 1x display");
+        logical = pinnedPlacementAtPointer(logical, retina, QPointF(-1470, -200), QPointF(30, 20));
+        require(logical == logicalOrigin, "logical mixed-scale round trips must not drift");
+    }
+    logical.position = QPointF(10000, -10000);
+    require(retina.usableBounds.contains(
+                pinnedDesktopRect(recoverPinnedPlacement(logical, retina), retina)),
+            "logical recovery must keep controls in the usable point bounds");
     ScreenshotPinnedNativeGeometryController controller;
     require(controller.initialize(QRect(0, 0, 321, 181)), "initialization failed");
     require(!controller.acceptInteractiveGeometry(QRect(1, 1, 321, 181)),

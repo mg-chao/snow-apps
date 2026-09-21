@@ -105,7 +105,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         QRectF contentCanvasRect;
         QRectF surfaceCanvasRect;
         ScreenshotResultStyle resultStyle;
-        QSize fullResolutionScaleBasis;
+        QSize initialWindowSize;
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;
         ScreenshotImageLoader imageLoader;
@@ -296,7 +296,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void applyWheelScale(double percent, const QPointF& nativeCursor);
     bool handleOpacityWheel(QObject* watched, QWheelEvent* event);
     bool handleScaleWheel(QObject* watched, QWheelEvent* event);
-    QSize orientedInitialPhysicalSize() const;
+    QSize orientedInitialWindowSize() const;
     QRect logicalRectForNativeRect(const QRect& nativeRect) const;
     void setEffectiveScale(double percent, bool showReadout);
     void showScaleReadout();
@@ -360,7 +360,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPoint globalPositionForNativePosition(const QPoint& position) const;
     bool isControlsPanelPosition(const QPoint& position) const;
 
-    void reconcilePlatformEnvironment();
+    void reconcilePlatformEnvironment(bool layoutChanged = false);
     bool handleControlledPointer(QObject* watched, QEvent* event);
     void resetPinnedGestures();
     bool handlePinnedGesture(QObject* watched, QEvent* event);
@@ -370,12 +370,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     void endControlledInteraction(bool cancel);
     std::unique_ptr<snow_shot::presentation::PinnedWindowPlatform> m_platform;
     bool m_platformReconciliationPending = false;
+    bool m_platformRecoveryPending = false;
     bool m_platformApplying = false;
     bool m_nativeRestoreInFlight = false;
     std::optional<snow_shot::storage::PinnedWindowPlacement> m_platformPlacement;
     std::optional<snow_shot::storage::PinnedWindowPlacement> m_interactionPlacement;
     QPointF m_interactionPointer;
-    QPointF m_interactionAnchorPixels;
+    QPointF m_interactionAnchor;
     std::optional<int> m_interactionResizeHandle;
     QPointer<QWidget> m_interactionGrabber;
     double m_scrollZoom = 0;
@@ -463,14 +464,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     ScreenshotRecognitionResults m_recognitionResults;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;
-    // Physical pixels are the only unit of the scaling model: the scale value
-    // is always 100 * current native width / oriented m_initialPhysicalSize
-    // width. Monitor DPI never enters that formula; the system scales the
-    // window across monitors and the window only re-derives the value from the
-    // resulting physical size. Creation-time DPI (m_firstCreationTextDpi and
-    // the formatted-text device pixel ratio) affects text and image rendering
-    // exclusively.
-    QSize m_initialPhysicalSize;
+    // Scale is 100 * current window width / oriented initial window width.
+    // Window units are logical pixels on macOS and physical pixels on Windows;
+    // source image density and formatted-text DPR affect rendering only.
+    QSize m_initialWindowSize;
     QSize m_originalPixelSize;
     QRect m_preThumbnailNativeGeometry;
     snow_shot::storage::PinnedWindowPlacement m_preThumbnailPlacement;
@@ -484,7 +481,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     double m_viewportZoom = 1.0;
     QPointF m_viewportCenter;
     bool m_synchronizingViewportGeometry = false;
-    // Derived value: 100 * expanded native width / oriented initial physical
+    // Derived value: 100 * expanded native width / oriented initial window
     // width. In thumbnail mode the saved expansion rectangle supplies that
     // width. Never carries an externally computed or DPI-translated percent.
     double m_scalePercent = 100.0;

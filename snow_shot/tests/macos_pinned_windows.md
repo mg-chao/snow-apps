@@ -3,10 +3,13 @@
 The implementation is available, but full platform qualification remains open.
 The automated results and outstanding hardware checks are recorded below.
 
-Pinned images use a display identity and display-local point position, with a
-separate backing-pixel extent. Image zoom remains stable across Retina changes.
-Toolbars retain their point size. The Cocoa adapter owns AppKit observers and
-native policy restoration; Qt continues to own each window and delegate.
+Pinned windows use a display identity, display-local logical position, and
+logical size. Image pixels remain separate: a 300×200 selection on a 2× display
+pins at exactly 300×200 logical pixels while retaining its 600×400 raster. Moving
+between displays preserves logical size, zoom, and the grabbed content point.
+Toolbars, click-through controls, and hide-to-top handles also use logical geometry.
+The Cocoa adapter owns AppKit observers and native policy restoration; Qt continues
+to own each window and delegate.
 
 Pins and associated palettes, popups, click-through controls, and hide-to-top
 handles join all Spaces and full-screen auxiliary Spaces at the floating level.
@@ -14,7 +17,9 @@ Public AppKit policies determine availability over system surfaces. Ordinary
 interaction and passive hover do not require a global input event tap.
 
 Persistence format 2 uses `pinned_windows_v2` under the settings directory.
-The prior `pinned_windows` directory is left intact and is not imported.
+Placements explicitly store `geometry_units` and `window_size`; records store
+`initial_window_size` separately from raster content. The unreleased schema is
+updated directly; older development data is not migrated.
 
 ## Automated checks
 
@@ -48,7 +53,7 @@ ctest --test-dir build/snow-shot-macos-arm64-debug \
   --output-on-failure
 ```
 
-The native policy case checks frame readback, odd backing-pixel extents, input
+The native policy case checks frame readback, odd logical extents, input
 transparency, Space flags, native-surface recreation, and observer cleanup.
 The separate focus case checks explicit activation, editor focus, input-method
 commits, and passive auxiliary controls; it skips on a locked desktop. The pixel
@@ -58,6 +63,22 @@ case starts a separate receiver process to test complete cross-application
 clicks and dismissal release ownership. It returns CTest skip code 77 when the
 host lacks event-posting permission. It never prompts for permission or changes
 privacy settings. Basic pinning does not require this test permission.
+
+## Recorded validation — 2026-09-21
+
+Host: macOS 27.0, arm64; Qt 6.11.1; deployment target macOS 15.0.
+
+- The Debug application and affected test targets built with strict warnings.
+- All 67 selected unit cases passed after the affected thumbnail export cases
+  were corrected and rerun. Coverage includes screenshot export, placement,
+  Retina interaction, rendered pixel alignment, imports, storage, groups, editing,
+  OCR, thumbnails, and cursor movement. No full repository suite or benchmarks ran.
+- All four Cocoa checks passed: native geometry/policies, focus/IME,
+  cross-application click-through and dismissal, and rendered pixel alignment.
+  Pixel alignment also verifies full-resolution viewport export and that backing
+  notifications preserve oversized/cross-display placement.
+- Formatting and `git diff --check` passed. Windows native regression checks,
+  Intel/macOS 15 execution, and the hardware scenarios below remain unqualified.
 
 ## Recorded validation — 2026-09-18
 
@@ -93,7 +114,7 @@ display geometry/scaling, and pass/fail:
 
 - Drag every edge and corner, change scale and opacity using a mouse and trackpad,
   pinch around different image positions, and cancel a drag with Escape. Check
-  stable aspect ratio, pixel zoom, keyboard nudges, and absence of resize flashes.
+  stable aspect ratio, logical zoom, keyboard nudges, and absence of resize flashes.
 - Move pins between displays repeatedly, including while drawing, viewing OCR,
   showing a thumbnail, or dragging click-through controls. Check the image anchor,
   sharp border, toolbar placement, and retained expansion size.

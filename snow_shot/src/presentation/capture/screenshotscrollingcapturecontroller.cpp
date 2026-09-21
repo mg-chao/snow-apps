@@ -149,6 +149,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         if (!renderSpec.isValid())
             return false;
         viewportPixelSize = renderSpec.pixelSize;
+        sourceScale = renderSpec.scale;
         canvasSelection = selection;
         restoreOriginalColors = context.restoreOriginalScreenColors();
         mode = requestedMode;
@@ -604,6 +605,7 @@ struct ScreenshotScrollingCaptureController::Impl {
     QSet<quint64> detachedResultRequestIds;
     QRect canvasSelection;
     QSize viewportPixelSize;
+    qreal sourceScale = 1.;
     quint64 generation = 0;
     quint64 nextResultRequestId = 0;
     bool active = false;
@@ -643,6 +645,10 @@ void ScreenshotScrollingCaptureController::stop(bool restoreScreenshotPresentati
 
 bool ScreenshotScrollingCaptureController::active() const {
     return m_impl->active;
+}
+
+qreal ScreenshotScrollingCaptureController::sourceScale() const {
+    return m_impl->sourceScale;
 }
 
 QSize ScreenshotScrollingCaptureController::trimmedSize() const {

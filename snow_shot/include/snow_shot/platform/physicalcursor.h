@@ -55,6 +55,8 @@ class PhysicalCursor final {
     [[nodiscard]] std::optional<QPoint> position() const;
     [[nodiscard]] std::optional<QPointF> logicalPosition() const;
     [[nodiscard]] PhysicalCursorMoveResult moveOnePixel(PhysicalCursorDirection direction) const;
+    [[nodiscard]] PhysicalCursorMoveResult movePixels(PhysicalCursorDirection direction,
+                                                      int distance) const;
 
   private:
     PhysicalCursorAccess m_access;

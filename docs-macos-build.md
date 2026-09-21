@@ -224,6 +224,9 @@ stored but are not used on macOS.
 
 See [macOS pinned-window validation](snow_shot/tests/macos_pinned_windows.md) for
 placement semantics, targeted tests, and the hardware qualification checklist.
-Pinned images use all Spaces and preserve their backing-pixel size across display
-changes; toolbars retain their logical size. Pinned persistence now uses format 2
-in `pinned_windows_v2`, leaving previous-version data untouched.
+Pinned windows use logical desktop pixels for position, size, interaction, and
+restore. A 300×200 selection stays 300×200 on both Retina and non-Retina displays;
+its full-resolution image remains independent of window geometry. Pins and their
+controls join all Spaces. The unreleased format 2 schema in `pinned_windows_v2`
+stores explicit geometry units and window sizes; earlier development schemas are
+not migrated.

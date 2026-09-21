@@ -44,10 +44,10 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     // Prepares one hidden native shell for the next Pin to Screen presentation.
     void prewarmPinnedWindow(QScreen* screen = nullptr);
     // A null image is accepted when imageLoader is provided and
-    // fullResolutionScaleBasis supplies the known canvas dimensions.
+    // initialWindowSize supplies the known canvas dimensions.
     [[nodiscard]] bool presentPinnedImage(const QImage& image, QScreen* screen,
                                           const QRect& nativeGeometry,
-                                          const QSize& fullResolutionScaleBasis = {},
+                                          const QSize& initialWindowSize = {},
                                           std::shared_ptr<QTextDocument> formattedTextDocument = {},
                                           const QString& formattedPlainText = {},
                                           qreal formattedTextDevicePixelRatio = 1.0,
@@ -62,7 +62,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                              PinnedCompletion completion = {});
     [[nodiscard]] bool
     presentPinnedImageArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact, QScreen* screen,
-                               const QRect& nativeGeometry, const QSize& fullResolutionScaleBasis,
+                               const QRect& nativeGeometry, const QSize& initialWindowSize,
                                PinnedCompletion completion = {});
     void restorePersistedWindows();
 

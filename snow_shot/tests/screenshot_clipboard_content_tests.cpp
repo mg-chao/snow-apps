@@ -64,6 +64,24 @@ void directImageWinsOverRichText() {
             "direct clipboard images should have priority over HTML");
 }
 
+void imageSourceDensitySurvivesDecode() {
+    QImage image(QSize(600, 400), QImage::Format_RGB32);
+    image.fill(Qt::red);
+    image.setDevicePixelRatio(2);
+    QMimeData mime;
+    mime.setImageData(image);
+    const auto content = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+    require(content && content->image.size() == image.size(),
+            "clipboard decode must retain the raster");
+#if defined(Q_OS_MACOS)
+    require(content->image.devicePixelRatio() == 2.,
+            "macOS pin imports need the source's logical size");
+#else
+    require(content->image.devicePixelRatio() == 1.,
+            "Windows clipboard raster behavior is unchanged");
+#endif
+}
+
 void oversizedDirectImagesAreIgnored() {
     QMimeData mime;
     QImage image(QSize(8192, 8192), QImage::Format_Mono);
@@ -556,6 +574,7 @@ int main(int argc, char** argv) {
     if (!application.arguments().contains(QStringLiteral("--mime-data-only"))) {
         liveSnapshotRetainsBitmapFallback();
     }
+    imageSourceDensitySurvivesDecode();
     directImageWinsOverRichText();
     oversizedDirectImagesAreIgnored();
     encodedImageAndTextAreSupported();

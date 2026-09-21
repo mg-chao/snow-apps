@@ -145,7 +145,7 @@ Sample runSample(const Scenario& scenario, const QStringList& paths, QScreen& sc
             ScreenshotGeometryMapper::physicalRectForScreen(screen), 16);
         require(fit.valid, QStringLiteral("pinned geometry fit failed"));
         static_cast<void>(services.presentPinnedImage(content.image, &screen, fit.nativeGeometry,
-                                                      fit.fullResolutionSize, {}, {}, 1.0,
+                                                      fit.initialWindowSize, {}, {}, 1.0,
                                                       std::move(content.originalContent)));
         return true;
     };

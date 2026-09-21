@@ -208,6 +208,29 @@ void everyDirectionRequestsOnePhysicalPixel() {
     }
 }
 
+void logicalRetinaStepsUseOneWarp() {
+    QPoint live(100, 80);
+    int writes = 0;
+    PhysicalCursor cursor(PhysicalCursorAccess{true, [&] { return std::optional<QPoint>(live); },
+                                               [&](const QPoint& target) {
+                                                   ++writes;
+                                                   live = target;
+                                                   return true;
+                                               }});
+    require(cursor.movePixels(PhysicalCursorDirection::Right, 2).position == QPoint(102, 80) &&
+                writes == 1,
+            "a logical Retina step must warp once across two backing pixels");
+    require(cursor.movePixels(PhysicalCursorDirection::Up, 0).status ==
+                    PhysicalCursorMoveStatus::InvalidTarget &&
+                writes == 1,
+            "invalid distances must not move the cursor");
+    live.setX(std::numeric_limits<int>::max() - 1);
+    require(cursor.movePixels(PhysicalCursorDirection::Right, 2).status ==
+                    PhysicalCursorMoveStatus::InvalidTarget &&
+                writes == 1,
+            "scaled cursor steps must reject overflow");
+}
+
 void everyMoveStartsFromTheLivePosition() {
     QPoint livePosition(10, 20);
     int readCount = 0;
@@ -396,6 +419,7 @@ int main(int argc, char** argv) {
         silentWarpsDeliverMovementThroughQt();
         warpsKeepNativePointerStateSynchronized();
         everyDirectionRequestsOnePhysicalPixel();
+        logicalRetinaStepsUseOneWarp();
         everyMoveStartsFromTheLivePosition();
         operatingSystemResolutionIsReadBack();
         failuresHaveDistinctOutcomes();

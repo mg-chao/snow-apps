@@ -168,7 +168,7 @@ struct ScreenshotPinnedSelectionRequest {
     QRect selection;
     ScreenshotResultStyle resultStyle;
     ScreenshotPinnedImageGeometry geometry;
-    QSize fullResolutionScaleBasis;
+    QSize initialWindowSize;
     QPointer<QScreen> screen;
     ScreenshotRecognitionResults recognitionResults;
     bool recognitionVisible = false;
@@ -177,12 +177,11 @@ struct ScreenshotPinnedSelectionRequest {
     [[nodiscard]] bool isPrepared() const {
         return !selection.isEmpty() && geometry.nativeGeometry.isValid() &&
                !geometry.nativeGeometry.isEmpty() && geometry.canvasSourceRect.isValid() &&
-               !geometry.canvasSourceRect.isEmpty() && geometry.initialPhysicalSize.isValid() &&
-               !geometry.initialPhysicalSize.isEmpty() && contentCanvasRect.isValid() &&
+               !geometry.canvasSourceRect.isEmpty() && geometry.initialWindowSize.isValid() &&
+               !geometry.initialWindowSize.isEmpty() && contentCanvasRect.isValid() &&
                !contentCanvasRect.isEmpty() && surfaceCanvasRect.isValid() &&
                !surfaceCanvasRect.isEmpty() && surfaceCanvasRect.contains(contentCanvasRect) &&
-               fullResolutionScaleBasis.isValid() && !fullResolutionScaleBasis.isEmpty() &&
-               screen != nullptr;
+               initialWindowSize.isValid() && !initialWindowSize.isEmpty() && screen != nullptr;
     }
 };
 

@@ -48,7 +48,7 @@ void fitDoesNotDropBelowMinimumZoom() {
         QSize(10000, 10000), QRect(0, 0, 1280, 680), QRect(0, 0, 1280, 720),
         QRect(0, 0, 1600, 900));
     require(huge.valid && huge.scalePercent == 10.0 &&
-                huge.fullResolutionSize == QSize(10000, 10000) &&
+                huge.initialWindowSize == QSize(10000, 10000) &&
                 huge.nativeGeometry.size() == QSize(1000, 1000),
             "adaptive fit dropped below the minimum zoom");
 }
@@ -70,7 +70,7 @@ void fullResolutionPlacementCentersWithoutFitting() {
         placement.nativeGeometry.top() + placement.nativeGeometry.height() / 2.0);
 
     require(placement.valid && placement.nativeGeometry.size() == imageSize &&
-                placement.fullResolutionSize == imageSize && placement.scalePercent == 100.0,
+                placement.initialWindowSize == imageSize && placement.scalePercent == 100.0,
             "full-resolution placement should preserve the image pixel dimensions");
     require((placementCenter - availableCenter).manhattanLength() <= 1.0 &&
                 !availableNative.contains(placement.nativeGeometry),

@@ -50,6 +50,7 @@ class ScreenshotScrollingCaptureController final : public QObject {
     void endSelectionMove();
     [[nodiscard]] bool movingSelection() const;
     [[nodiscard]] QSize trimmedSize() const;
+    [[nodiscard]] qreal sourceScale() const;
     [[nodiscard]] bool requestTrimmedSnapshot(SnapshotResultCallback callback);
     void detachPendingResultRequest();
     [[nodiscard]] QRect canvasSelection() const;

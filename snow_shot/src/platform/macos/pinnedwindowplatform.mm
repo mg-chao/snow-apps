@@ -51,7 +51,7 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
                                  queue:nil
                             usingBlock:^(NSNotification*) {
                               if (!m_applying && environmentChanged)
-                                  environmentChanged();
+                                  environmentChanged(false);
                             }];
                 [m_observers addObject:token];
             }
@@ -61,7 +61,7 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
                              queue:nil
                         usingBlock:^(NSNotification*) {
                           if (environmentChanged)
-                              environmentChanged();
+                              environmentChanged(false);
                         }] retain];
         }
         window.level = m_staysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel;
@@ -95,27 +95,23 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
     }
     bool applyPlacement(const PinnedPlacement& placement, QScreen* screen,
                         GeometryUpdate) override {
-        if (!m_window || !screen || !placement.isValid())
+        if (!m_window || !screen || !placement.isValid() ||
+            placement.units != storage::PinnedGeometryUnits::LogicalPixels)
             return false;
         m_applying = true;
         m_window->setScreen(screen);
         const QRectF target = pinnedDesktopRect(placement, *screen);
-        // Qt owns the backing store; AppKit supplies the sub-point native frame.
-        // The enclosing Qt surface can contain one transparent excess pixel.
+        // Qt owns the backing store; both Qt and AppKit receive logical geometry.
         m_window->setGeometry(target.toAlignedRect());
         const bool attached = attach();
         if (attached)
             [m_native setFrame:cocoaRect(target) display:YES animate:NO];
         m_applying = false;
         const auto actual = this->placement();
-        // A frame application may itself change the native backing display.
-        // Report the frame result; the shared transaction uses actual backing
-        // pixels to reconcile that transition around its interaction anchor.
+        // Backing-display changes must not alter the logical frame.
         return attached && actual &&
-               std::abs(desktopRect(m_native.frame).x() - target.x()) <
-                   0.51 / screen->devicePixelRatio() &&
-               std::abs(desktopRect(m_native.frame).y() - target.y()) <
-                   0.51 / screen->devicePixelRatio();
+               std::abs(desktopRect(m_native.frame).x() - target.x()) < 0.01 &&
+               std::abs(desktopRect(m_native.frame).y() - target.y()) < 0.01;
     }
     std::optional<PinnedPlacement> placement() const override {
         if (!m_native || !m_window || !m_window->screen())
@@ -129,10 +125,10 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
             }
         }
         const QRectF rect = desktopRect(m_native.frame);
-        const qreal dpr = m_native.backingScaleFactor;
+
         return PinnedPlacement{screen->name(), screen->serialNumber(),
                                rect.topLeft() - QPointF(screen->geometry().topLeft()),
-                               QSize(qRound(rect.width() * dpr), qRound(rect.height() * dpr))};
+                               QSize(qRound(rect.width()), qRound(rect.height()))};
     }
     bool setInputTransparent(bool transparent) override {
         if (!attach())

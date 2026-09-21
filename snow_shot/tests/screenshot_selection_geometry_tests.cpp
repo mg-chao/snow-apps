@@ -630,9 +630,50 @@ void shadowWidthPreservesSelectionAndToolbarPlacement() {
         }
     }
 }
+void logicalPinSelectionUsesDesktopBounds() {
+    ScreenshotDisplaySession displays;
+    for (const auto& entry :
+         {std::pair{QRect(-800, -300, 800, 600), 2.0}, std::pair{QRect(0, 0, 1000, 700), 1.0}}) {
+        CapturedDisplayModel display;
+        display.active = true;
+        display.canvasUsesPoints = true;
+        display.capturedLogicalRect = entry.first;
+        display.physicalRect = entry.first;
+        display.backingScale = entry.second;
+        display.image = QImage(QSize(qRound(entry.first.width() * entry.second),
+                                     qRound(entry.first.height() * entry.second)),
+                               QImage::Format_RGB32);
+        display.image.fill(Qt::white);
+        displays.appendDisplay(std::move(display));
+    }
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    for (const QRect desktop :
+         {QRect(-700, -220, 301, 201), QRect(100, 80, 300, 200), QRect(-20, 40, 100, 101)}) {
+        const QRect selection = desktop.translated(-geometry.canvasOrigin());
+        for (const int padding : {0, 7}) {
+            const QSize surfaceSize = selection.size() + QSize(padding * 2, padding * 2);
+            const auto placement =
+                geometry.pinnedImagePlacement(displays, selection, surfaceSize, padding);
+            require(placement.valid &&
+                        placement.geometry.nativeGeometry ==
+                            desktop.adjusted(-padding, -padding, padding, padding) &&
+                        placement.geometry.initialWindowSize == surfaceSize,
+                    "logical pin selection must retain negative origins, mixed display bounds and "
+                    "effects");
+        }
+        const auto spec = screenshotSelectionRenderSpec(displays, selection);
+        const qreal expectedScale = desktop.x() < 0 ? 2. : 1.;
+        require(spec.isValid() && spec.scale == expectedScale &&
+                    spec.pixelSize == QSize(qRound(selection.width() * expectedScale),
+                                            qRound(selection.height() * expectedScale)),
+                "logical geometry must retain the highest intersecting source resolution");
+    }
+}
 } // namespace
 
 int main() {
+    logicalPinSelectionUsesDesktopBounds();
     shadowWidthPreservesSelectionAndToolbarPlacement();
     lockedAspectRatioAppliesToEveryResizeHandle();
     lockedResizeStaysInsideBoundsWithoutDistorting();

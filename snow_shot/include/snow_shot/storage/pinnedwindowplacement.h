@@ -7,17 +7,28 @@
 #include <cmath>
 
 namespace snow_shot::storage {
-// Positions belong to one display, in points. Extents belong to the image, in
-// backing pixels. There is deliberately no global physical desktop rectangle.
+enum class PinnedGeometryUnits { LogicalPixels, PhysicalPixels };
+#if defined(Q_OS_MACOS)
+inline constexpr auto kPinnedGeometryUnits = PinnedGeometryUnits::LogicalPixels;
+#else
+inline constexpr auto kPinnedGeometryUnits = PinnedGeometryUnits::PhysicalPixels;
+#endif
+inline qreal pinnedGeometryScale(qreal backingScale,
+                                 PinnedGeometryUnits units = kPinnedGeometryUnits) {
+    return units == PinnedGeometryUnits::LogicalPixels ? 1.0 : backingScale;
+}
+// Positions are display-local logical coordinates. Window extents use the
+// explicit platform geometry unit, independently of the source raster size.
 struct PinnedWindowPlacement {
     QString displayName;
     QString displaySerial;
     QPointF position;
-    QSize pixelSize;
+    QSize windowSize;
+    PinnedGeometryUnits units = kPinnedGeometryUnits;
 
     [[nodiscard]] bool isValid() const {
         return std::isfinite(position.x()) && std::isfinite(position.y()) &&
-               pixelSize.width() > 0 && pixelSize.height() > 0;
+               windowSize.width() > 0 && windowSize.height() > 0;
     }
     friend bool operator==(const PinnedWindowPlacement&, const PinnedWindowPlacement&) = default;
 };

@@ -16,14 +16,15 @@ namespace snow_shot::presentation {
 QRect cocoaPinnedUsableGeometry(const QScreen& screen);
 #endif
 PinnedPlacement pinnedPlacement(const QRect& pixels, const QScreen& screen) {
-    const qreal dpr = std::max(qreal(1), screen.devicePixelRatio());
+    const qreal dpr = storage::pinnedGeometryScale(std::max(qreal(1), screen.devicePixelRatio()));
     return {screen.name(), screen.serialNumber(),
             QPointF(pixels.topLeft() - screen.geometry().topLeft()) / dpr, pixels.size()};
 }
-QRect pinnedPixelRect(const PinnedPlacement& placement, const QScreen& screen) {
-    const qreal dpr = std::max(qreal(1), screen.devicePixelRatio());
+QRect pinnedWindowRect(const PinnedPlacement& placement, const QScreen& screen) {
+    const qreal dpr = storage::pinnedGeometryScale(std::max(qreal(1), screen.devicePixelRatio()),
+                                                   placement.units);
     return {screen.geometry().topLeft() + (placement.position * dpr).toPoint(),
-            placement.pixelSize};
+            placement.windowSize};
 }
 PinnedDisplayGeometry pinnedDisplayGeometry(const QScreen& screen) {
     QRect usable = screen.availableGeometry();
@@ -63,22 +64,22 @@ PinnedWindowPlatform::PinnedWindowPlatform(QWidget* window, Role role)
     : m_window(window), m_role(role) {
     window->installEventFilter(this);
     qApp->installEventFilter(this);
-    const auto changed = [this] {
+    const auto changed = [this](bool layoutChanged) {
         if (environmentChanged)
-            environmentChanged();
+            environmentChanged(layoutChanged);
     };
     const auto watch = [this, changed](QScreen* screen) {
-        connect(screen, &QScreen::geometryChanged, this, changed);
-        connect(screen, &QScreen::availableGeometryChanged, this, changed);
-        connect(screen, &QScreen::physicalDotsPerInchChanged, this, changed);
+        connect(screen, &QScreen::geometryChanged, this, [changed] { changed(true); });
+        connect(screen, &QScreen::availableGeometryChanged, this, [changed] { changed(true); });
+        connect(screen, &QScreen::physicalDotsPerInchChanged, this, [changed] { changed(false); });
     };
     for (QScreen* screen : QGuiApplication::screens())
         watch(screen);
     connect(qGuiApp, &QGuiApplication::screenAdded, this, [watch, changed](QScreen* screen) {
         watch(screen);
-        changed();
+        changed(false);
     });
-    connect(qGuiApp, &QGuiApplication::screenRemoved, this, changed);
+    connect(qGuiApp, &QGuiApplication::screenRemoved, this, [changed] { changed(true); });
 }
 PinnedWindowPlatform::~PinnedWindowPlatform() = default;
 void PinnedWindowPlatform::observeNativeSurface() {
@@ -120,7 +121,7 @@ bool PinnedWindowPlatform::eventFilter(QObject* watched, QEvent* event) {
     } else if (event->type() == QEvent::DevicePixelRatioChange ||
                event->type() == QEvent::ScreenChangeInternal) {
         if (environmentChanged)
-            environmentChanged();
+            environmentChanged(false);
     }
     return false;
 }
@@ -137,8 +138,8 @@ std::optional<bool> PinnedWindowPlatform::pointerInside() const {
     return pinnedDesktopRect(*current, *pinnedDisplay(*current, m_window->screen()))
         .contains(*pointer);
 }
-bool PinnedWindowPlatform::applyPixelGeometry(const QRect& pixels, QScreen* screen,
-                                              GeometryUpdate update) {
+bool PinnedWindowPlatform::applyGeometry(const QRect& pixels, QScreen* screen,
+                                         GeometryUpdate update) {
     if (!screen || !pixels.isValid())
         return false;
     return applyStablePlacement(pinnedPlacement(pixels, *screen), screen, update);
@@ -147,15 +148,16 @@ bool PinnedWindowPlatform::applyStablePlacement(PinnedPlacement requested, QScre
                                                 GeometryUpdate update) {
     if (!screen || !requested.isValid())
         return false;
-    const QSize pixelSize = requested.pixelSize;
+    const QSize windowSize = requested.windowSize;
     const QPointF desktopAnchor = pinnedDesktopRect(requested, *screen).topLeft();
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    const int attempts = requested.units == storage::PinnedGeometryUnits::LogicalPixels ? 1 : 3;
+    for (int attempt = 0; attempt < attempts; ++attempt) {
         if (!applyPlacement(requested, screen, update))
             return false;
         const auto actual = placement();
         if (!actual)
             return false;
-        if (actual->pixelSize == pixelSize)
+        if (actual->windowSize == windowSize)
             return true;
         screen = pinnedDisplay(*actual, screen);
         requested.displayName = screen->name();
@@ -164,10 +166,10 @@ bool PinnedWindowPlatform::applyStablePlacement(PinnedPlacement requested, QScre
     }
     return false;
 }
-QRect PinnedWindowPlatform::pixelGeometry() const {
+QRect PinnedWindowPlatform::windowGeometry() const {
     const auto current = placement();
     return current && m_window && m_window->screen()
-               ? pinnedPixelRect(*current, *pinnedDisplay(*current, m_window->screen()))
+               ? pinnedWindowRect(*current, *pinnedDisplay(*current, m_window->screen()))
                : QRect();
 }
 
@@ -181,7 +183,8 @@ class QtPinnedWindowPlatform final : public PinnedWindowPlatform {
     void detach() override {}
     bool applyPlacement(const PinnedPlacement& placement, QScreen* screen,
                         GeometryUpdate) override {
-        if (!m_window || !screen || !placement.isValid())
+        if (!m_window || !screen || !placement.isValid() ||
+            placement.units != storage::kPinnedGeometryUnits)
             return false;
         m_placement = placement;
         m_window->setScreen(screen);
@@ -272,7 +275,7 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
     bool systemInteractionReleased() const override {
         return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0;
     }
-    QRect framePixelGeometry() const override {
+    QRect frameGeometry() const override {
         return m_window ? screenshot_pinned_window_native::currentWindowGeometry(
                               m_window->internalWinId())
                         : QRect();
@@ -284,7 +287,7 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
                                       invalidate ? PaintSynchronization::InvalidateAndUpdate
                                                  : PaintSynchronization::FlushAlreadyPainted);
     }
-    bool applyPixelGeometry(const QRect& pixels, QScreen*, GeometryUpdate update) override {
+    bool applyGeometry(const QRect& pixels, QScreen*, GeometryUpdate update) override {
         return m_window && m_window->internalWinId() &&
                screenshot_pinned_window_native::applyClientGeometry(
                    m_window->internalWinId(), pixels,
@@ -292,7 +295,7 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
                        ? screenshot_pinned_window_native::GeometryUpdate::DiscardClientPixels
                        : screenshot_pinned_window_native::GeometryUpdate::PreserveClientPixels);
     }
-    QRect pixelGeometry() const override {
+    QRect windowGeometry() const override {
         return m_window && m_window->internalWinId()
                    ? screenshot_pinned_window_native::currentClientGeometry(
                          m_window->internalWinId())
@@ -301,12 +304,12 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
     bool applyPlacement(const PinnedPlacement& placement, QScreen* screen,
                         GeometryUpdate update) override {
         return screen && placement.isValid() &&
-               applyPixelGeometry(pinnedPixelRect(placement, *screen), screen, update);
+               applyGeometry(pinnedWindowRect(placement, *screen), screen, update);
     }
     std::optional<PinnedPlacement> placement() const override {
         if (!m_window || !m_window->screen())
             return std::nullopt;
-        const QRect rect = pixelGeometry();
+        const QRect rect = windowGeometry();
         return rect.isValid() ? std::optional(pinnedPlacement(rect, *m_window->screen()))
                               : std::nullopt;
     }

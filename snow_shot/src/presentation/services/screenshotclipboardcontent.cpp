@@ -119,7 +119,9 @@ QImage normalizedImage(QImage image) {
         image.sizeInBytes() > kMaximumClipboardImageBytes) {
         return {};
     }
+#if !defined(Q_OS_MACOS)
     image.setDevicePixelRatio(1.0);
+#endif
     return image;
 }
 

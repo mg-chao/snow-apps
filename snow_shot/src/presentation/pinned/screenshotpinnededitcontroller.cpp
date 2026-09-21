@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 
@@ -805,7 +806,7 @@ QRect ScreenshotPinnedEditController::placementLogicalBounds() const {
 
 QRect ScreenshotPinnedEditController::placementPhysicalBounds() const {
     if (QScreen* screen = placementScreen()) {
-        const QRect screenPhysicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+        const QRect screenPhysicalBounds = snow_shot::presentation::pinnedScreenGeometry(*screen);
         if (screenPhysicalBounds.isValid() && !screenPhysicalBounds.isEmpty()) {
             return screenPhysicalBounds;
         }

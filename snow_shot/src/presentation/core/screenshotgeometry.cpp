@@ -877,11 +877,11 @@ QRect ScreenshotGeometryMapper::nativeRectForLogicalRect(const QRect& logicalRec
 }
 
 ScreenshotPinnedImageFit ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-    const QSize& fullResolutionSize, const QRect& availableLogicalGeometry,
+    const QSize& initialWindowSize, const QRect& availableLogicalGeometry,
     const QRect& screenLogicalGeometry, const QRect& screenNativeGeometry, int logicalMargin) {
     ScreenshotPinnedImageFit fit;
-    fit.fullResolutionSize = fullResolutionSize;
-    if (!fullResolutionSize.isValid() || fullResolutionSize.isEmpty() ||
+    fit.initialWindowSize = initialWindowSize;
+    if (!initialWindowSize.isValid() || initialWindowSize.isEmpty() ||
         !availableLogicalGeometry.isValid() || availableLogicalGeometry.isEmpty() ||
         !screenLogicalGeometry.isValid() || screenLogicalGeometry.isEmpty() ||
         !screenNativeGeometry.isValid() || screenNativeGeometry.isEmpty()) {
@@ -901,13 +901,13 @@ ScreenshotPinnedImageFit ScreenshotGeometryMapper::fitImageToAvailableGeometry(
 
     const double scale = std::max(
         kMinimumZoom,
-        std::min({1.0, static_cast<double>(insetNative.width()) / fullResolutionSize.width(),
-                  static_cast<double>(insetNative.height()) / fullResolutionSize.height()}));
+        std::min({1.0, static_cast<double>(insetNative.width()) / initialWindowSize.width(),
+                  static_cast<double>(insetNative.height()) / initialWindowSize.height()}));
     if (!(scale > 0.0)) {
         return fit;
     }
-    const QSize fittedSize(std::max(1, qRound(fullResolutionSize.width() * scale)),
-                           std::max(1, qRound(fullResolutionSize.height() * scale)));
+    const QSize fittedSize(std::max(1, qRound(initialWindowSize.width() * scale)),
+                           std::max(1, qRound(initialWindowSize.height() * scale)));
     fit.nativeGeometry =
         QRect(QPoint(insetNative.left() + (insetNative.width() - fittedSize.width()) / 2,
                      insetNative.top() + (insetNative.height() - fittedSize.height()) / 2),
@@ -918,11 +918,11 @@ ScreenshotPinnedImageFit ScreenshotGeometryMapper::fitImageToAvailableGeometry(
 }
 
 ScreenshotPinnedImageFit ScreenshotGeometryMapper::centerImageAtFullResolution(
-    const QSize& fullResolutionSize, const QRect& availableLogicalGeometry,
+    const QSize& initialWindowSize, const QRect& availableLogicalGeometry,
     const QRect& screenLogicalGeometry, const QRect& screenNativeGeometry) {
     ScreenshotPinnedImageFit placement;
-    placement.fullResolutionSize = fullResolutionSize;
-    if (!fullResolutionSize.isValid() || fullResolutionSize.isEmpty() ||
+    placement.initialWindowSize = initialWindowSize;
+    if (!initialWindowSize.isValid() || initialWindowSize.isEmpty() ||
         !availableLogicalGeometry.isValid() || availableLogicalGeometry.isEmpty() ||
         !screenLogicalGeometry.isValid() || screenLogicalGeometry.isEmpty() ||
         !screenNativeGeometry.isValid() || screenNativeGeometry.isEmpty()) {
@@ -935,10 +935,10 @@ ScreenshotPinnedImageFit ScreenshotGeometryMapper::centerImageAtFullResolution(
         return placement;
     }
     const QPoint topLeft(qRound(availableNative.left() +
-                                (availableNative.width() - fullResolutionSize.width()) / 2.0),
+                                (availableNative.width() - initialWindowSize.width()) / 2.0),
                          qRound(availableNative.top() +
-                                (availableNative.height() - fullResolutionSize.height()) / 2.0));
-    placement.nativeGeometry = QRect(topLeft, fullResolutionSize);
+                                (availableNative.height() - initialWindowSize.height()) / 2.0));
+    placement.nativeGeometry = QRect(topLeft, initialWindowSize);
     placement.scalePercent = 100.0;
     placement.valid = true;
     return placement;
@@ -1073,7 +1073,7 @@ ScreenshotGeometryMapper::pinnedImageGeometry(const QRect& nativeWindowGeometry,
     ScreenshotPinnedImageGeometry geometry;
     geometry.nativeGeometry = nativeWindowGeometry;
     geometry.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(imagePixelSize));
-    geometry.initialPhysicalSize = nativeWindowGeometry.size();
+    geometry.initialWindowSize = nativeWindowGeometry.size();
     return geometry;
 }
 
@@ -1100,8 +1100,13 @@ ScreenshotPinnedImagePlacement ScreenshotGeometryMapper::pinnedImagePlacement(
     const QRect nativeGeometry(nativeContentTopLeft - QPoint(shadowPadding, shadowPadding),
                                imagePixelSize);
 
-    const CapturedDisplayModel* placementDisplay = displayForPhysicalPoint(
-        displaySession, ScreenshotHalfOpenRect::fromRect(nativeGeometry).center());
+    const CapturedDisplayModel* placementDisplay =
+        anchorDisplay->canvasUsesPoints
+            ? displayForCanvasPoint(displaySession,
+                                    ScreenshotHalfOpenRect::fromRect(nativeGeometry).center() -
+                                        QPointF(m_canvasOrigin))
+            : displayForPhysicalPoint(displaySession,
+                                      ScreenshotHalfOpenRect::fromRect(nativeGeometry).center());
     if (placementDisplay == nullptr) {
         placementDisplay = anchorDisplay;
     }
@@ -1110,7 +1115,7 @@ ScreenshotPinnedImagePlacement ScreenshotGeometryMapper::pinnedImagePlacement(
     placement.screen = placementDisplay->screen;
     placement.valid = !placement.geometry.nativeGeometry.isEmpty() &&
                       !placement.geometry.canvasSourceRect.isEmpty() &&
-                      !placement.geometry.initialPhysicalSize.isEmpty();
+                      !placement.geometry.initialWindowSize.isEmpty();
     return placement;
 }
 

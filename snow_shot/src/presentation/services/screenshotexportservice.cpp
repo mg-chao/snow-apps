@@ -118,7 +118,7 @@ preparePinnedSelectionRequest(const ScreenshotDisplaySession& displaySession,
         static_cast<qreal>(shadowPadding), static_cast<qreal>(shadowPadding));
     request.geometry = placement.geometry;
     request.geometry.canvasSourceRect = request.surfaceCanvasRect;
-    request.fullResolutionScaleBasis = layout.outputRect.size();
+    request.initialWindowSize = layout.outputRect.size();
     request.screen = placement.screen;
     return request;
 }
@@ -399,20 +399,24 @@ bool ScreenshotExportService::schedulePinnedSelection(ScreenshotPinnedSelectionR
     }
 
     auto* worker = static_cast<ScreenshotExportWorker*>(m_worker);
+    const auto renderSpec =
+        screenshotSelectionRenderSpec(m_context.displaySession, request.selection);
+    if (!renderSpec.isValid())
+        return false;
     const auto resultState = std::make_shared<ScreenshotPinnedSelectionResultHandle::State>();
     const QPointer<ScreenshotExportWorker> guardedWorker(worker);
     const bool scheduled = QMetaObject::invokeMethod(
         worker,
         [guardedWorker, resultState, documentSession = std::move(documentSession), smartErase,
-         sources = std::move(sources), selection = request.selection,
-         style = request.resultStyle]() mutable {
+         sources = std::move(sources), selection = request.selection, style = request.resultStyle,
+         renderSpec]() mutable {
             SNOW_SHOT_PIN_PERF_SCOPE("export.worker_callback");
             if (guardedWorker.isNull() || resultState->isCancelled()) {
                 return;
             }
             SNOW_SHOT_PIN_PERF_MILESTONE("export.render_started");
             QImage image = guardedWorker->renderSelection(documentSession, smartErase, selection,
-                                                          style, sources);
+                                                          style, sources, renderSpec);
             SNOW_SHOT_PIN_PERF_MILESTONE("export.render_finished");
             SNOW_SHOT_PIN_PERF_MILESTONE("export.result_published");
             const bool succeeded = !image.isNull();
