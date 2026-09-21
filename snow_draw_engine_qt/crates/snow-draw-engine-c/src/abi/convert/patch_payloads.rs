@@ -163,7 +163,9 @@ pub(crate) fn snow_spotlight_cutout_from_rust(
 /// `omit_arrow_points` must be set for pen filters (their points travel through
 /// `pen_filter_geometry_ops` instead) and `omit_path_commands` for arrows whose
 /// commands travel through `path_geometry_ops`; skipping the conversion here
-/// avoids allocating buffers that the patch payload would discard.
+/// avoids allocating buffers that the patch payload would discard. Tapered arrows
+/// retain complete contours as well: Qt fills them in one operation rather than
+/// stroking individual chunks, preserving joins and translucent colors.
 pub(crate) fn snow_scene_display_item_from_rust(
     value: &SceneDisplayItem,
     omit_arrow_points: bool,
@@ -260,6 +262,7 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.fill = item.fill.into();
             out.fill_style = snow_fill_style_from_rust(item.fill_style);
             out.arrow_type = snow_arrow_type_from_rust(item.arrow_type);
+            out.arrow_shaft_type = super::snow_arrow_shaft_type_from_rust(item.arrow_shaft_type);
             out.is_free_draw = u8::from(item.is_free_draw);
             out.arrow_start_head = snow_arrowhead_from_rust(item.start_arrowhead);
             out.arrow_end_head = snow_arrowhead_from_rust(item.end_arrowhead);
@@ -275,7 +278,9 @@ pub(crate) fn snow_scene_display_item_from_rust(
                     snow_arrow_points_from_rust(&item.points).into_boxed_slice();
                 out.arrow_point_count = converted.arrow_points.len() as u32;
             }
-            if !omit_path_commands {
+            if !omit_path_commands
+                || item.arrow_shaft_type == snow_draw_engine_core::arrow::ArrowShaftType::Tapered
+            {
                 converted.arrow_path_commands =
                     snow_arrow_path_commands_from_rust(&item.path_commands).into_boxed_slice();
                 out.arrow_path_command_count = converted.arrow_path_commands.len() as u32;
@@ -408,6 +413,7 @@ pub(crate) fn snow_overlay_display_item_from_rust(
             out.stroke = item.stroke.into();
             out.stroke_width = item.stroke_width;
             out.arrow_type = snow_arrow_type_from_rust(item.arrow_type);
+            out.arrow_shaft_type = super::snow_arrow_shaft_type_from_rust(item.arrow_shaft_type);
             out.arrow_start_head = snow_arrowhead_from_rust(item.start_arrowhead);
             out.arrow_end_head = snow_arrowhead_from_rust(item.end_arrowhead);
             out.arrow_stroke_style = snow_stroke_style_from_rust(item.stroke_style);
@@ -662,6 +668,22 @@ mod tests {
         assert_eq!(item.view.stroke_width, 30.0);
         assert_eq!(item.view.arrow_point_count, 2);
         assert_eq!(item.view.arrow_path_command_count, 2);
+    }
+
+    #[test]
+    fn tapered_arrow_keeps_contours_when_path_chunks_are_exported() {
+        let mut arrow = snow_draw_engine::ArrowDisplayItem::default();
+        arrow.arrow_shaft_type = snow_draw_engine_core::arrow::ArrowShaftType::Tapered;
+        arrow.path_commands = vec![
+            ArrowPathCommand::MoveTo { point: [0.0, 0.0] },
+            ArrowPathCommand::LineTo {
+                point: [100.0, 5.0],
+            },
+        ];
+        let item = snow_scene_display_item_from_rust(&SceneDisplayItem::Arrow(arrow), true, true);
+        assert_eq!(item.view.arrow_shaft_type, SnowArrowShaftType::Tapered);
+        assert_eq!(item.view.arrow_path_command_count, 2);
+        assert!(!item.view.arrow_path_commands.is_null());
     }
 
     #[test]

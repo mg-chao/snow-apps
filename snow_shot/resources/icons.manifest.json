@@ -87,6 +87,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowShaftPlain",
+      "name": "arrow-shaft-plain",
+      "source": "../src/presentation/components/icons/resources/arrow-shaft-plain.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ArrowShaftTapered",
+      "name": "arrow-shaft-tapered",
+      "source": "../src/presentation/components/icons/resources/arrow-shaft-tapered.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowTypeCurved",
       "name": "arrow-type-curved",
       "source": "../src/presentation/components/icons/resources/arrow-type-curved.svg",

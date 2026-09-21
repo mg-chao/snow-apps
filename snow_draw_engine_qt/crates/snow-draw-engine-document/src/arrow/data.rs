@@ -73,6 +73,8 @@ pub struct ArrowData {
     pub start_arrowhead: Option<Arrowhead>,
     pub end_arrowhead: Option<Arrowhead>,
     pub arrow_type: ArrowType,
+    #[serde(default)]
+    pub arrow_shaft_type: snow_draw_engine_core::arrow::ArrowShaftType,
     pub fixed_segments: Option<Vec<FixedSegment>>,
     pub start_is_special: Option<bool>,
     pub end_is_special: Option<bool>,
@@ -118,6 +120,7 @@ impl ArrowData {
             start_arrowhead,
             end_arrowhead,
             arrow_type,
+            arrow_shaft_type: Default::default(),
             fixed_segments: None,
             start_is_special: None,
             end_is_special: None,
@@ -158,6 +161,7 @@ impl ArrowData {
 
     pub fn inherit_linear_metadata_from(&mut self, source: &Self) {
         self.linear_kind = source.linear_kind;
+        self.arrow_shaft_type = source.arrow_shaft_type;
         self.fill = source.fill;
         self.fill_style = source.fill_style;
         self.opacity = source.opacity;
@@ -299,6 +303,7 @@ impl ArrowData {
             start_arrowhead: self.start_arrowhead,
             end_arrowhead: self.end_arrowhead,
             arrow_type: self.arrow_type,
+            arrow_shaft_type: self.arrow_shaft_type,
             fixed_segments: match &patch.fixed_segments {
                 Some(segments) => segments.clone(),
                 None => self.fixed_segments.clone(),
@@ -534,7 +539,16 @@ pub fn validate_arrow(arrow: &ArrowData) -> Result<(), ErrorCode> {
 }
 
 pub fn arrow_bounds(arrow: &ArrowData) -> DrawRect {
-    let global_points = arrow_visual_points(arrow);
+    let mut global_points = arrow_visual_points(arrow);
+    if let Some(shaft) = crate::tapered_arrow_geometry(arrow) {
+        global_points.extend(
+            shaft
+                .contours
+                .iter()
+                .flatten()
+                .map(|p| Point::new(p[0], p[1])),
+        );
+    }
     let half_stroke = arrow.stroke_width.max(0.0) / 2.0;
 
     let mut bounds = global_points
@@ -573,6 +587,26 @@ pub fn arrow_hit_test(arrow: &ArrowData, point: Point<f64>, hit_tolerance: f64) 
     }
 
     let threshold = arrow.stroke_width / 2.0 + hit_tolerance.max(0.0);
+    if let Some(shaft) = crate::tapered_arrow_geometry(arrow) {
+        let hit = shaft.contours.iter().any(|contour| {
+            let polygon: Vec<_> = contour.iter().map(|p| Point::new(p[0], p[1])).collect();
+            (!shaft.hollow && point_in_polygon(&polygon, point))
+                || polygon
+                    .iter()
+                    .zip(polygon.iter().cycle().skip(1))
+                    .take(polygon.len())
+                    .any(|(&a, &b)| distance_point_to_segment(point, a, b) <= threshold)
+        });
+        let opposite = match shaft.destination {
+            ArrowEndpointPosition::Start => ArrowEndpointPosition::End,
+            ArrowEndpointPosition::End => ArrowEndpointPosition::Start,
+        };
+        return hit
+            || arrowhead_render_primitives(arrow, opposite)
+                .iter()
+                .any(|p| arrowhead_primitive_hit_test(p, point, threshold));
+    }
+
     if global_points
         .windows(2)
         .any(|segment| distance_point_to_segment(point, segment[0], segment[1]) <= threshold)

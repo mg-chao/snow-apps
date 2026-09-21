@@ -575,13 +575,66 @@ void drawArrowPath(QPainter& painter, const QVector<QPointF>& points,
 
 void drawArrowDisplayItem(QPainter& painter, const ArrowRenderProjection& projection,
                           const SnowArrowPoint* points, std::uint32_t pointCount,
-                          SnowArrowType arrowType, SnowArrowhead startHead, SnowArrowhead endHead,
+                          SnowArrowType arrowType, SnowArrowShaftType shaftType,
+                          SnowArrowhead startHead, SnowArrowhead endHead,
                           SnowStrokeStyle strokeStyle, bool isFreeDraw, bool roundCaps,
                           const SnowColorRgba8& stroke, double strokeWidth,
                           const QPainterPath* pathOverride,
                           const SnowArrowheadPrimitive* arrowheadPrimitives,
                           std::uint32_t arrowheadPrimitiveCount) {
     const QVector<QPointF> viewPoints = arrowPointsToView(projection.view, points, pointCount);
+    if (shaftType == SNOW_ARROW_SHAFT_TYPE_TAPERED && pathOverride != nullptr) {
+        painter.save();
+        const SnowArrowhead destination = endHead == SNOW_ARROWHEAD_NONE ? startHead : endHead;
+        QPainterPath contour = *pathOverride;
+        contour.setFillRule(Qt::WindingFill);
+        if (destination == SNOW_ARROWHEAD_TRIANGLE_OUTLINE) {
+            QPen pen(toQColor(stroke), strokeWidth * projection.view.cameraZoom, Qt::SolidLine,
+                     Qt::RoundCap, Qt::RoundJoin);
+            applyArrowStrokeStyle(pen, strokeStyle);
+            painter.setPen(pen);
+            painter.setBrush(Qt::NoBrush);
+            if (strokeStyle != SNOW_STROKE_STYLE_SOLID && !viewPoints.isEmpty()) {
+                // Triangle outlines retain solid head edges even with a dashed shaft.
+                // Stroke both paths into one filled area to avoid dark alpha seams.
+                const QPointF tip =
+                    endHead == SNOW_ARROWHEAD_NONE ? viewPoints.front() : viewPoints.back();
+                QPainterPath headEdges;
+                for (int i = 1; i + 1 < contour.elementCount(); ++i) {
+                    const auto element = contour.elementAt(i);
+                    if (QLineF(QPointF(element.x, element.y), tip).length() < 0.001) {
+                        const auto before = contour.elementAt(i - 1);
+                        const auto after = contour.elementAt(i + 1);
+                        headEdges.moveTo(before.x, before.y);
+                        headEdges.lineTo(tip);
+                        headEdges.lineTo(after.x, after.y);
+                        break;
+                    }
+                }
+                QPainterPathStroker stroker;
+                stroker.setWidth(pen.widthF());
+                stroker.setCapStyle(pen.capStyle());
+                stroker.setJoinStyle(pen.joinStyle());
+                const QPainterPath solidHead = stroker.createStroke(headEdges);
+                stroker.setDashPattern(pen.dashPattern());
+                contour = stroker.createStroke(contour).united(solidHead);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(toQColor(stroke));
+            }
+        } else {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(toQColor(stroke));
+        }
+        painter.drawPath(contour);
+        if (arrowheadPrimitiveCount > 0) {
+            drawArrowheadPrimitives(painter, projection, arrowheadPrimitives,
+                                    arrowheadPrimitiveCount, strokeStyle, toQColor(stroke),
+                                    strokeWidth * projection.view.cameraZoom);
+        }
+        painter.restore();
+        return;
+    }
+
     drawArrowPath(painter, viewPoints, pathOverride, projection, arrowheadPrimitives,
                   arrowheadPrimitiveCount, arrowType, startHead, endHead, strokeStyle, isFreeDraw,
                   roundCaps, toQColor(stroke), strokeWidth * projection.view.cameraZoom,
@@ -792,7 +845,7 @@ void drawArrowItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
         clip.addRect(labelRect);
         painter.setClipPath(clip, Qt::IntersectClip);
     }
-    if (!item.pathChunks().empty()) {
+    if (!item.pathChunks().empty() && item.arrow_shaft_type != SNOW_ARROW_SHAFT_TYPE_TAPERED) {
         drawOwnedPathChunks(painter, projection, item);
         const QVector<QPointF> viewPoints =
             arrowPointsToView(projection.view, item.arrow_points, item.arrow_point_count);
@@ -822,8 +875,8 @@ void drawArrowItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
                                                     item.stroke_width * projection.view.cameraZoom);
         }
         drawArrowDisplayItem(painter, projection, item.arrow_points, item.arrow_point_count,
-                             item.arrow_type, item.arrow_start_head, item.arrow_end_head,
-                             item.arrow_stroke_style, item.is_free_draw != 0,
+                             item.arrow_type, item.arrow_shaft_type, item.arrow_start_head,
+                             item.arrow_end_head, item.arrow_stroke_style, item.is_free_draw != 0,
                              item.blend_mode == SNOW_BLEND_MODE_MULTIPLY, item.stroke,
                              item.stroke_width, rustPath.isEmpty() ? nullptr : &rustPath,
                              item.arrowhead_primitives, item.arrowhead_primitive_count);
@@ -1166,10 +1219,10 @@ void drawFocusConnectionItem(QPainter& painter, const OverlayDisplayInfo& displa
     QPainterPath rustPath = arrowPathFromCommands(projection.view, item.arrow_path_commands,
                                                   item.arrow_path_command_count);
     drawArrowDisplayItem(painter, projection, item.arrow_points, item.arrow_point_count,
-                         item.arrow_type, item.arrow_start_head, item.arrow_end_head,
-                         item.arrow_stroke_style, false, false, item.stroke, item.stroke_width,
-                         rustPath.isEmpty() ? nullptr : &rustPath, item.arrowhead_primitives,
-                         item.arrowhead_primitive_count);
+                         item.arrow_type, item.arrow_shaft_type, item.arrow_start_head,
+                         item.arrow_end_head, item.arrow_stroke_style, false, false, item.stroke,
+                         item.stroke_width, rustPath.isEmpty() ? nullptr : &rustPath,
+                         item.arrowhead_primitives, item.arrowhead_primitive_count);
 }
 
 void drawPenFilterContourItem(QPainter& painter, const OverlayDisplayInfo& displayInfo,

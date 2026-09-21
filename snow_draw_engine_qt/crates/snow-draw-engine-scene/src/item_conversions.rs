@@ -117,14 +117,18 @@ pub(crate) fn scene_item_from_rect(id: ElementId, rect: RectangleData) -> SceneD
 }
 
 pub(crate) fn scene_item_from_arrow(id: ElementId, arrow: ArrowData) -> SceneDisplayItem {
-    let path_commands = arrow.path_commands();
+    let shaft = snow_draw_engine_document::tapered_arrow_geometry(&arrow);
+    let path_commands = shaft
+        .as_ref()
+        .map_or_else(|| arrow.path_commands(), |g| g.path_commands());
     let fill_path_is_closed = arrow.fill_path_is_closed();
     let geometry = Arc::new(snow_draw_engine_core::PathGeometry::from_commands(
         0,
         path_commands.clone(),
         fill_path_is_closed,
     ));
-    let arrowhead_primitives = arrowhead_display_primitives(&arrow);
+    let arrowhead_primitives =
+        arrowhead_display_primitives(&arrow, shaft.as_ref().map(|g| g.destination));
     SceneDisplayItem::Arrow(ArrowDisplayItem {
         bound_text_id: None,
         label_bounds: None,
@@ -137,6 +141,11 @@ pub(crate) fn scene_item_from_arrow(id: ElementId, arrow: ArrowData) -> SceneDis
         path_commands,
         geometry,
         arrow_type: arrow.arrow_type,
+        arrow_shaft_type: if shaft.is_some() {
+            arrow.arrow_shaft_type
+        } else {
+            Default::default()
+        },
         start_arrowhead: arrow.start_arrowhead,
         end_arrowhead: arrow.end_arrowhead,
         stroke: arrow.stroke,
@@ -189,6 +198,7 @@ pub(crate) fn scene_item_from_free_draw(
         path_commands: geometry.flattened_commands(),
         geometry,
         arrow_type: snow_draw_engine_core::arrow::ArrowType::Curve,
+        arrow_shaft_type: Default::default(),
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: free_draw.stroke,
@@ -215,6 +225,7 @@ pub(crate) fn scene_item_from_free_draw_preview(
         path_commands: preview.geometry.flattened_commands(),
         geometry: preview.geometry.clone(),
         arrow_type: snow_draw_engine_core::arrow::ArrowType::Curve,
+        arrow_shaft_type: Default::default(),
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: preview.stroke,
@@ -240,9 +251,13 @@ pub(crate) fn free_draw_preview_bounds(preview: &FreeDrawPreview) -> DrawRect {
     )
 }
 
-fn arrowhead_display_primitives(arrow: &ArrowData) -> Vec<ArrowheadDisplayPrimitive> {
+fn arrowhead_display_primitives(
+    arrow: &ArrowData,
+    joined_head: Option<ArrowEndpointPosition>,
+) -> Vec<ArrowheadDisplayPrimitive> {
     [ArrowEndpointPosition::Start, ArrowEndpointPosition::End]
         .into_iter()
+        .filter(|position| joined_head != Some(*position))
         .flat_map(|position| arrowhead_render_primitives(arrow, position))
         .map(arrowhead_display_primitive)
         .collect()
@@ -633,6 +648,7 @@ pub(crate) fn focus_connection_item(
             },
         ],
         arrow_type: ArrowType::Straight,
+        arrow_shaft_type: Default::default(),
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: SNOW_SHOT_FOCUS_CONNECTION_STROKE,
@@ -643,20 +659,31 @@ pub(crate) fn focus_connection_item(
 }
 
 pub(crate) fn hover_arrow_item(arrow: &ArrowData, zoom: f64) -> UiFocusConnectionDisplayItem {
+    let shaft = snow_draw_engine_document::tapered_arrow_geometry(arrow);
     UiFocusConnectionDisplayItem {
         points: arrow
             .global_points()
             .iter()
             .map(|point| [point.x, point.y])
             .collect(),
-        path_commands: arrow.path_commands(),
+        path_commands: shaft
+            .as_ref()
+            .map_or_else(|| arrow.path_commands(), |g| g.path_commands()),
         arrow_type: arrow.arrow_type,
+        arrow_shaft_type: if shaft.is_some() {
+            arrow.arrow_shaft_type
+        } else {
+            Default::default()
+        },
         start_arrowhead: arrow.start_arrowhead,
         end_arrowhead: arrow.end_arrowhead,
         stroke: SELECTION_COLOR,
         stroke_width: 1.0 / zoom.max(0.0001),
         stroke_style: StrokeStyle::Solid,
-        arrowhead_primitives: arrowhead_display_primitives(arrow),
+        arrowhead_primitives: arrowhead_display_primitives(
+            arrow,
+            shaft.as_ref().map(|g| g.destination),
+        ),
     }
 }
 
@@ -672,6 +699,7 @@ pub(crate) fn hover_free_draw_item(
             .collect(),
         path_commands: free_draw.path_commands(),
         arrow_type: ArrowType::Curve,
+        arrow_shaft_type: Default::default(),
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: SELECTION_COLOR,
@@ -702,6 +730,7 @@ pub(crate) fn hover_pen_filter_item(filter: &PenFilterData) -> UiFocusConnection
         points: points.iter().map(|point| [point.x, point.y]).collect(),
         path_commands,
         arrow_type: ArrowType::Straight,
+        arrow_shaft_type: Default::default(),
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: SELECTION_COLOR,
@@ -1393,4 +1422,70 @@ pub(crate) fn scene_item_from_pen_filter_preview(
         }),
         bounds,
     ))
+}
+
+#[cfg(test)]
+mod shaft_tests {
+    use super::*;
+    use snow_draw_engine_core::arrow::ArrowShaftType;
+
+    #[test]
+    fn tapered_arrow_scene_and_hover_share_contours_and_fallback() {
+        let mut arrow = ArrowData::from_global_points(
+            &[Point::new(0.0, 0.0), Point::new(100.0, 0.0)],
+            ColorRgba8::default(),
+            2.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            None,
+            Some(snow_draw_engine_core::arrow::Arrowhead::TriangleOutline),
+        )
+        .unwrap();
+        arrow.arrow_shaft_type = ArrowShaftType::Tapered;
+        let expected = snow_draw_engine_document::tapered_arrow_geometry(&arrow)
+            .unwrap()
+            .path_commands();
+        let SceneDisplayItem::Arrow(scene) = scene_item_from_arrow(
+            ElementId {
+                index: 0,
+                generation: 0,
+            },
+            arrow.clone(),
+        ) else {
+            panic!("expected arrow")
+        };
+        assert_eq!(scene.path_commands, expected);
+        assert_eq!(scene.geometry.flattened_commands(), expected);
+        assert!(
+            scene.arrowhead_primitives.is_empty(),
+            "joined head is already in the contour"
+        );
+        let hover = hover_arrow_item(&arrow, 2.0);
+        assert_eq!(hover.path_commands, expected);
+        let frame = snow_draw_engine_display::FrameView::default();
+        let bounds = crate::item_bounds::overlay_display_item_bounds(
+            &snow_draw_engine_display::OverlayDisplayItem::FocusConnection(hover),
+            frame,
+        )
+        .unwrap();
+        assert!(
+            bounds.min_y <= scene.geometry.canvas_bounds[1] + frame.surface.height as f64 * 0.5
+        );
+        assert!(
+            bounds.max_y >= scene.geometry.canvas_bounds[3] + frame.surface.height as f64 * 0.5
+        );
+        arrow.end_arrowhead = Some(snow_draw_engine_core::arrow::Arrowhead::Circle);
+        let SceneDisplayItem::Arrow(scene) = scene_item_from_arrow(
+            ElementId {
+                index: 0,
+                generation: 0,
+            },
+            arrow.clone(),
+        ) else {
+            panic!("expected arrow")
+        };
+        assert_eq!(scene.arrow_shaft_type, ArrowShaftType::Plain);
+        assert_eq!(scene.path_commands, arrow.path_commands());
+        assert_eq!(arrow.arrow_shaft_type, ArrowShaftType::Tapered);
+    }
 }

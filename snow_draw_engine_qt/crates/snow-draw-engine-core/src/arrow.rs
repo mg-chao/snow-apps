@@ -101,6 +101,15 @@ pub enum ArrowType {
     Elbow,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+/// Stored preference. Unsupported destination heads render plain without changing it.
+pub enum ArrowShaftType {
+    #[default]
+    Plain,
+    Tapered,
+}
+
 impl ArrowType {
     pub const fn is_elbow(self) -> bool {
         matches!(self, Self::Elbow)

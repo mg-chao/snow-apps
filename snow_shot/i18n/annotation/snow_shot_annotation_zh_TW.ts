@@ -60,6 +60,10 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Arrow shaft type</source>
+            <translation>箭桿類型</translation>
+        </message>
+        <message>
             <source>Arrow stroke color</source>
             <translation>箭頭筆畫色彩</translation>
         </message>
@@ -612,6 +616,10 @@
             <translation>釘選到螢幕</translation>
         </message>
         <message>
+            <source>Plain shaft</source>
+            <translation>普通箭桿</translation>
+        </message>
+        <message>
             <source>Please enter a template name</source>
             <translation>請輸入範本名稱</translation>
         </message>
@@ -898,6 +906,14 @@
         <message>
             <source>Table recognition</source>
             <translation>表格辨識</translation>
+        </message>
+        <message>
+            <source>Tapered shaft</source>
+            <translation>漸寬箭桿</translation>
+        </message>
+        <message>
+            <source>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads.</source>
+            <translation>漸寬箭桿支援標準、三角形、空心三角形和內凹三角形箭頭。</translation>
         </message>
         <message>
             <source>Template</source>

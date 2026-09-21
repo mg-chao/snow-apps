@@ -93,6 +93,7 @@ impl ShapeStyle {
             end_arrowhead: self.end_arrowhead,
             stroke_style: self.stroke_style,
             arrow_type: self.arrow_type,
+            arrow_shaft_type: self.arrow_shaft_type,
         }
     }
 
@@ -114,6 +115,7 @@ impl ShapeStyle {
         self.end_arrowhead = style.end_arrowhead;
         self.stroke_style = style.stroke_style;
         self.arrow_type = style.arrow_type;
+        self.arrow_shaft_type = style.arrow_shaft_type;
         self
     }
 
@@ -136,6 +138,7 @@ impl ShapeStyle {
             end_arrowhead: None,
             stroke_style: style.stroke_style,
             arrow_type: ArrowType::Straight,
+            arrow_shaft_type: Default::default(),
             opacity: 1.0,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             shape: style.shape,
@@ -204,6 +207,9 @@ impl ShapeStylePatch {
         if properties & SHAPE_STYLE_PROPERTY_STROKE_STYLE != 0 {
             current.stroke_style = self.style.stroke_style;
         }
+        if properties & crate::SHAPE_STYLE_PROPERTY_ARROW_SHAFT_TYPE != 0 {
+            current.arrow_shaft_type = self.style.arrow_shaft_type;
+        }
         if properties & SHAPE_STYLE_PROPERTY_ARROW_TYPE != 0 {
             current.arrow_type = self.style.arrow_type;
         }
@@ -268,6 +274,7 @@ struct ShapeStyleSample {
     start_arrowhead: Option<Option<Arrowhead>>,
     end_arrowhead: Option<Option<Arrowhead>>,
     arrow_type: Option<ArrowType>,
+    arrow_shaft_type: Option<snow_draw_engine_core::arrow::ArrowShaftType>,
     opacity: f64,
     highlight_shape: Option<snow_draw_engine_document::HighlightShape>,
     shape: Option<snow_draw_engine_document::HighlightShape>,
@@ -285,6 +292,7 @@ impl ShapeStyleSample {
             start_arrowhead: None,
             end_arrowhead: None,
             arrow_type: None,
+            arrow_shaft_type: None,
             opacity: rectangle.opacity,
             highlight_shape: rectangle
                 .is_highlight()
@@ -304,6 +312,8 @@ impl ShapeStyleSample {
             start_arrowhead: (!arrow.is_line()).then_some(arrow.start_arrowhead),
             end_arrowhead: (!arrow.is_line()).then_some(arrow.end_arrowhead),
             arrow_type: (!arrow.is_pen_highlight()).then_some(arrow.arrow_type),
+            arrow_shaft_type: (!arrow.is_line() && !arrow.is_pen_highlight())
+                .then_some(arrow.arrow_shaft_type),
             opacity: arrow.opacity,
             highlight_shape: None,
             shape: None,
@@ -321,6 +331,7 @@ impl ShapeStyleSample {
             start_arrowhead: None,
             end_arrowhead: None,
             arrow_type: None,
+            arrow_shaft_type: None,
             opacity: free_draw.opacity,
             highlight_shape: None,
             shape: None,
@@ -351,6 +362,7 @@ impl ArrowStyle {
             end_arrowhead: arrow.end_arrowhead,
             stroke_style: arrow.stroke_style,
             arrow_type: arrow.arrow_type,
+            arrow_shaft_type: arrow.arrow_shaft_type,
         }
     }
 }
@@ -367,6 +379,7 @@ impl ShapeStyle {
             end_arrowhead: None,
             stroke_style: line.stroke_style,
             arrow_type: normalized_line_arrow_type(line.arrow_type),
+            arrow_shaft_type: Default::default(),
             opacity: line.opacity,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             shape: snow_draw_engine_document::HighlightShape::Rectangle,
@@ -384,6 +397,7 @@ impl ShapeStyle {
             end_arrowhead: None,
             stroke_style: free_draw.stroke_style,
             arrow_type: ArrowType::Curve,
+            arrow_shaft_type: Default::default(),
             opacity: free_draw.opacity,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
             shape: snow_draw_engine_document::HighlightShape::Rectangle,
@@ -1151,6 +1165,9 @@ impl Editor {
             }
             if style.end_arrowhead != first.end_arrowhead {
                 mixed |= SHAPE_STYLE_MIXED_END_ARROWHEAD;
+            }
+            if style.arrow_shaft_type != first.arrow_shaft_type {
+                mixed |= crate::SHAPE_STYLE_MIXED_ARROW_SHAFT_TYPE;
             }
             if style.arrow_type != first.arrow_type {
                 mixed |= SHAPE_STYLE_MIXED_ARROW_TYPE;
@@ -1987,6 +2004,7 @@ mod tests {
             end_arrowhead: Some(Arrowhead::Arrow),
             stroke_style: StrokeStyle::Dotted,
             arrow_type: ArrowType::Curve,
+            arrow_shaft_type: Default::default(),
         };
         let mut updated_style =
             ShapeStyle::from_rectangle_shape_style(rectangle_style).with_arrow_style(arrow_style);
@@ -2414,6 +2432,87 @@ mod tests {
             )
             .unwrap();
         assert_eq!(editor.state.default_line_style.arrow_type, ArrowType::Curve);
+    }
+
+    #[test]
+    fn tapered_arrow_mixed_selection_and_style_changes() {
+        use snow_draw_engine_core::arrow::ArrowShaftType;
+        let mut document = DocumentModel::new();
+        let mut insert = Transaction::new("insert mixed shafts");
+        let mut ids = Vec::new();
+        for (i, shaft) in [ArrowShaftType::Plain, ArrowShaftType::Tapered]
+            .into_iter()
+            .enumerate()
+        {
+            let id = document.allocate_element_id();
+            let mut arrow = ArrowData::from_global_points(
+                &[
+                    Point::new(0.0, i as f64 * 30.0),
+                    Point::new(100.0, i as f64 * 30.0),
+                ],
+                ColorRgba8::default(),
+                2.0,
+                StrokeStyle::Solid,
+                ArrowType::Straight,
+                None,
+                Some(Arrowhead::Triangle),
+            )
+            .unwrap();
+            arrow.arrow_shaft_type = shaft;
+            insert.insert_arrow(id, ElementMeta::default(), arrow);
+            ids.push(id);
+        }
+        document.apply_transaction(insert).unwrap();
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state_with_document(Some(&document), ids.clone(), Some(ids[0]));
+        assert_ne!(
+            editor.shape_style_mixed(&document) & crate::SHAPE_STYLE_MIXED_ARROW_SHAFT_TYPE,
+            0
+        );
+        let mut style = editor.shape_style(&document);
+        style.arrow_shaft_type = ArrowShaftType::Tapered;
+        let Some(EditorCommand::ApplyTransaction(command)) = editor
+            .set_shape_style_patch(
+                &document,
+                ShapeStylePatch {
+                    kind: ShapeKind::Arrow,
+                    style,
+                    properties: crate::SHAPE_STYLE_PROPERTY_ARROW_SHAFT_TYPE,
+                },
+            )
+            .unwrap()
+        else {
+            panic!("shaft change needs transaction")
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        assert_eq!(
+            editor.shape_style_mixed(&document) & crate::SHAPE_STYLE_MIXED_ARROW_SHAFT_TYPE,
+            0
+        );
+        for selected in &editor.state.selection.arrows {
+            assert_eq!(selected.arrow.arrow_shaft_type, ArrowShaftType::Tapered);
+        }
+        style.end_arrowhead = Some(Arrowhead::Circle);
+        style.arrow_type = ArrowType::Elbow;
+        let Some(EditorCommand::ApplyTransaction(command)) = editor
+            .set_shape_style_patch(
+                &document,
+                ShapeStylePatch {
+                    kind: ShapeKind::Arrow,
+                    style,
+                    properties: SHAPE_STYLE_PROPERTY_END_ARROWHEAD
+                        | SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+                },
+            )
+            .unwrap()
+        else {
+            panic!("head change needs transaction")
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        for selected in &editor.state.selection.arrows {
+            assert_eq!(selected.arrow.arrow_shaft_type, ArrowShaftType::Tapered);
+            assert!(snow_draw_engine_document::tapered_arrow_geometry(&selected.arrow).is_none());
+        }
     }
 
     #[test]

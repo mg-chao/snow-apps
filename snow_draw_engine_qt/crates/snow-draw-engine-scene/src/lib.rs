@@ -1648,6 +1648,7 @@ mod tests {
             path_commands: commands,
             geometry,
             arrow_type: ArrowType::Straight,
+            arrow_shaft_type: Default::default(),
             start_arrowhead: None,
             end_arrowhead: None,
             stroke: ColorRgba8 {

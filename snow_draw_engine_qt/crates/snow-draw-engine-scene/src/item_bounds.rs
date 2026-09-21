@@ -94,16 +94,29 @@ fn draw_path_item_bounds(
     frame_view: FrameView,
     item: &snow_draw_engine_display::ArrowDisplayItem,
 ) -> Option<DirtyRegion> {
-    let bounds = item.geometry.canvas_bounds;
-    if bounds.iter().any(|value| !value.is_finite()) || item.stroke_width < 0.0 {
+    draw_path_geometry_bounds(
+        frame_view,
+        item.geometry.canvas_bounds,
+        item.stroke_width,
+        &item.arrowhead_primitives,
+    )
+}
+
+fn draw_path_geometry_bounds(
+    frame_view: FrameView,
+    bounds: [f64; 4],
+    stroke_width: f64,
+    arrowhead_primitives: &[snow_draw_engine_display::ArrowheadDisplayPrimitive],
+) -> Option<DirtyRegion> {
+    if bounds.iter().any(|value| !value.is_finite()) || stroke_width < 0.0 {
         return None;
     }
-    let outset = item.stroke_width * 0.5;
+    let outset = stroke_width * 0.5;
     let mut min_x = bounds[0] - outset;
     let mut min_y = bounds[1] - outset;
     let mut max_x = bounds[2] + outset;
     let mut max_y = bounds[3] + outset;
-    for primitive in &item.arrowhead_primitives {
+    for primitive in arrowhead_primitives {
         for point in &primitive.points {
             min_x = min_x.min(point[0] - outset);
             min_y = min_y.min(point[1] - outset);
@@ -172,6 +185,21 @@ pub(crate) fn overlay_display_item_bounds(
             item.rotation,
             item.stroke_width,
         ),
+        OverlayDisplayItem::FocusConnection(item)
+            if item.arrow_shaft_type == snow_draw_engine_core::arrow::ArrowShaftType::Tapered =>
+        {
+            let geometry = snow_draw_engine_core::PathGeometry::from_commands(
+                0,
+                item.path_commands.clone(),
+                false,
+            );
+            draw_path_geometry_bounds(
+                frame_view,
+                geometry.canvas_bounds,
+                item.stroke_width,
+                &item.arrowhead_primitives,
+            )
+        }
         OverlayDisplayItem::FocusConnection(item) => draw_arrow_bounds(
             frame_view,
             display_arrow_to_document_arrow(
@@ -493,6 +521,7 @@ fn display_arrow_to_document_arrow(
         start_arrowhead,
         end_arrowhead,
         arrow_type,
+        arrow_shaft_type: Default::default(),
         fixed_segments: None,
         start_is_special: None,
         end_is_special: None,

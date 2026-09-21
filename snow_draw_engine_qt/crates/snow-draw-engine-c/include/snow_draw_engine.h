@@ -287,6 +287,11 @@ typedef enum SnowArrowhead {
     SNOW_ARROWHEAD_INDENTED_TRIANGLE = 15
 } SnowArrowhead;
 
+typedef enum SnowArrowShaftType {
+    SNOW_ARROW_SHAFT_TYPE_PLAIN = 0,
+    SNOW_ARROW_SHAFT_TYPE_TAPERED = 1,
+} SnowArrowShaftType;
+
 typedef enum SnowArrowType {
     SNOW_ARROW_TYPE_STRAIGHT = 0,
     SNOW_ARROW_TYPE_CURVE = 1,
@@ -443,6 +448,7 @@ typedef struct SnowShapeStyle {
     SnowArrowhead end_arrowhead;
     SnowStrokeStyle stroke_style;
     SnowArrowType arrow_type;
+    SnowArrowShaftType arrow_shaft_type;
     SnowFillStyle fill_style;
     double opacity;
     SnowHighlightShape highlight_shape;
@@ -468,6 +474,7 @@ typedef enum SnowShapeKind {
 #define SNOW_SHAPE_STYLE_PROPERTY_START_ARROWHEAD (1u << 5)
 #define SNOW_SHAPE_STYLE_PROPERTY_END_ARROWHEAD (1u << 6)
 #define SNOW_SHAPE_STYLE_PROPERTY_STROKE_STYLE (1u << 7)
+#define SNOW_SHAPE_STYLE_PROPERTY_ARROW_SHAFT_TYPE (1u << 12)
 #define SNOW_SHAPE_STYLE_PROPERTY_ARROW_TYPE (1u << 8)
 #define SNOW_SHAPE_STYLE_PROPERTY_OPACITY (1u << 9)
 #define SNOW_SHAPE_STYLE_PROPERTY_HIGHLIGHT_SHAPE (1u << 10)
@@ -475,8 +482,8 @@ typedef enum SnowShapeKind {
 #define SNOW_SHAPE_STYLE_PROPERTY_LINE                                                             \
     (SNOW_SHAPE_STYLE_PROPERTY_FILL | SNOW_SHAPE_STYLE_PROPERTY_FILL_STYLE |                       \
      SNOW_SHAPE_STYLE_PROPERTY_STROKE | SNOW_SHAPE_STYLE_PROPERTY_STROKE_WIDTH |                   \
-     SNOW_SHAPE_STYLE_PROPERTY_STROKE_STYLE | SNOW_SHAPE_STYLE_PROPERTY_ARROW_TYPE |               \
-     SNOW_SHAPE_STYLE_PROPERTY_OPACITY)
+     SNOW_SHAPE_STYLE_PROPERTY_ARROW_SHAFT_TYPE | SNOW_SHAPE_STYLE_PROPERTY_STROKE_STYLE |         \
+     SNOW_SHAPE_STYLE_PROPERTY_ARROW_TYPE | SNOW_SHAPE_STYLE_PROPERTY_OPACITY)
 #define SNOW_SHAPE_STYLE_PROPERTY_FREE_DRAW                                                        \
     (SNOW_SHAPE_STYLE_PROPERTY_FILL | SNOW_SHAPE_STYLE_PROPERTY_FILL_STYLE |                       \
      SNOW_SHAPE_STYLE_PROPERTY_STROKE | SNOW_SHAPE_STYLE_PROPERTY_STROKE_WIDTH |                   \
@@ -498,6 +505,7 @@ typedef struct SnowArrowStyle {
     SnowArrowhead end_arrowhead;
     SnowStrokeStyle stroke_style;
     SnowArrowType arrow_type;
+    SnowArrowShaftType arrow_shaft_type;
     uint8_t reserved0[4];
 } SnowArrowStyle;
 
@@ -1035,6 +1043,7 @@ typedef struct SnowSceneDisplayItem {
     SnowCornerRadii corner_radii;
     uint32_t arrow_point_count;
     SnowArrowType arrow_type;
+    SnowArrowShaftType arrow_shaft_type;
     uint8_t is_free_draw;
     uint8_t reserved1[2];
     SnowArrowhead arrow_start_head;
@@ -1110,6 +1119,7 @@ typedef struct SnowOverlayDisplayItem {
     SnowCornerRadii corner_radii;
     uint32_t arrow_point_count;
     SnowArrowType arrow_type;
+    SnowArrowShaftType arrow_shaft_type;
     uint8_t reserved1[3];
     SnowArrowhead arrow_start_head;
     SnowArrowhead arrow_end_head;

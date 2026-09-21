@@ -530,6 +530,7 @@ impl EditorState {
             default_arrow_style: default_styles.arrow,
             default_line_style: ShapeStyle {
                 arrow_type: normalized_line_arrow_type(default_styles.line.arrow_type),
+                arrow_shaft_type: Default::default(),
                 ..default_styles.line
             },
             default_free_draw_style: default_styles.free_draw,

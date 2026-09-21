@@ -7647,6 +7647,14 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
                 arrowLayout->indexOf(separators.at(1)) < arrowLayout->indexOf(arrowTypeControls),
             "arrow stroke width should remain between color and arrow type");
 
+    QWidget* shaftControl = controlWithAccessibleName(palette, "Arrow shaft type");
+    QWidget* shaftRoot = styleEditorRoot(arrowControls, "arrow-shaft-type");
+    require(shaftControl != nullptr && shaftRoot != nullptr, "shaft editor should be present");
+    require(arrowLayout->indexOf(styleEditorRoot(arrowControls, "start-arrowhead")) <
+                    arrowLayout->indexOf(shaftRoot) &&
+                arrowLayout->indexOf(shaftRoot) <
+                    arrowLayout->indexOf(styleEditorRoot(arrowControls, "end-arrowhead")),
+            "shaft editor must be between the endpoint editors");
     int arrowPopoverOptionSpacing = -1;
     for (QWidget* trigger : {
              startArrowheadControl,
@@ -7725,6 +7733,15 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
     require(emittedStyle.endArrowhead == SnowCanvasArrowhead::DiamondOutline,
             "end arrowhead should update");
 
+    clickPopoverStyleControl(showPopoverForTrigger(shaftControl), "Tapered shaft");
+    require(emittedStyle.arrowShaftType == SnowCanvasArrowShaftType::Tapered,
+            "shaft editor should emit the tapered preference even for an unsupported head");
+    clickPopoverStyleControl(showPopoverForTrigger(endArrowheadControl), "End arrowhead triangle");
+    require(emittedStyle.arrowShaftType == SnowCanvasArrowShaftType::Tapered,
+            "supported head must retain the tapered preference");
+    clickPopoverStyleControl(showPopoverForTrigger(shaftControl), "Plain shaft");
+    require(emittedStyle.arrowShaftType == SnowCanvasArrowShaftType::Plain,
+            "plain shaft must be selectable");
     for (const auto& [trigger, label, triangleLabel] : {
              std::tuple{startArrowheadControl, "Start arrowhead indented triangle",
                         "Start arrowhead triangle"},
@@ -7752,7 +7769,7 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
         require(indented->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal,
                 "reopening the picker should retain the indented triangle selection");
     }
-    require(styleChangeCount == 8 &&
+    require(styleChangeCount == 11 &&
                 emittedStyle.startArrowhead == SnowCanvasArrowhead::IndentedTriangle &&
                 emittedStyle.endArrowhead == SnowCanvasArrowhead::IndentedTriangle,
             "both indented endpoints should emit exactly once and preserve each other");
@@ -7904,6 +7921,15 @@ void arrowheadOptionsRetranslateInPlace() {
                                         QStringLiteral("arrowhead-standard"),
             "end arrowhead options should use the right-facing asset");
     endPopover->hide();
+    QWidget* shaftTrigger = controlWithAccessibleName(palette, "Arrow shaft type");
+    require(shaftTrigger != nullptr, "shaft trigger must be available");
+    auto* shaftPopover = showPopoverForTrigger(shaftTrigger);
+    auto* taperedOption = popoverButtonWithTooltip(shaftPopover, "Tapered shaft");
+    require(taperedOption != nullptr &&
+                adqt::icons::describeIcon(taperedOption->iconRef()).key.name ==
+                    QStringLiteral("arrow-shaft-tapered"),
+            "tapered shaft uses its hand-drawn asset");
+    shaftPopover->hide();
     popover = showPopoverForTrigger(startTrigger);
 
     require(languageManager.setLanguage(QStringLiteral("zh_CN")),
@@ -7913,6 +7939,9 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Simplified Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u5934 \u65e0"),
             "open arrowhead option should retranslate to Simplified Chinese");
+    require(shaftTrigger->accessibleName() == QStringLiteral("箭杆类型") &&
+                taperedOption->toolTip() == QStringLiteral("渐宽箭杆"),
+            "shaft editor must retranslate to Simplified Chinese");
     require(indentedOption->toolTip() == QStringLiteral("起始箭头 内凹三角形"),
             "indented triangle should retranslate to Simplified Chinese");
 
@@ -7923,6 +7952,9 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Traditional Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u982d \u7121"),
             "open arrowhead option should retranslate to Traditional Chinese");
+    require(shaftTrigger->accessibleName() == QStringLiteral("箭桿類型") &&
+                taperedOption->toolTip() == QStringLiteral("漸寬箭桿"),
+            "shaft editor must retranslate to Traditional Chinese");
     require(indentedOption->toolTip() == QStringLiteral("起始箭頭 內凹三角形"),
             "indented triangle should retranslate to Traditional Chinese");
 
@@ -7950,7 +7982,8 @@ void selectedArrowMixedPropertiesResolveIndependently() {
     state.shapeStyleMixed =
         SnowCanvasShapeStylePropertyStrokeWidth | SnowCanvasShapeStylePropertyStrokeColor |
         SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyStartArrowhead |
-        SnowCanvasShapeStylePropertyEndArrowhead | SnowCanvasShapeStylePropertyArrowType;
+        SnowCanvasShapeStylePropertyEndArrowhead | SnowCanvasShapeStylePropertyArrowType |
+        SnowCanvasShapeStylePropertyArrowShaftType;
     palette.setStyleToolbarState(state);
 
     requireControlInactive(palette, "Arrow stroke width 4",
@@ -7974,6 +8007,8 @@ void selectedArrowMixedPropertiesResolveIndependently() {
     require(startArrowheadControl != nullptr, "start arrowhead control should be present");
     require(endArrowheadControl != nullptr, "end arrowhead control should be present");
 
+    auto* shaftPopover =
+        showPopoverForTrigger(controlWithAccessibleName(palette, "Arrow shaft type"));
     adqt::widgets::AdPopover* startArrowheadPopover = showPopoverForTrigger(startArrowheadControl);
     adqt::widgets::AdPopover* endArrowheadPopover = showPopoverForTrigger(endArrowheadControl);
     require(arrowTypeGroup->checkedId() == -1 && !elbowArrowType->isChecked(),
@@ -7981,6 +8016,7 @@ void selectedArrowMixedPropertiesResolveIndependently() {
     for (const auto& option : {
              std::pair{startArrowheadPopover, "Start arrowhead triangle"},
              std::pair{endArrowheadPopover, "End arrowhead diamond"},
+             std::pair{shaftPopover, "Plain shaft"},
          }) {
         adqt::widgets::AdButton* button = popoverButtonWithTooltip(option.first, option.second);
         require(button != nullptr, "mixed arrow option should be present");
@@ -8013,6 +8049,7 @@ void selectedArrowMixedPropertiesResolveIndependently() {
     for (const auto& option : {
              std::pair{startArrowheadPopover, "Start arrowhead triangle"},
              std::pair{endArrowheadPopover, "End arrowhead diamond"},
+             std::pair{shaftPopover, "Plain shaft"},
          }) {
         adqt::widgets::AdButton* button = popoverButtonWithTooltip(option.first, option.second);
         require(button != nullptr, "mixed arrowhead option should be present");
@@ -8028,6 +8065,10 @@ void selectedArrowMixedPropertiesResolveIndependently() {
         popover->hide();
     }
     QCoreApplication::processEvents();
+    clickPopoverStyleControl(shaftPopover, "Tapered shaft");
+    require(emittedProperties == SnowCanvasShapeStylePropertyArrowShaftType &&
+                styleChangeCount == 2,
+            "resolving mixed shafts emits only the shaft property once");
 }
 
 void styleToolbarWidthTracksTheActiveTool() {
@@ -11764,6 +11805,8 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--arrow-icons-only"))) {
         arrowStyleControlsExposeAndEmitAllStyleProperties();
         arrowheadOptionsRetranslateInPlace();
+        selectedArrowMixedPropertiesResolveIndependently();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--dynamic-i18n-only"))) {

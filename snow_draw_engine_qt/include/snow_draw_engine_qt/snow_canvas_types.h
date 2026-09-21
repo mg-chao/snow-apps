@@ -109,6 +109,7 @@ enum SnowCanvasShapeStyleMixedFlag : quint32 {
     SnowCanvasShapeStyleMixedStartArrowhead = 1u << 5,
     SnowCanvasShapeStyleMixedEndArrowhead = 1u << 6,
     SnowCanvasShapeStyleMixedStrokeStyle = 1u << 7,
+    SnowCanvasShapeStyleMixedArrowShaftType = 1u << 12,
     SnowCanvasShapeStyleMixedArrowType = 1u << 8,
     SnowCanvasShapeStyleMixedOpacity = 1u << 9,
     SnowCanvasShapeStyleMixedHighlightShape = 1u << 10,
@@ -142,6 +143,7 @@ enum SnowCanvasShapeStyleProperty : quint32 {
     SnowCanvasShapeStylePropertyStartArrowhead = 1u << 5,
     SnowCanvasShapeStylePropertyEndArrowhead = 1u << 6,
     SnowCanvasShapeStylePropertyStrokeStyle = 1u << 7,
+    SnowCanvasShapeStylePropertyArrowShaftType = 1u << 12,
     SnowCanvasShapeStylePropertyArrowType = 1u << 8,
     SnowCanvasShapeStylePropertyOpacity = 1u << 9,
     SnowCanvasShapeStylePropertyShape = 1u << 11,
@@ -222,6 +224,8 @@ enum class SnowCanvasArrowhead {
     IndentedTriangle,
 };
 
+enum class SnowCanvasArrowShaftType { Plain, Tapered };
+
 enum class SnowCanvasArrowType {
     Straight,
     Curve,
@@ -280,6 +284,7 @@ struct SnowCanvasShapeStyle {
     SnowCanvasArrowhead endArrowhead = SnowCanvasArrowhead::None;
     SnowCanvasStrokeStyle strokeStyle = SnowCanvasStrokeStyle::Solid;
     SnowCanvasArrowType arrowType = SnowCanvasArrowType::Straight;
+    SnowCanvasArrowShaftType arrowShaftType = SnowCanvasArrowShaftType::Plain;
     double opacity = 1.0;
     SnowCanvasHighlightShape highlightShape = SnowCanvasHighlightShape::Rectangle;
     SnowCanvasRectangleShape shape = SnowCanvasRectangleShape::Rectangle;
@@ -290,7 +295,8 @@ inline bool operator==(const SnowCanvasShapeStyle& lhs, const SnowCanvasShapeSty
            snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth) &&
            lhs.cornerRadii == rhs.cornerRadii && lhs.startArrowhead == rhs.startArrowhead &&
            lhs.endArrowhead == rhs.endArrowhead && lhs.strokeStyle == rhs.strokeStyle &&
-           lhs.arrowType == rhs.arrowType && snowCanvasExactDoubleEqual(lhs.opacity, rhs.opacity) &&
+           lhs.arrowType == rhs.arrowType && lhs.arrowShaftType == rhs.arrowShaftType &&
+           snowCanvasExactDoubleEqual(lhs.opacity, rhs.opacity) &&
            lhs.highlightShape == rhs.highlightShape && lhs.shape == rhs.shape;
 }
 
@@ -385,13 +391,15 @@ struct SnowCanvasArrowStyle {
     SnowCanvasArrowhead endArrowhead = SnowCanvasArrowhead::None;
     SnowCanvasStrokeStyle strokeStyle = SnowCanvasStrokeStyle::Solid;
     SnowCanvasArrowType arrowType = SnowCanvasArrowType::Straight;
+    SnowCanvasArrowShaftType arrowShaftType = SnowCanvasArrowShaftType::Plain;
 };
 
 inline bool operator==(const SnowCanvasArrowStyle& lhs, const SnowCanvasArrowStyle& rhs) {
     return lhs.stroke == rhs.stroke &&
            snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth) &&
            lhs.startArrowhead == rhs.startArrowhead && lhs.endArrowhead == rhs.endArrowhead &&
-           lhs.strokeStyle == rhs.strokeStyle && lhs.arrowType == rhs.arrowType;
+           lhs.strokeStyle == rhs.strokeStyle && lhs.arrowType == rhs.arrowType &&
+           lhs.arrowShaftType == rhs.arrowShaftType;
 }
 
 inline bool operator!=(const SnowCanvasArrowStyle& lhs, const SnowCanvasArrowStyle& rhs) {

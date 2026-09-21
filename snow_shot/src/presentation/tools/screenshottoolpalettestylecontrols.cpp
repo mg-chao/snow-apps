@@ -91,6 +91,8 @@ constexpr char kRoleCornerRadius[] = "corner-radius";
 constexpr char kRoleShapeKind[] = "shape-kind";
 constexpr char kRoleArrowType[] = "arrow-type";
 constexpr char kRoleLineType[] = "line-type";
+constexpr char kRoleArrowShaft[] = "arrow-shaft-type";
+constexpr char kSignatureArrowShaft[] = "icon-options:arrow-shaft-type";
 constexpr char kRoleStartArrowhead[] = "start-arrowhead";
 constexpr char kRoleEndArrowhead[] = "end-arrowhead";
 constexpr char kRoleTextAlignment[] = "text-alignment";
@@ -148,8 +150,8 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::FreeDraw:
         return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleShapeFill};
     case Tool::Arrow:
-        return {kRoleOutlineStroke, kRoleOutlineWidth, "arrow-type", "start-arrowhead",
-                "end-arrowhead"};
+        return {kRoleOutlineStroke, kRoleOutlineWidth, "arrow-type",
+                "start-arrowhead",  kRoleArrowShaft,   "end-arrowhead"};
     case Tool::RectangleHighlight:
         return {kRoleHighlightMode, kRoleHighlightColor, kRoleHighlightBorder};
     case Tool::PenHighlight:
@@ -486,6 +488,15 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number (scroll to adjust)"),
 };
 
+[[maybe_unused]] constexpr const char* kArrowShaftTranslations[] = {
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow shaft type"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Plain shaft"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Tapered shaft"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette",
+                      "Tapered shafts support standard, triangle, triangle outline, and indented "
+                      "triangle arrowheads."),
+};
+
 [[maybe_unused]] constexpr const char* kStartArrowheadOptionTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead none"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead standard"),
@@ -533,6 +544,7 @@ SnowCanvasShapeStyle shapeStyleFromArrowStyle(const SnowCanvasArrowStyle& arrowS
     style.endArrowhead = arrowStyle.endArrowhead;
     style.strokeStyle = arrowStyle.strokeStyle;
     style.arrowType = arrowStyle.arrowType;
+    style.arrowShaftType = arrowStyle.arrowShaftType;
     return style;
 }
 
@@ -544,6 +556,7 @@ SnowCanvasArrowStyle arrowStyleFromShapeStyle(const SnowCanvasShapeStyle& shapeS
     style.endArrowhead = shapeStyle.endArrowhead;
     style.strokeStyle = shapeStyle.strokeStyle;
     style.arrowType = shapeStyle.arrowType;
+    style.arrowShaftType = shapeStyle.arrowShaftType;
     return style;
 }
 
@@ -744,6 +757,7 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_arrowStrokeWidthEditor);
     append(m_arrowStrokeEditor);
     append(m_startArrowheadEditor);
+    append(m_arrowShaftEditor);
     append(m_endArrowheadEditor);
     append(m_textColorEditor);
     append(m_textFontEditor);
@@ -787,6 +801,7 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
         park(kRoleOutlineStroke, kSignatureStroke, m_arrowStrokeEditor);
         park(kRoleOutlineWidth, kSignatureStrokeWidth, m_arrowStrokeWidthEditor);
         park(kRoleStartArrowhead, kSignatureArrowhead, m_startArrowheadEditor);
+        park(kRoleArrowShaft, kSignatureArrowShaft, m_arrowShaftEditor);
         park(kRoleEndArrowhead, kSignatureArrowhead, m_endArrowheadEditor);
         break;
     case Tool::RectangleHighlight:
@@ -856,6 +871,7 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
         restore(kRoleOutlineStroke, m_arrowStrokeEditor);
         restore(kRoleOutlineWidth, m_arrowStrokeWidthEditor);
         restore(kRoleStartArrowhead, m_startArrowheadEditor);
+        restore(kRoleArrowShaft, m_arrowShaftEditor);
         restore(kRoleEndArrowhead, m_endArrowheadEditor);
         break;
     case Tool::RectangleHighlight:
@@ -1133,6 +1149,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_arrowStrokeWidthEditor);
         stageWidget(kRoleArrowType);
         stageComponent(kRoleStartArrowhead, kSignatureArrowhead, m_startArrowheadEditor);
+        stageComponent(kRoleArrowShaft, kSignatureArrowShaft, m_arrowShaftEditor);
         stageComponent(kRoleEndArrowhead, kSignatureArrowhead, m_endArrowheadEditor);
         break;
     case Tool::RectangleHighlight:
@@ -1636,9 +1653,35 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
     };
     m_startArrowheadEditor =
         addArrowheadEditor(true, kRoleStartArrowhead, QStringLiteral("Start arrowhead"));
+    ScreenshotToolPaletteIconOptionEditorConfig shaftConfig;
+    shaftConfig.accessibleName = QStringLiteral("Arrow shaft type");
+    shaftConfig.triggerTooltip =
+        QStringLiteral("Tapered shafts support standard, triangle, triangle outline, and indented "
+                       "triangle arrowheads.");
+    shaftConfig.gridColumnCount = 2;
+    shaftConfig.options = {
+        {0, QStringLiteral("Plain shaft"), custom_outlined_icons::ArrowShaftPlain()},
+        {1, QStringLiteral("Tapered shaft"), custom_outlined_icons::ArrowShaftTapered()},
+    };
+    auto reusedShaft = takeReusableEditor(kRoleArrowShaft, kSignatureArrowShaft, layout, controls);
+    const auto changeShaft = [this](int value) {
+        setArrowShaftType(static_cast<SnowCanvasArrowShaftType>(value));
+    };
+    if (reusedShaft != nullptr) {
+        m_arrowShaftEditor.reset(
+            static_cast<ScreenshotToolPaletteIconOptionEditor*>(reusedShaft.release()));
+        m_arrowShaftEditor->rebind(shaftConfig, changeShaft);
+    } else {
+        m_arrowShaftEditor = std::make_unique<ScreenshotToolPaletteIconOptionEditor>();
+        m_arrowShaftEditor->build(layout, controls, controls, shaftConfig,
+                                  static_cast<int>(m_state.m_arrowStyle.arrowShaftType),
+                                  changeShaft, metrics);
+    }
+    registerEditor(m_arrowShaftEditor.get());
     m_endArrowheadEditor =
         addArrowheadEditor(false, kRoleEndArrowhead, QStringLiteral("End arrowhead"));
     tagEditor(m_startArrowheadEditor.get(), kRoleStartArrowhead, kSignatureArrowhead);
+    tagEditor(m_arrowShaftEditor.get(), kRoleArrowShaft, kSignatureArrowShaft);
     tagEditor(m_endArrowheadEditor.get(), kRoleEndArrowhead, kSignatureArrowhead);
 
     registerArrowEntries();
@@ -3002,6 +3045,10 @@ void ScreenshotToolPaletteStyleControls::registerArrowEntries() {
         {ShapeArrowheadsRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.arrow.arrowheads_refresh");
+             if (m_arrowShaftEditor != nullptr) {
+                 m_arrowShaftEditor->update(static_cast<int>(m_state.m_arrowStyle.arrowShaftType),
+                                            mixed(SnowCanvasShapeStylePropertyArrowShaftType));
+             }
              if (m_startArrowheadEditor != nullptr) {
                  m_startArrowheadEditor->update(
                      static_cast<int>(m_state.m_arrowStyle.startArrowhead),
@@ -3318,6 +3365,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_arrowStrokeEditor.reset();
     m_arrowTypeButtonGroup = nullptr;
     m_startArrowheadEditor.reset();
+    m_arrowShaftEditor.reset();
     m_endArrowheadEditor.reset();
     m_textColorEditor.reset();
     m_textFontEditor.reset();
@@ -3394,6 +3442,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     resetUnless(keepArrow, m_arrowStrokeWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeEditor);
     resetUnless(keepArrow, m_startArrowheadEditor);
+    resetUnless(keepArrow, m_arrowShaftEditor);
     resetUnless(keepArrow, m_endArrowheadEditor);
     resetUnless(keepText, m_textColorEditor);
     resetUnless(keepText, m_textFontEditor);
@@ -3810,6 +3859,7 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.arrow.endArrowhead = m_state.m_creationArrowStyle.endArrowhead;
     defaults.arrow.strokeStyle = m_state.m_creationArrowStyle.strokeStyle;
     defaults.arrow.arrowType = m_state.m_creationArrowStyle.arrowType;
+    defaults.arrow.arrowShaftType = m_state.m_creationArrowStyle.arrowShaftType;
     defaults.text = m_state.m_creationTextStyle.textStyle();
     defaults.serialNumber = m_state.m_creationSerialNumberStyle;
     defaults.rectangleFilter = m_state.creationRectangleFilterStyle;
@@ -4242,6 +4292,16 @@ void ScreenshotToolPaletteStyleControls::setArrowStrokeStyle(SnowCanvasStrokeSty
                                 return false;
                             }
                             style.strokeStyle = strokeStyle;
+                            return true;
+                        });
+}
+
+void ScreenshotToolPaletteStyleControls::setArrowShaftType(SnowCanvasArrowShaftType shaftType) {
+    commitArrowProperty(SnowCanvasShapeStylePropertyArrowShaftType,
+                        [shaftType](SnowCanvasArrowStyle& style) {
+                            if (style.arrowShaftType == shaftType)
+                                return false;
+                            style.arrowShaftType = shaftType;
                             return true;
                         });
 }
@@ -5093,6 +5153,9 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
                 (mixedChanged &
                  (SnowCanvasShapeStyleMixedStroke | SnowCanvasShapeStyleMixedStrokeStyle)) != 0)
                 groups |= ShapeStrokeRefresh;
+            if (m_state.m_arrowStyle.arrowShaftType != displayedStyle.arrowShaftType ||
+                (mixedChanged & SnowCanvasShapeStyleMixedArrowShaftType) != 0)
+                groups |= ShapeArrowheadsRefresh;
             if (m_state.m_arrowStyle.arrowType != displayedStyle.arrowType ||
                 (mixedChanged & SnowCanvasShapeStyleMixedArrowType) != 0)
                 groups |= ShapeArrowTypeRefresh;

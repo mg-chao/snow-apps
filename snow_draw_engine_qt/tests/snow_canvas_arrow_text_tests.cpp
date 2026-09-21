@@ -152,6 +152,163 @@ void indentedTriangleStyleRoundTrips() {
     }
 }
 
+void taperedShaftsRenderAndRoundTrip() {
+    for (const auto head :
+         {SnowCanvasArrowhead::Arrow, SnowCanvasArrowhead::Triangle,
+          SnowCanvasArrowhead::TriangleOutline, SnowCanvasArrowhead::IndentedTriangle}) {
+        SnowCanvasRuntime runtime;
+        SnowCanvasWidget canvas(runtime);
+        canvas.resize(600, 360);
+        canvas.show();
+        QApplication::processEvents();
+        require(canvas.setCanvasTool(SnowCanvasTool::Arrow), "activate tapered arrow tool");
+        SnowCanvasShapeStyle style;
+        style.arrowType = SnowCanvasArrowType::Straight;
+        style.arrowShaftType = SnowCanvasArrowShaftType::Tapered;
+        style.endArrowhead = head;
+        style.stroke = QColor(255, 0, 0, 128);
+        style.strokeWidth = 4.0;
+        const quint32 properties =
+            SnowCanvasShapeStylePropertyArrowType | SnowCanvasShapeStylePropertyArrowShaftType |
+            SnowCanvasShapeStylePropertyEndArrowhead | SnowCanvasShapeStylePropertyStrokeColor |
+            SnowCanvasShapeStylePropertyStrokeWidth;
+        require(canvas.setCanvasShapeStylePatch(style, properties, SnowCanvasShapeKind::Arrow),
+                "set tapered arrow defaults");
+        createArrow(canvas, runtime);
+        require(payload(runtime, QStringLiteral("Arrow"))
+                        .value(QStringLiteral("arrow_shaft_type"))
+                        .toString() == QStringLiteral("tapered"),
+                "new arrows should preserve the shaft preference");
+        const auto exportImage = [&]() {
+            return runtime.renderToImage(QRectF(-300, -180, 600, 360), QSize(600, 360), {});
+        };
+        QImage image = exportImage();
+        require(!image.isNull(), "tapered arrow export must render");
+        const QString directory = qEnvironmentVariable("SNOW_ARROW_TEXT_PREVIEW_DIR");
+        if (!directory.isEmpty())
+            image.save(directory + QStringLiteral("/shaft-%1.png").arg(static_cast<int>(head)));
+        if (head == SnowCanvasArrowhead::TriangleOutline) {
+            require(image.pixelColor(400, 180).alpha() == 0,
+                    "hollow shaft interior must stay transparent");
+            require(image.pixelColor(400, 176).alpha() > 0, "hollow shaft contour must be visible");
+        } else {
+            require(image.pixelColor(400, 180).alpha() >= 120 &&
+                        image.pixelColor(400, 180).alpha() <= 130,
+                    "filled taper must retain uniform alpha");
+            require(image.pixelColor(400, 178).alpha() > 0,
+                    "filled taper must widen near its head");
+        }
+        SnowCanvasRuntime restored;
+        require(restored.restoreDocumentSession(runtime.serializeDocumentSession()),
+                "restore tapered document");
+        require(payload(restored, QStringLiteral("Arrow")) ==
+                    payload(runtime, QStringLiteral("Arrow")),
+                "shaft must round-trip");
+        mouse(canvas, QEvent::MouseButtonPress, {40.0, 140.0}, Qt::LeftButton, Qt::LeftButton);
+        mouse(canvas, QEvent::MouseMove, {530.0, 220.0}, Qt::NoButton, Qt::LeftButton);
+        mouse(canvas, QEvent::MouseButtonRelease, {530.0, 220.0}, Qt::LeftButton, Qt::NoButton);
+        require(canvas.canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::SelectedArrow,
+                "select arrow before editing shaft");
+        style.arrowShaftType = SnowCanvasArrowShaftType::Plain;
+        require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyArrowShaftType,
+                                                SnowCanvasShapeKind::Arrow),
+                "edit shaft on selected arrow");
+        require(payload(runtime, QStringLiteral("Arrow"))
+                        .value(QStringLiteral("arrow_shaft_type"))
+                        .toString() == QStringLiteral("plain"),
+                "selected shaft should change");
+        require(canvas.undo(), "undo shaft style edit");
+        require(payload(runtime, QStringLiteral("Arrow"))
+                        .value(QStringLiteral("arrow_shaft_type"))
+                        .toString() == QStringLiteral("tapered"),
+                "undo must restore shaft");
+        require(canvas.redo(), "redo shaft style edit");
+        require(payload(runtime, QStringLiteral("Arrow"))
+                        .value(QStringLiteral("arrow_shaft_type"))
+                        .toString() == QStringLiteral("plain"),
+                "redo restores plain shaft");
+        require(canvas.undo(), "restore taper for fallback check");
+        style.endArrowhead = SnowCanvasArrowhead::Circle;
+        require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyEndArrowhead,
+                                                SnowCanvasShapeKind::Arrow),
+                "switch to unsupported head");
+        const QImage fallback = exportImage();
+        require(payload(runtime, QStringLiteral("Arrow"))
+                        .value(QStringLiteral("arrow_shaft_type"))
+                        .toString() == QStringLiteral("tapered"),
+                "fallback retains preference");
+        require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyArrowShaftType,
+                                                SnowCanvasShapeKind::Arrow),
+                "set explicit plain fallback");
+        require(exportImage() == fallback, "unsupported head must render exactly like plain shaft");
+        for (const QString& pathType :
+             {QStringLiteral("straight"), QStringLiteral("curve"), QStringLiteral("elbow")}) {
+            for (const QString& strokeStyle :
+                 {QStringLiteral("solid"), QStringLiteral("dashed"), QStringLiteral("dotted")}) {
+                for (const bool reverse : {false, true}) {
+                    auto session =
+                        QJsonDocument::fromJson(restored.serializeDocumentSession()).object();
+                    auto document = session.value(QStringLiteral("document")).toObject();
+                    auto documentSlots = document.value(QStringLiteral("slots")).toArray();
+                    for (int i = 0; i < documentSlots.size(); ++i) {
+                        auto slot = documentSlots.at(i).toObject();
+                        auto data = slot.value(QStringLiteral("data")).toObject();
+                        if (!data.contains(QStringLiteral("Arrow")))
+                            continue;
+                        auto arrow = data.value(QStringLiteral("Arrow")).toObject();
+                        arrow.insert(QStringLiteral("x"), -230.0);
+                        arrow.insert(QStringLiteral("y"), 0.0);
+                        arrow.insert(QStringLiteral("width"), 440.0);
+                        arrow.insert(QStringLiteral("height"), 180.0);
+                        arrow.insert(QStringLiteral("arrow_type"), pathType);
+                        arrow.insert(QStringLiteral("stroke_style"), strokeStyle);
+                        arrow.insert(QStringLiteral("points"),
+                                     pathType == QStringLiteral("elbow")
+                                         ? QJsonArray{QJsonArray{0, 0}, QJsonArray{300, 0},
+                                                      QJsonArray{300, -80}, QJsonArray{130, -80}}
+                                         : QJsonArray{QJsonArray{0, 0}, QJsonArray{300, 100},
+                                                      QJsonArray{440, 0}, QJsonArray{130, -80}});
+                        if (reverse) {
+                            arrow.insert(QStringLiteral("start_arrowhead"),
+                                         arrow.value(QStringLiteral("end_arrowhead")));
+                            arrow.insert(QStringLiteral("end_arrowhead"), QJsonValue::Null);
+                        }
+                        data.insert(QStringLiteral("Arrow"), arrow);
+                        slot.insert(QStringLiteral("data"), data);
+                        documentSlots.replace(i, slot);
+                    }
+                    document.insert(QStringLiteral("slots"), documentSlots);
+                    session.insert(QStringLiteral("document"), document);
+                    SnowCanvasRuntime empty;
+                    const auto emptySession =
+                        QJsonDocument::fromJson(empty.serializeDocumentSession()).object();
+                    session.insert(QStringLiteral("history"),
+                                   emptySession.value(QStringLiteral("history")));
+                    SnowCanvasRuntime variant;
+                    require(variant.restoreDocumentSession(QJsonDocument(session).toJson()),
+                            "restore routed taper fixture");
+                    const QImage routed =
+                        variant.renderToImage(QRectF(-300, -180, 600, 360), QSize(1200, 720), {});
+                    int visible = 0;
+                    for (int y = 0; y < routed.height(); ++y)
+                        for (int x = 0; x < routed.width(); ++x) {
+                            const int alpha = routed.pixelColor(x, y).alpha();
+                            visible += alpha > 0 ? 1 : 0;
+                            require(alpha <= 130,
+                                    "taper must not double-paint translucent bends or head joins");
+                        }
+                    require(visible > 100, "every route, dash style, and direction must render");
+                    if (!directory.isEmpty() && head == SnowCanvasArrowhead::TriangleOutline &&
+                        !reverse)
+                        routed.save(directory +
+                                    QStringLiteral("/shaft-%1-%2.png").arg(pathType, strokeStyle));
+                }
+            }
+        }
+    }
+}
+
 void deleteKeyRemovesEditedText() {
     for (const bool attached : {false, true}) {
         for (const bool existing : {false, true}) {
@@ -587,6 +744,9 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    taperedShaftsRenderAndRoundTrip();
+    if (app.arguments().contains(QStringLiteral("--shafts-only")))
+        return 0;
     indentedTriangleStyleRoundTrips();
     deleteKeyRemovesEditedText();
     widgetLifecycle();

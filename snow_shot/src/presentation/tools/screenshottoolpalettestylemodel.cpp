@@ -31,8 +31,9 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     m_creationPenHighlightStyle = defaults.penHighlight;
     m_penHighlightStyle = m_creationPenHighlightStyle;
     m_creationArrowStyle = SnowCanvasArrowStyle{
-        defaults.arrow.stroke,       defaults.arrow.strokeWidth, defaults.arrow.startArrowhead,
-        defaults.arrow.endArrowhead, defaults.arrow.strokeStyle, defaults.arrow.arrowType,
+        defaults.arrow.stroke,         defaults.arrow.strokeWidth, defaults.arrow.startArrowhead,
+        defaults.arrow.endArrowhead,   defaults.arrow.strokeStyle, defaults.arrow.arrowType,
+        defaults.arrow.arrowShaftType,
     };
     m_arrowStyle = m_creationArrowStyle;
     m_creationTextStyle.setTextStyle(defaults.text);

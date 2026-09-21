@@ -60,3 +60,7 @@ pub(crate) use snow_draw_engine_core::arrow::{
     BindMode, BindableShape, CurvePathOp, FixedSegment, FocusPointContext, UpdateElbowArrowOptions,
     normalize_arrow_endpoint_edge,
 };
+
+#[path = "arrow/shaft.rs"]
+mod arrow_shaft;
+pub use arrow_shaft::{ArrowShaftGeometry, tapered_arrow_geometry};
