@@ -447,6 +447,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("thumbnail_mode"), record.thumbnailMode},
         {QStringLiteral("click_through_mode"), record.clickThroughMode},
         {QStringLiteral("always_on_top"), record.alwaysOnTop},
+        {QStringLiteral("show_border"), record.showBorder},
         {QStringLiteral("recognition_visible"), record.recognitionVisible},
         {QStringLiteral("translation_visible"), record.translationVisible},
         {QStringLiteral("pre_thumbnail_geometry"), rectToJson(record.preThumbnailNativeGeometry)},
@@ -761,6 +762,9 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     // Pins saved before the preference existed must keep floating above
     // everything, which was their only behavior.
     record.alwaysOnTop = object.value(QStringLiteral("always_on_top")).toBool(true);
+    // Pins saved before the preference existed always drew their rim, so a
+    // missing key must restore with the border visible.
+    record.showBorder = object.value(QStringLiteral("show_border")).toBool(true);
     const auto accentValue = object.value(QStringLiteral("hide_to_top_accent_index"));
     const int accent = accentValue.toInt(-1);
     record.hideToTopAccentIndex =

@@ -2052,19 +2052,32 @@ void pinnedTransformResetPersistsWithoutResize() {
     waitForUi(400);
     auto* menu = window->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedProcessImageMenu"));
-    require(menu != nullptr && menu->actions().size() == 6,
-            "the transform reset fixture should expose its image actions");
-    for (const int operation : {2, 0}) {
+    auto* flipHorizontal =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedFlipHorizontalAction"));
+    auto* flipVertical =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedFlipVerticalAction"));
+    auto* rotateClockwise =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    auto* resetTransform =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedResetTransformAction"));
+    require(menu != nullptr && flipHorizontal != nullptr && flipVertical != nullptr &&
+                rotateClockwise != nullptr && resetTransform != nullptr &&
+                menu->actions().size() == 8 &&
+                menu->actions().indexOf(resetTransform) ==
+                    menu->actions().indexOf(flipVertical) + 1,
+            "the transform reset fixture should expose Reset transform directly below Flip "
+            "vertically");
+    for (QAction* operation : {flipHorizontal, rotateClockwise}) {
         const QRect geometry = window->currentNativeGeometry();
-        menu->actions().at(operation)->trigger();
-        if (operation == 0) {
-            menu->actions().at(operation)->trigger();
+        operation->trigger();
+        if (operation == rotateClockwise) {
+            operation->trigger();
         }
         waitForUi(400);
         require(!lastWritten.imageTransform.isIdentity() && lastWritten.nativeGeometry == geometry,
                 "the flip or half-turn must persist without changing the window size");
         const int previousWrites = writeCount;
-        menu->actions().back()->trigger();
+        resetTransform->trigger();
         QElapsedTimer elapsed;
         elapsed.start();
         while (writeCount == previousWrites && elapsed.elapsed() < 2000) {
@@ -2132,8 +2145,11 @@ void transformedPinnedOcrTracksCanvasViewport() {
         for (int rotation = 0; rotation < 4; ++rotation) {
             auto* menu = window->findChild<adqt::widgets::AdContextMenu*>(
                 QStringLiteral("screenshotPinnedProcessImageMenu"));
-            require(menu != nullptr, "the image transform menu should exist");
-            menu->actions().front()->trigger();
+            auto* rotateClockwise = window->findChild<QAction*>(
+                QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+            require(menu != nullptr && rotateClockwise != nullptr,
+                    "the image transform menu should exist");
+            rotateClockwise->trigger();
             verifyAlignment();
             const auto record = window->persistenceSnapshot();
             window->close();
@@ -2276,11 +2292,14 @@ void pinnedWindowPoolReusesAndReplenishesPreparedShell() {
                 topLevelPinnedWindows().size() == 2,
             "prewarming a replenished pool should not exceed one spare");
 
-    auto* firstFocusMenu = firstPrepared->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedFocusMenu"));
-    require(firstFocusMenu != nullptr && firstFocusMenu->actions().size() == 4,
-            "the first pinned focus menu was not found");
-    firstFocusMenu->actions().front()->trigger();
+    auto* firstManagementMenu = firstPrepared->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedWindowManagementMenu"));
+    auto* firstShowAll =
+        firstPrepared->findChild<QAction*>(QStringLiteral("screenshotPinnedShowAllWindowsAction"));
+    require(firstManagementMenu != nullptr && firstShowAll != nullptr &&
+                firstManagementMenu->actions().contains(firstShowAll),
+            "the first pinned window management menu must expose Show all windows");
+    firstShowAll->trigger();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(secondPrepared != nullptr && !secondPrepared->isVisible(),
             "showing all pinned windows must ignore the hidden pool spare");
@@ -2309,11 +2328,14 @@ void pinnedWindowPoolReusesAndReplenishesPreparedShell() {
         hiddenPinnedWindowExcept({firstPrepared, secondPrepared}));
     require(finalPrepared != nullptr && topLevelPinnedWindows().size() == 3,
             "the pool should replenish after every successful presentation");
-    auto* secondFocusMenu = secondPrepared->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedFocusMenu"));
-    require(secondFocusMenu != nullptr && secondFocusMenu->actions().size() == 4,
-            "the second pinned focus menu was not found");
-    secondFocusMenu->actions().back()->trigger();
+    auto* secondManagementMenu = secondPrepared->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedWindowManagementMenu"));
+    auto* secondCloseAll = secondPrepared->findChild<QAction*>(
+        QStringLiteral("screenshotPinnedCloseAllWindowsAction"));
+    require(secondManagementMenu != nullptr && secondCloseAll != nullptr &&
+                secondManagementMenu->actions().contains(secondCloseAll),
+            "the second pinned window management menu must expose Close all windows");
+    secondCloseAll->trigger();
     require(processUntilDeleted(firstPrepared, 2000) && processUntilDeleted(secondPrepared, 2000),
             "closing all presented pins should delete both visible windows");
     require(finalPrepared != nullptr && !finalPrepared->isVisible(),
@@ -5309,8 +5331,11 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
         pinnedMenuActionNamed(*pinnedWindow, QStringLiteral("screenshotPinnedProcessImageMenu"));
     auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(
         processAction != nullptr ? processAction->menu() : nullptr);
-    require(processMenu != nullptr, "the process-image menu was not found");
-    processMenu->actions().at(0)->trigger();
+    auto* rotateClockwise =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    require(processMenu != nullptr && rotateClockwise != nullptr,
+            "the process-image menu was not found");
+    rotateClockwise->trigger();
     waitForUi(40);
     require(pinnedWindow->currentNativeGeometry().size() == expectedSize(100, true) &&
                 (pinnedWindow->currentNativeGeometry().center() - beforeRotation.center())
@@ -6960,16 +6985,17 @@ void pinnedAlwaysOnTopOffscreen() {
 
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
-    auto* clickThrough =
-        window.findChild<QAction*>(QStringLiteral("screenshotPinnedClickThroughAction"));
     auto* alwaysOnTop =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
-    require(menu != nullptr && clickThrough != nullptr && alwaysOnTop != nullptr,
+    auto* management =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedWindowManagementAction"));
+    require(menu != nullptr && alwaysOnTop != nullptr && management != nullptr &&
+                management->menu() != nullptr,
             "always-on-top fixture needs the pinned menu");
     emit menu->aboutToShow();
     require(alwaysOnTop->isCheckable() && alwaysOnTop->isChecked() &&
-                menu->actions().indexOf(alwaysOnTop) == menu->actions().indexOf(clickThrough) + 1,
-            "Always on Top must be a checked item directly below Click-through");
+                management->menu()->actions().indexOf(alwaysOnTop) == 0,
+            "Always on Top must be a checked item leading the Window Management menu");
     require(window.windowFlags().testFlag(Qt::WindowStaysOnTopHint),
             "a new pin must stay on top by default");
 
@@ -7018,6 +7044,97 @@ void pinnedAlwaysOnTopOffscreen() {
                     restoredAction->isChecked() == persisted &&
                     restored.persistenceSnapshot().alwaysOnTop == persisted,
                 "a restored pin must adopt its saved always-on-top state");
+        restored.close();
+    }
+}
+
+void pinnedShowBorderOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "show border needs a primary screen");
+    int persistenceWrites = 0;
+    snow_shot::storage::PinnedWindowRecord lastPersisted;
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    ScreenshotPinnedWindow::Config config = clickThroughTestConfig(*screen);
+    config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    config.persistenceWriter = [&](const snow_shot::storage::PinnedWindowRecord& record) {
+        ++persistenceWrites;
+        lastPersisted = record;
+    };
+    Access::restoreOffscreen(window, config);
+    window.show();
+    waitForUi(20);
+
+    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* alwaysOnTop =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
+    auto* showBorder =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
+    auto* management =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedWindowManagementAction"));
+    auto* borderFrame = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
+    require(menu != nullptr && alwaysOnTop != nullptr && showBorder != nullptr &&
+                management != nullptr && management->menu() != nullptr && borderFrame != nullptr,
+            "show border fixture needs the pinned menu and border frame");
+    emit menu->aboutToShow();
+    const QList<QAction*> managementActions = management->menu()->actions();
+    require(showBorder->isCheckable() && showBorder->isChecked() &&
+                managementActions.indexOf(alwaysOnTop) == 0 &&
+                managementActions.indexOf(showBorder) == 1,
+            "Show border must be a checked item directly below Always on Top");
+    require(borderFrame->isVisible(), "a new pin must render its border by default");
+    setPinnedWindowActive(window, false);
+    requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2),
+                     QColor(QStringLiteral("#DBDBDB")), 0,
+                     "an enabled border must frame the pin with its configured color");
+
+    showBorder->trigger();
+    waitForUi(20);
+    require(!showBorder->isChecked() && !borderFrame->isVisible() &&
+                !window.persistenceSnapshot().showBorder,
+            "unchecking must stop rendering the pinned border");
+    requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2), QColor(42, 84, 126),
+                     0, "a hidden border must let the rim show image content");
+    waitForUi(300);
+    require(persistenceWrites > 0 && !lastPersisted.showBorder,
+            "unchecking must schedule a durable border opt-out");
+
+    showBorder->trigger();
+    waitForUi(20);
+    require(showBorder->isChecked() && borderFrame->isVisible() &&
+                window.persistenceSnapshot().showBorder,
+            "re-checking must render the border again");
+    requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2),
+                     QColor(QStringLiteral("#DBDBDB")), 0,
+                     "re-checking must repaint the border rim");
+
+    window.close();
+
+    // A restored pin adopts its saved border visibility before the menu opens.
+    for (const bool persisted : {false, true}) {
+        ScreenshotPinnedWindow restored;
+        restored.setAttribute(Qt::WA_DeleteOnClose, false);
+        ScreenshotPinnedWindow::Config restoreConfig = clickThroughTestConfig(*screen);
+        restoreConfig.restorePersistentState = true;
+        restoreConfig.persistedShowBorder = persisted;
+        Access::restoreOffscreen(restored, restoreConfig);
+        restored.show();
+        waitForUi(20);
+        auto* restoredMenu = restored.findChild<adqt::widgets::AdContextMenu*>(
+            QStringLiteral("screenshotPinnedContextMenu"));
+        auto* restoredAction =
+            restored.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
+        auto* restoredBorder =
+            restored.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
+        require(restoredMenu != nullptr && restoredAction != nullptr && restoredBorder != nullptr,
+                "restored show border fixture needs the pinned menu and border frame");
+        emit restoredMenu->aboutToShow();
+        require(restoredAction->isChecked() == persisted &&
+                    restoredBorder->isVisible() == persisted &&
+                    restored.persistenceSnapshot().showBorder == persisted,
+                "a restored pin must adopt its saved border visibility");
         restored.close();
     }
 }
@@ -7777,8 +7894,11 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
         pinnedMenuActionNamed(*pinnedWindow, QStringLiteral("screenshotPinnedProcessImageMenu"));
     auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(
         processAction != nullptr ? processAction->menu() : nullptr);
-    require(processMenu != nullptr, "pinned process-image menu was not found");
-    processMenu->actions().at(0)->trigger();
+    auto* rotateClockwise =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    require(processMenu != nullptr && rotateClockwise != nullptr,
+            "pinned process-image menu was not found");
+    rotateClockwise->trigger();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     require(toolbarWindow->contentPosition() ==
                 toolbarPositionBeforeRotation + pinnedWindow->pos() - pinnedPositionBeforeRotation,
@@ -8960,15 +9080,26 @@ void pinnedContentReplacement() {
     auto* clipboard =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadClipboardAction"));
     auto* close = window.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
-    require(menu && load && file && clipboard && close && load->isEnabled(),
+    auto* management =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedWindowManagementAction"));
+    auto* showMain =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowMainInterfaceAction"));
+    require(menu && load && file && clipboard && close && management && showMain &&
+                management->menu() != nullptr &&
+                // Always on Top, Show border, separator, then Load new content.
+                management->menu()->actions().indexOf(load) == 3 && load->isEnabled(),
             "replacement submenu must be available after materialization");
     require(menu->actionIcon(clipboard) ==
                 snow_shot::presentation::icons::custom::outlined::PinClipboard(),
             "clipboard replacement must use the pin-clipboard outlined icon");
     for (const bool tray : {false, true, false}) {
         ScreenshotPinnedWindow::setRuntimeTrayEnabled(tray);
-        require(menu->actions().indexOf(load) + 1 == menu->actions().indexOf(close),
-                "replacement must remain directly above Close when tray fallback changes");
+        const bool fallbackShown = menu->actions().contains(showMain);
+        const int managementIndex = menu->actions().indexOf(management);
+        const int closeIndex = menu->actions().indexOf(close);
+        require(managementIndex >= 0 && closeIndex == managementIndex + (fallbackShown ? 3 : 2) &&
+                    (!fallbackShown || menu->actions().indexOf(showMain) + 1 == closeIndex),
+                "window management must stay above Close when the tray fallback changes");
     }
     ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
     class ReplacementTranslator final : public QTranslator {
@@ -9622,6 +9753,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--always-on-top-only"))) {
             pinnedAlwaysOnTopOffscreen();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--show-border-only"))) {
+            pinnedShowBorderOffscreen();
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)

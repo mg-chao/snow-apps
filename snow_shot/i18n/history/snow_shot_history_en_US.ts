@@ -311,10 +311,6 @@
             <translation>Flip vertically</translation>
         </message>
         <message>
-            <source>Focus mode</source>
-            <translation>Focus mode</translation>
-        </message>
-        <message>
             <source>Group: %1</source>
             <translation>Group: %1</translation>
         </message>
@@ -399,6 +395,10 @@
             <translation>Show all windows</translation>
         </message>
         <message>
+            <source>Show border</source>
+            <translation>Show border</translation>
+        </message>
+        <message>
             <source>Show main interface</source>
             <translation>Show main interface</translation>
         </message>
@@ -425,6 +425,10 @@
         <message>
             <source>Thumbnail mode</source>
             <translation>Thumbnail mode</translation>
+        </message>
+        <message>
+            <source>Window Management</source>
+            <translation>Window Management</translation>
         </message>
     </context>
     <context>

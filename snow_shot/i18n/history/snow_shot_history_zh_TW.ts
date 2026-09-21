@@ -308,10 +308,6 @@
             <translation>垂直翻轉</translation>
         </message>
         <message>
-            <source>Focus mode</source>
-            <translation>專注模式</translation>
-        </message>
-        <message>
             <source>Group: %1</source>
             <translation>群組：%1</translation>
         </message>
@@ -396,6 +392,10 @@
             <translation>顯示所有視窗</translation>
         </message>
         <message>
+            <source>Show border</source>
+            <translation>顯示邊框</translation>
+        </message>
+        <message>
             <source>Show main interface</source>
             <translation>顯示主介面</translation>
         </message>
@@ -422,6 +422,10 @@
         <message>
             <source>Thumbnail mode</source>
             <translation>縮圖模式</translation>
+        </message>
+        <message>
+            <source>Window Management</source>
+            <translation>視窗管理</translation>
         </message>
     </context>
     <context>

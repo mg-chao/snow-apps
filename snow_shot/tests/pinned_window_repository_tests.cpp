@@ -572,6 +572,51 @@ void alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
     require(loaded.has_value() && loaded->alwaysOnTop,
             "legacy records must restore with always-on-top enabled");
 }
+void showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary show border storage is unavailable");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(200, 100), 5));
+    record.showBorder = false;
+    const QString manifest =
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows_v2/index.json"));
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "the show border opt-out must be committed to disk");
+        const auto demoted = repository.loadRecord(id);
+        require(demoted.has_value() && !demoted->showBorder,
+                "the show border opt-out must survive payload demotion");
+        record.showBorder = true;
+        require(repository.updateState(record).success && repository.flush().success,
+                "re-enabling the border must update persisted metadata");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded.has_value() && loaded->showBorder,
+                "show border state must survive repository recreation");
+    }
+
+    // Records saved before the preference existed always rendered their rim,
+    // so a missing key must restore with the border visible.
+    auto root = QJsonDocument::fromJson(readBytes(manifest)).object();
+    auto records = root.value(QStringLiteral("records")).toArray();
+    auto item = records.at(0).toObject();
+    item.remove(QStringLiteral("show_border"));
+    records.replace(0, item);
+    root.insert(QStringLiteral("records"), records);
+    QFile file(manifest);
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "open show border legacy fixture");
+    const QByteArray bytes = QJsonDocument(root).toJson();
+    require(file.write(bytes) == bytes.size(), "write show border legacy fixture");
+    file.close();
+    storage::PinnedWindowRepository repository(directory.path());
+    const auto loaded = repository.loadRecord(id);
+    require(loaded.has_value() && loaded->showBorder,
+            "legacy records must restore with the border visible");
+}
 void thumbnailStateSurvivesRestartAndExit() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary thumbnail storage is unavailable");
@@ -718,6 +763,7 @@ int main(int argc, char* argv[]) {
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
     clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
     alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
+    showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
     thumbnailStateSurvivesRestartAndExit();
     hideToTopRoundTripsAndRecoversLegacyMetadata();
     return 0;

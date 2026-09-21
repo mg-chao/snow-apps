@@ -1152,11 +1152,10 @@ void runPinnedOriginalImageTranslationTests() {
     QCoreApplication::sendEvent(canvas, &zoom);
     waitUntil([&]() { return pinned->currentNativeGeometry().size() != beforeZoom; },
               "pinned translation should remain zoomable during streaming");
-    auto* processMenu = pinned->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedProcessImageMenu"));
-    require(processMenu != nullptr && !processMenu->actions().isEmpty(),
-            "find pinned rotation action");
-    processMenu->actions().first()->trigger();
+    auto* rotate =
+        pinned->findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    require(rotate != nullptr, "find pinned rotation action");
+    rotate->trigger();
     QCoreApplication::processEvents();
     pinned->resize(pinned->width() + 20, pinned->height() + 10);
     QCoreApplication::processEvents();
