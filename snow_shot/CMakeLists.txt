@@ -3796,6 +3796,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-export-dialog-workflow-tests)
     add_test(NAME snow-shot-export-dialog-shortcut-tests
         COMMAND snow-shot-export-dialog-workflow-tests --shortcuts)
+    add_test(NAME snow-shot-export-preview-wheel-tests
+        COMMAND snow-shot-export-dialog-workflow-tests --wheel-zoom -platform offscreen)
+    set_tests_properties(snow-shot-export-preview-wheel-tests PROPERTIES
+        TIMEOUT 30 LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     # These tests drive QWidget events synchronously. Cocoa menu tracking has its
     # own event loop and is exercised by snow-shot-action-popup-native-tests.
     set_tests_properties(

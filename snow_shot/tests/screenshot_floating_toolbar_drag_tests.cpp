@@ -1813,14 +1813,8 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
 
     const QStringList actionIds = snow_shot::presentation::toolbar_layout::defaultOrder(
         snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools);
-    int expectedActionButtonCount = static_cast<int>(actionIds.size());
-    int expectedDefaultActionButtonCount = 7;
-#ifdef Q_OS_MACOS
-    // Recording remains unavailable on macOS; every other screenshot action,
-    // including Pin to Screen, must materialize.
-    --expectedActionButtonCount;
-    --expectedDefaultActionButtonCount;
-#endif
+    const int expectedActionButtonCount = static_cast<int>(actionIds.size());
+    constexpr int expectedDefaultActionButtonCount = 7;
     const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
     require(toolbarSettings.setLayout(snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools,
                                       snow_shot::storage::ScreenshotToolbarLayout{{}, actionIds}),

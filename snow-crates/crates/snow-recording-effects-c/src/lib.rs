@@ -344,7 +344,7 @@ pub unsafe extern "C" fn snow_recording_effects_frame_info(
     };
     1
 }
-/// Keyboard tiles are a separate, complete layer in physical capture coordinates.
+/// Keyboard tiles are a separate, complete layer in native composition coordinates.
 /// Both layer views borrow the same immutable frame lease.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_recording_effects_frame_keyboard_info(
@@ -604,6 +604,9 @@ mod tests {
         );
         let keyboard = unsafe { keyboard.assume_init() };
         assert_eq!(keyboard.generation, 12);
+        #[cfg(target_os = "macos")]
+        assert_eq!((keyboard.width, keyboard.height), (1280, 720));
+        #[cfg(not(target_os = "macos"))]
         assert_eq!((keyboard.width, keyboard.height), (1920, 1080));
         assert_eq!(keyboard.tile_count, 0);
         assert_eq!(

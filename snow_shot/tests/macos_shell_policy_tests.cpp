@@ -63,7 +63,7 @@ void globalMouseFamiliesAreComplete() {
     }
 }
 
-void macosRouterAllowsSupportedFeaturesAndRejectsRecording() {
+void macosRouterAllowsAllFeatures() {
     int notices = 0;
     int screenshotDispatches = 0;
     int pinDispatches = 0;
@@ -81,44 +81,39 @@ void macosRouterAllowsSupportedFeaturesAndRejectsRecording() {
     require(router.dispatch(FeatureFamily::PinToScreen, [&]() { ++pinDispatches; }),
             "macOS pin routing must reach capture");
     require(!lastNotice.has_value(), "supported pinning must not show an unavailable notice");
-    require(!router.dispatch(FeatureFamily::ScreenRecording, [&]() { ++recordingDispatches; }),
-            "macOS recording routing must be rejected");
-    require(lastNotice == FeatureFamily::ScreenRecording,
-            "the router must identify an unavailable recording operation");
-    require(screenshotDispatches == 1 && pinDispatches == 1 && recordingDispatches == 0,
-            "macOS actions must reach only supported feature handlers");
-    require(notices == 1, "the unavailable recording action must emit one notice");
+    require(router.dispatch(FeatureFamily::ScreenRecording, [&]() { ++recordingDispatches; }),
+            "macOS recording routing must reach capture");
+    require(!lastNotice.has_value(), "supported recording must not show an unavailable notice");
+    require(screenshotDispatches == 1 && pinDispatches == 1 && recordingDispatches == 1,
+            "macOS actions must reach every supported feature handler");
+    require(notices == 0, "supported macOS actions must not emit unavailable notices");
 
     require(router.dispatch(
                 FeatureFamily::PinToScreen, [&]() { ++restorationDispatches; }, false) &&
-                restorationDispatches == 1 && notices == 1,
+                restorationDispatches == 1 && notices == 0,
             "silent startup restoration must run without emitting a notice");
 }
 
-void macosRouterCancelsBlockedGestureOnce() {
+void macosRouterDispatchesRecordingGesture() {
     int notices = 0;
     int cancellations = 0;
     int gestureDispatches = 0;
-    const snow_shot::app::FeatureActionRouter router([&](FeatureFamily feature) {
-        require(feature == FeatureFamily::ScreenRecording,
-                "a recording gesture must report the recording family");
-        ++notices;
-    });
+    const snow_shot::app::FeatureActionRouter router([&](FeatureFamily) { ++notices; });
 
-    require(!router.beginGesture(
+    require(router.beginGesture(
                 FeatureFamily::ScreenRecording, [&]() { ++cancellations; },
                 [&]() { ++gestureDispatches; }),
-            "an unavailable global-mouse gesture must be rejected");
-    require(notices == 1, "a blocked gesture must emit exactly one notice at begin");
-    require(cancellations == 1, "a blocked gesture must be cancelled exactly once");
-    require(gestureDispatches == 0, "a blocked gesture must not reach capture handling");
+            "an available global-mouse recording gesture must be dispatched");
+    require(notices == 0, "an available recording gesture must not emit a notice");
+    require(cancellations == 0, "an available recording gesture must not be cancelled");
+    require(gestureDispatches == 1, "an available recording gesture must reach capture handling");
 }
 } // namespace
 
 int main() {
     shortcutFamiliesAreComplete();
     globalMouseFamiliesAreComplete();
-    macosRouterAllowsSupportedFeaturesAndRejectsRecording();
-    macosRouterCancelsBlockedGestureOnce();
+    macosRouterAllowsAllFeatures();
+    macosRouterDispatchesRecordingGesture();
     return 0;
 }

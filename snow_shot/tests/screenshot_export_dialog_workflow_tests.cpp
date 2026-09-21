@@ -897,6 +897,49 @@ void canvasPdfComparison() {
             "automatic PDF fitting must continue to use source pixels");
 }
 
+void canvasWheelZoom() {
+    ScreenshotSavePreviewCanvas canvas;
+    canvas.resize(600, 400);
+    canvas.setSource(fixture(), QSize(160, 100));
+    const QPointF position(120, 80);
+    const auto scroll = [&](QPoint pixels, QPoint angles,
+                            Qt::MouseEventSource source = Qt::MouseEventNotSynthesized,
+                            Qt::ScrollPhase phase = Qt::NoScrollPhase) {
+        QWheelEvent event(position, position, pixels, angles, Qt::NoButton, Qt::NoModifier, phase,
+                          false, source);
+        QApplication::sendEvent(&canvas, &event);
+        require(event.isAccepted(), "preview wheel zoom must consume the input");
+    };
+    scroll({}, QPoint(0, 120));
+    require(qAbs(canvas.zoom() - 1.15) < 0.000001,
+            "a Windows mouse notch must retain its 15 percent zoom factor");
+#ifdef Q_OS_MACOS
+    for (int pixels : {2, 2, 80}) {
+        const double before = canvas.zoom();
+        const QPointF imagePoint =
+            (position - QRectF(canvas.rect()).center() - canvas.pan()) / before;
+        scroll(QPoint(0, pixels), QPoint(0, 120));
+        require(qAbs(canvas.zoom() - before * 1.15) < 0.000001,
+                "every Cocoa mouse notch must match the Windows zoom factor");
+        const QPointF afterPoint =
+            (position - QRectF(canvas.rect()).center() - canvas.pan()) / canvas.zoom();
+        require(QLineF(imagePoint, afterPoint).length() < 0.000001,
+                "mouse wheel zoom must keep the source point under the cursor");
+    }
+    const double beforeReverse = canvas.zoom();
+    scroll(QPoint(0, -2), QPoint(0, -120));
+    require(qAbs(canvas.zoom() - beforeReverse / 1.15) < 0.000001,
+            "reverse Cocoa mouse scrolling must match Windows");
+#endif
+    const double beforePrecise = canvas.zoom();
+    scroll(QPoint(0, 2), QPoint(0, 4), Qt::MouseEventSynthesizedBySystem);
+    require(qAbs(canvas.zoom() - beforePrecise * std::pow(1.15, 0.02)) < 0.000001,
+            "precise phase-less Cocoa input must retain continuous pixel scaling");
+    const double beforeHorizontal = canvas.zoom();
+    scroll(QPoint(20, 0), QPoint(120, 0));
+    require(canvas.zoom() == beforeHorizontal, "horizontal mouse scrolling must not zoom");
+}
+
 void canvasZoomHint() {
     ScreenshotSavePreviewCanvas canvas;
     canvas.resize(600, 400);
@@ -2458,9 +2501,12 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--zoom-hint")) ||
+            app.arguments().contains(QStringLiteral("--wheel-zoom")) ||
             app.arguments().contains(QStringLiteral("--canvas-baseline")) ||
             app.arguments().contains(QStringLiteral("--unchanged-edits")) ||
             app.arguments().contains(QStringLiteral("--row-backed-preview"))) {
+            if (app.arguments().contains(QStringLiteral("--wheel-zoom")))
+                canvasWheelZoom();
             if (app.arguments().contains(QStringLiteral("--zoom-hint")))
                 canvasZoomHint();
             if (app.arguments().contains(QStringLiteral("--canvas-baseline")))
@@ -2509,6 +2555,7 @@ int main(int argc, char* argv[]) {
         canvasInteraction();
         canvasPdfComparison();
         canvasZoomHint();
+        canvasWheelZoom();
         canvasOriginalSizeBaseline();
         unchangedPreviewEdits(owner);
         shortcutsAndCancellation(owner, temp);

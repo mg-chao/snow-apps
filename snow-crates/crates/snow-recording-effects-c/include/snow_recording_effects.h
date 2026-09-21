@@ -73,8 +73,9 @@ void snow_recording_effects_destroy(SnowRecordingEffects* effects);
 SnowRecordingEffectsFrame* snow_recording_effects_acquire_frame(SnowRecordingEffects* effects);
 int32_t snow_recording_effects_frame_info(const SnowRecordingEffectsFrame* frame,
                                           SnowRecordingEffectsFrameInfo* info);
-// Keyboard layer in physical capture pixels, drawn above the mouse layer returned by frame_info.
-// This is a complete snapshot, including an empty tile array when keys expire. Same frame lease.
+// Keyboard layer in native composition coordinates, drawn above the mouse layer returned by
+// frame_info. This is a complete snapshot, including an empty tile array when keys expire. Same
+// frame lease.
 int32_t snow_recording_effects_frame_keyboard_info(const SnowRecordingEffectsFrame* frame,
                                                    SnowRecordingEffectsFrameInfo* info);
 void snow_recording_effects_release_frame(SnowRecordingEffectsFrame* frame);

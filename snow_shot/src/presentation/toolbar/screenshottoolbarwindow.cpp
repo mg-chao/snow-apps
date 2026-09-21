@@ -37,11 +37,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showTableTool = true;
     options.showQrTool = true;
     options.showImageConversionTools = true;
-#ifdef Q_OS_MACOS
-    options.showScreenRecordButton = false;
-#else
     options.showScreenRecordButton = true;
-#endif
     options.showScrollingScreenshotTool = true;
     options.showSaveButton = true;
     options.separatorBeforeShape = true;

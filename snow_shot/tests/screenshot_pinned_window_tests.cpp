@@ -5391,8 +5391,10 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "one wheel notch should scale ten points around the cursor");
 
     sendWheel(center, QPoint(), QPoint(0, 60));
-    require(pinnedWindow->currentNativeGeometry().size() == expectedSize(110),
-            "a partial wheel delta should not scale before reaching 120 units");
+    const bool controlledWheel = QGuiApplication::platformName() != QStringLiteral("windows");
+    require(pinnedWindow->currentNativeGeometry().size() ==
+                expectedSize(controlledWheel ? 120 : 110),
+            "controlled scrolling should advance as soon as input crosses the previous notch");
     sendWheel(center, QPoint(), QPoint(0, 60));
     require(pinnedWindow->currentNativeGeometry().size() == expectedSize(120),
             "partial wheel deltas should accumulate into one ten-point step");
@@ -5401,7 +5403,7 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "a multi-notch wheel delta should apply every ten-point step");
 
     const int preciseWheelStep =
-        QGuiApplication::platformName() == QStringLiteral("windows") ? 1 : 120;
+        QGuiApplication::platformName() == QStringLiteral("windows") ? 1 : 100;
     const QPoint arbitraryPoint(canvas->width() / 4, canvas->height() * 2 / 3);
     const QRect beforeArbitraryScale = pinnedWindow->currentNativeGeometry();
     const double normalizedX = static_cast<double>(arbitraryPoint.x()) / canvas->width();
@@ -9935,14 +9937,40 @@ void pinnedControlledInteractionAndGestures() {
                 !failing->transparent,
             "successful exit must restore interaction before removing controls");
     const QPointF local(40, 30), global = QPointF(window.pos()) + local;
-    for (int i = 0; i < 120; ++i) {
-        QWheelEvent wheel(local, global, QPoint(0, 1), QPoint(), Qt::NoButton, Qt::NoModifier,
-                          i == 0 ? Qt::ScrollBegin : Qt::ScrollUpdate, false);
+    const auto scroll = [&](QPoint pixels, QPoint angles, Qt::ScrollPhase phase,
+                            quint64 timestamp = 0,
+                            Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+        QWheelEvent wheel(local, global, pixels, angles, Qt::NoButton, modifiers, phase, false);
+        wheel.setTimestamp(timestamp);
         require(ScreenshotPinnedWindowTestAccess::gesture(window, &wheel),
-                "precise wheel event was not handled");
-    }
-    require(std::abs(ScreenshotPinnedWindowTestAccess::scale(window) - 110.) < .01,
-            "120 trackpad points must equal one ten-percent wheel step");
+                "scroll input was not handled");
+    };
+    const auto expectScale = [&](double expected, const char* message) {
+        require(std::abs(ScreenshotPinnedWindowTestAccess::scale(window) - expected) < .01,
+                message);
+    };
+    scroll({}, {}, Qt::ScrollBegin);
+    expectScale(100, "an empty scroll begin must not zoom");
+    scroll(QPoint(20, 0), {}, Qt::ScrollUpdate);
+    expectScale(100, "horizontal scrolling must not zoom");
+    scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectScale(110, "the first precise scroll point must zoom immediately");
+    for (int i = 0; i < 99; ++i)
+        scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectScale(110, "small updates must accumulate without zooming on every event");
+    scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectScale(120, "continued scrolling must advance after another 100 points");
+    scroll(QPoint(0, 250), {}, Qt::ScrollUpdate);
+    expectScale(140, "large updates must apply multiple zoom steps and retain the remainder");
+    scroll(QPoint(0, 50), {}, Qt::ScrollUpdate);
+    expectScale(150, "the remainder from a large update must contribute to the next step");
+    scroll(QPoint(0, -1), {}, Qt::ScrollUpdate);
+    expectScale(140, "reversing direction must zoom immediately without cancelling old input");
+    scroll({}, {}, Qt::ScrollEnd);
+    scroll(QPoint(0, -1), {}, Qt::ScrollBegin);
+    expectScale(130, "a new gesture must respond immediately in the same direction");
+    scroll(QPoint(0, -200), {}, Qt::ScrollUpdate);
+    expectScale(110, "continued negative scrolling must apply every step");
     QWheelEvent momentum(local, global, QPoint(0, 120), QPoint(), Qt::NoButton, Qt::NoModifier,
                          Qt::ScrollMomentum, false);
     require(ScreenshotPinnedWindowTestAccess::gesture(window, &momentum) &&
@@ -9953,11 +9981,63 @@ void pinnedControlledInteractionAndGestures() {
     require(ScreenshotPinnedWindowTestAccess::gesture(window, &pinch) &&
                 std::abs(ScreenshotPinnedWindowTestAccess::scale(window) - 165.) < .01,
             "pinch must apply continuous magnification");
+    QWheelEvent snappedWheel(local, global, QPoint(0, 100), QPoint(), Qt::NoButton, Qt::NoModifier,
+                             Qt::ScrollBegin, false);
+    require(ScreenshotPinnedWindowTestAccess::gesture(window, &snappedWheel) &&
+                std::abs(ScreenshotPinnedWindowTestAccess::scale(window) - 170.) < .01,
+            "wheel input after a continuous pinch must advance to the next fixed level");
     QWheelEvent opacity(local, global, QPoint(0, -120), QPoint(), Qt::NoButton, Qt::ControlModifier,
                         Qt::ScrollBegin, false);
     require(ScreenshotPinnedWindowTestAccess::gesture(window, &opacity) &&
                 ScreenshotPinnedWindowTestAccess::opacity(window) == 95,
             "precise opacity wheel must use five-percent steps");
+    scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectScale(180, "switching from opacity to zoom must start an immediate zoom step");
+    scroll(QPoint(0, -250), {}, Qt::ScrollBegin);
+    expectScale(150, "a large first event must apply an immediate step and continued steps");
+    scroll({}, {}, Qt::ScrollEnd);
+    scroll({}, QPoint(0, 1), Qt::NoScrollPhase, 1000);
+    expectScale(160, "a small angle-only wheel input must zoom immediately");
+    scroll({}, QPoint(0, 119), Qt::NoScrollPhase, 1010);
+    expectScale(160, "angle-only updates must accumulate within the same burst");
+    scroll({}, QPoint(0, 1), Qt::NoScrollPhase, 1020);
+    expectScale(170, "continued angle-only scrolling must advance once per notch");
+    scroll({}, QPoint(0, 1), Qt::NoScrollPhase, 2000);
+    expectScale(180, "a wheel burst after an idle gap must zoom immediately");
+    scroll({}, QPoint(0, -240), Qt::NoScrollPhase, 2010);
+    expectScale(160, "angle-only reversal must apply all reverse notches immediately");
+    scroll(QPoint(0, -1), {}, Qt::NoScrollPhase, 2020);
+    expectScale(150, "switching delta units must start a fresh zoom sequence");
+    QEvent deactivate(QEvent::WindowDeactivate);
+    ScreenshotPinnedWindowTestAccess::gesture(window, &deactivate);
+    scroll(QPoint(0, -1), {}, Qt::NoScrollPhase, 2030);
+    expectScale(140, "deactivation must clear pending scroll state");
+    scroll(QPoint(0, 10000), {}, Qt::ScrollBegin);
+    expectScale(500, "large positive scrolling must respect the maximum scale");
+    scroll(QPoint(0, -1), {}, Qt::ScrollUpdate);
+    expectScale(490, "reversal at the scale limit must respond immediately");
+    scroll(QPoint(0, -10000), {}, Qt::ScrollUpdate);
+    expectScale(10, "large negative scrolling must respect the minimum scale");
+#ifdef Q_OS_MACOS
+    // Cocoa supplies estimated pixels even for a non-precise, notched mouse.
+    // Rapid notches must match Windows regardless of that pixel estimate.
+    scroll({}, {}, Qt::ScrollEnd);
+    scroll(QPoint(0, 2), QPoint(0, 120), Qt::NoScrollPhase, 3000);
+    expectScale(20, "the first Cocoa mouse notch must apply one zoom step");
+    scroll(QPoint(0, 2), QPoint(0, 120), Qt::NoScrollPhase, 3010);
+    expectScale(30, "each rapid Cocoa mouse notch must apply a full zoom step");
+    scroll(QPoint(0, 80), QPoint(0, 120), Qt::NoScrollPhase, 3020);
+    expectScale(40, "estimated pixel acceleration must not change mouse notch scaling");
+    scroll(QPoint(0, -2), QPoint(0, -120), Qt::NoScrollPhase, 3030);
+    expectScale(30, "a reverse Cocoa mouse notch must apply one reverse step");
+    for (int i = 0; i < 2; ++i) {
+        QWheelEvent precise(local, global, QPoint(0, 2), QPoint(0, 4), Qt::NoButton, Qt::NoModifier,
+                            Qt::NoScrollPhase, false, Qt::MouseEventSynthesizedBySystem);
+        require(ScreenshotPinnedWindowTestAccess::gesture(window, &precise),
+                "phase-less precise Cocoa input must be handled");
+        expectScale(40, "phase-less precise input must retain pixel accumulation");
+    }
+#endif
     window.close();
 }
 

@@ -29,7 +29,17 @@ pub struct PreviewConfig {
 
 impl PreviewConfig {
     fn keyboard_output(&self) -> (u32, u32) {
-        (self.region.2, self.region.3)
+        // Native macOS recording composes keycaps in the final pixel canvas while
+        // the observed desktop region is expressed in points. Windows observes a
+        // physical-pixel region, so that region is the matching preview canvas.
+        #[cfg(target_os = "macos")]
+        {
+            self.output
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            (self.region.2, self.region.3)
+        }
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -56,8 +66,9 @@ pub struct PreviewFrame {
     pub error: Option<String>,
 }
 
-/// Mouse tiles use export coordinates; keyboard tiles use physical capture pixels.
-/// Keeping these destinations separate prevents export scaling from resizing keycaps.
+/// Mouse tiles use export coordinates. Keyboard tiles use the coordinate space in which native
+/// recording composes keycaps: export pixels on macOS and physical capture pixels elsewhere.
+/// Keeping these destinations separate prevents export scaling from resizing Windows keycaps.
 #[derive(Default)]
 pub struct PreviewLayers {
     pub mouse: Vec<Tile>,
@@ -609,7 +620,7 @@ mod tests {
         }
     }
     #[test]
-    fn preview_keycaps_stay_64_physical_pixels_independent_of_capture_and_export_size() {
+    fn preview_keycaps_match_native_composition_coordinates() {
         struct FixedSquare;
         impl KeycapRasterizer for FixedSquare {
             fn rasterize(&mut self, _: &str, scale: f32) -> Result<Keycap, String> {
@@ -628,6 +639,9 @@ mod tests {
                 config.output = output;
                 let mut preview = EffectsPreview::new(config, Some(Box::new(FixedSquare)));
                 preview.keyboard.as_mut().unwrap().model.event(key(0, true));
+                #[cfg(target_os = "macos")]
+                assert_eq!(preview.config.keyboard_output(), output);
+                #[cfg(not(target_os = "macos"))]
                 assert_eq!(preview.config.keyboard_output(), capture);
                 let frame = preview.render(200).unwrap();
                 assert!(frame.mouse.is_empty());

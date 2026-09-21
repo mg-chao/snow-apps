@@ -295,6 +295,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void rebuildTransformedImage();
     void applyScale(int percent);
     void applyWheelScale(double percent, const QPointF& nativeCursor);
+    void applyWheelScaleSteps(int steps, const QPointF& nativeCursor);
     bool handleOpacityWheel(QObject* watched, QWheelEvent* event);
     bool handleScaleWheel(QObject* watched, QWheelEvent* event);
     QSize orientedInitialWindowSize() const;
@@ -382,7 +383,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointF m_interactionAnchor;
     std::optional<int> m_interactionResizeHandle;
     QPointer<QWidget> m_interactionGrabber;
-    double m_scrollZoom = 0;
+    int m_scrollWheelRemainder = 0;
+    int m_scrollWheelDirection = 0;
+    int m_scrollWheelStepDelta = 0;
+    quint64 m_scrollWheelTimestamp = 0;
     double m_scrollOpacity = 0;
     bool m_pinchActive = false;
     bool m_controlledEscapeRelease = false;

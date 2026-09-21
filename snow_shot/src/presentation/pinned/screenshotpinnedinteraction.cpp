@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
+#include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "pinnedwindowplatform.h"
 #include "screenshotpinnednativegeometrycontroller.h"
@@ -23,6 +24,11 @@
 namespace platform = snow_shot::presentation;
 namespace resize_geometry = screenshot_pinned_resize_geometry;
 namespace {
+constexpr int kPreciseWheelZoomStepDelta = 100;
+constexpr int kAngleWheelZoomStepDelta = 120;
+// Wheels without scroll phases need an idle boundary for a new immediate step.
+constexpr quint64 kWheelZoomBurstIntervalMs = 250;
+
 std::optional<int> resizeHandle(const QPointF& p, const QSize& size) {
     constexpr qreal margin = 6;
     if (!QRectF(QPointF(), QSizeF(size)).contains(p))
@@ -361,7 +367,10 @@ bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* e
 }
 
 void ScreenshotPinnedWindow::resetPinnedGestures() {
-    m_scrollZoom = 0;
+    m_scrollWheelRemainder = 0;
+    m_scrollWheelDirection = 0;
+    m_scrollWheelStepDelta = 0;
+    m_scrollWheelTimestamp = 0;
     m_scrollOpacity = 0;
     m_pinchActive = false;
 }
@@ -405,31 +414,50 @@ bool ScreenshotPinnedWindow::handlePinnedGesture(QObject* watched, QEvent* event
     auto* wheel = static_cast<QWheelEvent*>(event);
     if (wheel->phase() == Qt::ScrollMomentum || m_pinchActive)
         return true;
-    if (wheel->phase() == Qt::ScrollBegin) {
-        m_scrollZoom = m_scalePercent;
-        m_scrollOpacity = m_opacityPercent;
-    }
+    if (wheel->phase() == Qt::ScrollBegin)
+        resetPinnedGestures();
     if (wheel->phase() == Qt::ScrollEnd) {
-        m_scrollZoom = 0;
-        m_scrollOpacity = 0;
+        resetPinnedGestures();
+        wheel->accept();
         return true;
     }
-    if (wheel->pixelDelta().isNull()) {
-        resetPinnedGestures();
-        return false;
-    }
+    const bool precise = platform::usesPreciseWheelDelta(*wheel);
+    const int delta = precise ? wheel->pixelDelta().y() : wheel->angleDelta().y();
     if (wheel->modifiers().testFlag(Qt::ControlModifier)) {
+        m_scrollWheelRemainder = 0;
+        m_scrollWheelDirection = 0;
+        if (!precise) {
+            m_scrollOpacity = 0;
+            return false;
+        }
         if (m_scrollOpacity == 0)
             m_scrollOpacity = m_opacityPercent;
-        m_scrollOpacity =
-            std::clamp(m_scrollOpacity + wheel->pixelDelta().y() * 5. / 120., 25., 100.);
+        m_scrollOpacity = std::clamp(m_scrollOpacity + delta * 5. / 120., 25., 100.);
         setOpacityPercent(qRound(m_scrollOpacity));
-    } else {
-        if (m_scrollZoom == 0)
-            m_scrollZoom = m_scalePercent;
-        m_scrollZoom = std::clamp(m_scrollZoom + wheel->pixelDelta().y() * 10. / 120., 10., 500.);
-        applyWheelScale(m_scrollZoom, nativePositionForWindowPosition(
-                                          windowPositionForEvent(watched, wheel->position())));
+    } else if (delta != 0) {
+        m_scrollOpacity = 0;
+        const int stepDelta = precise ? kPreciseWheelZoomStepDelta : kAngleWheelZoomStepDelta;
+        const int direction = delta > 0 ? 1 : -1;
+        const quint64 timestamp = wheel->timestamp();
+        const bool newBurst = wheel->phase() == Qt::NoScrollPhase &&
+                              timestamp > m_scrollWheelTimestamp &&
+                              timestamp - m_scrollWheelTimestamp >= kWheelZoomBurstIntervalMs;
+        if (direction != m_scrollWheelDirection || stepDelta != m_scrollWheelStepDelta ||
+            newBurst) {
+            // Advance on the first point, then once per full step of continued movement.
+            // Keeping this credit in the accumulator makes event coalescing irrelevant.
+            m_scrollWheelRemainder = direction * (stepDelta - 1);
+        }
+        m_scrollWheelDirection = direction;
+        m_scrollWheelStepDelta = stepDelta;
+        m_scrollWheelTimestamp = timestamp;
+        const qint64 accumulated = qint64(m_scrollWheelRemainder) + delta;
+        const int steps = int(accumulated / stepDelta);
+        m_scrollWheelRemainder = int(accumulated % stepDelta);
+        if (steps != 0) {
+            applyWheelScaleSteps(steps, nativePositionForWindowPosition(
+                                            windowPositionForEvent(watched, wheel->position())));
+        }
     }
     wheel->accept();
     return true;

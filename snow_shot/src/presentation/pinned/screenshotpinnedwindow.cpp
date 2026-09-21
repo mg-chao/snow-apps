@@ -5093,6 +5093,25 @@ void ScreenshotPinnedWindow::applyWheelScale(double percent, const QPointF& nati
     refreshContextMenu();
 }
 
+void ScreenshotPinnedWindow::applyWheelScaleSteps(int steps, const QPointF& nativeCursor) {
+    if (steps == 0) {
+        return;
+    }
+
+    // Wheel scaling moves between fixed ten-percent levels. Keep arbitrary
+    // values produced by native resizing or pinch gestures, but use the next
+    // level in the direction of travel instead of adding ten to that value.
+    const int displayedScalePercent = qRound(m_scalePercent);
+    const double level = steps > 0 ? std::floor(displayedScalePercent / kWheelScaleStep)
+                                   : std::ceil(displayedScalePercent / kWheelScaleStep);
+    const int targetPercent =
+        qBound(kMinimumScalePercent, qRound(level * kWheelScaleStep + steps * kWheelScaleStep),
+               kMaximumScalePercent);
+    if (targetPercent != displayedScalePercent) {
+        applyWheelScale(targetPercent, nativeCursor);
+    }
+}
+
 bool ScreenshotPinnedWindow::handleOpacityWheel(QObject* watched, QWheelEvent* event) {
     Q_UNUSED(watched);
     if (event == nullptr || m_closing || !event->modifiers().testFlag(Qt::ControlModifier) ||
@@ -5156,18 +5175,7 @@ bool ScreenshotPinnedWindow::handleScaleWheel(QObject* watched, QWheelEvent* eve
 
     const QPointF windowPosition = windowPositionForEvent(watched, event->position());
     const QPointF nativeCursor = nativePositionForWindowPosition(windowPosition);
-    // Wheel scaling moves between fixed ten-percent levels. Keep arbitrary
-    // values produced by native resizing, but use the next level in the
-    // direction of travel instead of adding ten to the current value.
-    const int displayedScalePercent = qRound(m_scalePercent);
-    const double level = steps > 0 ? std::floor(displayedScalePercent / kWheelScaleStep)
-                                   : std::ceil(displayedScalePercent / kWheelScaleStep);
-    const int targetPercent =
-        qBound(kMinimumScalePercent, qRound(level * kWheelScaleStep + steps * kWheelScaleStep),
-               kMaximumScalePercent);
-    if (targetPercent != displayedScalePercent) {
-        applyWheelScale(targetPercent, nativeCursor);
-    }
+    applyWheelScaleSteps(steps, nativeCursor);
     return true;
 }
 
