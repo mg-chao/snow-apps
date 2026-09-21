@@ -30,12 +30,20 @@
     <context>
         <name>ScreenshotController</name>
         <message>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
+            <translation>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</translation>
+        </message>
+        <message>
             <source>Automatic screenshot saving failed: %1</source>
             <translation>Automatic screenshot saving failed: %1</translation>
         </message>
         <message>
             <source>Cancel</source>
             <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Could not read the selected files from Finder. Please try again.</source>
+            <translation>Could not read the selected files from Finder. Please try again.</translation>
         </message>
         <message>
             <source>Could not recapture the screen</source>
@@ -48,6 +56,14 @@
         <message>
             <source>Exit screenshot?</source>
             <translation>Exit screenshot?</translation>
+        </message>
+        <message>
+            <source>Finder is unavailable. Open Finder and try again.</source>
+            <translation>Finder is unavailable. Open Finder and try again.</translation>
+        </message>
+        <message>
+            <source>Finder took too long to return the selected files. Please try again.</source>
+            <translation>Finder took too long to return the selected files. Please try again.</translation>
         </message>
         <message>
             <source>No recognized result is available to copy</source>

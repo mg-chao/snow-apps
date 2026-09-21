@@ -1967,7 +1967,7 @@ impl LiveAudioMixer {
         }
     }
 
-    fn reset_alignment(&mut self, source: Option<AudioSourceKind>) {
+    pub(crate) fn reset_alignment(&mut self, source: Option<AudioSourceKind>) {
         if source.is_none_or(|source| source == AudioSourceKind::System) {
             self.next_system_frame = None;
         }

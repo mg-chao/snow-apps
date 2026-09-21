@@ -1,5 +1,7 @@
 if(APPLE)
-    set_source_files_properties(src/presentation/core/screenshotgeometry.cpp PROPERTIES LANGUAGE OBJCXX)
+    set_source_files_properties(src/presentation/core/screenshotgeometry.cpp
+        src/presentation/recording/screenrecordingareawindow.cpp
+        tests/screen_recording_shortcut_tests.cpp PROPERTIES LANGUAGE OBJCXX)
 endif()
 
 cmake_minimum_required(VERSION 3.30)
@@ -20,6 +22,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_OBJCXX_STANDARD 20)
 set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_EXTENSIONS OFF)
+
+if(APPLE)
+    set(SNOW_SELECTED_FILES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/selectedfiles.mm)
+    set(SNOW_SELECTED_FILES_LIBRARIES "-framework AppKit" "-framework ApplicationServices")
+else()
+    set(SNOW_SELECTED_FILES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/selectedfiles.cpp)
+endif()
 
 set(SNOW_PINNED_PLATFORM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowplatform.cpp)
@@ -1082,7 +1091,7 @@ set(PROJECT_HEADERS
 )
 
 set(PROJECT_CXX_SOURCES
-    src/platform/windows/selectedfiles.cpp
+    ${SNOW_SELECTED_FILES_SOURCES}
     src/presentation/services/screenshotfilepinbatch.cpp
     src/presentation/capture/directcapturecontroller.cpp
     src/presentation/capture/directcapturenative.cpp
@@ -1309,6 +1318,7 @@ if(MSVC)
 endif()
 
 if(APPLE)
+    target_link_libraries(snow_shot PRIVATE ${SNOW_SELECTED_FILES_LIBRARIES})
     target_sources(snow_shot PRIVATE src/platform/macos/camerashuttersound.mm)
     target_link_libraries(snow_shot PRIVATE "-framework AVFoundation" "-framework Foundation" objc)
     qt_add_resources(snow_shot "snow_shot_shutter_audio"
@@ -3463,7 +3473,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-file-pin-batch-tests
         tests/screenshot_file_pin_batch_tests.cpp
-        src/platform/windows/selectedfiles.cpp
+        ${SNOW_SELECTED_FILES_SOURCES}
         src/presentation/services/screenshotfilepinbatch.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
         include/snow_shot/presentation/screenshotexportcoordinator.h
@@ -3472,11 +3482,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_include_directories(snow-shot-file-pin-batch-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_image_codec Qt6::Widgets)
+    target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_image_codec Qt6::Widgets
+        ${SNOW_SELECTED_FILES_LIBRARIES})
     if(WIN32)
         target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE ole32 oleaut32 shell32 uuid)
         add_executable(snow-shot-selected-files-native-smoke-tests
-            tests/selected_files_native_smoke_tests.cpp src/platform/windows/selectedfiles.cpp)
+            tests/selected_files_native_smoke_tests.cpp ${SNOW_SELECTED_FILES_SOURCES})
         target_include_directories(snow-shot-selected-files-native-smoke-tests PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/include")
         target_link_libraries(snow-shot-selected-files-native-smoke-tests PRIVATE
@@ -3485,6 +3496,27 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-selected-files-native-smoke-tests)
         set_tests_properties(snow-shot-selected-files-native-smoke-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+    if(APPLE)
+        add_executable(snow-shot-macos-selected-files-tests
+            tests/macos_selected_files_tests.mm ${SNOW_SELECTED_FILES_SOURCES})
+        target_include_directories(snow-shot-macos-selected-files-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-macos-selected-files-tests PRIVATE
+            Qt6::Core ${SNOW_SELECTED_FILES_LIBRARIES})
+        add_test(NAME snow-shot-macos-selected-files-tests COMMAND snow-shot-macos-selected-files-tests)
+        add_executable(snow-shot-macos-selected-files-native-smoke MACOSX_BUNDLE
+            tests/macos_selected_files_native_smoke.mm ${SNOW_SELECTED_FILES_SOURCES})
+        target_include_directories(snow-shot-macos-selected-files-native-smoke PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-macos-selected-files-native-smoke PRIVATE
+            Qt6::Gui ${SNOW_SELECTED_FILES_LIBRARIES})
+        set_target_properties(snow-shot-macos-selected-files-native-smoke PROPERTIES
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/tests/macos_selected_files_smoke.plist.in")
+        add_test(NAME snow-shot-macos-selected-files-native-smoke
+            COMMAND snow-shot-macos-selected-files-native-smoke)
+        set_tests_properties(snow-shot-macos-selected-files-native-smoke PROPERTIES
+            LABELS "interactive" RUN_SERIAL TRUE TIMEOUT 120 SKIP_RETURN_CODE 77)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-file-pin-batch-tests)
     add_test(NAME snow-shot-file-pin-batch-tests COMMAND snow-shot-file-pin-batch-tests)
@@ -4241,11 +4273,18 @@ if(SNOW_SHOT_BUILD_TESTS)
                 ENVIRONMENT "QT_QPA_PLATFORM=windows")
         endforeach()
     endif()
+    if(APPLE)
+        set(_snow_recording_shortcut_platform cocoa)
+        set(_snow_recording_shortcut_os macos)
+    else()
+        set(_snow_recording_shortcut_platform windows)
+        set(_snow_recording_shortcut_os windows)
+    endif()
     set_tests_properties(snow-shot-screen-recording-shortcut-tests PROPERTIES
         # The shortcut gating asserts real keyboard focus ownership, which the
         # non-activating floating toolbar only supports on a native platform.
-        LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 60
-        ENVIRONMENT "QT_QPA_PLATFORM=windows"
+        LABELS "interactive;e2e;${_snow_recording_shortcut_os}" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "QT_QPA_PLATFORM=${_snow_recording_shortcut_platform}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
@@ -4809,7 +4848,8 @@ if(SNOW_SHOT_BUILD_TESTS)
             "snow_recording_session_${_operation}=test_recording_session_${_operation}")
     endforeach()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
-        snow_recording_last_error_message=test_recording_last_error_message)
+        snow_recording_last_error_message=test_recording_last_error_message
+        snow_recording_region_output_dimensions=test_recording_region_output_dimensions)
     if(WIN32)
         target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE user32 dwmapi gdi32)
         target_sources(snow-shot-screen-recording-controller-tests PRIVATE
@@ -4909,7 +4949,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
     target_link_libraries(snow-shot-screen-recording-area-window-tests PRIVATE
-        adqt_icon_core
+        ant_design_qt adqt_icon_core
         Qt6::Widgets
         snow_draw_engine_qt_canvas
         snow_shot_storage
@@ -5798,7 +5838,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     # sessions.
     add_executable(snow-shot-file-pin-batch-performance-benchmark
         tests/screenshot_file_pin_batch_performance_benchmark.cpp
-        src/platform/windows/selectedfiles.cpp
+        ${SNOW_SELECTED_FILES_SOURCES}
         src/presentation/services/screenshotfilepinbatch.cpp
         include/snow_shot/presentation/components/pathinput.h
         src/presentation/components/pathinput.cpp
@@ -5883,6 +5923,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-file-pin-batch-performance-benchmark PRIVATE
+        ${SNOW_SELECTED_FILES_LIBRARIES}
         snow_shot_translation
         adqt_icon_core
         ant_design_icons_qt
@@ -6989,7 +7030,7 @@ if(APPLE)
     get_property(_screenshot_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
     foreach(_target IN LISTS _screenshot_targets)
         get_target_property(_sources ${_target} SOURCES)
-        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp|screenshotoverlaywindow.cpp|screenshotrecognitionwindow.cpp")
+        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp|screenshotoverlaywindow.cpp|screenshotrecognitionwindow.cpp|screenrecordingareawindow.cpp|screenrecordingtoolbarwindow.cpp")
             if(NOT _sources MATCHES "platform/macos/screenshotnative.mm")
                 target_sources(${_target} PRIVATE src/platform/macos/screenshotnative.mm)
             endif()

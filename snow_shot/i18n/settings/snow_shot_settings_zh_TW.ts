@@ -1955,6 +1955,10 @@
             <translation>釘選檔案總管或桌面中選取的影像檔案到螢幕</translation>
         </message>
         <message>
+            <source>Pin selected image files from Finder or the desktop to the screen</source>
+            <translation>將 Finder 或桌面中所選的圖片檔案貼到螢幕</translation>
+        </message>
+        <message>
             <source>Pin selection</source>
             <translation>釘選選取範圍</translation>
         </message>

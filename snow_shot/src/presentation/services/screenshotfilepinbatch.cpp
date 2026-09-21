@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 
-#include "snow_shot/platform/windows/selectedfiles.h"
+#include "snow_shot/platform/selectedfiles.h"
 
 #include <QPointer>
 
@@ -35,34 +35,42 @@ void ScreenshotFilePinBatch::cancel() {
 }
 
 void ScreenshotFilePinBatch::start(QStringList paths, Present present) {
-    startSource([paths = std::move(paths)](const ScreenshotExportCancellation&) { return paths; },
-                std::move(present));
+    startSource(
+        [paths = std::move(paths)](const ScreenshotExportCancellation&) {
+            return snow_shot::platform::SelectedFileResult{paths};
+        },
+        std::move(present));
 }
 
 void ScreenshotFilePinBatch::startSelection(
-    std::shared_ptr<snow_shot::platform::windows::SelectedFileBackend> backend,
-    snow_shot::platform::windows::SelectedFileTarget target, Present present) {
+    std::shared_ptr<snow_shot::platform::SelectedFileBackend> backend,
+    snow_shot::platform::SelectedFileTarget target, Present present, Failure failure) {
     startSource(
         [backend = std::move(backend), target](const ScreenshotExportCancellation& token) {
             return backend->selectedFiles(target,
                                           [&token]() { return token.isCancellationRequested(); });
         },
-        std::move(present));
+        std::move(present), std::move(failure));
 }
 
-void ScreenshotFilePinBatch::startSource(Source source, Present present) {
+void ScreenshotFilePinBatch::startSource(Source source, Present present, Failure failure) {
     cancel();
     m_active = true;
     m_present = std::move(present);
     const quint64 generation = m_generation;
     auto files = std::make_shared<QList<ScreenshotClipboardLocalImage>>();
     auto first = std::make_shared<std::optional<ScreenshotClipboardContent>>();
+    auto selection = std::make_shared<snow_shot::platform::SelectedFileResult>();
     m_snapshotJob = ScreenshotExportCoordinator::shared().submit(
         this, ScreenshotExportCoordinator::Priority::Foreground,
-        [source = std::move(source), files, first](const ScreenshotExportCancellation& token) {
-            const QStringList paths = source(token);
+        [source = std::move(source), files, first,
+         selection](const ScreenshotExportCancellation& token) {
+            *selection = source(token);
+            if (selection->error != snow_shot::platform::SelectedFileError::None) {
+                return ScreenshotExportTaskResult{};
+            }
             *files = ScreenshotClipboardContentReader::snapshotLocalFiles(
-                paths, [&token]() { return token.isCancellationRequested(); });
+                selection->paths, [&token]() { return token.isCancellationRequested(); });
             if (!files->isEmpty()) {
                 // Decoding the first file on the worker keeps the first pin
                 // from paying a queue round trip before its decode starts.
@@ -73,12 +81,20 @@ void ScreenshotFilePinBatch::startSource(Source source, Present present) {
             }
             return ScreenshotExportTaskResult{};
         },
-        [this, generation, files, first](ScreenshotExportTaskResult result) {
+        [this, generation, files, first, selection,
+         failure = std::move(failure)](ScreenshotExportTaskResult result) {
             if (generation != m_generation) {
                 return;
             }
             if (!result.succeeded()) {
                 cancel();
+                return;
+            }
+            if (selection->error != snow_shot::platform::SelectedFileError::None) {
+                cancel();
+                if (failure) {
+                    failure(selection->error);
+                }
                 return;
             }
             m_snapshotJob = {};

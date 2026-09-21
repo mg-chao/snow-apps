@@ -173,9 +173,8 @@ void routingPolicy() {
     for (auto action : {A::ScreenRecord, A::ScreenRecordCopy}) {
         require(requiredPermissions(action, false) == AppPermissions{P::ScreenRecording},
                 "recording without microphone");
-        require(requiredPermissions(action, true) ==
-                    AppPermissions({P::ScreenRecording, P::Microphone}),
-                "recording with microphone");
+        require(requiredPermissions(action, true) == AppPermissions({P::ScreenRecording}),
+                "recording selection defers microphone access until actual recording");
     }
     require(requiredPermissions(A::TranslateSelectedText, false) ==
                 AppPermissions{P::Accessibility},
@@ -192,8 +191,8 @@ void routingPolicy() {
         require(required.contains(P::ScreenRecording) && required.contains(P::Accessibility) &&
                     required.contains(P::InputMonitoring),
                 "mouse action requirements");
-        require(required.contains(P::Microphone) == (action == M::ScreenRecording),
-                "only mouse recording needs microphone");
+        require(!required.contains(P::Microphone),
+                "mouse selection defers microphone access until actual recording");
     }
     require(!pagePermissions(false, false, false).contains(P::InputMonitoring),
             "Carbon hotkeys do not require Input Monitoring");
@@ -234,12 +233,8 @@ void routingPolicy() {
             "a fresh user action can proceed to the existing availability gate");
     static_cast<void>(
         featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot, [&] { ++dispatched; }));
-#ifdef Q_OS_MACOS
-    require(unavailable == 1 && dispatched == 0,
-            "granting access must retain the existing macOS feature gate");
-#else
-    require(unavailable == 0 && dispatched == 1, "available platforms retain feature dispatch");
-#endif
+    require(unavailable == 0 && dispatched == 1,
+            "granted screen access must allow capture on every supported platform");
 }
 class PermissionTranslator final : public QTranslator {
     QString translate(const char* context, const char* source, const char*, int) const override {

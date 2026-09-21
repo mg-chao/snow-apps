@@ -69,7 +69,7 @@ int runRecordingEffectsPerformanceBenchmark(RecordingEffectsBenchmarkApplication
         for (const QSize output : {QSize(1920, 1080), QSize(3840, 2160)}) {
             ScreenRecordingAreaWindow area;
             const QRect capture(screen.topLeft() + QPoint(20, 20), output);
-            area.setPhysicalRegion(capture);
+            area.setRecordingRegion(capture);
             area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
             area.show();
             area.activateWindow();

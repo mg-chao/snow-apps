@@ -1,10 +1,13 @@
 #![allow(clippy::missing_safety_doc)]
 use snow_capture::{backend::CaptureBackendKind, exclusions::SnowCaptureExclusions};
+#[cfg(not(target_os = "macos"))]
+use snow_screen_recorder::DirectRecordingSession;
+#[cfg(target_os = "macos")]
+use snow_screen_recorder::macos::DirectSession as DirectRecordingSession;
 use snow_screen_recorder::{
-    DirectRecordingConfig, DirectRecordingSession, EditingSession, ExportFormat, ExportRequest,
-    RecordingAudioConfig, RecordingAudioTrackConfig, RecordingConfig, RecordingRegion,
-    RecordingSession, RecordingState, RecordingTarget, ScreenRecorderError, VideoCodec,
-    VideoEncodeConfig, VideoEncodingSpeed,
+    DirectRecordingConfig, EditingSession, ExportFormat, ExportRequest, RecordingAudioConfig,
+    RecordingAudioTrackConfig, RecordingConfig, RecordingRegion, RecordingSession, RecordingState,
+    RecordingTarget, ScreenRecorderError, VideoCodec, VideoEncodeConfig, VideoEncodingSpeed,
 };
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
@@ -777,6 +780,66 @@ pub unsafe extern "C" fn snow_recording_output_dimensions(
     1
 }
 
+/// Resolves output pixels for a desktop region. On macOS this queries display scale
+/// on a worker thread; it neither starts capture nor requests permissions.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_region_output_dimensions(
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    maximum_width: u32,
+    maximum_height: u32,
+    format: u32,
+    output_width: *mut u32,
+    output_height: *mut u32,
+) -> i32 {
+    if width == 0
+        || height == 0
+        || output_width.is_null()
+        || output_height.is_null()
+        || (maximum_width == 0) != (maximum_height == 0)
+        || format > 3
+    {
+        return 0;
+    }
+    #[cfg(target_os = "macos")]
+    let (width, height) = {
+        match snow_screen_recorder::macos::recording_dimensions(
+            RecordingRegion::new(x, y, width, height),
+            (maximum_width != 0).then_some(maximum_width),
+            (maximum_height != 0).then_some(maximum_height),
+            match format {
+                0 => ExportFormat::Mp4,
+                1 => ExportFormat::Gif,
+                2 => ExportFormat::Apng,
+                _ => ExportFormat::Webp,
+            },
+        ) {
+            Ok(size) => (size.width, size.height),
+            Err(error) => {
+                set_last_error(error);
+                return 0;
+            }
+        }
+    };
+    #[cfg(target_os = "macos")]
+    let (maximum_width, maximum_height) = (0, 0);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (x, y);
+    unsafe {
+        snow_recording_output_dimensions(
+            width,
+            height,
+            maximum_width,
+            maximum_height,
+            format,
+            output_width,
+            output_height,
+        )
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_recording_session_create_direct(
     config: *const SnowCaptureDirectRecordingConfig,
@@ -886,7 +949,7 @@ pub unsafe extern "C" fn snow_recording_gpu_probe(
         }
     };
     let result = (|| {
-        let mut session = DirectRecordingSession::create(config)?;
+        let mut session = snow_screen_recorder::DirectRecordingSession::create(config)?;
         session.start()?;
         std::thread::sleep(std::time::Duration::from_millis(400));
         session.pause()?;
@@ -1222,6 +1285,52 @@ mod tests {
         assert!(parse_direct_recording_config(&config).is_err());
     }
 
+    #[test]
+    fn region_dimensions_reject_invalid_queries_without_native_access() {
+        for (width, height, max_width, max_height, format) in [
+            (0, 239, 0, 0, 0),
+            (321, 0, 0, 0, 0),
+            (321, 239, 640, 0, 0),
+            (321, 239, 0, 0, 4),
+        ] {
+            let (mut out_width, mut out_height) = (17, 19);
+            assert_eq!(
+                unsafe {
+                    super::snow_recording_region_output_dimensions(
+                        -20,
+                        -40,
+                        width,
+                        height,
+                        max_width,
+                        max_height,
+                        format,
+                        &mut out_width,
+                        &mut out_height,
+                    )
+                },
+                0
+            );
+            assert_eq!((out_width, out_height), (17, 19));
+        }
+        let mut height = 19;
+        assert_eq!(
+            unsafe {
+                super::snow_recording_region_output_dimensions(
+                    0,
+                    0,
+                    321,
+                    239,
+                    0,
+                    0,
+                    0,
+                    std::ptr::null_mut(),
+                    &mut height,
+                )
+            },
+            0
+        );
+        assert_eq!(height, 19);
+    }
     #[test]
     fn recording_preview_output_dimensions_match_export_formats() {
         for format in 0..=3 {
@@ -1685,7 +1794,8 @@ mod tests {
     #[test]
     fn recording_session_live_count_tracks_create_and_destroy_exactly_once() {
         let output = CString::new("recording.mp4").unwrap();
-        let config = direct_config(&output);
+        let mut config = direct_config(&output);
+        config.capture_backend = 0;
         let baseline = snow_recording_session_live_count();
         let mut first = ptr::null_mut();
         let mut second = ptr::null_mut();

@@ -27,7 +27,7 @@ struct ScreenRecordingAreaBorderGeometry {
 inline constexpr int screenRecordingPhysicalFrameInset = 3;
 
 struct ScreenRecordingObservedGeometry {
-    QRect physicalRegion;
+    QRect recordingRegion;
     QRectF frameRect;
     QRectF selectionRect;
     qreal paddingWidth = 0.0;
@@ -45,7 +45,7 @@ screenRecordingAreaFrameGeometry(const QRectF& logicalRegion, qreal physicalScal
 screenRecordingAreaBorderGeometry(const QRectF& frameRect, const QRectF& selectionRect,
                                   qreal paddingWidth);
 
-[[nodiscard]] QRect screenRecordingCompatibleCaptureRegion(const QRect& selectedPhysicalRegion,
+[[nodiscard]] QRect screenRecordingCompatibleCaptureRegion(const QRect& selectedRecordingRegion,
                                                            const QRect& physicalBounds);
 
 [[nodiscard]] QSize screenRecordingMaximumSizeForClarity(const QString& clarity);

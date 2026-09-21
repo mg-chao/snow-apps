@@ -7,8 +7,9 @@
 #include "snow_shot/presentation/globalmousetypes.h"
 
 #include <memory>
+#include <functional>
 
-namespace snow_shot::platform::windows {
+namespace snow_shot::platform {
 struct SelectedFileTarget;
 }
 namespace snow_shot::presentation {
@@ -27,7 +28,7 @@ class ScreenshotController : public QObject {
         ScreenshotOcrRecognitionService* sharedOcrRecognition = nullptr,
         SnowShotApiClient* sharedApiClient = nullptr);
     ~ScreenshotController() override;
-    void pinSelectedFilesToScreen(snow_shot::platform::windows::SelectedFileTarget target);
+    void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     [[nodiscard]] bool captureAvailable() const;
     [[nodiscard]] bool blocksApplicationUpdate() const;
     [[nodiscard]] bool beginGlobalMouseCapture(
@@ -38,6 +39,8 @@ class ScreenshotController : public QObject {
     void updateGlobalMouseCapture(quint64 gestureId, const QPointF& position);
     void finishGlobalMouseCapture(quint64 gestureId, const QPointF& position);
     void cancelGlobalMouseCapture(quint64 gestureId);
+
+    void setRecordingPermissionCheck(std::function<bool(bool, bool, bool)> check);
 
   public slots:
     void prewarmResources();
@@ -57,6 +60,7 @@ class ScreenshotController : public QObject {
     void pinSelectedFilesToScreen();
 
   signals:
+    void selectedFilePinFailed(const QString& message);
     void showMainWindowRequested();
     void accessibilityPermissionRequested();
     void translationPageRequested(const QString& text);

@@ -1046,11 +1046,11 @@ QVector<ConfigurationSchemaEntry> buildEntries() {
     };
     // Portable Meta maps to the physical Control key on Apple platforms.
     replaceDefault(QStringLiteral("global_shortcuts/screenshot"),
-                   macGlobalShortcutDefault(QStringLiteral("Meta+Shift+1"), 18));
+                   macGlobalShortcutDefault(QStringLiteral("Meta+1"), 18));
     replaceDefault(QStringLiteral("global_shortcuts/screenshot_copy"),
-                   macGlobalShortcutDefault(QStringLiteral("Meta+Shift+2"), 19));
+                   macGlobalShortcutDefault(QStringLiteral("Meta+2"), 19));
     replaceDefault(QStringLiteral("global_shortcuts/pin_clipboard_content"),
-                   macGlobalShortcutDefault(QStringLiteral("Meta+Shift+3"), 20));
+                   macGlobalShortcutDefault(QStringLiteral("Meta+3"), 20));
 #endif
     return result;
 }

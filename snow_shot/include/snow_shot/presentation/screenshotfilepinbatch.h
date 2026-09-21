@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "snow_shot/platform/selectedfiles.h"
 #include <QHash>
 #include <QObject>
 #include <QStringList>
@@ -10,28 +11,31 @@
 #include <functional>
 #include <memory>
 
-namespace snow_shot::platform::windows {
+namespace snow_shot::platform {
 class SelectedFileBackend;
 struct SelectedFileTarget;
-} // namespace snow_shot::platform::windows
+} // namespace snow_shot::platform
 
 class ScreenshotFilePinBatch final : public QObject {
   public:
     using Present = std::function<bool(ScreenshotClipboardContent)>;
-    using Source = std::function<QStringList(const ScreenshotExportCancellation&)>;
+    using Source =
+        std::function<snow_shot::platform::SelectedFileResult(const ScreenshotExportCancellation&)>;
+    using Failure = std::function<void(snow_shot::platform::SelectedFileError)>;
 
     explicit ScreenshotFilePinBatch(QObject* parent = nullptr);
     ~ScreenshotFilePinBatch() override;
     void start(QStringList paths, Present present);
-    void startSelection(std::shared_ptr<snow_shot::platform::windows::SelectedFileBackend> backend,
-                        snow_shot::platform::windows::SelectedFileTarget target, Present present);
+    void startSelection(std::shared_ptr<snow_shot::platform::SelectedFileBackend> backend,
+                        snow_shot::platform::SelectedFileTarget target, Present present,
+                        Failure failure = {});
     void cancel();
     [[nodiscard]] bool active() const {
         return m_active;
     }
 
   private:
-    void startSource(Source source, Present present);
+    void startSource(Source source, Present present, Failure failure = {});
     void submitDecode(quint64 generation, qsizetype index);
     void submitPendingDecodes(quint64 generation);
     void dispatch(quint64 generation);

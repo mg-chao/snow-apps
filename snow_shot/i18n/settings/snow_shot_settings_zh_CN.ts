@@ -1955,6 +1955,10 @@
             <translation>固定文件资源管理器或桌面中选中的图像文件到屏幕</translation>
         </message>
         <message>
+            <source>Pin selected image files from Finder or the desktop to the screen</source>
+            <translation>将访达或桌面中选中的图像文件贴到屏幕</translation>
+        </message>
+        <message>
             <source>Pin selection</source>
             <translation>固定选区</translation>
         </message>

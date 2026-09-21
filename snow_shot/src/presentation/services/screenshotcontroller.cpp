@@ -27,7 +27,7 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotdisplayconfigurationobserver.h"
-#include "snow_shot/platform/windows/selectedfiles.h"
+#include "snow_shot/platform/selectedfiles.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -393,7 +393,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     QPoint scrollingMovePhysicalPointer(QPoint position) const;
     void pinSelectionToScreen() override;
     void pinClipboardContentToScreen();
-    void pinSelectedFilesToScreen(snow_shot::platform::windows::SelectedFileTarget target);
+    void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     void cancelContentPin();
     ScreenshotFilePinBatch::Present filePinPresenter(QScreen* screen);
     void restorePinnedWindows();
@@ -556,6 +556,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotIntelligentSelectionModel m_intelligentSelection;
     QSet<SnowCanvasTool> m_quickSelectionDisabledTools;
     ScreenshotUiPreferences m_uiPreferences;
+    std::function<bool(bool, bool, bool)> m_recordingPermissionCheck;
     std::unique_ptr<ScreenRecordingController> m_screenRecordingController;
     bool m_constructingRecognitionFeature = false;
     bool m_constructingScrollingFeature = false;
@@ -1104,6 +1105,7 @@ bool ScreenshotController::Impl::ensureRecordingFeature() {
     }
     const QScopedValueRollback<bool> constructingGuard(m_constructingRecordingFeature, true);
     m_screenRecordingController = std::make_unique<ScreenRecordingController>(&owner);
+    m_screenRecordingController->setPermissionCheck(m_recordingPermissionCheck);
     return m_screenRecordingController != nullptr;
 }
 
@@ -2845,17 +2847,46 @@ ScreenshotFilePinBatch::Present ScreenshotController::Impl::filePinPresenter(QSc
 }
 
 void ScreenshotController::Impl::pinSelectedFilesToScreen(
-    snow_shot::platform::windows::SelectedFileTarget target) {
+    snow_shot::platform::SelectedFileTarget target) {
     cancelContentPin();
     QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
     if (screen == nullptr) {
         screen = QGuiApplication::primaryScreen();
     }
-    if (screen == nullptr || target.window == 0 || !ensureExportFeature()) {
+    const auto backend = snow_shot::platform::createSelectedFileBackend();
+    if (screen == nullptr || !ensureExportFeature()) {
         return;
     }
-    m_filePinBatch.startSelection(snow_shot::platform::windows::createSelectedFileBackend(), target,
-                                  filePinPresenter(screen));
+    const auto failure = [this](snow_shot::platform::SelectedFileError error) {
+        using Error = snow_shot::platform::SelectedFileError;
+        QString message;
+        switch (error) {
+        case Error::None:
+            return;
+        case Error::PermissionDenied:
+            message = owner.tr("Allow Snow Shot to access Finder in System Settings > Privacy & "
+                               "Security > Automation, then try again.");
+            break;
+        case Error::Timeout:
+            message =
+                owner.tr("Finder took too long to return the selected files. Please try again.");
+            break;
+        case Error::Unavailable:
+            message = owner.tr("Finder is unavailable. Open Finder and try again.");
+            break;
+        case Error::QueryFailed:
+            message = owner.tr("Could not read the selected files from Finder. Please try again.");
+            break;
+        }
+        emit owner.selectedFilePinFailed(message);
+    };
+    if (!backend->isValidTarget(target)) {
+#ifdef Q_OS_MACOS
+        failure(snow_shot::platform::SelectedFileError::Unavailable);
+#endif
+        return;
+    }
+    m_filePinBatch.startSelection(backend, target, filePinPresenter(screen), failure);
     if (m_selectionExportUiServices != nullptr) {
         // Built after submitting so shell construction overlaps the batch's
         // worker-side snapshot and first decode instead of delaying the first
@@ -3982,8 +4013,8 @@ void ScreenshotController::Impl::startScreenRecording() {
                  m_historyService->resetCaptureNavigation();
              }
          },
-         [this](const QRect& physicalRegion) {
-             m_screenRecordingController->open(physicalRegion);
+         [this](const QRect& recordingRegion) {
+             m_screenRecordingController->open(recordingRegion);
          }});
 }
 
@@ -4699,6 +4730,13 @@ void ScreenshotController::captureAndCopySelection() {
     static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::Copy));
 }
 
+void ScreenshotController::setRecordingPermissionCheck(
+    std::function<bool(bool, bool, bool)> check) {
+    m_impl->m_recordingPermissionCheck = std::move(check);
+    if (m_impl->m_screenRecordingController)
+        m_impl->m_screenRecordingController->setPermissionCheck(m_impl->m_recordingPermissionCheck);
+}
+
 void ScreenshotController::captureAndStartScreenRecording() {
     static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::StartVideo));
 }
@@ -4733,12 +4771,11 @@ void ScreenshotController::pinClipboardContentToScreen() {
 }
 
 void ScreenshotController::pinSelectedFilesToScreen() {
-    pinSelectedFilesToScreen(
-        snow_shot::platform::windows::createSelectedFileBackend()->captureTarget());
+    pinSelectedFilesToScreen(snow_shot::platform::createSelectedFileBackend()->captureTarget());
 }
 
 void ScreenshotController::pinSelectedFilesToScreen(
-    snow_shot::platform::windows::SelectedFileTarget target) {
+    snow_shot::platform::SelectedFileTarget target) {
     m_impl->pinSelectedFilesToScreen(target);
 }
 

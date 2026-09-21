@@ -1955,6 +1955,10 @@
             <translation>Pin selected image files from File Explorer or the desktop to the screen</translation>
         </message>
         <message>
+            <source>Pin selected image files from Finder or the desktop to the screen</source>
+            <translation>Pin selected image files from Finder or the desktop to the screen</translation>
+        </message>
+        <message>
             <source>Pin selection</source>
             <translation>Pin selection</translation>
         </message>

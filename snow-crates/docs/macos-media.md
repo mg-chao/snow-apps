@@ -2,9 +2,11 @@
 
 This implementation targets macOS **15.0 or newer**, with separate arm64 and
 x86_64 builds. It is an implementation in progress, **not completed acceptance of
-the comprehensive macOS plan**. Snow Shot's Qt application is not ported by these
-changes. The remaining requirements are listed below rather than implied by a
-successful compilation.
+the comprehensive macOS plan**. Snow Shot's Qt recording workflow now uses the
+native session through the common recording C API; its SDR integration and
+acceptance coverage are documented in
+`../../snow_shot/tests/macos_recording_tests.md`. Remaining media requirements
+are listed below rather than implied by a successful compilation.
 
 ## Ownership and architecture
 

@@ -32,8 +32,9 @@ class ScreenRecordingAreaWindow final : public QWidget {
     explicit ScreenRecordingAreaWindow(QWidget* parent = nullptr);
     ~ScreenRecordingAreaWindow() override;
 
-    void setPhysicalRegion(const QRect& region);
-    [[nodiscard]] QRect physicalRegion() const;
+    // Desktop points on macOS; physical desktop pixels on Windows.
+    void setRecordingRegion(const QRect& region);
+    [[nodiscard]] QRect recordingRegion() const;
     void setRecordingState(ScreenshotToolPalette::RecordingState state);
     void setInputMode(InputMode mode);
     [[nodiscard]] InputMode inputMode() const;
@@ -51,7 +52,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     }
 
   signals:
-    void physicalRegionChanged(const QRect& region);
+    void recordingRegionChanged(const QRect& region);
     void regionInteractionStarted();
     void regionInteractionFinished();
     void closeRequested();
@@ -86,7 +87,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
 
     QRectF m_frameRect;
     QRectF m_selectionRect;
-    QRect m_physicalRegion;
+    QRect m_recordingRegion;
     qreal m_paddingWidth = 0.0;
     ScreenshotToolPalette::RecordingState m_state = ScreenshotToolPalette::RecordingState::Idle;
     InputMode m_inputMode = InputMode::PassThrough;
@@ -96,6 +97,11 @@ class ScreenRecordingAreaWindow final : public QWidget {
     bool m_settingRegion = false;
     bool m_geometrySyncPending = false;
     QMarginsF m_physicalInsets;
+#ifdef Q_OS_MACOS
+    QPoint m_regionDragOrigin;
+    QRect m_regionDragRect;
+    Qt::Edges m_regionDragEdges;
+#endif
     std::unique_ptr<SnowCanvasRuntime> m_canvasRuntime;
     SnowCanvasWidget* m_canvas = nullptr;
     snow_shot::presentation::recording::RecordingCountdownOverlay* m_countdownOverlay = nullptr;

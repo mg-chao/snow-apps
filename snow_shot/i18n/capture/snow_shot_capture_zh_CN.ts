@@ -30,12 +30,20 @@
     <context>
         <name>ScreenshotController</name>
         <message>
+            <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
+            <translation>请在“系统设置 &gt; 隐私与安全性 &gt; 自动化”中允许 Snow Shot 访问访达，然后重试。</translation>
+        </message>
+        <message>
             <source>Automatic screenshot saving failed: %1</source>
             <translation>自动保存截图失败：%1</translation>
         </message>
         <message>
             <source>Cancel</source>
             <translation>取消</translation>
+        </message>
+        <message>
+            <source>Could not read the selected files from Finder. Please try again.</source>
+            <translation>无法读取访达中选中的文件，请重试。</translation>
         </message>
         <message>
             <source>Could not recapture the screen</source>
@@ -48,6 +56,14 @@
         <message>
             <source>Exit screenshot?</source>
             <translation>退出截图？</translation>
+        </message>
+        <message>
+            <source>Finder is unavailable. Open Finder and try again.</source>
+            <translation>访达不可用，请打开访达后重试。</translation>
+        </message>
+        <message>
+            <source>Finder took too long to return the selected files. Please try again.</source>
+            <translation>读取访达中选中文件的请求超时，请重试。</translation>
         </message>
         <message>
             <source>No recognized result is available to copy</source>

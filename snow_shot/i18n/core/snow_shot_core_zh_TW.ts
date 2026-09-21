@@ -579,6 +579,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot。</translation>
         </message>
         <message>
+            <source>Could not pin selected files</source>
+            <translation>無法將所選檔案貼到螢幕</translation>
+        </message>
+        <message>
             <source>Feature unavailable</source>
             <translation>功能暫時無法使用</translation>
         </message>
@@ -589,10 +593,6 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Restart and update</source>
             <translation>重新啟動並更新</translation>
-        </message>
-        <message>
-            <source>Screen recording is not available on macOS yet.</source>
-            <translation>螢幕錄影功能尚未支援 macOS。</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

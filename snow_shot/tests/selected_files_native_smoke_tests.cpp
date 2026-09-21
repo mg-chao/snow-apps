@@ -1,4 +1,4 @@
-#include "snow_shot/platform/windows/selectedfiles.h"
+#include "snow_shot/platform/selectedfiles.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -19,7 +19,7 @@
 
 namespace {
 using Microsoft::WRL::ComPtr;
-using namespace snow_shot::platform::windows;
+using namespace snow_shot::platform;
 void require(bool condition, const char* message) {
     if (!condition) {
         throw std::runtime_error(message);
@@ -136,7 +136,7 @@ void verifyCapture(const QStringList& expected, bool desktop) {
                 return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready;
             }),
             "native selection timed out");
-    QStringList actual = future.get();
+    QStringList actual = future.get().paths;
     for (QString& path : actual) {
         path = QDir::fromNativeSeparators(path);
     }

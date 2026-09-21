@@ -43,6 +43,7 @@
 #include <chrono>
 #include <cstdint>
 #include <future>
+#include <thread>
 #include <memory>
 #include <utility>
 
@@ -231,6 +232,21 @@ struct ScreenRecordingController::Impl {
         showCursor = settings.showCursor();
         showKeyboard = settings.showKeyboard();
         startDelaySeconds = settings.startDelaySeconds();
+#ifdef Q_OS_MACOS
+        dimensionsPollTimer.setInterval(50);
+        QObject::connect(&dimensionsPollTimer, &QTimer::timeout, &owner, [this] {
+            if (!dimensionsFuture.valid() || dimensionsFuture.wait_for(std::chrono::milliseconds(
+                                                 0)) != std::future_status::ready)
+                return;
+            const auto [generation, size] = dimensionsFuture.get();
+            dimensionsPollTimer.stop();
+            if (generation == dimensionsGeneration) {
+                previewOutput = size;
+                dimensionsResolved = true;
+            }
+            syncPreview();
+        });
+#endif
         durationTimer.setInterval(kDurationTickMilliseconds);
         durationTimer.setTimerType(Qt::PreciseTimer);
         QObject::connect(&durationTimer, &QTimer::timeout, &owner, [this]() {
@@ -260,6 +276,29 @@ struct ScreenRecordingController::Impl {
         finalizationPollTimer.stop();
         startPollTimer.stop();
         countdownTimer.stop();
+#ifdef Q_OS_MACOS
+        dimensionsPollTimer.stop();
+        // Native acquisition/teardown may wait for AppKit's main run loop. Move
+        // every pending operation and the session into one UI-independent owner
+        // so destroying the controller never joins a native worker on that loop.
+        if (startFuture.valid() || finalizationFuture.valid() || dimensionsFuture.valid() ||
+            recordingSession != nullptr) {
+            std::thread([start = std::move(startFuture), finish = std::move(finalizationFuture),
+                         dimensions = std::move(dimensionsFuture),
+                         session = std::move(recordingSession)]() mutable {
+                if (start.valid()) {
+                    StartAttemptResult result = start.get();
+                    if (result.session != nullptr && session == nullptr)
+                        session = std::move(result.session);
+                }
+                if (finish.valid())
+                    finish.wait();
+                session.reset();
+                if (dimensions.valid())
+                    dimensions.wait();
+            }).detach();
+        }
+#else
         if (startFuture.valid()) {
             startFuture.wait();
             // A session that finished starting while the controller was being
@@ -274,6 +313,7 @@ struct ScreenRecordingController::Impl {
             static_cast<void>(finalizationFuture.get());
         }
         recordingSession.reset();
+#endif
         destroyUi();
     }
 
@@ -284,7 +324,7 @@ struct ScreenRecordingController::Impl {
         }
         cancelPendingStart();
         if (uiSession != nullptr) {
-            physicalRegion = region;
+            recordingRegion = region;
             updateCaptureRegion();
             // Match the screenshot capture flow, which refreshes persisted
             // creation styles on every capture, so style edits made elsewhere
@@ -298,16 +338,16 @@ struct ScreenRecordingController::Impl {
             if (ScreenshotToolPalette* palette = toolbarWindow->palette()) {
                 palette->setCreationStyleDefaults(defaults);
             }
-            areaWindow->setPhysicalRegion(region);
+            areaWindow->setRecordingRegion(region);
             syncUi();
-            toolbarWindow->placeForPhysicalRegion(region);
+            toolbarWindow->placeForRecordingRegion(region);
             areaWindow->show();
             areaWindow->raise();
             toolbarWindow->showAndActivate();
             return;
         }
 
-        physicalRegion = region;
+        recordingRegion = region;
         updateCaptureRegion();
         SNOW_SHOT_RECORDING_PERF_MILESTONE("open.before_ui_session");
         uiSession = new RecordingUiSession(&owner);
@@ -330,8 +370,8 @@ struct ScreenRecordingController::Impl {
         toolbarWindow->setTransientOwnerWindow(areaWindow);
         areaWindow->setAttribute(Qt::WA_DeleteOnClose, false);
         toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
-        areaWindow->setPhysicalRegion(region);
-        toolbarWindow->placeForPhysicalRegion(region);
+        areaWindow->setRecordingRegion(region);
+        toolbarWindow->placeForRecordingRegion(region);
         SNOW_SHOT_RECORDING_PERF_MILESTONE("open.region_applied");
         connectToolbar();
         SNOW_SHOT_RECORDING_PERF_MILESTONE("open.toolbar_connected");
@@ -369,17 +409,17 @@ struct ScreenRecordingController::Impl {
                              snow_shot::storage::RecordingSettings().setKeyboardSize(value);
                              syncPreview();
                          });
-        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::physicalRegionChanged,
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::recordingRegionChanged,
                          uiSession->connections.get(), [this](const QRect& region) {
                              if (sessionStatus.state() !=
                                      ScreenshotToolPalette::RecordingState::Idle ||
                                  sessionStatus.busy()) {
                                  return;
                              }
-                             physicalRegion = region;
+                             recordingRegion = region;
                              updateCaptureRegion();
                              syncPreview();
-                             toolbarWindow->placeForPhysicalRegion(region);
+                             toolbarWindow->placeForRecordingRegion(region);
                          });
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::regionInteractionStarted,
                          uiSession->connections.get(),
@@ -387,7 +427,7 @@ struct ScreenRecordingController::Impl {
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::regionInteractionFinished,
                          uiSession->connections.get(), [this]() {
                              if (areaWindow->isVisible()) {
-                                 toolbarWindow->endRegionInteraction(areaWindow->physicalRegion());
+                                 toolbarWindow->endRegionInteraction(areaWindow->recordingRegion());
                              }
                          });
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::closeRequested,
@@ -647,6 +687,8 @@ struct ScreenRecordingController::Impl {
             sessionStatus.busy() || startScheduled || recordingSession != nullptr) {
             return;
         }
+        if (!allowRecording(true))
+            return;
         if (startDelaySeconds > 0) {
             beginCountdown();
             return;
@@ -691,7 +733,17 @@ struct ScreenRecordingController::Impl {
         scheduleStart();
     }
 
+    bool allowRecording(bool notify) {
+        const bool input = showKeyboard || recordMouseClicks || mouseTrailColor.alpha() != 0 ||
+                           mouseClickColor.alpha() != 0;
+        return !permissionCheck ||
+               permissionCheck(outputFormat == QStringLiteral("mp4") && microphoneEnabled, input,
+                               notify);
+    }
+
     void scheduleStart() {
+        if (!allowRecording(true))
+            return;
         startScheduled = true;
         syncPreview();
         uiSession->preview->stopAndClear(true);
@@ -1025,6 +1077,52 @@ struct ScreenRecordingController::Impl {
             return;
         }
         const auto output = directRecordingSettings(outputFormat, captureRegion.size());
+#ifdef Q_OS_MACOS
+        if (!allowRecording(false)) {
+            uiSession->preview->setEligible(false);
+            return;
+        }
+        if (dimensionsRegion != captureRegion || dimensionsMaximum != output.maximumSize ||
+            dimensionsFormat != output.format) {
+            dimensionsRegion = captureRegion;
+            dimensionsMaximum = output.maximumSize;
+            dimensionsFormat = output.format;
+            ++dimensionsGeneration;
+            dimensionsResolved = false;
+            previewOutput = {};
+        }
+        if (!dimensionsResolved) {
+            uiSession->preview->setEligible(false);
+            if (!dimensionsFuture.valid()) {
+                const QRect region = captureRegion;
+                const QSize maximum = output.maximumSize;
+                const auto format = output.format;
+                const auto generation = dimensionsGeneration;
+                dimensionsFuture =
+                    std::async(std::launch::async, [region, maximum, format, generation] {
+                        uint32_t width = 0, height = 0;
+                        const bool ok =
+                            snow_recording_region_output_dimensions(
+                                region.x(), region.y(), static_cast<uint32_t>(region.width()),
+                                static_cast<uint32_t>(region.height()),
+                                static_cast<uint32_t>(maximum.width()),
+                                static_cast<uint32_t>(maximum.height()),
+                                static_cast<uint32_t>(format), &width, &height) != 0;
+                        return std::make_pair(generation, ok ? QSize(static_cast<int>(width),
+                                                                     static_cast<int>(height))
+                                                             : QSize());
+                    });
+                dimensionsPollTimer.start();
+            }
+            return;
+        }
+        if (previewOutput.isEmpty()) {
+            uiSession->preview->setEligible(false);
+            return;
+        }
+        const auto width = previewOutput.width();
+        const auto height = previewOutput.height();
+#else
         uint32_t width = 0;
         uint32_t height = 0;
         if (snow_recording_output_dimensions(static_cast<uint32_t>(captureRegion.width()),
@@ -1036,6 +1134,7 @@ struct ScreenRecordingController::Impl {
             uiSession->preview->setEligible(false);
             return;
         }
+#endif
         uiSession->preview->configure(
             captureRegion, QSize(static_cast<int>(width), static_cast<int>(height)),
             mouseTrailColor, mouseClickColor, showKeyboard, mouseTrailDurationMs,
@@ -1075,11 +1174,15 @@ struct ScreenRecordingController::Impl {
     }
 
     void updateCaptureRegion() {
-        QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(physicalRegion);
+#ifdef Q_OS_MACOS
+        captureRegion = recordingRegion;
+#else
+        QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(recordingRegion);
         const QRect bounds =
             screen != nullptr ? ScreenshotGeometryMapper::physicalRectForScreen(*screen) : QRect();
         captureRegion = snow_shot::presentation::recording::screenRecordingCompatibleCaptureRegion(
-            physicalRegion, bounds);
+            recordingRegion, bounds);
+#endif
     }
 
     void showError(const QString& message) {
@@ -1088,13 +1191,24 @@ struct ScreenRecordingController::Impl {
                               message.isEmpty() ? tr("The recording operation failed") : message);
     }
 
+    PermissionCheck permissionCheck;
+#ifdef Q_OS_MACOS
+    QTimer dimensionsPollTimer;
+    std::future<std::pair<quint64, QSize>> dimensionsFuture;
+    quint64 dimensionsGeneration = 0;
+    QRect dimensionsRegion;
+    QSize dimensionsMaximum;
+    SnowRecordingOutputFormat dimensionsFormat = SNOW_RECORDING_OUTPUT_FORMAT_MP4;
+    QSize previewOutput;
+    bool dimensionsResolved = false;
+#endif
     ScreenRecordingController& owner;
     ScreenRecordingController::EffectsSourceFactory effectsSourceFactory;
     RecordingUiSession* uiSession = nullptr;
     ScreenRecordingAreaWindow* areaWindow = nullptr;
     ScreenRecordingToolbarWindow* toolbarWindow = nullptr;
     RecordingSessionHandle recordingSession;
-    QRect physicalRegion;
+    QRect recordingRegion;
     QRect captureRegion;
     QTimer durationTimer;
     QTimer finalizationPollTimer;
@@ -1132,7 +1246,13 @@ struct ScreenRecordingController::Impl {
                                          {{QStringLiteral("operation"), operation},
                                           {QStringLiteral("duration_ms"),
                                            operationTimer.isValid() ? operationTimer.elapsed() : 0},
-                                          {QStringLiteral("backend"), QStringLiteral("wgc")}},
+                                          {QStringLiteral("backend"),
+#ifdef Q_OS_MACOS
+                                           QStringLiteral("screencapturekit")
+#else
+                                           QStringLiteral("auto")
+#endif
+                                          }},
                                          level);
     }
     QString operation;
@@ -1154,8 +1274,12 @@ ScreenRecordingController::ScreenRecordingController(EffectsSourceFactory factor
 
 ScreenRecordingController::~ScreenRecordingController() = default;
 
-void ScreenRecordingController::open(const QRect& physicalRegion) {
-    m_impl->open(physicalRegion);
+void ScreenRecordingController::setPermissionCheck(PermissionCheck check) {
+    m_impl->permissionCheck = std::move(check);
+}
+
+void ScreenRecordingController::open(const QRect& recordingRegion) {
+    m_impl->open(recordingRegion);
 }
 
 bool ScreenRecordingController::isOpen() const {

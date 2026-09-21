@@ -102,6 +102,16 @@ fn key_label(key: u16, observation: &KeyObservation, config: &KeyboardOverlayCon
     if let Some(label) = config.labels.get(&key) {
         return label.clone();
     }
+    #[cfg(target_os = "macos")]
+    if let Some(label) = match key {
+        0x11 | 0xa2 | 0xa3 => Some("Control"),
+        0x12 | 0xa4 | 0xa5 => Some("Option"),
+        0x10 | 0xa0 | 0xa1 => Some("Shift"),
+        0x5b | 0x5c => Some("Command"),
+        _ => None,
+    } {
+        return label.into();
+    }
     if (0x70..=0x87).contains(&key) {
         return format!("F{}", key - 0x6f);
     }
@@ -510,7 +520,121 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+impl KeyObservation {
+    /// Shared conversion for live preview and encoded native effects.
+    pub fn from_macos(
+        event: &snow_macos::input::InputEvent,
+        at: Instant,
+        generation: u64,
+    ) -> Option<Self> {
+        if !matches!(event.kind, 10..=12) || event.repeat {
+            return None;
+        }
+        let mut pressed = [0; 256];
+        for (bit, key) in [(18, 0xa2), (19, 0xa4), (17, 0xa0), (20, 0x5b)] {
+            pressed[key] = u8::from(event.modifiers & (1 << bit) != 0);
+        }
+        let (key, down) = if event.kind == 12 {
+            let (key, bit) = match event.key_code {
+                54 | 55 => (0x5b, 20),
+                56 | 60 => (0xa0, 17),
+                58 | 61 => (0xa4, 19),
+                59 | 62 => (0xa2, 18),
+                _ => return None,
+            };
+            (key, event.modifiers & (1 << bit) != 0)
+        } else {
+            (0x100 + event.key_code, event.kind == 10)
+        };
+        Some(Self {
+            at,
+            key,
+            down,
+            scan: event.keyboard_type,
+            layout: event.modifiers as usize,
+            pressed,
+            alt_gr: false,
+            generation,
+            #[cfg(test)]
+            extra_info: 0,
+        })
+    }
+}
+#[cfg(target_os = "macos")]
+mod platform {
+    use super::*;
+    use snow_macos::input::{InputObserver, InputStatus};
+    pub struct Observer {
+        stop: Sender<()>,
+        worker: Option<std::thread::JoinHandle<()>>,
+    }
+    impl Observer {
+        pub fn start(
+            sender: Sender<KeyObservation>,
+            generation: Arc<AtomicU64>,
+        ) -> Result<Self, String> {
+            let input = InputObserver::start(true, false).map_err(|e| e.to_string())?;
+            let (stop, stopped) = crossbeam_channel::bounded(1);
+            let worker = std::thread::Builder::new().name("snow-keyboard-adapter".into()).spawn(move || {
+                let mut input_generation = input.generation();
+                loop {
+                    // Poll status as well as events, so secure input clears held keys immediately.
+                    let status = input.status();
+                    let current = input.generation();
+                    if current != input_generation { input_generation = current; generation.fetch_add(1, Ordering::AcqRel); }
+                    crossbeam_channel::select_biased! {
+                        recv(stopped) -> _ => break,
+                        recv(input.events) -> event => {
+                            let Ok(event) = event else { break; };
+                            if status != InputStatus::Active || event.generation != input_generation { continue; }
+                            if let Some(at) = event.instant()
+                                && let Some(observation) = KeyObservation::from_macos(&event, at, generation.load(Ordering::Acquire))
+                                && sender.try_send(observation).is_err() {
+                                generation.fetch_add(1, Ordering::AcqRel);
+                            }
+                        },
+                        default(std::time::Duration::from_millis(20)) => {},
+                    }
+                }
+            }).map_err(|e| e.to_string())?;
+            Ok(Self {
+                stop,
+                worker: Some(worker),
+            })
+        }
+    }
+    impl Drop for Observer {
+        fn drop(&mut self) {
+            let _ = self.stop.try_send(());
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+    pub fn printable_label(key: u16, observation: &KeyObservation) -> Option<String> {
+        let native = key.checked_sub(0x100)?;
+        Some(match native {
+            36 => "Return".into(),
+            48 => "Tab".into(),
+            49 => "Space".into(),
+            51 => "Delete".into(),
+            53 => "Esc".into(),
+            123 => "Left".into(),
+            124 => "Right".into(),
+            125 => "Down".into(),
+            126 => "Up".into(),
+            _ => snow_macos::text::keyboard_label(
+                native,
+                observation.scan,
+                observation.layout as u64,
+            )
+            .unwrap_or_else(|| format!("Key {native}")),
+        })
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use super::*;
     pub struct Observer;
@@ -527,6 +651,58 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_keys_preserve_modifier_state_releases_and_generation() {
+        let mut input = snow_macos::input::InputEvent {
+            kind: 10,
+            x: 0.,
+            y: 0.,
+            timestamp_ns: 0,
+            key_code: 36,
+            mouse_button: 0,
+            keyboard_type: 40,
+            modifiers: (1 << 20) | (1 << 19),
+            repeat: false,
+            text: [0; 16],
+            text_len: 0,
+            generation: 9,
+        };
+        let config = KeyboardOverlayConfig {
+            font: None,
+            keycap_size: 64,
+            background_rgba: [0; 4],
+            text_rgba: [0; 4],
+            border_rgba: [0; 4],
+            labels: [(0x12, "Option".into()), (0x5b, "Command".into())].into(),
+        };
+        let observation = KeyObservation::from_macos(&input, Instant::now(), 7).unwrap();
+        assert_eq!(observation.generation, 7);
+        let event = observation.event(20, &config);
+        assert!(event.down);
+        assert_eq!(event.label, "Return");
+        assert_eq!(
+            event.modifiers,
+            [(0xa4, "Option".into()), (0x5b, "Command".into())]
+        );
+        input.kind = 11;
+        assert!(
+            !KeyObservation::from_macos(&input, Instant::now(), 8)
+                .unwrap()
+                .event(30, &config)
+                .down
+        );
+        input.repeat = true;
+        assert!(KeyObservation::from_macos(&input, Instant::now(), 8).is_none());
+        input.repeat = false;
+        input.kind = 12;
+        input.key_code = 55;
+        input.modifiers = 0;
+        let release = KeyObservation::from_macos(&input, Instant::now(), 8).unwrap();
+        assert_eq!(release.key, 0x5b);
+        assert!(!release.down);
+        assert!(release.event(40, &config).modifiers.is_empty());
+    }
     #[test]
     fn modifier_sides_collapse_and_altgr_hides_only_synthetic_control() {
         let config = KeyboardOverlayConfig {

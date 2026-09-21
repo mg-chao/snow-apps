@@ -1,4 +1,4 @@
-#include "snow_shot/platform/windows/selectedfiles.h"
+#include "snow_shot/platform/selectedfiles.h"
 
 #if defined(Q_OS_WIN)
 #include <qt_windows.h>
@@ -8,7 +8,7 @@
 #include <wrl/client.h>
 #endif
 
-namespace snow_shot::platform::windows {
+namespace snow_shot::platform {
 namespace {
 #if defined(Q_OS_WIN)
 using Microsoft::WRL::ComPtr;
@@ -106,8 +106,8 @@ class NativeSelectedFileBackend final : public SelectedFileBackend {
         return target;
     }
 
-    QStringList selectedFiles(const SelectedFileTarget& target,
-                              const std::function<bool()>& cancelled) const override {
+    SelectedFileResult selectedFiles(const SelectedFileTarget& target,
+                                     const std::function<bool()>& cancelled) const override {
 #if defined(Q_OS_WIN)
         DWORD process = 0;
         if (target.window == 0 || target.view == 0 || cancelled() ||
@@ -139,7 +139,7 @@ class NativeSelectedFileBackend final : public SelectedFileBackend {
             if (SUCCEEDED(windows->FindWindowSW(&location, &root, SWC_DESKTOP, &handle,
                                                 SWFO_NEEDDISPATCH, &dispatch)) &&
                 dispatch) {
-                return filesFromView(dispatch.Get(), target, cancelled);
+                return {filesFromView(dispatch.Get(), target, cancelled)};
             }
             return {};
         }
@@ -159,7 +159,7 @@ class NativeSelectedFileBackend final : public SelectedFileBackend {
             }
             const QStringList paths = filesFromView(dispatch.Get(), target, cancelled);
             if (!paths.isEmpty()) {
-                return paths;
+                return {paths};
             }
         }
 #else
@@ -174,4 +174,4 @@ class NativeSelectedFileBackend final : public SelectedFileBackend {
 std::shared_ptr<SelectedFileBackend> createSelectedFileBackend() {
     return std::make_shared<NativeSelectedFileBackend>();
 }
-} // namespace snow_shot::platform::windows
+} // namespace snow_shot::platform

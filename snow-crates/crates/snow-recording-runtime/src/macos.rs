@@ -31,6 +31,9 @@ pub struct NativeRecordingConfig {
     pub output: PixelSize,
     pub output_path: PathBuf,
     pub fps: u32,
+    pub format: ExportFormat,
+    pub loop_animated_images: bool,
+    pub video: snow_recording_model::VideoEncodeConfig,
     pub codec: VideoCodec,
     pub execution: ExportExecutionMode,
     pub audio: Option<AudioStreamConfig>,
@@ -120,15 +123,16 @@ impl NativeRecordingSession {
         }
         if config.fps == 0
             || config.fps > 240
-            || !config.output.width.is_multiple_of(2)
-            || !config.output.height.is_multiple_of(2)
+            || (config.format.requires_even_dimensions()
+                && (!config.output.width.is_multiple_of(2)
+                    || !config.output.height.is_multiple_of(2)))
         {
             return Err(ScreenRecorderError::InvalidConfig(
                 "recording requires 1..240 fps and even output dimensions".into(),
             ));
         }
         let hdr = config.capture.dynamic_range == DynamicRange::Hdr;
-        if hdr && config.codec != VideoCodec::H265 {
+        if hdr && (config.codec != VideoCodec::H265 || config.format != ExportFormat::Mp4) {
             return Err(ScreenRecorderError::UnsupportedFeature(
                 "HDR recording requires HEVC Main10 encoding".into(),
             ));
@@ -152,9 +156,9 @@ impl NativeRecordingSession {
         };
         let compositor = Compositor::new(config.output, format, 4).map_err(native_error)?;
         let encode_config = StreamingEncoderConfig {
-            loop_animated_images: false,
+            loop_animated_images: config.loop_animated_images,
             output_path: config.output_path.clone(),
-            format: ExportFormat::Mp4,
+            format: config.format,
             width: config.output.width,
             height: config.output.height,
             fps: config.fps,
@@ -162,7 +166,7 @@ impl NativeRecordingSession {
             prefer_hardware_h264: config.execution != ExportExecutionMode::SoftwareOnly,
             execution_mode: config.execution,
             software_h264_priority: SoftwareH264Priority::X264First,
-            video: Default::default(),
+            video: config.video,
             encode_threads: 0,
             audio: config.audio.as_ref().map(|_| StreamingAudioConfig {
                 sample_rate_hz: 48_000,
@@ -170,7 +174,9 @@ impl NativeRecordingSession {
                 bitrate_kbps: 192,
             }),
         };
-        let (encoder, native) = if config.execution == ExportExecutionMode::SoftwareOnly {
+        let (mut encoder, native) = if config.execution == ExportExecutionMode::SoftwareOnly
+            || config.format.is_animated_image()
+        {
             let mut builder = StreamingEncoder::builder(encode_config).software_only();
             if hdr {
                 builder = builder.hdr10_cpu_input();
@@ -192,7 +198,7 @@ impl NativeRecordingSession {
                 Err(error) => return Err(error.into()),
             }
         };
-        let clock = RecordingClock::new(Instant::now());
+        encoder.retain_failed_output();
         let audio = config
             .audio
             .clone()
@@ -208,6 +214,8 @@ impl NativeRecordingSession {
             .as_ref()
             .map(|a| LiveAudioMixer::new(a.system.enabled, a.microphone.enabled));
         let effects = Effects::new(config.effects.clone(), config.output, config.capture.cursor)?;
+        // Startup (including audio-device initialization) is outside the recording timeline.
+        let clock = RecordingClock::new(Instant::now());
         Ok(Self {
             media: snow_recording_model::media::RecordedMedia::new(
                 if hdr {
@@ -236,10 +244,25 @@ impl NativeRecordingSession {
             audio_ends: [None; 2],
         })
     }
+    pub(crate) fn preserve_failure(&mut self, error: ScreenRecorderError) -> ScreenRecorderError {
+        if self.config.capture.cancellation.is_canceled() {
+            return error;
+        }
+        self.encoder
+            .preserve_staging_failure(&error.to_string())
+            .map(ScreenRecorderError::from)
+            .unwrap_or(error)
+    }
     pub fn pause(&mut self) {
         if !self.paused {
             self.clock.controller().mark_pause(Instant::now());
             self.paused = true;
+            if let Some(audio) = &self.audio {
+                audio.pause();
+            }
+            if let Some(mixer) = &mut self.mixer {
+                mixer.reset_alignment(None);
+            }
             if let Some(effects) = &mut self.effects {
                 effects.reset(self.clock.active_elapsed_ms(Instant::now()));
             }
@@ -250,6 +273,9 @@ impl NativeRecordingSession {
         if self.paused {
             self.clock.controller().mark_resume(Instant::now());
             self.paused = false;
+            if let Some(audio) = &self.audio {
+                audio.resume();
+            }
         }
     }
     fn drain_audio(&mut self, flush: bool) -> Result<()> {
@@ -441,13 +467,21 @@ impl NativeRecordingSession {
         self.last_pts = Some(pts);
         Ok(NativeRecordingEvent::Frame { pts })
     }
-    pub fn finish(mut self) -> Result<NativeRecordingReport> {
+    fn prepare_finish(&mut self) -> Result<u64> {
         if self.config.capture.cancellation.is_canceled() {
             return Err(native_error(MacError::Canceled));
         }
         let stop = Instant::now();
         self.clock.controller().mark_pause(stop);
         self.capture.release_capture_access();
+        if let Some(audio) = self.audio.take() {
+            for event in audio.stop_and_drain() {
+                if let AudioEvent::Error(error) = event {
+                    return Err(ScreenRecorderError::Audio(error));
+                }
+                process_audio_event(event, &self.clock, self.paused, self.mixer.as_mut());
+            }
+        }
         self.drain_audio(true)?;
         let end = u64::try_from(
             self.clock.active_elapsed_duration(stop).as_nanos() * u128::from(self.config.fps)
@@ -458,6 +492,12 @@ impl NativeRecordingSession {
         self.media
             .validate()
             .map_err(ScreenRecorderError::InvalidConfig)?;
+        Ok(end)
+    }
+    pub fn finish(mut self) -> Result<NativeRecordingReport> {
+        let end = self
+            .prepare_finish()
+            .map_err(|error| self.preserve_failure(error))?;
         let mut encoder = self
             .encoder
             .finish_at_pts_cancelable(end, &self.config.capture.cancellation)?;
@@ -535,6 +575,9 @@ fn audio_discontinuity(
         reason,
     }))
 }
+
+mod direct;
+pub use direct::{DirectSession, recording_dimensions};
 
 mod editable;
 mod editable_cursor;

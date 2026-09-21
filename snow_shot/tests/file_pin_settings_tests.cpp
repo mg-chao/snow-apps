@@ -88,6 +88,19 @@ void shortcutSettings() {
     const auto action = GlobalShortcutAction::PinSelectedFiles;
     const QString id = QStringLiteral("quick.pin-selected-files");
     const storage::ShortcutSettings stored;
+    const auto* item = settings::builtInSettingsRegistry().catalog().item(
+        {QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"), id});
+    require(item != nullptr, "file pin action must remain in global shortcut settings");
+#ifdef Q_OS_MACOS
+    require(item->description.translated() ==
+                QStringLiteral("Pin selected image files from Finder or the desktop to the screen"),
+            "macOS file pin description must identify Finder");
+#else
+    require(item->description.translated() ==
+                QStringLiteral(
+                    "Pin selected image files from File Explorer or the desktop to the screen"),
+            "Windows file pin description must identify File Explorer");
+#endif
     require(stored.pinSelectedFiles().isEmpty(), "selected files starts unassigned");
     const storage::TraySettings tray;
     const auto defaultMenu = tray.menuOptions();
@@ -122,8 +135,9 @@ void shortcutSettings() {
                          });
         input->handler(input->registrations.key(keys.first()));
         require(activated == 1, "native activation must dispatch selected-file action");
-        require(session.applyShortcuts(action, {QStringLiteral("F3")}),
-                "conflicting binding is stored");
+        const auto clipboardBindings = stored.pinClipboardContent();
+        require(!clipboardBindings.isEmpty(), "clipboard pinning must have a default shortcut");
+        require(session.applyShortcuts(action, clipboardBindings), "conflicting binding is stored");
         require(manager.state(action).status == GlobalShortcutStatus::Failed &&
                     manager.state(action).bindings.first().failureReason ==
                         GlobalShortcutFailureReason::AlreadyInUse,

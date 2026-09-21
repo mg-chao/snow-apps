@@ -20,7 +20,10 @@ class ScreenRecordingController final : public QObject {
     ScreenRecordingController(EffectsSourceFactory effectsSourceFactory, QObject* parent = nullptr);
     ~ScreenRecordingController() override;
 
-    void open(const QRect& physicalRegion);
+    // The region is in desktop points on macOS and physical pixels on Windows.
+    void open(const QRect& recordingRegion);
+    using PermissionCheck = std::function<bool(bool microphone, bool input, bool notify)>;
+    void setPermissionCheck(PermissionCheck check);
     bool isOpen() const;
     bool isRecording() const;
     void startRecording();

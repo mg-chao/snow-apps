@@ -8,7 +8,12 @@
 #include "screenrecordinggeometry.h"
 #include "screenrecordingperfinstrumentation.h"
 
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/screenshotnative.h"
+#endif
+
 #include <QScreen>
+#include <QGuiApplication>
 #include <QCloseEvent>
 #include "widgets/color_picker.h"
 #include "widgets/select.h"
@@ -51,11 +56,14 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_DeleteOnClose, false);
     prepareForDisplay();
+#ifdef Q_OS_MACOS
+    snow_shot::platform::configureScreenshotToolbarWindow(this);
+#endif
     // Secondary rows can grow without changing the fixed native frame or the
     // main-row anchor. Observe the committed host content, including those cases.
     connect(paletteHost(), &ScreenshotToolPaletteHost::visibleContentChanged, this, [this]() {
         if (!m_manuallyDragged && !m_regionInteractionActive) {
-            placeForPhysicalRegion(m_physicalRegion);
+            placeForRecordingRegion(m_recordingRegion);
         }
     });
     connect(paletteHost(), &ScreenshotToolPaletteHost::dragStarted, this,
@@ -74,27 +82,39 @@ void ScreenRecordingToolbarWindow::showAndActivate() {
     SNOW_SHOT_RECORDING_PERF_MILESTONE("toolbar.show_and_activate_returned");
 }
 
-void ScreenRecordingToolbarWindow::placeForPhysicalRegion(const QRect& physicalRegion) {
+void ScreenRecordingToolbarWindow::placeForRecordingRegion(const QRect& recordingRegion) {
     SNOW_SHOT_RECORDING_PERF_SCOPE("toolbar.place_for_region");
-    if (m_regionInteractionActive || m_placing || !physicalRegion.isValid() ||
-        physicalRegion.isEmpty()) {
+    if (m_regionInteractionActive || m_placing || !recordingRegion.isValid() ||
+        recordingRegion.isEmpty()) {
         return;
     }
-    QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(physicalRegion);
+#ifdef Q_OS_MACOS
+    QScreen* screen = QGuiApplication::screenAt(recordingRegion.center());
+    if (screen == nullptr)
+        screen = QGuiApplication::primaryScreen();
+#else
+    QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(recordingRegion);
+#endif
     if (screen == nullptr) {
         return;
     }
     // Preparing the layout and changing the row arrangement can emit content
     // changes synchronously; the outer placement already accounts for them.
     const QScopedValueRollback<bool> placing(m_placing, true);
-    m_physicalRegion = physicalRegion;
+    m_recordingRegion = recordingRegion;
     m_manuallyDragged = false;
     const QRect logicalBounds = screen->geometry();
     const QRect physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+#ifdef Q_OS_MACOS
+    const QRectF logicalRegion(recordingRegion);
+    const qreal regionScale = 1.0;
+#else
     const QRectF logicalRegion =
-        ScreenshotGeometryMapper::logicalRectFForPhysicalRect(physicalRegion, screen);
+        ScreenshotGeometryMapper::logicalRectFForPhysicalRect(recordingRegion, screen);
+    const qreal regionScale = screen->devicePixelRatio();
+#endif
     const QRect anchorRegion = snow_shot::presentation::recording::screenRecordingAreaFrameGeometry(
-                                   logicalRegion, screen->devicePixelRatio())
+                                   logicalRegion, regionScale)
                                    .windowGeometry;
     setPlacementContext(screen, logicalBounds, physicalBounds);
     prepareForDisplay();
@@ -135,12 +155,12 @@ void ScreenRecordingToolbarWindow::beginRegionInteraction() {
     }
 }
 
-void ScreenRecordingToolbarWindow::endRegionInteraction(const QRect& physicalRegion) {
+void ScreenRecordingToolbarWindow::endRegionInteraction(const QRect& recordingRegion) {
     if (!m_regionInteractionActive) {
         return;
     }
     m_regionInteractionActive = false;
-    placeForPhysicalRegion(physicalRegion);
+    placeForRecordingRegion(recordingRegion);
     prepareForDisplay();
     show();
     raise();

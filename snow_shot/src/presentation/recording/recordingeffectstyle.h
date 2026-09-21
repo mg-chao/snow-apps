@@ -100,7 +100,12 @@ struct RecordingKeyboardLabels {
         text.reserve(64);
         entries.reserve(64);
         for (const auto& [key, label] : names) {
+#ifdef Q_OS_MACOS
+            const char* legend = key == 0x12 ? "Option" : key == 0x5B ? "Command" : label;
+            add(key, QString::fromLatin1(legend));
+#else
             add(key, QString::fromLatin1(label));
+#endif
         }
         for (uint32_t key = 0x60; key <= 0x69; ++key) {
             add(key, QStringLiteral("Num %1").arg(key - 0x60));

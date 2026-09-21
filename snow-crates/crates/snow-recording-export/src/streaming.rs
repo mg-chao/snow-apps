@@ -349,6 +349,7 @@ pub struct StreamingEncoder {
     pending_timed_durations: VecDeque<(i64, i64)>,
     audio: Option<StreamingAudioState>,
     staging_path: Option<PathBuf>,
+    retain_failed_output: bool,
     final_path: PathBuf,
     report: StreamingEncoderReport,
     finished: bool,
@@ -875,6 +876,7 @@ impl StreamingEncoder {
             pending_timed_durations: VecDeque::new(),
             audio,
             staging_path: None,
+            retain_failed_output: false,
             final_path: config.output_path,
             report: StreamingEncoderReport {
                 requested_video_encoder,
@@ -1376,6 +1378,49 @@ impl StreamingEncoder {
         }
     }
 
+    /// Preserve a native recording's staging media if final muxing fails.
+    /// Explicit cancellation still removes staging files.
+    pub fn retain_failed_output(&mut self) {
+        self.retain_failed_output = true;
+    }
+
+    pub fn preserve_staging_failure(&mut self, cause: &str) -> Option<RecordingExportError> {
+        if !self.retain_failed_output || self.report.encoded_frames == 0 {
+            return None;
+        }
+        let path = self.staging_path.as_ref()?.clone();
+        // Best effort sealing also makes recordings interrupted during capture playable.
+        let _ = self.encode_pending(1);
+        if let (Some(audio), Some(output)) = (self.audio.as_mut(), self.output.as_mut()) {
+            let _ = audio.finish(output, &mut self.report);
+        }
+        let _ = self.encoder.send_eof();
+        let _ = self.drain_packets(true);
+        if let Some(output) = self.output.as_mut() {
+            let _ = output.write_trailer();
+        }
+        self.output.take();
+        let directory = path.with_extension("recovery");
+        fs::create_dir_all(&directory).ok()?;
+        let destination = directory.join(self.final_path.file_name()?);
+        fs::rename(&path, &destination).ok()?;
+        self.staging_path.take();
+        let _ = fs::write(
+            directory.join("timeline.txt"),
+            format!(
+                "fps={}\nframes={}\nmedia={}\nerror={}\n",
+                self.fps(),
+                self.report.encoded_frames,
+                destination.display(),
+                cause
+            ),
+        );
+        Some(RecordingExportError::Encode(format!(
+            "{cause}; recoverable media is retained in {}",
+            directory.display()
+        )))
+    }
+
     pub fn finish(self) -> Result<StreamingEncoderReport> {
         self.finish_inner(None, None)
     }
@@ -1427,6 +1472,20 @@ impl StreamingEncoder {
                 end_pts.unwrap_or_else(|| self.pending.as_ref().map_or(1, |frame| frame.pts + 1));
             return self.finish_recoverable(endpoint, cancellation);
         }
+        let result = self.finish_stream(end_pts, cancellation);
+        match result {
+            Err(error) if !cancellation.is_some_and(|token| token.is_canceled()) => Err(self
+                .preserve_staging_failure(&error.to_string())
+                .unwrap_or(error)),
+            result => result,
+        }
+    }
+
+    fn finish_stream(
+        &mut self,
+        end_pts: Option<i64>,
+        cancellation: Option<&snow_core::cancellation::CancellationToken>,
+    ) -> Result<StreamingEncoderReport> {
         #[cfg(feature = "bench-timing")]
         let finish_started = std::time::Instant::now();
         let duration = self
@@ -1442,7 +1501,7 @@ impl StreamingEncoder {
             audio.finish(output, &mut self.report)?;
         }
         retry_send(
-            &mut self,
+            self,
             |state| state.encoder.send_eof(),
             |state| state.drain_available_packets(),
         )?;
@@ -1462,7 +1521,11 @@ impl StreamingEncoder {
             RecordingExportError::Encode("streaming staging path is unavailable".to_string())
         })?;
         if let Err(error) = publish_unless_canceled(&staging_path, &self.final_path, cancellation) {
-            let _ = fs::remove_file(&staging_path);
+            if self.retain_failed_output && !cancellation.is_some_and(|token| token.is_canceled()) {
+                self.staging_path = Some(staging_path);
+            } else {
+                let _ = fs::remove_file(&staging_path);
+            }
             return Err(error);
         }
         self.finished = true;
@@ -2692,6 +2755,41 @@ mod tests {
                     .starts_with(DIRECT_STAGING_PREFIX))
         );
     }
+    #[test]
+    fn retained_native_style_failure_keeps_playable_media_but_cancellation_does_not() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("recording.mp4");
+        fs::write(&output, b"existing").unwrap();
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(output.clone(), ExportFormat::Mp4)).unwrap();
+        encoder.retain_failed_output();
+        write_test_frames(&mut encoder);
+        let error = encoder.finish().unwrap_err().to_string();
+        let retained = PathBuf::from(
+            error
+                .split("recoverable media is retained in ")
+                .nth(1)
+                .unwrap(),
+        );
+        assert!(retained.join("timeline.txt").is_file());
+        assert_eq!(
+            decoded_video_frame_count(&retained.join("recording.mp4")).0,
+            3
+        );
+        assert_eq!(fs::read(&output).unwrap(), b"existing");
+        let canceled = directory.path().join("canceled.mp4");
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(canceled.clone(), ExportFormat::Mp4)).unwrap();
+        encoder.retain_failed_output();
+        write_test_frames(&mut encoder);
+        let token = snow_core::cancellation::CancellationToken::default();
+        token.cancel();
+        let count = fs::read_dir(directory.path()).unwrap().count();
+        assert!(encoder.finish_at_pts_cancelable(3, &token).is_err());
+        assert!(!canceled.exists());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), count - 1);
+    }
+
     #[test]
     fn explicit_pts_and_endpoint_preserve_variable_duration_and_decode() {
         let directory = tempfile::tempdir().unwrap();

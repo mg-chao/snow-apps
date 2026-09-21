@@ -72,6 +72,11 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
 
 SnowRecordingSession session;
 std::atomic<int> starts = 0;
+std::atomic<bool> holdDimensions = false;
+std::atomic<bool> dimensionsEntered = false;
+std::atomic<int> dimensionsCompleted = 0;
+std::shared_future<void> dimensionsGate;
+std::atomic<uint32_t> dimensionsScale = 1;
 SnowCaptureDirectRecordingConfig lastDirectConfig{};
 QByteArray lastKeyboardFontFamily;
 QByteArray lastKeyboardCjkFontFamily;
@@ -313,7 +318,7 @@ void recordingToolbarReconcilesFrameBeforeShowing() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "placement test requires a screen");
     const QRect region = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
-    toolbar.placeForPhysicalRegion(region);
+    toolbar.placeForRecordingRegion(region);
     toolbar.showAndActivate();
     QCoreApplication::processEvents();
 #if defined(Q_OS_MACOS)
@@ -373,8 +378,8 @@ void recordingToolbarPlacementAcrossDisplays() {
                 if (!QRegion(region).subtracted(desktop).isEmpty()) {
                     continue;
                 }
-                area.setPhysicalRegion(region);
-                toolbar.placeForPhysicalRegion(region);
+                area.setRecordingRegion(region);
+                toolbar.placeForRecordingRegion(region);
                 area.show();
                 toolbar.showAndActivate();
                 for (int pass = 0; pass < 5; ++pass) {
@@ -401,7 +406,7 @@ void recordingToolbarPlacementAcrossDisplays() {
                 require(toolbar.rect().contains(
                             content.translated(toolbar.contentPosition() - toolbar.pos())),
                         "recording rows must fit the native frame after cross-display placement");
-                toolbar.placeForPhysicalRegion(region);
+                toolbar.placeForRecordingRegion(region);
                 QCoreApplication::processEvents();
                 require(
                     toolbar.contentPosition() == position &&
@@ -430,7 +435,7 @@ void recordingSecondaryPanelsStayOnScreen() {
     const QRect region(physicalBounds.left() + qRound(40 * dpr),
                        physicalBounds.top() + qRound(40 * dpr), qRound((bounds.width() - 80) * dpr),
                        qRound((bounds.height() - mainHeight - 60) * dpr));
-    toolbar.placeForPhysicalRegion(region);
+    toolbar.placeForRecordingRegion(region);
     toolbar.show();
     QCoreApplication::processEvents();
     const auto requireFits = [&](const char* message) {
@@ -448,7 +453,7 @@ void recordingSecondaryPanelsStayOnScreen() {
     const auto requireAnchored = [&]() {
         const QPoint position = toolbar.contentPosition();
         const QRect occupied = toolbar.occupiedContentRect();
-        toolbar.placeForPhysicalRegion(region);
+        toolbar.placeForRecordingRegion(region);
         require(
             toolbar.contentPosition() == position && toolbar.occupiedContentRect() == occupied,
             "content changes before dragging must match a fresh placement of the whole toolbar");
@@ -478,7 +483,7 @@ void recordingSecondaryPanelsStayOnScreen() {
     requireFits("recording export settings must fit at an interior position");
     require(toolbar.contentPosition() == interiorPosition,
             "opening a panel after dragging must preserve the user's toolbar position");
-    toolbar.placeForPhysicalRegion(region);
+    toolbar.placeForRecordingRegion(region);
     exportButton->click();
     requireAnchored();
     exportButton->click();
@@ -541,9 +546,9 @@ void effectsPreviewLifecycle() {
     }
     auto state = std::make_shared<RecordingEffectTestState>();
     ScreenRecordingAreaWindow area;
-    area.setPhysicalRegion(QRect(40, 40, 640, 480));
+    area.setRecordingRegion(QRect(40, 40, 640, 480));
     RecordingEffectPreview preview(area, std::make_unique<RecordingEffectTestSource>(state));
-    preview.configure(area.physicalRegion(), QSize(640, 480), QColor(255, 0, 0, 128),
+    preview.configure(area.recordingRegion(), QSize(640, 480), QColor(255, 0, 0, 128),
                       Qt::transparent, false);
     preview.setEligible(true);
     require(!state->active, "hidden window must not observe input");
@@ -579,9 +584,9 @@ void effectsPreviewLifecycle() {
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
     // Exercise the renderer itself with independent layer coordinates, not just its transform.
     for (const QSize captureSize : {QSize(640, 480), QSize(960, 720)}) {
-        area.setPhysicalRegion(QRect(QPoint(40, 40), captureSize));
+        area.setRecordingRegion(QRect(QPoint(40, 40), captureSize));
         for (const QSize exportSize : {QSize(320, 240), QSize(1920, 1080)}) {
-            preview.configure(area.physicalRegion(), exportSize, Qt::red, Qt::transparent, true);
+            preview.configure(area.recordingRegion(), exportSize, Qt::red, Qt::transparent, true);
             pumpPreview();
             state->publish(false);
             QImage keycap(64, 64, QImage::Format_RGBA8888_Premultiplied);
@@ -602,8 +607,8 @@ void effectsPreviewLifecycle() {
                     "keyboard tiles must not grow with capture area or export scale");
         }
     }
-    area.setPhysicalRegion(QRect(40, 40, 640, 480));
-    preview.configure(area.physicalRegion(), QSize(640, 480), Qt::red, Qt::transparent, false);
+    area.setRecordingRegion(QRect(40, 40, 640, 480));
+    preview.configure(area.recordingRegion(), QSize(640, 480), Qt::red, Qt::transparent, false);
     pumpPreview();
     const auto history = area.canvas()->canvasHistoryState();
     const QImage visible = previewImage(*area.canvas());
@@ -616,12 +621,12 @@ void effectsPreviewLifecycle() {
             "preview must not change undo history");
     state->publish();
     const auto stale = state->frame;
-    preview.configure(area.physicalRegion(), QSize(640, 480), Qt::transparent, Qt::transparent,
+    preview.configure(area.recordingRegion(), QSize(640, 480), Qt::transparent, Qt::transparent,
                       false);
     require(!state->active && !preview.hasFrame() && !label->isVisible(),
             "disabling all effects must clear synchronously");
     pumpPreview();
-    preview.configure(area.physicalRegion(), QSize(640, 480), Qt::red, Qt::transparent, true);
+    preview.configure(area.recordingRegion(), QSize(640, 480), Qt::red, Qt::transparent, true);
     pumpPreview();
     require(state->active, "enabling an effect must restart preview");
     state->frame = stale;
@@ -686,10 +691,10 @@ void effectsPreviewLifecycle() {
 void recordingKeyboardFontFollowsApplication() {
     const QFont original = QApplication::font();
     ScreenRecordingAreaWindow area;
-    area.setPhysicalRegion(QRect(32, 32, 320, 240));
+    area.setRecordingRegion(QRect(32, 32, 320, 240));
     auto state = std::make_shared<RecordingEffectTestState>();
     RecordingEffectPreview preview(area, std::make_unique<RecordingEffectTestSource>(state));
-    preview.configure(area.physicalRegion(), QSize(320, 240), Qt::transparent, Qt::transparent,
+    preview.configure(area.recordingRegion(), QSize(320, 240), Qt::transparent, Qt::transparent,
                       true);
     preview.setEligible(true);
     area.show();
@@ -718,7 +723,7 @@ void recordingKeyboardFontFollowsApplication() {
 // the compositor sees in any input mode.
 void areaWindowPaintsInputSurfaceOnlyWhenItIsVisible() {
     ScreenRecordingAreaWindow area;
-    area.setPhysicalRegion(QRect(32, 32, 320, 240));
+    area.setRecordingRegion(QRect(32, 32, 320, 240));
     area.show();
     QCoreApplication::processEvents();
     for (const auto mode : {ScreenRecordingAreaWindow::InputMode::PassThrough,
@@ -739,10 +744,10 @@ void areaWindowPaintsInputSurfaceOnlyWhenItIsVisible() {
 // The preview filters the whole application, so it must not cast on every event.
 void previewIgnoresEventsOtherThanDialogVisibility() {
     ScreenRecordingAreaWindow area;
-    area.setPhysicalRegion(QRect(32, 32, 320, 240));
+    area.setRecordingRegion(QRect(32, 32, 320, 240));
     auto state = std::make_shared<RecordingEffectTestState>();
     RecordingEffectPreview preview(area, std::make_unique<RecordingEffectTestSource>(state));
-    preview.configure(area.physicalRegion(), QSize(320, 240), Qt::red, Qt::transparent, false);
+    preview.configure(area.recordingRegion(), QSize(320, 240), Qt::red, Qt::transparent, false);
     preview.setEligible(true);
     area.show();
     pumpPreview();
@@ -790,7 +795,13 @@ void controllerPreviewTransitions() {
     controller.open({40, 40, 320, 240});
     pumpPreview();
     auto state = effectSources.back().lock();
-    require(state && state->active, "idle controller must enable preview");
+    QElapsedTimer sizing;
+    sizing.start();
+    while (state && !state->active && sizing.elapsed() < 3000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    require(state && state->active,
+            "idle controller must enable preview after asynchronous sizing");
     require(state->keyboardSize == 64 && state->trailDurationMs == 500 &&
                 state->keyboardBackground == 0x000000cc &&
                 state->keyboardForeground == 0xffffffff && state->keyboardBorder == 0x404040cc,
@@ -974,6 +985,122 @@ void recordingCaptureExclusionWiring() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+#ifdef Q_OS_MACOS
+void destructionDoesNotBlockNativeWorkers() {
+    std::promise<void> releaseDimensions;
+    dimensionsGate = releaseDimensions.get_future().share();
+    dimensionsEntered = false;
+    holdDimensions = true;
+    const int completed = dimensionsCompleted;
+    auto controller = std::make_unique<ScreenRecordingController>(testEffectsSource);
+    controller->open(QRect(40, 40, 321, 239));
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!dimensionsEntered && deadline.elapsed() < 3000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(dimensionsEntered, "the sizing worker must reach the controlled native query");
+    controller.reset();
+    // Releasing only after destruction proves the GUI thread did not join it.
+    releaseDimensions.set_value();
+    while (dimensionsCompleted == completed && deadline.elapsed() < 3000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(dimensionsCompleted == completed + 1, "retired sizing must complete independently");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    controller = std::make_unique<ScreenRecordingController>(testEffectsSource);
+    controller->open(QRect(40, 40, 321, 239));
+    controller->startRecording();
+    waitForRecording(*controller);
+    std::promise<void> releaseExport;
+    std::promise<void> enteredPromise;
+    auto entered = enteredPromise.get_future();
+    exportGate = releaseExport.get_future().share();
+    exportEntered = &enteredPromise;
+    const int destroyed = destroyedSessions;
+    palette()->recordingStopRequested();
+    require(entered.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+            "finalization must reach the controlled worker");
+    controller.reset();
+    require(destroyedSessions == destroyed,
+            "the live session must outlive its pending finalization");
+    releaseExport.set_value();
+    exportEntered = nullptr;
+    exportGate = {};
+    deadline.restart();
+    while (destroyedSessions == destroyed && deadline.elapsed() < 3000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(destroyedSessions == destroyed + 1,
+            "retired finalization must release the native session exactly once");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void staleRetinaSizingCannotConfigureAnotherRegion() {
+    snow_shot::storage::RecordingSettings().setMouseTrailColor(Qt::red);
+    std::promise<void> release;
+    dimensionsGate = release.get_future().share();
+    dimensionsEntered = false;
+    holdDimensions = true;
+    dimensionsScale = 2;
+    ScreenRecordingController controller(testEffectsSource);
+    controller.open(QRect(-300, -100, 321, 239));
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!dimensionsEntered && deadline.elapsed() < 3000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(dimensionsEntered, "Retina sizing must be dispatched off the GUI thread");
+    auto state = effectSources.back().lock();
+    controller.open(QRect(-280, -80, 401, 301));
+    require(state && !state->active,
+            "changing the region must not reuse unresolved preview dimensions");
+    release.set_value();
+    deadline.restart();
+    while (!state->active && deadline.elapsed() < 3000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(state->active && state->output == QSize(802, 602),
+            "only the latest region's native Retina dimensions may configure preview");
+    dimensionsScale = 1;
+    palette()->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    snow_shot::storage::RecordingSettings().setMouseTrailColor(Qt::transparent);
+}
+#endif
+
+void permissionsAndExactLogicalRegion() {
+    const snow_shot::storage::RecordingSettings settings;
+    ScreenRecordingController controller(testEffectsSource);
+    bool granted = false;
+    int requests = 0;
+    controller.setPermissionCheck([&](bool microphone, bool input, bool notify) {
+        require(microphone == (settings.outputFormat() == QStringLiteral("mp4") &&
+                               settings.microphoneEnabled()),
+                "start permission check must reflect the current microphone and output settings");
+        require(input == (settings.showKeyboard() || settings.recordMouseClicks() ||
+                          settings.mouseTrailColor().alpha() != 0 ||
+                          settings.mouseClickColor().alpha() != 0),
+                "only selected input effects require monitoring permission");
+        requests += notify ? 1 : 0;
+        return granted;
+    });
+    controller.open(QRect(-231, -119, 321, 239));
+    const int initialStarts = starts.load();
+    controller.startRecording();
+    QCoreApplication::processEvents();
+    require(requests == 1 && starts == initialStarts && !controller.isRecording(),
+            "denied permissions must keep recording idle without creating a session");
+    granted = true;
+    controller.startRecording();
+    waitForRecording(controller);
+#ifdef Q_OS_MACOS
+    require(lastDirectConfig.x == -231 && lastDirectConfig.y == -119 &&
+                lastDirectConfig.width == 321 && lastDirectConfig.height == 239,
+            "macOS must forward odd logical regions without DPI conversion or encoder expansion");
+#endif
+    controller.stopRecordingAndCopy();
+    waitForIdle(controller);
+    palette()->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 void delayCountdownBlocksTheStartUntilItElapses() {
     using snow_shot::storage::RecordingSettings;
     require(RecordingSettings().startDelaySeconds() == 0,
@@ -1113,7 +1240,7 @@ int nativeEffectsPreviewCapture() {
     const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
     const QRect region(bounds.topLeft() + QPoint(100, 100), QSize(640, 480));
     ScreenRecordingAreaWindow area;
-    area.setPhysicalRegion(region);
+    area.setRecordingRegion(region);
     QWidget background(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     background.setStyleSheet(QStringLiteral("background-color: rgb(38, 48, 63);"));
     background.setGeometry(area.geometry());
@@ -1131,7 +1258,7 @@ int nativeEffectsPreviewCapture() {
     for (QScreen* target : QGuiApplication::screens()) {
         const QRect targetBounds = ScreenshotGeometryMapper::physicalRectForScreen(*target);
         const QRect selected(targetBounds.topLeft() + QPoint(50, 50), QSize(641, 479));
-        area.setPhysicalRegion(selected);
+        area.setRecordingRegion(selected);
         background.setGeometry(area.geometry());
         preview.configure(selected.adjusted(0, 0, 1, 1), QSize(642, 480), Qt::red, Qt::cyan, true);
         for (const auto mode : {ScreenRecordingAreaWindow::InputMode::PassThrough,
@@ -1192,7 +1319,7 @@ int nativeEffectsPreviewCapture() {
             for (const QSize exportSize : {QSize(320, 240), QSize(1280, 960)}) {
                 preview.setEligible(false);
                 const QRect capture(selected.topLeft(), captureSize);
-                area.setPhysicalRegion(capture);
+                area.setRecordingRegion(capture);
                 background.setGeometry(area.geometry());
                 area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
                 area.raise();
@@ -1243,7 +1370,7 @@ int nativeEffectsPreviewCapture() {
         }
     }
     preview.setEligible(false);
-    area.setPhysicalRegion(region);
+    area.setRecordingRegion(region);
     background.setGeometry(area.geometry());
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
     preview.configure(region, region.size(), Qt::red, Qt::cyan, true);
@@ -1571,7 +1698,7 @@ int main(int argc, char** argv) {
         area->regionInteractionFinished();
         require(toolbar->isVisible(), "finishing interaction must restore the toolbar");
         const QPoint finalPosition = toolbar->contentPosition();
-        toolbar->placeForPhysicalRegion(area->physicalRegion());
+        toolbar->placeForRecordingRegion(area->recordingRegion());
         require(toolbar->contentPosition() == finalPosition,
                 "restored toolbar must use final geometry");
         controller.open(region);
@@ -1696,8 +1823,28 @@ int main(int argc, char** argv) {
     closeAndStopHaveIndependentUiLifetimes();
     require(snow_shot::storage::RecordingSettings().setLoopAnimatedImages(true),
             "restore recording loop preference");
+#ifdef Q_OS_MACOS
+    destructionDoesNotBlockNativeWorkers();
+    staleRetinaSizingCannotConfigureAnotherRegion();
+#endif
+    permissionsAndExactLogicalRegion();
     stopAndCopyBusyIndicatorsStayOnTheInitiatingControl();
     delayCountdownBlocksTheStartUntilItElapses();
     ApplicationStorage::instance().shutdown();
     return 0;
+}
+
+extern "C" int32_t snow_recording_region_output_dimensions(int32_t, int32_t, uint32_t width,
+                                                           uint32_t height, uint32_t maximumWidth,
+                                                           uint32_t maximumHeight, uint32_t format,
+                                                           uint32_t* outputWidth,
+                                                           uint32_t* outputHeight) {
+    const auto scale = dimensionsScale.load();
+    if (holdDimensions.exchange(false)) {
+        dimensionsEntered = true;
+        dimensionsGate.wait();
+    }
+    ++dimensionsCompleted;
+    return snow_recording_output_dimensions(width * scale, height * scale, maximumWidth,
+                                            maximumHeight, format, outputWidth, outputHeight);
 }

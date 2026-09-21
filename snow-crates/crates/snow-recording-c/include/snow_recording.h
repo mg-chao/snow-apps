@@ -6,6 +6,7 @@ extern "C" {
 #endif
 typedef struct SnowRecordingSessionImpl SnowRecordingSession;
 typedef struct SnowRecordingConfig {
+    /* Desktop points on macOS; physical desktop pixels on Windows. */
     int32_t x;
     int32_t y;
     uint32_t width;
@@ -113,6 +114,7 @@ typedef struct SnowCaptureKeyboardLabel {
 typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t version;
     uint32_t struct_size;
+    /* Desktop points on macOS; physical desktop pixels on Windows. */
     int32_t x;
     int32_t y;
     uint32_t width;
@@ -158,6 +160,13 @@ typedef struct SnowCaptureDirectRecordingConfig {
     const char* keyboard_cjk_font_family_utf8;
     uint32_t keyboard_font_weight;
 } SnowCaptureDirectRecordingConfig;
+
+/* Worker-thread query. macOS region coordinates are points; output is pixels.
+ * Uses the same display transform and sizing policy as native recording startup. */
+int32_t snow_recording_region_output_dimensions(int32_t x, int32_t y, uint32_t width,
+                                                uint32_t height, uint32_t maximum_width,
+                                                uint32_t maximum_height, uint32_t format,
+                                                uint32_t* output_width, uint32_t* output_height);
 
 SnowRecordingSession* snow_recording_session_create(const SnowRecordingConfig* config);
 /* Pure output sizing shared by recording and effects preview. Zero maximums mean uncapped. */

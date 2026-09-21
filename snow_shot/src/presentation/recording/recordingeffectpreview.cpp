@@ -320,9 +320,15 @@ void RecordingEffectPreview::clearFrame() {
 }
 
 QTransform RecordingEffectPreview::outputToCanvas(const QSize& output) const {
-    return recordingEffectsOutputTransform(
-        m_capture, m_area.physicalRegion(), m_area.selectionRect(),
-        m_area.canvasGeometry().topLeft(), m_area.devicePixelRatioF(), output);
+    return recordingEffectsOutputTransform(m_capture, m_area.recordingRegion(),
+                                           m_area.selectionRect(),
+                                           m_area.canvasGeometry().topLeft(),
+#ifdef Q_OS_MACOS
+                                           1.0,
+#else
+                                           m_area.devicePixelRatioF(),
+#endif
+                                           output);
 }
 
 QRegion RecordingEffectPreview::frameRegion(const RecordingEffectsFrame& frame) const {

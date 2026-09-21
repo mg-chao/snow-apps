@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 
-#include "snow_shot/platform/windows/selectedfiles.h"
+#include "snow_shot/platform/selectedfiles.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -15,7 +15,7 @@
 #include <iostream>
 
 namespace {
-using namespace snow_shot::platform::windows;
+using namespace snow_shot::platform;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -49,11 +49,12 @@ class FakeBackend final : public SelectedFileBackend {
     mutable QSemaphore entered;
     mutable QSemaphore release;
     bool block = false;
+    SelectedFileError error = SelectedFileError::None;
     SelectedFileTarget captureTarget() const override {
         return target;
     }
-    QStringList selectedFiles(const SelectedFileTarget& captured,
-                              const std::function<bool()>& cancelled) const override {
+    SelectedFileResult selectedFiles(const SelectedFileTarget& captured,
+                                     const std::function<bool()>& cancelled) const override {
         require(QThread::currentThread() != qApp->thread(),
                 "selection must run off the GUI thread");
         require(captured.window == 1 && captured.view == 2 && captured.tab == 3 &&
@@ -63,7 +64,7 @@ class FakeBackend final : public SelectedFileBackend {
         if (block) {
             release.acquire();
         }
-        return cancelled() ? QStringList{} : paths;
+        return {cancelled() ? QStringList{} : paths, error};
     }
 };
 
@@ -223,6 +224,40 @@ void selectionAndCancellation() {
     require(presented == 2, "destroyed batch must not present");
 }
 
+void selectionFailures() {
+    auto backend = std::make_shared<FakeBackend>();
+    backend->error = SelectedFileError::PermissionDenied;
+    ScreenshotFilePinBatch batch;
+    int failures = 0;
+    const auto present = [](ScreenshotClipboardContent) {
+        require(false, "failed selection must not present an image");
+        return true;
+    };
+    const auto failure = [&](SelectedFileError error) {
+        require(QThread::currentThread() == qApp->thread(), "failure must run on the GUI thread");
+        require(!batch.active(), "batch must be stopped before reporting failure");
+        require(error == SelectedFileError::PermissionDenied,
+                "preserve structured selection error");
+        ++failures;
+    };
+    batch.startSelection(backend, backend->captureTarget(), present, failure);
+    finish(batch);
+    require(failures == 1, "selection failure must be delivered exactly once");
+
+    backend = std::make_shared<FakeBackend>();
+    backend->error = SelectedFileError::PermissionDenied;
+    backend->block = true;
+    batch.startSelection(backend, backend->captureTarget(), present, failure);
+    require(backend->entered.tryAcquire(1, 5000), "failing selection worker must start");
+    batch.start({}, present);
+    backend->release.release();
+    finish(batch);
+    // Drain all worker completions before checking for a stale warning.
+    ScreenshotExportCoordinator::shared().shutdown();
+    QCoreApplication::processEvents();
+    require(failures == 1, "replaced selection must not report its late failure");
+}
+
 void clipboardFiles() {
     QTemporaryDir directory;
     const QString first = imageFile(directory, QStringLiteral("first.png"));
@@ -258,6 +293,7 @@ int main(int argc, char** argv) {
     stoppingDiscardsPrefetchedDecodes();
     selectionAndCancellation();
     clipboardFiles();
+    selectionFailures();
     ScreenshotExportCoordinator::shared().shutdown();
     return 0;
 }

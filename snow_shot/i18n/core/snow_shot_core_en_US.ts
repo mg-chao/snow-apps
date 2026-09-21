@@ -579,6 +579,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>An update is ready. Open About to restart and update Snow Shot.</translation>
         </message>
         <message>
+            <source>Could not pin selected files</source>
+            <translation>Could not pin selected files</translation>
+        </message>
+        <message>
             <source>Feature unavailable</source>
             <translation>Feature unavailable</translation>
         </message>
@@ -589,10 +593,6 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <message>
             <source>Restart and update</source>
             <translation>Restart and update</translation>
-        </message>
-        <message>
-            <source>Screen recording is not available on macOS yet.</source>
-            <translation>Screen recording is not available on macOS yet.</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

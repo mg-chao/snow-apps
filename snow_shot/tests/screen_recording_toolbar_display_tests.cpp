@@ -213,7 +213,7 @@ int recordingToolbarAcrossNativeDisplays(bool startCapture) {
     }
 
     const HWND areaHandle = reinterpret_cast<HWND>(area->winId());
-    const QPoint hitPoint = area->physicalRegion().center();
+    const QPoint hitPoint = area->recordingRegion().center();
     check(SendMessageW(areaHandle, WM_NCHITTEST, 0, MAKELPARAM(hitPoint.x(), hitPoint.y())) ==
               HTCAPTION,
           "PREREQUISITE: recording area must accept dragging in the requested recording state");
@@ -284,7 +284,7 @@ int recordingToolbarAcrossNativeDisplays(bool startCapture) {
               "toolbar must anchor below the final area with a 4-DIP gap and correct alignment");
     };
     check(starts == 1 && finishes == 1, "drag must have one balanced native interaction lifecycle");
-    check(area->screen() == displayB && bBounds.contains(area->physicalRegion()),
+    check(area->screen() == displayB && bBounds.contains(area->recordingRegion()),
           "recording area must finish completely on B");
     verifyToolbar("Immediately after release");
     settleWindows();

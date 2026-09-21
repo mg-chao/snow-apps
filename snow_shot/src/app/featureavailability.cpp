@@ -50,12 +50,8 @@ FeatureFamily featureFamilyFor(presentation::settings::SettingsGlobalMouseAction
 }
 
 bool isFeatureAvailable(FeatureFamily feature) {
-#ifdef Q_OS_MACOS
-    return feature != FeatureFamily::ScreenRecording;
-#else
     (void)feature;
     return true;
-#endif
 }
 
 FeatureGate::FeatureGate(UnavailableHandler unavailableHandler)

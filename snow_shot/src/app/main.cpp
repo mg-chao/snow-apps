@@ -37,6 +37,13 @@
 #include <optional>
 #include "snow_capture.h"
 #include "snow_recording.h"
+#ifdef Q_OS_MACOS
+#include <QScopeGuard>
+#include <future>
+#include <thread>
+#include <QTimer>
+#include <QScreen>
+#endif
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -97,6 +104,97 @@ int main(int argc, char* argv[]) {
             return result;
         administratorRestart = true;
     }
+#ifdef Q_OS_MACOS
+    // Runs the shipped recording bridge with the Cocoa event loop, without user storage.
+    if (argc >= 3 && QString::fromLocal8Bit(argv[1]) == u"--recording-macos-probe") {
+        QApplication probe(argc, argv);
+        const QStringList arguments = probe.arguments();
+        const QByteArray path = QFileInfo(arguments[2]).absoluteFilePath().toUtf8();
+        const QRect screen = probe.primaryScreen()->geometry();
+        const QPoint origin = screen.topLeft() + QPoint(40, 40);
+        auto result = std::async(std::launch::async, [path, arguments, origin] {
+            SnowCaptureDirectRecordingConfig config{};
+            config.version = SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION;
+            config.struct_size = sizeof(config);
+            config.x = origin.x();
+            config.y = origin.y();
+            config.width = 321;
+            config.height = 239;
+            config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
+            config.output_file_utf8 = path.constData();
+            const auto suffix = QFileInfo(QString::fromUtf8(path)).suffix();
+            config.output_format = suffix == u"gif"    ? SNOW_RECORDING_OUTPUT_FORMAT_GIF
+                                   : suffix == u"apng" ? SNOW_RECORDING_OUTPUT_FORMAT_APNG
+                                   : suffix == u"webp" ? SNOW_RECORDING_OUTPUT_FORMAT_WEBP
+                                                       : SNOW_RECORDING_OUTPUT_FORMAT_MP4;
+            config.capture_fps = 30;
+            config.output_fps = 15;
+            config.maximum_width = 1920;
+            config.maximum_height = 1080;
+            config.codec = arguments.contains(u"hevc") ? SNOW_CAPTURE_VIDEO_CODEC_H265
+                                                       : SNOW_CAPTURE_VIDEO_CODEC_H264;
+            config.preset = SNOW_CAPTURE_VIDEO_ENCODING_PRESET_VERYFAST;
+            config.encoder_preference = arguments.contains(u"software")
+                                            ? SNOW_CAPTURE_ENCODER_PREFERENCE_SOFTWARE
+                                            : SNOW_CAPTURE_ENCODER_PREFERENCE_H264_HARDWARE;
+            config.enable_system_audio = static_cast<uint8_t>(arguments.contains(u"system-audio"));
+            config.enable_microphone = static_cast<uint8_t>(arguments.contains(u"microphone"));
+            config.show_cursor = 1;
+            config.keyboard_size = 64;
+            config.mouse_trail_duration_ms = 500;
+            config.loop_animated_images = 1;
+            if (arguments.contains(u"effects")) {
+                config.show_keyboard = 1;
+                config.record_mouse_clicks = 1;
+                config.mouse_trail_rgba = 0xff4080e0;
+                config.mouse_click_rgba = 0x40a0ffe0;
+                config.keyboard_background_rgba = 0x000000cc;
+                config.keyboard_text_rgba = 0xffffffff;
+                config.keyboard_border_rgba = 0x808080ff;
+                config.mouse_highlight_rgba = 0xffff0080;
+            }
+            uint32_t width = 0, height = 0;
+            if (!snow_recording_region_output_dimensions(
+                    config.x, config.y, config.width, config.height, config.maximum_width,
+                    config.maximum_height, config.output_format, &width, &height)) {
+                qWarning("%s", snow_recording_last_error_message());
+                return 1;
+            }
+            SnowRecordingSession* session = nullptr;
+            if (snow_recording_session_create_direct(&config, &session) !=
+                SNOW_RECORDING_RESULT_OK) {
+                qWarning("%s", snow_recording_last_error_message());
+                return 2;
+            }
+            const auto destroy =
+                qScopeGuard([session] { snow_recording_session_destroy(session); });
+            if (!snow_recording_session_start(session)) {
+                qWarning("%s", snow_recording_last_error_message());
+                return 3;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(800));
+            if (!snow_recording_session_pause(session))
+                return 4;
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            if (!snow_recording_session_resume(session))
+                return 5;
+            std::this_thread::sleep_for(std::chrono::milliseconds(800));
+            if (snow_recording_session_stop(session) != SNOW_RECORDING_RESULT_OK) {
+                qWarning("%s", snow_recording_last_error_message());
+                return 6;
+            }
+            qInfo("macos recording probe: logical=321x239 output=%ux%u", width, height);
+            return 0;
+        });
+        QTimer poll;
+        QObject::connect(&poll, &QTimer::timeout, &probe, [&] {
+            if (result.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
+                probe.exit(result.get());
+        });
+        poll.start(20);
+        return probe.exec();
+    }
+#endif
     // Package QA uses the ordinary FFI and linked vendor encoders, without
     // opening UI, taking the singleton, or modifying the user's settings.
     if ((argc == 4 || argc == 5) && QString::fromLocal8Bit(argv[1]) == u"--recording-gpu-probe") {

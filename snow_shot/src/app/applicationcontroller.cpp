@@ -28,7 +28,7 @@
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
-#include "snow_shot/platform/windows/selectedfiles.h"
+#include "snow_shot/platform/selectedfiles.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "widgets/message.h"
@@ -379,12 +379,46 @@ class ApplicationController::Impl {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), translationClient.get());
+            screenshotController->setRecordingPermissionCheck([this](bool microphone, bool input,
+                                                                     bool notify) {
+#ifdef Q_OS_MACOS
+                permissions.refresh();
+                presentation::AppPermissions required{presentation::AppPermission::ScreenRecording};
+                if (microphone)
+                    required.append(presentation::AppPermission::Microphone);
+                if (input)
+                    required.append(presentation::AppPermission::InputMonitoring);
+                return notify ? allowPermissions(required)
+                              : permissions.missing(required).isEmpty();
+#else
+                Q_UNUSED(microphone);
+                Q_UNUSED(input);
+                Q_UNUSED(notify);
+                return true;
+#endif
+            });
             QObject::connect(
                 screenshotController.get(), &ScreenshotController::accessibilityPermissionRequested,
                 &q, [this] {
                     permissions.refresh();
                     ensureMainWindow().showAppPermissions(
                         presentation::appPermissionId(presentation::AppPermission::Accessibility));
+                });
+            QObject::connect(
+                screenshotController.get(), &ScreenshotController::selectedFilePinFailed, &q,
+                [this](const QString& message) {
+                    if (systemTray.canShowMessages() &&
+                        (!mainWindow || !mainWindow->isVisible() || mainWindow->isMinimized())) {
+                        systemTray.showWarningMessage(
+                            ApplicationController::tr("Could not pin selected files"), message);
+                        return;
+                    }
+                    MainWindow& window = ensureMainWindow();
+                    window.showAndActivate();
+                    adqt::widgets::AdMessage::Request request;
+                    request.key = QStringLiteral("pin-selected-files-error");
+                    request.content = message;
+                    adqt::widgets::AdMessageService::warning(std::move(request), &window);
                 });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
@@ -608,7 +642,7 @@ class ApplicationController::Impl {
             }
             break;
         case presentation::GlobalShortcutAction::PinSelectedFiles: {
-            const auto target = platform::windows::createSelectedFileBackend()->captureTarget();
+            const auto target = platform::createSelectedFileBackend()->captureTarget();
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinSelectedFilesToScreen(target);
             }
@@ -702,16 +736,12 @@ class ApplicationController::Impl {
     }
 
     QString unavailableFeatureMessage(FeatureFamily feature) const {
-        if (feature == FeatureFamily::ScreenRecording) {
-            return ApplicationController::tr("Screen recording is not available on macOS yet.");
-        }
+        Q_UNUSED(feature);
         return {};
     }
 
     QString unavailableFeatureKey(FeatureFamily feature) const {
-        if (feature == FeatureFamily::ScreenRecording) {
-            return QStringLiteral("macos-recording-unavailable");
-        }
+        Q_UNUSED(feature);
         return {};
     }
 

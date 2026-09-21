@@ -78,13 +78,13 @@ ScreenRecordingAreaBorderGeometry screenRecordingAreaBorderGeometry(const QRectF
     };
 }
 
-QRect screenRecordingCompatibleCaptureRegion(const QRect& selectedPhysicalRegion,
+QRect screenRecordingCompatibleCaptureRegion(const QRect& selectedRecordingRegion,
                                              const QRect& physicalBounds) {
-    if (!selectedPhysicalRegion.isValid() || selectedPhysicalRegion.isEmpty()) {
+    if (!selectedRecordingRegion.isValid() || selectedRecordingRegion.isEmpty()) {
         return {};
     }
 
-    QRect captureRegion = selectedPhysicalRegion;
+    QRect captureRegion = selectedRecordingRegion;
     if (captureRegion.width() % 2 != 0) {
         if (physicalBounds.isValid() && captureRegion.right() >= physicalBounds.right() &&
             captureRegion.left() > physicalBounds.left()) {

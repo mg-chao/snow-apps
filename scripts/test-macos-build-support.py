@@ -16,6 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MacOSBundleMetadata(unittest.TestCase):
+    def test_finder_automation_has_usage_description(self):
+        plist = plistlib.loads((ROOT / 'snow_shot/packaging/macos/Info.plist.in').read_bytes())
+        self.assertEqual(plist['NSAppleEventsUsageDescription'],
+                         'Snow Shot reads selected image files from Finder to pin them to the screen.')
+
     def test_native_languages_match_the_application_catalogs(self):
         plist = plistlib.loads((ROOT / 'snow_shot/packaging/macos/Info.plist.in').read_bytes())
         native_languages = {'en_US': 'en', 'zh_CN': 'zh-Hans', 'zh_TW': 'zh-Hant'}

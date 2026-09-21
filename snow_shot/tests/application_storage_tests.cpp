@@ -237,11 +237,11 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             !defaultValue("extended_features/jump_to_translation_page").toBool() &&
 #ifdef Q_OS_MACOS
             defaultValue("global_shortcuts/screenshot").toArray() ==
-                QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+1"), 18)} &&
+                QJsonArray{shortcutObject(QStringLiteral("Meta+1"), 18)} &&
             defaultValue("global_shortcuts/screenshot_copy").toArray() ==
-                QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+2"), 19)} &&
+                QJsonArray{shortcutObject(QStringLiteral("Meta+2"), 19)} &&
             defaultValue("global_shortcuts/pin_clipboard_content").toArray() ==
-                QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+3"), 20)} &&
+                QJsonArray{shortcutObject(QStringLiteral("Meta+3"), 20)} &&
 #else
             defaultValue("global_shortcuts/screenshot").toArray() ==
                 structuredShortcuts(QJsonArray{QStringLiteral("F1")}) &&

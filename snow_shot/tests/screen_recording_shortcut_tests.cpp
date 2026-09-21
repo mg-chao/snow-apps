@@ -20,6 +20,10 @@
 #include <QMouseEvent>
 #include <QTemporaryDir>
 
+#ifdef Q_OS_MACOS
+#import <AppKit/AppKit.h>
+#endif
+
 #include <cstdlib>
 #include <iostream>
 
@@ -69,11 +73,25 @@ void require(bool condition, const char* message) {
     }
 }
 
+QKeyEvent keyEvent(QEvent::Type type, Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+                   bool autoRepeat = false) {
+#ifdef Q_OS_MACOS
+    // Cocoa identifies physical shortcuts by the native virtual key, including
+    // key code zero (A). Synthetic events must carry the same identity.
+    const auto identity = snow_shot::shortcuts::effectiveIdentity(
+        {QKeySequence(key).toString(QKeySequence::PortableText)});
+    const quint32 nativeKey = identity.physicalKey.value_or(0);
+    return QKeyEvent(type, key, modifiers, nativeKey, nativeKey, 0, QString(), autoRepeat);
+#else
+    return QKeyEvent(type, key, modifiers, QString(), autoRepeat);
+#endif
+}
+
 void press(QWidget& receiver, Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
            bool autoRepeat = false) {
-    QKeyEvent event(QEvent::KeyPress, key, modifiers, QString(), autoRepeat);
+    auto event = keyEvent(QEvent::KeyPress, key, modifiers, autoRepeat);
     QCoreApplication::sendEvent(&receiver, &event);
-    QKeyEvent release(QEvent::KeyRelease, key, modifiers);
+    auto release = keyEvent(QEvent::KeyRelease, key, modifiers);
     QCoreApplication::sendEvent(&receiver, &release);
 }
 
@@ -108,6 +126,38 @@ void requireFocusPolicy(QWidget& widget, bool acceptsFocus) {
     }
 #endif
 }
+
+#ifdef Q_OS_MACOS
+void nativeRecordingWindowPoliciesSurviveInputAndVisibilityChanges() {
+    ScreenRecordingAreaWindow area;
+    ScreenRecordingToolbarWindow toolbar;
+    area.setRecordingRegion(QRect(40, 40, 321, 239));
+    toolbar.setTransientOwnerWindow(&area);
+    toolbar.placeForRecordingRegion(area.recordingRegion());
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        area.show();
+        toolbar.showAndActivate();
+        QCoreApplication::processEvents();
+        NSWindow* areaWindow = reinterpret_cast<NSView*>(area.winId()).window;
+        NSWindow* toolbarWindow = reinterpret_cast<NSView*>(toolbar.winId()).window;
+        require(areaWindow && toolbarWindow && toolbarWindow.level > areaWindow.level,
+                "the native recording toolbar must remain above its drawing area");
+        const auto spaces = NSWindowCollectionBehaviorCanJoinAllSpaces |
+                            NSWindowCollectionBehaviorFullScreenAuxiliary;
+        require((areaWindow.collectionBehavior & spaces) == spaces &&
+                    (toolbarWindow.collectionBehavior & spaces) == spaces &&
+                    !areaWindow.hidesOnDeactivate && !toolbarWindow.hidesOnDeactivate,
+                "recording controls must remain available in fullscreen Spaces");
+        area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
+        require(areaWindow.ignoresMouseEvents,
+                "pass-through must route native input to underlying applications");
+        area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+        require(!areaWindow.ignoresMouseEvents, "drawing mode must accept native input");
+        toolbar.hide();
+        area.hide();
+    }
+}
+#endif
 
 void recordingToolbarTakesFocusWhenOpenedOrStarted() {
     ScreenRecordingToolbarWindow toolbar;
@@ -152,7 +202,7 @@ void recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration() {
 void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
     ScreenRecordingAreaWindow area;
     ScreenRecordingToolbarWindow toolbar;
-    area.setPhysicalRegion(
+    area.setRecordingRegion(
         ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen())
             .adjusted(20, 20, -20, -20));
     auto& palette = *toolbar.palette();
@@ -338,7 +388,7 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
             "recording controls must have the requested defaults");
     ScreenRecordingAreaWindow area;
     ScreenRecordingToolbarWindow toolbar;
-    area.setPhysicalRegion(
+    area.setRecordingRegion(
         ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen())
             .adjusted(20, 20, -20, -20));
     auto& palette = *toolbar.palette();
@@ -366,13 +416,13 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     area.show();
     toolbar.show();
     focus(toolbar);
-    QKeyEvent closePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    auto closePress = keyEvent(QEvent::KeyPress, Qt::Key_Escape);
     QApplication::sendEvent(&toolbar, &closePress);
     require(ends == 0 && toolbar.isVisible(), "recording must stay open while Escape is held");
-    QKeyEvent closeRepeat(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, QString(), true);
+    auto closeRepeat = keyEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, true);
     QApplication::sendEvent(&toolbar, &closeRepeat);
     require(ends == 0, "held Escape must not end recording");
-    QKeyEvent closeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    auto closeRelease = keyEvent(QEvent::KeyRelease, Qt::Key_Escape);
     QApplication::sendEvent(&toolbar, &closeRelease);
     require(ends == 1, "Escape release must end recording once");
     ends = 0;
@@ -493,7 +543,7 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
 
     ScreenRecordingAreaWindow area;
     ScreenRecordingToolbarWindow toolbar;
-    area.setPhysicalRegion(
+    area.setRecordingRegion(
         ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen())
             .adjusted(20, 20, -20, -20));
     auto* palette = toolbar.palette();
@@ -718,7 +768,7 @@ int main(int argc, char* argv[]) {
             close_release_native_test::Receiver receiver;
             ScreenRecordingAreaWindow area;
             ScreenRecordingToolbarWindow toolbar;
-            area.setPhysicalRegion(QRect(150, 150, 500, 350));
+            area.setRecordingRegion(QRect(150, 150, 500, 350));
             auto controller = std::make_unique<ScreenRecordingShortcutController>(area, toolbar);
             QObject::connect(toolbar.palette(), &ScreenshotToolPalette::recordingCloseRequested,
                              &area, [&] {
@@ -734,6 +784,9 @@ int main(int argc, char* argv[]) {
         storage.shutdown();
         return result;
     }
+#endif
+#ifdef Q_OS_MACOS
+    nativeRecordingWindowPoliciesSurviveInputAndVisibilityChanges();
 #endif
     recordingToolbarTakesFocusWhenOpenedOrStarted();
     recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration();

@@ -33,6 +33,9 @@ fn main() {
                     config
                 });
             let config = NativeRecordingConfig {
+                format: snow_recording_export::ExportFormat::Mp4,
+                loop_animated_images: false,
+                video: Default::default(),
                 effects: snow_recording_runtime::macos::NativeEffectsConfig {
                     clicks: args.iter().any(|arg| arg == "effects"),
                     trail: args.iter().any(|arg| arg == "effects"),

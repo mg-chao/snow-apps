@@ -651,9 +651,14 @@ SettingsItemDefinition pinSelectedFilesItem() {
     return quickActionItem(
         QStringLiteral("quick.pin-selected-files"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Selected Files to Screen"),
+#ifdef Q_OS_MACOS
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Pin selected image files from Finder or the desktop to the screen"),
+#else
         QT_TRANSLATE_NOOP(
             "SettingsCatalog",
             "Pin selected image files from File Explorer or the desktop to the screen"),
+#endif
         {}, GlobalShortcutAction::PinSelectedFiles,
         QStringLiteral("global_shortcuts/pin_selected_files"),
         []() { return custom_outlined_icons::Select(); });

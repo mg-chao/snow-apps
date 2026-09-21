@@ -36,7 +36,7 @@ QString appPermissionName(AppPermission permission) {
     }
     return {};
 }
-AppPermissions requiredPermissions(GlobalShortcutAction action, bool microphoneEnabled) {
+AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphoneEnabled*/) {
     using Action = GlobalShortcutAction;
     using P = AppPermission;
     switch (action) {
@@ -51,8 +51,9 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool microphoneE
         return {P::ScreenRecording};
     case Action::ScreenRecord:
     case Action::ScreenRecordCopy:
-        return microphoneEnabled ? AppPermissions{P::ScreenRecording, P::Microphone}
-                                 : AppPermissions{P::ScreenRecording};
+        // This action opens selection. The recording controller checks microphone
+        // and effect permissions against the final toolbar settings at start.
+        return {P::ScreenRecording};
     case Action::TranslateSelectedText:
         return {P::Accessibility};
     case Action::OpenScreenRecordingFolder:
@@ -66,12 +67,10 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool microphoneE
     }
     return {};
 }
-AppPermissions requiredPermissions(settings::SettingsGlobalMouseAction action,
-                                   bool microphoneEnabled) {
+AppPermissions requiredPermissions(settings::SettingsGlobalMouseAction /*action*/,
+                                   bool /*microphoneEnabled*/) {
     AppPermissions result{AppPermission::ScreenRecording, AppPermission::Accessibility,
                           AppPermission::InputMonitoring};
-    if (action == settings::SettingsGlobalMouseAction::ScreenRecording && microphoneEnabled)
-        result.append(AppPermission::Microphone);
     return result;
 }
 AppPermissions pagePermissions(bool mousePage, bool microphoneEnabled, bool selectedTextEnabled) {

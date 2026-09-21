@@ -25,12 +25,12 @@ void observedNativeGeometryFollowsDisplaysWithoutRescalingPhysicalCoordinates() 
                                QRect(3000, 180, 1286, 726), QRect(40, 40, 8, 8)}) {
         for (const qreal scale : {1.0, 1.25, 1.5, 1.75, 2.0}) {
             const auto observed = recording::screenRecordingObservedGeometry(client, scale);
-            require(observed.physicalRegion == client.adjusted(3, 3, -3, -3),
+            require(observed.recordingRegion == client.adjusted(3, 3, -3, -3),
                     "DPI and display origins must not rescale native capture coordinates");
-            require(qAbs(observed.selectionRect.width() * scale - observed.physicalRegion.width()) <
-                            0.0001 &&
+            require(qAbs(observed.selectionRect.width() * scale -
+                         observed.recordingRegion.width()) < 0.0001 &&
                         qAbs(observed.selectionRect.height() * scale -
-                             observed.physicalRegion.height()) < 0.0001,
+                             observed.recordingRegion.height()) < 0.0001,
                     "fractional logical layout must cover exactly the physical capture pixels");
             const auto border = recording::screenRecordingAreaBorderGeometry(
                 observed.frameRect, observed.selectionRect, observed.paddingWidth);
@@ -44,10 +44,10 @@ void observedNativeGeometryFollowsDisplaysWithoutRescalingPhysicalCoordinates() 
     }
     const auto rounded = recording::screenRecordingObservedGeometry(QRect(36, 36, 329, 249), 1.5,
                                                                     QMargins(4, 4, 4, 4));
-    require(rounded.physicalRegion == QRect(40, 40, 321, 241),
+    require(rounded.recordingRegion == QRect(40, 40, 321, 241),
             "Qt's fractional-DPI outer rounding must not change the initial screenshot selection");
     require(!recording::screenRecordingObservedGeometry(QRect(0, 0, 7, 8), 1.25)
-                 .physicalRegion.isValid(),
+                 .recordingRegion.isValid(),
             "undersized native geometry must not publish an invalid capture selection");
 }
 

@@ -6,7 +6,7 @@ use snow_media::{
     time::{ClockDomain, MediaTime},
 };
 use snow_recording_effects::{
-    keyboard_overlay::{KeyEvent, KeyboardOverlay, KeyboardOverlayConfig},
+    keyboard_overlay::{KeyboardOverlay, KeyboardOverlayConfig},
     laser_trail::LaserTrail,
     mouse_effects::{CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks_to},
     mouse_hook::ObservedMouseButton,
@@ -14,14 +14,32 @@ use snow_recording_effects::{
 };
 use std::collections::VecDeque;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct NativeEffectsConfig {
+    pub click_rgba: [u8; 4],
+    pub trail_rgba: [u8; 4],
+    pub trail_duration_ms: u64,
     pub clicks: bool,
     pub trail: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
     pub show_keyboard: bool,
     pub record_mouse_clicks: bool,
     pub highlight_rgba: [u8; 4],
+}
+impl Default for NativeEffectsConfig {
+    fn default() -> Self {
+        Self {
+            click_rgba: [64, 160, 255, 220],
+            trail_rgba: [255, 64, 80, 230],
+            trail_duration_ms: 500,
+            clicks: false,
+            trail: false,
+            keyboard: None,
+            show_keyboard: false,
+            record_mouse_clicks: false,
+            highlight_rgba: [0; 4],
+        }
+    }
 }
 pub(crate) struct Effects {
     input: Option<InputObserver>,
@@ -94,6 +112,7 @@ impl Effects {
         Ok(Some(Self {
             input,
             cursor,
+            trail: LaserTrail::new(config.trail_duration_ms),
             config,
             output,
             surface: TileSurface::new((output.width, output.height)),
@@ -102,7 +121,7 @@ impl Effects {
             pending_input: VecDeque::new(),
             show_cursor: separate,
             clicks: VecDeque::new(),
-            trail: LaserTrail::default(),
+
             keyboard,
             generation: 0,
             status: InputStatus::Active,
@@ -243,9 +262,15 @@ impl Effects {
             }
             if self.config.show_keyboard
                 && let Some(keyboard) = &mut self.keyboard
-                && let Some(event) = key_event(&event, at_ms)
+                && let Some(style) = &self.config.keyboard
+                && let Some(event) =
+                    snow_recording_effects::keyboard_hook::KeyObservation::from_macos(
+                        &event,
+                        at,
+                        self.generation,
+                    )
             {
-                keyboard.model.event(event);
+                keyboard.model.event(event.event(at_ms, style));
             }
         }
         self.surface.clear();
@@ -282,13 +307,13 @@ impl Effects {
                 &mut self.surface,
                 &self.clicks,
                 now,
-                [64, 160, 255, 220],
+                self.config.click_rgba,
                 (self.output.width, self.output.height),
             );
         }
         if self.config.trail {
             self.trail
-                .draw_to(&mut self.surface, now, [255, 64, 80, 230]);
+                .draw_to(&mut self.surface, now, self.config.trail_rgba);
         }
         if let Some((x, y, shape)) = cursor_shape {
             draw_cursor(
@@ -357,53 +382,6 @@ pub(crate) fn project(
         (f64::from(destination.y) + (y - r.y) / r.height * f64::from(destination.height)).floor()
             as i32,
     ))
-}
-fn key_event(event: &InputEvent, at_ms: u64) -> Option<KeyEvent> {
-    if !matches!(event.kind, 10 | 11) || event.repeat {
-        return None;
-    }
-    let label = match event.key_code {
-        36 => "Return".into(),
-        48 => "Tab".into(),
-        49 => "Space".into(),
-        51 => "Delete".into(),
-        53 => "Esc".into(),
-        123 => "←".into(),
-        124 => "→".into(),
-        125 => "↓".into(),
-        126 => "↑".into(),
-        _ => String::from_utf16_lossy(&event.text[..event.text_len.min(event.text.len())])
-            .chars()
-            .filter(|c| !c.is_control())
-            .collect::<String>(),
-    };
-    let label =
-        snow_macos::text::keyboard_label(event.key_code, event.keyboard_type, event.modifiers)
-            .filter(|_| !matches!(event.key_code, 36 | 48 | 49 | 51 | 53 | 123..=126))
-            .unwrap_or_else(|| {
-                if label.is_empty() {
-                    format!("Key {}", event.key_code)
-                } else {
-                    label
-                }
-            });
-    let modifiers = [
-        (18, 0x11, "Control"),
-        (19, 0x12, "Option"),
-        (17, 0x10, "Shift"),
-        (20, 0x5b, "Command"),
-    ]
-    .into_iter()
-    .filter(|(bit, _, _)| event.modifiers & (1 << bit) != 0)
-    .map(|(_, key, label)| (key, label.to_owned()))
-    .collect();
-    Some(KeyEvent {
-        at_ms,
-        key: 0x100 + event.key_code,
-        down: event.kind == 10,
-        label,
-        modifiers,
-    })
 }
 #[cfg(test)]
 mod tests {

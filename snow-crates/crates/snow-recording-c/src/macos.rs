@@ -265,7 +265,13 @@ pub unsafe extern "C" fn snow_recording_macos_create(
             None
         };
         let native_config = NativeRecordingConfig {
+            format: snow_recording_export::ExportFormat::Mp4,
+            loop_animated_images: false,
+            video: Default::default(),
             effects: snow_screen_recorder::macos::NativeEffectsConfig {
+                click_rgba: [64, 160, 255, 220],
+                trail_rgba: [255, 64, 80, 230],
+                trail_duration_ms: 500,
                 clicks: config.click_effects == 1,
                 trail: config.trail == 1,
                 show_keyboard: config.keyboard == 1,

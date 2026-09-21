@@ -20,6 +20,7 @@
     <key>CFBundleShortVersionString</key><string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
     <key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppleEventsUsageDescription</key><string>Snow Shot reads selected image files from Finder to pin them to the screen.</string>
     <key>NSMicrophoneUsageDescription</key><string>Snow Shot records microphone audio when you enable it for a screen recording.</string>
     <key>NSAudioCaptureUsageDescription</key><string>Snow Shot captures system audio when you enable it for a screen recording.</string>
 </dict>

@@ -11,10 +11,10 @@ class ScreenRecordingToolbarWindow final : public ScreenshotFloatingToolPaletteW
   public:
     explicit ScreenRecordingToolbarWindow(QWidget* parent = nullptr);
 
-    void placeForPhysicalRegion(const QRect& physicalRegion);
+    void placeForRecordingRegion(const QRect& recordingRegion);
     void showAndActivate();
     void beginRegionInteraction();
-    void endRegionInteraction(const QRect& physicalRegion);
+    void endRegionInteraction(const QRect& recordingRegion);
 
   signals:
     void closeRequested();
@@ -23,7 +23,7 @@ class ScreenRecordingToolbarWindow final : public ScreenshotFloatingToolPaletteW
     void closeEvent(QCloseEvent* event) override;
 
   private:
-    QRect m_physicalRegion;
+    QRect m_recordingRegion;
     bool m_manuallyDragged = false;
     bool m_placing = false;
     bool m_regionInteractionActive = false;

@@ -28,6 +28,18 @@ pub struct PreviewConfig {
 }
 
 impl PreviewConfig {
+    fn keyboard_output(&self) -> (u32, u32) {
+        // Native recording composes keycaps in the final pixel canvas.
+        #[cfg(target_os = "macos")]
+        {
+            self.output
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            (self.region.2, self.region.3)
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if !(100..=2000).contains(&self.trail_duration_ms) {
             return Err("trail duration must be between 100 and 2000 ms".into());
@@ -89,7 +101,7 @@ impl EffectsPreview {
     pub fn new(config: PreviewConfig, rasterizer: Option<Box<dyn KeycapRasterizer>>) -> Self {
         let output = config.output;
         let trail = LaserTrail::new(config.trail_duration_ms);
-        let keyboard_output = (config.region.2, config.region.3);
+        let keyboard_output = config.keyboard_output();
         let keycap_size = config
             .keyboard
             .as_ref()
@@ -358,7 +370,7 @@ fn run(
                         revision,
                         output: config.output,
                         tiles: vec![],
-                        keyboard_output: (config.region.2, config.region.3),
+                        keyboard_output: config.keyboard_output(),
                         keyboard_tiles: vec![],
                         error: Some(error),
                     },
@@ -442,7 +454,7 @@ fn run(
                         revision,
                         output: config.output,
                         tiles: tiles.mouse,
-                        keyboard_output: (config.region.2, config.region.3),
+                        keyboard_output: config.keyboard_output(),
                         keyboard_tiles: tiles.keyboard,
                         error,
                     },
@@ -620,7 +632,10 @@ mod tests {
                         if pixel[3] != 0 {
                             let x = tile.x + index as u32 % TILE_SIZE;
                             let y = tile.y + index as u32 / TILE_SIZE;
-                            assert!(x < capture.0 && y < capture.1);
+                            assert!(
+                                x < preview.config.keyboard_output().0
+                                    && y < preview.config.keyboard_output().1
+                            );
                             left = left.min(x);
                             top = top.min(y);
                             right = right.max(x);
