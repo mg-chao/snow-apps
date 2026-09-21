@@ -2216,6 +2216,54 @@ void selectionTransitionDirtyRegionCoversEveryChangedPixel() {
     canvas.setCustomRenderer(nullptr);
 }
 
+void originalImageVisibilityPreservesLatestOcrRendering() {
+    using Renderer = ScreenshotCanvasRenderer;
+    for (const bool pinned : {false, true}) {
+        for (const auto mode : {Renderer::OcrPresentationMode::BackgroundOnly,
+                                Renderer::OcrPresentationMode::BackgroundAndText}) {
+            SnowCanvasWidget canvas;
+            canvas.resize(100, 60);
+            canvas.setClearBackgroundEnabled(false);
+            require(canvas.setViewportCamera(0.0, 0.0, 1.0), "camera updates");
+            Renderer renderer(canvas);
+            canvas.setCustomRenderer(&renderer);
+            canvas.show();
+            QApplication::processEvents();
+            const QRectF rect(-50, -30, 100, 60);
+            QImage original(100, 60, QImage::Format_ARGB32_Premultiplied);
+            original.fill(Qt::blue);
+            renderer.setImage(original, rect);
+            if (pinned) {
+                renderer.setPinnedResultSurface(rect, rect, {});
+            }
+            const auto baseline = renderCanvas(canvas);
+            auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+            presentation->selection = rect.toRect();
+            presentation->lines.push_back({QStringLiteral("OCR"), 0.99,
+                                           QPolygonF{QPointF(-40, -10), QPointF(40, -10),
+                                                     QPointF(40, 10), QPointF(-40, 10)}});
+            renderer.setOcrPresentation(presentation, mode);
+            QImage filtered(original.size(), original.format());
+            filtered.fill(Qt::red);
+            renderer.setOcrFilteredImage(filtered, rect);
+            require(renderCanvas(canvas) != baseline, "recognition changes the displayed pixels");
+            renderer.setOcrVisible(false);
+            require(renderCanvas(canvas) == baseline,
+                    "original-image mode restores every source pixel");
+            renderer.setOcrPresentation(presentation, mode);
+            filtered.fill(Qt::green);
+            renderer.setOcrFilteredImage(filtered, rect);
+            require(renderCanvas(canvas) == baseline, "asynchronous updates remain invisible");
+            require(!renderer.ocrTextPositionAt(QPointF(0, 0), true).valid(),
+                    "hidden OCR does not participate in text hit testing");
+            renderer.setOcrVisible(true);
+            require(renderCanvas(canvas).pixelColor(5, 5) == QColor(Qt::green),
+                    "revealing OCR restores the latest filtered image");
+            canvas.setCustomRenderer(nullptr);
+        }
+    }
+}
+
 void ocrPresentationRendersWhileCanvasContentIsHidden() {
     SnowCanvasWidget canvas;
     canvas.resize(80, 80);
@@ -3929,6 +3977,7 @@ int main(int argc, char** argv) {
             "the vertical OCR renderer test requires a system CJK font");
 #endif
     if (application.arguments().contains(QStringLiteral("--ocr-presentation"))) {
+        originalImageVisibilityPreservesLatestOcrRendering();
         mergedParagraphUsesSourceRows();
         ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
         ocrSolidFillRendersAdaptiveTextPerBlock();

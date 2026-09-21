@@ -764,6 +764,10 @@
             <translation>在錄製中顯示按鍵</translation>
         </message>
         <message>
+            <source>Show original image</source>
+            <translation>顯示原圖</translation>
+        </message>
+        <message>
             <source>Smart Erase</source>
             <translation>智慧擦除</translation>
         </message>

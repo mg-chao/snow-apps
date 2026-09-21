@@ -56,6 +56,7 @@ class ScreenshotToolbarCommandSink {
     virtual void mergeTableSelection() {}
     virtual void splitTableSelection() {}
     virtual void resetTable() {}
+    virtual void setShowOriginalImage(bool) {}
     virtual void beginTextEditing() {}
     virtual void toggleTextEditing() {
         beginTextEditing();

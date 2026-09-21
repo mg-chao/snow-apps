@@ -1089,6 +1089,22 @@ void ScreenshotCanvasRenderer::clearSelection() {
     applySelectionState(next);
 }
 
+void ScreenshotCanvasRenderer::setOcrVisible(bool visible) {
+    if (m_ocrVisible == visible) {
+        return;
+    }
+    m_ocrVisible = visible;
+    if (m_ocrTextLayer != nullptr) {
+        if (visible && m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText) {
+            m_ocrTextLayer->setPresentation(m_ocrPresentation);
+        } else {
+            m_ocrTextLayer->clearPresentation();
+        }
+    }
+    invalidateCachedContent();
+    m_canvas.update();
+}
+
 void ScreenshotCanvasRenderer::setOcrPresentation(
     std::shared_ptr<ScreenshotOcrPresentation> presentation, OcrPresentationMode mode) {
     const bool presentationChanged = m_ocrPresentation != presentation;
@@ -1109,7 +1125,7 @@ void ScreenshotCanvasRenderer::setOcrPresentation(
             theme.colorBgContainer.isValid() ? theme.colorBgContainer : QColor(Qt::white);
     }
     invalidateCachedContent();
-    if (m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText) {
+    if (m_ocrVisible && m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText) {
         ensureOcrTextLayer()->setPresentation(m_ocrPresentation);
     } else if (m_ocrTextLayer != nullptr) {
         m_ocrTextLayer->clearPresentation();
@@ -1187,7 +1203,7 @@ ScreenshotOcrTextPosition ScreenshotCanvasRenderer::ocrTextPositionAt(const QPoi
         m_ocrTextLayer != nullptr) {
         return m_ocrTextLayer->textPositionAt(canvasPosition, useClosestLine);
     }
-    return m_ocrPresentation != nullptr
+    return m_ocrVisible && m_ocrPresentation != nullptr
                ? m_ocrPresentation->textPositionAt(canvasPosition, useClosestLine)
                : ScreenshotOcrTextPosition{};
 }
@@ -1209,6 +1225,7 @@ void ScreenshotCanvasRenderer::clearOcrPresentation() {
 }
 
 void ScreenshotCanvasRenderer::reset() {
+    setOcrVisible(true);
     const bool hadCachedContent =
         m_imageSource.isValid() || !m_imageViewportPhysicalSize.isEmpty() ||
         m_renderMode != RenderMode::Standard || m_ocrPresentation != nullptr;
@@ -1414,7 +1431,7 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
             }
         }
     }
-    if (m_ocrPresentation != nullptr && !m_ocrFilteredImage.isNull()) {
+    if (m_ocrVisible && m_ocrPresentation != nullptr && !m_ocrFilteredImage.isNull()) {
         const QRectF canvasRect = m_ocrFilteredCanvasRect.isValid()
                                       ? m_ocrFilteredCanvasRect
                                       : QRectF(m_ocrPresentation->selection).normalized();
@@ -1454,7 +1471,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             painter.fillRect(context.viewportRect, m_pinnedBackgroundColor);
             painter.restore();
         }
-        if (m_ocrPresentation != nullptr &&
+        if (m_ocrVisible && m_ocrPresentation != nullptr &&
             m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText &&
             m_ocrTextLayer != nullptr) {
             m_ocrTextLayer->synchronize(context.canvasToViewTransform, context.viewportRect);
@@ -1529,7 +1546,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             }
         }
     }
-    if (m_renderMode == RenderMode::Standard && m_ocrPresentation != nullptr &&
+    if (m_ocrVisible && m_renderMode == RenderMode::Standard && m_ocrPresentation != nullptr &&
         m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText) {
         if (m_ocrTextLayer != nullptr) {
             m_ocrTextLayer->synchronize(context.canvasToViewTransform, context.viewportRect);

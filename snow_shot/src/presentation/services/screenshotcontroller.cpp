@@ -375,6 +375,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void mergeTableSelection() override;
     void splitTableSelection() override;
     void resetTable() override;
+    void setShowOriginalImage(bool show) override;
     void toggleTextEditing() override;
     void toggleTextTranslation() override;
     void jumpToTranslationPage() override;
@@ -2245,6 +2246,12 @@ void ScreenshotController::Impl::splitTableSelection() {
 void ScreenshotController::Impl::resetTable() {
     if (m_ocrController != nullptr) {
         m_ocrController->resetTable();
+    }
+}
+
+void ScreenshotController::Impl::setShowOriginalImage(bool show) {
+    if (m_ocrController != nullptr) {
+        m_ocrController->setShowOriginalImage(show);
     }
 }
 

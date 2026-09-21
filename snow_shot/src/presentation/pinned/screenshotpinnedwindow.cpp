@@ -3441,6 +3441,11 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     connect(toolbar, &ScreenshotToolPalette::imageConversionSettingsRequested, this,
             [this]() { m_recognitionSession->openImageConversionSettings(); });
 
+    connect(toolbar, &ScreenshotToolPalette::showOriginalImageRequested, this, [this](bool show) {
+        if (m_recognitionSession != nullptr) {
+            m_recognitionSession->setShowOriginalImage(show);
+        }
+    });
     connect(toolbar, &ScreenshotToolPalette::textEditRequested, this,
             &ScreenshotPinnedWindow::handleTextEditingRequested);
     connect(toolbar, &ScreenshotToolPalette::textTranslateRequested, this,
@@ -3964,6 +3969,16 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                         palette->setImageConversionBusy(
                             busy && format == SnowShotImageConversionFormat::Markdown,
                             busy && format == SnowShotImageConversionFormat::Html);
+                    }
+                }
+            },
+            [this](bool show) {
+                if (m_screenshotRenderer != nullptr) {
+                    m_screenshotRenderer->setOcrVisible(!show);
+                }
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette()) {
+                        palette->setShowOriginalImage(show);
                     }
                 }
             },

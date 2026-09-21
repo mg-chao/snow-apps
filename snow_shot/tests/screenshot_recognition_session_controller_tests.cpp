@@ -1,4 +1,7 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include <QTextEdit>
+#include <QMimeData>
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -232,6 +235,84 @@ makeTextSession(ControllableOcrRecognition& recognition, PromptRecorder& recorde
 
 // A cached launch pays asset re-verification and helper start-up before the
 // first recognition can run; none of that may surface the download prompt.
+void originalImageOverridePreservesSessionState() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    ControllableOcrRecognition recognition;
+    ScreenshotRecognitionWindow window({});
+    window.resize(320, 200);
+    window.show();
+    bool original = false;
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    actions.setShowOriginalImage = [&](bool show) { original = show; };
+    ScreenshotRecognitionSessionController session(&recognition, nullptr, nullptr, actions);
+    QImage image(64, 64, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::blue);
+    session.setTarget({QStringLiteral("original-toggle"), image, QRectF(0, 0, 64, 64)});
+    session.activate(Mode::Text);
+    session.setShowOriginalImage(true);
+    recognition.completeWithEmptyPresentation();
+    auto* content = window.findChild<QWidget*>(QStringLiteral("screenshotRecognitionContent"));
+    require(session.showOriginalImage() && original && content->isHidden(),
+            "asynchronous recognition completion cannot reveal hidden content");
+    session.beginTextEditing();
+    session.setTextDraft(QStringLiteral("Edited OCR"));
+    auto* editor = window.findChild<QTextEdit*>();
+    require(session.editing() && editor && !editor->isVisible(),
+            "original image takes precedence over newly activated edit mode");
+    session.setShowOriginalImage(false);
+    require(session.editing() && editor->isVisible() &&
+                session.textDraft() == QStringLiteral("Edited OCR"),
+            "revealing content preserves the editor and draft");
+    session.setShowOriginalImage(true);
+    const auto clipboard = session.recognitionClipboardMimeData();
+    require(clipboard && clipboard->text() == QStringLiteral("Edited OCR"),
+            "show original image preserves recognized-text clipboard commands");
+    session.setShowOriginalImage(false);
+    require(window.findChild<QTextEdit*>() == editor && session.editing(),
+            "toggling never rebuilds the text editor");
+    session.undoTextEdit();
+    require(session.textDraft().isEmpty(), "text undo history survives original-image viewing");
+    session.redoTextEdit();
+    require(session.textDraft() == QStringLiteral("Edited OCR"), "redo history survives");
+    require(recognition.requests == 1, "toggling never repeats recognition");
+    for (const auto mode : {Mode::Table, Mode::Qr, Mode::Markdown, Mode::Html, Mode::Text}) {
+        session.setShowOriginalImage(true);
+        session.activate(mode);
+        require(!session.showOriginalImage() && !original && !content->isHidden(),
+                "switching recognition tools resets original-image mode");
+    }
+    session.setShowOriginalImage(true);
+    session.deactivate();
+    require(!session.showOriginalImage() && !original, "deactivation resets original-image mode");
+    session.activate(Mode::Text);
+    session.setShowOriginalImage(true);
+    session.setTarget({QStringLiteral("next-image"), image, QRectF(0, 0, 64, 64)});
+    require(!session.showOriginalImage() && !original, "new target resets original-image mode");
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = QRect(0, 0, 64, 64);
+    presentation->lines.push_back(
+        {QStringLiteral("Source"), 0.99,
+         QPolygonF{QPointF(5, 5), QPointF(55, 5), QPointF(55, 25), QPointF(5, 25)}});
+    presentation->prepareForRendering();
+    ScreenshotRecognitionResults cached;
+    cached.key = QStringLiteral("next-image");
+    cached.text = ScreenshotOcrRecognitionResult{presentation, {}, {}, {}};
+    cached.translatedText = std::make_shared<ScreenshotOcrPresentation>(*presentation);
+    cached.translatedText->setLineText(0, QStringLiteral("Translated OCR"));
+    session.seedRecognitionResults(cached);
+    session.activate(Mode::Text);
+    require(session.activateCachedTextTranslation(), "activate cached translation fixture");
+    session.setShowOriginalImage(true);
+    require(session.translating() && session.originalImageTranslationActive() &&
+                !session.originalImageVisible() && content->isHidden() &&
+                session.textDraft() == QStringLiteral("Translated OCR"),
+            "original-image override preserves translation without exporting its overlay");
+    session.setShowOriginalImage(false);
+    require(session.originalImageVisible() && session.translating() && !content->isHidden(),
+            "disabling original-image override restores translation presentation");
+}
+
 void cachedVerificationStaysSilent() {
     ControllableOcrRecognition recognition;
     PromptRecorder recorder;
@@ -588,6 +669,11 @@ int main(int argc, char** argv) {
                 .initialize({executable, temporary.path(), 60000})
                 .success,
             "initialize recognition test storage");
+    if (application.arguments().contains(QStringLiteral("--original-image-only"))) {
+        originalImageOverridePreservesSessionState();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--table-only"))) {
         tablePreparationPreservesSessionAndSiblingPopovers();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

@@ -219,6 +219,12 @@ void ScreenshotOverlayWindow::setScreenshotOcrFilteredImage(QImage image,
     }
 }
 
+void ScreenshotOverlayWindow::setScreenshotOcrVisible(bool visible) {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setOcrVisible(visible);
+    }
+}
+
 void ScreenshotOverlayWindow::clearScreenshotOcrBackground() {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->clearOcrPresentation();

@@ -5199,6 +5199,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    foreach(_original_image_test IN ITEMS screenshot-tool-palette recognition-window recognition-session-controller)
+        add_test(NAME snow-shot-${_original_image_test}-original-image-tests
+            COMMAND snow-shot-${_original_image_test}-tests --original-image-only -platform offscreen)
+        set_tests_properties(snow-shot-${_original_image_test}-original-image-tests
+            PROPERTIES LABELS "unit" TIMEOUT 90)
+    endforeach()
+
     add_test(NAME snow-shot-recognition-image-snapshot-tests
         COMMAND snow-shot-recognition-window-tests --image-snapshot-only -platform offscreen)
     set_tests_properties(snow-shot-recognition-image-snapshot-tests PROPERTIES LABELS "unit" TIMEOUT 60)

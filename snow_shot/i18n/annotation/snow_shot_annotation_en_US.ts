@@ -764,6 +764,10 @@
             <translation>Show keystrokes in recording</translation>
         </message>
         <message>
+            <source>Show original image</source>
+            <translation>Show original image</translation>
+        </message>
+        <message>
             <source>Smart Erase</source>
             <translation>Smart Erase</translation>
         </message>

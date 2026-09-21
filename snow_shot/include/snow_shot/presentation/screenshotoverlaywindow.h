@@ -58,6 +58,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void setScreenshotOcrBackground(std::shared_ptr<ScreenshotOcrPresentation> presentation);
     void setScreenshotOcrFilteredImage(QImage image, const QRectF& canvasRect);
     void clearScreenshotOcrBackground();
+    void setScreenshotOcrVisible(bool visible);
     void setHistoryLoadingVisible(bool visible);
     void resetScreenshotRendering();
     void commitInitialSelectionCursor();

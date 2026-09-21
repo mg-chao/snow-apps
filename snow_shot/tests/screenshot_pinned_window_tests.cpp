@@ -8347,6 +8347,13 @@ void pinnedRecognitionSaveSnapshotsAndRoutesOffscreen() {
     };
     const QImage recognized = pixels(ScreenshotPinnedWindowTestAccess::fileSave(window));
     require(recognized != config.imageSource.materializedImage, "OCR text appears in saved image");
+    session->setShowOriginalImage(true);
+    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) ==
+                config.imageSource.materializedImage,
+            "show original image excludes OCR from pinned image export");
+    session->setShowOriginalImage(false);
+    require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) == recognized,
+            "disabling show original image restores pinned OCR export");
     require(settings.setSaveRecognitionResultAsImage(false),
             "disable recognition saving on open pin");
     require(pixels(ScreenshotPinnedWindowTestAccess::fileSave(window)) ==

@@ -191,6 +191,8 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
         m_commands.setQrTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Qr);
     });
+    connect(&toolPalette, &ScreenshotToolPalette::showOriginalImageRequested, this,
+            [this](bool show) { m_commands.setShowOriginalImage(show); });
     connect(&toolPalette, &ScreenshotToolPalette::textEditRequested, this,
             [this]() { m_commands.toggleTextEditing(); });
     connect(&toolPalette, &ScreenshotToolPalette::textTranslateRequested, this,
@@ -559,6 +561,12 @@ void ScreenshotToolbarWindow::setTableEditingState(bool available, bool canUndo,
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setTableEditingState(available, canUndo, canRedo, canMerge, canSplit,
                                           canReset);
+    }
+}
+
+void ScreenshotToolbarWindow::setShowOriginalImage(bool show) {
+    if (auto* toolPalette = palette()) {
+        toolPalette->setShowOriginalImage(show);
     }
 }
 

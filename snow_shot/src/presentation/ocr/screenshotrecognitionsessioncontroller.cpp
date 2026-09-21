@@ -344,6 +344,9 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         showStatus(tr("Unable to read the selected screenshot"), true);
         return;
     }
+    if (!m_active || mode != m_mode) {
+        setShowOriginalImage(false);
+    }
     m_conversion->deactivate();
     clearTextEditingState();
     if (mode != Mode::Text && m_textRenderRequestToken != 0) {
@@ -448,6 +451,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
 }
 
 void ScreenshotRecognitionSessionController::deactivate() {
+    setShowOriginalImage(false);
     if (!m_active && m_content == nullptr) {
         return;
     }
@@ -789,6 +793,9 @@ bool ScreenshotRecognitionSessionController::activateCachedTextTranslation() {
 }
 
 void ScreenshotRecognitionSessionController::synchronizeUiState() const {
+    if (m_actions.setShowOriginalImage) {
+        m_actions.setShowOriginalImage(m_showOriginalImage);
+    }
     if (m_active && m_actions.setActiveMode) {
         m_actions.setActiveMode(static_cast<int>(m_mode));
     }
@@ -1138,8 +1145,22 @@ bool ScreenshotRecognitionSessionController::originalImageTranslationActive() co
     return m_translating && m_translationInImage;
 }
 
+void ScreenshotRecognitionSessionController::setShowOriginalImage(bool show) {
+    show = show && m_active;
+    if (m_showOriginalImage == show) {
+        return;
+    }
+    m_showOriginalImage = show;
+    if (content() != nullptr) {
+        content()->setShowOriginalImage(show);
+    }
+    if (m_actions.setShowOriginalImage) {
+        m_actions.setShowOriginalImage(show);
+    }
+}
+
 bool ScreenshotRecognitionSessionController::originalImageVisible() const {
-    return m_active && m_mode == Mode::Text && !editing();
+    return m_active && m_mode == Mode::Text && !editing() && !m_showOriginalImage;
 }
 
 bool ScreenshotRecognitionSessionController::hasTextResult() const {
@@ -1542,6 +1563,7 @@ void ScreenshotRecognitionSessionController::ensureContent() {
     if (m_content == nullptr && m_actions.ensureContent) {
         m_content = m_actions.ensureContent();
         if (m_content != nullptr) {
+            m_content->setShowOriginalImage(m_showOriginalImage);
             connect(m_content, &ScreenshotRecognitionWindow::imageConversionRetryRequested,
                     m_conversion, &ScreenshotImageConversionController::retry);
         }
