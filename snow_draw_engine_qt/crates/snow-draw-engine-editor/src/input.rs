@@ -412,7 +412,7 @@ mod stroke_cursor_tests {
     }
 
     #[test]
-    fn free_draw_control_points_take_priority_over_the_stroke_cursor() {
+    fn free_draw_control_points_away_from_endpoints_take_priority_over_the_stroke_cursor() {
         let mut document = DocumentModel::new();
         let id = document.peek_next_element_id();
         let free_draw = FreeDrawData::from_global_vertices(
@@ -454,7 +454,7 @@ mod stroke_cursor_tests {
                 selected_elements.len(),
                 selected_arrows.len(),
             ),
-            RectCorner::TopLeft,
+            RectCorner::TopRight,
         );
         let handle_view_position = Point::new(
             handle_position.x + editor.surface_size().width as f64 / 2.0,
@@ -469,9 +469,24 @@ mod stroke_cursor_tests {
             .unwrap();
         assert_eq!(
             handle_hover.interaction.cursor,
-            CursorCommand::Set(CursorStyle::ResizeNwSe)
+            CursorCommand::Set(CursorStyle::ResizeNeSw)
         );
         assert!(!editor.state.stroke_cursor_active);
+
+        let endpoint_hover = editor
+            .process_input(
+                &document,
+                pointer(PointerEventType::Move, Point::new(60.0, 80.0)),
+            )
+            .unwrap();
+        assert_eq!(
+            endpoint_hover.interaction.cursor,
+            CursorCommand::Set(CursorStyle::Stroke)
+        );
+        assert_eq!(
+            editor.presentation_state(&document).free_draw_endpoint,
+            Some(Point::new(-40.0, -20.0))
+        );
 
         let empty_canvas_hover = editor
             .process_input(

@@ -230,6 +230,9 @@ impl Editor {
     }
 
     pub(crate) fn set_hovered_element(&mut self, hovered_element: Option<ElementId>) {
+        if self.state.ui.free_draw_hover_position.take().is_some() {
+            self.bump_overlay_state_revision();
+        }
         if self.state.ui.hovered_element != hovered_element {
             self.state.ui.hovered_element = hovered_element;
             self.bump_overlay_state_revision();

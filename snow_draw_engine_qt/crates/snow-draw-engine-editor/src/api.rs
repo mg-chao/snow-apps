@@ -371,6 +371,8 @@ pub struct EditorPresentationState {
     /// Additive, uncommitted copies. Uses the same transaction builder as duplication.
     pub duplicate_preview: Option<snow_draw_engine_document::Transaction>,
     pub creation_preview: Option<ElementCreationPreview>,
+    pub free_draw_endpoint: Option<Point<f64>>,
+    pub free_draw_replacement: Option<(ElementId, Arc<FreeDrawPreview>)>,
     pub active_text_draft: Option<ActiveTextDraftPresentation>,
     pub arrow_text_previews: Vec<(ElementId, TextData)>,
     pub preview_arrows: Vec<SelectionArrowState>,

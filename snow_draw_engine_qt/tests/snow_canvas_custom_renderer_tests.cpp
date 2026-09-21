@@ -12,6 +12,8 @@
 #include <QColor>
 #include <QCursor>
 #include <QImage>
+#include <QEventLoop>
+#include <QTimer>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QPainter>
@@ -636,6 +638,73 @@ void strokeCursorsUseNativeBitmapsAndRefreshWithStyle() {
             "switching tools must release the native brush cursor");
 }
 
+void freeDrawContinuationRendersOneStrokeAndActivatedEndpoint() {
+    SnowCanvasWidget canvas;
+    canvas.resize(240, 200);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setCanvasTool(SnowCanvasTool::FreeDraw), "free draw must activate");
+    auto style = canvas.canvasStyleToolbarState().shapeStyle;
+    style.stroke = QColor(220, 30, 50);
+    style.strokeWidth = 8.0;
+    style.opacity = 0.5;
+    const quint32 properties = SnowCanvasShapeStylePropertyStrokeColor |
+                               SnowCanvasShapeStylePropertyStrokeWidth |
+                               SnowCanvasShapeStylePropertyOpacity;
+    require(canvas.setCanvasShapeStylePatch(style, properties, SnowCanvasShapeKind::FreeDraw),
+            "free draw fixture style must apply");
+    auto pointer = [&](QEvent::Type type, QPointF position, bool pressed) {
+        const auto button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+        QMouseEvent event(type, position, position, button, pressed ? Qt::LeftButton : Qt::NoButton,
+                          Qt::ShiftModifier);
+        QEventLoop loop;
+        bool batchProcessed = false;
+        QObject::connect(&canvas, &SnowCanvasWidget::freeDrawMoveBatchProcessed, &loop, [&]() {
+            batchProcessed = true;
+            loop.quit();
+        });
+        QApplication::sendEvent(&canvas, &event);
+        if (type == QEvent::MouseMove && pressed && !batchProcessed) {
+            QTimer::singleShot(1000, &loop, &QEventLoop::quit);
+            loop.exec();
+            require(batchProcessed, "live stroke move batch must finish before rendering");
+        }
+        QApplication::processEvents();
+    };
+    pointer(QEvent::MouseButtonPress, QPointF(40, 80), true);
+    pointer(QEvent::MouseMove, QPointF(120, 80), true);
+    pointer(QEvent::MouseButtonRelease, QPointF(120, 80), false);
+    const QImage original = renderCanvas(canvas);
+    pointer(QEvent::MouseMove, QPointF(124, 82), false);
+    const QImage snapped = renderCanvas(canvas);
+    require(snapped.pixelColor(120, 80) == QColor(106, 189, 252),
+            "hover must render the activated blue marker at the exact endpoint");
+    pointer(QEvent::MouseMove, QPointF(145, 105), false);
+    require(renderCanvas(canvas) == original, "moving away must clear endpoint feedback");
+    style.stroke = QColor(30, 220, 50);
+    style.opacity = 1.0;
+    require(canvas.setCanvasShapeStylePatch(style, properties, SnowCanvasShapeKind::FreeDraw),
+            "different creation defaults must apply");
+    pointer(QEvent::MouseButtonPress, QPointF(124, 82), true);
+    pointer(QEvent::MouseMove, QPointF(190, 80), true);
+    const QImage preview = renderCanvas(canvas);
+    require(preview.pixelColor(70, 80) == original.pixelColor(70, 80),
+            "replacement preview must not double the original stroke opacity");
+    require(preview.pixelColor(160, 80) == original.pixelColor(70, 80),
+            "extension must use the original stroke style and render new geometry");
+    pointer(QEvent::MouseButtonRelease, QPointF(190, 80), false);
+    require(renderCanvas(canvas) == preview, "commit must match the replacement preview");
+    require(canvas.undo(), "continuation must undo");
+    require(renderCanvas(canvas) == original, "undo must restore the original rendered stroke");
+    require(canvas.redo(), "continuation must redo");
+    require(renderCanvas(canvas) == preview, "redo must restore the extended rendered stroke");
+    pointer(QEvent::MouseButtonPress, QPointF(40, 80), true);
+    pointer(QEvent::MouseMove, QPointF(20, 130), true);
+    const QImage prepended = renderCanvas(canvas);
+    pointer(QEvent::MouseButtonRelease, QPointF(20, 130), false);
+    require(renderCanvas(canvas) == prepended, "start-endpoint preview must match commit");
+}
+
 void cornerRadiusCursorMatchesTheApprovedSvg() {
     constexpr int kCursorLogicalSize = 32;
     constexpr QPoint kCursorHotSpot(3, 3);
@@ -762,6 +831,7 @@ int main(int argc, char** argv) {
         documentResetClearsElementsAndPreservesViews();
         return 0;
     }
+    freeDrawContinuationRendersOneStrokeAndActivatedEndpoint();
     strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
     rotationHandleCursorMatchesTheReferencePlatformBehavior();
     customRendererContractIsOrderedAndIsolated();

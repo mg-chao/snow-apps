@@ -89,6 +89,7 @@ pub(crate) struct UiState {
     pub(crate) marquee: Option<RectangleData>,
     pub(crate) snap_guides: Vec<SnapGuide>,
     pub(crate) hovered_element: Option<ElementId>,
+    pub(crate) free_draw_hover_position: Option<Point<f64>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -124,6 +125,7 @@ pub(crate) struct EraserState {
 pub(crate) struct CreateFreeDrawState {
     pub(crate) pointer_id: u32,
     pub(crate) builder: crate::free_draw_workflow::StreamingFreeDrawBuilder,
+    pub(crate) continuation: Option<crate::free_draw_workflow::FreeDrawContinuation>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

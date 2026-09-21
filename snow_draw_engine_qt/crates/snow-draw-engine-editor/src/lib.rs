@@ -292,6 +292,7 @@ impl Editor {
     }
 
     fn cancel_interaction(&mut self) {
+        self.state.ui.free_draw_hover_position = None;
         self.state.pending_text_edit = None;
         self.state.pending_new_text_draft = false;
         self.state.auto_filter = Default::default();
@@ -302,6 +303,7 @@ impl Editor {
                 | InteractionState::EditingSelection(_)
                 | InteractionState::EditingArrow(_)
                 | InteractionState::CreatingSerialNumber(_)
+                | InteractionState::CreatingFreeDraw(_)
         );
         self.state.interaction = InteractionState::Idle;
         if had_selection_edit {

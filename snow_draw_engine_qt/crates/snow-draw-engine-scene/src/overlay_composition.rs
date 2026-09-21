@@ -146,6 +146,12 @@ pub(crate) fn compose_overlay_items(
         }
     }
 
+    if let Some(point) = presentation.free_draw_endpoint {
+        items.push(OverlayDisplayItem::Rectangle(
+            binding_snapped_midpoint_dot_item(point, zoom),
+        ));
+    }
+
     items.retain(|item| overlay_item_visible(item, frame_view));
     items
 }

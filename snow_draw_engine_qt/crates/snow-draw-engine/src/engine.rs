@@ -22,6 +22,8 @@ mod document_commands;
 mod duplicate_drag_tests;
 #[cfg(test)]
 mod filter_snap_tests;
+#[cfg(test)]
+mod free_draw_continuation_tests;
 mod input;
 mod mutations;
 mod text_commands;

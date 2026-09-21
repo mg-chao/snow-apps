@@ -49,6 +49,7 @@ pub(crate) fn compose_scene_items(
         .keys()
         .chain(preview_arrows.keys())
         .chain(active_existing_text.iter().map(|(id, _)| id))
+        .chain(presentation.free_draw_replacement.iter().map(|(id, _)| id))
         .copied()
         .filter(|id| model.paint_rank(*id).is_some() && present.insert(*id))
         .collect();
@@ -70,6 +71,14 @@ pub(crate) fn compose_scene_items(
     }
 
     for id in &ordered_ids {
+        if let Some((target, preview)) = &presentation.free_draw_replacement
+            && id == target
+        {
+            if bounds_visible(free_draw_preview_bounds(preview), viewport) {
+                items.push(scene_item_from_free_draw_preview(*id, preview));
+            }
+            continue;
+        }
         if let Some((active_id, active_text)) = active_existing_text.as_ref()
             && id == active_id
         {

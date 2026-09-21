@@ -155,6 +155,8 @@ impl Editor {
         };
         let copying = duplicate_preview.is_some();
         EditorPresentationState {
+            free_draw_endpoint: self.free_draw_endpoint_feedback(document),
+            free_draw_replacement: self.free_draw_replacement_preview(document),
             duplicate_preview,
             auto_filter_highlights: self.auto_filter_highlights(document),
             arrow_text_previews: if copying {
