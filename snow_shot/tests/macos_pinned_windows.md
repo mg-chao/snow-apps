@@ -49,7 +49,7 @@ Run Cocoa checks explicitly; presets exclude interactive tests:
 
 ```sh
 ctest --test-dir build/snow-shot-macos-arm64-debug \
-  -R '^snow-shot-macos-pinned-(window|focus|delivery|pixel-alignment)-tests$' \
+  -R '^snow-shot-macos-pinned-(window|focus|delivery|drag|pixel-alignment)-tests$' \
   --output-on-failure
 ```
 
@@ -63,6 +63,47 @@ case starts a separate receiver process to test complete cross-application
 clicks and dismissal release ownership. It returns CTest skip code 77 when the
 host lacks event-posting permission. It never prompts for permission or changes
 privacy settings. Basic pinning does not require this test permission.
+
+## Input interruption and boundary audit — 2026-09-21
+
+The follow-up audit covers input behavior independently of the event source or
+remote desktop client. Two missing-release regressions were reproduced: pins
+continued moving after a move reported no left button, and deferred mouse actions
+retained capture and could run on a later release. Both now cancel the owned
+gesture on that button-state transition. Normal releases still apply their final
+position; hover after a delivered release does not discard an already queued action.
+
+A reverse native drag also reproduced rollback at the menu bar. AppKit constrains
+that frame below the menu bar, so the adapter now resolves `constrainFrameRect`
+before applying and verifying Qt/native geometry. The native tests check that
+this adjustment remains a valid drag and that Qt geometry matches native readback.
+
+Regression coverage includes lost releases during moving and resizing, another
+button remaining held, coalesced movement followed by a release, repeated native
+fractional movement in both directions, and the menu-bar boundary. These are
+reproducible input sequences, not certification of a particular remote desktop
+client or every reconnect/mixed-display scenario.
+
+All 15 selected checks passed: shared/Cocoa global input, physical cursor,
+mouse-release actions, pinned movement shortcuts, interrupted toolbar dragging,
+toolbar geometry at 1×/2× and on Cocoa, controlled pin interaction at 1×/2×,
+and native pin policies, input delivery, dragging, and pixel alignment. The three
+new failure cases were observed before their corrections. No full suite ran.
+
+## Fractional pointer drag regression — 2026-09-21
+
+Physical pointer events can contain fractional logical coordinates that do not
+land on a backing pixel. The Cocoa adapter aligns the requested frame with the
+target screen's backing grid before verifying native readback. Qt geometry rounds
+the origin independently from the size, so a fractional move cannot enlarge the
+window. Otherwise, the first pointer update is rejected and the drag rolls back.
+
+The offscreen interaction, Cocoa placement, and native pointer drag regressions
+failed before this correction. The native drag case sends repeated gestures with
+fractional intermediate positions and checks movement while the button is held,
+unchanged size, and the committed release position. It skips with code 77 without
+event-posting permission. The focused interaction, Retina interaction, Cocoa
+placement, native drag, and pixel-alignment checks passed after the correction.
 
 ## Recorded validation — 2026-09-21
 

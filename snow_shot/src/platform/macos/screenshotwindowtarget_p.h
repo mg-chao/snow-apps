@@ -3,6 +3,8 @@
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <QPoint>
+#include <algorithm>
+#include <span>
 
 namespace snow_shot::platform::detail {
 struct WindowTarget {
@@ -10,8 +12,8 @@ struct WindowTarget {
     pid_t pid = 0;
     CGRect bounds{};
 };
-inline WindowTarget selectWindowTarget(CFArrayRef windows, pid_t owner, pid_t excludedOwner,
-                                       const QPoint* point) {
+template <typename Accept>
+inline WindowTarget selectWindowTarget(CFArrayRef windows, const QPoint* point, Accept accept) {
     if (!windows)
         return {};
     WindowTarget result;
@@ -28,8 +30,7 @@ inline WindowTarget selectWindowTarget(CFArrayRef windows, pid_t owner, pid_t ex
         if (!number(kCGWindowOwnerPID, kCFNumberIntType, &pid) ||
             !number(kCGWindowLayer, kCFNumberIntType, &layer) ||
             !number(kCGWindowAlpha, kCFNumberDoubleType, &alpha) ||
-            !number(kCGWindowNumber, kCFNumberIntType, &id) || pid <= 0 || pid == excludedOwner ||
-            (owner && pid != owner) || layer != 0 || alpha <= 0)
+            !number(kCGWindowNumber, kCFNumberIntType, &id) || id == 0 || pid <= 0 || alpha <= 0)
             continue;
         CGRect bounds{};
         const auto rectangle =
@@ -39,6 +40,8 @@ inline WindowTarget selectWindowTarget(CFArrayRef windows, pid_t owner, pid_t ex
             continue;
         if (point && !CGRectContainsPoint(bounds, CGPointMake(point->x(), point->y())))
             continue;
+        if (!accept(id, pid, layer))
+            continue;
         result = {id, pid, bounds};
         break;
     }
@@ -47,13 +50,44 @@ inline WindowTarget selectWindowTarget(CFArrayRef windows, pid_t owner, pid_t ex
 
 inline WindowTarget focusedWindowTarget(CFArrayRef windows, pid_t owner) {
     // Focused capture can target our own application, just like any other app.
-    return owner > 0 ? selectWindowTarget(windows, owner, 0, nullptr) : WindowTarget{};
+    return owner > 0 ? selectWindowTarget(windows, nullptr,
+                                          [owner](CGWindowID, pid_t pid, int layer) {
+                                              return pid == owner && layer == 0;
+                                          })
+                     : WindowTarget{};
 }
 
 inline WindowTarget scrollWindowTarget(CFArrayRef windows, pid_t currentProcess,
                                        const QPoint& point) {
     // Scroll input must pass through our capture overlay to the application below.
-    return selectWindowTarget(windows, 0, currentProcess, &point);
+    return selectWindowTarget(windows, &point, [currentProcess](CGWindowID, pid_t pid, int layer) {
+        return pid != currentProcess && layer == 0;
+    });
+}
+
+// AppKit hit testing accounts for window shape and ignoresMouseEvents, unlike
+// bounding rectangles from WindowServer (which include decorative system surfaces).
+// Step below an editing surface only when it is itself the frontmost hit.
+template <typename HitTest>
+inline CGWindowID recaptureWindowAtPoint(std::span<const CGWindowID> excludedWindows,
+                                         HitTest hitTest) {
+    CGWindowID below = 0;
+    for (size_t index = 0; index <= excludedWindows.size(); ++index) {
+        const CGWindowID hit = hitTest(below);
+        if (!hit || hit == below)
+            return 0;
+        if (std::find(excludedWindows.begin(), excludedWindows.end(), hit) == excludedWindows.end())
+            return hit;
+        below = hit;
+    }
+    return 0;
+}
+
+// Resolve metadata for the exact native hit, without imposing scrolling's
+// process/level policy or substituting a window underneath if it disappeared.
+inline WindowTarget recaptureWindowTarget(CFArrayRef windows, CGWindowID hit) {
+    return selectWindowTarget(windows, nullptr,
+                              [hit](CGWindowID id, pid_t, int) { return id == hit; });
 }
 } // namespace snow_shot::platform::detail
 

@@ -1,5 +1,6 @@
 #include "snow_shot/platform/screenshotnative.h"
 #include "screenshotwindowtarget_p.h"
+#include "snow_shot/platform/macos/recapturefocus.h"
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #include <dlfcn.h>
@@ -415,3 +416,292 @@ ScrollInputResult sendScreenshotScroll(const QRect& selection, const QPoint& del
     return {ScrollInputResult::Status::Posted, 0};
 }
 } // namespace snow_shot::platform
+
+namespace snow_shot::platform::macos {
+namespace {
+struct RecaptureNativeState {
+    struct Surface {
+        NSWindow* native;
+        BOOL ignoredMouse;
+        QPointer<QWindow> qtWindow;
+        bool transparentForInput;
+    };
+    QVector<Surface> surfaces;
+    QVector<CGWindowID> excludedWindowIds;
+    NSWindow* localTarget = nil;
+    AXUIElementRef application = nullptr;
+    AXUIElementRef targetWindow = nullptr;
+    NSRunningApplication* targetApp = nil;
+    CGWindowID targetId = 0;
+    bool desktop = false;
+    CFMachPortRef mouseTap = nullptr;
+    CFRunLoopSourceRef mouseSource = nullptr;
+    bool mouseDelivered = false;
+
+    ~RecaptureNativeState() {
+        for (const auto& surface : surfaces)
+            [surface.native release];
+        if (targetWindow)
+            CFRelease(targetWindow);
+        if (application)
+            CFRelease(application);
+        [targetApp release];
+        [localTarget release];
+    }
+
+    detail::WindowTarget targetAt(CGPoint location) const {
+        const NSPoint point =
+            NSMakePoint(location.x, NSMaxY(NSScreen.screens.firstObject.frame) - location.y);
+        const CGWindowID hit = detail::recaptureWindowAtPoint(
+            {excludedWindowIds.constData(), static_cast<size_t>(excludedWindowIds.size())},
+            [point](CGWindowID below) {
+                return static_cast<CGWindowID>([NSWindow windowNumberAtPoint:point
+                                                 belowWindowWithWindowNumber:below]);
+            });
+        if (!hit)
+            return {};
+        CFArrayRef windows = CGWindowListCopyWindowInfo(
+            kCGWindowListOptionIncludingWindow | kCGWindowListExcludeDesktopElements, hit);
+        const auto target = detail::recaptureWindowTarget(windows, hit);
+        if (windows)
+            CFRelease(windows);
+        return target;
+    }
+
+    bool begin(const QVector<QWidget*>& windows) {
+        // Use the same exact surfaces for input transparency and hit-test exclusions.
+        // Retain them before any activation can recreate a Qt native surface.
+        for (QWidget* widget : windows) {
+            NSWindow* native = reinterpret_cast<NSView*>(widget->winId()).window;
+            if (!native)
+                return false;
+            QWindow* handle = widget->windowHandle();
+            surfaces.push_back({[native retain],
+                                native.ignoresMouseEvents,
+                                handle,
+                                handle->flags().testFlag(Qt::WindowTransparentForInput)});
+            excludedWindowIds.push_back(static_cast<CGWindowID>(native.windowNumber));
+        }
+        CGEventRef position = CGEventCreate(nullptr);
+        if (!position)
+            return false;
+        const CGPoint location = CGEventGetLocation(position);
+        CFRelease(position);
+        const auto target = targetAt(location);
+        targetId = target.id;
+        desktop = !target.id;
+        if (!desktop) {
+            targetApp =
+                [[NSRunningApplication runningApplicationWithProcessIdentifier:target.pid] retain];
+            if (!targetApp)
+                return false;
+            if (target.pid == NSProcessInfo.processInfo.processIdentifier) {
+                localTarget = [[NSApp windowWithWindowNumber:target.id] retain];
+                if (!localTarget || !localTarget.visible || localTarget.ignoresMouseEvents)
+                    return false;
+            } else if (!resolveExternalTarget(location, target.pid)) {
+                return false;
+            }
+        }
+        for (const auto& surface : surfaces) {
+            // Native transparency alone leaves Qt's enter/leave and cursor
+            // tracking active, allowing a delayed overlay event to reset the
+            // cursor of another window in the same process.
+            surface.qtWindow->setFlag(Qt::WindowTransparentForInput, true);
+            surface.native.ignoresMouseEvents = YES;
+        }
+        if (desktop)
+            return true;
+        if (localTarget) {
+            // AX hit testing in our own process can see the overlay instead of
+            // the selected window. Native identity avoids that ambiguity entirely.
+            [NSApp activate];
+            [localTarget makeKeyAndOrderFront:nil];
+            return true;
+        }
+        // Activate only the window under the pointer. Activation alone can choose
+        // another window belonging to the same application.
+        const auto raiseError = AXUIElementPerformAction(targetWindow, kAXRaiseAction);
+        const auto focusError =
+            AXUIElementSetAttributeValue(application, kAXFocusedWindowAttribute, targetWindow);
+        if (raiseError != kAXErrorSuccess || focusError != kAXErrorSuccess)
+            return false;
+        [NSApp yieldActivationToApplication:targetApp];
+        return [targetApp activateWithOptions:0];
+    }
+
+    bool resolveExternalTarget(CGPoint location, pid_t pid) {
+        if (!AXIsProcessTrusted())
+            return false;
+        application = AXUIElementCreateApplication(pid);
+        AXUIElementSetMessagingTimeout(application, 0.25F);
+        AXUIElementRef element = nullptr;
+        if (AXUIElementCopyElementAtPosition(application, static_cast<float>(location.x),
+                                             static_cast<float>(location.y),
+                                             &element) != kAXErrorSuccess)
+            return false;
+        CFTypeRef window = nullptr;
+        const auto error = AXUIElementCopyAttributeValue(element, kAXWindowAttribute, &window);
+        if (error == kAXErrorSuccess && window) {
+            targetWindow = static_cast<AXUIElementRef>(window);
+        } else {
+            CFTypeRef role = nullptr;
+            if (AXUIElementCopyAttributeValue(element, kAXRoleAttribute, &role) ==
+                    kAXErrorSuccess &&
+                role && CFEqual(role, kAXWindowRole))
+                targetWindow = static_cast<AXUIElementRef>(CFRetain(element));
+            if (role)
+                CFRelease(role);
+        }
+        CFRelease(element);
+        return targetWindow != nullptr;
+    }
+
+    bool ready() const {
+        if (desktop)
+            return true;
+        if (!targetApp.active)
+            return false;
+        if (localTarget)
+            return localTarget.visible &&
+                   (!localTarget.canBecomeKeyWindow || localTarget.keyWindow);
+        CFTypeRef focused = nullptr;
+        const bool ready = AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute,
+                                                         &focused) == kAXErrorSuccess &&
+                           focused && CFEqual(focused, targetWindow);
+        if (focused)
+            CFRelease(focused);
+        return ready;
+    }
+
+    bool refreshCursor() {
+        if (!desktop && !localTarget) {
+            mouseTap = CGEventTapCreateForPid(
+                targetApp.processIdentifier, kCGTailAppendEventTap, kCGEventTapOptionListenOnly,
+                CGEventMaskBit(kCGEventMouseMoved),
+                [](CGEventTapProxy, CGEventType type, CGEventRef event,
+                   void* context) -> CGEventRef {
+                    auto* state = static_cast<RecaptureNativeState*>(context);
+                    if (type == kCGEventMouseMoved &&
+                        CGEventGetIntegerValueField(event, kCGEventSourceUserData) ==
+                            reinterpret_cast<intptr_t>(state))
+                        state->mouseDelivered = true;
+                    return event;
+                },
+                this);
+            if (!mouseTap)
+                return false;
+            mouseSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, mouseTap, 0);
+            if (!mouseSource)
+                return false;
+            CFRunLoopAddSource(CFRunLoopGetMain(), mouseSource, kCFRunLoopCommonModes);
+        }
+        // A stationary pointer will otherwise keep the overlay's last cursor.
+        // No click, drag, or pointer warp is needed to update native cursor rects.
+        CGEventRef position = CGEventCreate(nullptr);
+        if (!position)
+            return false;
+        const CGPoint location = CGEventGetLocation(position);
+        CFRelease(position);
+        // Revalidate with the same exclusions and stacking policy used at begin.
+        // Do not replay a stale pointer position if the user moved during activation.
+        if (targetAt(location).id != targetId)
+            return false;
+        if (localTarget) {
+            // The hit was revalidated above, so dispatch to that exact native
+            // window. A posted stationary move can be coalesced into enter/exit
+            // tracking events and has no reliable local delivery acknowledgement.
+            [localTarget
+                sendEvent:[NSEvent mouseEventWithType:NSEventTypeMouseMoved
+                                             location:localTarget.mouseLocationOutsideOfEventStream
+                                        modifierFlags:NSEvent.modifierFlags
+                                            timestamp:NSProcessInfo.processInfo.systemUptime
+                                         windowNumber:localTarget.windowNumber
+                                              context:nil
+                                          eventNumber:0
+                                           clickCount:0
+                                             pressure:0]];
+            mouseDelivered = true;
+            return true;
+        }
+        CGEventRef move =
+            CGEventCreateMouseEvent(nullptr, kCGEventMouseMoved, location, kCGMouseButtonLeft);
+        if (!move)
+            return false;
+        CGEventSetIntegerValueField(move, kCGEventSourceUserData, reinterpret_cast<intptr_t>(this));
+        CGEventPost(kCGSessionEventTap, move);
+        CFRelease(move);
+        return true;
+    }
+
+    bool cursorReady() const {
+        if (desktop)
+            return true;
+        // Local dispatch completed synchronously before this poll. For a foreign app,
+        // the synchronous focus query also crosses its main thread after the tap
+        // observes routing, before the asynchronous ScreenCaptureKit request.
+        if (!mouseDelivered || !ready())
+            return false;
+        if (localTarget) {
+            // With a stationary pointer, AppKit can keep the target's tracking
+            // area entered across the temporary overlay focus. Qt then retains
+            // the right per-view cursor, but no cursorUpdate restores it globally.
+            // Ask the actual responder to apply its cursor after mouse dispatch.
+            const NSPoint location = localTarget.mouseLocationOutsideOfEventStream;
+            NSView* content = localTarget.contentView;
+            NSView* hit = [content hitTest:[content.superview convertPoint:location fromView:nil]];
+            [hit cursorUpdate:[NSEvent enterExitEventWithType:NSEventTypeCursorUpdate
+                                                     location:location
+                                                modifierFlags:NSEvent.modifierFlags
+                                                    timestamp:NSProcessInfo.processInfo.systemUptime
+                                                 windowNumber:localTarget.windowNumber
+                                                      context:nil
+                                                  eventNumber:0
+                                               trackingNumber:0
+                                                     userData:nullptr]];
+        }
+        return true;
+    }
+
+    void restore() {
+        if (mouseSource) {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), mouseSource, kCFRunLoopCommonModes);
+            CFRelease(mouseSource);
+            mouseSource = nullptr;
+        }
+        if (mouseTap) {
+            CFMachPortInvalidate(mouseTap);
+            CFRelease(mouseTap);
+            mouseTap = nullptr;
+        }
+        for (const auto& surface : surfaces) {
+            // Do not apply saved Qt flags to a replacement native surface.
+            if (surface.qtWindow && surface.qtWindow->handle() &&
+                reinterpret_cast<NSView*>(surface.qtWindow->winId()).window == surface.native)
+                surface.qtWindow->setFlag(Qt::WindowTransparentForInput,
+                                          surface.transparentForInput);
+            surface.native.ignoresMouseEvents = surface.ignoredMouse;
+        }
+    }
+};
+} // namespace
+
+std::unique_ptr<RecaptureFocus> createRecaptureFocus(const QVector<QWidget*>& windows) {
+    auto state = std::make_shared<RecaptureNativeState>();
+    QVector<QPointer<QWidget>> guarded;
+    for (QWidget* window : windows)
+        guarded.push_back(window);
+    return std::make_unique<RecaptureFocus>(RecaptureFocus::Backend{
+        [state, guarded] {
+            QVector<QWidget*> live;
+            for (const auto& window : guarded) {
+                if (!window || !window->isVisible())
+                    return false;
+                live.push_back(window);
+            }
+            return state->begin(live);
+        },
+        [state] { return state->ready(); }, [state] { return state->refreshCursor(); },
+        [state] { state->restore(); }, [state] { return state->cursorReady(); }});
+}
+} // namespace snow_shot::platform::macos

@@ -3,6 +3,7 @@
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #include <QGuiApplication>
+#include <QScopedValueRollback>
 #include <QThread>
 #include <QWindow>
 #include <cmath>
@@ -26,7 +27,8 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         detach();
     }
     bool attach() override {
-        if (!m_window || !m_window->internalWinId() || QThread::currentThread() != qApp->thread())
+        if (m_detaching || !m_window || !m_window->internalWinId() ||
+            QThread::currentThread() != qApp->thread())
             return false;
         observeNativeSurface();
         NSView* view = reinterpret_cast<NSView*>(m_window->internalWinId());
@@ -36,6 +38,10 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         if (window != m_native) {
             detach();
             m_native = [window retain];
+            m_styleMask = window.styleMask;
+            m_movable = window.movable;
+            m_movableByWindowBackground = window.movableByWindowBackground;
+            m_hasShadow = window.hasShadow;
             m_level = window.level;
             m_behavior = window.collectionBehavior;
             m_ignoresMouse = window.ignoresMouseEvents;
@@ -64,7 +70,22 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
                               environmentChanged(false);
                         }] retain];
         }
-        window.level = m_staysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel;
+        if (m_role == Role::Image) {
+            // The shared pin controller owns proportional edge resizing and background
+            // dragging. Qt leaves these native policies enabled on its frameless NSPanel,
+            // so AppKit consumes the pointer gesture before the controller can begin and
+            // the controller subsequently restores AppKit's untracked geometry change.
+            constexpr NSWindowStyleMask nativeChrome =
+                NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+            window.styleMask &= ~nativeChrome;
+            window.movable = NO;
+            window.movableByWindowBackground = NO;
+            window.hasShadow = NO;
+        }
+        // Match Qt's WindowStaysOnTopHint: floating tools occupy a lower band
+        // and must not cover pins or their auxiliary controls.
+        window.level = m_staysOnTop ? NSModalPanelWindowLevel : NSNormalWindowLevel;
         window.collectionBehavior =
             (window.collectionBehavior & ~(NSWindowCollectionBehaviorMoveToActiveSpace |
                                            NSWindowCollectionBehaviorFullScreenPrimary)) |
@@ -75,6 +96,9 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         return true;
     }
     void detach() override {
+        if (m_detaching)
+            return;
+        m_detaching = true;
         for (id observer in m_observers)
             [NSNotificationCenter.defaultCenter removeObserver:observer];
         [m_observers release];
@@ -84,32 +108,58 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
             [m_wakeObserver release];
             m_wakeObserver = nil;
         }
-        if (m_native) {
-            m_native.level = m_level;
-            m_native.collectionBehavior = m_behavior;
-            m_native.ignoresMouseEvents = m_ignoresMouse;
-            m_native.hidesOnDeactivate = m_hidesOnDeactivate;
-            [m_native release];
+        if (NSWindow* native = m_native) {
+            // Changing the style mask may synchronously tear down Qt's platform
+            // surface. Clear our attachment first so that notification cannot
+            // recursively restore a partially updated NSWindow.
             m_native = nil;
+            native.styleMask = m_styleMask;
+            native.movable = m_movable;
+            native.movableByWindowBackground = m_movableByWindowBackground;
+            native.hasShadow = m_hasShadow;
+            native.level = m_level;
+            native.collectionBehavior = m_behavior;
+            native.ignoresMouseEvents = m_ignoresMouse;
+            native.hidesOnDeactivate = m_hidesOnDeactivate;
+            [native release];
         }
+        m_detaching = false;
     }
     bool applyPlacement(const PinnedPlacement& placement, QScreen* screen,
                         GeometryUpdate) override {
         if (!m_window || !screen || !placement.isValid() ||
             placement.units != storage::PinnedGeometryUnits::LogicalPixels)
             return false;
-        m_applying = true;
+        NSScreen* nativeScreen = nil;
+        for (NSScreen* candidate in NSScreen.screens) {
+            if (desktopRect(candidate.frame) == QRectF(screen->geometry())) {
+                nativeScreen = candidate;
+                break;
+            }
+        }
+        if (!nativeScreen)
+            return false;
+        const QScopedValueRollback<bool> applying(m_applying, true);
         m_window->setScreen(screen);
-        const QRectF target = pinnedDesktopRect(placement, *screen);
-        // Qt owns the backing store; both Qt and AppKit receive logical geometry.
-        m_window->setGeometry(target.toAlignedRect());
-        const bool attached = attach();
-        if (attached)
-            [m_native setFrame:cocoaRect(target) display:YES animate:NO];
-        m_applying = false;
+        if (!attach())
+            return false;
+        // Real pointer events carry subpixel coordinates. AppKit aligns window
+        // origins to backing pixels and constrains the top below the menu bar.
+        // Resolve both native policies before verification, rather than treating
+        // their legitimate adjustments as a failed move and cancelling the drag.
+        const NSRect alignedFrame =
+            [nativeScreen backingAlignedRect:cocoaRect(pinnedDesktopRect(placement, *screen))
+                                     options:NSAlignMinXNearest | NSAlignMinYNearest |
+                                             NSAlignWidthNearest | NSAlignHeightNearest];
+        const NSRect frame = [m_native constrainFrameRect:alignedFrame toScreen:nativeScreen];
+        const QRectF target = desktopRect(frame);
+        // Round the origin independently: enclosing a fractional rectangle
+        // would grow the logical extent during an ordinary window move.
+        m_window->setGeometry(QRect(target.topLeft().toPoint(), placement.windowSize));
+        [m_native setFrame:frame display:YES animate:NO];
         const auto actual = this->placement();
         // Backing-display changes must not alter the logical frame.
-        return attached && actual &&
+        return actual && actual->windowSize == placement.windowSize &&
                std::abs(desktopRect(m_native.frame).x() - target.x()) < 0.01 &&
                std::abs(desktopRect(m_native.frame).y() - target.y()) < 0.01;
     }
@@ -143,8 +193,7 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_staysOnTop = staysOnTop;
         if (!attach())
             return false;
-        m_native.level = staysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel;
-        return m_native.level == (staysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel);
+        return m_native.level == (staysOnTop ? NSModalPanelWindowLevel : NSNormalWindowLevel);
     }
     bool activate() override {
         if (m_transparent || !attach())
@@ -174,11 +223,16 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
     NSWindow* m_native = nil;
     NSMutableArray* m_observers = nil;
     id m_wakeObserver = nil;
+    NSWindowStyleMask m_styleMask = NSWindowStyleMaskBorderless;
+    bool m_movable = true;
+    bool m_movableByWindowBackground = false;
+    bool m_hasShadow = true;
     NSInteger m_level = NSNormalWindowLevel;
     NSWindowCollectionBehavior m_behavior = NSWindowCollectionBehaviorDefault;
     bool m_ignoresMouse = false;
     bool m_hidesOnDeactivate = false;
     bool m_applying = false;
+    bool m_detaching = false;
     bool m_staysOnTop = true;
 };
 } // namespace

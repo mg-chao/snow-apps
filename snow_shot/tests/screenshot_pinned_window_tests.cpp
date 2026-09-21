@@ -1,6 +1,9 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
 #include <QNativeGestureEvent>
+#ifdef Q_OS_MACOS
+#include <CoreGraphics/CoreGraphics.h>
+#endif
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
@@ -9095,8 +9098,8 @@ void pinnedContentReplacement() {
     for (const bool tray : {false, true, false}) {
         ScreenshotPinnedWindow::setRuntimeTrayEnabled(tray);
         const bool fallbackShown = menu->actions().contains(showMain);
-        const int managementIndex = menu->actions().indexOf(management);
-        const int closeIndex = menu->actions().indexOf(close);
+        const qsizetype managementIndex = menu->actions().indexOf(management);
+        const qsizetype closeIndex = menu->actions().indexOf(close);
         require(managementIndex >= 0 && closeIndex == managementIndex + (fallbackShown ? 3 : 2) &&
                     (!fallbackShown || menu->actions().indexOf(showMain) + 1 == closeIndex),
                 "window management must stay above Close when the tray fallback changes");
@@ -9515,6 +9518,89 @@ void pinnedOddPixelExtentRemainsSharp() {
     }
 }
 
+#ifdef Q_OS_MACOS
+void pinnedNativePointerDragging() {
+    CGEventRef current = CGEventCreate(nullptr);
+    const CGPoint originalPointer = CGEventGetLocation(current);
+    CFRelease(current);
+    const auto restorePointer = qScopeGuard([&] { CGWarpMouseCursorPosition(originalPointer); });
+    QScreen* screen = QGuiApplication::primaryScreen();
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.initialWindowSize = image.size();
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    require(window.present(config), "native drag pin presentation failed");
+    waitForUi(500);
+    bool buttonDown = false;
+    QPointF lastPoint;
+    const auto releaseButton = qScopeGuard([&] {
+        if (!buttonDown)
+            return;
+        CGEventRef release =
+            CGEventCreateMouseEvent(nullptr, kCGEventLeftMouseUp,
+                                    CGPointMake(lastPoint.x(), lastPoint.y()), kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap, release);
+        CFRelease(release);
+        waitForUi(100);
+    });
+    for (const QPointF delta : {QPointF(30, 20), QPointF(-30, -20), QPointF(30, -20)}) {
+        const QRect before = window.currentNativeGeometry();
+        const QPointF beforePosition = window.persistenceSnapshot().placement.position;
+        const QPointF start = window.mapToGlobal(QPoint(30, 20));
+        const QPointF end = start + delta;
+        for (const auto& [type, point] : {
+                 std::pair{kCGEventMouseMoved, start},
+                 std::pair{kCGEventLeftMouseDown, start},
+                 std::pair{kCGEventLeftMouseDragged, start + delta * .13},
+                 std::pair{kCGEventLeftMouseDragged, start + delta * .37},
+                 std::pair{kCGEventLeftMouseDragged, end},
+                 std::pair{kCGEventLeftMouseUp, end},
+             }) {
+            lastPoint = point;
+            if (type == kCGEventLeftMouseDown || type == kCGEventLeftMouseUp)
+                buttonDown = type == kCGEventLeftMouseDown;
+            CGEventRef event = CGEventCreateMouseEvent(
+                nullptr, type, CGPointMake(point.x(), point.y()), kCGMouseButtonLeft);
+            CGEventPost(kCGHIDEventTap, event);
+            CFRelease(event);
+            waitForUi(100);
+            if (type == kCGEventLeftMouseDragged) {
+                const auto actual = window.persistenceSnapshot().placement;
+                const bool tracking = ScreenshotPinnedWindowTestAccess::interactionActive(window);
+                QPointF expectedPosition = beforePosition + point - start;
+                // AppKit constrains a native window below the menu bar even
+                // when the pointer would place its top edge above that boundary.
+                expectedPosition.setY(
+                    std::max(expectedPosition.y(),
+                             qreal(screen->availableGeometry().top() - screen->geometry().top())));
+                const bool valid = tracking && window.size() == before.size() &&
+                                   QLineF(actual.position, expectedPosition).length() <=
+                                       1. / screen->devicePixelRatio();
+                if (!valid)
+                    qWarning() << "Native drag mismatch" << "delta" << delta << "pointer" << point
+                               << "expected" << expectedPosition << "actual" << actual.position
+                               << "size" << window.size() << "active" << tracking;
+                require(
+                    valid,
+                    "native pin must track subpixel input on the backing grid without cancelling");
+            }
+        }
+        QRect expected = before.translated(delta.toPoint());
+        expected.moveTop(std::max(expected.top(), screen->availableGeometry().top()));
+        require(window.currentNativeGeometry() == expected,
+                "native pointer drag must retain its platform-constrained released position");
+    }
+    window.close();
+}
+#endif
+
 void pinnedControlledInteractionAndGestures() {
     QScreen* screen = QGuiApplication::primaryScreen();
     ScreenshotPinnedWindow window;
@@ -9543,6 +9629,19 @@ void pinnedControlledInteractionAndGestures() {
     require(window.currentNativeGeometry() == original &&
                 ScreenshotPinnedWindowTestAccess::geometrySettled(window),
             "cancelled controlled move must restore geometry and clear the transaction");
+    const QSize originalWidgetSize = window.size();
+    require(ScreenshotPinnedWindowTestAccess::beginControlled(window, cursor),
+            "fractional move did not start");
+    for (const QPointF delta : {QPointF(.13, .21), QPointF(15.37, 10.19), QPointF(30, 20)}) {
+        ScreenshotPinnedWindowTestAccess::updateControlled(window, cursor + delta);
+        require(ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
+                    window.size() == originalWidgetSize &&
+                    window.currentNativeGeometry().size() == original.size(),
+                "fractional pointer movement must preserve size and keep the drag active");
+    }
+    ScreenshotPinnedWindowTestAccess::endControlled(window, true);
+    require(window.currentNativeGeometry() == original,
+            "fractional drag cancellation must restore the original placement");
     const QPointF deltas[] = {{-40, -20}, {0, -20}, {40, -20}, {40, 0},
                               {40, 20},   {0, 20},  {-40, 20}, {-40, 0}};
     for (int edge = 0; edge < 8; ++edge) {
@@ -9577,6 +9676,38 @@ void pinnedControlledInteractionAndGestures() {
     require(!ScreenshotPinnedWindowTestAccess::interactionActive(window) && window.isVisible() &&
                 window.currentNativeGeometry() == original,
             "Escape must cancel without closing the pin on release");
+
+    // A remote session or input interruption may lose the release event. A
+    // subsequent move with no left button must retire the captured gesture,
+    // without treating that ordinary hover position as another drag update.
+    for (const std::optional<int> handle : {std::optional<int>{}, std::optional<int>{4}}) {
+        for (const Qt::MouseButtons buttons :
+             {Qt::MouseButtons{}, Qt::MouseButtons(Qt::RightButton)}) {
+            require(ScreenshotPinnedWindowTestAccess::beginControlled(window, cursor, handle),
+                    "button-loss fixture could not begin");
+            ScreenshotPinnedWindowTestAccess::updateControlled(window, cursor + QPointF(12, 8));
+            const QPointF hover = cursor + QPointF(100.13, 80.21);
+            QMouseEvent lostRelease(QEvent::MouseMove, window.mapFromGlobal(hover), hover,
+                                    Qt::NoButton, buttons, Qt::NoModifier);
+            QCoreApplication::sendEvent(&window, &lostRelease);
+            require(!ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
+                        window.currentNativeGeometry() == original &&
+                        ScreenshotPinnedWindowTestAccess::geometrySettled(window),
+                    "a move without the owning button must cancel the pin interaction");
+        }
+    }
+    require(ScreenshotPinnedWindowTestAccess::beginControlled(window, cursor),
+            "release-only fixture could not begin");
+    const QPointF released = cursor + QPointF(25, 15);
+    QMouseEvent coalescedRelease(QEvent::MouseButtonRelease, window.mapFromGlobal(released),
+                                 released, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &coalescedRelease);
+    require(!ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
+                window.currentNativeGeometry() == original.translated(25, 15) &&
+                ScreenshotPinnedWindowTestAccess::geometrySettled(window),
+            "release must commit its final position even when intermediate moves were coalesced");
+    require(ScreenshotPinnedWindowTestAccess::moveWindow(window, original),
+            "restore coalesced-release fixture placement");
 
     auto* failing = ScreenshotPinnedWindowTestAccess::installFailingPlatform(window);
     const auto requested = failing->placement();
@@ -9696,6 +9827,14 @@ int main(int argc, char* argv[]) {
             }
             return 0;
         }
+#ifdef Q_OS_MACOS
+        if (app.arguments().contains(QStringLiteral("--native-controlled-drag-only"))) {
+            if (!CGPreflightPostEventAccess())
+                return 77;
+            pinnedNativePointerDragging();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--controlled-interaction-only"))) {
             pinnedControlledInteractionAndGestures();
             return 0;

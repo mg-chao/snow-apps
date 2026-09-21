@@ -91,6 +91,37 @@ void interruptionsDiscardPendingAndQueuedActions() {
     }
 }
 
+void missedReleaseRetiresCapture() {
+    QWidget window;
+    window.show();
+    QApplication::processEvents();
+    MouseReleaseActionController controller;
+    int actions = 0;
+    for (const auto button : {Qt::LeftButton, Qt::RightButton, Qt::MiddleButton}) {
+        require(controller.arm(&window, button, [&] { ++actions; }), "arm lost-release fixture");
+        QMouseEvent held(QEvent::MouseMove, QPointF(20, 20), QPointF(20, 20), Qt::NoButton, button,
+                         Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &held);
+        require(controller.pending(), "movement while the owning button is held must remain armed");
+        QMouseEvent hover(QEvent::MouseMove, QPointF(30.13, 40.21), QPointF(30.13, 40.21),
+                          Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &hover);
+        require(!controller.pending() && !QWidget::mouseGrabber(),
+                "missing release must not leave the action holding mouse capture");
+        release(window, button);
+        QApplication::processEvents();
+        require(actions == 0, "a delayed release must not execute an abandoned action");
+    }
+    require(controller.arm(&window, Qt::RightButton, [&] { ++actions; }), "arm after lost release");
+    release(window, Qt::RightButton);
+    QMouseEvent hover(QEvent::MouseMove, QPointF(30, 40), QPointF(30, 40), Qt::NoButton,
+                      Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &hover);
+    QApplication::processEvents();
+    require(actions == 1 && !controller.pending(),
+            "hover after a delivered release must not cancel its queued action");
+}
+
 void captureAndCallbackLifetimesAreRespected() {
     QWidget window;
     QWidget other;
@@ -125,6 +156,7 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     completesAfterReleaseDispatch();
     interruptionsDiscardPendingAndQueuedActions();
+    missedReleaseRetiresCapture();
     captureAndCallbackLifetimesAreRespected();
     return 0;
 }

@@ -3,6 +3,7 @@
 #import <Foundation/Foundation.h>
 #include <cstdlib>
 #include <iostream>
+#include <array>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -55,6 +56,52 @@ int main() {
                                    QPoint(50, 50))
                         .id == 0,
                 "scroll input must never be sent back to our own window");
+        const std::array<CGWindowID, 2> excluded{1, 7};
+        // Simulate AppKit's ordered mouse hits. Its native implementation skips
+        // transparent/decorative windows before reporting a hit to this policy.
+        const auto hitTest = [](CGWindowID below) -> CGWindowID {
+            switch (below) {
+            case 0:
+                return 1;
+            case 1:
+                return 7;
+            case 7:
+                return 8;
+            default:
+                return 0;
+            }
+        };
+        require(recaptureWindowAtPoint(excluded, hitTest) == 8,
+                "recapture must step below each excluded editing surface");
+        require(recaptureWindowAtPoint({}, hitTest) == 1,
+                "recapture must accept a hit unless its exact window ID is excluded");
+        const std::array<CGWindowID, 1> excludeFirst{1};
+        require(recaptureWindowAtPoint(excludeFirst, hitTest) == 7,
+                "recapture must not step below another surface from the same process");
+        require(recaptureWindowAtPoint(excluded, [](CGWindowID) { return 8U; }) == 8,
+                "already click-through editing surfaces need no additional traversal");
+        const std::array<CGWindowID, 3> excludeAll{1, 7, 8};
+        require(recaptureWindowAtPoint(excludeAll, hitTest) == 0 &&
+                    recaptureWindowAtPoint(excluded, [](CGWindowID) { return 0U; }) == 0 &&
+                    recaptureWindowAtPoint(excluded, [](CGWindowID) { return 1U; }) == 0,
+                "empty or changing native hit chains must terminate without an unrelated target");
+        require(recaptureWindowTarget(snapshot, 4).id == 4,
+                "recapture must retain our non-overlay windows as cursor owners");
+        NSArray* floating =
+            @[ window(1, self, 100), window(7, self, 101), window(8, other, 3), window(9, 99) ];
+        const auto floatingSnapshot = reinterpret_cast<CFArrayRef>(floating);
+        require(
+            recaptureWindowTarget(floatingSnapshot, recaptureWindowAtPoint(excluded, hitTest)).id ==
+                8,
+            "recapture must select the hit floating window above a normal window");
+        require(scrollWindowTarget(floatingSnapshot, self, QPoint(50, 50)).id == 9,
+                "recapture policy must not change scrolling's normal-window contract");
+        require(recaptureWindowTarget(floatingSnapshot, 9).id == 9,
+                "native mouse hit identity must take precedence over decorative window bounds");
+        require(recaptureWindowTarget(nullptr, 8).id == 0 &&
+                    recaptureWindowTarget(floatingSnapshot, 99).id == 0 &&
+                    recaptureWindowTarget(floatingSnapshot, 0).id == 0,
+                "a vanished hit or desktop must not fall through to another application");
     }
-    std::cout << "macOS focused-window and scroll target tests passed\n";
+    std::cout << "macOS focused-window, scroll, and recapture target tests passed\n";
 }

@@ -322,6 +322,13 @@ bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* e
         }
         if (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonRelease) {
             auto* mouse = static_cast<QMouseEvent*>(event);
+            // A release can be lost during input/session interruption. The next
+            // move's button state ends ownership; its hover position is not a
+            // drag target. Actual release events still apply their final position.
+            if (event->type() == QEvent::MouseMove && !mouse->buttons().testFlag(Qt::LeftButton)) {
+                endControlledInteraction(true);
+                return false;
+            }
             if (event->type() == QEvent::MouseButtonRelease && mouse->button() != Qt::LeftButton)
                 return false;
             updateControlledInteraction(mouse->globalPosition());

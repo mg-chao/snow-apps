@@ -1269,11 +1269,15 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     };
     ScreenshotCaptureWorkflow workflow(context);
 
-    require(workflow.startRecapture() && workflow.recaptureInProgress() &&
+    QVector<std::uint32_t> excludedWindowIds{101, 202};
+    require(workflow.startRecapture(excludedWindowIds) && workflow.recaptureInProgress() &&
                 runtime.lastCaptureRequest.purpose == ScreenshotCapturePurpose::Recapture &&
                 runtime.lastCaptureRequest.captureCursor &&
                 runtime.lastCaptureRequest.refreshLayout,
             "recapture must dispatch a distinct request with the current cursor setting");
+    excludedWindowIds.clear();
+    require(runtime.lastCaptureRequest.excludedWindowIds == QVector<std::uint32_t>{101, 202},
+            "recapture must own both overlay and toolbar exclusions after dispatch");
     const QRect selectionBefore = selection.pixelSelection();
     const ScreenshotCaptureMode modeBefore = interaction.mode();
     CapturedDisplayModel replacement = original;
@@ -1289,7 +1293,8 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
             "successful recapture must preserve selection, interaction, and canvas state");
 
     captureCursor = false;
-    require(workflow.startRecapture() && !runtime.lastCaptureRequest.captureCursor,
+    require(workflow.startRecapture() && !runtime.lastCaptureRequest.captureCursor &&
+                runtime.lastCaptureRequest.excludedWindowIds.isEmpty(),
             "each recapture must read the latest cursor setting");
     ScreenshotCaptureResult failed;
     failed.requestId = runtime.lastCaptureRequest.requestId;

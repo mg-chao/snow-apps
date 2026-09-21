@@ -587,20 +587,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>请先完成截图、录屏或导出，再进行更新。</translation>
         </message>
         <message>
-            <source>Pin to screen is not available on macOS yet.</source>
-            <translation>固定到屏幕功能暂不支持 macOS。</translation>
-        </message>
-        <message>
             <source>Restart and update</source>
             <translation>重启并更新</translation>
         </message>
         <message>
             <source>Screen recording is not available on macOS yet.</source>
             <translation>屏幕录制功能暂不支持 macOS。</translation>
-        </message>
-        <message>
-            <source>Screenshot is not available on macOS yet.</source>
-            <translation>截图功能暂不支持 macOS。</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

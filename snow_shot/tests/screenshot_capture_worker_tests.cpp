@@ -21,6 +21,7 @@
 struct SnowCaptureDesktopSessionImpl {
     SnowCaptureDesktopSessionConfig config{};
     bool prepared = false;
+    QVector<std::uint32_t> excludedWindowIds;
 };
 
 struct SnowCaptureFrameLeaseImpl {
@@ -52,6 +53,7 @@ bool failCapture = false;
 uint8_t preparedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 uint8_t refreshedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 uint32_t capturedFlags = 0;
+QVector<std::uint32_t> capturedWindowIds;
 std::atomic<uint8_t> liveCursorPixel{71};
 std::atomic<int> cursorSnapshots{0};
 std::atomic<int> cursorCompositions{0};
@@ -75,7 +77,8 @@ void setMode(const char* mode) {
 
 ScreenshotCaptureResult capture(ScreenshotCaptureWorker& worker, bool restoreColors = false,
                                 bool captureCursor = false,
-                                std::shared_ptr<SnowCaptureCursorSnapshot> cursorSnapshot = {}) {
+                                std::shared_ptr<SnowCaptureCursorSnapshot> cursorSnapshot = {},
+                                const QVector<std::uint32_t>& excludedWindowIds = {}) {
     ScreenshotCaptureCoordinator coordinator;
     ScreenshotCaptureResult result;
     bool received = false;
@@ -89,10 +92,37 @@ ScreenshotCaptureResult capture(ScreenshotCaptureWorker& worker, bool restoreCol
     request.restoreOriginalScreenColors = restoreColors;
     request.captureCursor = captureCursor;
     request.cursorSnapshot = std::move(cursorSnapshot);
+    request.excludedWindowIds = excludedWindowIds;
     worker.capture(request, &coordinator, nullptr);
     QCoreApplication::sendPostedEvents(&coordinator);
     require(received && result.requestId == request.requestId, "capture result was not delivered");
     return result;
+}
+
+void recaptureExclusionsReplaceSessionAndDoNotLeak() {
+    ScreenshotCaptureWorker worker;
+    worker.prepare(1, {});
+    const int before = created;
+    const QVector<std::uint32_t> windows{101, 202};
+    require(capture(worker, false, false, {}, windows).succeeded && capturedWindowIds == windows &&
+                created == before + 1,
+            "recapture must replace a prewarmed session to exclude overlay and toolbar");
+    require(capture(worker, false, false, {}, windows).succeeded && created == before + 1,
+            "unchanged exclusions must reuse the native capture session");
+    const QVector<std::uint32_t> replacedWindows{303, 404};
+    require(capture(worker, false, false, {}, replacedWindows).succeeded &&
+                capturedWindowIds == replacedWindows,
+            "recapture must replace stale native window IDs");
+    failCreation = true;
+    const int capturesBeforeFailure = captured;
+    require(!capture(worker, false, false, {}, windows).succeeded &&
+                captured == capturesBeforeFailure,
+            "failed exclusion changes must not capture using stale exclusions");
+    failCreation = false;
+    require(capture(worker, false, false, {}, windows).succeeded && capturedWindowIds == windows,
+            "recapture must recover with the requested exclusions");
+    require(capture(worker).succeeded && capturedWindowIds.isEmpty(),
+            "ordinary capture must clear recapture exclusions");
 }
 
 void requireBackend(ScreenshotCaptureWorker& worker, uint8_t expected) {
@@ -312,7 +342,11 @@ snow_capture_desktop_session_create(const SnowCaptureDesktopSessionConfig* confi
         return nullptr;
     }
     ++created;
-    return new SnowCaptureDesktopSession{*config, false};
+    auto* session = new SnowCaptureDesktopSession{*config, false, {}};
+    for (size_t index = 0; index < config->exclusions.window_count; ++index) {
+        session->excludedWindowIds.push_back(config->exclusions.windows[index]);
+    }
+    return session;
 }
 
 void snow_capture_desktop_session_destroy(SnowCaptureDesktopSession* session) {
@@ -347,6 +381,7 @@ SnowCaptureScreenshotResult*
 snow_capture_desktop_session_capture(SnowCaptureDesktopSession* session,
                                      const SnowCaptureScreenshotRequest* request) {
     capturedFlags = request->flags;
+    capturedWindowIds = session->excludedWindowIds;
     ++captured;
     if (blockCapture) {
         captureEntered.release();
@@ -456,6 +491,7 @@ int main(int argc, char** argv) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     static_cast<void>(storage.initialize({temporary.filePath(QStringLiteral("bin")),
                                           temporary.filePath(QStringLiteral("data")), 60000}));
+    recaptureExclusionsReplaceSessionAndDoNotLeak();
     changedModeReplacesPrewarmedSession();
     allModeTransitionsApplyWithoutRestart();
     colorRestorationAppliesAcrossBackendChanges();

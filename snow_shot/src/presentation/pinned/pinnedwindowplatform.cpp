@@ -188,7 +188,8 @@ class QtPinnedWindowPlatform final : public PinnedWindowPlatform {
             return false;
         m_placement = placement;
         m_window->setScreen(screen);
-        m_window->setGeometry(pinnedDesktopRect(placement, *screen).toAlignedRect());
+        const QRectF target = pinnedDesktopRect(placement, *screen);
+        m_window->setGeometry(QRect(target.topLeft().toPoint(), target.size().toSize()));
         return true;
     }
     std::optional<PinnedPlacement> placement() const override {

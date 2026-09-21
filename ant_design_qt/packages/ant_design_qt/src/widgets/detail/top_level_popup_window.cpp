@@ -35,6 +35,9 @@ void syncTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow) 
   if (ownerHandle && toolHandle && toolHandle->transientParent() != ownerHandle) {
     toolHandle->setTransientParent(ownerHandle);
   }
+#if defined(Q_OS_MACOS)
+  syncMacTopLevelPopupOwnership(toolWindow);
+#endif
 }
 
 void releaseTopLevelToolResourcesOnHide(QWidget* toolWindow) {

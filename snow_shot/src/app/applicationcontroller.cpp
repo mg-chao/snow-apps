@@ -702,24 +702,14 @@ class ApplicationController::Impl {
     }
 
     QString unavailableFeatureMessage(FeatureFamily feature) const {
-        switch (feature) {
-        case FeatureFamily::Screenshot:
-            return ApplicationController::tr("Screenshot is not available on macOS yet.");
-        case FeatureFamily::PinToScreen:
-            return ApplicationController::tr("Pin to screen is not available on macOS yet.");
-        case FeatureFamily::ScreenRecording:
+        if (feature == FeatureFamily::ScreenRecording) {
             return ApplicationController::tr("Screen recording is not available on macOS yet.");
         }
         return {};
     }
 
     QString unavailableFeatureKey(FeatureFamily feature) const {
-        switch (feature) {
-        case FeatureFamily::Screenshot:
-            return QStringLiteral("macos-screenshot-unavailable");
-        case FeatureFamily::PinToScreen:
-            return QStringLiteral("macos-pin-unavailable");
-        case FeatureFamily::ScreenRecording:
+        if (feature == FeatureFamily::ScreenRecording) {
             return QStringLiteral("macos-recording-unavailable");
         }
         return {};

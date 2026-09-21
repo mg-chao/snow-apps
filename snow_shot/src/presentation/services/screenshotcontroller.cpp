@@ -3,6 +3,10 @@
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/platform/screenshotnative.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/recapturefocus.h"
+#include "snow_shot/platform/macos/applicationactivation.h"
+#endif
 #include "snow_shot/presentation/screenshotglobalmousedrag.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/network/snowshotapiclient.h"
@@ -11,6 +15,7 @@
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include "snow_shot/platform/physicalcursor.h"
+#include "snow_shot/platform/windowcaptureexclusion.h"
 #include "snow_shot/platform/windows/windowchrome.h"
 #include "snow_shot/presentation/screenshotcaptureruntimeadapter.h"
 #include "snow_shot/presentation/screenshotcapturestate.h"
@@ -325,7 +330,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] bool canRecapture() const;
     void prepareRecaptureWindows(quint64 generation);
     void waitForRecaptureWindowsHidden(quint64 generation);
-    void beginRecaptureCapture(quint64 generation);
+    void beginRecaptureCapture(quint64 generation,
+                               const QVector<std::uint32_t>& excludedWindowIds = {});
     void finishRecapture(bool succeeded, bool reportFailure);
     void restoreRecaptureWindows();
 
@@ -508,6 +514,10 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::unique_ptr<snow_shot::presentation::WindowInputTransparency> m_recaptureInputTransparency;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     std::unique_ptr<snow_shot::platform::windows::CursorRefresh> m_recaptureCursorRefresh;
+#endif
+#ifdef Q_OS_MACOS
+    std::unique_ptr<snow_shot::platform::macos::RecaptureFocus> m_recaptureFocus;
+    QPointer<ScreenshotOverlayWindow> m_recaptureKeyboardOwner;
 #endif
     QVector<QPointer<QWidget>> m_recaptureHiddenWindows;
     QElapsedTimer m_recaptureHideTimer;
@@ -1693,6 +1703,36 @@ void ScreenshotController::Impl::prepareRecaptureWindows(quint64 generation) {
         visibleWindows.push_back(toolbar);
     }
 
+#ifdef Q_OS_MACOS
+    // ScreenCaptureKit filters explicit window IDs while the editing UI stays visible.
+    // NSWindow sharingType alone does not exclude windows from ScreenCaptureKit.
+    QVector<std::uint32_t> excludedWindowIds;
+    excludedWindowIds.reserve(visibleWindows.size());
+    for (QWidget* window : std::as_const(visibleWindows)) {
+        const auto windowId = snow_shot::platform::captureWindowId(window);
+        if (!windowId) {
+            finishRecapture(false, true);
+            return;
+        }
+        excludedWindowIds.push_back(*windowId);
+    }
+    m_recaptureKeyboardOwner = keyboardOwnerOverlay();
+    if (snow_shot::storage::ScreenshotSettings().captureCursor()) {
+        m_recaptureFocus = snow_shot::platform::macos::createRecaptureFocus(visibleWindows);
+        m_recaptureFocus->prepare([this, generation, excludedWindowIds](bool ready) {
+            if (!m_recaptureBusy || generation != m_recaptureGeneration)
+                return;
+            if (!ready) {
+                finishRecapture(false, true);
+                return;
+            }
+            beginRecaptureCapture(generation, excludedWindowIds);
+        });
+    } else {
+        beginRecaptureCapture(generation, excludedWindowIds);
+    }
+#else
+
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (snow_shot::platform::windows::supportsWindowCaptureExclusion()) {
         m_recaptureExclusion = std::make_unique<snow_shot::presentation::WindowCaptureExclusion>(
@@ -1727,6 +1767,7 @@ void ScreenshotController::Impl::prepareRecaptureWindows(quint64 generation) {
     m_recaptureHideTimer.start();
     QTimer::singleShot(0, &owner,
                        [this, generation]() { waitForRecaptureWindowsHidden(generation); });
+#endif
 }
 
 void ScreenshotController::Impl::waitForRecaptureWindowsHidden(quint64 generation) {
@@ -1767,7 +1808,8 @@ void ScreenshotController::Impl::waitForRecaptureWindowsHidden(quint64 generatio
                        [this, generation]() { waitForRecaptureWindowsHidden(generation); });
 }
 
-void ScreenshotController::Impl::beginRecaptureCapture(quint64 generation) {
+void ScreenshotController::Impl::beginRecaptureCapture(
+    quint64 generation, const QVector<std::uint32_t>& excludedWindowIds) {
     if (!m_recaptureBusy || generation != m_recaptureGeneration || m_captureWorkflow == nullptr) {
         finishRecapture(false, false);
         return;
@@ -1785,12 +1827,22 @@ void ScreenshotController::Impl::beginRecaptureCapture(quint64 generation) {
         return;
     }
 #endif
-    if (!m_captureWorkflow->startRecapture()) {
+    if (!m_captureWorkflow->startRecapture(excludedWindowIds)) {
         finishRecapture(false, false);
     }
 }
 
 void ScreenshotController::Impl::restoreRecaptureWindows() {
+#ifdef Q_OS_MACOS
+    m_recaptureFocus.reset();
+    const QPointer<ScreenshotOverlayWindow> keyboardOwner = m_recaptureKeyboardOwner;
+    m_recaptureKeyboardOwner.clear();
+    if (keyboardOwner && keyboardOwner->isVisible() &&
+        m_captureState.sessionState == ScreenshotSessionState::Editing) {
+        snow_shot::platform::macos::activateWindow(keyboardOwner);
+        restoreKeyboardOwnerQueued(keyboardOwner);
+    }
+#endif
 #if defined(Q_OS_WIN) || defined(_WIN32)
     m_recaptureCursorRefresh.reset();
     const bool inputSurfacesChanged =
@@ -4422,6 +4474,9 @@ void ScreenshotController::Impl::handleSelectionConfirmed() {
 }
 
 void ScreenshotController::Impl::shutdown() {
+#ifdef Q_OS_MACOS
+    m_recaptureKeyboardOwner.clear();
+#endif
     finishRecapture(false, false);
     if (auto cancel = std::exchange(m_cancelSaveDialog, {}))
         cancel();

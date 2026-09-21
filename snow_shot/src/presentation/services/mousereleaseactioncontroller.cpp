@@ -124,6 +124,13 @@ bool MouseReleaseActionController::eventFilter(QObject* watched, QEvent* event) 
         cancel();
         return false;
     }
+    if (event->type() == QEvent::MouseMove && m_button != Qt::NoButton &&
+        !static_cast<QMouseEvent*>(event)->buttons().testFlag(m_button)) {
+        // Recover a missed release without firing its action on a later click.
+        // Once a real release has queued the action, m_button is already cleared.
+        cancel();
+        return false;
+    }
     if (event->type() == QEvent::ContextMenu) {
         auto* context = static_cast<QContextMenuEvent*>(event);
         auto* widget = qobject_cast<QWidget*>(watched);

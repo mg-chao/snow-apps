@@ -64,7 +64,8 @@ if(APPLE)
     target_sources(ant_design_qt PRIVATE
         packages/ant_design_qt/src/widgets/context_menu_mac.mm
         packages/ant_design_qt/src/widgets/modal_mac.mm
-        packages/ant_design_qt/src/widgets/detail/window_surface_mac.mm)
+        packages/ant_design_qt/src/widgets/detail/window_surface_mac.mm
+        packages/ant_design_qt/src/widgets/detail/top_level_popup_window_mac.mm)
     # QPlatformMenu keeps Cocoa's modal ownership and mouse-release cleanup in Qt.
     target_link_libraries(ant_design_qt PRIVATE Qt6::GuiPrivate "-framework AppKit")
 endif()
@@ -147,6 +148,16 @@ if(ADQT_BUILD_TESTS)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
     if(APPLE)
+        add_executable(adqt-popup-stacking-native-tests tests/popup_stacking_native_tests.mm)
+        target_link_libraries(adqt-popup-stacking-native-tests PRIVATE
+            adqt::widgets Qt6::Widgets "-framework AppKit")
+        add_test(NAME adqt-popup-ownership-tests COMMAND adqt-popup-stacking-native-tests)
+        set_tests_properties(adqt-popup-ownership-tests PROPERTIES
+            LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+        add_test(NAME adqt-popup-stacking-native-tests COMMAND adqt-popup-stacking-native-tests)
+        set_tests_properties(adqt-popup-stacking-native-tests PROPERTIES
+            LABELS "interactive" ENVIRONMENT "QT_QPA_PLATFORM=cocoa"
+            RUN_SERIAL TRUE TIMEOUT 30)
         add_executable(adqt-context-menu-native-tests tests/context_menu_native_tests.mm)
         target_link_libraries(adqt-context-menu-native-tests PRIVATE
             adqt::widgets Qt6::Test "-framework AppKit")

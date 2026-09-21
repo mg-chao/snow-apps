@@ -114,7 +114,7 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     beginCapturePreparation(sessionId);
 }
 
-bool ScreenshotCaptureWorkflow::startRecapture() {
+bool ScreenshotCaptureWorkflow::startRecapture(const QVector<std::uint32_t>& excludedWindowIds) {
     if (m_recaptureInProgress || m_state.captureInProgress ||
         m_state.sessionState != ScreenshotSessionState::Editing ||
         !m_context.interaction.moveToolActive()) {
@@ -133,7 +133,8 @@ bool ScreenshotCaptureWorkflow::startRecapture() {
                                                             m_state.restoreOriginalScreenColors,
                                                             m_state.captureCursor,
                                                             ScreenshotCapturePurpose::Recapture,
-                                                            {}});
+                                                            {},
+                                                            excludedWindowIds});
     return true;
 }
 
@@ -381,6 +382,7 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
                                                             m_state.restoreOriginalScreenColors,
                                                             m_state.captureCursor,
                                                             ScreenshotCapturePurpose::Initial,
+                                                            {},
                                                             {}});
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.async_dispatched");
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {

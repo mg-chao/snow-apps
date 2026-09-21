@@ -45,11 +45,8 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showScrollingScreenshotTool = true;
     options.showSaveButton = true;
     options.separatorBeforeShape = true;
-    options.actions =
-#ifndef Q_OS_MACOS
-        ScreenshotToolPalette::PinAction |
-#endif
-        ScreenshotToolPalette::CancelAction | ScreenshotToolPalette::CopyAction;
+    options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
+                      ScreenshotToolPalette::CopyAction;
     options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
     return options;
 }

@@ -25,7 +25,7 @@ class ScreenshotCaptureWorker final : public QObject {
                  SnowCaptureCancellationToken* cancellationToken);
 
   private:
-    bool ensureSession();
+    bool ensureSession(const QVector<std::uint32_t>& excludedWindowIds = {});
     bool sessionPrepared() const;
     bool prepareSessionIfNeeded();
     static void postPrepared(quint64 requestId,
@@ -35,6 +35,7 @@ class ScreenshotCaptureWorker final : public QObject {
 
     SnowCaptureDesktopSession* m_session = nullptr;
     std::uint8_t m_sessionBackend = 0;
+    QVector<std::uint32_t> m_sessionExcludedWindowIds;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCAPTUREWORKER_H

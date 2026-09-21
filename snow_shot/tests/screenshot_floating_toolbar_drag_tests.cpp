@@ -238,7 +238,9 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
         }
     }
     void startScrollingScreenshot() override {}
-    void pinSelectionToScreen() override {}
+    void pinSelectionToScreen() override {
+        ++pinSelectionCount;
+    }
     void cancelCapture() override {}
     void copySelectionToClipboard() override {}
     void startScreenRecording() override {}
@@ -258,6 +260,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void hideColorPickersForScreenshotUi() override {}
 
     int repositionCount = 0;
+    int pinSelectionCount = 0;
     int deleteAllElementsCount = 0;
     int presentationRepositionCount = 0;
     int textTranslationToolCount = 0;
@@ -1760,6 +1763,14 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
 
     const QStringList actionIds = snow_shot::presentation::toolbar_layout::defaultOrder(
         snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools);
+    int expectedActionButtonCount = static_cast<int>(actionIds.size());
+    int expectedDefaultActionButtonCount = 7;
+#ifdef Q_OS_MACOS
+    // Recording remains unavailable on macOS; every other screenshot action,
+    // including Pin to Screen, must materialize.
+    --expectedActionButtonCount;
+    --expectedDefaultActionButtonCount;
+#endif
     const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
     require(toolbarSettings.setLayout(snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools,
                                       snow_shot::storage::ScreenshotToolbarLayout{{}, actionIds}),
@@ -1808,7 +1819,10 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
                     snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools, unstackedLayout),
                 "failed to persist the widest screenshot action layout");
         settleQueuedRefreshes();
-        require(actionToolbarButtonCount(*screenshotToolbar.palette()) == actionIds.size() &&
+        require(actionToolbarButtonCount(*screenshotToolbar.palette()) ==
+                        expectedActionButtonCount &&
+                    screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
+                        QStringLiteral("screenshotPinToScreenButton")) != nullptr &&
                     screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
                         QStringLiteral("screenshotQrRecognitionButton")) != nullptr &&
                     screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
@@ -1825,7 +1839,8 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
                 "failed to restore the default screenshot action layout");
         settleQueuedRefreshes();
         require(
-            actionToolbarButtonCount(*screenshotToolbar.palette()) == 7 &&
+            actionToolbarButtonCount(*screenshotToolbar.palette()) ==
+                    expectedDefaultActionButtonCount &&
                 screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
                     QStringLiteral("screenshotTableQrButton")) != nullptr,
             "restoring the default layout should restore the shared recognition/conversion slot");
@@ -2535,6 +2550,13 @@ void macosToolbarUsesLogicalGeometry() {
         owner.show();
         NoOpToolbarCommands commands;
         ScreenshotToolbarWindow window(commands);
+        auto* pinButton = window.palette()->findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotPinToScreenButton"));
+        require(pinButton != nullptr,
+                "macOS screenshot toolbar must expose the supported Pin to Screen action");
+        pinButton->click();
+        require(commands.pinSelectionCount == 1,
+                "macOS Pin to Screen action must dispatch exactly one toolbar command");
         window.setTransientOwnerWindow(&owner);
         window.setPlacementContext(nullptr, QRect(-2000, -1000, 6000, 4000),
                                    QRect(8000, 9000, 12000, 8000));

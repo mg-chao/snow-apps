@@ -56,7 +56,7 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void startCapture(StartMode mode = StartMode::Normal,
                       ToolbarPreparation toolbarPreparation = ToolbarPreparation::Prewarm,
                       ToolbarVisibility toolbarVisibility = ToolbarVisibility::ShowAfterSelection);
-    [[nodiscard]] bool startRecapture();
+    [[nodiscard]] bool startRecapture(const QVector<std::uint32_t>& excludedWindowIds = {});
     [[nodiscard]] bool recaptureInProgress() const;
     [[nodiscard]] bool suppressCaptureToolbar() const;
     void cancelCapture();

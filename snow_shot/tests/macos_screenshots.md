@@ -2,8 +2,9 @@
 
 Snow Shot uses ScreenCaptureKit on macOS 15+, including when a migrated settings
 file selects DXGI, WGC or GDI. Windows capture API and color-filter restoration
-controls are hidden without changing their stored values. Pin-to-screen and
-recording are outside this screenshot implementation.
+controls are hidden without changing their stored values. Screenshot selections
+can be pinned through the shared export pipeline; screen recording remains
+unavailable on macOS.
 
 ## Workflows and sizing
 
@@ -123,3 +124,42 @@ The ancillary non-Windows updater build cleanup passed its service tests and
 Clippy. Its transaction fixtures require a canonical temporary directory on
 macOS (`TMPDIR=/private/tmp`); the default `/var` alias is intentionally rejected
 by the updater's symlink protection.
+
+## Recapture cursor ownership
+
+Recapture excludes only its editing surfaces. Its cursor owner can be another
+Snow Shot window or a foreign floating panel. Scrolling's normal-window and
+foreign-process filters must not be reused for this selection.
+
+The recapture transaction uses AppKit's native mouse hit test and steps below
+explicitly excluded window IDs. WindowServer bounds alone are insufficient:
+click-through windows and decorative system surfaces can cover the pointer
+without receiving input. The selected native ID is used to resolve process
+metadata, and the same hit test runs again before cursor refresh. Windows owned
+by Snow Shot are activated through their retained `NSWindow`; external windows
+use Accessibility. A local mouse refresh is dispatched to the verified window,
+then its actual view handles a cursor update, including when the stationary
+pointer remains inside an existing tracking area. Both Qt and native input
+transparency last through capture and are restored when the transaction ends.
+
+Run the focused checks with:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug \
+  -R '^snow-shot-macos-(screenshot-window-target|recapture-(focus|native|floating|local|local-floating))-tests$' \
+  --output-on-failure
+```
+
+The target-policy tests need no live desktop or permissions. Native cases cover
+normal and floating cursor owners in both processes, a separate click-through
+surface, repeated keyboard recapture, input/focus restoration, and actual captured
+I-beam pixels. Native cases skip without Accessibility or Screen Recording access.
+
+Validation on 2026-09-21: the Debug application build and all ten related
+capture-worker, capture-workflow, target-policy, recapture, and overlay checks
+passed. Repeated same-process native cases also passed five runs each. A temporary
+binary using the old scrolling target policy failed both the foreign floating
+and same-process regressions; the floating fixture explicitly verifies that its
+WindowServer layer remains nonzero while inactive. Changed C++/Objective-C++
+files passed clang-format, and `git diff --check` passed. No full suite was run;
+clang-tidy is disabled in this build.

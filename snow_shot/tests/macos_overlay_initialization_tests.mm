@@ -5,6 +5,7 @@
 #import <AppKit/AppKit.h>
 #import <objc/runtime.h>
 #include "widgets/modal.h"
+#include "widgets/popover.h"
 #include <QApplication>
 #include <QAbstractEventDispatcher>
 #include <QEventLoop>
@@ -356,6 +357,35 @@ void nativeFilePanelsCoverScreenshotModals(bool cocoa) {
     }
 }
 
+void adqtPopupPreservesScreenshotLayers(bool cocoa) {
+    OverlayFixture overlay;
+    overlay.resize(400, 300);
+    ToolFixture toolbar(&overlay);
+    toolbar.resize(200, 60);
+    snow_shot::platform::configureScreenshotToolbarWindow(&toolbar);
+    QWidget trigger(&toolbar);
+    trigger.setGeometry(40, 10, 80, 30);
+    adqt::widgets::AdPopover popover(&trigger);
+    popover.setSourceWidget(&trigger);
+    popover.setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    auto* content = new QWidget;
+    content->setFixedSize(100, 60);
+    popover.setContentWidget(content);
+    overlay.show();
+    toolbar.show();
+    popover.show();
+    QCoreApplication::processEvents();
+    toolbar.raise();
+    require(content->isVisible(), "the screenshot toolbar's AdQt popup must stay visible");
+    if (cocoa) {
+        NSWindow* popup = reinterpret_cast<NSView*>(content->window()->winId()).window;
+        NSWindow* owner = reinterpret_cast<NSView*>(toolbar.winId()).window;
+        require(popup.parentWindow == owner && popup.level > owner.level,
+                "Cocoa popup ownership must preserve the screenshot's explicit layers");
+    }
+    popover.hide();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -412,6 +442,7 @@ int main(int argc, char** argv) {
         if (cocoa)
             screenshotNativeSettingsFollowOwnership();
         screenshotWindowsKeepTheirStackingOrder(cocoa);
+        adqtPopupPreservesScreenshotLayers(cocoa);
         nativeFilePanelsCoverScreenshotModals(cocoa);
     }
     return 0;

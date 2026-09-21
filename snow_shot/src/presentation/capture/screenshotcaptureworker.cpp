@@ -78,7 +78,7 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;
     captureResult.purpose = request.purpose;
-    if (!ensureSession()) {
+    if (!ensureSession(request.excludedWindowIds)) {
         captureResult.errorMessage = nativeCaptureError("Failed to create desktop capture session");
         postCaptureResult(coordinator, std::move(captureResult));
         return;
@@ -186,7 +186,7 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     postCaptureResult(coordinator, std::move(captureResult));
 }
 
-bool ScreenshotCaptureWorker::ensureSession() {
+bool ScreenshotCaptureWorker::ensureSession(const QVector<std::uint32_t>& excludedWindowIds) {
     const QString apiMode = snow_shot::storage::ScreenshotSettings().apiMode();
     auto requested = snow_shot::presentation::capture::screenshotApiModeFromValue(
         apiMode.toLatin1().constData());
@@ -195,11 +195,12 @@ bool ScreenshotCaptureWorker::ensureSession() {
     }
     const auto backend =
         snow_shot::presentation::capture::nativeBackendForNormalScreenshot(requested);
-    if (m_session != nullptr && m_sessionBackend == backend) {
+    if (m_session != nullptr && m_sessionBackend == backend &&
+        m_sessionExcludedWindowIds == excludedWindowIds) {
         return true;
     }
 
-    // Native backend policy is fixed at creation, including for prewarmed sessions.
+    // Backend policy and exclusions are fixed at creation, including for prewarmed sessions.
     if (m_session != nullptr) {
         snow_capture_desktop_session_destroy(m_session);
         m_session = nullptr;
@@ -208,6 +209,8 @@ bool ScreenshotCaptureWorker::ensureSession() {
     SnowCaptureDesktopSessionConfig config{};
     config.capture_retry_count = 1;
     config.capture_backend = backend;
+    config.exclusions.windows = excludedWindowIds.constData();
+    config.exclusions.window_count = static_cast<size_t>(excludedWindowIds.size());
 #if defined(Q_OS_WIN) || defined(_WIN32)
     config.pixel_format = SNOW_CAPTURE_PIXEL_FORMAT_BGRA8;
 #endif
@@ -217,6 +220,7 @@ bool ScreenshotCaptureWorker::ensureSession() {
         return false;
     }
     m_sessionBackend = backend;
+    m_sessionExcludedWindowIds = excludedWindowIds;
     snow_shot::diagnostics::logEvent(
         QStringLiteral("snow_shot.capture"), QStringLiteral("capture.backend_ready"),
         {{QStringLiteral("backend"), static_cast<int>(backend)},

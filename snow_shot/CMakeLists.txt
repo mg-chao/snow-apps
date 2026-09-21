@@ -6936,6 +6936,11 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --controlled-interaction-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-retina-interaction-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE ENVIRONMENT "QT_SCALE_FACTOR=2" RUN_SERIAL TRUE)
+    add_test(NAME snow-shot-macos-pinned-drag-tests
+        COMMAND snow-shot-pinned-window-tests --native-controlled-drag-only -platform cocoa)
+    set_tests_properties(snow-shot-macos-pinned-drag-tests PROPERTIES
+        LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE
+        TIMEOUT 60 SKIP_RETURN_CODE 77)
     add_test(NAME snow-shot-macos-pinned-pixel-alignment-tests
         COMMAND snow-shot-pinned-window-tests --pixel-alignment-only -platform cocoa)
     set_tests_properties(snow-shot-macos-pinned-pixel-alignment-tests PROPERTIES
@@ -7003,6 +7008,32 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-recapture-native-tests
+        tests/macos_recapture_native_tests.mm
+        src/platform/macos/screenshotnative.mm
+        src/platform/macos/applicationactivation.mm)
+    target_include_directories(snow-shot-macos-recapture-native-tests PRIVATE include
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+    target_link_libraries(snow-shot-macos-recapture-native-tests PRIVATE Qt6::Widgets snow_capture_c
+        "-framework AppKit" "-framework ApplicationServices")
+    add_test(NAME snow-shot-macos-recapture-native-tests COMMAND snow-shot-macos-recapture-native-tests)
+    set_tests_properties(snow-shot-macos-recapture-native-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
+        RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 30)
+    foreach(target_kind IN ITEMS floating local local-floating)
+        add_test(NAME snow-shot-macos-recapture-${target_kind}-tests
+            COMMAND snow-shot-macos-recapture-native-tests --${target_kind})
+        set_tests_properties(snow-shot-macos-recapture-${target_kind}-tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
+            RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 30)
+    endforeach()
+
+    add_executable(snow-shot-macos-recapture-focus-tests tests/macos_recapture_focus_tests.cpp)
+    target_include_directories(snow-shot-macos-recapture-focus-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-recapture-focus-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-macos-recapture-focus-tests COMMAND snow-shot-macos-recapture-focus-tests)
+    set_tests_properties(snow-shot-macos-recapture-focus-tests PROPERTIES LABELS "unit;macos")
+
     add_executable(snow-shot-macos-overlay-initialization-tests
         tests/macos_overlay_initialization_tests.mm
         src/platform/macos/screenshotnative.mm
