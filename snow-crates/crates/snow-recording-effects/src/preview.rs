@@ -29,15 +29,7 @@ pub struct PreviewConfig {
 
 impl PreviewConfig {
     fn keyboard_output(&self) -> (u32, u32) {
-        // Native recording composes keycaps in the final pixel canvas.
-        #[cfg(target_os = "macos")]
-        {
-            self.output
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            (self.region.2, self.region.3)
-        }
+        (self.region.2, self.region.3)
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -250,6 +242,13 @@ impl PreviewSession {
         notify: Arc<dyn Fn() + Send + Sync>,
     ) -> Result<Self, String> {
         config.validate()?;
+        // Initialize on the caller before spawning the preview worker: stop()
+        // may join that worker from the main thread, so key translation cannot
+        // synchronously dispatch back to the host.
+        #[cfg(target_os = "macos")]
+        if config.show_keyboard {
+            snow_macos::text::prepare_keyboard_layout();
+        }
         let (sender, receiver) = bounded(1);
         let pending = receiver.clone();
         let latest = Arc::new(Mutex::new(None));
@@ -267,6 +266,12 @@ impl PreviewSession {
     }
     pub fn configure(&self, config: PreviewConfig) -> Result<(), String> {
         config.validate()?;
+        // Enabling keyboard display on an existing preview has the same
+        // initialization contract as starting one with keyboard display enabled.
+        #[cfg(target_os = "macos")]
+        if config.show_keyboard {
+            snow_macos::text::prepare_keyboard_layout();
+        }
         // Keep only the newest configuration; rapid color/geometry updates never block Qt.
         let command = Command::Configure(config);
         match self.sender.try_send(command) {
@@ -623,6 +628,7 @@ mod tests {
                 config.output = output;
                 let mut preview = EffectsPreview::new(config, Some(Box::new(FixedSquare)));
                 preview.keyboard.as_mut().unwrap().model.event(key(0, true));
+                assert_eq!(preview.config.keyboard_output(), capture);
                 let frame = preview.render(200).unwrap();
                 assert!(frame.mouse.is_empty());
                 let mut count = 0;

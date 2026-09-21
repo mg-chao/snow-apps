@@ -147,6 +147,9 @@ impl NativeRecordingSession {
                 crate::MediaPermission::Microphone,
             ));
         }
+        if config.effects.show_keyboard {
+            snow_macos::text::prepare_keyboard_layout();
+        }
         config.capture.opaque = true;
         let capture = DesktopSession::new(config.capture.clone()).map_err(native_error)?;
         let format = if hdr {

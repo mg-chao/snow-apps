@@ -8,7 +8,7 @@ pub const MOVE_MS: u64 = 180;
 pub const HOLD_MS: u64 = 1_200;
 pub const FADE_MS: u64 = 400;
 /// Native keycap height in output pixels for video and live preview.
-pub const KEYCAP_SIZE: u32 = 64;
+pub const KEYCAP_SIZE: u32 = snow_core::keycap_layout::HEIGHT;
 const KEYCAP_GAP: f32 = 10.0;
 const ROW_PITCH: f32 = KEYCAP_SIZE as f32 + 12.0;
 const MAX_ROWS: usize = 4;

@@ -151,7 +151,7 @@ mod platform {
                     self.weight,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
-                    32.0,
+                    snow_core::keycap_layout::FONT_SIZE,
                     w!(""),
                 )?;
                 format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
@@ -162,22 +162,15 @@ mod platform {
                     .SetFontFallback(&self.fallback)?;
                 let mut metrics = DWRITE_TEXT_METRICS::default();
                 layout.GetMetrics(&mut metrics)?;
-                // Sublinear growth keeps long legends compact, with equal padding for
-                // single-character and multi-character keys. Fit glyphs into that width.
-                let measured = metrics.widthIncludingTrailingWhitespace.max(1.0);
-                let content_width = if measured <= 32.0 {
-                    measured
-                } else {
-                    32.0 * (measured / 32.0).powf(0.85)
-                };
+                let (width, font_size) =
+                    snow_core::keycap_layout::fit(metrics.widthIncludingTrailingWhitespace);
                 layout.SetFontSize(
-                    32.0 * content_width / measured,
+                    font_size,
                     DWRITE_TEXT_RANGE {
                         startPosition: 0,
                         length: text.len() as u32,
                     },
                 )?;
-                let width = (content_width + 40.0).ceil() as u32;
                 layout.SetMaxWidth(width as f32)?;
                 layout.SetMaxHeight(KEYCAP_SIZE as f32)?;
                 layout.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;

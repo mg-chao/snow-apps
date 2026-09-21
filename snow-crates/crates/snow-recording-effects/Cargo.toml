@@ -5,6 +5,7 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+snow-core = { path = "../snow-core" }
 crossbeam-channel.workspace = true
 
 [target.'cfg(windows)'.dependencies]

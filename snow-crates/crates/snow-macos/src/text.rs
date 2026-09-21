@@ -121,36 +121,44 @@ pub fn keycap_with_font(
     }
     let scale = f64::from(scale);
     unsafe {
-        let font = keycap_font(font, 30.0 * scale)?;
+        let base_font = keycap_font(font, f64::from(snow_core::keycap_layout::FONT_SIZE))?;
         let color = CGColor::new_generic_rgb(
             f64::from(text[0]) / 255.0,
             f64::from(text[1]) / 255.0,
             f64::from(text[2]) / 255.0,
             f64::from(text[3]) / 255.0,
         );
-        let attributes = CFDictionary::<CFType, CFType>::from_slices(
-            &[
-                kCTFontAttributeName.as_ref(),
-                kCTForegroundColorAttributeName.as_ref(),
-            ],
-            &[font.as_ref(), color.as_ref()],
+        let make_line = |font: &CTFont| -> MacResult<CFRetained<CTLine>> {
+            let attributes = CFDictionary::<CFType, CFType>::from_slices(
+                &[
+                    kCTFontAttributeName.as_ref(),
+                    kCTForegroundColorAttributeName.as_ref(),
+                ],
+                &[font.as_ref(), color.as_ref()],
+            );
+            let value = CFAttributedString::new(
+                None,
+                Some(&CFString::from_str(label)),
+                Some(attributes.as_opaque()),
+            )
+            .ok_or_else(|| MacError::Unsupported("text allocation failed".into()))?;
+            Ok(CTLine::with_attributed_string(&value))
+        };
+        let base_line = make_line(&base_font)?;
+        let measured = base_line.typographic_bounds(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         );
-        let value = CFAttributedString::new(
-            None,
-            Some(&CFString::from_str(label)),
-            Some(attributes.as_opaque()),
-        )
-        .ok_or_else(|| MacError::Unsupported("text allocation failed".into()))?;
-        let line = CTLine::with_attributed_string(&value);
+        let (logical_width, font_size) = snow_core::keycap_layout::fit(measured as f32);
+        let fitted_font = keycap_font(font, f64::from(font_size) * scale)?;
+        let line = make_line(&fitted_font)?;
         let mut ascent = 0.0;
         let mut descent = 0.0;
         let measured =
             line.typographic_bounds(&raw mut ascent, &raw mut descent, std::ptr::null_mut());
-        let height = (64.0 * scale).ceil() as u32;
-        let width = (measured + 28.0 * scale)
-            .max(f64::from(height))
-            .ceil()
-            .min(4096.0) as u32;
+        let height = (f64::from(snow_core::keycap_layout::HEIGHT) * scale).round() as u32;
+        let width = (f64::from(logical_width) * scale).ceil().min(4096.0) as u32;
         let mut rgba = vec![0; width as usize * height as usize * 4];
         let space = CGColorSpace::with_name(Some(kCGColorSpaceSRGB)).ok_or(MacError::Inactive)?;
         let context = CGBitmapContextCreate(
@@ -188,7 +196,8 @@ pub fn keycap_with_font(
         };
         fill(border, 0.0);
         fill(background, scale);
-        // Quartz text uses a bottom-left origin. Flip only the backing rows after drawing.
+        // Quartz draws in y-up coordinates, but bitmap memory already exposes the
+        // visual top row first. Return those rows unchanged to the RGBA compositor.
         CGContext::set_text_position(
             Some(&context),
             (f64::from(width) - measured) / 2.0,
@@ -196,11 +205,6 @@ pub fn keycap_with_font(
         );
         line.draw(&context);
         drop(context);
-        let stride = width as usize * 4;
-        for y in 0..height as usize / 2 {
-            let (top, rest) = rgba.split_at_mut((height as usize - 1 - y) * stride);
-            top[y * stride..(y + 1) * stride].swap_with_slice(&mut rest[..stride]);
-        }
         Ok(KeycapImage {
             width,
             height,
@@ -208,19 +212,18 @@ pub fn keycap_with_font(
         })
     }
 }
-/// Resolve a key legend using the active macOS layout, without consuming dead
-/// keys or changing the user's input state. Call outside the event tap callback.
+/// Prepare the layout snapshot before starting keyboard consumers. On workers,
+/// the host main run loop must be running during this initialization.
+pub fn prepare_keyboard_layout() {
+    crate::keyboard_layout::prepare();
+}
+
+/// Resolve a key legend from the prepared layout snapshot, without consuming
+/// dead keys, accessing TIS on a worker, or waiting for the host main thread.
 pub fn keyboard_label(key: u16, keyboard_type: u32, modifiers: u64) -> Option<String> {
-    use objc2_core_foundation::{CFData, CFRetained};
-    use std::{ffi::c_void, ptr::NonNull};
+    use std::ffi::c_void;
     #[link(name = "Carbon", kind = "framework")]
     unsafe extern "C" {
-        static kTISPropertyUnicodeKeyLayoutData: *const CFString;
-        fn TISCopyCurrentKeyboardLayoutInputSource() -> *mut CFType;
-        fn TISGetInputSourceProperty(
-            source: *const CFType,
-            property: *const CFString,
-        ) -> *const c_void;
         fn UCKeyTranslate(
             layout: *const c_void,
             key: u16,
@@ -234,17 +237,8 @@ pub fn keyboard_label(key: u16, keyboard_type: u32, modifiers: u64) -> Option<St
             output: *mut u16,
         ) -> i32;
     }
+    let layout = crate::keyboard_layout::snapshot()?;
     unsafe {
-        let source = CFRetained::from_raw(NonNull::new(TISCopyCurrentKeyboardLayoutInputSource())?);
-        let data = TISGetInputSourceProperty(
-            CFRetained::as_ptr(&source).as_ptr(),
-            kTISPropertyUnicodeKeyLayoutData,
-        )
-        .cast::<CFData>()
-        .as_ref()?;
-        if data.length() <= 0 {
-            return None;
-        }
         let mut dead = 0;
         let mut length = 0;
         let mut text = [0; 16];
@@ -254,7 +248,7 @@ pub fn keyboard_label(key: u16, keyboard_type: u32, modifiers: u64) -> Option<St
             | (u32::from(modifiers & (1 << 16) != 0) << 2)
             | (u32::from(modifiers & (1 << 19) != 0) << 3);
         if UCKeyTranslate(
-            data.byte_ptr().cast(),
+            layout.as_ptr().cast(),
             key,
             3,
             flags,
@@ -307,6 +301,64 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[test]
+    fn coretext_keycaps_use_compact_pixel_geometry_at_every_scale() {
+        register_fixture_fonts();
+        // Fixture advances are 600 (Latin) and 900 (W) units per 1000 em.
+        // These are the Windows layout widths at a 32-pixel font size.
+        for (label, width) in [("F", 60), ("Ctrl", 108), ("WWWWWWWW", 212)] {
+            for scale in [0.5, 1.0, 1.25, 2.0] {
+                let image = keycap_with_font(
+                    label,
+                    scale,
+                    [0; 4],
+                    [255; 4],
+                    [0; 4],
+                    Some(KeycapFont {
+                        family: "Snow Recording Test Sans",
+                        cjk_family: "Snow Recording Test Han",
+                        weight: 400,
+                    }),
+                )
+                .unwrap();
+                assert_eq!(image.width, (width as f32 * scale).ceil() as u32, "{label}");
+                assert_eq!(image.height, (64.0 * scale).round() as u32);
+            }
+        }
+    }
+
+    #[test]
+    fn coretext_keycap_rows_are_top_down() {
+        register_fixture_fonts();
+        for scale in [0.5, 1.0, 2.0] {
+            let image = keycap_with_font(
+                "F",
+                scale,
+                [0; 4],
+                [255; 4],
+                [0; 4],
+                Some(KeycapFont {
+                    family: "Snow Recording Test Sans",
+                    cjk_family: "Snow Recording Test Han",
+                    weight: 400,
+                }),
+            )
+            .unwrap();
+            // The fixture glyph has a full-width TOP bar and a narrow vertical stem.
+            let rows: Vec<u32> = image
+                .rgba
+                .chunks_exact(image.width as usize * 4)
+                .map(|row| row.chunks_exact(4).map(|p| u32::from(p[3])).sum())
+                .filter(|sum| *sum > 0)
+                .collect();
+            let middle = rows.len() / 2;
+            assert!(
+                rows[..middle].iter().sum::<u32>() > rows[middle..].iter().sum::<u32>(),
+                "glyph top bar must precede its stem in top-down RGBA rows at scale {scale}"
+            );
+        }
     }
 
     #[test]

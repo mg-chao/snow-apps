@@ -1348,6 +1348,7 @@ name = "snow-recording-effects"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "snow-core",
  "snow-macos",
  "windows",
 ]
