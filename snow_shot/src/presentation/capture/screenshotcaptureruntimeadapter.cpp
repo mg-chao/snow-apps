@@ -193,3 +193,16 @@ bool ScreenshotCaptureRuntimeAdapter::resetCanvasRuntime() {
 void ScreenshotCaptureRuntimeAdapter::resetColorPicker() {
     m_context.colorPickerController.reset();
 }
+
+void ScreenshotCaptureRuntimeAdapter::createColorPicker(const QPoint& initialCursorGlobalPosition) {
+    m_context.overlayCoordinator.createColorPicker(initialCursorGlobalPosition);
+}
+
+void ScreenshotCaptureRuntimeAdapter::prepareColorPickerSurface(
+    const ScreenshotDisplaySession& displaySession) {
+    m_context.overlayCoordinator.prepareColorPickerSurface(displaySession);
+}
+
+void ScreenshotCaptureRuntimeAdapter::releaseColorPicker() {
+    m_context.overlayCoordinator.releaseColorPicker();
+}

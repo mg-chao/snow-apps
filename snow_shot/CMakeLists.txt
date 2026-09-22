@@ -1026,7 +1026,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotresultcompositor.h
     include/snow_shot/presentation/screenshotselectionshadowrenderer.h
     include/snow_shot/presentation/screenshotcolorpickercontroller.h
-    include/snow_shot/presentation/screenshotcolorpickerwidget.h
+    include/snow_shot/presentation/screenshotcolorpickerwindow.h
     include/snow_shot/presentation/screenshotcontroller.h
     include/snow_shot/presentation/screenshotdialogowner.h
     include/snow_shot/presentation/screenshotshortcutexitconfirmation.h
@@ -1161,7 +1161,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotclipboardcontent.cpp
     src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
     src/presentation/services/screenshotclipboardservice.cpp
-    src/presentation/services/screenshotcolorpickerwidget.cpp
+    src/presentation/services/screenshotcolorpickerwindow.cpp
     src/presentation/services/screenshotcontroller.cpp
     src/presentation/services/screenshotshortcutexitconfirmation.cpp
     src/presentation/services/screenshotexportcoordinator.cpp
@@ -2827,7 +2827,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-screenshot-color-picker-tests
         tests/screenshot_color_picker_tests.cpp
         include/snow_shot/presentation/styles/thememanager.h
-        src/presentation/services/screenshotcolorpickerwidget.cpp
+        src/presentation/services/screenshotcolorpickerwindow.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
@@ -4389,6 +4389,50 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE
             TIMEOUT 60 SKIP_RETURN_CODE 77)
     endif()
+    # Exercise the real UI host with the same overlay and toolbar implementations.
+    get_target_property(_color_picker_overlay_sources
+        snow-shot-screenshot-canvas-renderer-tests SOURCES)
+    get_target_property(_color_picker_toolbar_sources
+        snow-shot-screenshot-toolbar-remembered-tool-tests SOURCES)
+    set(_color_picker_lifecycle_sources
+        ${_color_picker_overlay_sources} ${_color_picker_toolbar_sources})
+    list(FILTER _color_picker_lifecycle_sources EXCLUDE REGEX "^tests/")
+    list(FILTER _color_picker_lifecycle_sources EXCLUDE
+        REGEX "/(directcapturehistory|screenshothistoryservice)[.]")
+    list(REMOVE_DUPLICATES _color_picker_lifecycle_sources)
+    add_executable(snow-shot-color-picker-lifecycle-tests
+        tests/screenshot_color_picker_lifecycle_tests.cpp
+        ${_color_picker_lifecycle_sources}
+        src/presentation/overlay/screenshotoverlaycoordinator.cpp
+        src/presentation/overlay/screenshotoverlayuihost.cpp
+        src/presentation/services/screenshotcolorpickerwindow.cpp
+        include/snow_shot/presentation/screenshotselectiontoolbarwidget.h
+        src/presentation/selection/screenshotselectiontoolbarwidget.cpp
+        src/presentation/selection/screenshotselectiontoolbarwidgets.h
+        src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
+    )
+    target_include_directories(snow-shot-color-picker-lifecycle-tests PRIVATE include)
+    target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
+        snow_shot_diagnostics snow_shot_storage snow_shot_window_shortcuts
+        snow_draw_engine_qt_canvas ant_design_qt adqt_icon_core ant_design_icons_qt Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE comctl32)
+    elseif(APPLE)
+        target_sources(snow-shot-color-picker-lifecycle-tests PRIVATE
+            src/platform/macos/screenshotnative.mm)
+        target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE "-framework AppKit")
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
+    add_test(NAME snow-shot-color-picker-lifecycle-tests
+        COMMAND snow-shot-color-picker-lifecycle-tests)
+    set_tests_properties(snow-shot-color-picker-lifecycle-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        TIMEOUT 60)
+    unset(_color_picker_overlay_sources)
+    unset(_color_picker_toolbar_sources)
+    unset(_color_picker_lifecycle_sources)
+
     snow_shot_import_offscreen_platform(snow-shot-floating-toolbar-drag-tests)
     add_test(NAME snow-shot-toolbar-stable-tool-frame-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --stable-tool-frame-only -platform offscreen)
@@ -6188,8 +6232,8 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             LABELS "benchmark;windows" RUN_SERIAL TRUE TIMEOUT 90)
     endif()
 
-    # Measures the recording window startup phases (controller open → windows
-    # shown → first paint → first motion-preview frame) through the
+    # Measures the recording window startup phases (controller open ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ windows
+    # shown ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ first paint ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ first motion-preview frame) through the
     # compile-time gated recording_perf instrumentation. Deterministic and
     # offscreen, so unlike the effects presentation benchmark it stays out of
     # the interactive label.

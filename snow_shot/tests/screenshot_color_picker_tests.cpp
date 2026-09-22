@@ -1,4 +1,4 @@
-#include "snow_shot/presentation/screenshotcolorpickerwidget.h"
+#include "snow_shot/presentation/screenshotcolorpickerwindow.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -21,7 +21,7 @@ void require(bool condition, const char* message) {
     }
 }
 
-void sampleRed(ScreenshotColorPickerWidget& picker) {
+void sampleRed(ScreenshotColorPickerWindow& picker) {
     QImage image(16, 16, QImage::Format_RGBA8888);
     image.fill(Qt::red);
     picker.setCaptureImage(image, image.rect());
@@ -47,7 +47,7 @@ void formatPersistsAcrossCapturesAndRestarts() {
                              QStringLiteral("hsl(0, 100.0%, 50.0%)"), QStringLiteral("#FF0000")};
     for (qsizetype index = 0; index < formats.size(); ++index) {
         {
-            ScreenshotColorPickerWidget picker;
+            ScreenshotColorPickerWindow picker;
             sampleRed(picker);
             require(picker.currentColorText() == colors.at(index),
                     "a recreated picker must restore the persisted color format");
@@ -81,7 +81,7 @@ void formatPersistsAcrossCapturesAndRestarts() {
     configuration.close();
     require(applicationStorage.initialize(options).success, "failed to reload invalid format");
     {
-        ScreenshotColorPickerWidget picker;
+        ScreenshotColorPickerWindow picker;
         sampleRed(picker);
         require(picker.currentColorText() == QStringLiteral("#FF0000") &&
                     settings.colorPickerFormat() == QStringLiteral("hex"),
@@ -91,7 +91,7 @@ void formatPersistsAcrossCapturesAndRestarts() {
 }
 
 void formatSurvivesResetWithoutStorage() {
-    ScreenshotColorPickerWidget picker;
+    ScreenshotColorPickerWindow picker;
     sampleRed(picker);
     picker.cycleColorFormat();
     picker.resetForNewCapture();
@@ -101,7 +101,7 @@ void formatSurvivesResetWithoutStorage() {
 }
 
 void plainHexPreservesSixUppercaseDigits() {
-    ScreenshotColorPickerWidget picker;
+    ScreenshotColorPickerWindow picker;
     picker.cycleColorFormat();
     const QList<QColor> colors{QColor(0, 0, 0), QColor(0, 10, 188), QColor(255, 255, 255)};
     const QStringList expected{QStringLiteral("000000"), QStringLiteral("000ABC"),
@@ -121,7 +121,7 @@ void pickerUsesASeparateClickThroughWindow() {
     owner.setGeometry(320, 180, 800, 600);
     owner.show();
 
-    ScreenshotColorPickerWidget picker;
+    ScreenshotColorPickerWindow picker;
     picker.setOwnerWindow(&owner);
     require(picker.isWindow() && picker.parentWidget() == &owner,
             "the display color picker must be a separate window owned by its overlay");

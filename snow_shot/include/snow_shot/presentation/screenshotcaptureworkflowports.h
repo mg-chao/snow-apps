@@ -58,6 +58,9 @@ class ScreenshotCaptureRuntimePort {
 
     [[nodiscard]] virtual bool clearDocumentPreservingViewports() = 0;
     [[nodiscard]] virtual bool resetCanvasRuntime() = 0;
+    virtual void createColorPicker(const QPoint& initialCursorGlobalPosition) = 0;
+    virtual void prepareColorPickerSurface(const ScreenshotDisplaySession& displaySession) = 0;
+    virtual void releaseColorPicker() = 0;
     virtual void resetColorPicker() = 0;
 };
 

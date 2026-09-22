@@ -72,6 +72,7 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
 
 void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation toolbarPreparation,
                                              ToolbarVisibility toolbarVisibility) {
+    const QPoint initialCursorGlobalPosition = QCursor::pos();
     completeRecapture(false);
     if (m_deferredExportCleanup) {
         completeDeferredExportCleanup();
@@ -111,6 +112,7 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_context.intelligentSelection.beginCaptureSession(mode != StartMode::ExternalDrag &&
                                                            m_context.smartSelectionEnabled(),
                                                        m_context.preferredSelectionTarget());
+    m_context.runtime.createColorPicker(initialCursorGlobalPosition);
     beginCapturePreparation(sessionId);
 }
 
@@ -223,6 +225,7 @@ void ScreenshotCaptureWorkflow::clearDisplays() {
 
 void ScreenshotCaptureWorkflow::finishCaptureSession(bool deferExportCleanup) {
     SNOW_SHOT_PIN_PERF_SCOPE("cleanup.finish_capture_session");
+    m_context.runtime.releaseColorPicker();
     if (deferExportCleanup) {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_overlays_immediately");
         m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
@@ -314,6 +317,7 @@ void ScreenshotCaptureWorkflow::cleanupActiveSessionForRestart() {
     m_refreshAfterCapture = false;
     m_context.runtime.releaseSelectorCache();
     resetCaptureModels();
+    m_context.runtime.releaseColorPicker();
     m_context.runtime.hideOverlayWindows(m_context.displaySession);
     if (m_context.presentation.hideToolbar) {
         m_context.presentation.hideToolbar();
@@ -388,6 +392,7 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
     }
+    m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
     if (preCapturePrepared) {
         m_canvasRuntimeClean = false;
 
@@ -476,6 +481,7 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     }
 
     m_context.runtime.applyDisplayModels(m_context.displaySession);
+    m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
     m_canvasRuntimeClean = false;
     if (m_context.presentation.updateOverlayState) {
         m_context.presentation.updateOverlayState();

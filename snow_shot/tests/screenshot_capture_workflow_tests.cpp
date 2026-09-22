@@ -40,6 +40,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void captureAsync(const ScreenshotCaptureRequest& request) override {
         ++captureAllAsyncCalls;
+        operations.push_back(QStringLiteral("capture-dispatched"));
         lastCaptureRequest = request;
         captureWasQueuedBeforeSelectorRefresh = !selectorRefreshActive;
         if (failCaptureSynchronously && eventSink != nullptr) {
@@ -102,6 +103,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     [[nodiscard]] bool
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override {
         ++preparePreCaptureOverlayCalls;
+        operations.push_back(QStringLiteral("prepare-overlays"));
         if (seedActiveDisplayOnPrepare) {
             CapturedDisplayModel display;
             display.stableId = QStringLiteral("primary");
@@ -116,6 +118,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void showOverlayWindows(const ScreenshotDisplaySession&,
                             ScreenshotOverlayShowMode mode) override {
         ++showOverlayCalls;
+        operations.push_back(QStringLiteral("show-overlays"));
         showOverlayModes.push_back(mode);
         if (mode == ScreenshotOverlayShowMode::WarmSurface) {
             ++warmSurfaceShowCalls;
@@ -145,6 +148,25 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         return true;
     }
     void resetColorPicker() override {}
+    void createColorPicker(const QPoint&) override {
+        ++createColorPickerCalls;
+        colorPickerAlive = true;
+        operations.push_back(QStringLiteral("create-picker"));
+    }
+    void prepareColorPickerSurface(const ScreenshotDisplaySession&) override {
+        ++prepareColorPickerCalls;
+        operations.push_back(QStringLiteral("prepare-picker"));
+    }
+    void releaseColorPicker() override {
+        ++releaseColorPickerCalls;
+        colorPickerAlive = false;
+        operations.push_back(QStringLiteral("release-picker"));
+    }
+
+    int createColorPickerCalls = 0;
+    int prepareColorPickerCalls = 0;
+    int releaseColorPickerCalls = 0;
+    bool colorPickerAlive = false;
 
     ScreenshotCaptureWorkerEventSink* eventSink = nullptr;
     int prepareAsyncCalls = 0;
@@ -273,6 +295,8 @@ void idlePrewarmDoesNotInitializeSelector() {
 
     workflow.prewarmResources();
     workflow.prewarmResources();
+    require(runtime.createColorPickerCalls == 0 && runtime.prepareColorPickerCalls == 0,
+            "idle prewarm must not create or prepare the color picker");
     require(runtime.prepareAsyncCalls == 1 && runtime.prewarmDisplayPoolCalls == 1,
             "idle kernel preparation must be idempotent once resources are prepared");
     require(runtime.prewarmDisplayPoolSawRuntimeReset,
@@ -386,6 +410,8 @@ void exportCancellationDefersExpensiveCleanup() {
     });
 
     workflow.cancelCaptureForExport();
+    require(runtime.releaseColorPickerCalls == 1 && !runtime.colorPickerAlive,
+            "export must release the picker before deferred cleanup");
     require(runtime.cancelActiveCaptureCalls == 1 && captureTerminatedCalls == 1,
             "export cancellation must stop the active capture before presenting the pin");
     require(runtime.hideOverlayImmediatelyCalls == 1 && runtime.hideOverlayCalls == 0,
@@ -450,6 +476,9 @@ void synchronousCaptureFailureDoesNotRestartSelectorRefresh() {
                                  intelligentSelection, runtime);
     workflow.startCapture();
 
+    require(runtime.createColorPickerCalls == 1 && runtime.releaseColorPickerCalls == 1 &&
+                runtime.prepareColorPickerCalls == 0 && !runtime.colorPickerAlive,
+            "synchronous failure must destroy the picker and skip subsequent preparation");
     require(!state.captureInProgress && state.sessionState == ScreenshotSessionState::IdlePrepared,
             "synchronous capture failure must return the workflow to idle");
     require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
@@ -539,6 +568,10 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
     runtime.eventSink->handleCaptureFinished(result);
     runtime.eventSink->handleCaptureFinished(result);
 
+    require(runtime.prepareColorPickerCalls == 2 &&
+                runtime.operations.lastIndexOf(QStringLiteral("prepare-picker")) <
+                    runtime.operations.indexOf(QStringLiteral("show-overlays")),
+            "displays supplied by the capture result must prepare the picker before presentation");
     require(runtime.showOverlayCalls == 1 && runtime.capturedImageShowCalls == 1 &&
                 runtime.warmSurfaceShowCalls == 0 && capturePresentedCalls == 1 &&
                 showCallsObservedByCallback == 1,
@@ -1296,6 +1329,8 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     replacement.image.fill(Qt::blue);
     runtime.eventSink->handleCaptureFinished(
         successfulRecaptureResult(runtime.lastCaptureRequest.requestId, replacement));
+    require(runtime.createColorPickerCalls == 0 && runtime.releaseColorPickerCalls == 0,
+            "recapture must leave the existing session picker lifetime unchanged");
     require(completions == 1 && lastSucceeded && !workflow.recaptureInProgress() &&
                 displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
             "successful recapture must replace the desktop image exactly once");
@@ -1347,7 +1382,57 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
             "a stale recapture callback after teardown must be ignored");
 }
 
+void colorPickerFollowsCaptureSessionLifetime() {
+    ScreenshotCaptureState state;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.seedActiveDisplayOnPrepare = true;
+    auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+    workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::ExternalDrag,
+                          ScreenshotCaptureWorkflow::ToolbarPreparation::OnDemand);
+    require(runtime.colorPickerAlive && runtime.createColorPickerCalls == 1 &&
+                runtime.prepareColorPickerCalls == 1 && runtime.prewarmToolbarSurfaceCalls == 0,
+            "every capture must create and prepare a picker independently of the toolbar");
+    const auto index = [&](const char* operation) {
+        return runtime.operations.indexOf(QString::fromLatin1(operation));
+    };
+    require(index("create-picker") < index("prepare-overlays") &&
+                index("capture-dispatched") < index("prepare-picker"),
+            "picker creation must precede preparation and native preparation must follow dispatch");
+    if (index("show-overlays") >= 0) {
+        require(index("prepare-picker") < index("show-overlays"),
+                "the picker must be prepared before overlay presentation");
+    }
+    workflow.startCapture();
+    require(runtime.createColorPickerCalls == 2 && runtime.releaseColorPickerCalls == 1 &&
+                runtime.colorPickerAlive,
+            "restarting must release the previous picker and create a replacement");
+    workflow.cancelCapture();
+    require(!runtime.colorPickerAlive && runtime.releaseColorPickerCalls == 2,
+            "cancellation must release the session picker");
+    workflow.prewarmResources();
+    require(runtime.createColorPickerCalls == 2 && !runtime.colorPickerAlive,
+            "cleanup and idle prewarm must leave the picker absent");
+    workflow.startCapture();
+    ScreenshotCaptureResult failed;
+    failed.requestId = runtime.lastCaptureRequest.requestId;
+    failed.purpose = ScreenshotCapturePurpose::Initial;
+    runtime.eventSink->handleCaptureFinished(failed);
+    require(!runtime.colorPickerAlive && runtime.releaseColorPickerCalls == 3,
+            "asynchronous capture failure must release the picker");
+    const int preparations = runtime.prepareColorPickerCalls;
+    runtime.eventSink->handleCaptureFinished(failed);
+    require(runtime.createColorPickerCalls == 3 && runtime.prepareColorPickerCalls == preparations,
+            "stale capture results must not recreate or prepare the picker");
+}
+
 int main() {
+    colorPickerFollowsCaptureSessionLifetime();
     recapturePreservesEditingStateAndRollsBackFailures();
     toolbarVisibilityIsIndependentOfInputAndPreparation();
     noToolbarCaptureWaitsForUserSelection();

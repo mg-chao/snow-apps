@@ -5,7 +5,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
-#include "snow_shot/presentation/screenshotcolorpickerwidget.h"
+#include "snow_shot/presentation/screenshotcolorpickerwindow.h"
 #include "snow_shot/presentation/screenshotselectiontoolbarwidget.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
@@ -461,18 +461,34 @@ void ScreenshotOverlayUiHost::attachSelectionToolbarToOverlay(ScreenshotOverlayW
     }
 }
 
-ScreenshotColorPickerWidget* ScreenshotOverlayUiHost::ensureColorPicker() {
+void ScreenshotOverlayUiHost::createColorPicker() {
     if (m_colorPicker == nullptr) {
-        auto* colorPicker = new ScreenshotColorPickerWidget();
+        auto* colorPicker = new ScreenshotColorPickerWindow();
         m_ownedWidgets.add(colorPicker);
         m_colorPicker = colorPicker;
         colorPicker->setCenterGuideLineColor(m_colorPickerCenterGuideLineColor);
         colorPicker->hide();
     }
-    return trackedWidget(m_colorPicker);
 }
 
-ScreenshotColorPickerWidget* ScreenshotOverlayUiHost::colorPicker() const {
+void ScreenshotOverlayUiHost::prepareColorPickerSurface(ScreenshotOverlayWindow* overlay) {
+    // Capture-result preparation must not move a picker that already follows
+    // the cursor on another display back to the first overlay.
+    if (m_colorPicker != nullptr && overlay != nullptr &&
+        (m_colorPicker->parentWidget() == nullptr || m_colorPicker->windowHandle() == nullptr)) {
+        m_colorPicker->setOwnerWindow(overlay);
+    }
+    if (m_colorPicker != nullptr && m_colorPicker->parentWidget() != nullptr) {
+        m_colorPicker->prepareNativeSurface();
+    }
+}
+
+void ScreenshotOverlayUiHost::releaseColorPicker() {
+    // QObjectCleanupHandler and QPointer both stop tracking a deleted object.
+    delete m_colorPicker.data();
+}
+
+ScreenshotColorPickerWindow* ScreenshotOverlayUiHost::colorPicker() const {
     return m_colorPicker.data();
 }
 
@@ -485,7 +501,10 @@ void ScreenshotOverlayUiHost::updateColorPicker(ScreenshotOverlayWindow* overlay
         return;
     }
 
-    ScreenshotColorPickerWidget* picker = ensureColorPicker();
+    ScreenshotColorPickerWindow* picker = colorPicker();
+    if (picker == nullptr) {
+        return;
+    }
     if (picker->parentWidget() != overlay || !picker->isWindow()) {
         picker->setOwnerWindow(overlay);
     }

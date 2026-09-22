@@ -13,7 +13,7 @@
 #include <QRect>
 #include <QRectF>
 
-class ScreenshotColorPickerWidget;
+class ScreenshotColorPickerWindow;
 class ScreenshotOverlayWindow;
 class ScreenshotSelectionToolbarCommandSink;
 class ScreenshotSelectionToolbarWidget;
@@ -36,8 +36,10 @@ class ScreenshotOverlayUiHost final {
     void redoCanvasEdit();
     ScreenshotSelectionToolbarWidget* selectionToolbar() const;
     void attachSelectionToolbarToOverlay(ScreenshotOverlayWindow* overlay);
-    ScreenshotColorPickerWidget* ensureColorPicker();
-    ScreenshotColorPickerWidget* colorPicker() const;
+    void createColorPicker();
+    void prepareColorPickerSurface(ScreenshotOverlayWindow* overlay);
+    void releaseColorPicker();
+    ScreenshotColorPickerWindow* colorPicker() const;
     void updateColorPicker(ScreenshotOverlayWindow* overlay, const QImage& image,
                            const QRect& physicalRect, const QPoint& physicalPoint,
                            const QPointF& localPosition, qreal opacity);
@@ -81,7 +83,7 @@ class ScreenshotOverlayUiHost final {
     QMetaObject::Connection m_toolbarStylePopupBeginConnection;
     QMetaObject::Connection m_toolbarStylePopupEndConnection;
     QPointer<ScreenshotSelectionToolbarWidget> m_selectionToolbar;
-    QPointer<ScreenshotColorPickerWidget> m_colorPicker;
+    QPointer<ScreenshotColorPickerWindow> m_colorPicker;
     QPointer<QWidget> m_shortcutHints;
     QColor m_colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);
     bool m_selectionToolbarHiddenForSession = false;

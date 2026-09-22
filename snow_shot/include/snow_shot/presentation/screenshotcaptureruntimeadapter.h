@@ -62,6 +62,9 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
 
     [[nodiscard]] bool clearDocumentPreservingViewports() override;
     [[nodiscard]] bool resetCanvasRuntime() override;
+    void createColorPicker(const QPoint& initialCursorGlobalPosition) override;
+    void prepareColorPickerSurface(const ScreenshotDisplaySession& displaySession) override;
+    void releaseColorPicker() override;
     void resetColorPicker() override;
 
   private:

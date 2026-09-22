@@ -1,5 +1,5 @@
-#ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWIDGET_H
-#define SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWIDGET_H
+#ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWINDOW_H
+#define SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWINDOW_H
 
 #include <QColor>
 #include <QImage>
@@ -11,11 +11,12 @@
 class QGraphicsOpacityEffect;
 class QPaintEvent;
 
-class ScreenshotColorPickerWidget final : public QWidget {
+class ScreenshotColorPickerWindow final : public QWidget {
   public:
-    explicit ScreenshotColorPickerWidget(QWidget* parent = nullptr);
+    explicit ScreenshotColorPickerWindow(QWidget* parent = nullptr);
 
     void setOwnerWindow(QWidget* owner);
+    void prepareNativeSurface();
     void resetForNewCapture();
     void setCaptureImage(const QImage& image, const QRect& physicalRect);
     void updatePicker(const QPoint& physicalPoint, const QPointF& overlayLocalPosition,
@@ -58,6 +59,7 @@ class ScreenshotColorPickerWidget final : public QWidget {
     QGraphicsOpacityEffect* m_opacityEffect = nullptr;
     ColorFormat m_colorFormat = ColorFormat::Hex;
     bool m_hasCurrentColor = false;
+    qreal m_preparedSurfaceDevicePixelRatio = 0.0;
 };
 
-#endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWIDGET_H
+#endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWINDOW_H

@@ -1,7 +1,7 @@
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 
 #include "snow_shot/platform/physicalcursor.h"
-#include "snow_shot/presentation/screenshotcolorpickerwidget.h"
+#include "snow_shot/presentation/screenshotcolorpickerwindow.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
@@ -166,7 +166,7 @@ void ScreenshotColorPickerController::updateAfterCursorMove(
 
 bool ScreenshotColorPickerController::copyColorToClipboard(
     const ScreenshotColorPickerContext& context) {
-    ScreenshotColorPickerWidget* picker = m_overlayCoordinator.colorPicker();
+    ScreenshotColorPickerWindow* picker = m_overlayCoordinator.colorPicker();
     if (m_overlay == nullptr || picker == nullptr || !picker->hasCurrentColor() ||
         !enabled(context)) {
         return false;
@@ -181,7 +181,7 @@ bool ScreenshotColorPickerController::cycleFormat(const ScreenshotColorPickerCon
         return false;
     }
 
-    ScreenshotColorPickerWidget* picker = m_overlayCoordinator.colorPicker();
+    ScreenshotColorPickerWindow* picker = m_overlayCoordinator.colorPicker();
     if (picker == nullptr) {
         return false;
     }

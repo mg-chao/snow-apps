@@ -2,7 +2,7 @@
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
-#include "snow_shot/presentation/screenshotcolorpickerwidget.h"
+#include "snow_shot/presentation/screenshotcolorpickerwindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
@@ -451,7 +451,7 @@ void ScreenshotOverlayCoordinator::redoCanvasEdit() {
     m_uiHost.redoCanvasEdit();
 }
 
-ScreenshotColorPickerWidget* ScreenshotOverlayCoordinator::colorPicker() const {
+ScreenshotColorPickerWindow* ScreenshotOverlayCoordinator::colorPicker() const {
     return m_uiHost.colorPicker();
 }
 
@@ -574,4 +574,30 @@ ScreenshotOverlayCoordinator::excludedHwnds(const ScreenshotDisplaySession& disp
     appendWidgetHwnd(m_uiHost.toolbar());
     appendWidgetHwnd(m_uiHost.colorPicker());
     return hwnds;
+}
+
+void ScreenshotOverlayCoordinator::createColorPicker(const QPoint& initialCursorGlobalPosition) {
+    m_colorPickerInitialCursorGlobalPosition = initialCursorGlobalPosition;
+    m_uiHost.createColorPicker();
+}
+
+void ScreenshotOverlayCoordinator::prepareColorPickerSurface(
+    const ScreenshotDisplaySession& displaySession) {
+    ScreenshotOverlayWindow* owner = nullptr;
+    displaySession.forEachActiveOverlay(
+        [&](qsizetype, const CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
+            if (owner == nullptr &&
+                display.logicalRect.contains(m_colorPickerInitialCursorGlobalPosition)) {
+                owner = overlay;
+            }
+        });
+    // The invocation display may have disappeared during capture preparation.
+    if (owner == nullptr) {
+        owner = displaySession.firstActiveOverlay();
+    }
+    m_uiHost.prepareColorPickerSurface(owner);
+}
+
+void ScreenshotOverlayCoordinator::releaseColorPicker() {
+    m_uiHost.releaseColorPicker();
 }
