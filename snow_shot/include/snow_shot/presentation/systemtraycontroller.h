@@ -57,6 +57,7 @@ class SystemTrayController final : public QObject {
   signals:
     void screenshotRequested();
     void showMainWindowRequested();
+    void restartRequested();
     void openFunctionSettingsRequested();
     void openAboutRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);

@@ -223,6 +223,37 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
     </context>
     <context>
+        <name>ApplicationRestart</name>
+        <message>
+            <source>Another restart operation is in progress.</source>
+            <translation>另一个重启操作正在进行中。</translation>
+        </message>
+        <message>
+            <source>Could not create the restart handoff.</source>
+            <translation>无法创建重启交接。</translation>
+        </message>
+        <message>
+            <source>Could not start the replacement application.</source>
+            <translation>无法启动替代应用程序。</translation>
+        </message>
+        <message>
+            <source>Finish capturing, recording, exporting, or updating before restarting.</source>
+            <translation>请完成截图、录制、导出或更新后再重启。</translation>
+        </message>
+        <message>
+            <source>The replacement application did not acknowledge the restart.</source>
+            <translation>替代应用程序未确认重启。</translation>
+        </message>
+        <message>
+            <source>The replacement application did not become ready.</source>
+            <translation>替代应用程序未准备就绪。</translation>
+        </message>
+        <message>
+            <source>Your settings could not be saved. Please retry before restarting.</source>
+            <translation>无法保存设置。请在重启前重试。</translation>
+        </message>
+    </context>
+    <context>
         <name>DiagnosticsService</name>
         <message>
             <source>A log file could not be read.</source>
@@ -597,6 +628,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Restart and update</source>
             <translation>重启并更新</translation>
+        </message>
+        <message>
+            <source>Restart failed</source>
+            <translation>重启失败</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

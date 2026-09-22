@@ -450,6 +450,13 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/menu_options")).toArray());
     require(stableTrayOptions.valid && !stableTrayOptions.changed,
             "current tray menu defaults must normalize without changes");
+    const auto restartTrayOption = storage::ConfigurationSchema::normalize(
+        QStringLiteral("tray/menu_options"),
+        QJsonArray{QStringLiteral("tray.show-main-window"), QStringLiteral("tray.restart-app"),
+                   QStringLiteral("tray.exit")});
+    require(restartTrayOption.valid && !restartTrayOption.changed &&
+                restartTrayOption.value.toArray().contains(QStringLiteral("tray.restart-app")),
+            "Restart App must be accepted only when explicitly selected");
     require(!storage::ConfigurationSchema::normalize(QStringLiteral("tray/menu_options"),
                                                      QStringLiteral("quick.screenshot"))
                  .valid,
@@ -1945,12 +1952,18 @@ void trayClickSettingsSurviveRestart() {
             "missing tray settings must use independent defaults");
     require(tray.setLeftClickAction(QStringLiteral("screenshot_copy")) &&
                 tray.setMiddleClickAction(QStringLiteral("open_function_settings")) &&
+                tray.setMenuOptions({QStringLiteral("tray.show-main-window"),
+                                     QStringLiteral("tray.restart-app"),
+                                     QStringLiteral("tray.exit")}) &&
                 applicationStorage.flushNow().success,
-            "persist distinct tray click actions");
+            "persist distinct tray click actions and opt-in menu commands");
     static_cast<void>(initialize(executable, temporary.path()));
     require(tray.leftClickAction() == QStringLiteral("screenshot_copy") &&
-                tray.middleClickAction() == QStringLiteral("open_function_settings"),
-            "both tray click choices must survive storage restart");
+                tray.middleClickAction() == QStringLiteral("open_function_settings") &&
+                tray.menuOptions() == QStringList{QStringLiteral("tray.show-main-window"),
+                                                  QStringLiteral("tray.restart-app"),
+                                                  QStringLiteral("tray.exit")},
+            "tray click choices and Restart App must survive storage restart");
     applicationStorage.shutdown();
 }
 

@@ -1,4 +1,5 @@
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/app/applicationrestart.h"
 #include "snow_shot/app/featureavailability.h"
 #include "snow_shot/presentation/apppermissionservice.h"
 #ifdef Q_OS_MACOS
@@ -80,7 +81,8 @@ storage::PinnedWindowRepository* initializedPinnedWindowRepository() {
 class ApplicationController::Impl {
   public:
     Impl(ApplicationController& owner, QApplication& application)
-        : q(owner), app(application), groupManager(initializedPinnedWindowRepository()),
+        : q(owner), app(application), restartCoordinator(application),
+          groupManager(initializedPinnedWindowRepository()),
           systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager),
           featureRouter([this](FeatureFamily feature) { showUnavailableFeature(feature); }) {
         QObject::connect(
@@ -97,6 +99,16 @@ class ApplicationController::Impl {
             });
         QObject::connect(&systemTray, &presentation::SystemTrayController::showMainWindowRequested,
                          &q, [this]() { showMainWindow(); });
+        QObject::connect(
+            &systemTray, &presentation::SystemTrayController::restartRequested, &q, [this]() {
+                const auto result = restartCoordinator.restart(
+                    [this]() { return restartAllowed(); },
+                    []() { return storage::ApplicationStorage::instance().flushNow().success; });
+                if (!result.success) {
+                    systemTray.showWarningMessage(ApplicationController::tr("Restart failed"),
+                                                  result.error);
+                }
+            });
         QObject::connect(&systemTray,
                          &presentation::SystemTrayController::openFunctionSettingsRequested, &q,
                          [this]() { ensureMainWindow().showFunctionSettings(); });
@@ -238,11 +250,7 @@ class ApplicationController::Impl {
             systemTray.showUpdateMessage(ApplicationController::tr(
                 "An update is ready. Open About to restart and update Snow Shot."));
         });
-        platform::windows::setAdministratorRestartGuard([this] {
-            return updates->status().state != update::UpdateState::Applying &&
-                   !(screenshotController && screenshotController->blocksApplicationUpdate()) &&
-                   !(directCaptureController && directCaptureController->blocksApplicationUpdate());
-        });
+        platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
             if (platform::windows::administratorOperationPending())
                 return;
@@ -314,6 +322,12 @@ class ApplicationController::Impl {
             mainWindow->setAttribute(Qt::WA_DeleteOnClose, false);
             delete mainWindow;
         }
+    }
+
+    [[nodiscard]] bool restartAllowed() const {
+        return updates != nullptr && updates->status().state != update::UpdateState::Applying &&
+               !(screenshotController && screenshotController->blocksApplicationUpdate()) &&
+               !(directCaptureController && directCaptureController->blocksApplicationUpdate());
     }
 
     void applyOcrConfiguration() {
@@ -782,6 +796,7 @@ class ApplicationController::Impl {
 
     ApplicationController& q;
     QApplication& app;
+    ApplicationRestartCoordinator restartCoordinator;
     // These services outlive the disposable configuration window.
     presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;

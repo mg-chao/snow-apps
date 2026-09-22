@@ -223,6 +223,37 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         </message>
     </context>
     <context>
+        <name>ApplicationRestart</name>
+        <message>
+            <source>Another restart operation is in progress.</source>
+            <translation>Another restart operation is in progress.</translation>
+        </message>
+        <message>
+            <source>Could not create the restart handoff.</source>
+            <translation>Could not create the restart handoff.</translation>
+        </message>
+        <message>
+            <source>Could not start the replacement application.</source>
+            <translation>Could not start the replacement application.</translation>
+        </message>
+        <message>
+            <source>Finish capturing, recording, exporting, or updating before restarting.</source>
+            <translation>Finish capturing, recording, exporting, or updating before restarting.</translation>
+        </message>
+        <message>
+            <source>The replacement application did not acknowledge the restart.</source>
+            <translation>The replacement application did not acknowledge the restart.</translation>
+        </message>
+        <message>
+            <source>The replacement application did not become ready.</source>
+            <translation>The replacement application did not become ready.</translation>
+        </message>
+        <message>
+            <source>Your settings could not be saved. Please retry before restarting.</source>
+            <translation>Your settings could not be saved. Please retry before restarting.</translation>
+        </message>
+    </context>
+    <context>
         <name>DiagnosticsService</name>
         <message>
             <source>A log file could not be read.</source>
@@ -597,6 +628,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <message>
             <source>Restart and update</source>
             <translation>Restart and update</translation>
+        </message>
+        <message>
+            <source>Restart failed</source>
+            <translation>Restart failed</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

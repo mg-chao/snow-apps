@@ -901,6 +901,16 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-administrator-launch-tests PRIVATE snow_shot_administrator)
     add_test(NAME snow-shot-administrator-launch-tests COMMAND snow-shot-administrator-launch-tests)
     set_tests_properties(snow-shot-administrator-launch-tests PROPERTIES LABELS "unit;windows" TIMEOUT 30)
+
+    add_executable(snow-shot-application-restart-tests
+        tests/application_restart_tests.cpp
+        src/app/applicationrestart.cpp)
+    target_include_directories(snow-shot-application-restart-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-application-restart-tests PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME snow-shot-application-restart-tests COMMAND snow-shot-application-restart-tests)
+    set_tests_properties(snow-shot-application-restart-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
 add_library(snow_shot_permissions STATIC
     include/snow_shot/presentation/apppermissionservice.h
@@ -998,6 +1008,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshottabledocument.h
     include/snow_shot/presentation/screenshottableeditor.h
     include/snow_shot/app/applicationcontroller.h
+    include/snow_shot/app/applicationrestart.h
     include/snow_shot/app/singleinstancecoordinator.h
     include/snow_shot/platform/windows/autostartregistration.h
     include/snow_shot/platform/windows/focusedfullscreenwindow.h
@@ -1127,6 +1138,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/directcapturehistory.cpp
     src/presentation/capture/camerashuttersound.cpp
     src/app/applicationcontroller.cpp
+    src/app/applicationrestart.cpp
     src/app/featureavailability.cpp
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp

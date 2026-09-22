@@ -1,6 +1,7 @@
 {
   "core": [
     "AboutPageWidget",
+    "ApplicationRestart",
     "DiagnosticsService",
     "LanguageCatalog",
     "MainContentHeaderWidget",
