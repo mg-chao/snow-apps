@@ -21,6 +21,12 @@ class MacOSBundleMetadata(unittest.TestCase):
         resources = ROOT / 'snow_shot/packaging/macos'
         plist = plistlib.loads((resources / 'Info.plist.in').read_bytes())
         background = ET.parse(resources / 'dmg-background.svg').getroot()
+        background_source = (resources / 'dmg-background.svg').read_text()
+        package_source = (ROOT / 'cmake/SnowShotMacOSPackage.cmake').read_text()
+        self.assertIn('@SNOW_DMG_WORDMARK@', background_source)
+        self.assertNotIn('>Snow Shot</', background_source)
+        self.assertIn('icons/resources/snow-shot-logo.svg', package_source)
+        self.assertIn('configure_file(', package_source)
         language_key = '{http://www.w3.org/XML/1998/namespace}lang'
         groups = {element.attrib[language_key]: element
                   for element in background.iter('{http://www.w3.org/2000/svg}g')

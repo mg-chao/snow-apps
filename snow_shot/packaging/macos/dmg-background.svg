@@ -9,7 +9,8 @@
   <rect width="780" height="560" fill="url(#paper)"/>
   <circle cx="720" cy="30" r="180" fill="#ffffff" opacity=".45"/>
   <g font-family="Helvetica Neue, Helvetica, PingFang SC, PingFang TC, sans-serif" text-anchor="middle">
-    <text x="390" y="58" font-size="30" font-weight="700" fill="#152c4a">Snow Shot</text>
+    <!-- CMake inlines the title bar's canonical 95x17 wordmark here. -->
+    <g transform="translate(295 31) scale(2)">@SNOW_DMG_WORDMARK@</g>
     <g font-size="14" fill="#50647e">
       <text xml:lang="en" x="390" y="88">Capture. Annotate. Keep your ideas in view.</text>
       <text xml:lang="zh-Hans" x="390" y="112">截图、标注，让灵感常驻眼前。</text>
