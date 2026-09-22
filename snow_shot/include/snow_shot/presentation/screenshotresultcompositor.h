@@ -38,8 +38,9 @@ class ScreenshotResultCompositor final {
     [[nodiscard]] static QImage compose(const QImage& content, const ScreenshotResultStyle& style,
                                         qreal devicePixelRatio = 1.0, qreal outputOpacity = 1.0);
 
-    // Called after the live canvas has painted. It clips every existing pixel
-    // to the result shape, then places the shared shadow behind that content.
+    // Clear the part of the viewport outside the result shape, then place the
+    // shadow behind the content. Content may cross the viewport boundary:
+    // native pixel extents and integer-DIP widget extents round independently.
     static void finishLiveSurface(QPainter& painter, const QRectF& viewportBounds,
                                   const QRectF& contentBounds, const ScreenshotResultStyle& style,
                                   qreal devicePixelRatio, qreal canvasToViewScale = 1.0);

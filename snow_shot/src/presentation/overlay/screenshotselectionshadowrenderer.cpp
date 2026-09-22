@@ -401,12 +401,20 @@ void ScreenshotResultCompositor::finishLiveSurface(QPainter& painter, const QRec
     const qreal viewShadow = normalized.shadowWidth * viewScale;
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, true);
+    // The widget's integer-DIP bounds need not contain the physical content.
+    // Use a containing outer rectangle so odd-even fill is a difference, never
+    // an XOR of intersecting shapes. Clip that difference to the viewport.
+    // Avoid QPainterPath::subtracted: it flattens curves and can misclassify
+    // nearly coincident edges produced by fractional camera roundoff.
     QPainterPath outside;
     outside.setFillRule(Qt::OddEvenFill);
-    outside.addRect(viewportBounds);
+    outside.addRect(viewportBounds.united(contentBounds));
     outside.addPath(roundedHole(contentBounds, viewRadius));
+    painter.save();
+    painter.setClipRect(viewportBounds, Qt::IntersectClip);
     painter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
     painter.fillPath(outside, Qt::black);
+    painter.restore();
     painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
     ScreenshotSelectionShadowRenderer::renderResultShadow(
         painter, contentBounds, viewRadius, viewShadow, normalized.shadowColor, devicePixelRatio);

@@ -2889,9 +2889,10 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
                                                             devicePixelRatio);
         const QSize coveringSize = clientMapping.coveringLogicalSize();
         if (coveringSize.isValid() && size() != coveringSize) {
-            // QWidget/backing-store dimensions are integer DIPs. Round outward
-            // to cover every client pixel; WM_WINDOWPOSCHANGING keeps the HWND
-            // at the controller's exact physical rectangle during this update.
+            // Choose the smallest integer-DIP widget whose backing store covers
+            // the native client after Qt rounding. Its logical boundary can be
+            // slightly inside the content; painting must retain that content.
+            // WM_WINDOWPOSCHANGING keeps the exact controller-owned rectangle.
             const QScopedValueRollback<bool> guard(m_synchronizingViewportGeometry, true);
             resize(coveringSize);
             if (layout())

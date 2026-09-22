@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QImage>
 #include <QPainter>
+#include <QTransform>
 
 #include <cstdlib>
 #include <iostream>
@@ -123,6 +124,68 @@ void liveSurfaceClipsExistingCanvasPixelsBeforeAddingShadow() {
             "live surface did not add a semitransparent shadow behind content");
 }
 
+void liveSurfacePreservesContentBeyondRoundedWidgetBounds() {
+    // A native client is sized in physical pixels. Its smallest covering Qt
+    // widget can end at a fractional device pixel before the content ends.
+    // In particular, 381 DIPs at 1.75x cover a 667-pixel client after rounding.
+    for (const qreal dpr : {1.25, 1.5, 1.75, 2.0}) {
+        for (const QSize size : {QSize(869, 937), QSize(1000, 667), QSize(667, 1000)}) {
+            QImage surface(size, QImage::Format_ARGB32_Premultiplied);
+            surface.setDevicePixelRatio(dpr);
+            surface.fill(QColor(30, 100, 210, 255));
+            const QImage expected = surface.copy();
+            const QRectF content(QPointF(), QSizeF(size) / dpr);
+            const QRectF widget(0, 0, qRound(content.width()), qRound(content.height()));
+            {
+                QPainter painter(&surface);
+                ScreenshotResultCompositor::finishLiveSurface(painter, widget, content, {}, dpr,
+                                                              1.0 / dpr);
+            }
+            require(surface == expected,
+                    "rounded widget bounds must not erase fractional strips of content");
+        }
+    }
+}
+
+void liveSurfaceSubtractsIntersectingContent() {
+    const QRect viewport(8, 8, 32, 24);
+    for (const QRect content :
+         {QRect(4, 4, 44, 36), QRect(12, 12, 20, 12), QRect(4, 12, 24, 28), QRect(24, 4, 24, 24)}) {
+        QImage surface(QSize(52, 44), QImage::Format_ARGB32_Premultiplied);
+        const QColor color(30, 100, 210, 128);
+        surface.fill(color);
+        QImage expected = surface.copy();
+        for (int y = 0; y < surface.height(); ++y) {
+            for (int x = 0; x < surface.width(); ++x) {
+                if (viewport.contains(x, y) && !content.contains(x, y))
+                    expected.setPixel(x, y, 0);
+            }
+        }
+        {
+            QPainter painter(&surface);
+            ScreenshotResultCompositor::finishLiveSurface(painter, viewport, content, {}, 1.0);
+        }
+        require(surface == expected,
+                "live clipping must subtract content instead of XORing intersecting rectangles");
+    }
+}
+
+void liveSurfacePreservesTranslatedFractionalContent() {
+    QImage surface(QSize(868, 936), QImage::Format_ARGB32_Premultiplied);
+    surface.setDevicePixelRatio(1.25);
+    surface.fill(QColor(30, 100, 210, 255));
+    const QImage expected = surface.copy();
+    const QTransform transform(0.79999999999999993, 0, 0, 0.79999999999999993, 312.80000000000001,
+                               -29.599999999999966);
+    const QRectF content = transform.mapRect(QRectF(-391, 37, 868, 936));
+    {
+        QPainter painter(&surface);
+        ScreenshotResultCompositor::finishLiveSurface(painter, QRectF(0, 0, 694, 749), content, {},
+                                                      1.25, transform.m11());
+    }
+    require(surface == expected, "camera roundoff must not erase translated content");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -134,6 +197,9 @@ int main(int argc, char** argv) {
         noEffectResultSharesNormalizedStorage();
         outputOpacityScalesTheCompleteComposition();
         liveSurfaceClipsExistingCanvasPixelsBeforeAddingShadow();
+        liveSurfacePreservesContentBeyondRoundedWidgetBounds();
+        liveSurfaceSubtractsIntersectingContent();
+        liveSurfacePreservesTranslatedFractionalContent();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

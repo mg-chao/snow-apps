@@ -54,13 +54,25 @@ void physicalAndLogicalExtentsRemainDistinct() {
 }
 
 void fractionalWidthDoesNotGrowPastTheClient() {
-    const ScreenshotPinnedGeometryMapping mapping(QRect(677, 395, 869, 937), QSizeF(579, 625),
-                                                  1.5);
+    const ScreenshotPinnedGeometryMapping mapping(QRect(677, 395, 869, 937), QSizeF(579, 625), 1.5);
     const QSize covering = mapping.coveringLogicalSize();
     require(qRound(covering.width() * 1.5) == 869,
             "869 device pixels at 1.5x must stay on the logical size that rounds back to 869");
     require(qRound(covering.height() * 1.5) >= 937 && covering.height() <= 625,
             "937 device pixels at 1.5x must be covered without a larger logical height");
+}
+
+void coveringExtentIsMinimalAtSupportedScales() {
+    for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.0, 3.5, 4.0}) {
+        for (int pixels = 1; pixels <= 10000; ++pixels) {
+            const int logical =
+                ScreenshotPinnedGeometryMapping::minimumCoveringLogicalExtent(pixels, dpr);
+            require(qRound(logical * dpr) >= pixels,
+                    "logical extent must cover every native pixel after Qt rounding");
+            require(logical == 1 || qRound((logical - 1) * dpr) < pixels,
+                    "logical extent must not add avoidable backing-store pixels");
+        }
+    }
 }
 
 void edgesRoundIndependently() {
@@ -92,6 +104,7 @@ int main() {
     try {
         physicalAndLogicalExtentsRemainDistinct();
         fractionalWidthDoesNotGrowPastTheClient();
+        coveringExtentIsMinimalAtSupportedScales();
         edgesRoundIndependently();
         invalidSnapshotsStayInvalid();
     } catch (const std::exception& error) {
