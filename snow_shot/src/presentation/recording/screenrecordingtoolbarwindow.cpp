@@ -74,12 +74,24 @@ void ScreenRecordingToolbarWindow::showAndActivate() {
     if (m_regionInteractionActive) {
         return;
     }
-    prepareForDisplay();
-    show();
-    raise();
+    showWithoutActivating();
     activateWindow();
     setFocus(Qt::OtherFocusReason);
     SNOW_SHOT_RECORDING_PERF_MILESTONE("toolbar.show_and_activate_returned");
+}
+
+void ScreenRecordingToolbarWindow::showWithoutActivating() {
+    if (m_regionInteractionActive) {
+        return;
+    }
+    prepareForDisplay();
+    // Showing/re-aligning the companion toolbar must not take focus from its area.
+    // Keep keyboard activation available for explicit controls and text editors.
+    const bool wasNonActivating = testAttribute(Qt::WA_ShowWithoutActivating);
+    setAttribute(Qt::WA_ShowWithoutActivating, true);
+    show();
+    raise();
+    setAttribute(Qt::WA_ShowWithoutActivating, wasNonActivating);
 }
 
 void ScreenRecordingToolbarWindow::placeForRecordingRegion(const QRect& recordingRegion) {
@@ -161,9 +173,7 @@ void ScreenRecordingToolbarWindow::endRegionInteraction(const QRect& recordingRe
     }
     m_regionInteractionActive = false;
     placeForRecordingRegion(recordingRegion);
-    prepareForDisplay();
-    show();
-    raise();
+    showWithoutActivating();
 }
 
 void ScreenRecordingToolbarWindow::closeEvent(QCloseEvent* event) {

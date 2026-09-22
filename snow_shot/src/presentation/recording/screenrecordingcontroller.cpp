@@ -343,7 +343,7 @@ struct ScreenRecordingController::Impl {
             toolbarWindow->placeForRecordingRegion(region);
             areaWindow->show();
             areaWindow->raise();
-            toolbarWindow->showAndActivate();
+            showRecordingControls();
             return;
         }
 
@@ -386,8 +386,15 @@ struct ScreenRecordingController::Impl {
 
         areaWindow->show();
         areaWindow->raise();
-        toolbarWindow->showAndActivate();
+        showRecordingControls();
         SNOW_SHOT_RECORDING_PERF_MILESTONE("open.show_returned");
+    }
+
+    void showRecordingControls() {
+        toolbarWindow->showWithoutActivating();
+        if (!areaWindow->activateInput()) {
+            toolbarWindow->showAndActivate();
+        }
     }
 
     bool isOpen() const {
@@ -428,6 +435,7 @@ struct ScreenRecordingController::Impl {
                          uiSession->connections.get(), [this]() {
                              if (areaWindow->isVisible()) {
                                  toolbarWindow->endRegionInteraction(areaWindow->recordingRegion());
+                                 areaWindow->activateInput();
                              }
                          });
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::closeRequested,
@@ -923,7 +931,7 @@ struct ScreenRecordingController::Impl {
             areaWindow->raise();
         }
         if (toolbarWindow != nullptr) {
-            toolbarWindow->showAndActivate();
+            showRecordingControls();
         }
         durationTimer.start();
         report(QStringLiteral("recording.started"));

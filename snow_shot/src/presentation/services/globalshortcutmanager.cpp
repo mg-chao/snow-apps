@@ -257,9 +257,22 @@ class GlobalShortcutManager::Impl {
                 emit q.activated(active->action);
             }
         });
+        m_backend->setAvailabilityChangedHandler([this](const QList<int>& invalidatedIds) {
+            for (int id : invalidatedIds) {
+                const auto entry = m_registrationKeysById.find(id);
+                if (entry == m_registrationKeysById.end()) {
+                    continue;
+                }
+                m_activeRegistrations.remove(*entry);
+                m_registrationKeysById.erase(entry);
+                m_backend->unregisterShortcut(id);
+            }
+            reconcile();
+        });
     }
 
     ~Impl() {
+        m_backend->setAvailabilityChangedHandler({});
         unregisterAll();
         m_backend->setActivationHandler({});
     }

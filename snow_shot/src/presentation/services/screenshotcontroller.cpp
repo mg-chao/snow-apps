@@ -2826,14 +2826,16 @@ ScreenshotFilePinBatch::Present ScreenshotController::Impl::filePinPresenter(QSc
             autoResizeWindow
                 ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
                       snow_shot::presentation::pinnedImageWindowSize(
-                          decoded.image,
-                          decoded.isFormattedText() ? decoded.formattedTextDevicePixelRatio : 0),
+                          decoded.image, decoded.isFormattedText()
+                                             ? decoded.formattedTextDevicePixelRatio
+                                             : guardedScreen->devicePixelRatio()),
                       guardedScreen->availableGeometry(), guardedScreen->geometry(),
                       snow_shot::presentation::pinnedScreenGeometry(*guardedScreen), 16)
                 : ScreenshotGeometryMapper::centerImageAtFullResolution(
                       snow_shot::presentation::pinnedImageWindowSize(
-                          decoded.image,
-                          decoded.isFormattedText() ? decoded.formattedTextDevicePixelRatio : 0),
+                          decoded.image, decoded.isFormattedText()
+                                             ? decoded.formattedTextDevicePixelRatio
+                                             : guardedScreen->devicePixelRatio()),
                       guardedScreen->availableGeometry(), guardedScreen->geometry(),
                       snow_shot::presentation::pinnedScreenGeometry(*guardedScreen));
         auto* services = receiver->m_impl->m_selectionExportUiServices.get();
@@ -2968,10 +2970,10 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     // runs asynchronously. Encoded, file-backed, and text payloads continue
     // through the decode-first path below because their size is not known yet.
     if (clipboardFastPath) {
-        const QSize windowSize =
-            snapshot->nativeDib.has_value()
-                ? nativeSize
-                : snow_shot::presentation::pinnedImageWindowSize(snapshot->detachedImage);
+        const QSize windowSize = snapshot->nativeDib.has_value()
+                                     ? nativeSize
+                                     : snow_shot::presentation::pinnedImageWindowSize(
+                                           snapshot->detachedImage, screen->devicePixelRatio());
         const ScreenshotPinnedImageFit fit =
             autoResizeWindow ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
                                    windowSize, screen->availableGeometry(), screen->geometry(),
@@ -3114,14 +3116,14 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                           snow_shot::presentation::pinnedImageWindowSize(
                               decoded.image, decoded.isFormattedText()
                                                  ? decoded.formattedTextDevicePixelRatio
-                                                 : 0),
+                                                 : guardedScreen->devicePixelRatio()),
                           guardedScreen->availableGeometry(), guardedScreen->geometry(),
                           snow_shot::presentation::pinnedScreenGeometry(*guardedScreen), 16)
                     : ScreenshotGeometryMapper::centerImageAtFullResolution(
                           snow_shot::presentation::pinnedImageWindowSize(
                               decoded.image, decoded.isFormattedText()
                                                  ? decoded.formattedTextDevicePixelRatio
-                                                 : 0),
+                                                 : guardedScreen->devicePixelRatio()),
                           guardedScreen->availableGeometry(), guardedScreen->geometry(),
                           snow_shot::presentation::pinnedScreenGeometry(*guardedScreen));
             SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");

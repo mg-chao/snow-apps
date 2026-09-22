@@ -38,6 +38,8 @@ class ScreenRecordingAreaWindow final : public QWidget {
     void setRecordingState(ScreenshotToolPalette::RecordingState state);
     void setInputMode(InputMode mode);
     [[nodiscard]] InputMode inputMode() const;
+    // Focus the effective input owner; pass-through and blocked areas cannot activate.
+    bool activateInput();
     void setDrawingBlocked(bool blocked);
     [[nodiscard]] bool drawingBlocked() const;
     void startCountdown(int seconds);
@@ -73,6 +75,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     friend class ScreenRecordingAreaWindowTestAccess;
 
     void applyInputMode();
+    void updateRegionCursor(const QPointF& position);
     void applyQuickSelectionPreferences();
     void applyNativePassThrough(bool enabled);
     [[nodiscard]] bool regionEditingEnabled() const;

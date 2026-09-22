@@ -1,10 +1,11 @@
-#include "../../presentation/services/globalshortcutbackend_p.h"
+#include "globalshortcutbackend_p.h"
 
 #include <Carbon/Carbon.h>
 
 #include <QHash>
 #include <QKeySequence>
 #include <QSet>
+#include <QTimer>
 
 #include <utility>
 
@@ -19,6 +20,70 @@ struct NativeShortcut {
     UInt32 keyCode = 0;
     UInt32 modifiers = 0;
 };
+
+quint64 nativeIdentity(const NativeShortcut& native) {
+    return (static_cast<quint64>(native.modifiers) << 32U) | native.keyCode;
+}
+
+struct ReservationPolicy {
+    OSStatus status = noErr;
+    OptionBits options = kEventHotKeyExclusive;
+};
+
+struct SystemReservations {
+    OSStatus status = noErr;
+    QHash<quint64, bool> enabledByIdentity;
+
+    bool operator==(const SystemReservations&) const = default;
+
+    ReservationPolicy policyFor(const NativeShortcut& native) const {
+        if (status != noErr) {
+            return {status, kEventHotKeyExclusive};
+        }
+        const auto entry = enabledByIdentity.constFind(nativeIdentity(native));
+        if (entry == enabledByIdentity.cend()) {
+            return {};
+        }
+        // Disabled symbolic hotkeys retain exclusive reservations. Non-exclusive
+        // registrants receive events only while the system owner is disabled.
+        return {*entry ? static_cast<OSStatus>(eventHotKeyExistsErr) : static_cast<OSStatus>(noErr),
+                kEventHotKeyNoOptions};
+    }
+};
+
+SystemReservations readSystemReservations(const MacOSHotKeyApi& api) {
+    SystemReservations result;
+    CFArrayRef symbolicKeys = nullptr;
+    result.status = api.copySymbolicHotKeys(&symbolicKeys);
+    if (result.status == noErr && symbolicKeys != nullptr) {
+        for (CFIndex index = 0; index < CFArrayGetCount(symbolicKeys); ++index) {
+            const auto entry =
+                static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(symbolicKeys, index));
+            const auto code =
+                static_cast<CFNumberRef>(CFDictionaryGetValue(entry, kHISymbolicHotKeyCode));
+            const auto modifiers =
+                static_cast<CFNumberRef>(CFDictionaryGetValue(entry, kHISymbolicHotKeyModifiers));
+            SInt32 keyCode = 0;
+            SInt32 keyModifiers = 0;
+            if (code == nullptr || modifiers == nullptr ||
+                !CFNumberGetValue(code, kCFNumberSInt32Type, &keyCode) ||
+                !CFNumberGetValue(modifiers, kCFNumberSInt32Type, &keyModifiers)) {
+                continue;
+            }
+            const quint64 identity =
+                nativeIdentity({static_cast<UInt32>(keyCode), static_cast<UInt32>(keyModifiers)});
+            const bool enabled =
+                CFDictionaryGetValue(entry, kHISymbolicHotKeyEnabled) == kCFBooleanTrue;
+            // Multiple symbolic actions can share a binding; any enabled owner wins.
+            result.enabledByIdentity[identity] =
+                result.enabledByIdentity.value(identity) || enabled;
+        }
+    }
+    if (symbolicKeys != nullptr) {
+        CFRelease(symbolicKeys);
+    }
+    return result;
+}
 
 bool parseNativeShortcut(const shortcuts::ShortcutBinding& binding, NativeShortcut* output) {
     const QKeySequence sequence =
@@ -76,7 +141,15 @@ GlobalShortcutValidationResult validation(const shortcuts::ShortcutBinding& bind
 
 class MacOSGlobalShortcutBackend final : public GlobalShortcutBackend {
   public:
-    MacOSGlobalShortcutBackend() {
+    explicit MacOSGlobalShortcutBackend(MacOSHotKeyApi api)
+        : m_api(api), m_reservations(readSystemReservations(api)) {
+        // Carbon provides a snapshot but no public symbolic-hotkey change event.
+        // Compare normalized snapshots at low frequency, including while all
+        // bindings are conflicted, so disabling a system owner can recover them.
+        m_availabilityTimer.setInterval(2000);
+        m_availabilityTimer.setTimerType(Qt::VeryCoarseTimer);
+        QObject::connect(&m_availabilityTimer, &QTimer::timeout, &m_availabilityTimer,
+                         [this] { refreshAvailability(); });
         const EventTypeSpec eventTypes[] = {
             {kEventClassKeyboard, kEventHotKeyPressed},
             {kEventClassKeyboard, kEventHotKeyReleased},
@@ -100,6 +173,35 @@ class MacOSGlobalShortcutBackend final : public GlobalShortcutBackend {
         m_activationHandler = std::move(handler);
     }
 
+    void setAvailabilityChangedHandler(AvailabilityChangedHandler handler) override {
+        m_availabilityChangedHandler = std::move(handler);
+        if (m_availabilityChangedHandler) {
+            m_availabilityTimer.start();
+        } else {
+            m_availabilityTimer.stop();
+        }
+    }
+
+    void refreshAvailability() override {
+        updateSystemReservations();
+        if (!m_availabilityChanged) {
+            return;
+        }
+        m_availabilityChanged = false;
+        QList<int> invalidatedIds;
+        for (auto entry = m_registered.cbegin(); entry != m_registered.cend(); ++entry) {
+            const auto policy = m_reservations.policyFor(entry->native);
+            if (policy.status != noErr || policy.options != entry->options) {
+                invalidatedIds.append(entry.key());
+            }
+        }
+        // The manager owns release/re-registration and publishes aggregate UI
+        // state. Notify after iteration because the callback can mutate the map.
+        if (m_availabilityChangedHandler) {
+            m_availabilityChangedHandler(invalidatedIds);
+        }
+    }
+
     GlobalShortcutValidationResult
     validateShortcut(const shortcuts::ShortcutBinding& binding) const override {
         NativeShortcut native;
@@ -116,30 +218,51 @@ class MacOSGlobalShortcutBackend final : public GlobalShortcutBackend {
             return {false, GlobalShortcutFailureReason::SystemError,
                     static_cast<qint64>(m_handlerStatus)};
         }
+        // Read afresh for explicit edits/resume as well as periodic changes.
+        updateSystemReservations();
+        const auto policy = m_reservations.policyFor(native);
+        if (policy.status != noErr) {
+            return {false,
+                    policy.status == eventHotKeyExistsErr
+                        ? GlobalShortcutFailureReason::AlreadyInUse
+                        : GlobalShortcutFailureReason::SystemError,
+                    static_cast<qint64>(policy.status)};
+        }
         EventHotKeyRef reference = nullptr;
         const EventHotKeyID id{HOTKEY_SIGNATURE, static_cast<UInt32>(registrationId)};
         const OSStatus status =
-            RegisterEventHotKey(native.keyCode, native.modifiers, id, GetApplicationEventTarget(),
-                                kEventHotKeyExclusive, &reference);
+            m_api.registerEventHotKey(native.keyCode, native.modifiers, id,
+                                      GetApplicationEventTarget(), policy.options, &reference);
         if (status != noErr) {
             return {false,
                     status == eventHotKeyExistsErr ? GlobalShortcutFailureReason::AlreadyInUse
                                                    : GlobalShortcutFailureReason::SystemError,
                     static_cast<qint64>(status)};
         }
-        m_registered.insert(registrationId, reference);
+        m_registered.insert(registrationId, {reference, native, policy.options});
         return {true, GlobalShortcutFailureReason::None, 0};
     }
 
     void unregisterShortcut(int registrationId) override {
-        EventHotKeyRef reference = m_registered.take(registrationId);
+        EventHotKeyRef reference = m_registered.take(registrationId).reference;
         m_pressed.remove(registrationId);
         if (reference != nullptr) {
-            UnregisterEventHotKey(reference);
+            m_api.unregisterEventHotKey(reference);
         }
     }
 
   private:
+    void updateSystemReservations() {
+        auto reservations = readSystemReservations(m_api);
+        if (reservations != m_reservations) {
+            m_reservations = std::move(reservations);
+            // Explicit registration can observe changes between timer ticks.
+            // Retain that observation even if settings revert before the next
+            // tick, so a binding rejected in the meantime is retried.
+            m_availabilityChanged = true;
+        }
+    }
+
     static OSStatus eventHandler(EventHandlerCallRef, EventRef event, void* context) {
         auto& self = *static_cast<MacOSGlobalShortcutBackend*>(context);
         EventHotKeyID id{};
@@ -165,8 +288,19 @@ class MacOSGlobalShortcutBackend final : public GlobalShortcutBackend {
         return noErr;
     }
 
+    struct Registration {
+        EventHotKeyRef reference = nullptr;
+        NativeShortcut native;
+        OptionBits options = kEventHotKeyExclusive;
+    };
+
+    MacOSHotKeyApi m_api;
+    SystemReservations m_reservations;
+    bool m_availabilityChanged = false;
+    QTimer m_availabilityTimer;
+    AvailabilityChangedHandler m_availabilityChangedHandler;
     ActivationHandler m_activationHandler;
-    QHash<int, EventHotKeyRef> m_registered;
+    QHash<int, Registration> m_registered;
     QSet<int> m_pressed;
     EventHandlerRef m_eventHandler = nullptr;
     OSStatus m_handlerStatus = noErr;
@@ -175,7 +309,11 @@ class MacOSGlobalShortcutBackend final : public GlobalShortcutBackend {
 } // namespace
 
 std::unique_ptr<GlobalShortcutBackend> createMacOSGlobalShortcutBackend() {
-    return std::make_unique<MacOSGlobalShortcutBackend>();
+    return createMacOSGlobalShortcutBackend(MacOSHotKeyApi{});
+}
+
+std::unique_ptr<GlobalShortcutBackend> createMacOSGlobalShortcutBackend(MacOSHotKeyApi api) {
+    return std::make_unique<MacOSGlobalShortcutBackend>(api);
 }
 
 } // namespace snow_shot::presentation

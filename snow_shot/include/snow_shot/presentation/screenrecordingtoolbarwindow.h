@@ -13,6 +13,7 @@ class ScreenRecordingToolbarWindow final : public ScreenshotFloatingToolPaletteW
 
     void placeForRecordingRegion(const QRect& recordingRegion);
     void showAndActivate();
+    void showWithoutActivating();
     void beginRegionInteraction();
     void endRegionInteraction(const QRect& recordingRegion);
 

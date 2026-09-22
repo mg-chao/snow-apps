@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/globalshortcuttypes.h"
 
+#include <QList>
 #include <QObject>
 
 #include <functional>
@@ -12,10 +13,16 @@ namespace snow_shot::presentation {
 class GlobalShortcutBackend {
   public:
     using ActivationHandler = std::function<void(int)>;
+    using AvailabilityChangedHandler = std::function<void(const QList<int>&)>;
 
     virtual ~GlobalShortcutBackend() = default;
 
     virtual void setActivationHandler(ActivationHandler handler) = 0;
+    // Called on the manager's thread when native availability changes. The IDs
+    // identify registrations the manager must release before reconciling; an
+    // empty list still requests a retry of previously unavailable bindings.
+    virtual void setAvailabilityChangedHandler(AvailabilityChangedHandler) {}
+    virtual void refreshAvailability() {}
     [[nodiscard]] virtual GlobalShortcutValidationResult
     validateShortcut(const snow_shot::shortcuts::ShortcutBinding& binding) const = 0;
     [[nodiscard]] virtual GlobalShortcutBackendResult

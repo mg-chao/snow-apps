@@ -10,6 +10,7 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QPointer>
 #include <QSet>
 #include <QTimer>
@@ -453,8 +454,14 @@ void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
 
     auto* modal = new adqt::widgets::AdModal(owner);
     modal->setObjectName(QStringLiteral("pinnedWindowGroupCreateModal"));
-    modal->setOwnerWindow(owner != nullptr ? owner : QApplication::activeWindow());
+    modal->setOwnerWindow(owner);
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    if (owner == nullptr) {
+        // Tray creation belongs to the cursor's screen, independent of visible pinned windows.
+        modal->setWindowModeDetached(true);
+        QScreen* screen = QApplication::screenAt(QCursor::pos());
+        modal->setWindowScreen(screen != nullptr ? screen : QApplication::primaryScreen());
+    }
     modal->setWindowModality(Qt::ApplicationModal);
     modal->setWindowTitle(tr("New Group"));
     modal->setCentered(true);

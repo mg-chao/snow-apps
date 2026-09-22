@@ -17,14 +17,24 @@ void require(bool condition, const char* message) {
 } // namespace
 int main() {
     QImage raster(QSize(600, 400), QImage::Format_RGB32);
-    require(pinnedImageWindowSize(raster) == QSize(600, 400),
-            "images without a source DPR use one pixel per window unit");
-    raster.setDevicePixelRatio(2);
-    const QSize expectedImageSize = kPinnedGeometryUnits == PinnedGeometryUnits::LogicalPixels
-                                        ? QSize(300, 200)
-                                        : QSize(600, 400);
-    require(pinnedImageWindowSize(raster) == expectedImageSize && raster.size() == QSize(600, 400),
-            "imported image geometry must honor source DPR without downsampling");
+    const bool logicalUnits = kPinnedGeometryUnits == PinnedGeometryUnits::LogicalPixels;
+    for (const qreal imageScale : {1.0, 2.0, 3.0}) {
+        raster.setDevicePixelRatio(imageScale);
+        require(pinnedImageWindowSize(raster, 1.0) == QSize(600, 400),
+                "standard display pins must use raster size regardless of image DPR metadata");
+        require(
+            pinnedImageWindowSize(raster, 2.0) ==
+                (logicalUnits ? QSize(300, 200) : QSize(600, 400)),
+            "Retina file and clipboard pins must use target display DPI, even without metadata");
+        require(pinnedImageWindowSize(raster, 1.5) ==
+                    (logicalUnits ? QSize(400, 267) : QSize(600, 400)),
+                "fractional display scaling must round initial window dimensions");
+        require(raster.size() == QSize(600, 400) && raster.devicePixelRatio() == imageScale,
+                "pin sizing must preserve source pixels and metadata");
+    }
+    require(pinnedImageWindowSize(QImage(), 2).isEmpty(), "empty images must have no window size");
+    require(pinnedImageWindowSize(QImage(1, 1, QImage::Format_RGB32), 2) == QSize(1, 1),
+            "small images must retain a nonempty window at high DPI");
     const PinnedDisplayGeometry retina{QStringLiteral("retina"), QStringLiteral("a"),
                                        QRectF(-1600, -300, 1600, 1000),
                                        QRectF(-1600, -262, 1600, 930), 2};

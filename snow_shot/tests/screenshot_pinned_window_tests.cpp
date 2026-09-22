@@ -9267,7 +9267,10 @@ void pinnedContentReplacement() {
     QImage replacement(original.size(), original.format());
     replacement.fill(QColor(80, 100, 120));
     const auto before = window.persistenceSnapshot();
+    // External image metadata must not change sizing on the destination display.
+    replacement.setDevicePixelRatio(3.0);
     require(Access::replace(window, contentFor(replacement)), "same-size replacement must load");
+    replacement.setDevicePixelRatio(1.0);
     require(Access::drawingHistory(window) == history &&
                 window.currentNativeGeometry() == before.nativeGeometry &&
                 window.persistenceSnapshot().scalePercent == before.scalePercent,

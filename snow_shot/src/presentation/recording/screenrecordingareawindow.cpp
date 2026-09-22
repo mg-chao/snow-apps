@@ -16,6 +16,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QEvent>
+#include <QEnterEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -267,8 +268,10 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
     }
 #ifdef Q_OS_MACOS
     if ((watched == this || watched == m_canvas) && event != nullptr && regionEditingEnabled()) {
-        if (event->type() == QEvent::MouseButtonPress ||
-            event->type() == QEvent::MouseButtonDblClick) {
+        if (event->type() == QEvent::Enter) {
+            updateRegionCursor(mapFromGlobal(static_cast<QEnterEvent*>(event)->globalPosition()));
+        } else if (event->type() == QEvent::MouseButtonPress ||
+                   event->type() == QEvent::MouseButtonDblClick) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() == Qt::LeftButton) {
                 m_regionDragOrigin = mouse->globalPosition().toPoint();
@@ -301,17 +304,7 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
                 synchronizeWindowGeometry();
                 return true;
             }
-            const auto edges = resizeEdgesAt(mapFromGlobal(mouse->globalPosition().toPoint()));
-            setCursor(
-                (edges == (Qt::LeftEdge | Qt::TopEdge) || edges == (Qt::RightEdge | Qt::BottomEdge))
-                    ? Qt::SizeFDiagCursor
-                : (edges == (Qt::RightEdge | Qt::TopEdge) ||
-                   edges == (Qt::LeftEdge | Qt::BottomEdge))
-                    ? Qt::SizeBDiagCursor
-                : edges.testFlag(Qt::LeftEdge) || edges.testFlag(Qt::RightEdge) ? Qt::SizeHorCursor
-                : edges.testFlag(Qt::TopEdge) || edges.testFlag(Qt::BottomEdge)
-                    ? Qt::SizeVerCursor
-                    : Qt::SizeAllCursor);
+            updateRegionCursor(mapFromGlobal(mouse->globalPosition().toPoint()));
         } else if (event->type() == QEvent::MouseButtonRelease && m_regionInteractionActive) {
             finishRegionInteraction();
             return true;
@@ -381,7 +374,11 @@ void ScreenRecordingAreaWindow::showEvent(QShowEvent* event) {
 }
 
 void ScreenRecordingAreaWindow::applyInputMode() {
+    m_canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
     unsetCursor();
+    if (windowHandle() != nullptr) {
+        windowHandle()->unsetCursor();
+    }
     const bool drawing = m_inputMode == InputMode::Drawing && !m_drawingBlocked;
     const bool interactive = drawing || regionEditingEnabled();
     setAttribute(Qt::WA_TransparentForMouseEvents, !interactive);
@@ -394,11 +391,42 @@ void ScreenRecordingAreaWindow::applyInputMode() {
     }
     applyNativePassThrough(!interactive);
     update();
-    if (drawing && isVisible() && m_canvas != nullptr) {
-        activateWindow();
-        m_canvas->setFocus(Qt::OtherFocusReason);
-    } else if (m_canvas != nullptr) {
+    if (!drawing && m_canvas != nullptr) {
         m_canvas->clearFocus();
+    }
+    activateInput();
+}
+
+bool ScreenRecordingAreaWindow::activateInput() {
+    const bool drawing = m_inputMode == InputMode::Drawing && !m_drawingBlocked;
+    if (!isVisible() || (!drawing && !regionEditingEnabled())) {
+        return false;
+    }
+    activateWindow();
+    if (drawing && m_canvas != nullptr) {
+        m_canvas->setFocus(Qt::OtherFocusReason);
+    } else {
+        setFocus(Qt::OtherFocusReason);
+    }
+    return true;
+}
+
+void ScreenRecordingAreaWindow::updateRegionCursor(const QPointF& position) {
+    const auto edges = resizeEdgesAt(position);
+    const QCursor cursor(
+        (edges == (Qt::LeftEdge | Qt::TopEdge) || edges == (Qt::RightEdge | Qt::BottomEdge))
+            ? Qt::SizeFDiagCursor
+        : (edges == (Qt::RightEdge | Qt::TopEdge) || edges == (Qt::LeftEdge | Qt::BottomEdge))
+            ? Qt::SizeBDiagCursor
+        : edges.testFlag(Qt::LeftEdge) || edges.testFlag(Qt::RightEdge) ? Qt::SizeHorCursor
+        : edges.testFlag(Qt::TopEdge) || edges.testFlag(Qt::BottomEdge) ? Qt::SizeVerCursor
+                                                                        : Qt::SizeAllCursor);
+    // The canvas retains its tool cursor even with drawing disabled. Match pinned
+    // windows by owning the host layer and the native surface during region editing.
+    m_canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, cursor);
+    setCursor(cursor);
+    if (windowHandle() != nullptr) {
+        windowHandle()->setCursor(cursor);
     }
 }
 
@@ -431,6 +459,7 @@ void ScreenRecordingAreaWindow::beginRegionInteraction() {
     if (!regionEditingEnabled() || m_regionInteractionActive) {
         return;
     }
+    activateInput();
     m_regionInteractionActive = true;
     emit regionInteractionStarted();
 }

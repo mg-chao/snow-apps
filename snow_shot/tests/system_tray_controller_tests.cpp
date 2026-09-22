@@ -12,6 +12,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -22,6 +23,7 @@
 #include <QMenu>
 #include <QPalette>
 #include <QPushButton>
+#include <QScreen>
 #include <QSet>
 #include <QString>
 #include <QSystemTrayIcon>
@@ -465,6 +467,43 @@ int main(int argc, char* argv[]) {
     QAction* trayNewGroup = groupActionNamed(QStringLiteral("systemTrayNewGroupAction"));
     require(trayNewGroup != nullptr && !trayNewGroup->icon().isNull() && trayNewGroup->isEnabled(),
             "tray New Group should expose an icon and stay actionable");
+    // An unrelated top-level window exercises the same implicit owner selection as a pin.
+    // Keep it away from the screen center so this also catches regressions offscreen.
+    const QPoint originalCursorPosition = QCursor::pos();
+    for (QScreen* screen : QApplication::screens()) {
+        QCursor::setPos(screen->availableGeometry().center());
+        for (const bool hasVisibleWindow : {false, true}) {
+            QWidget unrelatedWindow(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint);
+            unrelatedWindow.setGeometry(
+                QRect(screen->availableGeometry().topLeft() + QPoint(20, 20), QSize(160, 100)));
+            if (hasVisibleWindow) {
+                unrelatedWindow.show();
+                unrelatedWindow.activateWindow();
+                QApplication::processEvents();
+            }
+            trayNewGroup->trigger();
+            QApplication::processEvents();
+            QWidget* dialog = nullptr;
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (widget->isVisible() &&
+                    widget->objectName() == QStringLiteral("ad-modal-overlay") &&
+                    widget->findChild<QWidget*>(QStringLiteral("pinnedWindowGroupCreateForm"))) {
+                    dialog = widget;
+                    break;
+                }
+            }
+            require(dialog != nullptr, "tray New Group should show its dialog without an owner");
+            const QPoint centerOffset =
+                dialog->geometry().center() - screen->availableGeometry().center();
+            require(qAbs(centerOffset.x()) <= 1 && qAbs(centerOffset.y()) <= 1,
+                    "tray New Group must center on the cursor screen regardless of visible pins");
+            require(dialog->parentWidget() == nullptr,
+                    "tray New Group must not adopt an unrelated window as its owner");
+            dialog->close();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        }
+    }
+    QCursor::setPos(originalCursorPosition);
     QAction* trayDeleteEmpty =
         groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
     require(trayDeleteEmpty != nullptr && !trayDeleteEmpty->icon().isNull(),

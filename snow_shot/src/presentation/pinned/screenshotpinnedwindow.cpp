@@ -4612,7 +4612,8 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content) 
         return false;
     }
     const QSize replacementWindowSize = pinned_platform::pinnedImageWindowSize(
-        content.image, content.isFormattedText() ? content.formattedTextDevicePixelRatio : 0);
+        content.image,
+        content.isFormattedText() ? content.formattedTextDevicePixelRatio : devicePixelRatioF());
     content.image.setDevicePixelRatio(1.0);
     const QTransform transform = normalizedImageTransform(m_imageTransform, content.image.size());
     QImage transformed = ScreenshotResultCompositor::normalizeImage(

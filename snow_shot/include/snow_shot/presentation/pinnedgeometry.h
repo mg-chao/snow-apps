@@ -22,9 +22,12 @@ inline QRect pinnedLogicalRect(const QRect& rect, const QScreen* screen) {
                ? rect
                : ScreenshotGeometryMapper::logicalRectForPhysicalRect(rect, screen);
 }
-inline QSize pinnedImageWindowSize(const QImage& image, qreal sourceScale = 0) {
+// Imported raster pixels map to backing pixels on the target display. Callers
+// rendering formatted text supply its rendering scale instead. Image DPR metadata
+// must not determine the initial size of a file or clipboard pin.
+inline QSize pinnedImageWindowSize(const QImage& image, qreal rasterScale) {
     const qreal scale = kPinnedGeometryUnits == PinnedGeometryUnits::LogicalPixels
-                            ? (sourceScale > 0 ? sourceScale : image.devicePixelRatio())
+                            ? std::max<qreal>(1.0, rasterScale)
                             : 1.0;
     return image.isNull() ? QSize()
                           : QSize(std::max(1, qRound(image.width() / scale)),

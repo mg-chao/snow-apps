@@ -19,6 +19,7 @@
 #include <QTemporaryDir>
 #include <QWheelEvent>
 #include <QTimer>
+#include <QWindow>
 #include <QDebug>
 #ifdef Q_OS_MACOS
 #include "macos_native_input.h"
@@ -159,6 +160,20 @@ void logicalRegionDragAndResize() {
         QCoreApplication::sendEvent(&area, &event);
         QCoreApplication::processEvents();
     };
+    // A retained drawing-tool cursor must not mask the host's region cursor.
+    area.canvas()->setCursorForLayer(SnowCanvasCursorLayer::CanvasTool, QCursor(Qt::CrossCursor));
+    const auto hover = [&](QPoint global, Qt::CursorShape expected) {
+        const QPoint local = area.canvas()->mapFromGlobal(global);
+        QMouseEvent event(QEvent::MouseMove, local, local, global, Qt::NoButton, Qt::NoButton,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(area.canvas(), &event);
+        require(area.cursor().shape() == expected && area.canvas()->cursor().shape() == expected &&
+                    area.windowHandle()->cursor().shape() == expected,
+                "region hover must own the widget, canvas and native window cursors");
+    };
+    hover(initial.center(), Qt::SizeAllCursor);
+    hover(initial.topLeft(), Qt::SizeFDiagCursor);
+    hover(QPoint(initial.left(), initial.center().y()), Qt::SizeHorCursor);
     const QPoint center = initial.center();
     send(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
     send(QEvent::MouseMove, center + QPoint(43, 27), Qt::NoButton, Qt::LeftButton);
@@ -172,6 +187,10 @@ void logicalRegionDragAndResize() {
     send(QEvent::MouseButtonRelease, corner + QPoint(19, 13), Qt::LeftButton, Qt::NoButton);
     require(area.recordingRegion() == QRect(moved.topLeft(), moved.size() + QSize(19, 13)),
             "corner resize must preserve the logical origin and exact dimensions");
+    hover(area.recordingRegion().center(), Qt::SizeAllCursor);
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    require(area.canvas()->cursor().shape() == Qt::CrossCursor,
+            "leaving region editing must release the host cursor to the drawing tool");
 }
 #endif
 
