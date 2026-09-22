@@ -193,6 +193,76 @@ void sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates() {
     }
 }
 
+void scrollingMarkerRoundTripsAndRejectsNonBooleanValues() {
+    const auto now = QDateTime::currentDateTimeUtc();
+    for (const std::optional<bool> scrolling :
+         {std::optional<bool>{true}, std::optional<bool>{false}}) {
+        QTemporaryDir temporary;
+        storage::CaptureHistoryRecord published;
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            auto draft = draftAt(now);
+            draft.scrolling = scrolling;
+            const auto result = repository->publish(draft).get();
+            require(result.storage.success, "scrolling marker publication failed");
+            published = result.record;
+        }
+        const QJsonObject record = firstRecord(temporary.path());
+        require(record.value(QStringLiteral("scrolling")).isBool() &&
+                    record.value(QStringLiteral("scrolling")).toBool() == *scrolling,
+                "the scrolling marker was not persisted as a boolean");
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        require(repository->records().size() == 1 && repository->records().front() == published &&
+                    repository->records().front().scrolling == scrolling,
+                "the scrolling marker did not survive a repository restart");
+    }
+
+    // Records persisted before the marker existed load without one.
+    {
+        QTemporaryDir temporary;
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            auto draft = draftAt(now);
+            draft.scrolling = false;
+            require(repository->publish(draft).get().storage.success,
+                    "legacy marker fixture publication failed");
+        }
+        QJsonObject index = readObject(indexPath(temporary.path()));
+        QJsonArray records = index.value(QStringLiteral("records")).toArray();
+        QJsonObject record = records[0].toObject();
+        record.remove(QStringLiteral("scrolling"));
+        records[0] = record;
+        index.insert(QStringLiteral("records"), records);
+        writeBytes(indexPath(temporary.path()), QJsonDocument(index).toJson());
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        require(repository->records().size() == 1 &&
+                    !repository->records().front().scrolling.has_value(),
+                "a missing scrolling marker was not treated as unrecorded");
+    }
+
+    // A marker that is not a boolean corrupts the record and therefore the index.
+    {
+        QTemporaryDir temporary;
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->publish(draftAt(now)).get().storage.success,
+                    "invalid marker fixture publication failed");
+        }
+        const QJsonObject index = readObject(indexPath(temporary.path()));
+        for (const QJsonValue& invalid :
+             {QJsonValue(QJsonValue::Null), QJsonValue(1), QJsonValue(QStringLiteral("yes"))}) {
+            QJsonObject record =
+                index.value(QStringLiteral("records")).toArray().first().toObject();
+            record.insert(QStringLiteral("scrolling"), invalid);
+            QJsonObject invalidIndex = index;
+            invalidIndex.insert(QStringLiteral("records"), QJsonArray{record});
+            writeBytes(indexPath(temporary.path()), QJsonDocument(invalidIndex).toJson());
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->records().isEmpty(), "a non-boolean scrolling marker was accepted");
+        }
+    }
+}
+
 void publicationAndRecovery() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create publication directory");
@@ -837,6 +907,7 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();
+    scrollingMarkerRoundTripsAndRejectsNonBooleanValues();
     publicationAndRecovery();
     preparedResultBytesAreCommittedWithoutReplacement();
     quickCaptureSourcesRoundTrip();

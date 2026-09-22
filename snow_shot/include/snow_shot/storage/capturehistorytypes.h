@@ -86,6 +86,8 @@ struct CaptureHistoryDraft {
     std::optional<QImage> resultImage;
     std::optional<PreparedPngImage> preparedResultImage;
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
+    // Absent on records persisted before the scrolling marker existed.
+    std::optional<bool> scrolling{};
 };
 
 struct CaptureHistoryDisplayRecord {
@@ -122,13 +124,16 @@ struct CaptureHistoryRecord {
     qint64 canvasBytes = 0;
     qint64 totalBytes = 0;
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
+    // Absent on records persisted before the scrolling marker existed.
+    std::optional<bool> scrolling{};
 
     friend bool operator==(const CaptureHistoryRecord& first, const CaptureHistoryRecord& second) {
         return first.contentKind == second.contentKind && first.id == second.id &&
                first.createdUtc == second.createdUtc && first.canvasBounds == second.canvasBounds &&
                first.selection == second.selection && first.displays == second.displays &&
                first.result == second.result && first.canvasBytes == second.canvasBytes &&
-               first.totalBytes == second.totalBytes && first.source == second.source;
+               first.totalBytes == second.totalBytes && first.source == second.source &&
+               first.scrolling == second.scrolling;
     }
 };
 

@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
+#include "snow_shot/presentation/screenshotselectionlimits.h"
 
 #include <QGuiApplication>
 #include <QScreen>
@@ -13,6 +14,59 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+
+namespace {
+QSize scaledSelectionPixelSize(const QSize& selection, qreal scale) {
+    if (selection.width() < 1 || selection.height() < 1 || !std::isfinite(scale) || scale <= 0.0) {
+        return {};
+    }
+    const double width = static_cast<double>(selection.width()) * scale;
+    const double height = static_cast<double>(selection.height()) * scale;
+    if (!std::isfinite(width) || !std::isfinite(height) || width < 1.0 || height < 1.0) {
+        return {};
+    }
+    const double pixelWidth = std::ceil(width);
+    const double pixelHeight = std::ceil(height);
+    if (!std::isfinite(pixelWidth) || !std::isfinite(pixelHeight) || pixelWidth < 1.0 ||
+        pixelHeight < 1.0 ||
+        pixelWidth > static_cast<double>(std::numeric_limits<int>::max()) / 4.0 ||
+        pixelHeight > static_cast<double>(std::numeric_limits<int>::max()) ||
+        pixelWidth * pixelHeight >
+            static_cast<double>(std::numeric_limits<qsizetype>::max()) / 4.0) {
+        return {};
+    }
+    return QSize(static_cast<int>(pixelWidth), static_cast<int>(pixelHeight));
+}
+} // namespace
+
+QSize screenshotSelectionRenderedPixelSize(const QSize& selection, qreal scale) {
+    return scaledSelectionPixelSize(selection, scale);
+}
+
+int screenshotSelectionRenderedShadowPixels(int shadowWidth, qreal scale) {
+    if (shadowWidth <= 0 || !std::isfinite(scale) || scale <= 0.0) {
+        return 0;
+    }
+    const double scaled = static_cast<double>(shadowWidth) * scale;
+    if (!std::isfinite(scaled)) {
+        return 0;
+    }
+    return std::clamp(qRound(scaled), 0,
+                      snow_shot::presentation::kScreenshotSelectionShadowWidthMax);
+}
+
+QSize screenshotSelectionCompositedPixelSize(const QSize& selection, qreal scale, int shadowWidth) {
+    const QSize content = screenshotSelectionRenderedPixelSize(selection, scale);
+    if (content.isEmpty()) {
+        return {};
+    }
+    const int shadowPixels = screenshotSelectionRenderedShadowPixels(shadowWidth, scale);
+    if (content.width() > std::numeric_limits<int>::max() - shadowPixels * 2 ||
+        content.height() > std::numeric_limits<int>::max() - shadowPixels * 2) {
+        return {};
+    }
+    return QSize(content.width() + shadowPixels * 2, content.height() + shadowPixels * 2);
+}
 
 ScreenshotSelectionRenderSpec
 screenshotSelectionRenderSpec(const ScreenshotDisplaySession& displays, const QRect& selection) {
@@ -35,14 +89,11 @@ screenshotSelectionRenderSpec(const ScreenshotDisplaySession& displays, const QR
             spec.scale = std::max(spec.scale, display.backingScale);
         }
     });
-    const double width = std::ceil(selection.width() * spec.scale);
-    const double height = std::ceil(selection.height() * spec.scale);
-    if (!valid || !intersects || !std::isfinite(width) || !std::isfinite(height) || width < 1 ||
-        height < 1 || width > std::numeric_limits<int>::max() / 4 ||
-        height > std::numeric_limits<int>::max() ||
-        width * height > static_cast<double>(std::numeric_limits<qsizetype>::max() / 4))
+    if (!valid || !intersects)
         return spec;
-    spec.pixelSize = QSize(static_cast<int>(width), static_cast<int>(height));
+    spec.pixelSize = screenshotSelectionRenderedPixelSize(selection.size(), spec.scale);
+    if (!spec.isValid())
+        return spec;
     spec.canvasToImage.scale(spec.scale, spec.scale);
     spec.canvasToImage.translate(-selection.x(), -selection.y());
     return spec;
