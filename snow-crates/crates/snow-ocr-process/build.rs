@@ -12,6 +12,8 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+mod link_manifest;
+
 fn main() {
     if env::var_os("CARGO_FEATURE_CRASH_DIAGNOSTICS").is_some() {
         println!("cargo:rerun-if-env-changed=SNOW_CRASHPAD_LINK_FILE");
@@ -127,10 +129,8 @@ END
         )
     });
     for line in manifest.lines() {
-        let argument = line.trim();
-        if argument.is_empty() || argument.starts_with('#') {
-            continue;
+        for directive in link_manifest::cargo_directives(line) {
+            println!("{directive}");
         }
-        println!("cargo:rustc-link-arg={argument}");
     }
 }
