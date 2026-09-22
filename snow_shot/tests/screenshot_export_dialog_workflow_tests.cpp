@@ -1129,6 +1129,9 @@ void shortcutPopupInteraction(QWidget& owner, const QTemporaryDir& temp) {
     });
     auto* content = modal->contentWidget();
     auto* trigger = child<AdButton>(content, "savePathExpand_0");
+    require(!trigger->isHidden() &&
+                adqt::icons::describeIcon(trigger->iconRef()).key.name == QStringLiteral("more"),
+            "custom save path menu button must stay visible and use the More icon");
     auto enter = [](QWidget* widget) {
         const QPoint local = widget->rect().center();
         const QPoint global = widget->mapToGlobal(local);
@@ -1150,29 +1153,6 @@ void shortcutPopupInteraction(QWidget& owner, const QTemporaryDir& temp) {
         }
     };
     const QPoint outside = content->mapToGlobal(QPoint(10, 10));
-#ifdef Q_OS_MACOS
-    enter(trigger);
-    require(content->findChild<AdContextMenu*>(QStringLiteral("savePathMenu")) == nullptr,
-            "macOS shortcut menus do not open on hover");
-    trigger->click();
-    auto* nativeMenu = child<AdContextMenu>(content, "savePathMenu");
-    require(nativeMenu->isPopupVisible(), "click opens the macOS shortcut menu");
-    QCursor::setPos(outside);
-    leave(trigger);
-    settle();
-    require(nativeMenu->isPopupVisible(), "macOS menus do not use mouse-leave dismissal timers");
-    require(nativeMenu->actions().size() == 2 &&
-                nativeMenu->actions().first()->isIconVisibleInMenu() &&
-                !nativeMenu->actions().first()->icon().isNull(),
-            "shortcut actions preserve their icons");
-    nativeMenu->dismissPopup();
-    require(!nativeMenu->isPopupVisible(), "explicit dismissal closes the shortcut menu");
-    trigger->click();
-    trigger->hide();
-    require(!nativeMenu->isPopupVisible(), "hiding the trigger dismisses its menu");
-    require(settings.setSavePathShortcuts({}), "shortcut cleanup failed");
-    return;
-#endif
     enter(trigger);
     QPointer<AdContextMenu> menu = child<AdContextMenu>(content, "savePathMenu");
     require(menu->isVisible(), "hovering the shortcut arrow must open its menu");
@@ -1184,6 +1164,7 @@ void shortcutPopupInteraction(QWidget& owner, const QTemporaryDir& temp) {
     std::cerr << "Shortcut popup width: " << popupWidth
               << "; visible after leaving trigger: " << menu->isVisible() << '\n';
     require(!menu->isVisible(), "leaving the trigger without entering its menu must hide it");
+    require(!trigger->isHidden(), "leaving a custom save path must keep its menu button visible");
     require(popupWidth < 160, "two-action shortcut popup must size to its content");
     flush();
 
@@ -1328,11 +1309,15 @@ void shortcutsAndCancellation(QWidget& owner, const QTemporaryDir& temp) {
             "custom save path must group its main and edit buttons");
     auto* shortcutButton = child<AdButton>(content, "savePathShortcut_0");
     auto* shortcutEdit = child<AdButton>(content, "savePathExpand_0");
+    require(!shortcutEdit->isHidden() &&
+                adqt::icons::describeIcon(shortcutEdit->iconRef()).key.name ==
+                    QStringLiteral("more"),
+            "custom save path menu button must stay visible and use More");
     require(shortcutButton->parentWidget() == shortcutGroup &&
                 shortcutEdit->parentWidget() == shortcutGroup &&
                 shortcutButton->geometry().right() == shortcutEdit->geometry().left(),
             "save path and edit buttons must share a joined border without a gap");
-    child<AdButton>(content, "savePathExpand_0")->click();
+    shortcutEdit->click();
     auto* menu = child<AdContextMenu>(content, "savePathMenu");
     require(menu->actions().size() == 2 && menu->actionDanger(menu->actions()[1]),
             "shortcut menu must include danger Delete");
@@ -1367,7 +1352,9 @@ void shortcutsAndCancellation(QWidget& owner, const QTemporaryDir& temp) {
             "cancel must preserve confirmed shortcut edits and never save");
     modal = openDialog(owner, fixture());
     content = modal->contentWidget();
-    child<AdButton>(content, "savePathExpand_0")->click();
+    auto* reopenedExpand = child<AdButton>(content, "savePathExpand_0");
+    require(!reopenedExpand->isHidden(), "reopened custom save path menu button must stay visible");
+    reopenedExpand->click();
     menu = child<AdContextMenu>(content, "savePathMenu");
     menu->hide();
     menu->actions()[1]->trigger();

@@ -18,11 +18,19 @@ namespace snow_shot::presentation {
 class ActionPopupMenu final : public QObject {
   public:
     enum class Placement { BottomLeft, TopRight };
+    // Platform keeps the macOS native menu. Widget uses the shared hover menu on every platform.
+    enum class Surface { Platform, Widget };
     ActionPopupMenu(QAbstractButton* trigger,
                     std::function<adqt::widgets::AdContextMenu*()> createMenu,
-                    Placement placement = Placement::BottomLeft)
+                    Placement placement = Placement::BottomLeft,
+                    Surface surface = Surface::Platform)
         : QObject(trigger), m_trigger(trigger), m_createMenu(std::move(createMenu)),
-          m_placement(placement) {
+          m_placement(placement), m_nativeMenu(false) {
+#ifdef Q_OS_MACOS
+        m_nativeMenu = surface != Surface::Widget;
+#else
+        (void)surface;
+#endif
         m_closeTimer.setSingleShot(true);
         m_closeTimer.setInterval(150);
         connect(&m_closeTimer, &QTimer::timeout, this, [this] {
@@ -47,6 +55,8 @@ class ActionPopupMenu final : public QObject {
             m_menu = m_createMenu();
             if (!m_menu)
                 return;
+            if (!m_nativeMenu)
+                m_menu->setNativeMenuEnabled(false);
             m_menu->setTriggerWidget(m_trigger);
             m_menu->installEventFilter(this);
             connect(m_menu, &QMenu::aboutToHide, &m_closeTimer, &QTimer::stop,
@@ -73,21 +83,14 @@ class ActionPopupMenu final : public QObject {
                     break;
                 }
             }
-#ifdef Q_OS_MACOS
-            if (QGuiApplication::platformName() != QStringLiteral("cocoa"))
-#endif
+            if (!m_nativeMenu)
                 m_menu->setFocus(Qt::PopupFocusReason);
         }
     }
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
-#ifdef Q_OS_MACOS
-        constexpr bool nativeMenu = true;
-#else
-        constexpr bool nativeMenu = false;
-#endif
-        if (!nativeMenu && watched == m_trigger && event->type() == QEvent::Enter) {
+        if (!m_nativeMenu && watched == m_trigger && event->type() == QEvent::Enter) {
             open();
         }
         if (watched == m_trigger && event->type() == QEvent::Hide && m_menu)
@@ -111,7 +114,7 @@ class ActionPopupMenu final : public QObject {
                 return true;
             }
         }
-        if (!nativeMenu && m_menu && m_menu->isPopupVisible()) {
+        if (!m_nativeMenu && m_menu && m_menu->isPopupVisible()) {
             if (event->type() == QEvent::Enter) {
                 m_closeTimer.stop();
             } else if (event->type() == QEvent::Leave && !m_keyboard) {
@@ -140,5 +143,6 @@ class ActionPopupMenu final : public QObject {
     Placement m_placement;
     QTimer m_closeTimer;
     bool m_keyboard = false;
+    bool m_nativeMenu = false;
 };
 } // namespace snow_shot::presentation

@@ -52,6 +52,7 @@ class ContentCardWidget final : public QFrame {
     void
     globalMouseDragRequested(snow_shot::presentation::settings::SettingsGlobalMouseAction action);
     void screenshotHistoryEditRequested(const QString& recordId);
+    void screenshotHistoryPinRequested(const QString& recordId);
 
   protected:
     void paintEvent(QPaintEvent* event) override;

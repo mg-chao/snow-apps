@@ -265,6 +265,8 @@ void MainWindow::buildUi() {
             &MainWindow::globalMouseDragRequested);
     connect(m_contentCard, &ContentCardWidget::screenshotHistoryEditRequested, this,
             &MainWindow::screenshotHistoryEditRequested);
+    connect(m_contentCard, &ContentCardWidget::screenshotHistoryPinRequested, this,
+            &MainWindow::screenshotHistoryPinRequested);
     m_contentCard->setCurrentRoute(m_sidebar->currentRoute());
     m_contentHeader->setSections(m_contentCard->currentSections());
     m_contentHeader->setCurrentSection(m_contentCard->currentLocation().sectionId);

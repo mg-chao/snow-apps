@@ -65,9 +65,15 @@ class AdContextMenu final : public QMenu {
   using QMenu::addAction;
   using QMenu::addMenu;
 
-  // Appearance tokens are retained for compatibility; macOS renders native menus.
+  // Appearance tokens apply to the widget menu. macOS uses a native menu until
+  // setNativeMenuEnabled(false) selects that shared widget menu. Submenus follow
+  // that choice, including menus already attached, and stored icons are rebuilt
+  // for the selected surface.
   ColorScheme colorScheme() const;
   void setColorScheme(ColorScheme value);
+
+  bool nativeMenuEnabled() const;
+  void setNativeMenuEnabled(bool enabled);
 
   ComponentTokens componentTokens() const;
   void setComponentTokens(const ComponentTokens& tokens);
@@ -110,6 +116,9 @@ class AdContextMenu final : public QMenu {
   friend class detail::AdContextMenuStyle;
 
   void refreshVisuals(bool relayout);
+  void configureCustomSurface();
+  void configurePlatformSurface();
+  void applyStoredActionIcon(QAction* action);
 
   class Private;
   std::unique_ptr<Private> d_;

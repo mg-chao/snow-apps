@@ -25,6 +25,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -488,13 +489,15 @@ class SaveContent final : public QWidget {
                 auto* expand = new AdButton(group);
                 expand->setObjectName(QStringLiteral("savePathExpand_%1").arg(index));
                 expand->setSizeClass(AdButton::SizeClass::Small);
-                expand->setIconRef(icons::Down());
+                expand->setIconRef(icons::More());
                 expand->setFixedSize(24, 24);
                 expand->setToolTip(tr("Edit or delete save path"));
                 expand->setAccessibleName(expand->toolTip());
-                new snow_shot::presentation::ActionPopupMenu(
-                    expand, [this, expand, index] { return createShortcutMenu(expand, index); });
                 group->addControl(expand);
+                new snow_shot::presentation::ActionPopupMenu(
+                    expand, [this, expand, index] { return createShortcutMenu(expand, index); },
+                    snow_shot::presentation::ActionPopupMenu::Placement::BottomLeft,
+                    snow_shot::presentation::ActionPopupMenu::Surface::Widget);
             }
             m_shortcutsLayout->addWidget(group);
         };

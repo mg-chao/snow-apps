@@ -114,6 +114,10 @@
             <translation>The screenshot could not be copied: %1</translation>
         </message>
         <message>
+            <source>The screenshot could not be pinned</source>
+            <translation>The screenshot could not be pinned</translation>
+        </message>
+        <message>
             <source>The screenshot could not be prepared for saving</source>
             <translation>The screenshot could not be prepared for saving</translation>
         </message>
@@ -136,6 +140,10 @@
         <message>
             <source>The scrolling screenshot could not be prepared</source>
             <translation>The scrolling screenshot could not be prepared</translation>
+        </message>
+        <message>
+            <source>This screenshot cannot be pinned</source>
+            <translation>This screenshot cannot be pinned</translation>
         </message>
         <message>
             <source>Your current screenshot will be discarded.</source>

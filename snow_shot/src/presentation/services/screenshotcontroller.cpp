@@ -123,6 +123,7 @@ namespace {
 constexpr auto kCopyMessageKey = "screenshot-copy";
 constexpr auto kSaveMessageKey = "screenshot-save";
 constexpr auto kPinClipboardMessageKey = "screenshot-pin-clipboard";
+constexpr auto kPinHistoryMessageKey = "screenshot-pin-history";
 constexpr int kRecaptureHideTimeoutMs = 1000;
 constexpr int kRecaptureHidePollIntervalMs = 10;
 
@@ -394,8 +395,14 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     QPoint scrollingMovePhysicalPointer(QPoint position) const;
     void pinSelectionToScreen() override;
     void pinClipboardContentToScreen();
+    void pinHistoryRecord(const QString& recordId);
     void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     void cancelContentPin();
+    void cancelHistoryPins();
+    [[nodiscard]] bool presentDecodedImageOnScreen(
+        QScreen* screen, const QImage& image, qreal rasterScale, bool autoResizeWindow,
+        ScreenshotClipboardOriginalContent originalContent = {},
+        ScreenshotSelectionExportDestinationPort::PinnedCompletion completion = {});
     ScreenshotFilePinBatch::Present filePinPresenter(QScreen* screen);
     void restorePinnedWindows();
     void restoreActivePinnedGroupWindows();
@@ -539,6 +546,13 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotExportJobHandle m_clipboardPinJob;
     ScreenshotFilePinBatch m_filePinBatch;
     quint64 m_clipboardPinGeneration = 0;
+    struct HistoryPinRequest {
+        quint64 id = 0;
+        ScreenshotExportJobHandle job;
+    };
+    std::vector<HistoryPinRequest> m_historyPinJobs;
+    quint64 m_historyPinEpoch = 0;
+    quint64 m_historyPinSerial = 0;
     quint64 m_delayedCaptureGeneration = 0;
     PendingSelectionAction m_pendingSelectionAction = PendingSelectionAction::None;
     ScreenshotGlobalMouseDrag m_globalMouseDrag;
@@ -2545,14 +2559,8 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                 : 1.;
         const QSize windowSize(std::max(1, qRound(sourceSize.width() / sourceScale)),
                                std::max(1, qRound(sourceSize.height() / sourceScale)));
-        const ScreenshotPinnedImageFit fit =
-            autoResizeWindow
-                ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                      windowSize, display->screen->availableGeometry(), display->screen->geometry(),
-                      snow_shot::presentation::pinnedScreenGeometry(*display->screen), 16)
-                : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                      windowSize, display->screen->availableGeometry(), display->screen->geometry(),
-                      snow_shot::presentation::pinnedScreenGeometry(*display->screen));
+        const ScreenshotPinnedImageFit fit = snow_shot::presentation::fitPinnedImageOnScreen(
+            *display->screen, windowSize, autoResizeWindow);
         if (!fit.valid || targetScreen == nullptr || m_selectionExportUiServices == nullptr) {
             SNOW_SHOT_PIN_PERF_FINISH(false);
             if (imageExportNotificationCurrent(*exportGeneration)) {
@@ -2824,6 +2832,174 @@ void ScreenshotController::Impl::cancelContentPin() {
     ++m_clipboardPinGeneration;
 }
 
+bool ScreenshotController::Impl::presentDecodedImageOnScreen(
+    QScreen* screen, const QImage& image, qreal rasterScale, bool autoResizeWindow,
+    ScreenshotClipboardOriginalContent originalContent,
+    ScreenshotSelectionExportDestinationPort::PinnedCompletion completion) {
+    if (screen == nullptr || image.isNull() || m_selectionExportUiServices == nullptr) {
+        return false;
+    }
+    const ScreenshotPinnedImageFit fit = snow_shot::presentation::fitPinnedImageOnScreen(
+        *screen, snow_shot::presentation::pinnedImageWindowSize(image, rasterScale),
+        autoResizeWindow);
+    return fit.valid && m_selectionExportUiServices->presentPinnedImage(
+                            image, screen, fit.nativeGeometry, fit.initialWindowSize, {}, {}, 1.0,
+                            std::move(originalContent), {}, std::move(completion));
+}
+
+void ScreenshotController::Impl::cancelHistoryPins() {
+    ++m_historyPinEpoch;
+    for (const HistoryPinRequest& request : m_historyPinJobs) {
+        request.job.cancel();
+    }
+    m_historyPinJobs.clear();
+}
+
+void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
+    const auto reportUnavailable = [this]() {
+        if (m_messages == nullptr) {
+            return;
+        }
+        m_messages->error(QString::fromLatin1(kPinHistoryMessageKey),
+                          QCoreApplication::translate("ScreenshotController",
+                                                      "This screenshot cannot be pinned"));
+    };
+    const auto reportFailed = [this]() {
+        if (m_messages == nullptr) {
+            return;
+        }
+        m_messages->error(QString::fromLatin1(kPinHistoryMessageKey),
+                          QCoreApplication::translate("ScreenshotController",
+                                                      "The screenshot could not be pinned"));
+    };
+    if (recordId.isEmpty()) {
+        return;
+    }
+    if (!ensureExportFeature()) {
+        reportFailed();
+        return;
+    }
+
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    if (!applicationStorage.isInitialized()) {
+        qWarning("Screenshot history pin failed: storage is unavailable");
+        reportUnavailable();
+        return;
+    }
+    const QVector<snow_shot::storage::CaptureHistoryRecord> records =
+        applicationStorage.captureHistory().records();
+    const auto iterator =
+        std::find_if(records.cbegin(), records.cend(),
+                     [&recordId](const snow_shot::storage::CaptureHistoryRecord& record) {
+                         return record.id == recordId;
+                     });
+    if (iterator == records.cend() || !iterator->result.has_value()) {
+        qWarning("Screenshot history pin failed: record %s has no image", qPrintable(recordId));
+        reportUnavailable();
+        return;
+    }
+
+    QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+    if (screen == nullptr) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (screen == nullptr) {
+        qWarning("Screenshot history pin failed: no screen is available");
+        reportUnavailable();
+        return;
+    }
+    if (m_selectionExportUiServices != nullptr) {
+        m_selectionExportUiServices->prewarmPinnedWindow(screen);
+    }
+
+    const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
+    const QPointer<ScreenshotController> receiver(&owner);
+    const QPointer<QScreen> guardedScreen(screen);
+    const snow_shot::storage::CaptureHistoryRecord record = *iterator;
+    const quint64 epoch = m_historyPinEpoch;
+    const quint64 requestId = ++m_historyPinSerial;
+    HistoryPinRequest request;
+    request.id = requestId;
+    request.job = ScreenshotExportCoordinator::shared().submit(
+        &owner, ScreenshotExportCoordinator::Priority::Foreground,
+        [record](const ScreenshotExportCancellation& cancellation) {
+            if (cancellation.isCancellationRequested()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Cancelled,
+                    QStringLiteral("The screenshot pin was cancelled"));
+            }
+            auto& storage = snow_shot::storage::ApplicationStorage::instance();
+            if (!storage.isInitialized()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Source,
+                    QStringLiteral("Screenshot history is unavailable"));
+            }
+            std::optional<QImage> image = storage.captureHistory().loadResultImage(record);
+            if (!image.has_value() || image->isNull()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Source,
+                    QStringLiteral("The screenshot history image could not be read"));
+            }
+            ScreenshotExportTaskResult loaded;
+            loaded.image = std::move(*image);
+            return loaded;
+        },
+        [receiver, guardedScreen, autoResizeWindow, epoch,
+         requestId](ScreenshotExportTaskResult result) {
+            if (receiver.isNull() || receiver->m_impl == nullptr) {
+                return;
+            }
+            auto& impl = *receiver->m_impl;
+            std::erase_if(impl.m_historyPinJobs, [requestId](const HistoryPinRequest& pending) {
+                return pending.id == requestId;
+            });
+            if (epoch != impl.m_historyPinEpoch ||
+                result.failureStage == ScreenshotExportFailureStage::Cancelled) {
+                return;
+            }
+            if (!result.succeeded() || result.image.isNull() || guardedScreen.isNull() ||
+                impl.m_selectionExportUiServices == nullptr) {
+                qWarning("Screenshot history pin failed: %s", qPrintable(result.error));
+                if (impl.m_messages != nullptr) {
+                    impl.m_messages->error(
+                        QString::fromLatin1(kPinHistoryMessageKey),
+                        QCoreApplication::translate("ScreenshotController",
+                                                    "The screenshot could not be pinned"));
+                }
+                return;
+            }
+
+            const bool presented = impl.presentDecodedImageOnScreen(
+                guardedScreen, result.image, guardedScreen->devicePixelRatio(), autoResizeWindow,
+                {}, [receiver, epoch](bool success, QImage) {
+                    if (success || receiver.isNull() || receiver->m_impl == nullptr ||
+                        epoch != receiver->m_impl->m_historyPinEpoch ||
+                        receiver->m_impl->m_messages == nullptr) {
+                        return;
+                    }
+                    receiver->m_impl->m_messages->error(
+                        QString::fromLatin1(kPinHistoryMessageKey),
+                        QCoreApplication::translate("ScreenshotController",
+                                                    "The screenshot could not be pinned"));
+                });
+            if (!presented) {
+                qWarning("Screenshot history pin could not be presented");
+                if (impl.m_messages != nullptr) {
+                    impl.m_messages->error(
+                        QString::fromLatin1(kPinHistoryMessageKey),
+                        QCoreApplication::translate("ScreenshotController",
+                                                    "The screenshot could not be pinned"));
+                }
+            }
+        });
+    if (!request.job.isValid()) {
+        qWarning("Screenshot history pin failed: the export queue is full");
+        reportFailed();
+        return;
+    }
+    m_historyPinJobs.push_back(std::move(request));
+}
+
 ScreenshotFilePinBatch::Present ScreenshotController::Impl::filePinPresenter(QScreen* screen) {
     const QPointer<ScreenshotController> receiver(&owner);
     const QPointer<QScreen> guardedScreen(screen);
@@ -2832,28 +3008,11 @@ ScreenshotFilePinBatch::Present ScreenshotController::Impl::filePinPresenter(QSc
         if (!receiver || !receiver->m_impl || !guardedScreen) {
             return false;
         }
-        const auto fit =
-            autoResizeWindow
-                ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                      snow_shot::presentation::pinnedImageWindowSize(
-                          decoded.image, decoded.isFormattedText()
-                                             ? decoded.formattedTextDevicePixelRatio
-                                             : guardedScreen->devicePixelRatio()),
-                      guardedScreen->availableGeometry(), guardedScreen->geometry(),
-                      snow_shot::presentation::pinnedScreenGeometry(*guardedScreen), 16)
-                : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                      snow_shot::presentation::pinnedImageWindowSize(
-                          decoded.image, decoded.isFormattedText()
-                                             ? decoded.formattedTextDevicePixelRatio
-                                             : guardedScreen->devicePixelRatio()),
-                      guardedScreen->availableGeometry(), guardedScreen->geometry(),
-                      snow_shot::presentation::pinnedScreenGeometry(*guardedScreen));
-        auto* services = receiver->m_impl->m_selectionExportUiServices.get();
-        if (fit.valid && services != nullptr) {
-            static_cast<void>(services->presentPinnedImage(
-                decoded.image, guardedScreen, fit.nativeGeometry, fit.initialWindowSize, {}, {},
-                1.0, std::move(decoded.originalContent)));
-        }
+        const qreal rasterScale = decoded.isFormattedText() ? decoded.formattedTextDevicePixelRatio
+                                                            : guardedScreen->devicePixelRatio();
+        static_cast<void>(receiver->m_impl->presentDecodedImageOnScreen(
+            guardedScreen, decoded.image, rasterScale, autoResizeWindow,
+            std::move(decoded.originalContent)));
         return true;
     };
 }
@@ -2985,12 +3144,7 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                                      : snow_shot::presentation::pinnedImageWindowSize(
                                            snapshot->detachedImage, screen->devicePixelRatio());
         const ScreenshotPinnedImageFit fit =
-            autoResizeWindow ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                                   windowSize, screen->availableGeometry(), screen->geometry(),
-                                   snow_shot::presentation::pinnedScreenGeometry(*screen), 16)
-                             : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                                   windowSize, screen->availableGeometry(), screen->geometry(),
-                                   snow_shot::presentation::pinnedScreenGeometry(*screen));
+            snow_shot::presentation::fitPinnedImageOnScreen(*screen, windowSize, autoResizeWindow);
         SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");
         const QPointer<ScreenshotController> receiver(&owner);
         const QPointer<QScreen> guardedScreen(screen);
@@ -3120,22 +3274,13 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
 
             SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.decode_finished");
             ScreenshotClipboardContent decoded = std::move(content->value());
-            const ScreenshotPinnedImageFit fit =
-                autoResizeWindow
-                    ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                          snow_shot::presentation::pinnedImageWindowSize(
-                              decoded.image, decoded.isFormattedText()
-                                                 ? decoded.formattedTextDevicePixelRatio
-                                                 : guardedScreen->devicePixelRatio()),
-                          guardedScreen->availableGeometry(), guardedScreen->geometry(),
-                          snow_shot::presentation::pinnedScreenGeometry(*guardedScreen), 16)
-                    : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                          snow_shot::presentation::pinnedImageWindowSize(
-                              decoded.image, decoded.isFormattedText()
-                                                 ? decoded.formattedTextDevicePixelRatio
-                                                 : guardedScreen->devicePixelRatio()),
-                          guardedScreen->availableGeometry(), guardedScreen->geometry(),
-                          snow_shot::presentation::pinnedScreenGeometry(*guardedScreen));
+            const qreal rasterScale = decoded.isFormattedText()
+                                          ? decoded.formattedTextDevicePixelRatio
+                                          : guardedScreen->devicePixelRatio();
+            const ScreenshotPinnedImageFit fit = snow_shot::presentation::fitPinnedImageOnScreen(
+                *guardedScreen,
+                snow_shot::presentation::pinnedImageWindowSize(decoded.image, rasterScale),
+                autoResizeWindow);
             SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");
             if (!fit.valid || receiver->m_impl->m_selectionExportUiServices == nullptr ||
                 !receiver->m_impl->m_selectionExportUiServices->presentPinnedImage(
@@ -4553,6 +4698,7 @@ void ScreenshotController::Impl::shutdown() {
         m_selectionExportUiServices->cancelClipboardPublication();
     }
     cancelContentPin();
+    cancelHistoryPins();
     ++m_imageExportGeneration;
     m_activeImageExports.clear();
     m_imageExportCaptureEpochs.clear();
@@ -4776,6 +4922,10 @@ void ScreenshotController::openScreenRecordingFolder() {
 void ScreenshotController::editHistoryRecord(const QString& recordId) {
     ++m_impl->m_captureEpoch;
     m_impl->startHistoryEdit(recordId);
+}
+
+void ScreenshotController::pinHistoryRecord(const QString& recordId) {
+    m_impl->pinHistoryRecord(recordId);
 }
 
 void ScreenshotController::pinClipboardContentToScreen() {

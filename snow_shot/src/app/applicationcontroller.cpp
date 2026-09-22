@@ -544,6 +544,16 @@ class ApplicationController::Impl {
                             }
                         }));
                 });
+            QObject::connect(
+                mainWindow, &MainWindow::screenshotHistoryPinRequested, &q,
+                [this](const QString& recordId) {
+                    static_cast<void>(
+                        featureRouter.dispatch(FeatureFamily::PinToScreen, [this, recordId]() {
+                            if (ScreenshotController* controller = ensureScreenshotController()) {
+                                controller->pinHistoryRecord(recordId);
+                            }
+                        }));
+                });
         }
         return *mainWindow;
     }

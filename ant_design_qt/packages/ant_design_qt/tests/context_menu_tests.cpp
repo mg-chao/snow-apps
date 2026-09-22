@@ -48,6 +48,8 @@ class ContextMenuTests final : public QObject {
   void menuUsesCompactAntMetrics();
   void metricTokensRelayoutExistingActions();
   void longLabelsRespectTrailingColumnsInConstrainedMenus();
+  void widgetMenuHonorsComponentTokens();
+  void widgetSurfaceFollowsExistingSubmenus();
 };
 
 void ContextMenuTests::actionMetadataAndNativeStateCoexist() {
@@ -369,6 +371,67 @@ void ContextMenuTests::longLabelsRespectTrailingColumnsInConstrainedMenus() {
   QVERIFY(actionRect.width() < menu.fontMetrics().horizontalAdvance(longAction->text()));
   QVERIFY(menu.actionGeometry(submenu->menuAction()).right() < menu.width());
   menu.hide();
+}
+
+void ContextMenuTests::widgetMenuHonorsComponentTokens() {
+#ifdef Q_OS_MACOS
+  AdContextMenu nativeMenu;
+  QVERIFY(nativeMenu.nativeMenuEnabled());
+  QVERIFY(!nativeMenu.testAttribute(Qt::WA_TranslucentBackground));
+#endif
+  AdContextMenu menu;
+  menu.setNativeMenuEnabled(false);
+  QVERIFY(!menu.nativeMenuEnabled());
+  menu.setNativeMenuEnabled(true);
+#ifdef Q_OS_MACOS
+  QVERIFY(menu.nativeMenuEnabled());
+  menu.setNativeMenuEnabled(false);
+#else
+  QVERIFY(!menu.nativeMenuEnabled());
+#endif
+  QVERIFY(menu.testAttribute(Qt::WA_TranslucentBackground));
+  menu.addItem(QStringLiteral("Shared metrics"));
+  AdContextMenu* submenu = menu.addSubMenu(QStringLiteral("More"));
+  QVERIFY(submenu);
+  QVERIFY(!submenu->nativeMenuEnabled());
+  const QSize original = menu.sizeHint();
+  AdContextMenu::ComponentTokens tokens;
+  tokens.itemHeight = 80;
+  tokens.minimumWidth = 420;
+  menu.setComponentTokens(tokens);
+  QVERIFY(menu.sizeHint().height() >= 80);
+  QVERIFY(menu.sizeHint().width() >= 420);
+  QVERIFY(menu.sizeHint() != original);
+}
+
+void ContextMenuTests::widgetSurfaceFollowsExistingSubmenus() {
+  AdContextMenu menu;
+#ifdef Q_OS_MACOS
+  QVERIFY(menu.nativeMenuEnabled());
+#endif
+  const auto pinIcon = outlined_icons::Edit();
+  QAction* action = menu.addItem(QStringLiteral("Pin"), pinIcon);
+  AdContextMenu* submenu = menu.addSubMenu(QStringLiteral("More"), outlined_icons::Folder());
+  QVERIFY(submenu != nullptr);
+  QAction* child = submenu->addItem(QStringLiteral("Child"), outlined_icons::Edit());
+#ifdef Q_OS_MACOS
+  QVERIFY(submenu->nativeMenuEnabled());
+  QVERIFY(action->icon().isMask());
+#endif
+  menu.setNativeMenuEnabled(false);
+  QVERIFY(!menu.nativeMenuEnabled());
+  QVERIFY(!submenu->nativeMenuEnabled());
+  QVERIFY(menu.testAttribute(Qt::WA_TranslucentBackground));
+  QVERIFY(submenu->testAttribute(Qt::WA_TranslucentBackground));
+  QCOMPARE(menu.actionIcon(action), pinIcon);
+  QCOMPARE(menu.actionIcon(submenu->menuAction()), outlined_icons::Folder());
+  QCOMPARE(submenu->actionIcon(child), outlined_icons::Edit());
+  QVERIFY(!action->icon().pixmap(16, 16).isNull());
+  QVERIFY(!submenu->menuAction()->icon().pixmap(16, 16).isNull());
+  QVERIFY(!child->icon().pixmap(16, 16).isNull());
+#ifdef Q_OS_MACOS
+  QVERIFY(!action->icon().isMask());
+#endif
 }
 
 QTEST_MAIN(ContextMenuTests)

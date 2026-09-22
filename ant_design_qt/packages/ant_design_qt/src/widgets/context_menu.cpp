@@ -31,7 +31,6 @@ namespace {
 constexpr char kActionDangerProperty[] = "adqt.contextMenu.danger";
 constexpr char kActionIconProperty[] = "adqt.contextMenu.iconRef";
 
-#ifndef Q_OS_MACOS
 QColor colorOr(const QColor& value, const QColor& fallback) {
   return value.isValid() ? value : fallback;
 }
@@ -285,11 +284,8 @@ void paintSubmenuArrow(QPainter& painter, const QRect& rect, const QColor& color
   painter.restore();
 }
 
-#endif
-
 }  // namespace
 
-#ifndef Q_OS_MACOS
 namespace detail {
 
 class AdContextMenuStyle final : public QProxyStyle {
@@ -550,27 +546,29 @@ class AdContextMenuStyle final : public QProxyStyle {
 };
 
 }  // namespace detail
-#endif
 
 class AdContextMenu::Private {
  public:
   ColorScheme colorScheme = ColorScheme::Inherit;
   ComponentTokens componentTokens;
   QPointer<QWidget> triggerWidget;
-#ifndef Q_OS_MACOS
   QPointer<detail::AdContextMenuStyle> menuStyle;
-#endif
   quint64 popupGeneration = 0;
   bool popupPending = false;
   bool nativeTracking = false;
+  bool useNativeMenu = false;
+  bool customSurface = false;
+  bool themeConnected = false;
 };
 
-AdContextMenu::AdContextMenu(QWidget* parent) : QMenu(parent), d_(std::make_unique<Private>()) {
-  setObjectName(QStringLiteral("ad-context-menu"));
-  setSeparatorsCollapsible(false);
-  setToolTipsVisible(true);
+void AdContextMenu::configureCustomSurface() {
+  if (d_->customSurface) {
+    return;
+  }
+  d_->customSurface = true;
+  d_->nativeTracking = false;
+  d_->popupPending = false;
 
-#ifndef Q_OS_MACOS
   // Popups do not inherit their owner's font by default. DirectWrite's default
   // hinting retains grid fitting at fractional DPI, so give every menu (including
   // submenus and ownerless tray menus) smooth outlines for labels and shortcuts.
@@ -578,10 +576,10 @@ AdContextMenu::AdContextMenu(QWidget* parent) : QMenu(parent), d_(std::make_uniq
   menuFont.setHintingPreference(QFont::PreferNoHinting);
   setFont(menuFont);
 
-  // A translucent top-level widget must be frameless on Windows.  Keeping the
-  // Popup type preserves QMenu's native focus, keyboard, submenu, and tray
-  // integration while preventing the platform from adding an opaque frame or
-  // a second drop shadow around our painted surface.
+  // A translucent top-level widget must be frameless. Keeping the Popup type
+  // preserves QMenu's focus, keyboard, submenu, and tray integration while
+  // preventing the platform from adding an opaque frame or a second drop shadow
+  // around the painted surface.
   setWindowFlags(Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
   setAttribute(Qt::WA_TranslucentBackground, true);
   setAttribute(Qt::WA_NoSystemBackground, true);
@@ -593,19 +591,56 @@ AdContextMenu::AdContextMenu(QWidget* parent) : QMenu(parent), d_(std::make_uniq
   // boundaries and clips the antialiased outer half of the 1 px border,
   // producing asymmetric or missing corner pixels at fractional DPI scales.
 
-  d_->menuStyle = new detail::AdContextMenuStyle(this);
+  if (!d_->menuStyle) {
+    d_->menuStyle = new detail::AdContextMenuStyle(this);
+  }
   QMenu::setStyle(d_->menuStyle);
+  if (!d_->themeConnected) {
+    d_->themeConnected = true;
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this]() { refreshVisuals(true); });
+  }
+  refreshVisuals(true);
+}
 
-  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
-          [this]() { refreshVisuals(true); });
-#else
+void AdContextMenu::configurePlatformSurface() {
+  d_->customSurface = false;
+  d_->nativeTracking = false;
+  d_->popupPending = false;
+  if (d_->menuStyle) {
+    if (style() == d_->menuStyle.data()) {
+      QMenu::setStyle(nullptr);
+    }
+    delete d_->menuStyle.data();
+    d_->menuStyle = nullptr;
+  }
+  setAttribute(Qt::WA_TranslucentBackground, false);
+  setAttribute(Qt::WA_NoSystemBackground, false);
+  setAttribute(Qt::WA_OpaquePaintEvent, false);
+  setAutoFillBackground(false);
+  setWindowFlags(Qt::Popup);
+#ifdef Q_OS_MACOS
+  detail::initializeNativeContextMenu(this);
+#endif
+}
+
+AdContextMenu::AdContextMenu(QWidget* parent) : QMenu(parent), d_(std::make_unique<Private>()) {
+  setObjectName(QStringLiteral("ad-context-menu"));
+  setSeparatorsCollapsible(false);
+  setToolTipsVisible(true);
+
+#ifdef Q_OS_MACOS
+  d_->useNativeMenu = true;
   detail::initializeNativeContextMenu(this);
   connect(this, &QMenu::aboutToShow, this, [this]() {
-    if (detail::usesNativeContextMenu()) {
+    if (d_->useNativeMenu && detail::usesNativeContextMenu()) {
       d_->nativeTracking = true;
     }
   });
   connect(this, &QMenu::aboutToHide, this, [this]() { d_->nativeTracking = false; });
+#else
+  d_->useNativeMenu = false;
+  configureCustomSurface();
 #endif
 }
 
@@ -617,6 +652,31 @@ AdContextMenu::~AdContextMenu() {
   dismissPopup();
   if (d_->triggerWidget) {
     d_->triggerWidget->removeEventFilter(this);
+  }
+}
+
+bool AdContextMenu::nativeMenuEnabled() const { return d_->useNativeMenu; }
+
+void AdContextMenu::setNativeMenuEnabled(bool enabled) {
+#ifndef Q_OS_MACOS
+  enabled = false;
+#endif
+  if (d_->useNativeMenu == enabled) {
+    return;
+  }
+  d_->useNativeMenu = enabled;
+  if (enabled) {
+    configurePlatformSurface();
+  } else {
+    configureCustomSurface();
+  }
+  const QList<QAction*> menuActions = actions();
+  for (QAction* action : menuActions) {
+    applyStoredActionIcon(action);
+    auto* submenu = qobject_cast<AdContextMenu*>(action != nullptr ? action->menu() : nullptr);
+    if (submenu != nullptr) {
+      submenu->setNativeMenuEnabled(enabled);
+    }
   }
 }
 
@@ -679,6 +739,7 @@ QAction* AdContextMenu::addItem(const QString& text, const adqt::icons::IconRef&
 
 AdContextMenu* AdContextMenu::addSubMenu(const QString& text, const adqt::icons::IconRef& icon) {
   auto* submenu = new AdContextMenu(text, this);
+  submenu->setNativeMenuEnabled(nativeMenuEnabled());
   submenu->setColorScheme(colorScheme());
   submenu->setComponentTokens(componentTokens());
   connect(this, &AdContextMenu::colorSchemeChanged, submenu, &AdContextMenu::setColorScheme);
@@ -697,22 +758,17 @@ void AdContextMenu::setActionIcon(QAction* action, const adqt::icons::IconRef& i
   }
   if (adqt::icons::isValid(icon)) {
     action->setProperty(kActionIconProperty, QVariant::fromValue(icon));
-#ifdef Q_OS_MACOS
-    QIcon menuIcon = detail::nativeContextMenuIcon(this, icon);
-#else
-    QIcon menuIcon = adqt::icons::makeIcon(icon);
-#endif
     action->setIconVisibleInMenu(true);
-    action->setIcon(menuIcon);
+    applyStoredActionIcon(action);
   } else {
     action->setProperty(kActionIconProperty, QVariant());
     action->setIcon(QIcon());
   }
-#ifndef Q_OS_MACOS
-  // Cocoa synchronizes the changed QAction itself. Rebuilding every icon here
-  // makes populating a native menu quadratic and changes unrelated actions.
-  refreshVisuals(true);
-#endif
+  if (!d_->useNativeMenu) {
+    // Cocoa synchronizes the changed QAction itself. Rebuilding every icon here
+    // makes populating a native menu quadratic and changes unrelated actions.
+    refreshVisuals(true);
+  }
 }
 
 adqt::icons::IconRef AdContextMenu::actionIcon(const QAction* action) const {
@@ -740,7 +796,7 @@ void AdContextMenu::dismissPopup() {
   ++d_->popupGeneration;
   d_->popupPending = false;
 #ifdef Q_OS_MACOS
-  if (d_->nativeTracking) {
+  if (d_->useNativeMenu && d_->nativeTracking) {
     detail::dismissNativeContextMenu(this);
   }
 #endif
@@ -749,7 +805,7 @@ void AdContextMenu::dismissPopup() {
 
 QSize AdContextMenu::sizeHint() const {
 #ifdef Q_OS_MACOS
-  if (detail::usesNativeContextMenu()) {
+  if (d_->useNativeMenu && detail::usesNativeContextMenu()) {
     return detail::nativeContextMenuSize(const_cast<AdContextMenu*>(this));
   }
 #endif
@@ -758,7 +814,7 @@ QSize AdContextMenu::sizeHint() const {
 
 void AdContextMenu::popupAt(const QPoint& globalPosition) {
 #ifdef Q_OS_MACOS
-  if (detail::usesNativeContextMenu()) {
+  if (d_->useNativeMenu && detail::usesNativeContextMenu()) {
     if (d_->nativeTracking) {
       return;
     }
@@ -783,7 +839,7 @@ void AdContextMenu::popupAt(const QPoint& globalPosition) {
 
 QAction* AdContextMenu::execAt(const QPoint& globalPosition, QAction* initialAction) {
 #ifdef Q_OS_MACOS
-  if (detail::usesNativeContextMenu()) {
+  if (d_->useNativeMenu && detail::usesNativeContextMenu()) {
     if (d_->nativeTracking) {
       return nullptr;
     }
@@ -833,7 +889,9 @@ void AdContextMenu::showEvent(QShowEvent* event) {
 
 void AdContextMenu::hideEvent(QHideEvent* event) {
   QMenu::hideEvent(event);
-#ifndef Q_OS_MACOS
+  if (d_->useNativeMenu) {
+    return;
+  }
   // The translucent popup's backing store is the dominant resident cost of a
   // hidden menu (its full physical-size ARGB surface stays allocated until the
   // widget is destroyed).  Destroying the native window releases it while
@@ -844,43 +902,54 @@ void AdContextMenu::hideEvent(QHideEvent* event) {
   QMetaObject::invokeMethod(
       this,
       [this]() {
-        if (!isVisible() && windowHandle() != nullptr) {
+        if (!d_->useNativeMenu && !isVisible() && windowHandle() != nullptr) {
           destroy();
         }
       },
       Qt::QueuedConnection);
-#endif
 }
 
 void AdContextMenu::paintEvent(QPaintEvent* event) {
-#ifndef Q_OS_MACOS
-  // QMenu is a native popup on Windows and its backing store is not
-  // guaranteed to be initialized before the first paint.  Clear the entire
-  // surface with Source composition before QMenu asks the style to paint the
-  // rounded panel and its items.  This makes pixels outside the panel's path
-  // explicitly transparent instead of retaining the platform's black
-  // window background.
-  QPainter painter(this);
-  painter.setCompositionMode(QPainter::CompositionMode_Source);
-  painter.fillRect(rect(), Qt::transparent);
-  painter.end();
-#endif
+  if (!d_->useNativeMenu) {
+    // A native popup's backing store is not guaranteed to be initialized before
+    // the first paint. Clear the entire surface with Source composition before
+    // QMenu asks the style to paint the rounded panel and its items. This makes
+    // pixels outside the panel's path explicitly transparent instead of
+    // retaining the platform's black window background.
+    QPainter painter(this);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.fillRect(rect(), Qt::transparent);
+    painter.end();
+  }
   QMenu::paintEvent(event);
 }
 
-void AdContextMenu::refreshVisuals(bool relayout) {
-#ifdef Q_OS_MACOS
-  Q_UNUSED(relayout);
-  for (QAction* action : actions()) {
-    if (!action) {
-      continue;
-    }
-    const auto icon = action->property(kActionIconProperty).value<adqt::icons::IconRef>();
-    if (adqt::icons::isValid(icon)) {
-      action->setIcon(detail::nativeContextMenuIcon(this, icon));
-    }
+void AdContextMenu::applyStoredActionIcon(QAction* action) {
+  if (action == nullptr) {
+    return;
   }
+  const auto icon = action->property(kActionIconProperty).value<adqt::icons::IconRef>();
+  if (!adqt::icons::isValid(icon)) {
+    return;
+  }
+#ifdef Q_OS_MACOS
+  action->setIcon(d_->useNativeMenu ? detail::nativeContextMenuIcon(this, icon)
+                                    : adqt::icons::makeIcon(icon));
 #else
+  action->setIcon(adqt::icons::makeIcon(icon));
+#endif
+}
+
+void AdContextMenu::refreshVisuals(bool relayout) {
+  if (d_->useNativeMenu) {
+#ifdef Q_OS_MACOS
+    Q_UNUSED(relayout);
+    for (QAction* action : actions()) {
+      applyStoredActionIcon(action);
+    }
+#endif
+    return;
+  }
   if (relayout) {
     const QList<QAction*> menuActions = actions();
     for (QAction* action : menuActions) {
@@ -896,7 +965,6 @@ void AdContextMenu::refreshVisuals(bool relayout) {
     }
   }
   update();
-#endif
 }
 
 }  // namespace adqt::widgets

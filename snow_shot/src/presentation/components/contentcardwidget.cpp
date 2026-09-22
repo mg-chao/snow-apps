@@ -153,6 +153,8 @@ QWidget* ContentCardWidget::createPage(
         auto* historyPage = new ScreenshotHistoryPageWidget(m_stack);
         connect(historyPage, &ScreenshotHistoryPageWidget::editRequested, this,
                 &ContentCardWidget::screenshotHistoryEditRequested);
+        connect(historyPage, &ScreenshotHistoryPageWidget::pinRequested, this,
+                &ContentCardWidget::screenshotHistoryPinRequested);
         page = historyPage;
     } else if (definition.kind ==
                snow_shot::presentation::settings::SettingsPageKind::Translation) {

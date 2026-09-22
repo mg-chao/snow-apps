@@ -56,6 +56,7 @@ class ScreenshotController : public QObject {
     void startOrStopScreenRecordingAndCopy();
     void openScreenRecordingFolder();
     void editHistoryRecord(const QString& recordId);
+    void pinHistoryRecord(const QString& recordId);
     void pinClipboardContentToScreen();
     void pinSelectedFilesToScreen();
 

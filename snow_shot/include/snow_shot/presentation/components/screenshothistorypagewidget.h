@@ -97,6 +97,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
 
   signals:
     void editRequested(const QString& recordId);
+    void pinRequested(const QString& recordId);
 
   protected:
     void changeEvent(QEvent* event) override;

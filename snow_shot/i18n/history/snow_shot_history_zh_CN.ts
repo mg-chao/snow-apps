@@ -56,6 +56,18 @@
             <translation>正在加载预览…</translation>
         </message>
         <message>
+            <source>More</source>
+            <translation>更多</translation>
+        </message>
+        <message>
+            <source>More actions</source>
+            <translation>更多操作</translation>
+        </message>
+        <message>
+            <source>Pin this screenshot to the screen</source>
+            <translation>将此截图固定到屏幕</translation>
+        </message>
+        <message>
             <source>Pin to screen</source>
             <translation>固定到屏幕</translation>
         </message>
@@ -82,6 +94,10 @@
         <message>
             <source>This action cannot be undone</source>
             <translation>此操作无法撤销</translation>
+        </message>
+        <message>
+            <source>This screenshot cannot be pinned</source>
+            <translation>此截图无法固定到屏幕</translation>
         </message>
     </context>
     <context>

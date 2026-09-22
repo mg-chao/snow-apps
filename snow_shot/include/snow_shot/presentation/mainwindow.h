@@ -47,6 +47,7 @@ class MainWindow : public QMainWindow {
     void
     globalMouseDragRequested(snow_shot::presentation::settings::SettingsGlobalMouseAction action);
     void screenshotHistoryEditRequested(const QString& recordId);
+    void screenshotHistoryPinRequested(const QString& recordId);
 
   protected:
     bool event(QEvent* event) override;

@@ -56,6 +56,18 @@
             <translation>Loading preview…</translation>
         </message>
         <message>
+            <source>More</source>
+            <translation>More</translation>
+        </message>
+        <message>
+            <source>More actions</source>
+            <translation>More actions</translation>
+        </message>
+        <message>
+            <source>Pin this screenshot to the screen</source>
+            <translation>Pin this screenshot to the screen</translation>
+        </message>
+        <message>
             <source>Pin to screen</source>
             <translation>Pin to screen</translation>
         </message>
@@ -82,6 +94,10 @@
         <message>
             <source>This action cannot be undone</source>
             <translation>This action cannot be undone</translation>
+        </message>
+        <message>
+            <source>This screenshot cannot be pinned</source>
+            <translation>This screenshot cannot be pinned</translation>
         </message>
     </context>
     <context>

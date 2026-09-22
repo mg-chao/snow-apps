@@ -114,6 +114,10 @@
             <translation>無法複製截圖：%1</translation>
         </message>
         <message>
+            <source>The screenshot could not be pinned</source>
+            <translation>無法將截圖釘選到螢幕</translation>
+        </message>
+        <message>
             <source>The screenshot could not be prepared for saving</source>
             <translation>無法準備要儲存的截圖</translation>
         </message>
@@ -136,6 +140,10 @@
         <message>
             <source>The scrolling screenshot could not be prepared</source>
             <translation>無法準備滾動截圖</translation>
+        </message>
+        <message>
+            <source>This screenshot cannot be pinned</source>
+            <translation>此截圖無法釘選到螢幕</translation>
         </message>
         <message>
             <source>Your current screenshot will be discarded.</source>

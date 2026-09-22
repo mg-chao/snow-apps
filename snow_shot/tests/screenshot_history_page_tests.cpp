@@ -7,6 +7,7 @@
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
 #include "widgets/pagination.h"
+#include "widgets/context_menu.h"
 #include "widgets/popconfirm.h"
 #include "widgets/scroll_area.h"
 #include "snow_shot/storage/storageusagetracker.h"
@@ -64,7 +65,10 @@ class MutableHistoryDataSource final : public ScreenshotHistoryPageDataSource {
         return std::nullopt;
     }
 
-    void remove(const QString&) override {}
+    void remove(const QString& id) override {
+        removedIds.push_back(id);
+    }
+    QVector<QString> removedIds;
     bool requestRemoveMany(const QVector<QString>& ids) override {
         removedBatches.push_back(ids);
         return acceptRemoval;
@@ -433,6 +437,126 @@ void emptyStateRemainsVisibleAfterFilteringEmptyHistory() {
         "an emptied repository must restore the unfiltered empty-state prompt");
 }
 
+void moreMenuOffersPinAndDelete() {
+    MutableHistoryDataSource dataSource;
+    QVector<storage::CaptureHistoryRecord> records = historyRecords(2);
+    storage::CaptureHistoryResultRecord result;
+    result.imageSize = QSize(32, 18);
+    result.encodedBytes = 256;
+    records[0].result = result;
+    dataSource.setRecords(records);
+
+    ScreenshotHistoryPageWidget page(&dataSource, nullptr);
+    QString pinnedId;
+    QObject::connect(&page, &ScreenshotHistoryPageWidget::pinRequested, &page,
+                     [&pinnedId](const QString& recordId) { pinnedId = recordId; });
+    page.resize(900, 720);
+    page.show();
+    page.setActive(true);
+    flushEvents();
+
+    auto* pinnableEntry =
+        page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-0"));
+    auto* plainEntry = page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-1"));
+    require(pinnableEntry != nullptr && plainEntry != nullptr,
+            "history entries must keep their record identity");
+
+    auto* more = pinnableEntry->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotHistoryEntryMore"));
+    auto* confirmation = pinnableEntry->findChild<adqt::widgets::AdPopconfirm*>(
+        QStringLiteral("screenshotHistoryEntryDeleteConfirm"));
+    require(more != nullptr && more->text() == QStringLiteral("More") && more->isVisible() &&
+                confirmation != nullptr && confirmation->sourceWidget() == more,
+            "each history entry must replace Delete with a More button");
+    require(pinnableEntry->findChild<adqt::widgets::AdContextMenu*>(
+                QStringLiteral("screenshotHistoryEntryMoreMenu")) == nullptr,
+            "the More menu must stay closed until it is opened");
+    require(
+        more->parentWidget()
+            ->findChildren<adqt::widgets::AdButton*>(QStringLiteral("screenshotHistoryEntryDelete"))
+            .isEmpty(),
+        "the entry action row must not contain Delete");
+
+    auto visibleMenu = [](QWidget* entry) -> adqt::widgets::AdContextMenu* {
+        const auto menus = entry->findChildren<adqt::widgets::AdContextMenu*>(
+            QStringLiteral("screenshotHistoryEntryMoreMenu"));
+        for (adqt::widgets::AdContextMenu* candidate : menus) {
+            if (candidate->isPopupVisible()) {
+                return candidate;
+            }
+        }
+        return nullptr;
+    };
+    auto hover = [](QWidget* widget) {
+        const QPoint local = widget->rect().center();
+        const QPoint global = widget->mapToGlobal(local);
+        QEnterEvent event(local, local, global);
+        QApplication::sendEvent(widget, &event);
+    };
+    auto activate = [](QMenu* menu, QAction* action) {
+        const QRect geometry = menu->actionGeometry(action);
+        const QPoint local = geometry.center();
+        const QPoint global = menu->mapToGlobal(local);
+        QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
+                            Qt::NoModifier);
+        QApplication::sendEvent(menu, &press);
+        QApplication::sendEvent(menu, &release);
+    };
+    hover(more);
+    flushEvents();
+    auto* menu = visibleMenu(pinnableEntry);
+    require(menu != nullptr && menu->actions().size() == 2 && !menu->nativeMenuEnabled(),
+            "hovering More must show the shared widget action menu");
+    QAction* pin = menu->actions().at(0);
+    QAction* remove = menu->actions().at(1);
+    require(pin->text() == QStringLiteral("Pin to screen") && pin->isEnabled() &&
+                remove->text() == QStringLiteral("Delete") && menu->actionDanger(remove) &&
+                menu->actionGeometry(pin).isValid(),
+            "the More menu must offer Pin to screen and a danger Delete action");
+    QEvent languageChange(QEvent::LanguageChange);
+    QApplication::sendEvent(pinnableEntry, &languageChange);
+    flushEvents();
+    require(pin->text() == QStringLiteral("Pin to screen") &&
+                pin->toolTip() == QStringLiteral("Pin this screenshot to the screen") &&
+                remove->text() == QStringLiteral("Delete"),
+            "an open More menu must keep its own action labels when the language changes");
+    activate(menu, pin);
+    flushEvents();
+    require(pinnedId == QStringLiteral("record-0") && !menu->isPopupVisible(),
+            "Pin to screen must request that history entry and close the menu");
+
+    auto* plainMore = plainEntry->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotHistoryEntryMore"));
+    require(plainMore != nullptr, "every history entry must expose More");
+    hover(plainMore);
+    flushEvents();
+    auto* plainMenu = visibleMenu(plainEntry);
+    require(plainMenu != nullptr && !plainMenu->actions().at(0)->isEnabled() &&
+                plainMenu->actions().at(0)->toolTip() ==
+                    QStringLiteral("This screenshot cannot be pinned"),
+            "Pin to screen must stay unavailable when the history entry has no image");
+    plainMenu->dismissPopup();
+    flushEvents();
+
+    hover(more);
+    flushEvents();
+    menu = visibleMenu(pinnableEntry);
+    require(menu != nullptr, "More must reopen its action menu");
+    activate(menu, menu->actions().at(1));
+    flushEvents();
+    adqt::widgets::AdButton* confirmDelete =
+        confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok);
+    require(confirmation->isVisible() && confirmDelete != nullptr && !menu->isPopupVisible(),
+            "Delete must close the action menu and ask for confirmation");
+    confirmDelete->click();
+    flushEvents();
+    require(dataSource.removedIds.size() == 1 &&
+                dataSource.removedIds.front() == QStringLiteral("record-0"),
+            "confirming Delete must remove that history entry");
+}
+
 void waitUntil(const std::function<bool()>& complete, const char* message) {
     QElapsedTimer deadline;
     deadline.start();
@@ -574,6 +698,7 @@ int main(int argc, char** argv) {
                 .success,
             "isolated application storage must initialize");
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
+    moreMenuOffersPinAndDelete();
     entriesUseBordersAndSupportCrossPageSelection();
     imageFailuresRespectCacheFallbackAndCancellation();
     shutdownDrainsBacklogThenRejectsNewWork();

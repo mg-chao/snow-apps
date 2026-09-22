@@ -2,6 +2,8 @@
 
 #include "snowimageqtcodec.h"
 
+#include "snow_shot/presentation/components/actionpopupmenu.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
@@ -21,11 +23,14 @@
 #include "widgets/detail/button_rendering.h"
 #include "widgets/image.h"
 #include "widgets/pagination.h"
+#include "widgets/context_menu.h"
 #include "widgets/popconfirm.h"
 #include "widgets/select.h"
 #include "widgets/scroll_area.h"
 
+#include <QAction>
 #include <QBoxLayout>
+#include <QPointer>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -61,6 +66,7 @@
 
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
+namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 namespace storage = snow_shot::storage;
 namespace styles = snow_shot::presentation::styles;
 
@@ -734,11 +740,12 @@ class HistoryEntryWidget final : public QFrame {
                        ScreenshotHistoryPageDataSource* dataSource, bool selected,
                        std::function<void(bool)> selectionChanged,
                        std::function<void()> editRequested, std::function<void()> copyRequested,
-                       std::function<void()> deleteRequested, QWidget* parent = nullptr)
+                       std::function<void()> pinRequested, std::function<void()> deleteRequested,
+                       QWidget* parent = nullptr)
         : QFrame(parent), m_record(record), m_assets(assets),
           m_selectionChanged(std::move(selectionChanged)),
           m_editRequested(std::move(editRequested)), m_copyRequested(std::move(copyRequested)),
-          m_deleteRequested(std::move(deleteRequested)) {
+          m_pinRequested(std::move(pinRequested)), m_deleteRequested(std::move(deleteRequested)) {
         setObjectName(QStringLiteral("screenshotHistoryEntry-%1").arg(record.id));
         setFrameShape(QFrame::NoFrame);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
@@ -802,13 +809,17 @@ class HistoryEntryWidget final : public QFrame {
         m_copyButton->setIconRef(outlined_icons::Copy());
         m_copyButton->setVisible(record.result.has_value());
         actions->addWidget(m_copyButton, 0);
-        m_deleteButton = new adqt::widgets::AdButton(details);
-        m_deleteButton->setObjectName(QStringLiteral("screenshotHistoryEntryDelete"));
-        m_deleteButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-        m_deleteButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
-        m_deleteButton->setIconRef(outlined_icons::IconDelete());
-        actions->addWidget(m_deleteButton, 0);
+        m_moreButton = new adqt::widgets::AdButton(details);
+        m_moreButton->setObjectName(QStringLiteral("screenshotHistoryEntryMore"));
+        m_moreButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+        m_moreButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+        m_moreButton->setIconRef(outlined_icons::Ellipsis());
+        actions->addWidget(m_moreButton, 0);
         actions->addStretch(1);
+        new snow_shot::presentation::ActionPopupMenu(
+            m_moreButton, [this] { return createMoreMenu(); },
+            snow_shot::presentation::ActionPopupMenu::Placement::BottomLeft,
+            snow_shot::presentation::ActionPopupMenu::Surface::Widget);
         detailsLayout->addLayout(actions);
         m_layout->addWidget(details, 1);
 
@@ -881,7 +892,10 @@ class HistoryEntryWidget final : public QFrame {
 
         m_deleteConfirmation = new adqt::widgets::AdPopconfirm(this);
         m_deleteConfirmation->setObjectName(QStringLiteral("screenshotHistoryEntryDeleteConfirm"));
-        m_deleteConfirmation->setSourceWidget(m_deleteButton);
+        m_deleteConfirmation->setSourceWidget(m_moreButton);
+        m_deleteConfirmation->setPlacement(adqt::widgets::AdPopconfirm::Placement::Top);
+        m_deleteConfirmation->setPopupLayerMode(
+            adqt::widgets::AdPopconfirm::PopupLayerMode::QtTool);
         m_deleteConfirmation->setButtonAccentRole(adqt::widgets::AdPopconfirm::StandardButton::Ok,
                                                   adqt::widgets::AdButton::AccentRole::Danger);
         connect(m_editButton, &QAbstractButton::clicked, this, [this]() {
@@ -980,9 +994,10 @@ class HistoryEntryWidget final : public QFrame {
         m_copyButton->setText(HistoryEntryWidget::tr("Copy"));
         m_copyButton->setToolTip(HistoryEntryWidget::tr("Copy screenshot result"));
         m_copyButton->setAccessibleName(HistoryEntryWidget::tr("Copy screenshot result"));
-        m_deleteButton->setText(HistoryEntryWidget::tr("Delete"));
-        m_deleteButton->setToolTip(HistoryEntryWidget::tr("Delete history entry"));
-        m_deleteButton->setAccessibleName(HistoryEntryWidget::tr("Delete history entry"));
+        m_moreButton->setText(HistoryEntryWidget::tr("More"));
+        m_moreButton->setToolTip(HistoryEntryWidget::tr("More actions"));
+        m_moreButton->setAccessibleName(HistoryEntryWidget::tr("More actions"));
+        retranslateMoreActions();
         m_deleteConfirmation->setText(
             HistoryEntryWidget::tr("Delete this screenshot history entry?"));
         m_deleteConfirmation->setInformativeText(
@@ -1023,6 +1038,13 @@ class HistoryEntryWidget final : public QFrame {
         QFrame::mousePressEvent(event);
     }
 
+    void changeEvent(QEvent* event) override {
+        QFrame::changeEvent(event);
+        if (event != nullptr && event->type() == QEvent::LanguageChange) {
+            retranslateUi();
+        }
+    }
+
     void resizeEvent(QResizeEvent* event) override {
         QFrame::resizeEvent(event);
         updateResponsiveLayout();
@@ -1051,6 +1073,51 @@ class HistoryEntryWidget final : public QFrame {
     }
 
   private:
+    void retranslateMoreActions() {
+        if (m_pinAction != nullptr) {
+            m_pinAction->setText(HistoryEntryWidget::tr("Pin to screen"));
+            m_pinAction->setToolTip(
+                m_pinAction->isEnabled()
+                    ? HistoryEntryWidget::tr("Pin this screenshot to the screen")
+                    : HistoryEntryWidget::tr("This screenshot cannot be pinned"));
+        }
+        if (m_deleteAction != nullptr) {
+            m_deleteAction->setText(HistoryEntryWidget::tr("Delete"));
+            m_deleteAction->setToolTip(HistoryEntryWidget::tr("Delete history entry"));
+        }
+    }
+
+    adqt::widgets::AdContextMenu* createMoreMenu() {
+        if (m_moreMenu != nullptr) {
+            m_moreMenu->deleteLater();
+        }
+        auto* menu = new adqt::widgets::AdContextMenu(this);
+        m_moreMenu = menu;
+        menu->setObjectName(QStringLiteral("screenshotHistoryEntryMoreMenu"));
+        auto* pin = menu->addItem(QString(), custom_outlined_icons::PinToScreen());
+        pin->setObjectName(QStringLiteral("screenshotHistoryEntryPin"));
+        pin->setEnabled(m_record.result.has_value());
+        m_pinAction = pin;
+        auto* remove = menu->addItem(QString(), outlined_icons::IconDelete());
+        remove->setObjectName(QStringLiteral("screenshotHistoryEntryDelete"));
+        m_deleteAction = remove;
+        menu->setActionDanger(remove);
+        retranslateMoreActions();
+        connect(pin, &QAction::triggered, this, [this]() {
+            if (m_pinRequested) {
+                m_pinRequested();
+            }
+        });
+        connect(remove, &QAction::triggered, this, [this]() {
+            QTimer::singleShot(0, this, [this]() {
+                if (m_deleteConfirmation != nullptr) {
+                    m_deleteConfirmation->show();
+                }
+            });
+        });
+        return menu;
+    }
+
     void updateResponsiveLayout() {
         const int availableWidth = parentWidget() != nullptr ? parentWidget()->width() : width();
         const bool wide = availableWidth >= kWideEntryBreakpoint;
@@ -1064,6 +1131,7 @@ class HistoryEntryWidget final : public QFrame {
     std::function<void(bool)> m_selectionChanged;
     std::function<void()> m_editRequested;
     std::function<void()> m_copyRequested;
+    std::function<void()> m_pinRequested;
     std::function<void()> m_deleteRequested;
     QBoxLayout* m_layout = nullptr;
     adqt::widgets::AdCheckbox* m_selectionCheckbox = nullptr;
@@ -1072,7 +1140,10 @@ class HistoryEntryWidget final : public QFrame {
     QLabel* m_metaLabel = nullptr;
     adqt::widgets::AdButton* m_editButton = nullptr;
     adqt::widgets::AdButton* m_copyButton = nullptr;
-    adqt::widgets::AdButton* m_deleteButton = nullptr;
+    adqt::widgets::AdButton* m_moreButton = nullptr;
+    QPointer<adqt::widgets::AdContextMenu> m_moreMenu;
+    QPointer<QAction> m_pinAction;
+    QPointer<QAction> m_deleteAction;
     adqt::widgets::AdPopconfirm* m_deleteConfirmation = nullptr;
     adqt::widgets::AdCarousel* m_carousel = nullptr;
     QLabel* m_previewPlaceholder = nullptr;
@@ -1560,6 +1631,7 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
                 },
                 [this, id = record.id]() { emit editRequested(id); },
                 [this, record]() { copyEntry(record); },
+                [this, id = record.id]() { emit pinRequested(id); },
                 [this, id = record.id]() { removeEntry(id); }, m_entriesHost);
             entry->applyTheme(m_colorScheme);
             m_entryWidgetsById.insert(record.id, entry);

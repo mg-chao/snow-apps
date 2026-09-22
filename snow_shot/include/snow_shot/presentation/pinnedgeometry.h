@@ -33,5 +33,18 @@ inline QSize pinnedImageWindowSize(const QImage& image, qreal rasterScale) {
                           : QSize(std::max(1, qRound(image.width() / scale)),
                                   std::max(1, qRound(image.height() / scale)));
 }
+
+// One placement policy for every pin: fit into the work area, or center at full size.
+inline ScreenshotPinnedImageFit
+fitPinnedImageOnScreen(const QScreen& screen, const QSize& windowSize, bool autoResizeWindow) {
+    const QRect available = screen.availableGeometry();
+    const QRect logical = screen.geometry();
+    const QRect native = pinnedScreenGeometry(screen);
+    return autoResizeWindow
+               ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(windowSize, available,
+                                                                       logical, native, 16)
+               : ScreenshotGeometryMapper::centerImageAtFullResolution(windowSize, available,
+                                                                       logical, native);
+}
 } // namespace snow_shot::presentation
 #endif
