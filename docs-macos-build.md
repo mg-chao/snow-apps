@@ -210,7 +210,8 @@ scripts/build.sh snow-shot-macos-arm64-release --parallel 8
 Use `x64` and `macos-static-x64` for an Intel build. The static Qt script pins
 the architecture and Qt's required 14.0 library deployment target (the Snow Shot
 app still targets macOS 15.0), enables LTO and system libpng/zlib, installs Qt
-source-license metadata, and records an audited build stamp. It
+source-license metadata, disables the macOS-27-only `dup3` path for compatibility
+with the supported deployment range, and records an audited build stamp. It
 reuses a matching installation; pass `--force` only when intentionally replacing
 that prefix. Release and fast entry points reject a shared, unstamped, wrong-arch,
 or wrong-version Qt kit.

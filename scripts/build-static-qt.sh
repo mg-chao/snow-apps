@@ -105,6 +105,7 @@ if [[ -f "$qt_config" && "$force" == 0 ]]; then
         grep -Eq '"Architecture"[[:space:]]*:[[:space:]]*"'"$arch"'"' "$stamp" &&
         grep -Eq '"Configuration"[[:space:]]*:[[:space:]]*"Release"' "$stamp" &&
         grep -Eq '"DeploymentTarget"[[:space:]]*:[[:space:]]*"14\.0"' "$stamp" &&
+        grep -Eq '"Dup3"[[:space:]]*:[[:space:]]*false' "$stamp" &&
         grep -Eq '"Ltcg"[[:space:]]*:[[:space:]]*true' "$stamp" &&
         grep -Eq '"SystemPng"[[:space:]]*:[[:space:]]*true' "$stamp" &&
         grep -Eq '"SystemZlib"[[:space:]]*:[[:space:]]*true' "$stamp" &&
@@ -150,6 +151,7 @@ mkdir -p "$build_dir"
         -DCMAKE_PREFIX_PATH="$dependency_prefix" \
         -DZLIB_ROOT="$dependency_prefix" -DPNG_ROOT="$dependency_prefix" \
         -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
+        -DFEATURE_dup3=OFF \
         -DQT_FEATURE_concurrent=OFF -DQT_FEATURE_dbus=OFF \
         -DQT_FEATURE_linguist=ON -DQT_FEATURE_printsupport=OFF \
         -DQT_FEATURE_qdoc=OFF -DQT_FEATURE_qmake=OFF -DQT_FEATURE_sql=OFF \
@@ -163,6 +165,7 @@ mkdir -p "$build_dir"
 cache="$build_dir/CMakeCache.txt"
 [[ -f "$cache" ]] || snow_die "Qt configure did not produce $cache"
 for entry in \
+    'FEATURE_dup3:BOOL=OFF' 'QT_FEATURE_dup3:INTERNAL=OFF' \
     'FEATURE_ltcg:BOOL=ON' 'QT_FEATURE_ltcg:INTERNAL=ON' \
     'FEATURE_system_png:BOOL=ON' 'QT_FEATURE_system_png:INTERNAL=ON' \
     'FEATURE_system_zlib:BOOL=ON' 'QT_FEATURE_system_zlib:INTERNAL=ON'; do
@@ -189,7 +192,7 @@ import json, pathlib, sys
 path, version, arch, deployment_target, fingerprint, source, parallelism = sys.argv[1:]
 value = {
     'SchemaVersion': 1, 'QtVersion': version, 'Architecture': arch,
-    'Configuration': 'Release', 'DeploymentTarget': deployment_target,
+    'Configuration': 'Release', 'DeploymentTarget': deployment_target, 'Dup3': False,
     'DependencyFingerprint': fingerprint,
     'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
     'LicenseBundle': 'share/snow-apps/qt-licenses', 'SourceArchive': source,

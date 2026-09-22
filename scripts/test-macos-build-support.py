@@ -123,6 +123,7 @@ if name == 'openssl':
         stamp.write_text(json.dumps({"SchemaVersion": 1, "QtVersion": "6.11.1",
                                      "Architecture": "arm64", "Configuration": "Release",
                                      "DeploymentTarget": "14.0",
+                                     "Dup3": False,
                                      "Ltcg": True, "SystemPng": True, "SystemZlib": True}))
         (self.root / "Qt kit/share/snow-apps/qt-licenses").mkdir()
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
@@ -254,6 +255,7 @@ if name == 'openssl':
         stamp.write_text(json.dumps({
             'SchemaVersion': 1, 'QtVersion': '6.11.1', 'Architecture': 'arm64',
             'Configuration': 'Release', 'DeploymentTarget': '14.0',
+            'Dup3': False,
             'DependencyFingerprint': fingerprint,
             'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
         }, indent=2))
@@ -270,6 +272,8 @@ if name == 'openssl':
         self.assertIn('"${qt_apple_options[@]}"', builder)
         self.assertIn('qt_deployment_target=14.0', builder)
         self.assertIn('-DCMAKE_OSX_DEPLOYMENT_TARGET="$qt_deployment_target"', builder)
+        self.assertIn('-DFEATURE_dup3=OFF', builder)
+        self.assertIn("'FEATURE_dup3:BOOL=OFF' 'QT_FEATURE_dup3:INTERNAL=OFF'", builder)
 
     def test_launch_bundle_with_arguments(self):
         app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
