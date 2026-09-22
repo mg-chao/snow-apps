@@ -49,7 +49,6 @@ struct DirectCaptureFrame {
     quint8 backend = 0;
     QString error;
     QVector<DirectCaptureDisplay> displays{};
-    QByteArray canonicalPng{};
     QRect logicalBounds{};
 
     [[nodiscard]] bool isValid() const {
@@ -70,6 +69,7 @@ struct DirectCapturePorts {
     std::function<bool(const DirectCaptureRequest&, const DirectCaptureFrame&, Completion)> history;
     std::function<void(const QString&, bool)> report;
     std::function<void()> captureRequested;
+    std::function<void()> finished{};
 };
 
 class DirectCaptureWorkflow final : public QObject {
@@ -82,7 +82,7 @@ class DirectCaptureWorkflow final : public QObject {
   private:
     enum class Phase { Idle, Acquiring, Saving, Copying, History, Stopped };
     void startNext();
-    void saveOrCopy();
+    void save();
     void copy(const QString& path = {});
     void publishHistory();
     void finish();
@@ -91,6 +91,7 @@ class DirectCaptureWorkflow final : public QObject {
     DirectCapturePorts m_ports;
     std::deque<DirectCaptureRequest> m_queue;
     DirectCaptureFrame m_frame;
+    bool m_copySucceeded = false;
     Phase m_phase = Phase::Idle;
     quint64 m_generation = 0;
 };

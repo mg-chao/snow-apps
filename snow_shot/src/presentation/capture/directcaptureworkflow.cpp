@@ -48,6 +48,7 @@ void DirectCaptureWorkflow::startNext() {
     if (m_phase != Phase::Idle || m_queue.empty())
         return;
     m_phase = Phase::Acquiring;
+    m_copySucceeded = false;
     const quint64 generation = ++m_generation;
     const QPointer<DirectCaptureWorkflow> self(this);
     auto complete = [self, generation](DirectCaptureFrame frame) {
@@ -63,17 +64,20 @@ void DirectCaptureWorkflow::startNext() {
             return;
         }
         self->m_frame = std::move(frame);
-        self->saveOrCopy();
+        if (self->m_queue.front().copyFile)
+            self->save();
+        else
+            self->copy();
     };
     if (!m_ports.acquire(m_queue.front(), complete))
         complete(DirectCaptureFrame{{}, {}, {}, 0, queueError()});
 }
 
-void DirectCaptureWorkflow::saveOrCopy() {
-    if (m_phase != Phase::Acquiring)
+void DirectCaptureWorkflow::save() {
+    if (m_phase != Phase::Acquiring && m_phase != Phase::Copying)
         return;
     if (!m_queue.front().autoSave && !m_queue.front().copyFile) {
-        copy();
+        publishHistory();
         return;
     }
     m_phase = Phase::Saving;
@@ -92,7 +96,10 @@ void DirectCaptureWorkflow::saveOrCopy() {
                 return;
             }
         }
-        self->copy(copyFile ? path : QString());
+        if (copyFile)
+            self->copy(path);
+        else
+            self->publishHistory();
     };
     if (!m_ports.save(m_queue.front(), m_frame, complete))
         complete({}, queueError());
@@ -107,18 +114,21 @@ void DirectCaptureWorkflow::copy(const QString& path) {
             return;
         if (!error.isEmpty()) {
             self->report(error);
-            if (self)
-                self->finish();
-            return;
+            if (!self || self->m_generation != generation || self->m_phase != Phase::Copying)
+                return;
         }
-        self->publishHistory();
+        self->m_copySucceeded = error.isEmpty();
+        if (self->m_queue.front().copyFile)
+            self->publishHistory();
+        else
+            self->save();
     };
     if (!m_ports.copy(m_queue.front(), m_frame, path, complete))
         complete(queueError());
 }
 
 void DirectCaptureWorkflow::publishHistory() {
-    if (!m_queue.front().historyEnabled) {
+    if (!m_copySucceeded || !m_queue.front().historyEnabled) {
         finish();
         return;
     }
@@ -142,6 +152,10 @@ void DirectCaptureWorkflow::finish() {
     m_queue.pop_front();
     m_frame = {};
     m_phase = Phase::Idle;
-    QTimer::singleShot(0, this, [this]() { startNext(); });
+    const QPointer<DirectCaptureWorkflow> self(this);
+    if (m_ports.finished)
+        m_ports.finished();
+    if (self)
+        QTimer::singleShot(0, this, [this]() { startNext(); });
 }
 } // namespace snow_shot::presentation

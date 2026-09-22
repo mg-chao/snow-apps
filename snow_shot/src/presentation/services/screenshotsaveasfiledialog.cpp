@@ -851,6 +851,7 @@ class SaveContent final : public QWidget {
         m_outputDescription->clear();
         ++m_generation;
         m_job.cancel();
+        m_renderGeneration.reset();
         cancelDecode();
         showError(error);
         if (!options) {
@@ -918,18 +919,46 @@ class SaveContent final : public QWidget {
                 startDecode();
             return;
         }
-        if (m_renderRunning)
+        if (m_renderGeneration == m_generation)
             return;
         const quint64 generation = m_generation;
         const auto options = *m_requestedOptions;
+        m_renderGeneration = generation;
+        if (options.format == Format::Png && options.size == m_state.sourceSize) {
+            auto cached = m_artifact->cachedPng(options.compressionLevel);
+            if (cached.isValid() || !m_artifact->shouldCachePng(options.size)) {
+                renderPrepared(generation, options, std::move(cached));
+                return;
+            }
+            const bool started = m_artifact->requestPng(
+                this, options.compressionLevel,
+                [this, generation, options](ScreenshotExportEncodingResult result) {
+                    if (m_closed || generation != m_generation)
+                        return;
+                    if (!result.succeeded()) {
+                        m_renderGeneration.reset();
+                        saveFailed(tr("The export could not be prepared: %1").arg(result.error));
+                        return;
+                    }
+                    renderPrepared(generation, options, std::move(result.image));
+                });
+            if (!started) {
+                m_renderGeneration.reset();
+                saveFailed(tr("The screenshot export queue is full"));
+            }
+            return;
+        }
+        renderPrepared(generation, options);
+    }
+    void renderPrepared(quint64 generation, const ScreenshotSaveExportOptions& options,
+                        snow_shot::storage::PreparedPngImage png = {}) {
         const auto prepared =
             m_preparedPixels && m_preparedPixels->size == options.size ? m_preparedPixels : nullptr;
         auto encoded = std::make_shared<std::shared_ptr<pipeline::Encoded>>();
-        m_renderRunning = true;
         m_job = ScreenshotExportCoordinator::shared().submit(
             this, ScreenshotExportCoordinator::Priority::Foreground,
             [source = m_source, options, prepared, cachedPdf = m_encoded ? m_encoded->pdf : nullptr,
-             encoded](const ScreenshotExportCancellation& cancellation) {
+             encoded, png](const ScreenshotExportCancellation& cancellation) {
                 ScreenshotExportTaskResult result;
                 auto pixels = prepared;
                 if (!pixels)
@@ -937,25 +966,21 @@ class SaveContent final : public QWidget {
                         pipeline::preparePixels(source, options.size, cancellation, &result.error);
                 if (pixels)
                     *encoded = pipeline::render(std::move(pixels), options, cancellation,
-                                                &result.error, cachedPdf);
+                                                &result.error, cachedPdf, png);
                 if (!*encoded)
                     result.failureStage = ScreenshotExportFailureStage::Render;
                 return result;
             },
             [this, generation, encoded](ScreenshotExportTaskResult result) {
-                m_renderRunning = false;
-                m_job = {};
-                if (m_closed)
+                if (m_closed || generation != m_generation)
                     return;
+                m_renderGeneration.reset();
+                m_job = {};
                 if (*encoded && (*encoded)->pixels) {
                     m_preparedPixels = (*encoded)->pixels;
                     setProperty("preparedPixelsIdentity",
                                 QVariant::fromValue<qulonglong>(
                                     reinterpret_cast<quintptr>(m_preparedPixels.get())));
-                }
-                if (generation != m_generation) {
-                    startRender();
-                    return;
                 }
                 if (!result.succeeded() || !*encoded) {
                     saveFailed(tr("The export could not be prepared: %1").arg(result.error));
@@ -967,7 +992,7 @@ class SaveContent final : public QWidget {
                 startRender();
             });
         if (!m_job.isValid()) {
-            m_renderRunning = false;
+            m_renderGeneration.reset();
             saveFailed(tr("The screenshot export queue is full"));
         }
     }
@@ -1061,11 +1086,10 @@ class SaveContent final : public QWidget {
     void writeFile() {
         if (m_saveJob.isValid())
             return;
-        auto adoptedPng = std::make_shared<std::optional<snow_shot::storage::PreparedPngImage>>();
         m_saveJob = ScreenshotExportCoordinator::shared().submit(
             this, ScreenshotExportCoordinator::Priority::Foreground,
-            [encoded = m_encoded, path = m_savePath, sourceSize = m_state.sourceSize,
-             adoptedPng](const ScreenshotExportCancellation& cancellation) {
+            [encoded = m_encoded,
+             path = m_savePath](const ScreenshotExportCancellation& cancellation) {
                 ScreenshotExportTaskResult result;
                 const auto cancelled = [&cancellation] {
                     return cancellation.isCancellationRequested();
@@ -1084,18 +1108,9 @@ class SaveContent final : public QWidget {
                 result.error = saved.error;
                 if (!saved.succeeded())
                     result.failureStage = ScreenshotExportFailureStage::File;
-                if (saved.succeeded() && encoded->options.format == Format::Png &&
-                    encoded->options.size == sourceSize &&
-                    !cancellation.isCancellationRequested()) {
-                    QFile file(encoded->path);
-                    if (file.open(QIODevice::ReadOnly)) {
-                        *adoptedPng = snow_shot::storage::PreparedPngImage::fromBytes(
-                            sourceSize, file.readAll());
-                    }
-                }
                 return result;
             },
-            [this, adoptedPng](ScreenshotExportTaskResult result) {
+            [this](ScreenshotExportTaskResult result) {
                 m_saveJob = {};
                 if (m_closed)
                     return;
@@ -1103,8 +1118,6 @@ class SaveContent final : public QWidget {
                     saveFailed(tr("The screenshot could not be saved: %1").arg(result.error));
                     return;
                 }
-                if (adoptedPng->has_value())
-                    static_cast<void>(m_artifact->adoptCanonicalPng(std::move(**adoptedPng)));
                 static_cast<void>(
                     snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
                         QFileInfo(result.savedPath).absolutePath()));
@@ -1136,7 +1149,7 @@ class SaveContent final : public QWidget {
     quint64 m_decodeSerial = 0;
     bool m_closed = false;
     bool m_saving = false;
-    bool m_renderRunning = false;
+    std::optional<quint64> m_renderGeneration;
     ScreenshotSavePreviewCanvas* m_preview = nullptr;
     QLabel* m_outputDescription = nullptr;
     AdForm* m_form = nullptr;

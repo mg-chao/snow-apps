@@ -383,9 +383,5 @@
             <source>The clipboard publication could not be queued</source>
             <translation>The clipboard publication could not be queued</translation>
         </message>
-        <message>
-            <source>The image could not be prepared for the clipboard</source>
-            <translation>The image could not be prepared for the clipboard</translation>
-        </message>
     </context>
 </TS>

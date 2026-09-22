@@ -90,13 +90,11 @@ class ScreenshotClipboardService final {
     [[nodiscard]] static PublicationId reservePublication();
 
     // A supplied PNG must encode the same sRGB pixels as the source. Export artifacts
-    // pass their cached canonical bytes here; preparation never decodes that PNG.
+    // may pass existing bytes here; otherwise encode at level 0 for speed.
     [[nodiscard]] static ScreenshotClipboardPayload prepare(const ScreenshotImageRowSource& source,
-                                                            const QByteArray& canonicalPng = {},
-                                                            int pngCompressionLevel = 0);
+                                                            const QByteArray& canonicalPng = {});
     [[nodiscard]] static ScreenshotClipboardPayload
-    prepareImage(const QImage& image, const QByteArray& canonicalPng = {},
-                 int pngCompressionLevel = 0);
+    prepareImage(const QImage& image, const QByteArray& canonicalPng = {});
     [[nodiscard]] static ScreenshotClipboardCommitHandle commit(QClipboard* clipboard,
                                                                 QObject* receiver,
                                                                 ScreenshotClipboardPayload payload,

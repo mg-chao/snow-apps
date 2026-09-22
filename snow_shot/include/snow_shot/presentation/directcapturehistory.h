@@ -6,6 +6,7 @@
 
 namespace snow_shot::presentation {
 [[nodiscard]] storage::CaptureHistoryDraft
-directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptureFrame& frame);
+directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptureFrame& frame,
+                          std::optional<storage::PreparedPngImage> png = {});
 }
 #endif

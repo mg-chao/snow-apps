@@ -383,9 +383,5 @@
             <source>The clipboard publication could not be queued</source>
             <translation>無法將剪貼簿寫入操作加入佇列</translation>
         </message>
-        <message>
-            <source>The image could not be prepared for the clipboard</source>
-            <translation>無法準備要複製到剪貼簿的影像</translation>
-        </message>
     </context>
 </TS>

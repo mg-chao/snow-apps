@@ -266,7 +266,8 @@ std::shared_ptr<PreparedPixels> preparePixels(const Source& source, QSize size,
 std::shared_ptr<Encoded> render(std::shared_ptr<PreparedPixels> pixels,
                                 const ScreenshotSaveExportOptions& options,
                                 const ScreenshotExportCancellation& cancellation, QString* error,
-                                std::shared_ptr<screenshot_pdf::Payload> cachedPdf) {
+                                std::shared_ptr<screenshot_pdf::Payload> cachedPdf,
+                                snow_shot::storage::PreparedPngImage cachedPng) {
     if (!pixels || !pixels->rows.isValid() || pixels->size != options.size ||
         cancellation.isCancellationRequested()) {
         return {};
@@ -291,6 +292,15 @@ std::shared_ptr<Encoded> render(std::shared_ptr<PreparedPixels> pixels,
     if (!output.open(QIODevice::WriteOnly)) {
         *error = output.errorString();
         return {};
+    }
+    if (options.format == ScreenshotImageFileFormat::Png && cachedPng.isValid() &&
+        cachedPng.pixelSize() == options.size) {
+        if (output.write(cachedPng.bytes()) != cachedPng.bytes().size() || !output.flush()) {
+            *error = output.errorString();
+            return {};
+        }
+        result->codecResult.roundTrip = snow::image::PixelRoundTrip::exact;
+        return cancellation.isCancellationRequested() ? nullptr : result;
     }
     ScreenshotImageRowSource rows = withCancellation(result->pixels->rows, cancellation);
     if (options.format == ScreenshotImageFileFormat::Pdf) {

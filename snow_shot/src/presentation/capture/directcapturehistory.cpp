@@ -5,8 +5,9 @@
 #include <QUuid>
 
 namespace snow_shot::presentation {
-storage::CaptureHistoryDraft directCaptureHistoryDraft(const DirectCaptureRequest& request,
-                                                       const DirectCaptureFrame& frame) {
+storage::CaptureHistoryDraft
+directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptureFrame& frame,
+                          std::optional<storage::PreparedPngImage> png) {
     storage::CaptureHistoryDraft draft;
     if (!frame.isValid() || frame.displays.isEmpty())
         return draft;
@@ -42,10 +43,7 @@ storage::CaptureHistoryDraft directCaptureHistoryDraft(const DirectCaptureReques
             display.sourceCanvasRect->translate(canvasOffset);
     }
     draft.resultImage = frame.image;
-    if (!frame.canonicalPng.isEmpty()) {
-        draft.preparedResultImage =
-            storage::PreparedPngImage::fromBytes(frame.image.size(), frame.canonicalPng);
-    }
+    draft.preparedResultImage = std::move(png);
     draft.pngCompressionLevel = ScreenshotImageFileService::encodeOptions(
                                     ScreenshotImageFileFormat::Png,
                                     ScreenshotImageEncodingOptions{100, request.compressionLevel})

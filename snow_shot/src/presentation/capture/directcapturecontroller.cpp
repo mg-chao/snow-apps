@@ -10,7 +10,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/settingsadapters.h"
-#include "snowimageqtcodec.h"
+#include "snow_shot/presentation/screenshotexportartifact.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -32,8 +32,6 @@ namespace {
 
 struct OutputResult {
     QString error;
-    QString path;
-    std::shared_ptr<ScreenshotClipboardPayload> payload;
 };
 } // namespace
 
@@ -43,70 +41,66 @@ class DirectCaptureController::Impl {
         : owner(controller), worker(new QObject),
           workflow(DirectCapturePorts{
               [this](const auto& request, auto done) {
+                  artifact.reset();
                   return submit<DirectCaptureFrame>(
-                      [request]() {
-                          auto frame = captureDirectTarget(request);
-                          if (frame.isValid() &&
-                              (!request.copyFile || request.historyEnabled ||
-                               ScreenshotImageFileService::formatForKey(request.imageFormat) ==
-                                   ScreenshotImageFileFormat::Png)) {
-                              frame.canonicalPng = image_codec::encodePng(
-                                  image_codec::srgbRowSource(frame.image),
-                                  ScreenshotImageFileService::encodeOptions(
-                                      ScreenshotImageFileFormat::Png,
-                                      ScreenshotImageEncodingOptions{100, request.compressionLevel})
-                                      .compression_level);
-                              if (frame.canonicalPng.isEmpty()) {
-                                  frame.error = DirectCaptureController::tr(
-                                      "The image could not be prepared for the clipboard");
-                              }
+                      [request]() { return captureDirectTarget(request); },
+                      [this, request, done = std::move(done)](DirectCaptureFrame frame) mutable {
+                          if (frame.isValid()) {
+                              artifact = std::make_unique<ScreenshotExportArtifact>(
+                                  ScreenshotExportSource::fromImage(frame.image),
+                                  request.compressionLevel);
                           }
-                          return frame;
-                      },
-                      std::move(done));
-              },
-              [this](const auto& request, const auto& frame, auto done) {
-                  return submit<OutputResult>(
-                      [request, frame]() {
-                          const auto format =
-                              ScreenshotImageFileService::formatForKey(request.imageFormat);
-                          const auto png = storage::PreparedPngImage::fromBytes(frame.image.size(),
-                                                                                frame.canonicalPng);
-                          const auto saved =
-                              format == ScreenshotImageFileFormat::Png && png.has_value()
-                                  ? ScreenshotImageFileService::saveAutomatically(
-                                        *png, request.directories, request.filenameFormat,
-                                        request.requestedAt)
-                                  : ScreenshotImageFileService::saveAutomatically(
-                                        frame.image, request.directories, format,
-                                        request.filenameFormat, request.requestedAt, request.pdf,
-                                        ScreenshotImageEncodingOptions{100,
-                                                                       request.compressionLevel});
-                          return OutputResult{saved.error, saved.path, {}};
-                      },
-                      [done = std::move(done)](OutputResult result) {
-                          done(result.path, result.error);
+                          done(std::move(frame));
                       });
+              },
+              [this](const auto& request, const auto&, auto done) {
+                  return artifact &&
+                         artifact->requestAutomaticSave(
+                             &owner, request.directories,
+                             ScreenshotImageFileService::formatForKey(request.imageFormat),
+                             request.filenameFormat,
+                             [done = std::move(done)](ScreenshotExportTaskResult result) {
+                                 done(result.savedPath, result.error);
+                             },
+                             request.pdf, request.requestedAt);
               },
               [this](const auto& request, const auto& frame, const auto& path, auto done) {
                   return copy(request, frame, path, std::move(done));
               },
               [this](const auto& request, const auto& frame, auto done) {
-                  auto* repository = &storage::ApplicationStorage::instance().captureHistory();
-                  return submit<OutputResult>(
-                      [request, frame, repository]() {
-                          const auto future =
-                              repository->publish(directCaptureHistoryDraft(request, frame));
-                          if (!future.valid())
-                              return OutputResult{DirectCaptureController::tr(
-                                                      "History publication could not be queued"),
-                                                  {},
-                                                  {}};
-                          const auto result = future.get();
-                          return OutputResult{
-                              result.storage.success ? QString() : result.storage.error, {}, {}};
-                      },
-                      [done = std::move(done)](OutputResult result) { done(result.error); });
+                  return artifact &&
+                         artifact->requestCanonicalPng(
+                             &owner, [this, request, frame, done = std::move(done)](
+                                         ScreenshotExportEncodingResult encoded) mutable {
+                                 if (!encoded.succeeded()) {
+                                     done(encoded.error);
+                                     return;
+                                 }
+                                 auto draft = directCaptureHistoryDraft(request, frame,
+                                                                        std::move(encoded.image));
+                                 auto* repository =
+                                     &storage::ApplicationStorage::instance().captureHistory();
+                                 auto completion = std::make_shared<DirectCapturePorts::Completion>(
+                                     std::move(done));
+                                 if (!submit<OutputResult>(
+                                         [repository, draft = std::move(draft)]() mutable {
+                                             const auto future =
+                                                 repository->publish(std::move(draft));
+                                             if (!future.valid())
+                                                 return OutputResult{DirectCaptureController::tr(
+                                                     "History publication could not be queued")};
+                                             const auto result = future.get();
+                                             return OutputResult{result.storage.success
+                                                                     ? QString()
+                                                                     : result.storage.error};
+                                         },
+                                         [completion](OutputResult result) {
+                                             (*completion)(result.error);
+                                         })) {
+                                     (*completion)(DirectCaptureController::tr(
+                                         "History publication could not be queued"));
+                                 }
+                             });
               },
               [this](const QString& error, bool warning) {
                   qWarning("Direct capture failed: %s", qPrintable(error));
@@ -114,6 +108,11 @@ class DirectCaptureController::Impl {
                       DirectCaptureController::tr("Capture failed: %1").arg(error), warning);
               },
               []() { playCameraShutterSound(); },
+              [this]() {
+                  // Completion can run inside the artifact's own callback dispatch.
+                  if (artifact)
+                      artifact.release()->deleteLater();
+              },
           }) {
         worker->moveToThread(&thread);
         QObject::connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
@@ -155,7 +154,7 @@ class DirectCaptureController::Impl {
             Qt::QueuedConnection);
     }
 
-    bool copy(const DirectCaptureRequest&, const DirectCaptureFrame& frame, const QString& path,
+    bool copy(const DirectCaptureRequest&, const DirectCaptureFrame&, const QString& path,
               DirectCapturePorts::Completion done) {
         if (!path.isEmpty()) {
             auto* mime = new QMimeData;
@@ -167,31 +166,22 @@ class DirectCaptureController::Impl {
                 });
             return clipboard.isValid();
         }
-        return submit<OutputResult>(
-            [frame]() {
-                auto payload = std::make_shared<ScreenshotClipboardPayload>(
-                    ScreenshotClipboardService::prepareImage(frame.image, frame.canonicalPng));
-                return OutputResult{payload->isValid()
-                                        ? QString()
-                                        : DirectCaptureController::tr(
-                                              "The image could not be prepared for the clipboard"),
-                                    {},
-                                    payload};
-            },
-            [this, done = std::move(done)](OutputResult result) {
-                if (!result.error.isEmpty()) {
-                    done(result.error);
-                    return;
-                }
-                clipboard = ScreenshotClipboardService::commit(
-                    QApplication::clipboard(), &owner, std::move(*result.payload),
-                    [done](ScreenshotClipboardCommitResult commit) {
-                        done(commit.succeeded() ? QString() : commit.errorString());
-                    });
-                if (!clipboard.isValid())
-                    done(DirectCaptureController::tr(
-                        "The clipboard publication could not be queued"));
-            });
+        return artifact &&
+               artifact->requestClipboard(
+                   &owner, [this, done = std::move(done)](ScreenshotExportClipboardResult result) {
+                       if (!result.succeeded()) {
+                           done(result.error);
+                           return;
+                       }
+                       clipboard = ScreenshotClipboardService::commit(
+                           QApplication::clipboard(), &owner, std::move(result.payload),
+                           [done](ScreenshotClipboardCommitResult commit) {
+                               done(commit.succeeded() ? QString() : commit.errorString());
+                           });
+                       if (!clipboard.isValid())
+                           done(DirectCaptureController::tr(
+                               "The clipboard publication could not be queued"));
+                   });
     }
 
     DirectCaptureRequest request(DirectCaptureTarget target) {
@@ -217,6 +207,7 @@ class DirectCaptureController::Impl {
 
     void shutdown() {
         workflow.shutdown();
+        artifact.reset();
         clipboard.cancel();
         if (stopped.exchange(true))
             return;
@@ -230,6 +221,7 @@ class DirectCaptureController::Impl {
     std::atomic_bool stopped = false;
     ScreenshotClipboardCommitHandle clipboard;
     DirectCaptureWorkflow workflow;
+    std::unique_ptr<ScreenshotExportArtifact> artifact;
 };
 
 DirectCaptureController::DirectCaptureController(QObject* parent)

@@ -16,6 +16,8 @@
 #include <snow/image/codec.h>
 #include <snow/image/format.h>
 
+#include <array>
+#include <algorithm>
 #include <cstring>
 #include <utility>
 #include <vector>
@@ -45,8 +47,14 @@ void dispatchResult(QObject* receiver, Callback callback, Result result) {
         Qt::QueuedConnection));
 }
 
-ScreenshotExportEncodingResult encodeCanonicalPng(const ScreenshotImageRowSource& source,
-                                                  ScreenshotCompressionLevel compressionLevel) {
+int pngCompression(ScreenshotCompressionLevel level) {
+    return ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png,
+                                                     ScreenshotImageEncodingOptions{100, level})
+        .compression_level;
+}
+
+ScreenshotExportEncodingResult encodePng(const ScreenshotImageRowSource& source,
+                                         int compressionLevel) {
     if (!source.isValid()) {
         return {{}, QStringLiteral("The screenshot row source is unavailable")};
     }
@@ -55,8 +63,9 @@ ScreenshotExportEncodingResult encodeCanonicalPng(const ScreenshotImageRowSource
     if (!buffer.open(QIODevice::WriteOnly)) {
         return {{}, QStringLiteral("The screenshot PNG buffer could not be opened")};
     }
-    const snow::image::EncodeOptions options = ScreenshotImageFileService::encodeOptions(
-        ScreenshotImageFileFormat::Png, ScreenshotImageEncodingOptions{100, compressionLevel});
+    snow::image::EncodeOptions options = ScreenshotImageFileService::encodeOptions(
+        ScreenshotImageFileFormat::Png, ScreenshotImageEncodingOptions{});
+    options.compression_level = compressionLevel;
     QString error;
     if (!snow_shot::image_codec::encodeToDevice(source, &buffer, snow::image::Format::png, options,
                                                 &error)) {
@@ -143,11 +152,15 @@ struct ScreenshotExportArtifact::Impl final {
         RowSourceCallback callback;
     };
 
-    Impl(ScreenshotExportSource value, ScreenshotCompressionLevel compression)
-        : source(std::move(value)), compressionLevel(compression) {}
+    Impl(ScreenshotExportSource value, ScreenshotCompressionLevel compression,
+         PngCachePolicy policy)
+        : source(std::move(value)), compressionLevel(compression),
+          maximumPngBytes(std::max(qsizetype{0}, policy.maximumBytes)) {}
 
     ScreenshotExportSource source;
     const ScreenshotCompressionLevel compressionLevel;
+    const qsizetype maximumPngBytes;
+    quint64 pngUseSerial = 0;
     const QString diagnosticId = QUuid::createUuid().toString(QUuid::Id128);
     mutable QMutex mutex;
     bool cancelled = false;
@@ -159,13 +172,47 @@ struct ScreenshotExportArtifact::Impl final {
     ScreenshotImageRowSource rowSource;
     QString rowSourceError;
     std::vector<RowSourceSubscriber> rowSourceSubscribers;
-    RequestPhase encodingPhase = RequestPhase::Empty;
-    snow_shot::storage::PreparedPngImage encoding;
-    QString encodingError;
-    std::vector<EncodingSubscriber> encodingSubscribers;
+    struct PngEncoding final {
+        RequestPhase phase = RequestPhase::Empty;
+        snow_shot::storage::PreparedPngImage image;
+        std::vector<EncodingSubscriber> subscribers;
+        ScreenshotExportJobHandle job;
+        quint64 lastUsed = 0;
+    };
+    // The source pixels and PNG options other than compression are immutable.
+    std::array<PngEncoding, 10> pngEncodings;
+
+    // Called under mutex. Pending encodings are never evicted; their subscribers
+    // receive the result even when it is too large to retain in this cache.
+    void retainPng(int level, const snow_shot::storage::PreparedPngImage& encoded) {
+        auto& target = pngEncodings[level];
+        target.phase = RequestPhase::Empty;
+        target.image = {};
+        const qsizetype bytes = encoded.bytes().size();
+        if (bytes > maximumPngBytes)
+            return;
+        qsizetype retained = 0;
+        for (const auto& entry : pngEncodings)
+            retained += entry.image.bytes().size();
+        while (retained > maximumPngBytes - bytes) {
+            PngEncoding* oldest = nullptr;
+            for (auto& entry : pngEncodings) {
+                if (entry.phase == RequestPhase::Ready &&
+                    (!oldest || entry.lastUsed < oldest->lastUsed))
+                    oldest = &entry;
+            }
+            if (!oldest)
+                break;
+            retained -= oldest->image.bytes().size();
+            oldest->image = {};
+            oldest->phase = RequestPhase::Empty;
+        }
+        target.phase = RequestPhase::Ready;
+        target.image = encoded;
+        target.lastUsed = ++pngUseSerial;
+    }
     ScreenshotExportJobHandle imageJob;
     ScreenshotExportJobHandle rowSourceJob;
-    ScreenshotExportJobHandle encodingJob;
     std::vector<ScreenshotExportJobHandle> outputJobs;
 };
 
@@ -178,7 +225,13 @@ ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source
 ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source,
                                                    ScreenshotCompressionLevel compressionLevel,
                                                    QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(std::move(source), compressionLevel)) {}
+    : ScreenshotExportArtifact(std::move(source), compressionLevel, PngCachePolicy{}, parent) {}
+
+ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source,
+                                                   ScreenshotCompressionLevel compressionLevel,
+                                                   PngCachePolicy cachePolicy, QObject* parent)
+    : QObject(parent),
+      m_impl(std::make_unique<Impl>(std::move(source), compressionLevel, cachePolicy)) {}
 
 QString ScreenshotExportArtifact::diagnosticId() const {
     return m_impl->diagnosticId;
@@ -475,7 +528,34 @@ void ScreenshotExportArtifact::completeImage(ScreenshotExportImageResult result)
     }
 }
 
+bool ScreenshotExportArtifact::shouldCachePng(QSize pixelSize) const {
+    // Use the uncompressed footprint before starting work. The actual PNG size
+    // is checked separately when retaining the result (including PNG overhead).
+    return pixelSize.width() > 0 && pixelSize.height() > 0 &&
+           qint64(pixelSize.width()) * pixelSize.height() <= m_impl->maximumPngBytes / 4;
+}
+
+snow_shot::storage::PreparedPngImage
+ScreenshotExportArtifact::cachedPng(ScreenshotCompressionLevel compression) {
+    QMutexLocker lock(&m_impl->mutex);
+    auto& entry = m_impl->pngEncodings[pngCompression(compression)];
+    if (m_impl->cancelled || entry.phase != RequestPhase::Ready)
+        return {};
+    entry.lastUsed = ++m_impl->pngUseSerial;
+    return entry.image;
+}
+
 bool ScreenshotExportArtifact::requestCanonicalPng(QObject* receiver, EncodingCallback callback) {
+    return requestPng(receiver, m_impl->compressionLevel, std::move(callback));
+}
+
+bool ScreenshotExportArtifact::requestPng(QObject* receiver, ScreenshotCompressionLevel compression,
+                                          EncodingCallback callback) {
+    return requestPngCompression(receiver, pngCompression(compression), std::move(callback));
+}
+
+bool ScreenshotExportArtifact::requestPngCompression(QObject* receiver, int compressionLevel,
+                                                     EncodingCallback callback) {
     if (receiver == nullptr || !callback || m_impl == nullptr) {
         return false;
     }
@@ -487,16 +567,15 @@ bool ScreenshotExportArtifact::requestCanonicalPng(QObject* receiver, EncodingCa
         if (m_impl->cancelled || !m_impl->source.isValid()) {
             return false;
         }
-        if (m_impl->encodingPhase == RequestPhase::Ready) {
-            ready.image = m_impl->encoding;
-            dispatchReady = true;
-        } else if (m_impl->encodingPhase == RequestPhase::Failed) {
-            ready.error = m_impl->encodingError;
+        if (m_impl->pngEncodings[compressionLevel].phase == RequestPhase::Ready) {
+            ready.image = m_impl->pngEncodings[compressionLevel].image;
+            m_impl->pngEncodings[compressionLevel].lastUsed = ++m_impl->pngUseSerial;
             dispatchReady = true;
         } else {
-            m_impl->encodingSubscribers.push_back({receiver, std::move(callback)});
-            if (m_impl->encodingPhase == RequestPhase::Empty) {
-                m_impl->encodingPhase = RequestPhase::Pending;
+            m_impl->pngEncodings[compressionLevel].subscribers.push_back(
+                {receiver, std::move(callback)});
+            if (m_impl->pngEncodings[compressionLevel].phase == RequestPhase::Empty) {
+                m_impl->pngEncodings[compressionLevel].phase = RequestPhase::Pending;
                 start = true;
             }
         }
@@ -504,44 +583,49 @@ bool ScreenshotExportArtifact::requestCanonicalPng(QObject* receiver, EncodingCa
     if (dispatchReady) {
         dispatchResult(receiver, std::move(callback), std::move(ready));
     } else if (start) {
-        startCanonicalPng();
+        startPng(compressionLevel);
     }
     return true;
 }
 
-void ScreenshotExportArtifact::startCanonicalPng() {
+void ScreenshotExportArtifact::startPng(int compressionLevel) {
     const QPointer<ScreenshotExportArtifact> guarded(this);
-    if (!requestRowSource(this, [guarded](ScreenshotImageRowSource source, QString error) mutable {
+    if (!requestRowSource(this, [guarded, compressionLevel](ScreenshotImageRowSource source,
+                                                            QString error) mutable {
             if (!guarded.isNull()) {
                 if (source.isValid() && error.isEmpty())
-                    guarded->startCanonicalPngFromRows(std::move(source));
+                    guarded->startPngFromRows(compressionLevel, std::move(source));
                 else
-                    guarded->completeCanonicalPng({{}, std::move(error)});
+                    guarded->completePng(compressionLevel, {{}, std::move(error)});
             }
         })) {
-        completeCanonicalPng(
-            {{}, QStringLiteral("The screenshot row source request could not be started")});
+        completePng(compressionLevel,
+                    {{}, QStringLiteral("The screenshot row source request could not be started")});
     }
 }
 
-void ScreenshotExportArtifact::startCanonicalPngFromRows(ScreenshotImageRowSource source) {
+void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
+                                                ScreenshotImageRowSource source) {
     {
         QMutexLocker lock(&m_impl->mutex);
-        if (m_impl->cancelled || m_impl->encodingPhase != RequestPhase::Pending)
+        if (m_impl->cancelled ||
+            m_impl->pngEncodings[compressionLevel].phase != RequestPhase::Pending)
             return;
     }
     const QPointer<ScreenshotExportArtifact> guarded(this);
     auto encoded = std::make_shared<ScreenshotExportEncodingResult>();
     const ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
-        this, ScreenshotExportCoordinator::Priority::Background,
-        [source = std::move(source), encoded, compressionLevel = m_impl->compressionLevel](
-            const ScreenshotExportCancellation& cancellation) {
+        this,
+        compressionLevel == 0 ? ScreenshotExportCoordinator::Priority::Foreground
+                              : ScreenshotExportCoordinator::Priority::Background,
+        [source = std::move(source), encoded,
+         compressionLevel](const ScreenshotExportCancellation& cancellation) {
             if (cancellation.isCancellationRequested()) {
                 return ScreenshotExportTaskResult::failure(
                     ScreenshotExportFailureStage::Cancelled,
                     QStringLiteral("The screenshot PNG encoding was cancelled"));
             }
-            *encoded = encodeCanonicalPng(
+            *encoded = encodePng(
                 withCancellation(
                     source, [&cancellation] { return cancellation.isCancellationRequested(); }),
                 compressionLevel);
@@ -549,22 +633,24 @@ void ScreenshotExportArtifact::startCanonicalPngFromRows(ScreenshotImageRowSourc
                                         : ScreenshotExportTaskResult::failure(
                                               ScreenshotExportFailureStage::Render, encoded->error);
         },
-        [guarded, encoded](ScreenshotExportTaskResult result) mutable {
+        [guarded, encoded, compressionLevel](ScreenshotExportTaskResult result) mutable {
             if (!guarded.isNull()) {
-                guarded->completeCanonicalPng(
-                    result.succeeded() ? std::move(*encoded)
-                                       : ScreenshotExportEncodingResult{{}, result.error});
+                guarded->completePng(compressionLevel,
+                                     result.succeeded()
+                                         ? std::move(*encoded)
+                                         : ScreenshotExportEncodingResult{{}, result.error});
             }
         });
     if (!job.isValid()) {
-        completeCanonicalPng({{}, QStringLiteral("The screenshot export queue is full")});
+        completePng(compressionLevel, {{}, QStringLiteral("The screenshot export queue is full")});
         return;
     }
     bool retained = false;
     {
         QMutexLocker lock(&m_impl->mutex);
-        if (!m_impl->cancelled && m_impl->encodingPhase == RequestPhase::Pending) {
-            m_impl->encodingJob = job;
+        if (!m_impl->cancelled &&
+            m_impl->pngEncodings[compressionLevel].phase == RequestPhase::Pending) {
+            m_impl->pngEncodings[compressionLevel].job = job;
             retained = true;
         }
     }
@@ -572,58 +658,26 @@ void ScreenshotExportArtifact::startCanonicalPngFromRows(ScreenshotImageRowSourc
         job.cancel();
 }
 
-bool ScreenshotExportArtifact::adoptCanonicalPng(snow_shot::storage::PreparedPngImage image) {
-    if (!image.isValid() || m_impl == nullptr)
-        return false;
-
-    ScreenshotExportJobHandle redundantJob;
+void ScreenshotExportArtifact::completePng(int compressionLevel,
+                                           ScreenshotExportEncodingResult result) {
     std::vector<Impl::EncodingSubscriber> subscribers;
     {
         QMutexLocker lock(&m_impl->mutex);
-        if (m_impl->cancelled || m_impl->rowSourcePhase != RequestPhase::Ready ||
-            !m_impl->rowSource.isValid() || image.pixelSize() != m_impl->rowSource.size) {
-            return false;
-        }
-        if (m_impl->encodingPhase == RequestPhase::Ready)
-            return true;
-        if (m_impl->encodingPhase == RequestPhase::Pending) {
-            redundantJob = m_impl->encodingJob;
-            subscribers = std::move(m_impl->encodingSubscribers);
-            m_impl->encodingSubscribers.clear();
-        }
-        m_impl->encodingPhase = RequestPhase::Ready;
-        m_impl->encoding = image;
-        m_impl->encodingError.clear();
-    }
-    redundantJob.cancel();
-    for (auto& subscriber : subscribers) {
-        if (!subscriber.receiver.isNull()) {
-            dispatchResult(subscriber.receiver, std::move(subscriber.callback),
-                           ScreenshotExportEncodingResult{image, {}});
-        }
-    }
-    return true;
-}
-
-void ScreenshotExportArtifact::completeCanonicalPng(ScreenshotExportEncodingResult result) {
-    std::vector<Impl::EncodingSubscriber> subscribers;
-    {
-        QMutexLocker lock(&m_impl->mutex);
-        if (m_impl->cancelled || m_impl->encodingPhase != RequestPhase::Pending) {
+        if (m_impl->cancelled ||
+            m_impl->pngEncodings[compressionLevel].phase != RequestPhase::Pending) {
             return;
         }
         if (result.succeeded()) {
-            m_impl->encodingPhase = RequestPhase::Ready;
-            m_impl->encoding = result.image;
+            m_impl->retainPng(compressionLevel, result.image);
         } else {
-            m_impl->encodingPhase = RequestPhase::Failed;
-            m_impl->encodingError = result.error.isEmpty()
-                                        ? QStringLiteral("The screenshot PNG is unavailable")
-                                        : result.error;
-            result.error = m_impl->encodingError;
+            // Only successful encodings are cached. A new user request may retry a
+            // transient queue/read failure; current subscribers all receive this failure.
+            m_impl->pngEncodings[compressionLevel].phase = RequestPhase::Empty;
+            if (result.error.isEmpty())
+                result.error = QStringLiteral("The screenshot PNG is unavailable");
         }
-        subscribers = std::move(m_impl->encodingSubscribers);
-        m_impl->encodingSubscribers.clear();
+        subscribers = std::move(m_impl->pngEncodings[compressionLevel].subscribers);
+        m_impl->pngEncodings[compressionLevel].subscribers.clear();
     }
     for (auto& subscriber : subscribers) {
         if (!subscriber.receiver.isNull()) {
@@ -637,33 +691,49 @@ void ScreenshotExportArtifact::completeCanonicalPng(ScreenshotExportEncodingResu
 bool ScreenshotExportArtifact::requestClipboard(QObject* receiver, ClipboardCallback callback) {
     if (receiver == nullptr || !callback || isCancelled())
         return false;
+    QByteArray readyPng;
+    {
+        QMutexLocker lock(&m_impl->mutex);
+        for (auto& encoding : m_impl->pngEncodings) {
+            if (encoding.phase == RequestPhase::Ready) {
+                readyPng = encoding.image.bytes();
+                encoding.lastUsed = ++m_impl->pngUseSerial;
+                break;
+            }
+        }
+    }
+    // Existing bytes are cheapest regardless of compression. Otherwise share level 0;
+    // never subscribe the clipboard to a pending higher-compression encoding.
+    if (!readyPng.isEmpty())
+        return prepareClipboard(receiver, std::move(readyPng), std::move(callback));
     const QPointer<ScreenshotExportArtifact> guarded(this);
     const QPointer<QObject> target(receiver);
-    return requestCanonicalPng(this, [guarded, target, callback = std::move(callback)](
-                                         ScreenshotExportEncodingResult result) mutable {
-        if (guarded.isNull() || guarded->isCancelled() || target.isNull())
-            return;
-        if (!result.succeeded()) {
-            dispatchResult(target, std::move(callback),
-                           ScreenshotExportClipboardResult{{}, result.error});
-            return;
-        }
-        // Clipboard, PNG saving and history subscribe to the same immutable encoding.
-        auto completion = std::make_shared<ClipboardCallback>(std::move(callback));
-        const bool scheduled = guarded->prepareClipboard(
-            target, result.image.bytes(),
-            [completion](ScreenshotExportClipboardResult prepared) mutable {
-                if (*completion) {
-                    auto deliver = std::move(*completion);
-                    deliver(std::move(prepared));
-                }
-            });
-        if (!scheduled && *completion) {
-            dispatchResult(target, std::move(*completion),
-                           ScreenshotExportClipboardResult{
-                               {}, QStringLiteral("The screenshot export queue is full")});
-        }
-    });
+    return requestPngCompression(
+        this, 0,
+        [guarded, target,
+         callback = std::move(callback)](ScreenshotExportEncodingResult result) mutable {
+            if (guarded.isNull() || guarded->isCancelled() || target.isNull())
+                return;
+            if (!result.succeeded()) {
+                dispatchResult(target, std::move(callback),
+                               ScreenshotExportClipboardResult{{}, result.error});
+                return;
+            }
+            auto completion = std::make_shared<ClipboardCallback>(std::move(callback));
+            const bool scheduled = guarded->prepareClipboard(
+                target, result.image.bytes(),
+                [completion](ScreenshotExportClipboardResult prepared) mutable {
+                    if (*completion) {
+                        auto deliver = std::move(*completion);
+                        deliver(std::move(prepared));
+                    }
+                });
+            if (!scheduled && *completion) {
+                dispatchResult(target, std::move(*completion),
+                               ScreenshotExportClipboardResult{
+                                   {}, QStringLiteral("The screenshot export queue is full")});
+            }
+        });
 }
 
 bool ScreenshotExportArtifact::prepareClipboard(QObject* receiver, QByteArray canonicalPng,
@@ -835,32 +905,56 @@ bool ScreenshotExportArtifact::requestSaveToPath(QObject* receiver, QString path
         if (!retained)
             job.cancel();
     };
-    // PNG compression changes size and encoding effort, not pixels. Share the canonical bytes.
-    if (format == ScreenshotImageFileFormat::Png) {
-        return requestCanonicalPng(
-            this, [schedule = std::move(schedule)](ScreenshotExportEncodingResult result) mutable {
-                schedule(std::move(result.image), {}, std::move(result.error));
-            });
-    }
-    return requestRowSource(this, [schedule = std::move(schedule)](ScreenshotImageRowSource source,
-                                                                   QString error) mutable {
-        schedule({}, std::move(source), std::move(error));
+    return requestFileSource(format, encoding.compressionLevel, std::move(schedule));
+}
+
+bool ScreenshotExportArtifact::requestFileSource(ScreenshotImageFileFormat format,
+                                                 ScreenshotCompressionLevel compression,
+                                                 FileSourceCallback callback) {
+    const QPointer<ScreenshotExportArtifact> guarded(this);
+    return requestRowSource(this, [guarded, format, compression, callback = std::move(callback)](
+                                      ScreenshotImageRowSource rows, QString error) mutable {
+        if (!guarded || guarded->isCancelled())
+            return;
+        if (!error.isEmpty() || format != ScreenshotImageFileFormat::Png) {
+            callback({}, std::move(rows), std::move(error));
+            return;
+        }
+        auto cached = guarded->cachedPng(compression);
+        if (cached.isValid()) {
+            callback(std::move(cached), {}, {});
+            return;
+        }
+        if (!guarded->shouldCachePng(rows.size)) {
+            callback({}, std::move(rows), {});
+            return;
+        }
+        auto completion = std::make_shared<FileSourceCallback>(std::move(callback));
+        if (!guarded->requestPng(
+                guarded, compression, [completion](ScreenshotExportEncodingResult result) {
+                    (*completion)(std::move(result.image), {}, std::move(result.error));
+                })) {
+            (*completion)({}, {}, QStringLiteral("The screenshot export queue is full"));
+        }
     });
 }
 
 bool ScreenshotExportArtifact::requestAutomaticSave(
     QObject* receiver, QStringList directories, ScreenshotImageFileFormat format,
     QString filenameFormat, ScreenshotExportCoordinator::Completion callback,
-    ScreenshotPdfOptions pdf) {
+    ScreenshotPdfOptions pdf, QDateTime requestedAt) {
     if (receiver == nullptr || !callback || isCancelled())
         return false;
     const QPointer<ScreenshotExportArtifact> guarded(this);
     const QPointer<QObject> target(receiver);
     const ScreenshotImageEncodingOptions encoding{100, m_impl->compressionLevel};
+    if (!requestedAt.isValid())
+        requestedAt = QDateTime::currentDateTime();
     auto schedule = [guarded, target, directories = std::move(directories), format, pdf, encoding,
-                     filenameFormat = std::move(filenameFormat), callback = std::move(callback)](
-                        snow_shot::storage::PreparedPngImage png, ScreenshotImageRowSource rows,
-                        QString error) mutable {
+                     requestedAt, filenameFormat = std::move(filenameFormat),
+                     callback = std::move(callback)](snow_shot::storage::PreparedPngImage png,
+                                                     ScreenshotImageRowSource rows,
+                                                     QString error) mutable {
         if (guarded.isNull() || guarded->isCancelled() || target.isNull())
             return;
         if (!error.isEmpty()) {
@@ -873,7 +967,7 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
             std::make_shared<ScreenshotExportCoordinator::Completion>(std::move(callback));
         auto job = ScreenshotExportCoordinator::shared().submit(
             target, ScreenshotExportCoordinator::Priority::Background,
-            [directories, format, pdf, encoding, filenameFormat, png = std::move(png),
+            [directories, format, pdf, encoding, requestedAt, filenameFormat, png = std::move(png),
              rows = std::move(rows)](const ScreenshotExportCancellation& cancellation) mutable {
                 if (cancellation.isCancellationRequested()) {
                     return ScreenshotExportTaskResult::failure(
@@ -882,14 +976,13 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
                 }
                 ScreenshotImageFileSaveResult saved;
                 if (png.isValid()) {
-                    saved = ScreenshotImageFileService::saveAutomatically(png, directories,
-                                                                          filenameFormat);
+                    saved = ScreenshotImageFileService::saveAutomatically(
+                        png, directories, filenameFormat, requestedAt);
                 } else {
                     rows = withCancellation(
                         rows, [&cancellation] { return cancellation.isCancellationRequested(); });
                     saved = ScreenshotImageFileService::saveAutomatically(
-                        rows, directories, format, filenameFormat, QDateTime::currentDateTime(),
-                        pdf, encoding);
+                        rows, directories, format, filenameFormat, requestedAt, pdf, encoding);
                 }
                 if (!saved.succeeded()) {
                     return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
@@ -922,16 +1015,7 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
         if (!retained)
             job.cancel();
     };
-    if (format == ScreenshotImageFileFormat::Png) {
-        return requestCanonicalPng(
-            this, [schedule = std::move(schedule)](ScreenshotExportEncodingResult result) mutable {
-                schedule(std::move(result.image), {}, std::move(result.error));
-            });
-    }
-    return requestRowSource(this, [schedule = std::move(schedule)](ScreenshotImageRowSource source,
-                                                                   QString error) mutable {
-        schedule({}, std::move(source), std::move(error));
-    });
+    return requestFileSource(format, encoding.compressionLevel, std::move(schedule));
 }
 
 void ScreenshotExportArtifact::cancel() {
@@ -940,7 +1024,6 @@ void ScreenshotExportArtifact::cancel() {
     }
     ScreenshotExportJobHandle imageJob;
     ScreenshotExportJobHandle rowSourceJob;
-    ScreenshotExportJobHandle encodingJob;
     std::vector<ScreenshotExportJobHandle> outputJobs;
     bool pending = false;
     {
@@ -950,15 +1033,17 @@ void ScreenshotExportArtifact::cancel() {
         }
         m_impl->cancelled = true;
         pending = m_impl->imagePhase == RequestPhase::Pending ||
-                  m_impl->rowSourcePhase == RequestPhase::Pending ||
-                  m_impl->encodingPhase == RequestPhase::Pending;
+                  m_impl->rowSourcePhase == RequestPhase::Pending;
         imageJob = m_impl->imageJob;
         rowSourceJob = m_impl->rowSourceJob;
-        encodingJob = m_impl->encodingJob;
         outputJobs = m_impl->outputJobs;
         m_impl->imageSubscribers.clear();
         m_impl->rowSourceSubscribers.clear();
-        m_impl->encodingSubscribers.clear();
+        for (auto& encoding : m_impl->pngEncodings) {
+            pending = pending || encoding.phase == RequestPhase::Pending;
+            outputJobs.push_back(encoding.job);
+            encoding.subscribers.clear();
+        }
     }
     if (pending) {
         snow_shot::diagnostics::logEvent(
@@ -968,7 +1053,6 @@ void ScreenshotExportArtifact::cancel() {
     }
     imageJob.cancel();
     rowSourceJob.cancel();
-    encodingJob.cancel();
     for (const auto& job : outputJobs) {
         job.cancel();
     }

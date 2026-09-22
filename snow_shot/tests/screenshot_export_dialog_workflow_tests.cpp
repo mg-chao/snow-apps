@@ -2218,7 +2218,86 @@ void unbackedExactPreviewDecodesArtifact(QWidget& owner) {
     flush();
 }
 
-void sourceSizedPngAdoptsHistoryEncoding(QWidget& owner, const QTemporaryDir& temp) {
+void oversizedManualPngStreamsWithoutPopulatingCache(QWidget& owner, const QTemporaryDir& temp) {
+    const storage::ScreenshotSettings settings;
+    require(settings.setLastManualSaveState(QStringLiteral("png"), {}),
+            "streaming PNG fixture settings failed");
+    const QImage image = fixture();
+    auto artifact = std::make_shared<ScreenshotExportArtifact>(
+        ScreenshotExportSource::fromImage(image), ScreenshotCompressionLevel::Low,
+        ScreenshotExportArtifact::PngCachePolicy{1});
+    require(!artifact->shouldCachePng(image.size()), "large image should use streaming");
+    QString savedPath;
+    require(ScreenshotSaveAsFileDialog::open(&owner, &owner, artifact,
+                                             [&](const QString& path) { savedPath = path; }),
+            "streaming PNG dialog did not open");
+    auto* modal = child<AdModal>(&owner, "screenshotSaveAsFileModal");
+    QPointer<QWidget> content = modal->contentWidget();
+    processUntil([&] { return content->property("previewGeneration").toULongLong() > 0; });
+    require(!artifact->cachedPng(ScreenshotCompressionLevel::Low).isValid(),
+            "streaming preview populated the in-memory PNG cache");
+    child<AdLineEdit>(content, "saveDirectoryInput")->setText(temp.path());
+    child<AdLineEdit>(content, "saveFilenameInput")->setText(QStringLiteral("streamed-png"));
+    modal->acceptButton()->click();
+    processUntil([&] { return !savedPath.isEmpty(); });
+    require(samePixels(QImage(savedPath), image), "streamed PNG changed the source pixels");
+    flush();
+}
+
+void obsoleteSharedPngDoesNotBlockCurrentPreview(QWidget& owner) {
+    const storage::ScreenshotSettings settings;
+    require(
+        settings.setLastManualSaveState(
+            QStringLiteral("png"),
+            QJsonObject{{QStringLiteral("png"), QJsonObject{{QStringLiteral("compression_level"),
+                                                             QStringLiteral("high")}}}}),
+        "PNG preview fixture settings failed");
+    auto entered = std::make_shared<std::atomic_bool>(false);
+    auto released = std::make_shared<std::atomic_bool>(false);
+    const auto release = qScopeGuard([released] { released->store(true); });
+    auto rows = snow_shot::image_codec::srgbRowSource(fixture());
+    rows.readRows = [read = rows.readRows, entered, released](
+                        int first, int count, qsizetype stride, uchar* target, qsizetype capacity) {
+        if (!entered->exchange(true)) {
+            while (!released->load())
+                QThread::msleep(1);
+        }
+        return read(first, count, stride, target, capacity);
+    };
+    auto artifact = std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromProducer(
+        {}, [rows](std::function<bool()> cancellation) mutable {
+            rows.cancellationRequested = std::move(cancellation);
+            return rows;
+        }));
+    require(ScreenshotSaveAsFileDialog::open(&owner, &owner, artifact),
+            "stale shared PNG dialog did not open");
+    auto* modal = child<AdModal>(&owner, "screenshotSaveAsFileModal");
+    QPointer<QWidget> content = modal->contentWidget();
+    const auto close = qScopeGuard([&] {
+        if (content) {
+            modal->reject();
+            flush();
+        }
+    });
+    processUntil([&] { return entered->load(); });
+    child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("jpeg"));
+    processUntil([&] { return content->property("previewGeneration").toULongLong() > 0; });
+    const auto generation = content->property("previewGeneration").toULongLong();
+    bool sharedCompleted = false;
+    require(artifact->requestPng(&owner, ScreenshotCompressionLevel::High,
+                                 [&](ScreenshotExportEncodingResult result) {
+                                     require(result.succeeded(), "shared PNG was cancelled");
+                                     sharedCompleted = true;
+                                 }),
+            "shared PNG subscriber rejected");
+    released->store(true);
+    processUntil([&] { return sharedCompleted; });
+    flush();
+    require(content->property("previewGeneration").toULongLong() == generation,
+            "obsolete shared PNG replaced the current preview");
+}
+
+void sourceSizedPngSharesMatchingEncoding(QWidget& owner, const QTemporaryDir& temp) {
     const storage::ScreenshotSettings settings;
     require(settings.setCompressionLevel(QStringLiteral("low")),
             "global PNG compression fixture failed");
@@ -2245,6 +2324,16 @@ void sourceSizedPngAdoptsHistoryEncoding(QWidget& owner, const QTemporaryDir& te
                     return rows;
                 }));
 
+        QByteArray existingPng;
+        require(artifact->requestPng(
+                    &owner, ScreenshotImageFileService::compressionLevelForKey(customCompression),
+                    [&](ScreenshotExportEncodingResult result) {
+                        require(result.succeeded(), "preexisting PNG encoding failed");
+                        existingPng = result.image.bytes();
+                    }),
+                "preexisting PNG request rejected");
+        processUntil([&] { return !existingPng.isEmpty(); });
+        const int readsBeforeDialog = reads->load();
         QString savedPath;
         QByteArray historyPng;
         int historyCallbacks = 0;
@@ -2252,22 +2341,25 @@ void sourceSizedPngAdoptsHistoryEncoding(QWidget& owner, const QTemporaryDir& te
                     &owner, &owner, artifact,
                     [&, artifact](const QString& path) {
                         savedPath = path;
-                        require(artifact->requestCanonicalPng(
+                        require(artifact->requestPng(
                                     &owner,
+                                    ScreenshotImageFileService::compressionLevelForKey(
+                                        customCompression),
                                     [&](ScreenshotExportEncodingResult result) {
                                         require(result.succeeded(),
-                                                "history canonical PNG request failed after save");
+                                                "matching cached PNG request failed after save");
                                         historyPng = result.image.bytes();
                                         ++historyCallbacks;
                                     }),
-                                "history canonical PNG request was rejected after save");
+                                "matching cached PNG request was rejected after save");
                     }),
                 "history-adoption export dialog did not open");
         auto* modal = child<AdModal>(&owner, "screenshotSaveAsFileModal");
         QPointer<QWidget> content = modal->contentWidget();
         processUntil([&] { return content->property("previewGeneration").toULongLong() > 0; });
         const int readsBeforeSave = reads->load();
-        require(readsBeforeSave > 0, "initial source-sized PNG did not read its row source");
+        require(readsBeforeSave == readsBeforeDialog,
+                "source-sized PNG preview re-encoded an existing matching artifact");
 
         child<AdLineEdit>(content, "saveDirectoryInput")->setText(temp.path());
         child<AdLineEdit>(content, "saveFilenameInput")
@@ -2278,8 +2370,9 @@ void sourceSizedPngAdoptsHistoryEncoding(QWidget& owner, const QTemporaryDir& te
         QFile saved(savedPath);
         require(saved.open(QIODevice::ReadOnly), "source-sized PNG save is unreadable");
         const QByteArray savedPng = saved.readAll();
-        require(reads->load() == readsBeforeSave && savedPng == historyPng,
-                "compatible PNG did not seed history with the retained artifact");
+        require(reads->load() == readsBeforeSave && savedPng == historyPng &&
+                    historyPng.constData() == existingPng.constData(),
+                "source-sized PNG did not share the matching cached encoding");
         flush();
     }
 }
@@ -2601,9 +2694,11 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--optimized-pipeline"))) {
+            oversizedManualPngStreamsWithoutPopulatingCache(owner, temp);
+            obsoleteSharedPngDoesNotBlockCurrentPreview(owner);
             optimizedPipelineBehavior(owner);
             unbackedExactPreviewDecodesArtifact(owner);
-            sourceSizedPngAdoptsHistoryEncoding(owner, temp);
+            sourceSizedPngSharesMatchingEncoding(owner, temp);
             ScreenshotExportCoordinator::shared().shutdown();
             storage::ApplicationStorage::instance().shutdown();
             std::cout << "Optimized export pipeline tests passed\n";
@@ -2673,9 +2768,11 @@ int main(int argc, char* argv[]) {
         overwriteRequiresConfirmation(owner, temp);
         shortcutWrappingAndLanguageChange(owner, temp);
         rowBackedDialogAndStalePreview(owner, temp);
+        oversizedManualPngStreamsWithoutPopulatingCache(owner, temp);
+        obsoleteSharedPngDoesNotBlockCurrentPreview(owner);
         optimizedPipelineBehavior(owner);
         unbackedExactPreviewDecodesArtifact(owner);
-        sourceSizedPngAdoptsHistoryEncoding(owner, temp);
+        sourceSizedPngSharesMatchingEncoding(owner, temp);
         saveReusesCalculatedResult(owner, temp);
         committedControlsAndSave(owner, temp);
         retainedResultFailures(owner, temp);
