@@ -5,8 +5,14 @@
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QGuiApplication>
 #include <QTemporaryDir>
 #include <QWindow>
+
+#ifdef Q_OS_MACOS
+#include "../src/presentation/pinned/pinnedwindowplatform.h"
+#import <AppKit/AppKit.h>
+#endif
 
 #include <cstdlib>
 #include <iostream>
@@ -117,20 +123,40 @@ void plainHexPreservesSixUppercaseDigits() {
 }
 
 void pickerUsesASeparateClickThroughWindow() {
+#ifdef Q_OS_MACOS
+    // The application prewarms pinned shells before they have a native surface.
+    // Keep their application event filter active throughout capture presentation.
+    QWidget prewarmedPin;
+    auto pinPlatform = snow_shot::presentation::createPinnedWindowPlatform(&prewarmedPin);
+    require(prewarmedPin.windowHandle() == nullptr,
+            "the prewarmed pin must have no native surface");
+#endif
     QWidget owner;
     owner.setGeometry(320, 180, 800, 600);
+    QWidget canvas(&owner);
+    canvas.setGeometry(owner.rect());
+    canvas.setMouseTracking(true);
     owner.show();
+#ifdef Q_OS_MACOS
+    require(owner.findChild<QObject*>(QStringLiteral("snowPinnedWindowPlatform"),
+                                      Qt::FindDirectChildrenOnly) == nullptr,
+            "a prewarmed pin must not adopt the unrelated screenshot overlay");
+#endif
 
     ScreenshotColorPickerWindow picker;
     picker.setOwnerWindow(&owner);
+    require(!canvas.testAttribute(Qt::WA_NativeWindow) && canvas.internalWinId() == 0,
+            "preparing the picker must not turn the screenshot canvas into a native child window");
     require(picker.isWindow() && picker.parentWidget() == &owner,
             "the display color picker must be a separate window owned by its overlay");
     require(picker.windowFlags().testFlag(Qt::Tool) &&
                 picker.windowFlags().testFlag(Qt::FramelessWindowHint) &&
                 picker.windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
                 picker.windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
-                picker.windowFlags().testFlag(Qt::WindowTransparentForInput),
-            "the display color picker window must stay topmost without taking focus or input");
+                picker.windowFlags().testFlag(Qt::WindowTransparentForInput) &&
+                picker.windowFlags().testFlag(Qt::NoDropShadowWindowHint),
+            "the display color picker window must stay topmost without taking focus, input, "
+            "or a native shadow around its painted shadow");
     require(picker.windowHandle() != nullptr && owner.windowHandle() != nullptr &&
                 picker.windowHandle()->transientParent() == owner.windowHandle(),
             "the display color picker window must use the overlay as its native stacking owner");
@@ -146,15 +172,99 @@ void pickerUsesASeparateClickThroughWindow() {
     require(picker.isVisible() && picker.pos().x() > globalCursor.x() &&
                 picker.pos().y() > globalCursor.y(),
             "the separate picker window must position itself from overlay-local to global space");
+    const QImage painted = picker.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+    require(qAlpha(painted.pixel(0, 0)) == 0,
+            "the color picker's outer shadow margin must stay transparent");
+    bool hasPaintedShadow = false;
+    const int shadowSampleY = painted.height() / 2;
+    for (int x = 1; x < 10 && x < painted.width(); ++x) {
+        const int alpha = qAlpha(painted.pixel(x, shadowSampleY));
+        hasPaintedShadow |= alpha > 0 && alpha < 255;
+    }
+    require(hasPaintedShadow, "disabling the native shadow must preserve the painted shadow");
+#ifdef Q_OS_MACOS
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        NSWindow* nativeWindow = reinterpret_cast<NSView*>(picker.winId()).window;
+        NSWindow* ownerWindow = reinterpret_cast<NSView*>(owner.winId()).window;
+        require(nativeWindow != nil && !nativeWindow.hasShadow,
+                "Cocoa must not outline the color picker's painted shadow");
+        require(nativeWindow.ignoresMouseEvents,
+                "the color picker window must ignore mouse events on macOS");
+        // Screenshot surfaces use the screensaver level. An unmarked transient
+        // tool is stacked three levels above its overlay.
+        const NSInteger overlayLevel = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey);
+        ownerWindow.level = overlayLevel;
+        nativeWindow.level = overlayLevel + 3;
+        [NSApp activate];
+        [ownerWindow orderFrontRegardless];
+        [nativeWindow orderFrontRegardless];
+        QApplication::processEvents();
+        const auto ownerReceivesMouseDown = [&](const QPoint& point) {
+            const NSPoint cocoaPoint =
+                NSMakePoint(point.x(), NSMaxY(NSScreen.screens.firstObject.frame) - point.y());
+            return [NSWindow windowNumberAtPoint:cocoaPoint belowWindowWithWindowNumber:0] ==
+                   ownerWindow.windowNumber;
+        };
+        require(ownerReceivesMouseDown(picker.mapToGlobal(picker.rect().center())),
+                "mouse events over the color picker panel must reach the screenshot window");
+        require(ownerReceivesMouseDown(picker.mapToGlobal(QPoint(2, picker.height() / 2))),
+                "mouse events over the painted shadow must reach the screenshot window");
+        require(ownerReceivesMouseDown(picker.mapToGlobal(QPoint(-6, picker.height() / 2))),
+                "mouse events beside the color picker must reach the screenshot window");
+    }
+#endif
+}
+
+void pickerPreparationPreservesCanvasInputSurfaces() {
+    QWidget firstOwner;
+    QWidget secondOwner;
+    QWidget firstCanvas(&firstOwner);
+    QWidget secondCanvas(&secondOwner);
+    firstOwner.resize(800, 600);
+    secondOwner.resize(800, 600);
+    const auto requireNonNativeCanvases = [&]() {
+        require(!firstCanvas.testAttribute(Qt::WA_NativeWindow) &&
+                    !secondCanvas.testAttribute(Qt::WA_NativeWindow) &&
+                    firstCanvas.internalWinId() == 0 && secondCanvas.internalWinId() == 0,
+                "picker preparation, reveal, and reparenting must preserve canvas input surfaces");
+    };
+
+    // Exercise both direct ownership and preparing a surface before attaching it.
+    for (bool prepareBeforeOwner : {false, true}) {
+        ScreenshotColorPickerWindow picker(prepareBeforeOwner ? nullptr : &firstOwner);
+        picker.prepareNativeSurface();
+        require(picker.internalWinId() != 0 && !picker.isVisible(),
+                "preparation must create a hidden top-level surface");
+        requireNonNativeCanvases();
+        for (QWidget* owner : {&firstOwner, &secondOwner, &firstOwner}) {
+            picker.setOwnerWindow(owner);
+            picker.prepareNativeSurface();
+            picker.prepareNativeSurface();
+            requireNonNativeCanvases();
+            QImage image(owner->size(), QImage::Format_RGBA8888);
+            image.fill(Qt::red);
+            picker.setCaptureImage(image, image.rect());
+            picker.updatePicker(QPoint(100, 100), QPointF(100, 100), 1.0);
+            QApplication::processEvents();
+            require(picker.isVisible() &&
+                        picker.windowHandle()->transientParent() == owner->windowHandle(),
+                    "the picker must retain its separate visible surface and stacking owner");
+            requireNonNativeCanvases();
+            picker.resetForNewCapture();
+        }
+    }
 }
 } // namespace
 
 int main(int argc, char** argv) {
-    qputenv("QT_QPA_PLATFORM", "offscreen");
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
     QApplication application(argc, argv);
     formatPersistsAcrossCapturesAndRestarts();
     formatSurvivesResetWithoutStorage();
     plainHexPreservesSixUppercaseDigits();
     pickerUsesASeparateClickThroughWindow();
+    pickerPreparationPreservesCanvasInputSurfaces();
     return 0;
 }

@@ -101,10 +101,12 @@ bool PinnedWindowPlatform::eventFilter(QObject* watched, QEvent* event) {
     }
     if (watched != m_window) {
         if (m_window && event->type() == QEvent::Show) {
+            // Prewarmed pins have no native surface. Two null handles do not
+            // establish ownership of an unrelated top-level window.
             if (auto* child = qobject_cast<QWidget*>(watched);
                 child && child->isWindow() &&
                 (m_window->isAncestorOf(child) ||
-                 (child->windowHandle() &&
+                 (m_window->windowHandle() && child->windowHandle() &&
                   child->windowHandle()->transientParent() == m_window->windowHandle()))) {
                 configurePinnedAuxiliary(child);
             }

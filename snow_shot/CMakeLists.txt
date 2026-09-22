@@ -2890,6 +2890,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_storage snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets
     )
     snow_shot_import_offscreen_platform(snow-shot-screenshot-color-picker-tests)
+    if(APPLE)
+        set_source_files_properties(tests/screenshot_color_picker_tests.cpp
+            PROPERTIES LANGUAGE OBJCXX)
+        target_sources(snow-shot-screenshot-color-picker-tests PRIVATE
+            ${SNOW_PINNED_PLATFORM_SOURCES})
+        target_link_libraries(snow-shot-screenshot-color-picker-tests PRIVATE "-framework AppKit")
+    endif()
     add_test(NAME snow-shot-screenshot-color-picker-tests
         COMMAND snow-shot-screenshot-color-picker-tests)
     set_tests_properties(snow-shot-screenshot-color-picker-tests PROPERTIES
@@ -4474,7 +4481,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE comctl32)
     elseif(APPLE)
         target_sources(snow-shot-color-picker-lifecycle-tests PRIVATE
-            src/platform/macos/screenshotnative.mm)
+            src/platform/macos/screenshotnative.mm
+            src/platform/macos/windowcaptureexclusion.mm)
         target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
             "-framework AppKit" "-framework CoreGraphics")
     endif()
@@ -7099,6 +7107,10 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-macos-pinned-window-tests PRIVATE include src)
     target_link_libraries(snow-shot-macos-pinned-window-tests PRIVATE Qt6::Widgets
         "-framework AppKit" "-framework CoreGraphics")
+    add_test(NAME snow-shot-pinned-auxiliary-ownership-tests
+        COMMAND snow-shot-macos-pinned-window-tests --ownership-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-auxiliary-ownership-tests PROPERTIES
+        LABELS "unit;macos" SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30)
     add_test(NAME snow-shot-macos-pinned-window-tests
         COMMAND snow-shot-macos-pinned-window-tests -platform cocoa)
     add_test(NAME snow-shot-macos-pinned-focus-tests

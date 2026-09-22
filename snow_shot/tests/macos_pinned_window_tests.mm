@@ -123,7 +123,47 @@ void hiddenPlacementCommitsBeforeShow() {
     }
 }
 
+void auxiliaryOwnershipRequiresARealOwner() {
+    QWidget pin;
+    auto platform = createPinnedWindowPlatform(&pin);
+    require(pin.windowHandle() == nullptr, "the pin must start without a native window");
+    const auto auxiliaryPlatform = [](QWidget& widget) {
+        return widget.findChild<QObject*>(QStringLiteral("snowPinnedWindowPlatform"),
+                                          Qt::FindDirectChildrenOnly);
+    };
+    QWidget unrelated;
+    unrelated.show();
+    require(auxiliaryPlatform(unrelated) == nullptr,
+            "missing native handles must not associate unrelated top-level windows");
+    QWidget decoration(&unrelated, Qt::Tool | Qt::WindowTransparentForInput);
+    decoration.show();
+    require(auxiliaryPlatform(decoration) == nullptr,
+            "unrelated descendants must not inherit a pinned auxiliary policy");
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        require(reinterpret_cast<NSView*>(decoration.winId()).window.ignoresMouseEvents,
+                "unrelated transparent tools must retain native click-through");
+    }
+
+    QWidget ownedChild(&pin, Qt::Tool);
+    ownedChild.show();
+    require(auxiliaryPlatform(ownedChild) != nullptr,
+            "a QWidget-owned auxiliary must still receive its pin's policy");
+    QWidget transient(nullptr, Qt::Tool);
+    static_cast<void>(transient.winId());
+    require(pin.windowHandle() != nullptr,
+            "showing the owned child must create its owner's surface");
+    transient.windowHandle()->setTransientParent(pin.windowHandle());
+    transient.show();
+    require(auxiliaryPlatform(transient) != nullptr,
+            "a native transient auxiliary must still receive its pin's policy");
+    QWidget other;
+    other.show();
+    require(auxiliaryPlatform(other) == nullptr,
+            "a created pin must not adopt an unrelated top-level window either");
+}
+
 void nativePolicies(bool focus) {
+    auxiliaryOwnershipRequiresARealOwner();
     hiddenPlacementCommitsBeforeShow();
     QWidget widget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     widget.setAttribute(Qt::WA_TranslucentBackground);
@@ -374,7 +414,9 @@ int main(int argc, char** argv) {
     int result = 0;
     QTimer::singleShot(100, &app, [&] {
         try {
-            if (app.arguments().contains(QStringLiteral("--delivery")))
+            if (app.arguments().contains(QStringLiteral("--ownership-only")))
+                auxiliaryOwnershipRequiresARealOwner();
+            else if (app.arguments().contains(QStringLiteral("--delivery")))
                 result = delivery();
             else if (app.arguments().contains(QStringLiteral("--focus")) && sessionLocked()) {
                 std::cerr << "Cocoa focus qualification requires an unlocked desktop\n";
