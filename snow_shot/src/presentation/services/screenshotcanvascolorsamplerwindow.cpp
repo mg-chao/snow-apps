@@ -61,9 +61,11 @@ QColor readableMarkerColor(const QColor& color) {
 }
 } // namespace
 
+// This HUD paints its own shadow. Cocoa must not outline those pixels.
 ScreenshotCanvasColorSamplerWindow::ScreenshotCanvasColorSamplerWindow(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-                          Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput) {
+                          Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput |
+                          Qt::NoDropShadowWindowHint) {
     setObjectName(QStringLiteral("screenshotCanvasColorSamplerWindow"));
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);

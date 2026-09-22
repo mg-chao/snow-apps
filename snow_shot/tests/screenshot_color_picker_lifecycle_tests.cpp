@@ -130,6 +130,15 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
         require(tracked->windowHandle() && !tracked->isVisible() &&
                     tracked->windowHandle()->transientParent() == first.windowHandle(),
                 "preparation must create a hidden native window owned by the overlay");
+        const auto requireNonNativeCanvases = [&]() {
+            for (const auto* overlay : {&first, &second}) {
+                const auto* canvas = overlay->findChild<SnowCanvasWidget*>();
+                require(canvas && !canvas->testAttribute(Qt::WA_NativeWindow) &&
+                            canvas->internalWinId() == 0,
+                        "preparing and moving the picker must not create native canvas children");
+            }
+        };
+        requireNonNativeCanvases();
         const uchar* preparedPixels = backingPixels(*tracked);
         const WId preparedWindowId = tracked->internalWinId();
         host.prepareColorPickerSurface(&first);
@@ -150,6 +159,7 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
         require(tracked == host.colorPicker() && tracked->parentWidget() == &second &&
                     tracked->windowHandle()->transientParent() == second.windowHandle(),
                 "moving between overlays must retain one picker and update its native owner");
+        requireNonNativeCanvases();
         const QPoint globalCursor = second.mapToGlobal(QPoint(8, 8));
         require(tracked->pos().x() > globalCursor.x() && tracked->pos().y() > globalCursor.y(),
                 "changing displays must position the picker next to the new global cursor");

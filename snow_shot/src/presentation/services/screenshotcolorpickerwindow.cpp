@@ -38,12 +38,12 @@ const QColor kFallbackPanelTextColor(38, 38, 38);
 const QColor kShadowColor(0, 0, 0, 28);
 
 Qt::WindowFlags colorPickerWindowFlags() {
-    Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-                            Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput;
-#if !defined(Q_OS_MACOS)
-    flags |= Qt::NoDropShadowWindowHint;
-#endif
-    return flags;
+    // The panel paints its own shadow. Cocoa otherwise builds a native shadow from
+    // every non-transparent pixel and outlines that painted shadow with a hard
+    // border, the same failure Message had on the recognition surface.
+    return Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+           Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput |
+           Qt::NoDropShadowWindowHint;
 }
 
 QColor panelBackgroundForTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
@@ -228,7 +228,10 @@ void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
         static_cast<void>(owner->winId());
         ownerHandle = owner->windowHandle();
     }
-    static_cast<void>(winId());
+    // winId() sets WA_NativeWindow and forces the picker's canvas siblings to
+    // become native too. Cocoa can then lose their hover events beneath this
+    // input-transparent tool. Create only this top-level surface instead.
+    create();
     if (QWindow* handle = windowHandle()) {
         handle->setTransientParent(ownerHandle);
     }
@@ -240,7 +243,7 @@ void ScreenshotColorPickerWindow::prepareNativeSurface() {
     }
 
     ensurePolished();
-    static_cast<void>(winId());
+    create();
     QBackingStore* store = backingStore();
     const qreal dpr = devicePixelRatioF();
     if (store == nullptr ||
@@ -248,7 +251,7 @@ void ScreenshotColorPickerWindow::prepareNativeSurface() {
         return;
     }
 
-    // winId() creates the platform window, but does not allocate its pixels.
+    // create() creates the platform window, but does not allocate its pixels.
     // Allocate and initialize the backing store while capture is in flight.
     // Do not show or flush the window: it must remain absent from the desktop.
     store->resize(size());
