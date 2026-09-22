@@ -3008,6 +3008,82 @@ void serialNumberBackgroundUsesTextHatchTexture() {
             "serial-number and text backgrounds should share one hatch texture");
 }
 
+void textDecorationsFollowAlignedLines() {
+    const QFont baseFont = QApplication::font();
+    for (const auto alignment : {SNOW_TEXT_HORIZONTAL_ALIGN_LEFT, SNOW_TEXT_HORIZONTAL_ALIGN_CENTER,
+                                 SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT}) {
+        for (const double zoom : {0.75, 1.0, 2.5}) {
+            for (const QString& text : {QStringLiteral("ABB231\nADFA233213121231321"),
+                                        QStringLiteral("short words wrap across several lines")}) {
+                SnowCanvasSceneItem item;
+                item.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
+                item.font_size = 24.0;
+                item.width = 280.0;
+                item.height = 180.0;
+                item.fill = SnowColorRgba8{255, 180, 180, 255};
+                item.fill_style = SNOW_FILL_STYLE_SOLID;
+                item.corner_radii = {};
+                item.text_horizontal_align = alignment;
+                item.text_vertical_align = SNOW_TEXT_VERTICAL_ALIGN_CENTER;
+                snow_canvas_text::copyTextToSceneItem(item, text);
+                const QRectF localRect(50.0, 50.0, item.width * zoom, item.height * zoom);
+                auto layout = snow_canvas_text_layout::createDocumentLayout(item, baseFont, zoom,
+                                                                            text, false);
+                QImage background(900, 650, QImage::Format_ARGB32_Premultiplied);
+                QImage underline(background.size(), background.format());
+                background.fill(Qt::transparent);
+                underline.fill(Qt::transparent);
+                {
+                    QPainter painter(&background);
+                    snow_canvas_text_render::drawBackground(painter, item, baseFont, localRect,
+                                                            zoom);
+                }
+                {
+                    QPainter painter(&underline);
+                    snow_canvas_text_render::drawHoverUnderlines(painter, item, baseFont, localRect,
+                                                                 zoom, Qt::blue, 1.0);
+                }
+                const auto outset = snow_scene_text_fill_outset(&item);
+                const double scale = layout.resolution.scale;
+                auto& document = layout.textDocument();
+                for (auto block = document.begin(); block.isValid(); block = block.next()) {
+                    const auto blockRect = document.documentLayout()->blockBoundingRect(block);
+                    for (int index = 0; index < block.layout()->lineCount(); ++index) {
+                        const auto line = block.layout()->lineAt(index);
+                        // Cursor positions independently locate the aligned text, including
+                        // the last short line of a wrapped paragraph.
+                        int end = line.textStart() + line.textLength();
+                        while (end > line.textStart() && block.text().at(end - 1).isSpace()) {
+                            --end;
+                        }
+                        const double left =
+                            localRect.left() +
+                            (blockRect.left() + line.cursorToX(line.textStart())) * scale;
+                        const double right =
+                            localRect.left() + (blockRect.left() + line.cursorToX(end)) * scale;
+                        const double top = localRect.top() + layout.topOffset +
+                                           (blockRect.top() + line.y()) * scale;
+                        const int middle = qRound(top + line.height() * scale / 2.0);
+                        const QRect fillPixels = alphaPixelBounds(
+                            background.copy(QRect(0, middle, background.width(), 1)));
+                        require(std::abs(fillPixels.left() - (left - outset.x * zoom)) <= 2.0 &&
+                                    std::abs(fillPixels.right() + 1.0 -
+                                             (right + outset.x * zoom)) <= 2.0,
+                                "each background must follow its aligned text line");
+                        const int bottom = qRound(top + line.height() * scale);
+                        const QRect underlinePixels = alphaPixelBounds(
+                            underline.copy(QRect(0, bottom - 2, underline.width(), 5)));
+                        require(!underlinePixels.isEmpty() &&
+                                    std::abs(underlinePixels.left() - left) <= 2.0 &&
+                                    std::abs(underlinePixels.right() - right) <= 2.0,
+                                "each hover underline must follow its aligned text line");
+                    }
+                }
+            }
+        }
+    }
+}
+
 void multilineTextHoverRendererDrawsEveryLineUnderline() {
     QImage image(QSize(160, 160), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -3964,6 +4040,7 @@ int main(int argc, char** argv) {
     serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics();
     solidSerialNumberChoosesFixedContrastLabelColors();
     textHoverUnderlineRendererDrawsOnlyTheUnderline();
+    textDecorationsFollowAlignedLines();
     multilineTextHoverRendererDrawsEveryLineUnderline();
     hatchTextureCacheReusesSaturatedStrokeWidths();
     textEditorConnectorBuildsSerialBoundConnector();
