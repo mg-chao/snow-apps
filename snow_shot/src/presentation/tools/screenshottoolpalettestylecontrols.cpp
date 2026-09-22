@@ -91,6 +91,8 @@ constexpr char kRoleCornerRadius[] = "corner-radius";
 constexpr char kRoleShapeKind[] = "shape-kind";
 constexpr char kRoleArrowType[] = "arrow-type";
 constexpr char kRoleLineType[] = "line-type";
+constexpr char kRoleArrowRatio[] = "arrow-ratio";
+constexpr char kSignatureArrowRatio[] = "numeric:arrow-ratio";
 constexpr char kRoleArrowShaft[] = "arrow-shaft-type";
 constexpr char kSignatureArrowShaft[] = "icon-options:arrow-shaft-type";
 constexpr char kRoleStartArrowhead[] = "start-arrowhead";
@@ -150,7 +152,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::FreeDraw:
         return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleShapeFill};
     case Tool::Arrow:
-        return {kRoleOutlineStroke, kRoleOutlineWidth, "arrow-type",
+        return {kRoleOutlineStroke, kRoleOutlineWidth, "arrow-type",   kRoleArrowRatio,
                 "start-arrowhead",  kRoleArrowShaft,   "end-arrowhead"};
     case Tool::RectangleHighlight:
         return {kRoleHighlightMode, kRoleHighlightColor, kRoleHighlightBorder};
@@ -483,6 +485,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle highlight"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow ratio (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Corner radius (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text fill corner radius (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number (scroll to adjust)"),
@@ -545,6 +548,7 @@ SnowCanvasShapeStyle shapeStyleFromArrowStyle(const SnowCanvasArrowStyle& arrowS
     style.strokeStyle = arrowStyle.strokeStyle;
     style.arrowType = arrowStyle.arrowType;
     style.arrowShaftType = arrowStyle.arrowShaftType;
+    style.arrowRatio = arrowStyle.arrowRatio;
     return style;
 }
 
@@ -557,6 +561,7 @@ SnowCanvasArrowStyle arrowStyleFromShapeStyle(const SnowCanvasShapeStyle& shapeS
     style.strokeStyle = shapeStyle.strokeStyle;
     style.arrowType = shapeStyle.arrowType;
     style.arrowShaftType = shapeStyle.arrowShaftType;
+    style.arrowRatio = shapeStyle.arrowRatio;
     return style;
 }
 
@@ -1148,6 +1153,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleOutlineStroke, kSignatureStroke, m_arrowStrokeEditor);
         stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_arrowStrokeWidthEditor);
         stageWidget(kRoleArrowType);
+        stageWidget(kRoleArrowRatio);
         stageComponent(kRoleStartArrowhead, kSignatureArrowhead, m_startArrowheadEditor);
         stageComponent(kRoleArrowShaft, kSignatureArrowShaft, m_arrowShaftEditor);
         stageComponent(kRoleEndArrowhead, kSignatureArrowhead, m_endArrowheadEditor);
@@ -1599,6 +1605,31 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
                                       : id == 2 ? SnowCanvasArrowType::Elbow
                                                 : SnowCanvasArrowType::Straight);
                      });
+
+    if (host.addGroupSeparator) {
+        host.addGroupSeparator(layout);
+    }
+    m_arrowRatioEditor = dynamic_cast<IconNumericValuePreviewButton*>(
+        takeReusableWidget(kRoleArrowRatio, kSignatureArrowRatio, layout, controls));
+    if (m_arrowRatioEditor == nullptr) {
+        m_arrowRatioEditor = createScreenshotToolPaletteIconNumericValueButton(
+            controls, "Arrow ratio (scroll to adjust)", custom_outlined_icons::ArrowRatio(), 1,
+            QStringLiteral("3.0"), metrics);
+        layout->addWidget(m_arrowRatioEditor);
+    } else {
+        configureScreenshotToolPaletteTooltip(
+            m_arrowRatioEditor,
+            ScreenshotToolPaletteTranslationText("Arrow ratio (scroll to adjust)"));
+        configureScreenshotToolPaletteIconNumericValueButton(m_arrowRatioEditor, metrics);
+    }
+    m_arrowRatioEditor->setDecimalPlaces(1);
+    m_arrowRatioEditor->setValue(m_state.m_arrowStyle.arrowRatio);
+    m_arrowRatioEditor->setObjectName(QStringLiteral("screenshotArrowRatioButton"));
+    m_arrowRatioEditor->setProperty("screenshotStyleEditorRoot", true);
+    m_arrowRatioEditor->setProperty("screenshotStyleEditorRole", kRoleArrowRatio);
+    m_arrowRatioEditor->setProperty("screenshotStyleEditorSignature", kSignatureArrowRatio);
+    QObject::connect(m_arrowRatioEditor, &adqt::widgets::AdButton::clicked, controls,
+                     [this]() { setArrowRatio(1.0); });
 
     const QVector<SnowCanvasArrowhead> arrowheads{
         SnowCanvasArrowhead::None,
@@ -3045,6 +3076,10 @@ void ScreenshotToolPaletteStyleControls::registerArrowEntries() {
         {ShapeArrowheadsRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.arrow.arrowheads_refresh");
+             if (m_arrowRatioEditor != nullptr) {
+                 m_arrowRatioEditor->setValue(m_state.m_arrowStyle.arrowRatio);
+                 m_arrowRatioEditor->setMixed(mixed(SnowCanvasShapeStylePropertyArrowRatio));
+             }
              if (m_arrowShaftEditor != nullptr) {
                  m_arrowShaftEditor->update(static_cast<int>(m_state.m_arrowStyle.arrowShaftType),
                                             mixed(SnowCanvasShapeStylePropertyArrowShaftType));
@@ -3364,6 +3399,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_arrowStrokeWidthEditor.reset();
     m_arrowStrokeEditor.reset();
     m_arrowTypeButtonGroup = nullptr;
+    m_arrowRatioEditor = nullptr;
     m_startArrowheadEditor.reset();
     m_arrowShaftEditor.reset();
     m_endArrowheadEditor.reset();
@@ -3465,6 +3501,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_lineTypeButtonGroup = nullptr;
     }
     if (!keepArrow) {
+        m_arrowRatioEditor = nullptr;
         m_arrowTypeButtonGroup = nullptr;
     }
     if (!keepText) {
@@ -3683,6 +3720,17 @@ bool ScreenshotToolPaletteStyleControls::stepTextFontSize(int direction) {
     return true;
 }
 
+bool ScreenshotToolPaletteStyleControls::handleArrowRatioWheel(const QPoint& globalPosition,
+                                                               int direction) {
+    if (direction == 0 || m_arrowRatioEditor == nullptr || !m_arrowRatioEditor->isVisible() ||
+        !m_arrowRatioEditor->rect().contains(m_arrowRatioEditor->mapFromGlobal(globalPosition))) {
+        return false;
+    }
+    const int tenths = qRound(m_state.m_arrowStyle.arrowRatio * 10.0);
+    setArrowRatio(std::clamp(tenths + (direction > 0 ? 1 : -1), 10, 30) / 10.0);
+    return true;
+}
+
 bool ScreenshotToolPaletteStyleControls::handleCornerRadiusWheel(const QPoint& globalPosition,
                                                                  int direction) {
     if (direction == 0 || m_cornerRadiusEditor == nullptr || !m_cornerRadiusEditor->isVisible() ||
@@ -3860,6 +3908,7 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.arrow.strokeStyle = m_state.m_creationArrowStyle.strokeStyle;
     defaults.arrow.arrowType = m_state.m_creationArrowStyle.arrowType;
     defaults.arrow.arrowShaftType = m_state.m_creationArrowStyle.arrowShaftType;
+    defaults.arrow.arrowRatio = m_state.m_creationArrowStyle.arrowRatio;
     defaults.text = m_state.m_creationTextStyle.textStyle();
     defaults.serialNumber = m_state.m_creationSerialNumberStyle;
     defaults.rectangleFilter = m_state.creationRectangleFilterStyle;
@@ -3957,6 +4006,7 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
                                              kScreenshotToolPaletteSelectWidth);
     }
     configureScreenshotToolPaletteCornerRadiusEditor(m_cornerRadiusEditor, metrics);
+    configureScreenshotToolPaletteIconNumericValueButton(m_arrowRatioEditor, metrics);
     configureScreenshotToolPaletteCornerRadiusEditor(m_textCornerRadiusEditor, metrics);
     if (applies(m_serialNumberEditor)) {
         m_serialNumberEditor->setFixedSize(
@@ -4292,6 +4342,17 @@ void ScreenshotToolPaletteStyleControls::setArrowStrokeStyle(SnowCanvasStrokeSty
                                 return false;
                             }
                             style.strokeStyle = strokeStyle;
+                            return true;
+                        });
+}
+
+void ScreenshotToolPaletteStyleControls::setArrowRatio(double ratio) {
+    ratio = std::isfinite(ratio) ? std::clamp(ratio, 1.0, 3.0) : 1.0;
+    commitArrowProperty(SnowCanvasShapeStylePropertyArrowRatio,
+                        [ratio](SnowCanvasArrowStyle& style) {
+                            if (style.arrowRatio == ratio)
+                                return false;
+                            style.arrowRatio = ratio;
                             return true;
                         });
 }
@@ -5153,6 +5214,9 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
                 (mixedChanged &
                  (SnowCanvasShapeStyleMixedStroke | SnowCanvasShapeStyleMixedStrokeStyle)) != 0)
                 groups |= ShapeStrokeRefresh;
+            if (m_state.m_arrowStyle.arrowRatio != displayedStyle.arrowRatio ||
+                (mixedChanged & SnowCanvasShapeStyleMixedArrowRatio) != 0)
+                groups |= ShapeArrowheadsRefresh;
             if (m_state.m_arrowStyle.arrowShaftType != displayedStyle.arrowShaftType ||
                 (mixedChanged & SnowCanvasShapeStyleMixedArrowShaftType) != 0)
                 groups |= ShapeArrowheadsRefresh;

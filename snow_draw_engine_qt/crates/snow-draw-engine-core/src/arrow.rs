@@ -319,6 +319,26 @@ pub fn normalize_engine_context(context: Option<&PartialEngineContext>) -> Engin
     }
 }
 
+/// The identity scale used by legacy documents and new arrows.
+pub const fn default_arrow_ratio() -> f64 {
+    1.0
+}
+
+pub fn normalize_arrow_ratio(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(1.0, 3.0)
+    } else {
+        1.0
+    }
+}
+
+pub fn deserialize_arrow_ratio<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<f64, D::Error> {
+    let value = f64::deserialize(deserializer)?;
+    Ok(normalize_arrow_ratio(value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::Arrowhead;

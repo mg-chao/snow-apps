@@ -141,6 +141,7 @@ pub(crate) fn scene_item_from_arrow(id: ElementId, arrow: ArrowData) -> SceneDis
         path_commands,
         geometry,
         arrow_type: arrow.arrow_type,
+        arrow_ratio: arrow.arrow_ratio,
         arrow_shaft_type: if shaft.is_some() {
             arrow.arrow_shaft_type
         } else {
@@ -199,6 +200,7 @@ pub(crate) fn scene_item_from_free_draw(
         geometry,
         arrow_type: snow_draw_engine_core::arrow::ArrowType::Curve,
         arrow_shaft_type: Default::default(),
+        arrow_ratio: 1.0,
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: free_draw.stroke,
@@ -226,6 +228,7 @@ pub(crate) fn scene_item_from_free_draw_preview(
         geometry: preview.geometry.clone(),
         arrow_type: snow_draw_engine_core::arrow::ArrowType::Curve,
         arrow_shaft_type: Default::default(),
+        arrow_ratio: 1.0,
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: preview.stroke,
@@ -656,6 +659,7 @@ pub(crate) fn focus_connection_item(
         ],
         arrow_type: ArrowType::Straight,
         arrow_shaft_type: Default::default(),
+        arrow_ratio: 1.0,
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: SNOW_SHOT_FOCUS_CONNECTION_STROKE,
@@ -677,6 +681,7 @@ pub(crate) fn hover_arrow_item(arrow: &ArrowData, zoom: f64) -> UiFocusConnectio
             .as_ref()
             .map_or_else(|| arrow.path_commands(), |g| g.path_commands()),
         arrow_type: arrow.arrow_type,
+        arrow_ratio: arrow.arrow_ratio,
         arrow_shaft_type: if shaft.is_some() {
             arrow.arrow_shaft_type
         } else {
@@ -704,6 +709,7 @@ pub(crate) fn hover_free_draw_item(
         path_commands: free_draw.path_commands(),
         arrow_type: ArrowType::Curve,
         arrow_shaft_type: Default::default(),
+        arrow_ratio: 1.0,
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: SELECTION_COLOR,
@@ -735,6 +741,7 @@ pub(crate) fn hover_pen_filter_item(filter: &PenFilterData) -> UiFocusConnection
         path_commands,
         arrow_type: ArrowType::Straight,
         arrow_shaft_type: Default::default(),
+        arrow_ratio: 1.0,
         start_arrowhead: None,
         end_arrowhead: None,
         stroke: SELECTION_COLOR,

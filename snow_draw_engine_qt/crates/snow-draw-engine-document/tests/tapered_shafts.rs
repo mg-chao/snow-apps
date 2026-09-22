@@ -250,3 +250,37 @@ fn tapered_dots_and_heads_have_consistent_fill_winding() {
         }
     }
 }
+
+#[test]
+fn arrow_ratio_tapered_geometry_bounds_and_hit_testing() {
+    for head in [
+        Arrowhead::Arrow,
+        Arrowhead::Triangle,
+        Arrowhead::TriangleOutline,
+        Arrowhead::IndentedTriangle,
+    ] {
+        for arrow_type in [ArrowType::Straight, ArrowType::Curve, ArrowType::Elbow] {
+            let mut a = arrow(Some(head));
+            a.start_arrowhead = Some(head);
+            a.arrow_type = arrow_type;
+            for ratio in [1.0, 2.0, 3.0] {
+                a.arrow_ratio = ratio;
+                let geometry = tapered_arrow_geometry(&a).unwrap();
+                assert_eq!(a.stroke_width, 2.0);
+                let bounds = arrow_bounds(&a);
+                for contour in &geometry.contours {
+                    for p in contour {
+                        assert!(p[0].is_finite() && p[1].is_finite());
+                        assert!(
+                            p[0] >= bounds.min_x
+                                && p[0] <= bounds.max_x
+                                && p[1] >= bounds.min_y
+                                && p[1] <= bounds.max_y
+                        );
+                        assert!(arrow_hit_test(&a, Point::new(p[0], p[1]), 0.01));
+                    }
+                }
+            }
+        }
+    }
+}

@@ -50,6 +50,7 @@ pub(crate) fn arrow_with_style(
     next.stroke_style = style.stroke_style;
     next.arrow_type = style.arrow_type;
     next.arrow_shaft_type = style.arrow_shaft_type;
+    next.arrow_ratio = snow_draw_engine_core::arrow::normalize_arrow_ratio(style.arrow_ratio);
 
     if arrow.arrow_type == style.arrow_type {
         return next;
@@ -75,6 +76,7 @@ pub(crate) fn arrow_with_style(
     };
     updated.inherit_linear_metadata_from(arrow);
     updated.arrow_shaft_type = style.arrow_shaft_type;
+    updated.arrow_ratio = snow_draw_engine_core::arrow::normalize_arrow_ratio(style.arrow_ratio);
     updated.rotation = arrow.rotation;
     updated.start_binding = arrow.start_binding.clone();
     updated.end_binding = arrow.end_binding.clone();
@@ -100,6 +102,7 @@ pub(crate) fn preview_arrow_from_points(
         style.end_arrowhead,
     )?;
     arrow.arrow_shaft_type = style.arrow_shaft_type;
+    arrow.arrow_ratio = snow_draw_engine_core::arrow::normalize_arrow_ratio(style.arrow_ratio);
     (arrow_length(&arrow) > 1e-6).then_some(arrow)
 }
 

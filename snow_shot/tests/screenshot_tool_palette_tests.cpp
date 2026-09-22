@@ -1780,7 +1780,7 @@ void styleToolSwitchesReconcileCompatibleEditorRoots() {
     require(styleEditorRoot(arrowRow, "outline-stroke") == strokeRoot &&
                 styleEditorRoot(arrowRow, "outline-width") == widthRoot,
             "Shape to Arrow should preserve both outline editor subtrees");
-    require(shapeToArrow.retained == 2 && shapeToArrow.destroyed == 3 && shapeToArrow.created == 3,
+    require(shapeToArrow.retained == 2 && shapeToArrow.destroyed == 3 && shapeToArrow.created == 5,
             "Shape to Arrow should report the exact reconciliation counts");
     require(palette.findChild<QWidget*>(QStringLiteral("screenshotRectangleStyleControls")) ==
                 nullptr,
@@ -1792,7 +1792,7 @@ void styleToolSwitchesReconcileCompatibleEditorRoots() {
     require(styleEditorRoot(shapeRow, "outline-stroke") == strokeRoot &&
                 styleEditorRoot(shapeRow, "outline-width") == widthRoot,
             "Arrow to Shape should preserve both outline editor subtrees");
-    require(arrowToShape.retained == 2 && arrowToShape.destroyed == 3 && arrowToShape.created == 3,
+    require(arrowToShape.retained == 2 && arrowToShape.destroyed == 5 && arrowToShape.created == 3,
             "Arrow to Shape should report the exact reconciliation counts");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Line);
@@ -7689,8 +7689,8 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
     require(arrowLayout != nullptr, "arrow style controls should have a layout");
     const QList<QFrame*> separators =
         arrowControls->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);
-    require(separators.size() == 2,
-            "arrow style controls should have separators before color and type");
+    require(separators.size() == 3,
+            "arrow style controls should separate color, width, type, and endpoint settings");
     QWidget* arrowStrokeColorControl = controlWithAccessibleName(palette, "Arrow stroke color");
     QWidget* arrowStrokeWidthControl = controlWithTooltip(palette, "Current arrow stroke width");
     QWidget* arrowStrokeRoot = styleEditorRoot(arrowControls, "outline-stroke");
@@ -7948,6 +7948,101 @@ void lineStyleControlsExposeStraightAndCurveTypes() {
             "Free Draw should not expose the Line type editor");
 }
 
+void arrowRatioEditorAdjustsAndResets() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto ratioEditor = [&palette]() {
+        return dynamic_cast<IconNumericValuePreviewButton*>(
+            palette.findChild<QWidget*>(QStringLiteral("screenshotArrowRatioButton")));
+    };
+    auto* editor = ratioEditor();
+    require(editor != nullptr && editor->valueText() == QStringLiteral("1.0"),
+            "arrow ratio starts at 1.0 with one decimal place");
+    auto* row = editor->parentWidget()->layout();
+    auto* arrowType = palette.findChild<QWidget*>(QStringLiteral("screenshotArrowTypeButtonGroup"));
+    QWidget* start = controlWithAccessibleName(palette, "Start arrowhead");
+    const auto rootInRow = [row](QWidget* widget) {
+        while (widget != nullptr && row->indexOf(widget) < 0)
+            widget = widget->parentWidget();
+        return widget;
+    };
+    QVector<QWidget*> rowWidgets;
+    for (int i = 0; i < row->count(); ++i) {
+        if (QWidget* widget = row->itemAt(i)->widget())
+            rowWidgets.push_back(widget);
+    }
+    const qsizetype ratioIndex = rowWidgets.indexOf(editor);
+    require(ratioIndex >= 2 && ratioIndex + 1 < rowWidgets.size() &&
+                rowWidgets.at(ratioIndex - 2) == rootInRow(arrowType) &&
+                qobject_cast<QFrame*>(rowWidgets.at(ratioIndex - 1)) != nullptr &&
+                rowWidgets.at(ratioIndex + 1) == rootInRow(start),
+            "arrow type, separator, ratio, and start arrowhead must be consecutive");
+    require(editor->cursor().shape() == Qt::SplitVCursor,
+            "ratio uses the same adjustment cursor as rounded corners");
+    const auto wheel = [&palette, &editor](int delta) {
+        const QPoint local = editor->rect().center();
+        QWheelEvent event(QPointF(local), editor->mapToGlobal(local), QPoint(), QPoint(0, delta),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        require(palette.handleToolbarWheel(&event) && event.isAccepted(),
+                "ratio wheel is consumed");
+    };
+    SnowCanvasShapeStyle emitted;
+    quint32 properties = 0;
+    int changes = 0;
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::shapeStyleChanged, &palette,
+        [&](const SnowCanvasShapeStyle& style, quint32 changed, SnowCanvasShapeKind kind) {
+            require(kind == SnowCanvasShapeKind::Arrow, "ratio edits target arrows");
+            emitted = style;
+            properties = changed;
+            ++changes;
+        });
+    const auto initial = palette.creationStyleDefaults().arrow;
+    wheel(120);
+    auto expected = initial;
+    expected.arrowRatio = 1.1;
+    require(palette.creationStyleDefaults().arrow == expected && emitted.arrowRatio == 1.1 &&
+                emitted.strokeWidth == initial.strokeWidth &&
+                properties == SnowCanvasShapeStylePropertyArrowRatio &&
+                editor->valueText() == QStringLiteral("1.1"),
+            "one wheel step updates only the ratio by 0.1");
+    const QSize initialSize = editor->size();
+    for (int i = 0; i < 30; ++i)
+        wheel(120);
+    require(editor->value() == 3.0 && editor->size() == initialSize,
+            "ratio clamps at 3.0 without changing editor size");
+    const int atMaximum = changes;
+    wheel(120);
+    require(changes == atMaximum, "clamped ratio is a no-op");
+    for (int i = 0; i < 30; ++i)
+        wheel(-120);
+    require(editor->value() == 1.0, "ratio clamps at 1.0");
+    wheel(120);
+    editor->click();
+    require(editor->valueText() == QStringLiteral("1.0"), "click resets ratio");
+    SnowCanvasStyleToolbarState selected;
+    selected.source = SnowCanvasStyleToolbarSource::SelectedArrow;
+    selected.shapeStyle = initial;
+    selected.shapeStyle.arrowRatio = 2.4;
+    selected.shapeStyleMixed =
+        SnowCanvasShapeStyleMixedArrowRatio | SnowCanvasShapeStyleMixedStroke;
+    palette.setStyleToolbarState(selected);
+    require(editor->valueText() == QStringLiteral("-"), "mixed ratios show a dash");
+    wheel(120);
+    require(editor->valueText() == QStringLiteral("2.5") &&
+                properties == SnowCanvasShapeStylePropertyArrowRatio,
+            "scroll resolves just the mixed ratio");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    QCoreApplication::processEvents();
+    editor = ratioEditor();
+    require(editor != nullptr && editor->value() == 2.5,
+            "arrow ratio survives editor reuse and tool switching");
+    palette.hide();
+}
+
 void arrowheadOptionsRetranslateInPlace() {
     auto& languageManager = snow_shot::presentation::LanguageManager::instance();
     require(languageManager.setLanguage(QStringLiteral("en_US")),
@@ -7981,6 +8076,8 @@ void arrowheadOptionsRetranslateInPlace() {
                                         QStringLiteral("arrowhead-standard"),
             "end arrowhead options should use the right-facing asset");
     endPopover->hide();
+    QWidget* ratioTrigger = controlWithTooltip(palette, "Arrow ratio (scroll to adjust)");
+    require(ratioTrigger != nullptr, "ratio editor must expose translated accessible text");
     QWidget* shaftTrigger = controlWithAccessibleName(palette, "Arrow shaft type");
     require(shaftTrigger != nullptr, "shaft trigger must be available");
     auto* shaftPopover = showPopoverForTrigger(shaftTrigger);
@@ -7999,6 +8096,8 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Simplified Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u5934 \u65e0"),
             "open arrowhead option should retranslate to Simplified Chinese");
+    require(ratioTrigger->accessibleName() == QStringLiteral("箭头比例（滚动调整）"),
+            "ratio editor retranslates to Simplified Chinese");
     require(shaftTrigger->accessibleName() == QStringLiteral("箭杆类型") &&
                 taperedOption->toolTip() == QStringLiteral("渐宽箭杆"),
             "shaft editor must retranslate to Simplified Chinese");
@@ -8012,6 +8111,8 @@ void arrowheadOptionsRetranslateInPlace() {
             "arrowhead trigger should retranslate to Traditional Chinese");
     require(noneOption->toolTip() == QStringLiteral("\u8d77\u59cb\u7bad\u982d \u7121"),
             "open arrowhead option should retranslate to Traditional Chinese");
+    require(ratioTrigger->accessibleName() == QStringLiteral("箭頭比例（捲動調整）"),
+            "ratio editor retranslates to Traditional Chinese");
     require(shaftTrigger->accessibleName() == QStringLiteral("箭桿類型") &&
                 taperedOption->toolTip() == QStringLiteral("漸寬箭桿"),
             "shaft editor must retranslate to Traditional Chinese");
@@ -11138,6 +11239,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.rectangle.strokeWidth = 3.0;
     styles.arrow.stroke = QColor(5, 6, 7, 8);
     styles.arrow.strokeWidth = 4.0;
+    styles.arrow.arrowRatio = 2.3;
     styles.arrow.startArrowhead = SnowCanvasArrowhead::IndentedTriangle;
     styles.arrow.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
     styles.line.strokeWidth = 5.0;
@@ -11227,6 +11329,26 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "the valid Line type should be restored for the remaining persistence test");
     require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == expected,
             "the restored Line type should round-trip independently");
+
+    const QString arrowKey = QStringLiteral("drawing/arrow_style");
+    const QJsonObject savedArrowStyle = configuration.value(arrowKey).toObject();
+    for (const QJsonValue& ratio :
+         {QJsonValue(), QJsonValue(-1.0), QJsonValue(4.0), QJsonValue(QStringLiteral("bad"))}) {
+        auto legacyArrow = savedArrowStyle;
+        if (ratio.isNull())
+            legacyArrow.remove(QStringLiteral("arrow_ratio"));
+        else
+            legacyArrow.insert(QStringLiteral("arrow_ratio"), ratio);
+        require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                    arrowKey, legacyArrow),
+                "save legacy or invalid ratio fixture");
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults().arrow.arrowRatio ==
+                    (ratio.toDouble() == 4.0 ? 3.0 : 1.0),
+                "missing or invalid saved ratios normalize safely");
+    }
+    require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                arrowKey, savedArrowStyle),
+            "restore arrow settings");
 
     const QString serialKey = QStringLiteral("drawing/serial_number_style");
     QJsonObject savedSerialStyle = configuration.value(serialKey).toObject();
@@ -11900,6 +12022,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--arrow-icons-only"))) {
+        arrowRatioEditorAdjustsAndResets();
         arrowStyleControlsExposeAndEmitAllStyleProperties();
         arrowheadOptionsRetranslateInPlace();
         selectedArrowMixedPropertiesResolveIndependently();
@@ -12136,6 +12259,7 @@ int main(int argc, char** argv) {
     shapeSelectorIsTheLeftmostStyleGroup();
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
+    arrowRatioEditorAdjustsAndResets();
     arrowStyleControlsExposeAndEmitAllStyleProperties();
     lineStyleControlsExposeStraightAndCurveTypes();
     selectedArrowMixedPropertiesResolveIndependently();

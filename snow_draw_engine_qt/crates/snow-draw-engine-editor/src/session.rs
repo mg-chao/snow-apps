@@ -155,6 +155,7 @@ impl EditorSession {
         state.default_line_style = ShapeStyle {
             arrow_type: crate::style::normalized_line_arrow_type(persisted.line.arrow_type),
             arrow_shaft_type: Default::default(),
+            arrow_ratio: 1.0,
             ..persisted.line
         };
         state.default_free_draw_style = persisted.free_draw;

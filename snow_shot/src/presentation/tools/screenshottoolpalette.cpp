@@ -3416,6 +3416,10 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         }
         return false;
     }
+    if (m_styleControls->handleArrowRatioWheel(event->globalPosition().toPoint(), direction)) {
+        event->accept();
+        return true;
+    }
     if (m_styleControls->handleCornerRadiusWheel(event->globalPosition().toPoint(), direction)) {
         event->accept();
         return true;

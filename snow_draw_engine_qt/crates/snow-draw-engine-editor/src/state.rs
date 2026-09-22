@@ -529,10 +529,16 @@ impl EditorState {
             pending_new_text_draft: false,
             arrow_text_measurements: Vec::new(),
             default_rectangle_shape_style: default_styles.rectangle,
-            default_arrow_style: default_styles.arrow,
+            default_arrow_style: ArrowStyle {
+                arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(
+                    default_styles.arrow.arrow_ratio,
+                ),
+                ..default_styles.arrow
+            },
             default_line_style: ShapeStyle {
                 arrow_type: normalized_line_arrow_type(default_styles.line.arrow_type),
                 arrow_shaft_type: Default::default(),
+                arrow_ratio: 1.0,
                 ..default_styles.line
             },
             default_free_draw_style: default_styles.free_draw,

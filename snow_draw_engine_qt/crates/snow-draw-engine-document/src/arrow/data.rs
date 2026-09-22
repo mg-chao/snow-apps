@@ -75,6 +75,11 @@ pub struct ArrowData {
     pub arrow_type: ArrowType,
     #[serde(default)]
     pub arrow_shaft_type: snow_draw_engine_core::arrow::ArrowShaftType,
+    #[serde(
+        default = "snow_draw_engine_core::arrow::default_arrow_ratio",
+        deserialize_with = "snow_draw_engine_core::arrow::deserialize_arrow_ratio"
+    )]
+    pub arrow_ratio: f64,
     pub fixed_segments: Option<Vec<FixedSegment>>,
     pub start_is_special: Option<bool>,
     pub end_is_special: Option<bool>,
@@ -121,6 +126,7 @@ impl ArrowData {
             end_arrowhead,
             arrow_type,
             arrow_shaft_type: Default::default(),
+            arrow_ratio: 1.0,
             fixed_segments: None,
             start_is_special: None,
             end_is_special: None,
@@ -162,6 +168,7 @@ impl ArrowData {
     pub fn inherit_linear_metadata_from(&mut self, source: &Self) {
         self.linear_kind = source.linear_kind;
         self.arrow_shaft_type = source.arrow_shaft_type;
+        self.arrow_ratio = snow_draw_engine_core::arrow::normalize_arrow_ratio(source.arrow_ratio);
         self.fill = source.fill;
         self.fill_style = source.fill_style;
         self.opacity = source.opacity;
@@ -304,6 +311,7 @@ impl ArrowData {
             end_arrowhead: self.end_arrowhead,
             arrow_type: self.arrow_type,
             arrow_shaft_type: self.arrow_shaft_type,
+            arrow_ratio: self.arrow_ratio,
             fixed_segments: match &patch.fixed_segments {
                 Some(segments) => segments.clone(),
                 None => self.fixed_segments.clone(),
@@ -658,6 +666,7 @@ pub fn arrowhead_render_primitives(
     };
 
     rendering::get_arrowhead_render_primitives(&rendering::ArrowheadRenderPrimitivesInput {
+        arrow_ratio: arrow.arrow_ratio,
         arrow_points: arrow
             .global_points()
             .iter()

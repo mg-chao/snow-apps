@@ -622,6 +622,7 @@ impl From<SnowShapeStyle> for ShapeStyle {
             stroke_style: snow_stroke_style_to_rust(value.stroke_style),
             arrow_type: snow_arrow_type_to_rust(value.arrow_type),
             arrow_shaft_type: snow_arrow_shaft_type_to_rust(value.arrow_shaft_type),
+            arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(value.arrow_ratio),
             opacity: value.opacity,
             highlight_shape: match value.highlight_shape {
                 SnowHighlightShape::Rectangle => snow_draw_engine::HighlightShape::Rectangle,
@@ -709,6 +710,7 @@ impl From<SnowArrowStyle> for snow_draw_engine::ArrowStyle {
             stroke_style: snow_stroke_style_to_rust(value.stroke_style),
             arrow_type: snow_arrow_type_to_rust(value.arrow_type),
             arrow_shaft_type: snow_arrow_shaft_type_to_rust(value.arrow_shaft_type),
+            arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(value.arrow_ratio),
         }
     }
 }
@@ -723,6 +725,7 @@ impl From<snow_draw_engine::ArrowStyle> for SnowArrowStyle {
             stroke_style: snow_stroke_style_from_rust(value.stroke_style),
             arrow_type: snow_arrow_type_from_rust(value.arrow_type),
             arrow_shaft_type: snow_arrow_shaft_type_from_rust(value.arrow_shaft_type),
+            arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(value.arrow_ratio),
             reserved0: [0; 4],
         }
     }
@@ -856,6 +859,7 @@ impl From<ShapeStyle> for SnowShapeStyle {
             stroke_style: snow_stroke_style_from_rust(value.stroke_style),
             arrow_type: snow_arrow_type_from_rust(value.arrow_type),
             arrow_shaft_type: snow_arrow_shaft_type_from_rust(value.arrow_shaft_type),
+            arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(value.arrow_ratio),
             opacity: value.opacity,
             highlight_shape: match value.highlight_shape {
                 snow_draw_engine::HighlightShape::Rectangle => SnowHighlightShape::Rectangle,
@@ -1064,6 +1068,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             stroke_style: snow_stroke_style_from_rust(arrow.stroke_style),
             arrow_type: snow_arrow_type_from_rust(arrow.arrow_type),
             arrow_shaft_type: snow_arrow_shaft_type_from_rust(arrow.arrow_shaft_type),
+            arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(arrow.arrow_ratio),
             ..SnowShapeStyle::default()
         };
         Self {
@@ -1580,6 +1585,7 @@ mod tests {
         };
         expected.editor.rectangle.stroke_width = 3.0;
         expected.editor.arrow.stroke_width = 4.0;
+        expected.editor.arrow.arrow_ratio = 2.3;
         expected.editor.line.stroke_width = 5.0;
         expected.editor.free_draw.stroke_width = 6.0;
         expected.editor.rectangle_highlight.stroke_width = 7.0;

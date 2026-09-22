@@ -132,6 +132,7 @@ pub struct SnowShapeStyle {
     pub stroke_style: SnowStrokeStyle,
     pub arrow_type: SnowArrowType,
     pub arrow_shaft_type: SnowArrowShaftType,
+    pub arrow_ratio: f64,
     pub fill_style: SnowFillStyle,
     pub opacity: f64,
     pub highlight_shape: SnowHighlightShape,
@@ -249,6 +250,7 @@ pub struct SnowArrowStyle {
     pub stroke_style: SnowStrokeStyle,
     pub arrow_type: SnowArrowType,
     pub arrow_shaft_type: SnowArrowShaftType,
+    pub arrow_ratio: f64,
     pub reserved0: [u8; 4],
 }
 
@@ -472,6 +474,7 @@ impl Default for SnowShapeStyle {
             stroke_style: SnowStrokeStyle::Solid,
             arrow_type: SnowArrowType::Straight,
             arrow_shaft_type: SnowArrowShaftType::Plain,
+            arrow_ratio: 1.0,
             fill_style: SnowFillStyle::Solid,
             opacity: 1.0,
             highlight_shape: SnowHighlightShape::Rectangle,
@@ -503,6 +506,7 @@ impl Default for SnowArrowStyle {
             stroke_style: SnowStrokeStyle::Solid,
             arrow_type: SnowArrowType::Straight,
             arrow_shaft_type: SnowArrowShaftType::Plain,
+            arrow_ratio: 1.0,
             reserved0: [0; 4],
         }
     }

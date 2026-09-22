@@ -60,6 +60,10 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Arrow ratio (scroll to adjust)</source>
+            <translation>箭頭比例（捲動調整）</translation>
+        </message>
+        <message>
             <source>Arrow shaft type</source>
             <translation>箭桿類型</translation>
         </message>

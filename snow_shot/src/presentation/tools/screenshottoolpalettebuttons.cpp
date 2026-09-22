@@ -1104,7 +1104,7 @@ void FillStylePreviewButton::paintEvent(QPaintEvent* event) {
 IconNumericValuePreviewButton::IconNumericValuePreviewButton(QWidget* parent)
     : adqt::widgets::AdButton(parent) {}
 
-void IconNumericValuePreviewButton::setValue(int value) {
+void IconNumericValuePreviewButton::setValue(double value) {
     if (m_value == value) {
         return;
     }
@@ -1112,8 +1112,21 @@ void IconNumericValuePreviewButton::setValue(int value) {
     update();
 }
 
-int IconNumericValuePreviewButton::value() const {
+double IconNumericValuePreviewButton::value() const {
     return m_value;
+}
+
+void IconNumericValuePreviewButton::setDecimalPlaces(int places) {
+    places = std::clamp(places, 0, 6);
+    if (m_decimalPlaces == places)
+        return;
+    m_decimalPlaces = places;
+    update();
+}
+
+QString IconNumericValuePreviewButton::valueText() const {
+    return (m_mixed ? QStringLiteral("-") : QString::number(m_value, 'f', m_decimalPlaces)) +
+           m_valueSuffix;
 }
 
 void IconNumericValuePreviewButton::setCornerRadius(int cornerRadius) {
@@ -1187,8 +1200,7 @@ void IconNumericValuePreviewButton::paintEvent(QPaintEvent* event) {
     painter.setFont(font());
     painter.setPen(contentColor);
 
-    const QString valueText =
-        (m_mixed ? QStringLiteral("-") : QString::number(m_value)) + m_valueSuffix;
+    const QString valueText = this->valueText();
     const int valueWidth = QFontMetrics(font()).horizontalAdvance(m_mixed ? QStringLiteral("-")
                                                                           : m_valueWidthReference);
     const int gap = scaledMetric(CORNER_RADIUS_ICON_TEXT_GAP, m_physicalScale);

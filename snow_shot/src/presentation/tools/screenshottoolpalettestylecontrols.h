@@ -243,6 +243,7 @@ class ScreenshotToolPaletteStyleControls final {
     void setTextControlsActive(bool active);
     void clearTextStylePopupInteractions();
     [[nodiscard]] bool stepTextFontSize(int direction);
+    [[nodiscard]] bool handleArrowRatioWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool handleCornerRadiusWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool handleTextStrokeWidthWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool handleTextCornerRadiusWheel(const QPoint& globalPosition, int direction);
@@ -358,6 +359,7 @@ class ScreenshotToolPaletteStyleControls final {
     void setArrowStrokeStyle(SnowCanvasStrokeStyle strokeStyle);
     void setArrowType(SnowCanvasArrowType arrowType);
     void setLineType(SnowCanvasArrowType arrowType);
+    void setArrowRatio(double ratio);
     void setArrowShaftType(SnowCanvasArrowShaftType shaftType);
     void setArrowhead(bool start, SnowCanvasArrowhead arrowhead);
     void setTextColor(const QColor& color);
@@ -479,6 +481,7 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteStrokeEditor> m_arrowStrokeEditor;
     adqt::widgets::AdRadioButtonGroup* m_arrowTypeButtonGroup = nullptr;
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_arrowShaftEditor;
+    IconNumericValuePreviewButton* m_arrowRatioEditor = nullptr;
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_startArrowheadEditor;
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_endArrowheadEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_textColorEditor;

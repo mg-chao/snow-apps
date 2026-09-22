@@ -338,7 +338,7 @@ ArrowRenderProjection focusConnectionProjection(const OverlayDisplayInfo& displa
 
 void drawArrowhead(QPainter& painter, const QVector<QPointF>& points, SnowArrowType arrowType,
                    bool atStart, SnowArrowhead head, SnowStrokeStyle style, double strokeWidth,
-                   double zoom, const QColor& stroke, const QColor& background) {
+                   double zoom, double arrowRatio, const QColor& stroke, const QColor& background) {
     if (head == SNOW_ARROWHEAD_NONE || points.size() < 2) {
         return;
     }
@@ -352,7 +352,8 @@ void drawArrowhead(QPainter& painter, const QVector<QPointF>& points, SnowArrowT
         return;
     }
 
-    const double size = arrowheadSize(head) * zoom;
+    const double ratio = std::isfinite(arrowRatio) ? std::clamp(arrowRatio, 1.0, 3.0) : 1.0;
+    const double size = arrowheadSize(head) * zoom * ratio;
     const double lengthMultiplier =
         (head == SNOW_ARROWHEAD_DIAMOND || head == SNOW_ARROWHEAD_DIAMOND_OUTLINE) ? 0.25 : 0.5;
     const double minSize = qMin(size, segmentLength * lengthMultiplier);
@@ -541,7 +542,7 @@ void drawArrowPath(QPainter& painter, const QVector<QPointF>& points,
                    std::uint32_t arrowheadPrimitiveCount, SnowArrowType arrowType,
                    SnowArrowhead startHead, SnowArrowhead endHead, SnowStrokeStyle style,
                    bool isFreeDraw, bool roundCaps, const QColor& stroke, double strokeWidth,
-                   double zoom, const QColor& background) {
+                   double zoom, double arrowRatio, const QColor& background) {
     if (points.size() < 2 || !stroke.isValid() || stroke.alpha() == 0 || strokeWidth <= 0.0) {
         return;
     }
@@ -565,17 +566,17 @@ void drawArrowPath(QPainter& painter, const QVector<QPointF>& points,
         drawArrowheadPrimitives(painter, projection, arrowheadPrimitives, arrowheadPrimitiveCount,
                                 style, stroke, strokeWidth);
     } else {
-        drawArrowhead(painter, points, arrowType, true, startHead, style, strokeWidth, zoom, stroke,
-                      background);
-        drawArrowhead(painter, points, arrowType, false, endHead, style, strokeWidth, zoom, stroke,
-                      background);
+        drawArrowhead(painter, points, arrowType, true, startHead, style, strokeWidth, zoom,
+                      arrowRatio, stroke, background);
+        drawArrowhead(painter, points, arrowType, false, endHead, style, strokeWidth, zoom,
+                      arrowRatio, stroke, background);
     }
     painter.restore();
 }
 
 void drawArrowDisplayItem(QPainter& painter, const ArrowRenderProjection& projection,
                           const SnowArrowPoint* points, std::uint32_t pointCount,
-                          SnowArrowType arrowType, SnowArrowShaftType shaftType,
+                          SnowArrowType arrowType, SnowArrowShaftType shaftType, double arrowRatio,
                           SnowArrowhead startHead, SnowArrowhead endHead,
                           SnowStrokeStyle strokeStyle, bool isFreeDraw, bool roundCaps,
                           const SnowColorRgba8& stroke, double strokeWidth,
@@ -638,7 +639,7 @@ void drawArrowDisplayItem(QPainter& painter, const ArrowRenderProjection& projec
     drawArrowPath(painter, viewPoints, pathOverride, projection, arrowheadPrimitives,
                   arrowheadPrimitiveCount, arrowType, startHead, endHead, strokeStyle, isFreeDraw,
                   roundCaps, toQColor(stroke), strokeWidth * projection.view.cameraZoom,
-                  projection.view.cameraZoom, projection.background);
+                  projection.view.cameraZoom, arrowRatio, projection.background);
 }
 
 void drawRectItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
@@ -857,10 +858,10 @@ void drawArrowItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
         } else if (viewPoints.size() >= 2) {
             drawArrowhead(painter, viewPoints, item.arrow_type, true, item.arrow_start_head,
                           item.arrow_stroke_style, viewStrokeWidth, projection.view.cameraZoom,
-                          toQColor(item.stroke), projection.background);
+                          item.arrow_ratio, toQColor(item.stroke), projection.background);
             drawArrowhead(painter, viewPoints, item.arrow_type, false, item.arrow_end_head,
                           item.arrow_stroke_style, viewStrokeWidth, projection.view.cameraZoom,
-                          toQColor(item.stroke), projection.background);
+                          item.arrow_ratio, toQColor(item.stroke), projection.background);
         }
     } else {
         QPainterPath rustPath = projectedArrowPath(projection, item);
@@ -875,11 +876,12 @@ void drawArrowItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
                                                     item.stroke_width * projection.view.cameraZoom);
         }
         drawArrowDisplayItem(painter, projection, item.arrow_points, item.arrow_point_count,
-                             item.arrow_type, item.arrow_shaft_type, item.arrow_start_head,
-                             item.arrow_end_head, item.arrow_stroke_style, item.is_free_draw != 0,
-                             item.blend_mode == SNOW_BLEND_MODE_MULTIPLY, item.stroke,
-                             item.stroke_width, rustPath.isEmpty() ? nullptr : &rustPath,
-                             item.arrowhead_primitives, item.arrowhead_primitive_count);
+                             item.arrow_type, item.arrow_shaft_type, item.arrow_ratio,
+                             item.arrow_start_head, item.arrow_end_head, item.arrow_stroke_style,
+                             item.is_free_draw != 0, item.blend_mode == SNOW_BLEND_MODE_MULTIPLY,
+                             item.stroke, item.stroke_width,
+                             rustPath.isEmpty() ? nullptr : &rustPath, item.arrowhead_primitives,
+                             item.arrowhead_primitive_count);
     }
     painter.restore();
 }
@@ -1219,10 +1221,11 @@ void drawFocusConnectionItem(QPainter& painter, const OverlayDisplayInfo& displa
     QPainterPath rustPath = arrowPathFromCommands(projection.view, item.arrow_path_commands,
                                                   item.arrow_path_command_count);
     drawArrowDisplayItem(painter, projection, item.arrow_points, item.arrow_point_count,
-                         item.arrow_type, item.arrow_shaft_type, item.arrow_start_head,
-                         item.arrow_end_head, item.arrow_stroke_style, false, false, item.stroke,
-                         item.stroke_width, rustPath.isEmpty() ? nullptr : &rustPath,
-                         item.arrowhead_primitives, item.arrowhead_primitive_count);
+                         item.arrow_type, item.arrow_shaft_type, item.arrow_ratio,
+                         item.arrow_start_head, item.arrow_end_head, item.arrow_stroke_style, false,
+                         false, item.stroke, item.stroke_width,
+                         rustPath.isEmpty() ? nullptr : &rustPath, item.arrowhead_primitives,
+                         item.arrowhead_primitive_count);
 }
 
 void drawPenFilterContourItem(QPainter& painter, const OverlayDisplayInfo& displayInfo,

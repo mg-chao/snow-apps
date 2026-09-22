@@ -87,6 +87,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ArrowRatio",
+      "name": "arrow-ratio",
+      "source": "../src/presentation/components/icons/resources/arrow-ratio.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowShaftPlain",
       "name": "arrow-shaft-plain",
       "source": "../src/presentation/components/icons/resources/arrow-shaft-plain.svg",

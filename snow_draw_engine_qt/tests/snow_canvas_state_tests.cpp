@@ -89,6 +89,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
     REQUIRE_SHAPE_CHANGE(startArrowhead, SnowCanvasArrowhead::Bar);
     REQUIRE_SHAPE_CHANGE(endArrowhead, SnowCanvasArrowhead::Arrow);
     REQUIRE_SHAPE_CHANGE(strokeStyle, SnowCanvasStrokeStyle::Dashed);
+    REQUIRE_SHAPE_CHANGE(arrowRatio, 2.0);
     REQUIRE_SHAPE_CHANGE(arrowType, SnowCanvasArrowType::Curve);
     REQUIRE_SHAPE_CHANGE(opacity, 0.5);
     REQUIRE_SHAPE_CHANGE(highlightShape, SnowCanvasHighlightShape::Ellipse);
@@ -124,6 +125,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
     REQUIRE_ARROW_CHANGE(startArrowhead, SnowCanvasArrowhead::Dot);
     REQUIRE_ARROW_CHANGE(endArrowhead, SnowCanvasArrowhead::Triangle);
     REQUIRE_ARROW_CHANGE(strokeStyle, SnowCanvasStrokeStyle::Dotted);
+    REQUIRE_ARROW_CHANGE(arrowRatio, 2.0);
     REQUIRE_ARROW_CHANGE(arrowType, SnowCanvasArrowType::Elbow);
 #undef REQUIRE_ARROW_CHANGE
 

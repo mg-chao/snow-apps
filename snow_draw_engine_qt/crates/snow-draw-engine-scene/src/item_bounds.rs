@@ -511,6 +511,7 @@ fn display_arrow_to_document_arrow(
         end_arrowhead,
         arrow_type,
         arrow_shaft_type: Default::default(),
+        arrow_ratio: 1.0,
         fixed_segments: None,
         start_is_special: None,
         end_is_special: None,

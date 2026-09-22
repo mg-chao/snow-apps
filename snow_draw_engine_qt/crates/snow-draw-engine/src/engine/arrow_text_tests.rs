@@ -507,3 +507,28 @@ fn alt_drag_arrow_with_label_matches_duplicate_operation_and_preview() {
         }
     }
 }
+
+#[test]
+fn arrow_ratio_legacy_style_defaults_are_compatible() {
+    let defaults = snow_draw_engine_editor::EditorStyleDefaults::default();
+    let mut arrow = serde_json::to_value(defaults.arrow).unwrap();
+    arrow.as_object_mut().unwrap().remove("arrow_ratio");
+    let restored: snow_draw_engine_editor::ArrowStyle =
+        serde_json::from_value(arrow.clone()).unwrap();
+    assert_eq!(restored.arrow_ratio, 1.0);
+    arrow["arrow_ratio"] = serde_json::json!(9.0);
+    assert_eq!(
+        serde_json::from_value::<snow_draw_engine_editor::ArrowStyle>(arrow)
+            .unwrap()
+            .arrow_ratio,
+        3.0
+    );
+    let mut shape = serde_json::to_value(defaults.line).unwrap();
+    shape.as_object_mut().unwrap().remove("arrow_ratio");
+    assert_eq!(
+        serde_json::from_value::<snow_draw_engine_editor::ShapeStyle>(shape)
+            .unwrap()
+            .arrow_ratio,
+        1.0
+    );
+}

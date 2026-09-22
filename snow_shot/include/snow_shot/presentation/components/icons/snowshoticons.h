@@ -29,6 +29,7 @@ AlignCenterHorizontal(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef AlignRight(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef AlignTop(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Angle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef ArrowRatio(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowShaftPlain(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowShaftTapered(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowTypeCurved(const adqt::icons::IconColors& colors = {});

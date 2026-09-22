@@ -60,6 +60,10 @@
             <translation>Arrow</translation>
         </message>
         <message>
+            <source>Arrow ratio (scroll to adjust)</source>
+            <translation>Arrow ratio (scroll to adjust)</translation>
+        </message>
+        <message>
             <source>Arrow shaft type</source>
             <translation>Arrow shaft type</translation>
         </message>

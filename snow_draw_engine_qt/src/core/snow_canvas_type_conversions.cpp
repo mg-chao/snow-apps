@@ -433,6 +433,7 @@ SnowCanvasShapeStyle toCanvasShapeStyle(const SnowShapeStyle& style) {
         toCanvasStrokeStyle(style.stroke_style),
         toCanvasArrowType(style.arrow_type),
         static_cast<SnowCanvasArrowShaftType>(style.arrow_shaft_type),
+        style.arrow_ratio,
         style.opacity,
         style.highlight_shape == SNOW_HIGHLIGHT_SHAPE_ELLIPSE ? SnowCanvasHighlightShape::Ellipse
                                                               : SnowCanvasHighlightShape::Rectangle,
@@ -454,6 +455,8 @@ SnowShapeStyle toEngineShapeStyle(const SnowCanvasShapeStyle& style) {
     engineStyle.stroke_style = toEngineStrokeStyle(style.strokeStyle);
     engineStyle.arrow_type = toEngineArrowType(style.arrowType);
     engineStyle.arrow_shaft_type = static_cast<SnowArrowShaftType>(style.arrowShaftType);
+    engineStyle.arrow_ratio =
+        std::isfinite(style.arrowRatio) ? std::clamp(style.arrowRatio, 1.0, 3.0) : 1.0;
     engineStyle.opacity = style.opacity;
     engineStyle.highlight_shape = style.highlightShape == SnowCanvasHighlightShape::Ellipse
                                       ? SNOW_HIGHLIGHT_SHAPE_ELLIPSE

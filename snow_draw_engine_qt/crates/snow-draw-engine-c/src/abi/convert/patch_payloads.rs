@@ -263,6 +263,7 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.fill_style = snow_fill_style_from_rust(item.fill_style);
             out.arrow_type = snow_arrow_type_from_rust(item.arrow_type);
             out.arrow_shaft_type = super::snow_arrow_shaft_type_from_rust(item.arrow_shaft_type);
+            out.arrow_ratio = item.arrow_ratio;
             out.is_free_draw = u8::from(item.is_free_draw);
             out.arrow_start_head = snow_arrowhead_from_rust(item.start_arrowhead);
             out.arrow_end_head = snow_arrowhead_from_rust(item.end_arrowhead);
@@ -414,6 +415,7 @@ pub(crate) fn snow_overlay_display_item_from_rust(
             out.stroke_width = item.stroke_width;
             out.arrow_type = snow_arrow_type_from_rust(item.arrow_type);
             out.arrow_shaft_type = super::snow_arrow_shaft_type_from_rust(item.arrow_shaft_type);
+            out.arrow_ratio = item.arrow_ratio;
             out.arrow_start_head = snow_arrowhead_from_rust(item.start_arrowhead);
             out.arrow_end_head = snow_arrowhead_from_rust(item.end_arrowhead);
             out.arrow_stroke_style = snow_stroke_style_from_rust(item.stroke_style);
