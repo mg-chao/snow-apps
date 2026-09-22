@@ -185,9 +185,10 @@ pub(crate) fn overlay_display_item_bounds(
             item.rotation,
             item.stroke_width,
         ),
-        OverlayDisplayItem::FocusConnection(item)
-            if item.arrow_shaft_type == snow_draw_engine_core::arrow::ArrowShaftType::Tapered =>
-        {
+        OverlayDisplayItem::FocusConnection(item) => {
+            // Hover strokes are screen-sized, but arrowheads retain the document's
+            // geometry. Bound the published primitives used by the renderer;
+            // rebuilding an arrow from the thin hover stroke shrinks its heads.
             let geometry = snow_draw_engine_core::PathGeometry::from_commands(
                 0,
                 item.path_commands.clone(),
@@ -200,18 +201,6 @@ pub(crate) fn overlay_display_item_bounds(
                 &item.arrowhead_primitives,
             )
         }
-        OverlayDisplayItem::FocusConnection(item) => draw_arrow_bounds(
-            frame_view,
-            display_arrow_to_document_arrow(
-                &item.points,
-                item.arrow_type,
-                item.start_arrowhead,
-                item.end_arrowhead,
-                item.stroke,
-                item.stroke_width,
-                item.stroke_style,
-            ),
-        ),
         OverlayDisplayItem::PenFilterContour(item) => draw_arrow_bounds(
             frame_view,
             display_arrow_to_document_arrow(
@@ -561,6 +550,80 @@ mod tests {
                 zoom: 1.0,
             },
             clear_color: ColorRgba8::default(),
+        }
+    }
+
+    #[test]
+    fn hovered_arrow_bounds_cover_original_arrowheads_at_every_zoom() {
+        use crate::item_conversions::hover_arrow_item;
+
+        for head in [
+            Arrowhead::Dot,
+            Arrowhead::Circle,
+            Arrowhead::CircleOutline,
+            Arrowhead::Arrow,
+            Arrowhead::Bar,
+            Arrowhead::Triangle,
+            Arrowhead::TriangleOutline,
+            Arrowhead::Diamond,
+            Arrowhead::DiamondOutline,
+            Arrowhead::CrowfootOne,
+            Arrowhead::CrowfootMany,
+            Arrowhead::CrowfootOneOrMany,
+            Arrowhead::Square,
+            Arrowhead::InvertedTriangle,
+            Arrowhead::IndentedTriangle,
+        ] {
+            for arrow_type in [ArrowType::Straight, ArrowType::Curve, ArrowType::Elbow] {
+                for zoom in [0.5, 1.0, 2.0, 4.0] {
+                    let arrow = ArrowData::from_global_points(
+                        &[Point::new(-100.0, 60.0), Point::new(100.0, -60.0)],
+                        ColorRgba8::default(),
+                        8.0,
+                        StrokeStyle::Solid,
+                        arrow_type,
+                        Some(head),
+                        Some(head),
+                    )
+                    .unwrap();
+                    let hover = hover_arrow_item(&arrow, zoom);
+                    let mut view = frame_view();
+                    view.camera.zoom = zoom;
+                    let bounds = overlay_display_item_bounds(
+                        &OverlayDisplayItem::FocusConnection(hover.clone()),
+                        view,
+                    )
+                    .unwrap();
+                    let half_stroke = hover.stroke_width * 0.5;
+                    for primitive in &hover.arrowhead_primitives {
+                        let mut points = primitive.points.clone();
+                        if primitive.diameter > 0.0 {
+                            let radius = primitive.diameter * 0.5;
+                            points
+                                .push([primitive.center[0] - radius, primitive.center[1] - radius]);
+                            points
+                                .push([primitive.center[0] + radius, primitive.center[1] + radius]);
+                        }
+                        for point in points {
+                            let min = canvas_point_to_surface(
+                                view,
+                                Point::new(point[0] - half_stroke, point[1] - half_stroke),
+                            );
+                            let max = canvas_point_to_surface(
+                                view,
+                                Point::new(point[0] + half_stroke, point[1] + half_stroke),
+                            );
+                            assert!(
+                                bounds.min_x <= min.x + 1e-9
+                                    && bounds.min_y <= min.y + 1e-9
+                                    && bounds.max_x >= max.x - 1e-9
+                                    && bounds.max_y >= max.y - 1e-9,
+                                "{head:?} {arrow_type:?} at zoom {zoom}: {bounds:?} clips {point:?}"
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 
