@@ -23,7 +23,8 @@ done
 [[ "$parallelism" =~ ^[1-9][0-9]*$ ]] || snow_die '--parallel needs a positive integer'
 snow_setup_tools
 if [[ "$skip_build" == 0 ]]; then
-    "$snow_repo_root/scripts/build.sh" "$snow_preset" --target snow_shot --parallel "$parallelism"
+    "$snow_repo_root/scripts/build.sh" "$snow_preset" --clean \
+        --target snow_shot --parallel "$parallelism"
 fi
 cache="$snow_build_dir/CMakeCache.txt"
 [[ -f "$cache" ]] || snow_die "CMake cache was not found: $cache"

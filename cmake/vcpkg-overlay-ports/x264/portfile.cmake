@@ -96,6 +96,11 @@ if(VCPKG_TARGET_IS_UWP)
     list(APPEND OPTIONS --extra-cflags=-D_WIN32_WINNT=0x0A00)
 endif()
 
+if(VCPKG_TARGET_IS_OSX AND VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+    list(APPEND OPTIONS
+        "--extra-asflags=-mmacosx-version-min=${VCPKG_OSX_DEPLOYMENT_TARGET}")
+endif()
+
 if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
     foreach(_snow_env_var IN ITEMS INCLUDE LIB LIBPATH)
         if(DEFINED ENV{${_snow_env_var}})

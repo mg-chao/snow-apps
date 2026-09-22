@@ -203,11 +203,24 @@ if name == 'openssl':
         self.assertIn('x86_64-apple-darwin', rustup)
 
     def test_package_builds_before_cpack(self):
+        stale = self.root / 'build/snow-shot-macos-arm64-release/stale-bundle-file'
+        stale.parent.mkdir(parents=True)
+        stale.touch()
         calls = self.run_script("package-snow-shot.sh")
         build = next(i for i, c in enumerate(calls) if '--build' in c)
         pack = next(i for i, c in enumerate(calls) if c[0] == 'cpack')
         self.assertLess(build, pack)
         self.assertEqual(calls[pack], ['cpack', '--preset', 'package-snow-shot-macos-arm64-release'])
+        self.assertFalse(stale.exists())
+
+    def test_arm_assembler_objects_keep_the_macos_deployment_target(self):
+        x264 = (ROOT / 'cmake/vcpkg-overlay-ports/x264/portfile.cmake').read_text()
+        x265 = (ROOT / 'cmake/vcpkg-overlay-ports/x265/portfile.cmake').read_text()
+        x265_patch = (ROOT / 'cmake/vcpkg-overlay-ports/x265/'
+                      'macos-arm64-deployment-target.patch').read_text()
+        self.assertIn('--extra-asflags=-mmacosx-version-min=', x264)
+        self.assertIn('macos-arm64-deployment-target.patch', x265)
+        self.assertIn('-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}', x265_patch)
 
     def test_package_rejects_nonrelease(self):
         calls = self.run_script("package-snow-shot.sh", "snow-shot-macos-arm64-debug", success=False)

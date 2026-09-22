@@ -1,0 +1,12 @@
+diff --git a/source/CMakeLists.txt b/source/CMakeLists.txt
+index 129758d..8dfdb2d 100755
+--- a/source/CMakeLists.txt
++++ b/source/CMakeLists.txt
+@@ -401,4 +401,7 @@ if(GCC)
+         set(ARM_ARGS -O3)
++        if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET)
++            list(APPEND ARM_ARGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
++        endif()
+         # Do not allow implicit vector type conversions in Clang builds (this
+         # is already the default in GCC builds).
+         check_cxx_compiler_flag(-flax-vector-conversions=none CC_HAS_FLAX_VEC_CONV_NONE)
