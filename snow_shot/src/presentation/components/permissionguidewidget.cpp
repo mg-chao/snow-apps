@@ -25,6 +25,30 @@ bool validBundle(const QUrl& url) {
            info.suffix().compare(QStringLiteral("app"), Qt::CaseInsensitive) == 0 &&
            QFileInfo(info.filePath() + QStringLiteral("/Contents/Info.plist")).isFile();
 }
+// Keep the guide visible until QPushButton has emitted clicked on mouse release.
+// Clicking this non-focusable window can deactivate System Settings without making
+// the guide key, so placement updates must wait for the complete interaction.
+class PermissionGuideButton final : public QPushButton {
+  public:
+    explicit PermissionGuideButton(PermissionGuideWidget& owner)
+        : QPushButton(&owner), m_owner(owner) {}
+
+  protected:
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton)
+            m_owner.setInteracting(true);
+        QPushButton::mousePressEvent(event);
+    }
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        QPointer<PermissionGuideWidget> guard(&m_owner);
+        QPushButton::mouseReleaseEvent(event);
+        if (guard && event->button() == Qt::LeftButton)
+            guard->setInteracting(false);
+    }
+
+  private:
+    PermissionGuideWidget& m_owner;
+};
 } // namespace
 class PermissionGuideDragRow final : public QAbstractButton {
   public:
@@ -119,7 +143,8 @@ PermissionGuideWidget::PermissionGuideWidget(PermissionGuideApplication applicat
     m_instruction->setObjectName(QStringLiteral("permissionGuideInstruction"));
     m_instruction->setWordWrap(true);
     m_instruction->setTextFormat(Qt::PlainText);
-    m_close = new QPushButton(QString::fromUtf8("×"), this);
+    m_close = new PermissionGuideButton(*this);
+    m_close->setText(QString::fromUtf8("×"));
     m_close->setObjectName(QStringLiteral("permissionGuideClose"));
     m_close->setFixedSize(24, 24);
     m_close->setCursor(Qt::PointingHandCursor);
@@ -129,7 +154,7 @@ PermissionGuideWidget::PermissionGuideWidget(PermissionGuideApplication applicat
     layout->addLayout(header);
     m_row = new PermissionGuideDragRow(*this, m_application);
     layout->addWidget(m_row);
-    m_request = new QPushButton(this);
+    m_request = new PermissionGuideButton(*this);
     m_request->setObjectName(QStringLiteral("permissionGuideRequest"));
     m_request->setCursor(Qt::PointingHandCursor);
     layout->addWidget(m_request, 0, Qt::AlignRight);

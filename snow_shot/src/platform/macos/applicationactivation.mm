@@ -1,4 +1,5 @@
 #include "snow_shot/platform/macos/applicationactivation.h"
+#include "snow_shot/platform/macos/loginitemservice.h"
 
 #import <AppKit/AppKit.h>
 
@@ -49,6 +50,8 @@
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)application
                     hasVisibleWindows:(BOOL)hasVisibleWindows {
+    if (snow_shot::platform::macos::isNativeLoginItemLaunch())
+        return YES;
     if ([m_forwardDelegate
             respondsToSelector:@selector(applicationShouldHandleReopen:hasVisibleWindows:)]) {
         [m_forwardDelegate applicationShouldHandleReopen:application

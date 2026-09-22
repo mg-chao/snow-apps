@@ -4,7 +4,7 @@ source "$(dirname "$0")/snow-build-environment.sh"
 if [[ "${1:-}" == --help ]]; then
     echo 'Usage: run-snow-shot.sh [macOS-preset] [--clean] [--no-build] [--codesign-identity IDENTITY] [-- APP_ARGUMENTS...]'
     echo '--no-build launches the existing deployed app without reinstalling or signing it.'
-    echo '--codesign-identity selects and caches a persistent signing identity for future rebuilds.'
+    echo '--codesign-identity overrides the automatically provisioned local signing identity.'
     exit 0
 fi
 snow_require_macos
@@ -80,9 +80,10 @@ fi
 stop_running_build_instances
 build_args=("$snow_preset" --target snow_shot)
 if [[ "$clean" == true ]]; then build_args+=(--clean); fi
-if [[ "$codesign_identity_set" == true ]]; then
-    build_args+=(-- "-DSNOW_MACOS_CODESIGN_IDENTITY=$codesign_identity")
+if [[ "$codesign_identity_set" == false ]]; then
+    codesign_identity="$("$(dirname "$0")/ensure-macos-codesign-identity.sh")"
 fi
+build_args+=(-- "-DSNOW_MACOS_CODESIGN_IDENTITY=$codesign_identity")
 "$(dirname "$0")/build.sh" "${build_args[@]}"
 app="$snow_build_dir/snow_shot/snow_shot.app"
 [[ -x "$app/Contents/MacOS/snow_shot" ]] || snow_die "Snow Shot was not found for $snow_preset. Run without --no-build to create it."

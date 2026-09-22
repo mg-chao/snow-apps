@@ -39,6 +39,7 @@
 #include "snow_capture.h"
 #include "snow_recording.h"
 #ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/loginitemservice.h"
 #include <QScopeGuard>
 #include <future>
 #include <thread>
@@ -350,6 +351,9 @@ int main(int argc, char* argv[]) {
     // into OS-level input interceptors.
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
 
+#ifdef Q_OS_MACOS
+    snow_shot::platform::macos::observeNativeLoginItemLaunch();
+#endif
     QApplication app(argc, argv);
     adqt::widgets::initializePlatformCompatibility(app);
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
@@ -365,9 +369,14 @@ int main(int argc, char* argv[]) {
     snow_shot::presentation::capture_perf::configureTrace(
         qEnvironmentVariable("SNOW_SHOT_CAPTURE_PERF_TRACE"));
 #endif
+    auto launchArguments = QApplication::arguments();
+#ifdef Q_OS_MACOS
+    launchArguments = snow_shot::platform::macos::loginItemLaunchArguments(
+        launchArguments, snow_shot::platform::macos::initialNativeLoginItemLaunch());
+#endif
     snow_shot::app::SingleInstanceCoordinator singleInstance;
     const snow_shot::app::SingleInstanceResult instanceResult =
-        singleInstance.acquireOrForward(QApplication::arguments());
+        singleInstance.acquireOrForward(launchArguments);
     if (instanceResult.outcome == snow_shot::app::SingleInstanceOutcome::Forwarded) {
         return 0;
     }
@@ -400,11 +409,19 @@ int main(int argc, char* argv[]) {
     adqt::locale::LocaleManager::instance().applyTo(app);
     snow_shot::presentation::LanguageManager::instance().initialize();
     const auto startupSettings = snow_shot::storage::SystemSettings();
+#ifdef Q_OS_MACOS
+    const auto startupResult =
+        snow_shot::platform::macos::loginItemAutomaticRegistrationAllowed(launchArguments)
+            ? snow_shot::platform::macos::loginItemService().initialize(
+                  startupSettings.autoStartAtBoot())
+            : snow_shot::platform::macos::LoginItemResult{};
+#else
     const auto startupResult = snow_shot::platform::windows::reconcileStartupMode(
         !startupSettings.autoStartAtBoot() ? snow_shot::platform::windows::StartupMode::Off
         : startupSettings.launchAsAdministrator()
             ? snow_shot::platform::windows::StartupMode::ElevatedTask
             : snow_shot::platform::windows::StartupMode::Registry);
+#endif
 
     snow_shot::presentation::styles::ThemeManager::instance().initialize(app);
     adqt::widgets::AdTooltip::installApplicationTooltips();
@@ -427,7 +444,7 @@ int main(int argc, char* argv[]) {
         applicationController.showMainWindow();
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.ready"));
-    if (!QApplication::arguments().contains(QStringLiteral("--autostart")) &&
+    if (!launchArguments.contains(QStringLiteral("--autostart")) &&
         QApplication::arguments().contains(QStringLiteral("--show-main-window"))) {
         applicationController.showMainWindow();
     }

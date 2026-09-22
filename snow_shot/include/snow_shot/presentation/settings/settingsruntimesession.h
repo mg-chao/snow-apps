@@ -141,6 +141,7 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);
     [[nodiscard]] storage::StorageStatus storageStatus() const;
+    void refreshPlatformSettings();
     void refreshStorageStatus();
     void refreshStorageStatusIfStale();
 

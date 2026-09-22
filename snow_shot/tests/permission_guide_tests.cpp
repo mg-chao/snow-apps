@@ -212,6 +212,63 @@ void lifecycle(const PermissionGuideApplication& app) {
     controller.updatePlacement();
     require(fake->queries == queries, "dismissed guide performs no environment queries");
 }
+void buttonInteractions(const PermissionGuideApplication& app) {
+    for (const bool close : {false, true}) {
+        auto backend = std::make_unique<FakePermissions>();
+        auto* native = backend.get();
+        native->value.statuses[3] = S::NotDetermined;
+        AppPermissionService service(std::move(backend));
+        service.refresh();
+        flush();
+        auto platform = std::make_unique<FakePlatform>();
+        auto* fake = platform.get();
+        fake->app = app;
+        PermissionGuideController controller(service, std::move(platform));
+        service.openSettings(P::Microphone);
+        auto* widget = controller.widget();
+        flush();
+        auto* button =
+            widget->findChild<QPushButton*>(close ? QStringLiteral("permissionGuideClose")
+                                                  : QStringLiteral("permissionGuideRequest"));
+        const QPoint center = button->rect().center();
+        const auto send = [&](QEvent::Type type, Qt::MouseButtons buttons) {
+            QMouseEvent event(type, QPointF(center), QPointF(button->mapToGlobal(center)),
+                              Qt::LeftButton, buttons, Qt::NoModifier);
+            QApplication::sendEvent(button, &event);
+        };
+        send(QEvent::MouseButtonPress, Qt::LeftButton);
+        const QPointF outside(-10, -10);
+        QMouseEvent cancel(QEvent::MouseButtonRelease, outside,
+                           QPointF(button->mapToGlobal(outside.toPoint())), Qt::LeftButton,
+                           Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(button, &cancel);
+        require(!widget->interacting() && widget->isVisible() && native->requests == 0,
+                "release outside cancels the action and releases interaction state");
+        send(QEvent::MouseButtonPress, Qt::LeftButton);
+        require(button->isDown(), "single press reaches guide button");
+        // The non-focusable guide cannot become key when clicking activates Snow Shot.
+        // A workspace notification or placement timer can run before mouse release.
+        fake->state.settingsActive = false;
+        fake->state.guideActive = false;
+        fake->changed();
+        flush();
+        controller.updatePlacement();
+        require(widget->isVisible() && button->isDown(),
+                "focus change must not hide a guide button before release");
+        send(QEvent::MouseButtonRelease, Qt::NoButton);
+        require(!widget->interacting(), "button release ends interaction");
+        if (close) {
+            require(!widget->isVisible() && !fake->observing,
+                    "single close click dismisses after interaction finishes");
+        } else {
+            require(native->requests == 1 && !button->isEnabled(),
+                    "single request click survives focus change and starts one request");
+            require(!widget->isVisible(), "placement resumes after button release");
+            native->completion();
+            flush();
+        }
+    }
+}
 void payloadAndCopy(const PermissionGuideApplication& app) {
     PermissionGuideWidget widget(app);
     std::unique_ptr<QMimeData> mime(widget.createDragMimeData());
@@ -353,6 +410,7 @@ int main(int argc, char** argv) {
     const auto application = bundle(directory.path());
     placement();
     lifecycle(application);
+    buttonInteractions(application);
     payloadAndCopy(application);
     destruction(application);
     translationsAndAppearance(application);

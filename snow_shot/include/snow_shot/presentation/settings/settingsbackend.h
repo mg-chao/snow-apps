@@ -7,6 +7,8 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
+#include "snow_shot/platform/macos/loginitemservice.h"
+
 #include <QObject>
 #include <QVariant>
 #include <QVector>
@@ -154,6 +156,7 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding,
                                              const QString& filePath = {}) = 0;
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
+    virtual void refreshPlatformSettings() {}
     virtual void refreshStorageStatus() {}
     // Show-event path; backends may throttle repeated refreshes.  Defaults to
     // the unthrottled refresh so simple backends only need that override.
@@ -186,7 +189,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     explicit BuiltInSettingsBackend(
         ::snow_shot::presentation::GlobalShortcutManager& shortcutManager,
         QObject* parent = nullptr, GlobalMouseManager* mouseManager = nullptr,
-        AppPermissionService* permissions = nullptr);
+        AppPermissionService* permissions = nullptr,
+        platform::macos::LoginItemService* loginItems = nullptr);
     AppPermissionService* appPermissions() const override {
         return m_permissions;
     }
@@ -258,6 +262,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] CustomAiModels customAiModels() const override;
     bool applyCustomAiModels(const CustomAiModels& models) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
+    void refreshPlatformSettings() override;
     void refreshStorageStatus() override;
     void refreshStorageStatusIfStale() override;
     [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
@@ -266,6 +271,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
     AppPermissionService* m_permissions = nullptr;
     GlobalMouseManager* m_mouseManager = nullptr;
+    platform::macos::LoginItemService* m_loginItems = nullptr;
     bool m_copyLogBusy = false;
     bool m_configurationBusy = false;
 };

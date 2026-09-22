@@ -247,7 +247,7 @@ bool writeDownloadedModelFixture(const QString& destination, QString* error) {
 
 // Builds the runtime archive in memory so the fixture itself never depends on
 // path encoding choices made by the production archive reader.
-QByteArray buildRuntimeArchiveBytes() {
+[[maybe_unused]] QByteArray buildRuntimeArchiveBytes() {
     const QList<QPair<QString, QByteArray>> entries{
         {QStringLiteral("snow-ocr-process-1.0.7-windows-x64.exe"), QByteArray("process")},
         {QStringLiteral("DirectML.dll"), QByteArray("directml")},

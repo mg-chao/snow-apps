@@ -253,8 +253,14 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
     Descriptor result;
     result.runtimeVersion = runtime.value(QStringLiteral("version")).toString();
     result.platform = runtime.value(QStringLiteral("platform")).toString();
+    const bool staticRuntime = runtime.value(QStringLiteral("static")).toBool();
 #if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM_64)
     result.bundled = true;
+#endif
+#if defined(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
+    constexpr bool expectedStaticRuntime = true;
+#else
+    constexpr bool expectedStaticRuntime = false;
 #endif
     result.executable =
         result.bundled
@@ -275,7 +281,7 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
         if (runtime.value(QStringLiteral("delivery")).toString() != QStringLiteral("bundled") ||
             runtime.value(QStringLiteral("protocol")).toInt() != 3 ||
             runtime.value(QStringLiteral("executable")).toString() != result.executable ||
-            runtime.contains(QStringLiteral("archive"))) {
+            staticRuntime != expectedStaticRuntime || runtime.contains(QStringLiteral("archive"))) {
             if (error != nullptr)
                 *error = QStringLiteral("incompatible bundled OCR runtime");
             return std::nullopt;
@@ -305,7 +311,7 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
     };
     if (!parseFiles(runtime.value(QStringLiteral("files")).toArray(), false,
                     &result.runtimeFiles) ||
-        result.runtimeFiles.size() != (result.bundled ? 2 : 3)) {
+        result.runtimeFiles.size() != (result.bundled ? (staticRuntime ? 1 : 2) : 3)) {
         if (error != nullptr && error->isEmpty())
             *error = QStringLiteral("incomplete OCR asset manifest");
         return std::nullopt;
@@ -316,7 +322,9 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
     };
     if (!contains(result.runtimeFiles, result.executable) ||
         (result.bundled
-             ? !contains(result.runtimeFiles, QStringLiteral("libonnxruntime.dylib"))
+             ? (staticRuntime
+                    ? contains(result.runtimeFiles, QStringLiteral("libonnxruntime.dylib"))
+                    : !contains(result.runtimeFiles, QStringLiteral("libonnxruntime.dylib")))
              : (!contains(result.runtimeFiles, QStringLiteral("DirectML.dll")) ||
                 !contains(result.runtimeFiles, QStringLiteral("runtime-manifest.json"))))) {
         if (error != nullptr)

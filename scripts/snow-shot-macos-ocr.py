@@ -224,9 +224,10 @@ def stage_models(manifest, cache, destination, all_models=False):
                     dict(schema=1, component=model['id']))
 
 
-def runtime_manifest(source, runtime):
+def runtime_manifest(source, runtime, static_runtime=False):
     version = source['runtime']['version']
-    for name in RUNTIME_FILES:
+    runtime_files = RUNTIME_FILES[:1] if static_runtime else RUNTIME_FILES
+    for name in runtime_files:
         path = runtime / name
         with path.open('rb') as binary:
             header = binary.read(32)
@@ -239,18 +240,19 @@ def runtime_manifest(source, runtime):
         raise ValueError('The OCR worker version/protocol does not match the application')
     return dict(schema=3, default_model='small', runtime=dict(
         version=version, platform='macos-arm64', delivery='bundled', protocol=3,
-        executable=RUNTIME_FILES[0], files=[descriptor(runtime / n) for n in RUNTIME_FILES]),
+        executable=RUNTIME_FILES[0], static=static_runtime,
+        files=[descriptor(runtime / n) for n in runtime_files]),
         models=source['models'])
 
 
-def finalize(source, runtime):
-    manifest = runtime_manifest(source, runtime)
+def finalize(source, runtime, static_runtime=False):
+    manifest = runtime_manifest(source, runtime, static_runtime)
     atomic_json(runtime / 'assets/ocr/asset-manifest.json', manifest)
 
 
-def verify_assets(source, runtime):
+def verify_assets(source, runtime, static_runtime=False):
     actual = json.loads((runtime / 'assets/ocr/asset-manifest.json').read_text())
-    if actual != runtime_manifest(source, runtime):
+    if actual != runtime_manifest(source, runtime, static_runtime):
         raise ValueError('Bundled OCR manifest does not match finalized runtime bytes')
     small = next(m for m in source['models'] if m['type'] == 'small')
     directory = runtime / 'assets/ocr/models' / small['id']
@@ -328,6 +330,8 @@ def main():
     parser.add_argument('--report', type=Path)
     parser.add_argument('--deployed', action='store_true',
                         help='Finalize after macdeployqt has moved dependencies into Frameworks')
+    parser.add_argument('--static-runtime', action='store_true',
+                        help='ONNX Runtime is linked into the worker instead of deployed as a dylib')
     args = parser.parse_args()
     if args.command == 'prepare-bundle':
         if args.app is None:
@@ -344,19 +348,22 @@ def main():
         parser.error('--runtime-dir is required')
     runtime = args.runtime_dir.resolve()
     if args.command == 'stage':
-        if args.worker is None or args.library is None:
-            parser.error('--worker and --library are required')
+        if args.worker is None or (args.library is None and not args.static_runtime):
+            parser.error('--worker is required; --library is also required for a dynamic runtime')
         copy_changed(args.worker, runtime / RUNTIME_FILES[0])
-        copy_changed(args.library, runtime / RUNTIME_FILES[1])
-        stage_native_dependencies(args.library, runtime)
+        if not args.static_runtime:
+            copy_changed(args.library, runtime / RUNTIME_FILES[1])
+            stage_native_dependencies(args.library, runtime)
+        else:
+            (runtime / RUNTIME_FILES[1]).unlink(missing_ok=True)
         stage_models(source, args.cache, runtime / 'assets/ocr/models')
-        finalize(source, runtime)
+        finalize(source, runtime, args.static_runtime)
     elif args.command == 'finalize':
         if args.deployed:
             remove_development_libraries(runtime)
-        finalize(source, runtime)
+        finalize(source, runtime, args.static_runtime)
     else:
-        manifest = verify_assets(source, runtime)
+        manifest = verify_assets(source, runtime, args.static_runtime)
         binaries = verify_bundle(args.app.resolve()) if args.app else []
         if args.report:
             atomic_json(args.report, dict(platform='macos-arm64', runtime=manifest['runtime'],

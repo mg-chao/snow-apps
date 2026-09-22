@@ -1459,6 +1459,10 @@ storage::StorageStatus SettingsRuntimeSession::storageStatus() const {
     return m_backend.storageStatus();
 }
 
+void SettingsRuntimeSession::refreshPlatformSettings() {
+    m_backend.refreshPlatformSettings();
+}
+
 void SettingsRuntimeSession::refreshStorageStatus() {
     m_backend.refreshStorageStatus();
 }

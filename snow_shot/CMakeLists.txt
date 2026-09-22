@@ -75,8 +75,6 @@ include(SnowTestCliGuard)
 include(SnowQtOffscreenTest)
 
 set(_snow_shot_static_qt_plugins
-    Qt6::QWindowsIntegrationPlugin
-    Qt6::QSchannelBackendPlugin
     # The full-color application icon embeds SVG images. QtSvg renders the
     # outer document, but QImageReader needs this plugin for those images.
     Qt6::QSvgPlugin
@@ -86,6 +84,16 @@ set(_snow_shot_static_qt_plugins
     # startup probe blocks forever on the missing-plugin dialog.
     Qt6::QOffscreenIntegrationPlugin
 )
+if(WIN32)
+    list(APPEND _snow_shot_static_qt_plugins
+        Qt6::QWindowsIntegrationPlugin
+        Qt6::QSchannelBackendPlugin)
+elseif(APPLE)
+    list(APPEND _snow_shot_static_qt_plugins
+        Qt6::QCocoaIntegrationPlugin
+        Qt6::QMacStylePlugin
+        Qt6::QSecureTransportBackendPlugin)
+endif()
 
 if(SNOW_SHOT_QT_STATIC)
     if(NOT QT_FEATURE_static)
@@ -111,7 +119,7 @@ if(SNOW_SHOT_QT_STATIC)
             message(FATAL_ERROR
                 "The production static build requires Qt to use the same system "
                 "zlib and libpng packages as Snow Image. Rebuild Qt with "
-                "scripts/build-static-qt.ps1; bundled Qt codecs cannot be linked "
+                "the platform build-static-qt script; bundled Qt codecs cannot be linked "
                 "safely into the unified executable.")
         endif()
         unset(_snow_shot_qt_core_private_features)
@@ -354,13 +362,16 @@ if(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-process-onnxruntime-$<CONFIG>.rsp"
         CONTENT "${_snow_shot_onnxruntime_link_manifest}\n")
-    set(SNOW_SHOT_OCR_PROCESS_FEATURES static-onnx-runtime directml-provider)
+    set(SNOW_SHOT_OCR_PROCESS_FEATURES static-onnx-runtime)
+    if(WIN32)
+        list(APPEND SNOW_SHOT_OCR_PROCESS_FEATURES directml-provider)
+    endif()
     set(SNOW_SHOT_OCR_PROCESS_NO_DEFAULT_FEATURES NO_DEFAULT_FEATURES)
     set(SNOW_SHOT_OCR_PROCESS_ENVIRONMENT
         "SNOW_ONNXRUNTIME_LINK_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-process-onnxruntime-$<CONFIG>.rsp")
 endif()
 
-if(APPLE)
+if(APPLE AND NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
     set(SNOW_SHOT_OCR_PROCESS_NO_DEFAULT_FEATURES NO_DEFAULT_FEATURES)
     set(SNOW_SHOT_OCR_PROCESS_FEATURES dynamic-onnx-runtime)
 endif()
@@ -860,6 +871,22 @@ if(NOT _snow_shot_history_global_pool_call EQUAL -1)
 endif()
 unset(_snow_shot_history_source)
 unset(_snow_shot_history_global_pool_call)
+add_library(snow_shot_login_item STATIC
+    include/snow_shot/platform/macos/loginitemservice.h
+    src/platform/macos/loginitemservice.cpp)
+target_include_directories(snow_shot_login_item PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_login_item PUBLIC Qt6::Core)
+if(APPLE)
+    target_sources(snow_shot_login_item PRIVATE src/platform/macos/loginitembackend.mm)
+    target_link_libraries(snow_shot_login_item PRIVATE snow_shot_storage
+        "-framework AppKit" "-framework Carbon" "-framework Security" "-framework ServiceManagement")
+endif()
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-login-item-tests tests/login_item_tests.cpp)
+    target_link_libraries(snow-shot-login-item-tests PRIVATE snow_shot_login_item)
+    add_test(NAME snow-shot-login-item-tests COMMAND snow-shot-login-item-tests)
+    set_tests_properties(snow-shot-login-item-tests PROPERTIES LABELS unit)
+endif()
 add_library(snow_shot_administrator STATIC
     src/platform/windows/autostartregistration.cpp
     src/platform/windows/administratorlaunch.cpp)
@@ -894,7 +921,7 @@ add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES}
 if(APPLE)
     target_sources(snow_shot_settings PRIVATE src/platform/macos/permissionguideplatform.mm)
 endif()
-target_link_libraries(snow_shot_settings PUBLIC snow_shot_permissions)
+target_link_libraries(snow_shot_settings PUBLIC snow_shot_permissions snow_shot_login_item)
 qt_add_resources(snow_shot_settings "snow_shot_about_assets"
     PREFIX "/snow_shot/about"
     BASE "resources/about"
@@ -1287,6 +1314,9 @@ endif()
 target_compile_definitions(snow_shot PRIVATE
     SNOW_SHOT_API_BASE_URL=\"${SNOW_SHOT_API_BASE_URL}\"
 )
+if(APPLE AND SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
+    target_compile_definitions(snow_shot PRIVATE SNOW_SHOT_OCR_STATIC_ONNXRUNTIME=1)
+endif()
 if(WIN32)
     target_compile_definitions(snow_shot PRIVATE
         SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE=\"${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}\"
@@ -6941,7 +6971,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_compile_definitions(snow-shot-macos-shell-native-tests PRIVATE
         SNOW_SHOT_MACOS_INFO_PLIST="${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in")
     target_link_libraries(snow-shot-macos-shell-native-tests PRIVATE
-        Qt6::Widgets "-framework AppKit")
+        snow_shot_login_item Qt6::Widgets "-framework AppKit")
     add_test(NAME snow-shot-macos-shell-native-tests
         COMMAND snow-shot-macos-shell-native-tests -platform cocoa)
     set_tests_properties(snow-shot-macos-shell-native-tests PROPERTIES
@@ -7164,3 +7194,20 @@ foreach(_cursor_host IN ITEMS snow_shot snow-shot-physical-cursor-tests
         target_link_libraries(${_cursor_host} PRIVATE Qt6::GuiPrivate)
     endif()
 endforeach()
+
+if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-login-item-settings-tests tests/login_item_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-login-item-settings-tests PRIVATE snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-login-item-settings-tests)
+    snow_shot_add_translations(snow-shot-login-item-settings-tests)
+    add_test(NAME snow-shot-login-item-settings-tests COMMAND snow-shot-login-item-settings-tests)
+    set_tests_properties(snow-shot-login-item-settings-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;macos")
+endif()
+if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-login-item-native-tests tests/login_item_native_tests.mm)
+    target_link_libraries(snow-shot-login-item-native-tests PRIVATE snow_shot_login_item)
+    add_test(NAME snow-shot-login-item-native-tests COMMAND snow-shot-login-item-native-tests)
+    set_tests_properties(snow-shot-login-item-native-tests PROPERTIES LABELS "unit;macos")
+endif()

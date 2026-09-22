@@ -56,6 +56,7 @@ class MacOSOcrAssets(unittest.TestCase):
         self.assertEqual(result['schema'], 3)
         self.assertEqual(result['models'], self.source['models'])
         self.assertEqual(result['runtime']['delivery'], 'bundled')
+        self.assertFalse(result['runtime']['static'])
         self.assertNotIn('archive', result['runtime'])
         with (self.runtime / 'snow-ocr-process').open('ab') as binary:
             binary.write(b'new signature')
@@ -63,6 +64,16 @@ class MacOSOcrAssets(unittest.TestCase):
             ocr.verify_assets(self.source, self.runtime)
         ocr.finalize(self.source, self.runtime)
         ocr.verify_assets(self.source, self.runtime)
+
+    def test_static_runtime_manifest_contains_only_the_linked_worker(self):
+        (self.runtime / 'libonnxruntime.dylib').unlink()
+        ocr.finalize(self.source, self.runtime, static_runtime=True)
+        result = ocr.verify_assets(self.source, self.runtime, static_runtime=True)
+        self.assertTrue(result['runtime']['static'])
+        self.assertEqual([item['name'] for item in result['runtime']['files']],
+                         ['snow-ocr-process'])
+        with self.assertRaises((OSError, ValueError)):
+            ocr.verify_assets(self.source, self.runtime)
 
     def test_missing_model_or_marker_prevents_release(self):
         ocr.finalize(self.source, self.runtime)

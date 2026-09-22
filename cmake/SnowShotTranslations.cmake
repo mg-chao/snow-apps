@@ -59,6 +59,7 @@ function(snow_shot_add_translations target)
     )
     qt_add_lupdate(
         SOURCE_TARGETS
+            snow_shot_login_item
             snow_shot_administrator
             snow_shot
             snow_shot_storage
@@ -70,6 +71,8 @@ function(snow_shot_add_translations target)
             snow_shot_translation
             snow_shot_diagnostics
             snow_shot_updates
+        # Preserve macOS-only messages when extracting on Windows as well.
+        SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/loginitembackend.mm"
         TS_FILES ${_snow_shot_update_ts}
         LUPDATE_TARGET snow_shot_update_translations
         OPTIONS -no-obsolete -locations none

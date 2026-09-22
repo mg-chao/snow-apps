@@ -22,7 +22,7 @@ cmake --build build/snow-shot-macos-arm64-debug --parallel 8 --target \
 ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
   -R '^snow-shot-(app-permissions|screen-recording-(controller|area-window|geometry|shortcut)|screenshot-recording-workflow|recording-effects-preview|recording-capture-exclusion|macos-recording-capture-exclusion)-tests$'
 
-export FFMPEG_DIR="$PWD/.tools/macos/installed/arm64-osx-snow-shot"
+export FFMPEG_DIR="$PWD/.tools/macos/installed/dynamic/arm64-osx-snow-shot"
 export DYLD_LIBRARY_PATH="$FFMPEG_DIR/lib"
 cargo test --manifest-path snow-crates/Cargo.toml \
   -p snow-recording-c -p snow-recording-runtime -p snow-recording-effects --lib

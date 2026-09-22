@@ -1311,6 +1311,7 @@ SettingsItemDefinition fullscreenHotkeySuppressionItem() {
         SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition launchAsAdministratorItem() {
     return switchItem(
         QStringLiteral("system.launch-as-administrator"),
@@ -1333,13 +1334,34 @@ SettingsItemDefinition restartAsAdministratorItem() {
             {},
             payload};
 }
+#endif
+#ifdef Q_OS_MACOS
+SettingsItemDefinition loginItemSettingsItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::OpenLoginItemSettings;
+    payload.iconFactory = [] { return outlined_icons::Setting(); };
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Open"));
+    return {QStringLiteral("system.login-item-settings"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Open Login Items Settings")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog", "Manage Snow Shot's login permission in macOS System Settings")),
+            {},
+            {},
+            payload};
+}
+#endif
 SettingsItemDefinition autoStartItem() {
-    return switchItem(QStringLiteral("system.auto-start-at-boot"),
-                      QT_TRANSLATE_NOOP("SettingsCatalog", "Auto start at boot"),
-                      QT_TRANSLATE_NOOP("SettingsCatalog",
-                                        "Start Snow Shot in the background when Windows starts"),
-                      QStringLiteral("system/auto_start_at_boot"),
-                      SettingsSwitchBinding::AutoStartAtBoot);
+    return switchItem(
+        QStringLiteral("system.auto-start-at-boot"),
+#ifdef Q_OS_MACOS
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Launch at login"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Start Snow Shot in the background when you log in."),
+#else
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Auto start at boot"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Start Snow Shot in the background when Windows starts"),
+#endif
+        QStringLiteral("system/auto_start_at_boot"), SettingsSwitchBinding::AutoStartAtBoot);
 }
 
 SettingsItemDefinition localShortcutItem(SettingsLocalShortcutScope scope,
@@ -2301,7 +2323,12 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "General system integration settings")),
                     SettingsSectionReset::SystemGeneral,
-                    {autoStartItem(), launchAsAdministratorItem(), restartAsAdministratorItem(),
+                    {autoStartItem(),
+#ifdef Q_OS_MACOS
+                     loginItemSettingsItem(),
+#else
+                     launchAsAdministratorItem(), restartAsAdministratorItem(),
+#endif
                      updateModeItem()},
                 },
                 {

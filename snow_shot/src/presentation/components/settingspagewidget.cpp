@@ -1751,6 +1751,7 @@ void SettingsPageWidget::changeEvent(QEvent* event) {
 
 void SettingsPageWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    m_impl->runtimeSession.refreshPlatformSettings();
     m_impl->observePermissionPage(true);
 }
 

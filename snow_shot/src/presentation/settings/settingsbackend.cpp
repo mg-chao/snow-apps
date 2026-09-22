@@ -4,6 +4,10 @@
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/macos/loginitemservice.h"
+#include <QGuiApplication>
+#endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
 
 #include "snow_shot/presentation/languagemanager.h"
@@ -151,7 +155,17 @@ storage::CaptureHistoryPolicy defaultHistoryPolicy() {
     return policy;
 }
 
-platform::windows::AdministratorResult applyStartupSettings(bool enabled, bool elevated) {
+platform::windows::AdministratorResult
+applyStartupSettings(bool enabled, bool elevated, platform::macos::LoginItemService* loginItems) {
+#ifdef Q_OS_MACOS
+    Q_UNUSED(elevated);
+    const auto result = loginItems->setEnabled(enabled);
+    platform::windows::AdministratorResult converted;
+    converted.success = result.success;
+    converted.error = result.error;
+    return converted;
+#else
+    Q_UNUSED(loginItems);
     using namespace platform::windows;
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     const bool oldEnabled = storage::SystemSettings().autoStartAtBoot();
@@ -176,15 +190,28 @@ platform::windows::AdministratorResult applyStartupSettings(bool enabled, bool e
         return failed;
     }
     return result;
+#endif
 }
 
 } // namespace
 
 BuiltInSettingsBackend::BuiltInSettingsBackend(
     ::snow_shot::presentation::GlobalShortcutManager& shortcutManager, QObject* parent,
-    GlobalMouseManager* mouseManager, AppPermissionService* permissions)
+    GlobalMouseManager* mouseManager, AppPermissionService* permissions,
+    platform::macos::LoginItemService* loginItems)
     : SettingsBackend(parent), m_shortcutManager(shortcutManager), m_permissions(permissions),
-      m_mouseManager(mouseManager) {
+      m_mouseManager(mouseManager), m_loginItems(loginItems) {
+#ifdef Q_OS_MACOS
+    if (!m_loginItems)
+        m_loginItems = &platform::macos::loginItemService();
+    connect(m_loginItems, &platform::macos::LoginItemService::changed, this,
+            &SettingsBackend::synchronized);
+    connect(qApp, &QGuiApplication::applicationStateChanged, this,
+            [this](Qt::ApplicationState state) {
+                if (state == Qt::ApplicationActive)
+                    refreshPlatformSettings();
+            });
+#endif
     if (m_mouseManager)
         connect(m_mouseManager, &GlobalMouseManager::permissionStateChanged, this,
                 &SettingsBackend::globalMousePermissionChanged);
@@ -194,7 +221,10 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
 
     auto& languageManager = LanguageManager::instance();
     connect(&languageManager, &LanguageManager::languageChanged, this,
-            [this](const QString&, const QLocale&) { emit synchronized(); });
+            [this](const QString&, const QLocale&) {
+                refreshPlatformSettings();
+                emit synchronized();
+            });
     connect(&languageManager, &LanguageManager::languageChangeFailed, this,
             [this](const QString&) { emit synchronized(); });
 
@@ -478,7 +508,11 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
         return storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
     case SettingsSwitchBinding::AutoStartAtBoot:
+#ifdef Q_OS_MACOS
+        return m_loginItems->snapshot().requested();
+#else
         return storage::SystemSettings().autoStartAtBoot();
+#endif
     case SettingsSwitchBinding::LaunchAsAdministrator:
         return storage::SystemSettings().launchAsAdministrator();
     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
@@ -487,13 +521,26 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     return false;
 }
 
+void BuiltInSettingsBackend::refreshPlatformSettings() {
+#ifdef Q_OS_MACOS
+    m_loginItems->refresh();
+#endif
+}
 bool BuiltInSettingsBackend::fieldPending(const QString& fieldId) const {
+#ifdef Q_OS_MACOS
+    if (fieldId == u"system.auto-start-at-boot" || fieldId == u"system.login-item-settings")
+        return m_loginItems->pending();
+#endif
     return platform::windows::administratorOperationPending() &&
            (fieldId == u"system.auto-start-at-boot" ||
             fieldId == u"system.launch-as-administrator" ||
             fieldId == u"system.restart-as-administrator");
 }
 QString BuiltInSettingsBackend::switchHint(SettingsSwitchBinding binding) const {
+#ifdef Q_OS_MACOS
+    if (binding == SettingsSwitchBinding::AutoStartAtBoot)
+        return m_loginItems->hint();
+#endif
     if (binding != SettingsSwitchBinding::LaunchAsAdministrator)
         return {};
     return platform::windows::administratorPresentation(
@@ -515,8 +562,12 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
         return storage::ExtendedFeaturesSettings().translationPageEnabled();
     }
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
+#ifdef Q_OS_MACOS
+        return m_loginItems->available() && !m_loginItems->pending();
+#else
         return snow_shot::platform::windows::AutoStartRegistration::isSupported() &&
                !platform::windows::administratorOperationPending();
+#endif
     }
     return binding != SettingsSwitchBinding::DirectMlAcceleration ||
            directMlTextRecognitionSupported();
@@ -623,7 +674,8 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
                                      : storage::SystemSettings().autoStartAtBoot(),
                                  binding == SettingsSwitchBinding::LaunchAsAdministrator
                                      ? value
-                                     : storage::SystemSettings().launchAsAdministrator());
+                                     : storage::SystemSettings().launchAsAdministrator(),
+                                 m_loginItems);
         if (!result.success)
             emit operationMessage(result.error, false);
         emit synchronized();
@@ -1048,6 +1100,12 @@ bool BuiltInSettingsBackend::applyGlobalMouseCombination(
 SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding binding) const {
     const storage::StorageStatus status = storage::ApplicationStorage::instance().status();
     switch (binding) {
+    case SettingsActionBinding::OpenLoginItemSettings:
+#ifdef Q_OS_MACOS
+        return {!m_loginItems->pending(), false};
+#else
+        return {false, false};
+#endif
     case SettingsActionBinding::RestartAsAdministrator: {
         const auto state = platform::windows::administratorPresentation(
             platform::windows::administratorState(), storage::SystemSettings().autoStartAtBoot(),
@@ -1083,6 +1141,15 @@ SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding bi
 
 bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const QString& filePath) {
     switch (binding) {
+    case SettingsActionBinding::OpenLoginItemSettings:
+#ifdef Q_OS_MACOS
+        if (!actionState(binding).enabled)
+            return false;
+        m_loginItems->openSettings();
+        return true;
+#else
+        return false;
+#endif
     case SettingsActionBinding::RestartAsAdministrator: {
         emit synchronized();
         const auto result = platform::windows::restartAsAdministrator(
@@ -1703,7 +1770,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         const auto result = applyStartupSettings(
             storage::ConfigurationSchema::defaultValue(QStringLiteral("system/auto_start_at_boot"))
                 .toBool(),
-            false);
+            false, m_loginItems);
         if (!result.success)
             emit operationMessage(result.error, false);
         emit synchronized();

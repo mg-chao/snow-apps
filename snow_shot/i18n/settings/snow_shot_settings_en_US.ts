@@ -441,6 +441,45 @@
         </message>
     </context>
     <context>
+        <name>LoginItemService</name>
+        <message>
+            <source>A launch-at-login change is already in progress.</source>
+            <translation>A launch-at-login change is already in progress.</translation>
+        </message>
+        <message>
+            <source>Approval required. Allow Snow Shot in System Settings &gt; General &gt; Login Items.</source>
+            <translation>Approval required. Allow Snow Shot in System Settings &gt; General &gt; Login Items.</translation>
+        </message>
+        <message>
+            <source>Could not change launch at login: %1</source>
+            <translation>Could not change launch at login: %1</translation>
+        </message>
+        <message>
+            <source>Could not save launch-at-login initialization. Registration was not changed.</source>
+            <translation>Could not save launch-at-login initialization. Registration was not changed.</translation>
+        </message>
+        <message>
+            <source>Could not save the launch-at-login preference. The displayed macOS status is still current.</source>
+            <translation>Could not save the launch-at-login preference. The displayed macOS status is still current.</translation>
+        </message>
+        <message>
+            <source>Move the signed Snow Shot app to /Applications or ~/Applications to use launch at login.</source>
+            <translation>Move the signed Snow Shot app to /Applications or ~/Applications to use launch at login.</translation>
+        </message>
+        <message>
+            <source>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</source>
+            <translation>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</translation>
+        </message>
+        <message>
+            <source>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</source>
+            <translation>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</translation>
+        </message>
+        <message>
+            <source>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</source>
+            <translation>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</translation>
+        </message>
+    </context>
+    <context>
         <name>PermissionGuide</name>
         <message>
             <source>Close guidance</source>
@@ -1667,6 +1706,10 @@
             <translation>Launch as administrator</translation>
         </message>
         <message>
+            <source>Launch at login</source>
+            <translation>Launch at login</translation>
+        </message>
+        <message>
             <source>Layout Processing</source>
             <translation>Layout Processing</translation>
         </message>
@@ -1705,6 +1748,10 @@
         <message>
             <source>Magnifier visibility</source>
             <translation>Magnifier visibility</translation>
+        </message>
+        <message>
+            <source>Manage Snow Shot's login permission in macOS System Settings</source>
+            <translation>Manage Snow Shot's login permission in macOS System Settings</translation>
         </message>
         <message>
             <source>Manage macOS permissions for Snow Shot</source>
@@ -1855,8 +1902,16 @@
             <translation>Only when displayed</translation>
         </message>
         <message>
+            <source>Open</source>
+            <translation>Open</translation>
+        </message>
+        <message>
             <source>Open Function Settings</source>
             <translation>Open Function Settings</translation>
+        </message>
+        <message>
+            <source>Open Login Items Settings</source>
+            <translation>Open Login Items Settings</translation>
         </message>
         <message>
             <source>Open selected text translation in a standalone window.</source>
@@ -2545,6 +2600,10 @@
         <message>
             <source>Start Snow Shot in the background when Windows starts</source>
             <translation>Start Snow Shot in the background when Windows starts</translation>
+        </message>
+        <message>
+            <source>Start Snow Shot in the background when you log in.</source>
+            <translation>Start Snow Shot in the background when you log in.</translation>
         </message>
         <message>
             <source>Start Snow Shot with administrator privileges when you sign in</source>

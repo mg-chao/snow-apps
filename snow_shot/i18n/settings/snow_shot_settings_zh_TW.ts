@@ -441,6 +441,45 @@
         </message>
     </context>
     <context>
+        <name>LoginItemService</name>
+        <message>
+            <source>A launch-at-login change is already in progress.</source>
+            <translation>正在變更登入時啟動設定。</translation>
+        </message>
+        <message>
+            <source>Approval required. Allow Snow Shot in System Settings &gt; General &gt; Login Items.</source>
+            <translation>需要批准。請在「系統設定 &gt; 一般 &gt; 登入項目」中允許 Snow Shot。</translation>
+        </message>
+        <message>
+            <source>Could not change launch at login: %1</source>
+            <translation>無法變更登入時啟動設定：%1</translation>
+        </message>
+        <message>
+            <source>Could not save launch-at-login initialization. Registration was not changed.</source>
+            <translation>無法儲存登入時啟動初始化狀態。註冊狀態未變更。</translation>
+        </message>
+        <message>
+            <source>Could not save the launch-at-login preference. The displayed macOS status is still current.</source>
+            <translation>無法儲存登入時啟動偏好設定。顯示的 macOS 狀態仍為目前狀態。</translation>
+        </message>
+        <message>
+            <source>Move the signed Snow Shot app to /Applications or ~/Applications to use launch at login.</source>
+            <translation>請將已簽署的 Snow Shot App 移至 /Applications 或 ~/Applications，以使用登入時啟動功能。</translation>
+        </message>
+        <message>
+            <source>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</source>
+            <translation>Snow Shot 需要有效的程式碼簽章才能使用登入時啟動功能。請重新安裝已簽署的 App。</translation>
+        </message>
+        <message>
+            <source>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</source>
+            <translation>macOS 找不到 Snow Shot 的登入項目。請將 App 重新安裝到「應用程式」中。</translation>
+        </message>
+        <message>
+            <source>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</source>
+            <translation>macOS 未套用登入時啟動變更。請檢查「系統設定」中的「登入項目」。</translation>
+        </message>
+    </context>
+    <context>
         <name>PermissionGuide</name>
         <message>
             <source>Close guidance</source>
@@ -1667,6 +1706,10 @@
             <translation>以系統管理員身分啟動</translation>
         </message>
         <message>
+            <source>Launch at login</source>
+            <translation>登入時啟動</translation>
+        </message>
+        <message>
             <source>Layout Processing</source>
             <translation>排版處理</translation>
         </message>
@@ -1705,6 +1748,10 @@
         <message>
             <source>Magnifier visibility</source>
             <translation>放大鏡顯示</translation>
+        </message>
+        <message>
+            <source>Manage Snow Shot's login permission in macOS System Settings</source>
+            <translation>在 macOS 系統設定中管理 Snow Shot 的登入權限</translation>
         </message>
         <message>
             <source>Manage macOS permissions for Snow Shot</source>
@@ -1855,8 +1902,16 @@
             <translation>僅在顯示時</translation>
         </message>
         <message>
+            <source>Open</source>
+            <translation>開啟</translation>
+        </message>
+        <message>
             <source>Open Function Settings</source>
             <translation>開啟功能設定</translation>
+        </message>
+        <message>
+            <source>Open Login Items Settings</source>
+            <translation>開啟登入項目設定</translation>
         </message>
         <message>
             <source>Open selected text translation in a standalone window.</source>
@@ -2545,6 +2600,10 @@
         <message>
             <source>Start Snow Shot in the background when Windows starts</source>
             <translation>Windows 啟動時在背景啟動 Snow Shot</translation>
+        </message>
+        <message>
+            <source>Start Snow Shot in the background when you log in.</source>
+            <translation>登入時在背景啟動 Snow Shot。</translation>
         </message>
         <message>
             <source>Start Snow Shot with administrator privileges when you sign in</source>

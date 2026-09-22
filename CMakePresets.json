@@ -128,7 +128,7 @@
       "cacheVariables": {
         "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_INSTALLED_DIR": "${sourceDir}/.tools/macos/installed",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/.tools/macos/installed/dynamic",
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/cmake/vcpkg-overlay-ports",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/vcpkg-overlay-triplets",
         "VCPKG_MANIFEST_FEATURES": "snow-shot",
@@ -138,10 +138,23 @@
         "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF",
         "SNOW_APPS_BUILD_SNOW_SHOT": "ON",
         "SNOW_APPS_STRICT_COMPILE": "ON",
-        "SNOW_APPS_RELEASE_STATIC": "OFF",
-        "SNOW_APPS_QT_STATIC": "OFF",
+        "SNOW_MACOS_CODESIGN_IDENTITY": "AUTO",
         "SNOW_IMAGE_PROFILE": "redistributable",
         "SNOW_IMAGE_DEFAULT_LINKAGE": "static"
+      }
+    },
+    {
+      "name": "macos-release-base",
+      "hidden": true,
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/.tools/macos/installed/static",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_RELEASE_STATIC": "ON",
+        "SNOW_APPS_QT_STATIC": "ON",
+        "SNOW_MACOS_CODESIGN_IDENTITY": "-",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top"
       }
     },
     {
@@ -155,6 +168,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "SNOW_APPS_BUILD_TESTS": "ON",
         "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
@@ -171,6 +186,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "SNOW_APPS_BUILD_TESTS": "ON",
         "SNOW_APPS_BUILD_BENCHMARKS": "ON",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
@@ -178,33 +195,27 @@
     },
     {
       "name": "snow-shot-macos-arm64-release",
-      "displayName": "Snow Shot macOS arm64 Release",
-      "inherits": "macos-base",
+      "displayName": "Snow Shot macOS arm64 Static Qt Release",
+      "inherits": "macos-release-base",
       "cacheVariables": {
         "CMAKE_OSX_ARCHITECTURES": "arm64",
-        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot-static",
         "SNOW_RUST_TARGET": "aarch64-apple-darwin",
         "CMAKE_BUILD_TYPE": "Release",
-        "SNOW_APPS_BUILD_TESTS": "OFF",
-        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "ON",
-        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
       }
     },
     {
       "name": "snow-shot-macos-arm64-fast",
-      "displayName": "Snow Shot macOS arm64 Fast",
-      "inherits": "macos-base",
+      "displayName": "Snow Shot macOS arm64 Fast Static Build",
+      "inherits": "macos-release-base",
       "cacheVariables": {
         "CMAKE_OSX_ARCHITECTURES": "arm64",
-        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx-snow-shot-static",
         "SNOW_RUST_TARGET": "aarch64-apple-darwin",
         "CMAKE_BUILD_TYPE": "Release",
-        "SNOW_APPS_BUILD_TESTS": "OFF",
-        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
-        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "OFF",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "OFF",
         "SNOW_RUST_RELEASE_PROFILE": "release-fast"
@@ -221,6 +232,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "SNOW_APPS_BUILD_TESTS": "ON",
         "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
@@ -237,6 +250,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "SNOW_APPS_BUILD_TESTS": "ON",
         "SNOW_APPS_BUILD_BENCHMARKS": "ON",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
@@ -244,33 +259,27 @@
     },
     {
       "name": "snow-shot-macos-x64-release",
-      "displayName": "Snow Shot macOS x64 Release",
-      "inherits": "macos-base",
+      "displayName": "Snow Shot macOS x64 Static Qt Release",
+      "inherits": "macos-release-base",
       "cacheVariables": {
         "CMAKE_OSX_ARCHITECTURES": "x86_64",
-        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot",
+        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot-static",
         "SNOW_RUST_TARGET": "x86_64-apple-darwin",
         "CMAKE_BUILD_TYPE": "Release",
-        "SNOW_APPS_BUILD_TESTS": "OFF",
-        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "ON",
-        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
       }
     },
     {
       "name": "snow-shot-macos-x64-fast",
-      "displayName": "Snow Shot macOS x64 Fast",
-      "inherits": "macos-base",
+      "displayName": "Snow Shot macOS x64 Fast Static Build",
+      "inherits": "macos-release-base",
       "cacheVariables": {
         "CMAKE_OSX_ARCHITECTURES": "x86_64",
-        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot",
+        "VCPKG_TARGET_TRIPLET": "x64-osx-snow-shot-static",
         "SNOW_RUST_TARGET": "x86_64-apple-darwin",
         "CMAKE_BUILD_TYPE": "Release",
-        "SNOW_APPS_BUILD_TESTS": "OFF",
-        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
-        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "OFF",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "OFF",
         "SNOW_RUST_RELEASE_PROFILE": "release-fast"
