@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
+#include "snow_shot/presentation/screenshotcolorpickerwidget.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
@@ -544,7 +545,7 @@ void ScreenshotOverlayCoordinator::destroyUiResources() {
 QVector<std::uintptr_t>
 ScreenshotOverlayCoordinator::excludedHwnds(const ScreenshotDisplaySession& displaySession) const {
     QVector<std::uintptr_t> hwnds;
-    hwnds.reserve(displaySession.size() + 1);
+    hwnds.reserve(displaySession.size() + 2);
 
     const auto appendWidgetHwnd = [&hwnds](QWidget* widget) {
         if (widget == nullptr) {
@@ -567,5 +568,6 @@ ScreenshotOverlayCoordinator::excludedHwnds(const ScreenshotDisplaySession& disp
         appendWidgetHwnd(overlay);
     });
     appendWidgetHwnd(m_uiHost.toolbar());
+    appendWidgetHwnd(m_uiHost.colorPicker());
     return hwnds;
 }

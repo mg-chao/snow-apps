@@ -485,16 +485,8 @@ void ScreenshotOverlayUiHost::updateColorPicker(ScreenshotOverlayWindow* overlay
     }
 
     ScreenshotColorPickerWidget* picker = ensureColorPicker();
-    SnowCanvasWidget* canvas = overlay->canvas();
-    QWidget* pickerParent =
-        canvas != nullptr ? static_cast<QWidget*>(canvas) : static_cast<QWidget*>(overlay);
-    if (picker->parentWidget() != pickerParent) {
-        picker->hidePicker();
-        picker->setParent(pickerParent);
-        picker->setAttribute(Qt::WA_TranslucentBackground, true);
-        picker->setAttribute(Qt::WA_NoSystemBackground, true);
-        picker->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        picker->setFocusPolicy(Qt::NoFocus);
+    if (picker->parentWidget() != overlay || !picker->isWindow()) {
+        picker->setOwnerWindow(overlay);
     }
 
     picker->setCaptureImage(image, physicalRect);
@@ -532,8 +524,7 @@ bool ScreenshotOverlayUiHost::colorPickerBelongsToOverlay(
         return false;
     }
 
-    const QWidget* parent = m_colorPicker->parentWidget();
-    return parent == overlay || parent == overlay->canvas();
+    return m_colorPicker->parentWidget() == overlay;
 }
 
 bool ScreenshotOverlayUiHost::screenshotUiContainsGlobalCursor() const {
@@ -663,6 +654,7 @@ void ScreenshotOverlayUiHost::showToolbar() {
     toolbarWindow->restoreRememberedDrawingTool();
     showPreparedWidget(toolbarWindow);
     toolbarWindow->raise();
+    raiseColorPickerAboveToolbar();
 }
 
 void ScreenshotOverlayUiHost::hideSelectionToolbar() {
@@ -682,11 +674,19 @@ void ScreenshotOverlayUiHost::showSelectionToolbar() {
     toolbarWidget->prepareForDisplay();
     showPreparedChildWidget(toolbarWidget);
     toolbarWidget->raise();
+    raiseColorPickerAboveToolbar();
 }
 
 void ScreenshotOverlayUiHost::raiseSelectionToolbar() {
     if (m_selectionToolbar != nullptr) {
         m_selectionToolbar->raise();
+    }
+    raiseColorPickerAboveToolbar();
+}
+
+void ScreenshotOverlayUiHost::raiseColorPickerAboveToolbar() {
+    if (m_colorPicker != nullptr && m_colorPicker->isVisible()) {
+        m_colorPicker->raise();
     }
 }
 
@@ -723,8 +723,7 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
         m_toolbar->setOwnerWindow(nullptr);
     }
     if (colorPickerBelongsToOverlay(overlay)) {
-        m_colorPicker->hidePicker();
-        m_colorPicker->setParent(nullptr);
+        m_colorPicker->setOwnerWindow(nullptr);
     }
     if (m_shortcutHints != nullptr && m_shortcutHints->parentWidget() == overlay) {
         hideShortcutHints();

@@ -15,6 +15,7 @@ class ScreenshotColorPickerWidget final : public QWidget {
   public:
     explicit ScreenshotColorPickerWidget(QWidget* parent = nullptr);
 
+    void setOwnerWindow(QWidget* owner);
     void resetForNewCapture();
     void setCaptureImage(const QImage& image, const QRect& physicalRect);
     void updatePicker(const QPoint& physicalPoint, const QPointF& overlayLocalPosition,

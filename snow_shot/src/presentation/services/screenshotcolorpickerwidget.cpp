@@ -10,6 +10,7 @@
 #include <QGraphicsOpacityEffect>
 #include <QPainter>
 #include <QPainterPath>
+#include <QWindow>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -33,6 +34,15 @@ constexpr int kCursorGap = 16;
 const QColor kFallbackPanelBackground(255, 255, 255);
 const QColor kFallbackPanelTextColor(38, 38, 38);
 const QColor kShadowColor(0, 0, 0, 28);
+
+Qt::WindowFlags colorPickerWindowFlags() {
+    Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+                            Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput;
+#if !defined(Q_OS_MACOS)
+    flags |= Qt::NoDropShadowWindowHint;
+#endif
+    return flags;
+}
 
 QColor panelBackgroundForTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     if (scheme.alias.surfaceBg.isValid()) {
@@ -147,7 +157,8 @@ QPainterPath topRoundedRectPath(const QRectF& rect, qreal radius) {
 }
 } // namespace
 
-ScreenshotColorPickerWidget::ScreenshotColorPickerWidget(QWidget* parent) : QWidget(parent) {
+ScreenshotColorPickerWidget::ScreenshotColorPickerWidget(QWidget* parent)
+    : QWidget(parent, colorPickerWindowFlags()) {
     if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
         const QString format = snow_shot::storage::ScreenshotUiSettings().colorPickerFormat();
         if (format == QStringLiteral("hex_without_hash")) {
@@ -160,6 +171,7 @@ ScreenshotColorPickerWidget::ScreenshotColorPickerWidget(QWidget* parent) : QWid
     }
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
+    setAttribute(Qt::WA_ShowWithoutActivating, true);
     setAutoFillBackground(false);
     setFocusPolicy(Qt::NoFocus);
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
@@ -185,6 +197,34 @@ ScreenshotColorPickerWidget::ScreenshotColorPickerWidget(QWidget* parent) : QWid
     m_opacityEffect->setOpacity(0.0);
     setGraphicsEffect(m_opacityEffect);
     hide();
+}
+
+void ScreenshotColorPickerWidget::setOwnerWindow(QWidget* owner) {
+    if (parentWidget() == owner && isWindow()) {
+        return;
+    }
+
+    hidePicker();
+    setParent(owner, colorPickerWindowFlags());
+    setAttribute(Qt::WA_TranslucentBackground, true);
+    setAttribute(Qt::WA_NoSystemBackground, true);
+    setAttribute(Qt::WA_ShowWithoutActivating, true);
+    setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    setFocusPolicy(Qt::NoFocus);
+
+    if (owner == nullptr) {
+        return;
+    }
+
+    QWindow* ownerHandle = owner->windowHandle();
+    if (ownerHandle == nullptr) {
+        static_cast<void>(owner->winId());
+        ownerHandle = owner->windowHandle();
+    }
+    static_cast<void>(winId());
+    if (QWindow* handle = windowHandle()) {
+        handle->setTransientParent(ownerHandle);
+    }
 }
 
 void ScreenshotColorPickerWidget::resetForNewCapture() {
@@ -409,13 +449,19 @@ bool ScreenshotColorPickerWidget::updatePreview(const QPoint& physicalPoint) {
 }
 
 bool ScreenshotColorPickerWidget::updatePosition(const QPointF& overlayLocalPosition) {
-    QWidget* parent = parentWidget();
+    QWidget* owner = parentWidget();
     const QSize ownSize = size();
     const QSize panelSize(std::max(1, ownSize.width() - kShadowMargin * 2),
                           std::max(1, ownSize.height() - kShadowMargin * 2));
-    const QRect bounds = parent != nullptr ? parent->rect() : QRect();
+    QPoint cursorPosition = overlayLocalPosition.toPoint();
+    QRect bounds;
+    if (owner != nullptr) {
+        const QPoint ownerOrigin = owner->mapToGlobal(QPoint());
+        cursorPosition += ownerOrigin;
+        bounds = QRect(ownerOrigin, owner->size());
+    }
     const QPoint panelPosition = ScreenshotGeometryMapper::cursorPanelPosition(
-        overlayLocalPosition.toPoint(), panelSize, bounds, kCursorGap);
+        cursorPosition, panelSize, bounds, kCursorGap);
     const QPoint targetPosition = panelPosition - QPoint(kShadowMargin, kShadowMargin);
     if (pos() == targetPosition) {
         return false;

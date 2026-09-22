@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
+#include <QWindow>
 
 #include <cstdlib>
 #include <iostream>
@@ -114,6 +115,38 @@ void plainHexPreservesSixUppercaseDigits() {
                 "plain HEX must preserve leading zeros and uppercase digits without a hash");
     }
 }
+
+void pickerUsesASeparateClickThroughWindow() {
+    QWidget owner;
+    owner.setGeometry(320, 180, 800, 600);
+    owner.show();
+
+    ScreenshotColorPickerWidget picker;
+    picker.setOwnerWindow(&owner);
+    require(picker.isWindow() && picker.parentWidget() == &owner,
+            "the display color picker must be a separate window owned by its overlay");
+    require(picker.windowFlags().testFlag(Qt::Tool) &&
+                picker.windowFlags().testFlag(Qt::FramelessWindowHint) &&
+                picker.windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
+                picker.windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
+                picker.windowFlags().testFlag(Qt::WindowTransparentForInput),
+            "the display color picker window must stay topmost without taking focus or input");
+    require(picker.windowHandle() != nullptr && owner.windowHandle() != nullptr &&
+                picker.windowHandle()->transientParent() == owner.windowHandle(),
+            "the display color picker window must use the overlay as its native stacking owner");
+
+    QImage image(owner.size(), QImage::Format_RGBA8888);
+    image.fill(Qt::blue);
+    const QPoint localCursor(100, 100);
+    picker.setCaptureImage(image, image.rect());
+    picker.updatePicker(localCursor, localCursor, 1.0);
+    QApplication::processEvents();
+
+    const QPoint globalCursor = owner.mapToGlobal(localCursor);
+    require(picker.isVisible() && picker.pos().x() > globalCursor.x() &&
+                picker.pos().y() > globalCursor.y(),
+            "the separate picker window must position itself from overlay-local to global space");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -122,5 +155,6 @@ int main(int argc, char** argv) {
     formatPersistsAcrossCapturesAndRestarts();
     formatSurvivesResetWithoutStorage();
     plainHexPreservesSixUppercaseDigits();
+    pickerUsesASeparateClickThroughWindow();
     return 0;
 }

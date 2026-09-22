@@ -68,6 +68,8 @@ class ScreenshotOverlayUiHost final {
     void destroyUiResources();
 
   private:
+    void raiseColorPickerAboveToolbar();
+
     ScreenshotToolbarCommandSink* m_toolbarCommands = nullptr;
     ScreenshotSelectionToolbarCommandSink* m_selectionToolbarCommands = nullptr;
     QObjectCleanupHandler m_ownedWidgets;
