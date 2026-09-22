@@ -10,6 +10,21 @@ pkg_check_modules(SNOW_SHOT_FFMPEG REQUIRED IMPORTED_TARGET GLOBAL
     libavformat libavcodec libswresample libswscale libavutil)
 set(PKG_CONFIG_ARGN "${_snow_saved_pkg_config_argn}")
 set(ENV{PKG_CONFIG_PATH} "${_snow_saved_pkg_config_path}")
+
+# FindPkgConfig places Apple's two-token `-framework Name` pairs in
+# INTERFACE_LINK_OPTIONS. CMake de-duplicates repeated options, which can leave
+# later framework names as bare linker inputs. The complete framework closure
+# is resolved with find_library below, so remove the unsafe pkg-config pairs
+# while preserving unrelated options such as -pthread.
+include("${CMAKE_CURRENT_LIST_DIR}/SnowPkgConfigAppleFrameworks.cmake")
+get_target_property(_snow_ffmpeg_link_options
+    PkgConfig::SNOW_SHOT_FFMPEG INTERFACE_LINK_OPTIONS)
+if(_snow_ffmpeg_link_options)
+    snow_strip_pkg_config_apple_framework_options(
+        _snow_ffmpeg_link_options ${_snow_ffmpeg_link_options})
+    set_property(TARGET PkgConfig::SNOW_SHOT_FFMPEG PROPERTY
+        INTERFACE_LINK_OPTIONS "${_snow_ffmpeg_link_options}")
+endif()
 set(_snow_native_libraries PkgConfig::SNOW_SHOT_FFMPEG objc)
 foreach(_framework IN ITEMS AppKit ApplicationServices AVFoundation AudioToolbox
         Carbon CoreAudio CoreFoundation CoreGraphics CoreImage CoreMedia CoreVideo

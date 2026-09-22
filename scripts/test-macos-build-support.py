@@ -31,6 +31,24 @@ class MacOSBundleMetadata(unittest.TestCase):
                          {native_languages[language] for language in catalog_languages})
         self.assertEqual(plist['CFBundleDevelopmentRegion'], native_languages['en_US'])
 
+    def test_pkg_config_apple_framework_options_are_removed_as_pairs(self):
+        module = ROOT / 'cmake/SnowPkgConfigAppleFrameworks.cmake'
+        managed_cmake = ROOT / '.tools/macos-dev/bin/cmake'
+        cmake = str(managed_cmake) if managed_cmake.is_file() else shutil.which('cmake')
+        self.assertIsNotNone(cmake, 'CMake is required for the framework option contract test')
+        with tempfile.TemporaryDirectory(prefix='snow cmake test ') as directory:
+            script = Path(directory) / 'test.cmake'
+            script.write_text(f'''include([[{module.as_posix()}]])
+snow_strip_pkg_config_apple_framework_options(result
+    -pthread -framework VideoToolbox -framework CoreMedia -Wl,-dead_strip)
+if(NOT result STREQUAL "-pthread;-Wl,-dead_strip")
+    message(FATAL_ERROR "Unexpected sanitized options: ${{result}}")
+endif()
+''')
+            result = subprocess.run([cmake, '-P', str(script)], text=True,
+                                    capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class MacOSBuildScripts(unittest.TestCase):
     def setUp(self):
