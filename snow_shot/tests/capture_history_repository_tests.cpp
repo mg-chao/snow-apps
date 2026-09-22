@@ -263,6 +263,66 @@ void scrollingMarkerRoundTripsAndRejectsNonBooleanValues() {
     }
 }
 
+void desktopGeometryRoundTripsAndValidatesCoordinates() {
+    for (const bool points : {false, true}) {
+        QTemporaryDir temporary;
+        storage::CaptureHistoryRecord published;
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            auto draft = draftAt(QDateTime::currentDateTimeUtc());
+            draft.desktopGeometry =
+                storage::CaptureHistoryDesktopGeometry{QPoint(-1920, -1080), points};
+            const auto result = repository->publish(draft).get();
+            require(result.storage.success, "desktop geometry publication failed");
+            published = result.record;
+            require(published.desktopGeometry == draft.desktopGeometry,
+                    "publication lost the captured desktop geometry");
+        }
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->records().size() == 1 && repository->records().front() == published,
+                    "desktop geometry did not survive a repository restart");
+        }
+        const QJsonObject index = readObject(indexPath(temporary.path()));
+        auto record = index.value(QStringLiteral("records")).toArray().first().toObject();
+        const auto validGeometry = record.value(QStringLiteral("desktop_geometry")).toObject();
+        const auto writeRecord = [&] {
+            auto changed = index;
+            changed.insert(QStringLiteral("records"), QJsonArray{record});
+            writeBytes(indexPath(temporary.path()), QJsonDocument(changed).toJson());
+        };
+        record.remove(QStringLiteral("desktop_geometry"));
+        writeRecord();
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->records().size() == 1 &&
+                        !repository->records().front().desktopGeometry,
+                    "legacy records must load without inventing a desktop origin");
+        }
+        for (const QJsonValue invalid :
+             {QJsonValue(QJsonValue::Null), QJsonValue(0), QJsonValue(QStringLiteral("invalid"))}) {
+            record.insert(QStringLiteral("desktop_geometry"), invalid);
+            writeRecord();
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->records().isEmpty(), "invalid desktop geometry was accepted");
+        }
+        for (const QString key :
+             {QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("space")}) {
+            for (const QJsonValue invalid :
+                 {QJsonValue(QJsonValue::Null), QJsonValue(0.5), QJsonValue(2147483648.0),
+                  QJsonValue(QStringLiteral("unknown"))}) {
+                auto geometry = validGeometry;
+                geometry.insert(key, invalid);
+                record.insert(QStringLiteral("desktop_geometry"), geometry);
+                writeRecord();
+                auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+                require(repository->records().isEmpty(),
+                        "invalid desktop coordinate or space was accepted");
+            }
+        }
+    }
+}
+
 void publicationAndRecovery() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create publication directory");
@@ -908,6 +968,7 @@ int main(int argc, char** argv) {
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();
     scrollingMarkerRoundTripsAndRejectsNonBooleanValues();
+    desktopGeometryRoundTripsAndValidatesCoordinates();
     publicationAndRecovery();
     preparedResultBytesAreCommittedWithoutReplacement();
     quickCaptureSourcesRoundTrip();

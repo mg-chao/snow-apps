@@ -16,20 +16,25 @@ namespace snow_shot::presentation {
 using HistoryPinNativeMonitorRect = std::function<QRect(const QScreen&)>;
 
 // Whether the record can map onto a desktop at all: a screenshot session captured without
-// scrolling, with a recorded result and a usable selection. Desktop-independent, so callers can
-// skip building a display session for ineligible records.
+// scrolling, with a recorded desktop origin, result and usable selection. Desktop-independent, so
+// callers can skip building a display session for ineligible records.
 [[nodiscard]] bool
 historyRecordSupportsSelectionPin(const snow_shot::storage::CaptureHistoryRecord& record);
 
 // The live selection-pin request for a non-scrolling screenshot whose selection meets the
-// supplied desktop. Unprepared for scrolling captures, records persisted before the scrolling
-// marker existed, imported images, and selections that miss every display. displays must
-// already be in capture coordinates; the caller rebuilds geometry. Off-desktop selections do
+// supplied desktop after translating from the recorded desktop origin. Unprepared for scrolling
+// captures, records without placement metadata, incompatible coordinate spaces, imported images,
+// and selections that miss every display. displays must already be in capture coordinates;
+// the caller rebuilds geometry. Off-desktop selections do
 // not use the live pin's nearest-display fallback.
 [[nodiscard]] ScreenshotPinnedSelectionRequest
 historySelectionPinPlacement(const snow_shot::storage::CaptureHistoryRecord& record,
                              const ScreenshotDisplaySession& displays,
                              const ScreenshotGeometryMapper& geometry);
+
+// Resolve against the current desktop immediately before presentation, including after image I/O.
+[[nodiscard]] ScreenshotPinnedSelectionRequest
+historySelectionPinPlacement(const snow_shot::storage::CaptureHistoryRecord& record);
 
 // The history-pin desktop for screens. Windows replaces each screen's pre-capture rectangle
 // with nativeMonitorRect and fails the whole session when one is unavailable: capture canvas

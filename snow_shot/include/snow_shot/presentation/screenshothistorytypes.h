@@ -41,6 +41,7 @@ struct ScreenshotHistoryEntry {
         snow_shot::storage::CaptureHistorySource::CopiedToClipboard;
     // Absent on entries restored from records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};
+    std::optional<snow_shot::storage::CaptureHistoryDesktopGeometry> desktopGeometry{};
     bool intelligentSelectionMode = false;
     bool persistent = true;
     std::optional<ScreenshotIntelligentSelectionModel> liveIntelligentSelection;

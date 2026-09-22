@@ -75,6 +75,16 @@ struct CaptureHistoryResultAsset {
     }
 };
 
+// Maps selection canvas coordinates to the desktop at capture time. Windows uses physical
+// pixels; macOS uses points. Missing on older records, whose absolute position is unknown.
+struct CaptureHistoryDesktopGeometry {
+    QPoint canvasOrigin;
+    bool canvasUsesPoints = false;
+
+    friend bool operator==(const CaptureHistoryDesktopGeometry&,
+                           const CaptureHistoryDesktopGeometry&) = default;
+};
+
 struct CaptureHistoryDraft {
     CaptureHistoryContentKind contentKind = CaptureHistoryContentKind::ScreenshotSession;
     QString id;
@@ -89,6 +99,7 @@ struct CaptureHistoryDraft {
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
     // Absent on records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};
+    std::optional<CaptureHistoryDesktopGeometry> desktopGeometry{};
 };
 
 struct CaptureHistoryDisplayRecord {
@@ -127,6 +138,7 @@ struct CaptureHistoryRecord {
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
     // Absent on records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};
+    std::optional<CaptureHistoryDesktopGeometry> desktopGeometry{};
 
     friend bool operator==(const CaptureHistoryRecord& first, const CaptureHistoryRecord& second) {
         return first.contentKind == second.contentKind && first.id == second.id &&
@@ -134,7 +146,8 @@ struct CaptureHistoryRecord {
                first.selection == second.selection && first.displays == second.displays &&
                first.result == second.result && first.canvasBytes == second.canvasBytes &&
                first.totalBytes == second.totalBytes && first.source == second.source &&
-               first.scrolling == second.scrolling;
+               first.scrolling == second.scrolling &&
+               first.desktopGeometry == second.desktopGeometry;
     }
 };
 

@@ -161,6 +161,15 @@ QJsonObject recordJson(const StoredRecord& stored) {
     if (record.scrolling.has_value()) {
         object.insert(QStringLiteral("scrolling"), *record.scrolling);
     }
+    if (record.desktopGeometry) {
+        const auto& desktop = *record.desktopGeometry;
+        object.insert(QStringLiteral("desktop_geometry"),
+                      QJsonObject{{QStringLiteral("x"), desktop.canvasOrigin.x()},
+                                  {QStringLiteral("y"), desktop.canvasOrigin.y()},
+                                  {QStringLiteral("space"), desktop.canvasUsesPoints
+                                                                ? QStringLiteral("points")
+                                                                : QStringLiteral("pixels")}});
+    }
     return object;
 }
 
@@ -196,6 +205,22 @@ bool parseRecord(const QJsonObject& object, StoredRecord* stored) {
         record.scrolling = scrolling.toBool();
     }
     record.id = object.value(QStringLiteral("id")).toString();
+    const QJsonValue desktop = object.value(QStringLiteral("desktop_geometry"));
+    if (!desktop.isUndefined()) {
+        const auto geometry = desktop.toObject();
+        qint64 x = 0, y = 0;
+        const QString space = geometry.value(QStringLiteral("space")).toString();
+        if (!desktop.isObject() ||
+            (space != QStringLiteral("points") && space != QStringLiteral("pixels")) ||
+            !integer(geometry.value(QStringLiteral("x")), std::numeric_limits<int>::min(),
+                     std::numeric_limits<int>::max(), &x) ||
+            !integer(geometry.value(QStringLiteral("y")), std::numeric_limits<int>::min(),
+                     std::numeric_limits<int>::max(), &y)) {
+            return false;
+        }
+        record.desktopGeometry = CaptureHistoryDesktopGeometry{
+            QPoint(static_cast<int>(x), static_cast<int>(y)), space == QStringLiteral("points")};
+    }
     const QString date = object.value(QStringLiteral("created_utc")).toString();
     record.createdUtc = QDateTime::fromString(date, Qt::ISODateWithMs);
     if (!validUuid(record.id) || !date.endsWith(u'Z') || !record.createdUtc.isValid() ||
@@ -387,6 +412,7 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
     record.selection = draft.selection;
     record.source = draft.source;
     record.scrolling = draft.scrolling;
+    record.desktopGeometry = draft.desktopGeometry;
     record.canvasBytes = draft.canvasHistory.size();
     record.totalBytes = record.canvasBytes;
     result->files.insert(stored.canvasFileName, draft.canvasHistory);

@@ -2913,15 +2913,7 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
     if (cursorScreen == nullptr) {
         cursorScreen = QGuiApplication::primaryScreen();
     }
-    ScreenshotPinnedSelectionRequest selectionPlacement;
-    if (snow_shot::presentation::historyRecordSupportsSelectionPin(record)) {
-        ScreenshotDisplaySession pinDisplays =
-            snow_shot::presentation::currentHistoryPinDisplaySession();
-        ScreenshotGeometryMapper pinGeometry;
-        pinGeometry.rebuild(pinDisplays);
-        selectionPlacement =
-            snow_shot::presentation::historySelectionPinPlacement(record, pinDisplays, pinGeometry);
-    }
+    const auto selectionPlacement = snow_shot::presentation::historySelectionPinPlacement(record);
     const bool selectionPinned = selectionPlacement.isPrepared();
     QScreen* screen = selectionPinned ? selectionPlacement.screen.data() : cursorScreen;
     if (screen == nullptr) {
@@ -2965,7 +2957,7 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
             return loaded;
         },
         [receiver, guardedScreen, autoResizeWindow, epoch, requestId,
-         selectionPlacement](ScreenshotExportTaskResult result) {
+         record](ScreenshotExportTaskResult result) {
             if (receiver.isNull() || receiver->m_impl == nullptr) {
                 return;
             }
@@ -2977,10 +2969,17 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
                 result.failureStage == ScreenshotExportFailureStage::Cancelled) {
                 return;
             }
+            // The desktop may have changed while the result image was being decoded.
+            const auto selectionPlacement =
+                snow_shot::presentation::historySelectionPinPlacement(record);
             const bool canPlaceSelection = selectionPlacement.isPrepared();
+            QScreen* fallbackScreen = guardedScreen.data();
+            if (fallbackScreen == nullptr) {
+                fallbackScreen = QGuiApplication::primaryScreen();
+            }
             if (!result.succeeded() || result.image.isNull() ||
                 impl.m_selectionExportUiServices == nullptr ||
-                (!canPlaceSelection && guardedScreen.isNull())) {
+                (!canPlaceSelection && fallbackScreen == nullptr)) {
                 qWarning("Screenshot history pin failed: %s", qPrintable(result.error));
                 if (impl.m_messages != nullptr) {
                     impl.m_messages->error(
@@ -3008,7 +3007,7 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
                     result.image, selectionPlacement, std::move(completion));
             } else {
                 presented = impl.presentDecodedImageOnScreen(
-                    guardedScreen, result.image, guardedScreen->devicePixelRatio(),
+                    fallbackScreen, result.image, fallbackScreen->devicePixelRatio(),
                     autoResizeWindow, {}, std::move(completion));
             }
             if (!presented) {
