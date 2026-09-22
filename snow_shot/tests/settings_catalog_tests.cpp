@@ -195,6 +195,20 @@ void builtInCatalogIsCompleteAndValid() {
                 }
                 if (item.configurationKey == QStringLiteral("updates/mode")) {
                     const auto& select = std::get<settings::SettingsSelectDefinition>(item.payload);
+#ifdef Q_OS_MACOS
+                    require(select.binding == settings::SettingsSelectBinding::UpdateMode &&
+                                select.options.size() == 2 &&
+                                select.options[0].value == QStringLiteral("manual") &&
+                                select.options[1].value == QStringLiteral("check") &&
+                                storage::ConfigurationSchema::defaultValue(item.configurationKey) ==
+                                    QStringLiteral("check"),
+                            "macOS exposes only manual and automatic checks");
+                    const auto migrated = storage::ConfigurationSchema::normalize(
+                        item.configurationKey, QStringLiteral("download"));
+                    require(migrated.valid && migrated.changed &&
+                                migrated.value == QStringLiteral("check"),
+                            "legacy automatic download migrates to check");
+#else
                     require(
                         select.binding == settings::SettingsSelectBinding::UpdateMode &&
                             select.options.size() == 3 &&
@@ -204,6 +218,7 @@ void builtInCatalogIsCompleteAndValid() {
                             storage::ConfigurationSchema::defaultValue(item.configurationKey) ==
                                 QStringLiteral("download"),
                         "update policy exposes all three modes with automatic download default");
+#endif
                     foundUpdates = true;
                 }
             }

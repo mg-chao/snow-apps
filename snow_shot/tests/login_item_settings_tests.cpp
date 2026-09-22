@@ -91,8 +91,10 @@ int main(int argc, char** argv) {
             "persistence failure retains observed native status");
     save = true;
     require(backend.resetSection(settings::SettingsSectionReset::SystemGeneral) &&
-                backend.switchValue(binding),
-            "reset requests the enabled default through native service");
+                backend.switchValue(binding) &&
+                backend.selectValue(settings::SettingsSelectBinding::UpdateMode).toString() ==
+                    u"check",
+            "reset restores native startup and macOS automatic check defaults");
     const int beforeRefresh = changes;
     native.status = LoginItemStatus::Unregistered;
     backend.refreshPlatformSettings();

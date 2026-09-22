@@ -499,17 +499,25 @@ SettingsItemDefinition updateModeItem() {
         {QStringLiteral("manual"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Manual"))},
         {QStringLiteral("check"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Check automatically"))},
+#ifndef Q_OS_MACOS
         {QStringLiteral("download"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Download automatically"))},
+#endif
     };
-    return {
-        QStringLiteral("updates.mode"),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Updates")),
-        settingsText(QT_TRANSLATE_NOOP(
-            "SettingsCatalog", "Download new versions automatically and ask before restarting")),
-        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Software updates"))},
-        QStringLiteral("updates/mode"),
-        payload};
+    return {QStringLiteral("updates.mode"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Updates")),
+#ifdef Q_OS_MACOS
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Check for new versions and download updates from the official website")),
+#else
+            settingsText(
+                QT_TRANSLATE_NOOP("SettingsCatalog",
+                                  "Download new versions automatically and ask before restarting")),
+#endif
+            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Software updates"))},
+            QStringLiteral("updates/mode"),
+            payload};
 }
 
 #ifndef Q_OS_MACOS

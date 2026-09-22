@@ -1,4 +1,6 @@
 set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/snow_shot.app")
+# Remove the obsolete helper from reused install/package staging directories.
+file(REMOVE "${_app}/Contents/MacOS/snow-shot-updater")
 set(_snow_codesign_identity [==[@SNOW_MACOS_CODESIGN_IDENTITY@]==])
 if(_snow_codesign_identity STREQUAL "-")
     message(WARNING "Snow Shot is ad-hoc signed. Rebuilds can invalidate macOS privacy grants even when System Settings shows them enabled. Use SNOW_MACOS_CODESIGN_IDENTITY with a persistent certificate to retain the signing identity.")
@@ -31,7 +33,6 @@ if(NOT @SNOW_SHOT_QT_STATIC@)
     endif()
     execute_process(COMMAND "@SNOW_MACDEPLOYQT@" "${_app}"
         "-executable=${_app}/Contents/MacOS/snow-ocr-process"
-        "-executable=${_app}/Contents/MacOS/snow-shot-updater"
         "-executable=${_app}/Contents/MacOS/libonnxruntime.dylib"
         "-executable=${_app}/Contents/PlugIns/platforms/libqoffscreen.dylib"
         "-libpath=${_snow_vcpkg_library_dir}"

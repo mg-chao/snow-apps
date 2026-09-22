@@ -13,11 +13,11 @@ Priorities: data preservation and authenticity > recovery > testability > mainta
 
 The first updater release is `1.0.0-beta`. Binaries without an updater require one manual
 installation/replacement. This release introduces no user-data migration, delta patches,
-additional channels, macOS updater, or OCR model-host deployment.
+additional channels, macOS in-app installation, or OCR model-host deployment.
 
 ## Release contract
 
-The application consumes `/latest-version.json`, not the unsigned text file. The root
+The Windows updater consumes `/latest-version.json`, not the unsigned text file. The root
 `/latest-version.txt` remains the compatibility endpoint for older clients and the website;
 there is deliberately no `/setup/latest-version.txt` requirement.
 
@@ -291,3 +291,25 @@ download cache cleanup retains only the currently accepted release's ZIP/partial
   The matching external PDB is 33,771,520 bytes (32.207 MiB) and passes RSDS GUID/age checks.
 - Both native macOS architecture/package jobs remain platform release gates. Cross-account UAC
   and physical power-loss behavior likewise require dedicated runtime validation.
+
+## macOS version checks
+
+macOS offers only **Manual** and **Check automatically**, defaulting to automatic checks.
+Legacy `download` settings normalize to `check`, including when restoring settings. Resetting
+settings restores the platform default. Automatic checks start 30 seconds after launch and
+repeat 24 hours after completion; manual checks remain available in About. Switching to manual
+stops the schedule and cancels an active background check.
+
+The macOS Qt service fetches `/latest-version.txt` from the configured API base URL over HTTPS,
+respects the network proxy setting, limits responses to 4 KiB, and times out after 30 seconds.
+It compares strict SemVer precedence (including prereleases and ignoring build metadata).
+This website compatibility endpoint is unsigned; it only supplies version display text and
+never supplies an executable, installation instructions, or a navigation URL. Publish the
+matching macOS installation packages before announcing a shared version on this endpoint.
+
+A newer version discovered automatically shows a nonmodal notice with **Download from website**
+and **Later**, once per version per session. The browser opens only on the user's download
+action, using the configured official website URL. About retains the available version and
+same website action. Background failures stay quiet; manual failures display a retry action.
+macOS does not build or bundle the Windows updater helper and never downloads or installs an
+update in-app. The Windows signed-metadata and installation flow is unchanged.

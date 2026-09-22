@@ -950,6 +950,10 @@
             <translation>Check automatically</translation>
         </message>
         <message>
+            <source>Check for new versions and download updates from the official website</source>
+            <translation>Check for new versions and download updates from the official website</translation>
+        </message>
+        <message>
             <source>Child elements</source>
             <translation>Child elements</translation>
         </message>

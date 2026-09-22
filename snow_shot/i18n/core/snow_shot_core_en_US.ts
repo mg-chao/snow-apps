@@ -82,6 +82,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Discover more features and ways to use it</translation>
         </message>
         <message>
+            <source>Download from website</source>
+            <translation>Download from website</translation>
+        </message>
+        <message>
             <source>Download update</source>
             <translation>Download update</translation>
         </message>

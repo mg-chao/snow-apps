@@ -468,4 +468,38 @@
             <translation>更新权限被拒绝，或无法获取权限</translation>
         </message>
     </context>
+    <context>
+        <name>UpdateNotice</name>
+        <message>
+            <source>Download from website</source>
+            <translation>前往官网下载</translation>
+        </message>
+        <message>
+            <source>Later</source>
+            <translation>稍后</translation>
+        </message>
+        <message>
+            <source>Snow Shot %1 is available. Download the installation package from the official website.</source>
+            <translation>Snow Shot %1 已发布。请前往官方网站下载安装包。</translation>
+        </message>
+        <message>
+            <source>Update available</source>
+            <translation>发现新版本</translation>
+        </message>
+    </context>
+    <context>
+        <name>UpdateService</name>
+        <message>
+            <source>Could not check for updates. Please try again.</source>
+            <translation>无法检查更新，请重试。</translation>
+        </message>
+        <message>
+            <source>The update check timed out. Please try again.</source>
+            <translation>检查更新超时，请重试。</translation>
+        </message>
+        <message>
+            <source>The update server returned an invalid version.</source>
+            <translation>更新服务器返回了无效的版本号。</translation>
+        </message>
+    </context>
 </TS>

@@ -73,6 +73,8 @@ function(snow_shot_add_translations target)
             snow_shot_updates
         # Preserve macOS-only messages when extracting on Windows as well.
         SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/loginitembackend.mm"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/update/macosupdateservice.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/update/updateservice.cpp"
         TS_FILES ${_snow_shot_update_ts}
         LUPDATE_TARGET snow_shot_update_translations
         OPTIONS -no-obsolete -locations none

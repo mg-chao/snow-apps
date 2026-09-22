@@ -950,6 +950,10 @@
             <translation>自動檢查</translation>
         </message>
         <message>
+            <source>Check for new versions and download updates from the official website</source>
+            <translation>檢查新版本並從官方網站下載更新</translation>
+        </message>
+        <message>
             <source>Child elements</source>
             <translation>子元素</translation>
         </message>

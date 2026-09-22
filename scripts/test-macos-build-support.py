@@ -512,14 +512,18 @@ class MacOSBundle(unittest.TestCase):
                 f"-DQt6_DIR={qt}", "-DCMAKE_BUILD_TYPE=Release",
                 f"-DCMAKE_OSX_ARCHITECTURES={os.uname().machine}")
             run("cmake", "--build", str(out))
+            stale_helper = stage / "snow_shot.app/Contents/MacOS/snow-shot-updater"
+            stale_helper.parent.mkdir(parents=True, exist_ok=True)
+            stale_helper.write_text("obsolete helper")
             run("cmake", "--install", str(out), "--component", "SnowShot", "--prefix", str(stage))
+            self.assertFalse(stale_helper.exists())
             app = stage / "snow_shot.app"
             info = run("plutil", "-extract", "CFBundleIconFile", "raw", "-o", "-",
                        str(app / "Contents/Info.plist")).strip()
             self.assertEqual(info, "snow-shot.icns")
             self.assertTrue((app / "Contents/Resources/snow-shot.icns").is_file())
             self.assertTrue((app / "Contents/PlugIns/platforms/libqoffscreen.dylib").is_file())
-            for name in ("snow_shot", "snow-ocr-process", "snow-shot-updater"):
+            for name in ("snow_shot", "snow-ocr-process"):
                 binary = app / "Contents/MacOS" / name
                 run(str(binary), cwd="/")
                 rpaths = run("otool", "-l", str(binary))

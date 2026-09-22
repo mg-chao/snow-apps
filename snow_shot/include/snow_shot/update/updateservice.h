@@ -29,8 +29,8 @@ struct UpdateStatus {
     qint64 total = 0;
 };
 
-// The updater owns persistence, networking, verification, and mutation. This lightweight QObject
-// owns scheduling, operation-scoped process lifetime, protocol framing, signals, and translation.
+// Windows delegates installation to the updater helper. macOS checks versions over HTTPS
+// and leaves package downloads and installation to the official website.
 class UpdateService final : public QObject {
     Q_OBJECT
   public:
@@ -42,6 +42,9 @@ class UpdateService final : public QObject {
         bool allowLocalHttp = false;
         std::chrono::milliseconds startupCheckDelay = std::chrono::seconds(30);
         std::chrono::milliseconds automaticCheckInterval = std::chrono::hours(24);
+        // macOS check transport; overrides also support deterministic local-server tests.
+        QString installedVersion;
+        std::chrono::milliseconds requestTimeout = std::chrono::seconds(30);
     };
 
     explicit UpdateService(Options options, QObject* parent = nullptr);
@@ -60,6 +63,7 @@ class UpdateService final : public QObject {
   signals:
     void statusChanged();
     void updateReady();
+    void automaticUpdateAvailable(const QString& version);
     void restartRequested();
     void handoffReady();
 

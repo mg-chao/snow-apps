@@ -82,6 +82,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>发现更多功能与使用方式</translation>
         </message>
         <message>
+            <source>Download from website</source>
+            <translation>前往官网下载</translation>
+        </message>
+        <message>
             <source>Download update</source>
             <translation>下载更新</translation>
         </message>

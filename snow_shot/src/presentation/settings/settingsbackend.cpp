@@ -1774,8 +1774,10 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         if (!result.success)
             emit operationMessage(result.error, false);
         emit synchronized();
-        return result.success &&
-               applySelectValue(SettingsSelectBinding::UpdateMode, QStringLiteral("download"));
+        return result.success && applySelectValue(SettingsSelectBinding::UpdateMode,
+                                                  storage::ConfigurationSchema::defaultValue(
+                                                      QStringLiteral("updates/mode"))
+                                                      .toVariant());
     }
     case SettingsSectionReset::ScreenshotCapture:
         return storage::ApplicationStorage::instance().configuration().setValues({

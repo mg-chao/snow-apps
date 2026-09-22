@@ -550,7 +550,11 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
             using snow_shot::update::UpdateState;
             switch (m_ui->updates->status().state) {
             case UpdateState::Available:
+#ifdef Q_OS_MACOS
+                openProjectLink(QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL)));
+#else
                 m_ui->updates->download();
+#endif
                 break;
             case UpdateState::Ready:
                 m_ui->updates->requestRestart();
@@ -933,7 +937,11 @@ void AboutPageWidget::refreshUpdateStatus() {
         break;
     case UpdateState::Available:
         text = tr("Update available: %1").arg(status.version);
+#ifdef Q_OS_MACOS
+        action = tr("Download from website");
+#else
         action = tr("Download update");
+#endif
         statusIcon = outlined::CloudDownload();
         actionIcon = outlined::Download();
         statusColor = colors.colorInfoText;

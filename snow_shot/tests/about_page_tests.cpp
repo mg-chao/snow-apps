@@ -10,6 +10,8 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/update/updateservice.h"
+#include "snow_shot/presentation/components/updatenotice.h"
+#include <QPushButton>
 
 #include "widgets/button.h"
 #include "widgets/button_style.h"
@@ -281,7 +283,11 @@ void largerTypeKeepsEveryActionReachable() {
     QCoreApplication::setApplicationVersion(QStringLiteral("12.34.56-beta.7+build.89"));
     snow_shot::update::UpdateService updates({});
     const_cast<snow_shot::update::UpdateStatus&>(updates.status()) = {
-        snow_shot::update::UpdateState::Ready, QStringLiteral("12.34.56-beta.8+build.90")};
+        snow_shot::update::UpdateState::Ready,
+        QStringLiteral("12.34.56-beta.8+build.90"),
+        {},
+        0,
+        0};
     AboutPageWidget page(nullptr, [](const QUrl&) { return true; }, &updates);
     page.resize(360, 360);
     page.show();
@@ -311,6 +317,75 @@ void updatePolicyAndUnavailableCopy() {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto binding = settings::SettingsSelectBinding::UpdateMode;
+#ifdef Q_OS_MACOS
+    require(backend.selectValue(binding).toString() == QStringLiteral("check"),
+            "macOS defaults to automatic checks");
+    for (const QString& value : {QStringLiteral("manual"), QStringLiteral("check")}) {
+        require(backend.applySelectValue(binding, value) &&
+                    backend.selectValue(binding).toString() == value,
+                "macOS check policies round-trip");
+    }
+    require(backend.applySelectValue(binding, QStringLiteral("download")) &&
+                backend.selectValue(binding).toString() == QStringLiteral("check"),
+            "legacy policy maps to check");
+    snow_shot::update::UpdateService updates({});
+    QList<QUrl> opened;
+    AboutPageWidget page(
+        nullptr,
+        [&](const QUrl& url) {
+            opened.append(url);
+            return true;
+        },
+        &updates);
+    require(child<adqt::widgets::AdButton>(page, "aboutUpdateAction")->isEnabled(),
+            "macOS can check without installation metadata");
+    auto& status = const_cast<snow_shot::update::UpdateStatus&>(updates.status());
+    status = {snow_shot::update::UpdateState::Available, QStringLiteral("2.0.0"), {}, 0, 0};
+    updates.statusChanged();
+    auto* action = child<adqt::widgets::AdButton>(page, "aboutUpdateAction");
+    require(action->text() == QStringLiteral("Download from website"),
+            "About explains external download");
+    action->click();
+    require(opened == QList<QUrl>{QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
+            "About opens configured website");
+    opened.clear();
+    {
+        snow_shot::presentation::UpdateNotice notice(QStringLiteral("2.0.0"), nullptr,
+                                                     [&](const QUrl& url) {
+                                                         opened.append(url);
+                                                         return true;
+                                                     });
+        notice.show();
+        require(!notice.isModal() && opened.isEmpty(),
+                "automatic notice is nonmodal and does not open browser");
+        child<QPushButton>(notice, "updateLater")->click();
+        require(opened.isEmpty() && status.state == snow_shot::update::UpdateState::Available,
+                "dismissing notice retains update without navigating");
+    }
+    snow_shot::presentation::UpdateNotice notice(QStringLiteral("2.0.0"), nullptr,
+                                                 [&](const QUrl& url) {
+                                                     opened.append(url);
+                                                     return true;
+                                                 });
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        QTranslator translator;
+        require(translator.load(QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR) +
+                                QStringLiteral("/snow_shot_%1.qm").arg(locale)),
+                "load notice translation");
+        QCoreApplication::installTranslator(&translator);
+        QEvent languageChange(QEvent::LanguageChange);
+        QCoreApplication::sendEvent(&notice, &languageChange);
+        require(child<QPushButton>(notice, "downloadFromWebsite")->text() ==
+                        translator.translate("UpdateNotice", "Download from website") &&
+                    notice.text().contains(QStringLiteral("2.0.0")),
+                "notice retranslates and preserves version");
+        QCoreApplication::removeTranslator(&translator);
+    }
+    child<QPushButton>(notice, "downloadFromWebsite")->click();
+    require(opened == QList<QUrl>{QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
+            "notice opens website only on action");
+#else
     require(backend.selectValue(binding).toString() == QStringLiteral("download"),
             "automatic download is the default update policy");
     for (const QString& value :
@@ -329,6 +404,7 @@ void updatePolicyAndUnavailableCopy() {
     require(child<QLabel>(page, "aboutUpdateStatus")->text() ==
                 QStringLiteral("Automatic updates are unavailable for this copy."),
             "unavailable update status explains the disabled action");
+#endif
 }
 
 void updateStatesFitTheVersionPanel() {

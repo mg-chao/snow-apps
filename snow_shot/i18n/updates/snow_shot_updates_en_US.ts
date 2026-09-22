@@ -468,4 +468,38 @@
             <translation>Update permission was declined or could not be obtained</translation>
         </message>
     </context>
+    <context>
+        <name>UpdateNotice</name>
+        <message>
+            <source>Download from website</source>
+            <translation>Download from website</translation>
+        </message>
+        <message>
+            <source>Later</source>
+            <translation>Later</translation>
+        </message>
+        <message>
+            <source>Snow Shot %1 is available. Download the installation package from the official website.</source>
+            <translation>Snow Shot %1 is available. Download the installation package from the official website.</translation>
+        </message>
+        <message>
+            <source>Update available</source>
+            <translation>Update available</translation>
+        </message>
+    </context>
+    <context>
+        <name>UpdateService</name>
+        <message>
+            <source>Could not check for updates. Please try again.</source>
+            <translation>Could not check for updates. Please try again.</translation>
+        </message>
+        <message>
+            <source>The update check timed out. Please try again.</source>
+            <translation>The update check timed out. Please try again.</translation>
+        </message>
+        <message>
+            <source>The update server returned an invalid version.</source>
+            <translation>The update server returned an invalid version.</translation>
+        </message>
+    </context>
 </TS>
