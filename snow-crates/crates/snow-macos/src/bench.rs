@@ -61,6 +61,24 @@ fn time_ms(warmup: usize, count: usize, mut op: impl FnMut()) -> (f64, f64) {
     percentile(&mut samples)
 }
 
+// A missing target or failed query must never produce a successful timing row.
+fn try_time_ms<T>(
+    warmup: usize,
+    count: usize,
+    mut op: impl FnMut() -> Option<T>,
+) -> Option<(f64, f64)> {
+    for _ in 0..warmup {
+        std::hint::black_box(op()?);
+    }
+    let mut samples = Vec::with_capacity(count);
+    for _ in 0..count {
+        let start = Instant::now();
+        std::hint::black_box(op()?);
+        samples.push(start.elapsed().as_secs_f64() * 1_000.0);
+    }
+    (!samples.is_empty()).then(|| percentile(&mut samples))
+}
+
 fn row(label: &str, median_ms: f64, p95_ms: f64, note: impl Into<String>) -> Timing {
     Timing {
         label: label.to_owned(),
@@ -350,12 +368,15 @@ fn window_probe_rows() -> Vec<Timing> {
     let Some(id) = first_window_id() else {
         return vec![skipped("window probe", "no window id")];
     };
-    let (probe_median, probe_p95) = time_ms(10, 40, || {
-        std::hint::black_box(content::probe_window(id));
-    });
-    let (list_median, list_p95) = time_ms(10, 40, || {
-        std::hint::black_box(on_screen_window_info_count());
-    });
+    let Some((probe_median, probe_p95)) = try_time_ms(10, 40, || content::probe_window(id)) else {
+        return vec![skipped(
+            "window probe",
+            "target unavailable or invalid window description",
+        )];
+    };
+    let Some((list_median, list_p95)) = try_time_ms(10, 40, on_screen_window_info_count) else {
+        return vec![skipped("window probe", "window-list baseline unavailable")];
+    };
     let mut rows = vec![
         row(
             "single-window geometry probe",
@@ -429,5 +450,34 @@ fn ratio(candidate: f64, baseline: f64) -> String {
         format!("{:.1}% slower than baseline", -percent)
     } else {
         format!("{percent:.1}% versus baseline, within noise")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_timings_reject_failed_warmup_and_measured_queries() {
+        for failure_at in [0, 1, 2, 4] {
+            let mut calls = 0;
+            let result = try_time_ms(2, 3, || {
+                let success = calls != failure_at;
+                calls += 1;
+                success.then_some(())
+            });
+            assert!(result.is_none());
+            assert_eq!(calls, failure_at + 1);
+        }
+        let mut calls = 0;
+        assert!(
+            try_time_ms(2, 3, || {
+                calls += 1;
+                Some(())
+            })
+            .is_some()
+        );
+        assert_eq!(calls, 5);
+        assert!(try_time_ms(0, 0, || Some(())).is_none());
     }
 }
