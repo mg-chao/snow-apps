@@ -136,18 +136,6 @@ QPainterPath selectionShapePath(const QRectF& selection, int cornerRadius,
     return path;
 }
 
-QRectF snappedOutwardToDevicePixels(const QRectF& rect, qreal devicePixelRatio) {
-    if (!rect.isValid() || rect.isEmpty() || devicePixelRatio <= 0.0) {
-        return rect;
-    }
-
-    const qreal left = std::floor(rect.left() * devicePixelRatio) / devicePixelRatio;
-    const qreal top = std::floor(rect.top() * devicePixelRatio) / devicePixelRatio;
-    const qreal right = std::ceil(rect.right() * devicePixelRatio) / devicePixelRatio;
-    const qreal bottom = std::ceil(rect.bottom() * devicePixelRatio) / devicePixelRatio;
-    return QRectF(QPointF(left, top), QPointF(right, bottom));
-}
-
 bool rectFCovers(const QRectF& outer, const QRect& inner) {
     if (!inner.isValid() || inner.isEmpty() || !outer.isValid() || outer.isEmpty()) {
         return false;
@@ -1341,8 +1329,7 @@ bool ScreenshotCanvasRenderer::coversWidgetRect(const QRect& widgetRect) const {
         return widgetRect == canvasRect;
     }
 
-    const QRectF targetRect = snappedOutwardToDevicePixels(
-        canvasToView.mapRect(m_imageSource.materializedCanvasRect), devicePixelRatio);
+    const QRectF targetRect = canvasToView.mapRect(m_imageSource.materializedCanvasRect);
     return rectFCovers(targetRect, widgetRect);
 }
 
@@ -1403,11 +1390,7 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
         painter.restore();
     } else if (m_imageSource.isMaterialized()) {
         const QRectF targetRect =
-            m_renderMode == RenderMode::PinnedResult
-                ? context.canvasToViewTransform.mapRect(m_imageSource.materializedCanvasRect)
-                : snappedOutwardToDevicePixels(
-                      context.canvasToViewTransform.mapRect(m_imageSource.materializedCanvasRect),
-                      context.devicePixelRatio);
+            context.canvasToViewTransform.mapRect(m_imageSource.materializedCanvasRect);
         if (context.exposedRegion.intersects(targetRect.toAlignedRect())) {
             painter.save();
             if (m_renderMode == RenderMode::PinnedResult) {
@@ -1435,8 +1418,7 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
         const QRectF canvasRect = m_ocrFilteredCanvasRect.isValid()
                                       ? m_ocrFilteredCanvasRect
                                       : QRectF(m_ocrPresentation->selection).normalized();
-        const QRectF targetRect = snappedOutwardToDevicePixels(
-            context.canvasToViewTransform.mapRect(canvasRect), context.devicePixelRatio);
+        const QRectF targetRect = context.canvasToViewTransform.mapRect(canvasRect);
         if (!canvasRect.isEmpty() && targetRect.isValid() && !targetRect.isEmpty() &&
             context.exposedRegion.intersects(targetRect.toAlignedRect())) {
             painter.save();

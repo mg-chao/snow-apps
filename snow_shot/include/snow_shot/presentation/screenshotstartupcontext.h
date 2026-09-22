@@ -154,6 +154,7 @@ template <typename QtStillCurrent>
         auto display = native;
         display.screen = qt.screen;
         display.logicalRect = qt.logicalRect;
+        display.logicalToPhysicalScale = qt.logicalToPhysicalScale;
         display.geometryResolved = true;
         bindings.push_back(StartupDisplayBinding{match.index, qtSlots.at(match.index), identity,
                                                  std::move(display)});

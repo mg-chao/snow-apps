@@ -220,11 +220,11 @@ QRect scrollingHoleForDisplay(const CapturedDisplayModel& display, const QRectF&
         return {};
     }
 
-    const qreal scaleX = static_cast<qreal>(display.logicalRect.width()) / canvasRect.width();
-    const qreal scaleY = static_cast<qreal>(display.logicalRect.height()) / canvasRect.height();
-    const QRectF localRect((intersection.left() - canvasRect.left()) * scaleX,
-                           (intersection.top() - canvasRect.top()) * scaleY,
-                           intersection.width() * scaleX, intersection.height() * scaleY);
+    const ScreenshotGeometryMapper mapper;
+    const QPointF origin(display.logicalRect.topLeft());
+    const QRectF localRect(
+        mapper.logicalPositionForCanvasPoint(display, intersection.topLeft()) - origin,
+        mapper.logicalPositionForCanvasPoint(display, intersection.bottomRight()) - origin);
     return localRect.toAlignedRect().intersected(QRect(QPoint(0, 0), display.logicalRect.size()));
 }
 } // namespace

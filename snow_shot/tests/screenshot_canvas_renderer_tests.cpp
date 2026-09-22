@@ -427,6 +427,63 @@ void physicalViewportRenderingPreservesEveryPixelAtFractionalDprs() {
     }
 }
 
+void overlayCameraPreservesDesktopPixels() {
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    ScreenshotGeometryMapper mapper;
+    for (const QSize size : {QSize(2240, 1440), QSize(2560, 1600), QSize(321, 181)}) {
+        for (const qreal dpr : {1.5, 1.25, 1.75, 2.0}) {
+            CapturedDisplayModel display;
+            display.physicalRect = QRect(QPoint(-2560, -1600), size);
+            display.canvasRect = QRect(QPoint(317, 211), size);
+            display.logicalRect = QRect(QPoint(-2560, -1600), QSize(qRound(size.width() / dpr),
+                                                                    qRound(size.height() / dpr)));
+            display.logicalToPhysicalScale = dpr;
+            const auto viewport = ScreenshotGeometryMapper::displayViewportGeometry(display);
+            const qreal zoom = viewport.canvasToLogicalScale;
+            const QTransform transform(
+                zoom, 0, 0, zoom,
+                viewport.logicalRect.width() / 2.0 - viewport.canvasCenter.x() * zoom,
+                viewport.logicalRect.height() / 2.0 - viewport.canvasCenter.y() * zoom);
+            const QPointF local = transform.map(QPointF(display.canvasRect.topLeft()));
+            require(std::hypot(local.x(), local.y()) < 1e-9 && std::abs(zoom * dpr - 1.0) < 1e-12,
+                    "overlay camera must anchor native pixels at the origin with exact DPI scale");
+            const QPointF sample = QPointF(display.canvasRect.topLeft()) + QPointF(123, 87);
+            const QPointF logical = mapper.logicalPositionForCanvasPoint(display, sample) -
+                                    QPointF(display.logicalRect.topLeft());
+            require(QLineF(logical, transform.map(sample)).length() < 1e-9,
+                    "selection mapping and image camera must use the same DPI transform");
+            display.active = true;
+            ScreenshotDisplaySession displays;
+            displays.appendDisplay(display);
+            require(mapper.physicalPositionForLogicalPoint(
+                        displays, logical + QPointF(display.logicalRect.topLeft())) ==
+                        display.physicalRect.topLeft() + QPoint(123, 87),
+                    "logical pointer mapping must select the original physical pixel");
+            QImage source(size, QImage::Format_RGB32);
+            for (int y = 0; y < size.height(); ++y) {
+                auto* row = reinterpret_cast<QRgb*>(source.scanLine(y));
+                for (int x = 0; x < size.width(); ++x) {
+                    row[x] = qRgb(x % 256, y % 256, (x + y) % 256);
+                }
+            }
+            renderer.setImage(source, QRectF(display.canvasRect));
+            QImage output(size, QImage::Format_RGB32);
+            output.setDevicePixelRatio(dpr);
+            output.fill(Qt::black);
+            QPainter painter(&output);
+            // Include the fractional final logical cell in the paint damage.
+            const QRect damage(0, 0, qCeil(size.width() / dpr), qCeil(size.height() / dpr));
+            renderer.renderBeforeCanvas(painter, {QRect(QPoint(), viewport.logicalRect.size()),
+                                                  QRegion(damage), transform, dpr});
+            painter.end();
+            output.setDevicePixelRatio(1);
+            require(output == source,
+                    "overlay rendering must preserve every desktop pixel at fractional DPI");
+        }
+    }
+}
+
 QImage renderPinnedResult(const QImage& source, const QTransform& canvasToView,
                           qreal devicePixelRatio) {
     SnowCanvasWidget canvas;
@@ -4005,6 +4062,7 @@ int main(int argc, char** argv) {
     rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
     overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();
     layeredImageSourceMatchesMaterializedOutput();
+    overlayCameraPreservesDesktopPixels();
     physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
     pinnedResultDownscaleUsesLinearFiltering();
     largeRasterSourceExtentsRenderWithoutFixedPointWrap();

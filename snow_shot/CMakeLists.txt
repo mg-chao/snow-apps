@@ -3026,6 +3026,8 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-canvas-renderer-tests
         tests/screenshot_canvas_renderer_tests.cpp
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         include/snow_shot/presentation/screenshothistoryservice.h
         src/presentation/capture/directcapturehistory.cpp
         src/presentation/services/screenshothistoryservice.cpp

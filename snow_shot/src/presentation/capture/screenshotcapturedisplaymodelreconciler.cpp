@@ -148,6 +148,7 @@ void applySnapshotToDisplay(CapturedDisplayModel& display, const CapturedDisplay
     display.capturedLogicalRect = snapshot.capturedLogicalRect;
     display.nativeDisplayId = snapshot.nativeDisplayId;
     display.backingScale = snapshot.backingScale;
+    display.logicalToPhysicalScale = 0.0;
     display.canvasUsesPoints = snapshot.canvasUsesPoints;
     display.backend = snapshot.backend;
     display.physicalRect = snapshot.physicalRect;
@@ -205,6 +206,7 @@ void ScreenshotCaptureDisplayModelReconciler::clearCaptureMetadata(CapturedDispl
     display.capturedLogicalRect = {};
     display.nativeDisplayId = 0;
     display.backingScale = 1.0;
+    display.logicalToPhysicalScale = 0.0;
     display.canvasUsesPoints = false;
     display.physicalRect = QRect();
     display.canvasRect = QRect();

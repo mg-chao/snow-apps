@@ -1681,6 +1681,31 @@ void startupDisplayIdentityMatchesByNameRectOrNativeId() {
                 (*matched)[0].identity.sameDeviceName(StartupDisplayIdentity::fromDisplay(right)),
             "reordered monitors must bind by device name");
 
+    for (const QSize pixels : {QSize(2240, 1440), QSize(2560, 1600)}) {
+        auto qtScaled = display("Scaled", QRect(QPoint(-2560, -1600), pixels), 0, false);
+        qtScaled.logicalRect.setSize(
+            QSize(qRound(pixels.width() / 1.5), qRound(pixels.height() / 1.5)));
+        qtScaled.logicalToPhysicalScale = 1.5;
+        auto nativeScaled = qtScaled;
+        nativeScaled.logicalToPhysicalScale = 0;
+        nativeScaled.logicalRect = {};
+        const auto scaled = matchStartupDisplays({qtScaled}, {0}, {nativeScaled}, alwaysCurrent);
+        require(scaled && scaled->first().display.logicalToPhysicalScale == 1.5,
+                "native startup matching must retain Qt DPI independently of rounded extents");
+        auto resolved = scaled->first().display;
+        resolved.active = true;
+        ScreenshotDisplaySession displays;
+        displays.appendDisplay(resolved);
+        ScreenshotGeometryMapper mapper;
+        const QPoint logical = resolved.logicalRect.topLeft() + QPoint(1200, 800);
+        const QPoint expected = resolved.physicalRect.topLeft() + QPoint(1800, 1200);
+        require(mapper.physicalPositionForLogicalPoint(displays, logical) == expected,
+                "startup cursor must use exact DPI before canvas geometry is normalized");
+        mapper.rebuild(displays);
+        require(mapper.physicalPositionForLogicalPoint(displays, logical) == expected,
+                "normalizing the canvas must preserve startup cursor pixels");
+    }
+
     CapturedDisplayModel renamed = left;
     renamed.name = QStringLiteral("Other");
     renamed.stableId = QStringLiteral("native-left");

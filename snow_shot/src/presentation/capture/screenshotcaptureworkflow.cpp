@@ -702,12 +702,8 @@ void ScreenshotCaptureWorkflow::handleLayoutReady(const ScreenshotCaptureLayout&
                 m_startup->displaySlot = slot;
         });
     m_startup->nativeDisplayId = owner->nativeDisplayId;
-    m_startup->physicalPosition =
-        owner->physicalRect.topLeft() +
-        QPoint(qRound(static_cast<double>(m_startup->logicalPosition.x() - owner->logicalRect.x()) *
-                      owner->physicalRect.width() / owner->logicalRect.width()),
-               qRound(static_cast<double>(m_startup->logicalPosition.y() - owner->logicalRect.y()) *
-                      owner->physicalRect.height() / owner->logicalRect.height()));
+    m_startup->physicalPosition = m_context.geometry.physicalPositionForLogicalPoint(
+        m_context.displaySession, m_startup->logicalPosition);
     m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
     if (m_startMode != StartMode::ExternalDrag)
         m_context.runtime.startWorkflowRefresh();
