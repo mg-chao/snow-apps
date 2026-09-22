@@ -408,6 +408,10 @@
             <translation>半形</translation>
         </message>
         <message>
+            <source>Hide selection toolbar</source>
+            <translation>隱藏選取範圍工具列</translation>
+        </message>
+        <message>
             <source>Highlight</source>
             <translation>醒目提示</translation>
         </message>

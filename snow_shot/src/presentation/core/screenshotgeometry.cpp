@@ -979,6 +979,37 @@ QPoint ScreenshotGeometryMapper::cursorPanelPosition(const QPoint& cursorPositio
     return clampContentPositionToRect(desiredPosition, QRect(QPoint(), panelSize), bounds);
 }
 
+QPoint ScreenshotGeometryMapper::selectionToolbarContentPosition(const QRectF& selectionLogical,
+                                                                 const QSize& toolbarSize,
+                                                                 const QRect& bounds, int gap) {
+    const int effectiveGap = std::max(0, gap);
+    const int left = qRound(selectionLogical.left());
+    const int top = qRound(selectionLogical.top());
+    const int right = qRound(selectionLogical.right());
+    const int bottom = qRound(selectionLogical.bottom());
+    const QRect content(QPoint(0, 0), toolbarSize);
+    const QPoint topLeft(left, top - toolbarSize.height() - effectiveGap);
+    const QPoint candidates[] = {
+        topLeft,
+        QPoint(right + effectiveGap, top),
+        QPoint(left - toolbarSize.width() - effectiveGap, top),
+        QPoint(left, bottom + effectiveGap),
+    };
+    const auto fullyVisible = [&](const QPoint& position) {
+        if (content.isEmpty() || !bounds.isValid() || bounds.isEmpty()) {
+            return false;
+        }
+        const QRect translated = content.translated(position);
+        return translated.intersected(bounds) == translated;
+    };
+    for (const QPoint& candidate : candidates) {
+        if (fullyVisible(candidate)) {
+            return candidate;
+        }
+    }
+    return clampContentPositionToRect(topLeft, content, bounds);
+}
+
 ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlacement(
     const QPoint& bottomRightAnchor, const QPoint& topRightAnchor,
     const ScreenshotToolbarPlacementGeometry& bottomPlacement,

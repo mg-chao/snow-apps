@@ -74,6 +74,7 @@ constexpr int kRecordingSettingsColorPickerWidth = 154;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill regions"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Capture cursor"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recapture"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Hide selection toolbar"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter type"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mosaic"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Gaussian blur"),
@@ -2095,6 +2096,15 @@ void ScreenshotToolPalette::setCaptureCursorEnabled(bool enabled) {
 
 bool ScreenshotToolPalette::captureCursorEnabled() const {
     return m_captureCursorEnabled;
+}
+
+void ScreenshotToolPalette::setSelectionToolbarHidden(bool hidden) {
+    m_selectionToolbarHidden = hidden;
+    setScreenshotToolPaletteButtonActive(m_hideSelectionToolbarButton, hidden);
+}
+
+bool ScreenshotToolPalette::selectionToolbarHidden() const {
+    return m_selectionToolbarHidden;
 }
 
 void ScreenshotToolPalette::setRecaptureBusy(bool busy) {
@@ -6849,9 +6859,7 @@ void ScreenshotToolPalette::createMoveActionFamily() {
         actionButtonMetrics(m_physicalScale));
     m_captureCursorButton->setObjectName(QStringLiteral("screenshotCaptureCursorButton"));
     layout->addWidget(m_captureCursorButton);
-    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
-    layout->addWidget(createStyleToolbarSeparator(m_moveActionControls));
-    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
     m_recaptureButton = createScreenshotToolPaletteStyleActionButton(
         m_moveActionControls, "Recapture", custom_outlined_icons::RefreshCapture(),
         actionButtonMetrics(m_physicalScale));
@@ -6859,6 +6867,16 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     applyScreenshotShortcutTooltip(m_recaptureButton, QStringLiteral("Recapture"),
                                    QStringLiteral("recapture"));
     layout->addWidget(m_recaptureButton);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    layout->addWidget(createStyleToolbarSeparator(m_moveActionControls));
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    auto* hideSelectionToolbarButton = createScreenshotToolPaletteStyleActionButton(
+        m_moveActionControls, "Hide selection toolbar", outlined_icons::EyeInvisible(),
+        actionButtonMetrics(m_physicalScale));
+    hideSelectionToolbarButton->setObjectName(
+        QStringLiteral("screenshotHideSelectionToolbarButton"));
+    layout->addWidget(hideSelectionToolbarButton);
+    m_hideSelectionToolbarButton = hideSelectionToolbarButton;
 
     connect(m_captureCursorButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         setCaptureCursorEnabled(!m_captureCursorEnabled);
@@ -6866,11 +6884,16 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     });
     connect(m_recaptureButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::recaptureRequested);
+    connect(hideSelectionToolbarButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        setSelectionToolbarHidden(!m_selectionToolbarHidden);
+        emit selectionToolbarHiddenChanged(m_selectionToolbarHidden);
+    });
     m_selectActionLayout->addWidget(m_moveActionControls);
-    stampScreenshotToolbarReferenceWidth(m_moveActionControls,
-                                         actionButtonMetrics(1.0).buttonSize * 2 +
-                                             STYLE_GROUP_SPACING * 4 + TOOLBAR_SEPARATOR_WIDTH);
+    stampScreenshotToolbarReferenceWidth(
+        m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 3 + STYLE_ITEM_SPACING +
+                                  STYLE_GROUP_SPACING * 4 + TOOLBAR_SEPARATOR_WIDTH);
     setCaptureCursorEnabled(m_captureCursorEnabled);
+    setSelectionToolbarHidden(m_selectionToolbarHidden);
     setRecaptureBusy(m_recaptureBusy);
 }
 

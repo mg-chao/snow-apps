@@ -195,7 +195,6 @@ void ScreenshotToolbarPresenter::moveSelectionToolbar(
     }
 
     const QSize toolbarSize = toolbarWidget->contentSizeHint();
-    const QRect toolbarRect(QPoint(0, 0), toolbarSize);
     const CapturedDisplayModel* display = displayForCanvasRect(selection);
     ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display);
     if (display == nullptr || overlay == nullptr) {
@@ -214,11 +213,12 @@ void ScreenshotToolbarPresenter::moveSelectionToolbar(
         return;
     }
 
-    const QPoint topLeftAnchor = logicalPositionForCanvasPoint(*display, selection.topLeft());
-    QPoint pos(topLeftAnchor.x(), topLeftAnchor.y() - toolbarSize.height() - kSelectionToolbarGap);
-
-    pos = ScreenshotGeometryMapper::clampContentPositionToRect(pos, toolbarRect,
-                                                               placementGeometry.logicalBounds);
+    const QPoint logicalTopLeft = logicalPositionForCanvasPoint(*display, selection.topLeft());
+    const QPoint logicalBottomRight =
+        logicalPositionForCanvasPoint(*display, selection.bottomRight());
+    const QPoint pos = ScreenshotGeometryMapper::selectionToolbarContentPosition(
+        QRectF(logicalTopLeft, logicalBottomRight).normalized(), toolbarSize,
+        placementGeometry.logicalBounds, kSelectionToolbarGap);
 
     const QPoint overlayOrigin = overlay->geometry().topLeft();
     toolbarWidget->moveContentTo(pos - overlayOrigin);

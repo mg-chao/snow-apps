@@ -454,7 +454,8 @@ void ScreenshotOverlayUiHost::attachSelectionToolbarToOverlay(ScreenshotOverlayW
     toolbarWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     toolbarWidget->setAttribute(Qt::WA_NoSystemBackground, true);
     toolbarWidget->setFocusPolicy(Qt::NoFocus);
-    if (wasVisible && overlay != nullptr && overlay->isVisible()) {
+    if (wasVisible && !m_selectionToolbarHiddenForSession && overlay != nullptr &&
+        overlay->isVisible()) {
         showPreparedChildWidget(toolbarWidget);
         toolbarWidget->raise();
     }
@@ -617,6 +618,7 @@ bool ScreenshotOverlayUiHost::stepToolbarWatermarkFontSize(int direction) {
 }
 
 void ScreenshotOverlayUiHost::resetToolbarForNewCapture() {
+    m_selectionToolbarHiddenForSession = false;
     if (m_toolbar != nullptr) {
         const bool wasVisible = m_toolbar->isVisible();
         m_toolbar->resetForNewCapture();
@@ -674,7 +676,17 @@ void ScreenshotOverlayUiHost::hideSelectionToolbar() {
     }
 }
 
+void ScreenshotOverlayUiHost::setSelectionToolbarHiddenForSession(bool hidden) {
+    m_selectionToolbarHiddenForSession = hidden;
+    if (hidden) {
+        hideSelectionToolbar();
+    }
+}
+
 void ScreenshotOverlayUiHost::showSelectionToolbar() {
+    if (m_selectionToolbarHiddenForSession) {
+        return;
+    }
     ScreenshotSelectionToolbarWidget* toolbarWidget = trackedWidget(m_selectionToolbar);
     if (toolbarWidget == nullptr || toolbarWidget->parentWidget() == nullptr) {
         return;

@@ -312,6 +312,8 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] bool activateRememberedDrawingTool();
     void setCaptureCursorEnabled(bool enabled);
     [[nodiscard]] bool captureCursorEnabled() const;
+    void setSelectionToolbarHidden(bool hidden);
+    [[nodiscard]] bool selectionToolbarHidden() const;
     void setRecaptureBusy(bool busy);
     [[nodiscard]] bool recaptureBusy() const;
     void clearActiveTool();
@@ -415,6 +417,7 @@ class ScreenshotToolPalette final : public QWidget,
     void moveRequested();
     void captureCursorToggled(bool enabled);
     void recaptureRequested();
+    void selectionToolbarHiddenChanged(bool hidden);
     void selectRequested();
     void recordingExportSettingsVisibleChanged(bool visible);
     void shapeRequested();
@@ -776,6 +779,7 @@ class ScreenshotToolPalette final : public QWidget,
     QSpacerItem* m_shapeStyleGroupSeparatorTrailingSpacing = nullptr;
     adqt::widgets::AdButton* m_moveButton = nullptr;
     adqt::widgets::AdButton* m_captureCursorButton = nullptr;
+    adqt::widgets::AdButton* m_hideSelectionToolbarButton = nullptr;
     adqt::widgets::AdButton* m_recaptureButton = nullptr;
     adqt::widgets::AdButton* m_undoButton = nullptr;
     adqt::widgets::AdButton* m_redoButton = nullptr;
@@ -930,6 +934,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_recordingKeyboardVisible = false;
     bool m_recordingCursorVisible = true;
     bool m_captureCursorEnabled = false;
+    bool m_selectionToolbarHidden = false;
     bool m_recaptureBusy = false;
     bool m_ocrEnabled = true;
     bool m_ocrBusy = false;

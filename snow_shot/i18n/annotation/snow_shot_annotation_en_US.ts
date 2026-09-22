@@ -408,6 +408,10 @@
             <translation>Half-width</translation>
         </message>
         <message>
+            <source>Hide selection toolbar</source>
+            <translation>Hide selection toolbar</translation>
+        </message>
+        <message>
             <source>Highlight</source>
             <translation>Highlight</translation>
         </message>

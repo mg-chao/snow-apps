@@ -408,6 +408,10 @@
             <translation>半角</translation>
         </message>
         <message>
+            <source>Hide selection toolbar</source>
+            <translation>隐藏选区工具栏</translation>
+        </message>
+        <message>
             <source>Highlight</source>
             <translation>高亮</translation>
         </message>

@@ -110,6 +110,44 @@ void cursorPanelPlacementRespectsOffsetMonitorBounds() {
             "an oversized cursor panel should clamp to an offset monitor origin");
 }
 
+void selectionToolbarPrefersTopLeftThenSidesThenBottom() {
+    const QRect bounds(0, 0, 1920, 1080);
+    const QSize toolbar(200, 32);
+    constexpr int gap = 4;
+    const auto place = [&](const QRectF& selection) {
+        return ScreenshotGeometryMapper::selectionToolbarContentPosition(selection, toolbar, bounds,
+                                                                         gap);
+    };
+    const auto inside = [&](const QPoint& position) {
+        const QRect occupied(position, toolbar);
+        return occupied.intersected(bounds) == occupied;
+    };
+
+    const QPoint above = place(QRectF(400, 300, 500, 200));
+    require(above == QPoint(400, 264) && inside(above),
+            "selection toolbar should sit above the top-left when that fits");
+
+    const QPoint right = place(QRectF(400, 10, 500, 200));
+    require(right == QPoint(904, 10) && inside(right),
+            "selection toolbar should use the top of the right side when the top does not fit");
+
+    const QPoint left = place(QRectF(1800, 10, 100, 200));
+    require(
+        left == QPoint(1596, 10) && inside(left),
+        "selection toolbar should use the top of the left side when the right side does not fit");
+
+    const QPoint below = place(QRectF(10, 8, 1900, 200));
+    require(below == QPoint(10, 212) && inside(below),
+            "selection toolbar should use the bottom-left when both sides do not fit");
+
+    const QPoint clamped = place(QRectF(0, 0, 1920, 1080));
+    require(clamped == QPoint(0, 0) && inside(clamped),
+            "selection toolbar should clamp the top-left candidate inside the display");
+
+    require(place(QRectF(400.6, 300.4, 100, 80)) == QPoint(401, 264),
+            "selection toolbar anchors should round logical selection edges");
+}
+
 } // namespace
 
 int main() {
@@ -120,6 +158,7 @@ int main() {
         fullResolutionPlacementCentersWithoutFitting();
         cursorPanelPlacementUsesEveryAvailableQuadrant();
         cursorPanelPlacementRespectsOffsetMonitorBounds();
+        selectionToolbarPrefersTopLeftThenSidesThenBottom();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

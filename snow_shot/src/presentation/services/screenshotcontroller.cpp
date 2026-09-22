@@ -338,6 +338,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void undoCanvasEdit() override;
     void redoCanvasEdit() override;
     void requestRecapture() override;
+    void setSelectionToolbarHiddenForSession(bool hidden) override;
     void setMoveTool() override;
     void setSelectTool() override;
     void setShapeTool() override;
@@ -1669,6 +1670,15 @@ bool ScreenshotController::Impl::canRecapture() const {
         }
     });
     return !textEditing;
+}
+
+void ScreenshotController::Impl::setSelectionToolbarHiddenForSession(bool hidden) {
+    if (m_overlayCoordinator != nullptr) {
+        m_overlayCoordinator->setSelectionToolbarHiddenForSession(hidden);
+    }
+    if (!hidden && m_presentationServices != nullptr) {
+        m_presentationServices->showSelectionToolbar();
+    }
 }
 
 void ScreenshotController::Impl::requestRecapture() {

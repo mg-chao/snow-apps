@@ -142,6 +142,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void hideToolbar();
     void showToolbar();
     void hideSelectionToolbar();
+    void setSelectionToolbarHiddenForSession(bool hidden);
     void showSelectionToolbar();
     void raiseSelectionToolbar();
     void destroyUiResources();

@@ -132,6 +132,8 @@ void ScreenshotToolbarWindow::initializePalette() {
             });
     connect(toolPalette, &ScreenshotToolPalette::recaptureRequested, this,
             [this]() { m_commands.requestRecapture(); });
+    connect(toolPalette, &ScreenshotToolPalette::selectionToolbarHiddenChanged, this,
+            [this](bool hidden) { m_commands.setSelectionToolbarHiddenForSession(hidden); });
     connect(host, &ScreenshotToolPaletteHost::dragStarted, this,
             [this](const QPoint&) { m_manuallyDragged = true; });
 }
@@ -460,6 +462,9 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
     }
     setHistoryState(SnowCanvasHistoryState{});
     m_rememberedDrawingToolRestorePending = true;
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->setSelectionToolbarHidden(false);
+    }
     prepareForDisplay();
 }
 

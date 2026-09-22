@@ -18,6 +18,7 @@ class ScreenshotToolbarCommandSink {
     virtual void undoCanvasEdit() {}
     virtual void redoCanvasEdit() {}
     virtual void requestRecapture() {}
+    virtual void setSelectionToolbarHiddenForSession(bool) {}
     virtual void setMoveTool() = 0;
     virtual void setSelectTool() = 0;
     virtual void setShapeTool() = 0;

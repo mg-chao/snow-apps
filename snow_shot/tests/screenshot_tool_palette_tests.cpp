@@ -11618,23 +11618,37 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
         QStringLiteral("screenshotCaptureCursorButton"));
     auto* recapture =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRecaptureButton"));
+    auto* hideSelectionToolbar = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotHideSelectionToolbarButton"));
     auto* layout = controls != nullptr ? qobject_cast<QBoxLayout*>(controls->layout()) : nullptr;
-    require(controls != nullptr && cursor != nullptr && recapture != nullptr && layout != nullptr &&
+    require(controls != nullptr && cursor != nullptr && recapture != nullptr &&
+                hideSelectionToolbar != nullptr && layout != nullptr &&
                 palette.actionToolbarVisible() && !palette.styleToolbarVisible(),
             "Move must materialize and display its dedicated options row");
-    require(layout->indexOf(cursor) == 0 && layout->indexOf(recapture) == layout->count() - 1 &&
-                layout->itemAt(2) != nullptr &&
-                qobject_cast<QFrame*>(layout->itemAt(2)->widget()) != nullptr,
-            "Move options must order Capture cursor, separator, then Recapture");
+    require(
+        layout->indexOf(cursor) == 0 && layout->indexOf(recapture) == 2 &&
+            layout->indexOf(hideSelectionToolbar) == layout->count() - 1 &&
+            qobject_cast<QFrame*>(layout->itemAt(1)->widget()) == nullptr &&
+            layout->itemAt(layout->indexOf(hideSelectionToolbar) - 2) != nullptr &&
+            qobject_cast<QFrame*>(
+                layout->itemAt(layout->indexOf(hideSelectionToolbar) - 2)->widget()) != nullptr,
+        "Move options must place Recapture beside Capture cursor, then a separator before hide");
     require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
             "Capture cursor must use the same state-driven action button as scrolling screenshot");
 
     int cursorChanges = 0;
     int recaptures = 0;
+    int hideChanges = 0;
+    bool selectionToolbarHidden = false;
     QObject::connect(&palette, &ScreenshotToolPalette::captureCursorToggled,
                      [&cursorChanges](bool enabled) { cursorChanges += enabled ? 1 : 100; });
     QObject::connect(&palette, &ScreenshotToolPalette::recaptureRequested,
                      [&recaptures]() { ++recaptures; });
+    QObject::connect(&palette, &ScreenshotToolPalette::selectionToolbarHiddenChanged,
+                     [&hideChanges, &selectionToolbarHidden](bool hidden) {
+                         ++hideChanges;
+                         selectionToolbarHidden = hidden;
+                     });
     cursor->click();
     require(cursorChanges == 1 && palette.captureCursorEnabled(),
             "Capture cursor clicks must update state and emit the persisted-setting command");
@@ -11642,6 +11656,18 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     require(recaptures == 1 && recapture->toolTip() == shortcutTooltip(QStringLiteral("Recapture"),
                                                                        {QStringLiteral("Alt+R")}),
             "Recapture must emit once and show its configurable default shortcut");
+    hideSelectionToolbar->click();
+    require(
+        hideChanges == 1 && selectionToolbarHidden && palette.selectionToolbarHidden() &&
+            hideSelectionToolbar->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+            hideSelectionToolbar->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
+            !hideSelectionToolbar->isCheckable(),
+        "hiding the selection toolbar must activate the button");
+    hideSelectionToolbar->click();
+    require(hideChanges == 2 && !selectionToolbarHidden && !palette.selectionToolbarHidden() &&
+                hideSelectionToolbar->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
+                hideSelectionToolbar->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral,
+            "showing the selection toolbar must deactivate the button");
     palette.setRecaptureBusy(true);
     require(!recapture->isEnabled() &&
                 !palette.activateScreenshotShortcut(QStringLiteral("recapture")),
@@ -11724,11 +11750,15 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                         scrollingPalette.actionPanel()->layout()->contentsMargins(),
                 "Move must share scrolling screenshot panel height and padding at every scale");
         auto* scrollingLayout = scrollingControls->layout();
-        require(layout->itemAt(2)->widget()->size() ==
+        const int hideSeparator = layout->indexOf(hideSelectionToolbar) - 2;
+        require(layout->itemAt(hideSeparator)->widget()->size() ==
                         scrollingLayout->itemAt(2)->widget()->size() &&
-                    layout->itemAt(1)->sizeHint() == scrollingLayout->itemAt(1)->sizeHint() &&
-                    layout->itemAt(3)->sizeHint() == scrollingLayout->itemAt(3)->sizeHint(),
-                "Move separators and group spacing must match scrolling screenshot controls");
+                    layout->itemAt(hideSeparator - 1)->sizeHint() ==
+                        scrollingLayout->itemAt(1)->sizeHint() &&
+                    layout->itemAt(hideSeparator + 1)->sizeHint() ==
+                        scrollingLayout->itemAt(3)->sizeHint(),
+                "the hide-toolbar separator and group spacing must match scrolling screenshot "
+                "controls");
     }
     palette.setRecaptureBusy(true);
     for (const auto tool :
@@ -11741,9 +11771,11 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
             QStringLiteral("screenshotCaptureCursorButton"));
         recapture = palette.findChild<adqt::widgets::AdButton*>(
             QStringLiteral("screenshotRecaptureButton"));
+        hideSelectionToolbar = palette.findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotHideSelectionToolbarButton"));
         require(palette.actionToolbarVisible() && !palette.styleToolbarVisible() &&
                     cursor != nullptr && palette.captureCursorEnabled() && recapture != nullptr &&
-                    !recapture->isEnabled(),
+                    !recapture->isEnabled() && hideSelectionToolbar != nullptr,
                 "returning to Move must restore capture state through the shared action row");
         requireMatchingButtonState();
     }

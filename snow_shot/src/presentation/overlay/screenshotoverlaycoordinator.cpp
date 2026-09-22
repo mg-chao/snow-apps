@@ -529,6 +529,10 @@ void ScreenshotOverlayCoordinator::hideSelectionToolbar() {
     m_uiHost.hideSelectionToolbar();
 }
 
+void ScreenshotOverlayCoordinator::setSelectionToolbarHiddenForSession(bool hidden) {
+    m_uiHost.setSelectionToolbarHiddenForSession(hidden);
+}
+
 void ScreenshotOverlayCoordinator::showSelectionToolbar() {
     m_uiHost.showSelectionToolbar();
 }
