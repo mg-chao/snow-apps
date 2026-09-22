@@ -258,26 +258,39 @@ impl MonitorCapturer for MacCapturer {
         } else {
             self.session.snapshot().map_err(map_error)?
         };
-        if !native.duplicate || self.cpu.is_none() {
-            self.cpu = Some(
-                native
-                    .image
-                    .to_cpu()
-                    .map_err(|e| CaptureError::platform(anyhow::anyhow!(e)))?,
-            );
-        }
-        let cpu = self.cpu.as_ref().unwrap();
         let mut frame = reuse.unwrap_or_else(Frame::empty);
-        frame.ensure_capacity(
-            cpu.size.width,
-            cpu.size.height,
-            self.options.output_pixel_format,
-        )?;
-        copy_cpu_pixels(cpu, &mut frame)?;
-        frame.metadata = Default::default();
-        if self.options.output_pixel_format == CapturePixelFormat::Rgba8 {
-            snow_media::convert::swap_red_blue(frame.as_mut_bytes());
+        let swap = self.options.output_pixel_format == CapturePixelFormat::Rgba8;
+        if native.duplicate
+            && let Some(cpu) = self.cpu.as_ref()
+        {
+            frame.ensure_capacity(
+                cpu.size.width,
+                cpu.size.height,
+                self.options.output_pixel_format,
+            )?;
+            copy_cpu_pixels(cpu, &mut frame)?;
+        } else {
+            let size = native.image.size();
+            frame.ensure_capacity(size.width, size.height, self.options.output_pixel_format)?;
+            match native.image.copy_packed(frame.as_mut_bytes(), swap) {
+                Ok(()) => {
+                    self.cpu = native.duplicate.then(|| cached_output(&frame));
+                }
+                Err(snow_media::macos::PixelBufferError::Conversion(_)) => {
+                    let cpu = native
+                        .image
+                        .to_cpu()
+                        .map_err(|error| CaptureError::platform(anyhow::anyhow!(error)))?;
+                    copy_cpu_pixels(&cpu, &mut frame)?;
+                    if swap {
+                        snow_media::convert::swap_red_blue(frame.as_mut_bytes());
+                    }
+                    self.cpu = native.duplicate.then(|| cached_output(&frame));
+                }
+                Err(error) => return Err(CaptureError::platform(anyhow::anyhow!(error))),
+            }
         }
+        frame.metadata = Default::default();
         if let Some(time) = native.source_times.iter().max_by(|a, b| {
             (i128::from(a.value) * i128::from(b.timescale))
                 .cmp(&(i128::from(b.value) * i128::from(a.timescale)))
@@ -305,6 +318,28 @@ impl MonitorCapturer for MacCapturer {
     }
     fn capture_access_active(&self) -> bool {
         self.session.active_sources() != 0
+    }
+}
+
+fn cached_output(frame: &Frame) -> snow_media::CpuFrame {
+    let row_bytes = frame.width() as usize * 4;
+    snow_media::CpuFrame {
+        size: snow_media::geometry::PixelSize::new(frame.width(), frame.height())
+            .expect("captured frame dimensions"),
+        format: if frame.pixel_format() == CapturePixelFormat::Rgba8 {
+            snow_media::PixelFormat::Rgba8
+        } else {
+            snow_media::PixelFormat::Bgra8
+        },
+        color: snow_media::ColorDescription::SRGB,
+        planes: vec![snow_media::PlaneLayout {
+            offset: 0,
+            width: frame.width() as usize,
+            height: frame.height() as usize,
+            stride: row_bytes,
+            row_bytes,
+        }],
+        bytes: std::sync::Arc::from(frame.as_bytes()),
     }
 }
 

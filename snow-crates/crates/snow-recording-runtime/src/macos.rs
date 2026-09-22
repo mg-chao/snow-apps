@@ -67,7 +67,7 @@ pub struct NativeRecordingSession {
     config: NativeRecordingConfig,
     effects: Option<Effects>,
     capture: DesktopSession,
-    compositor: Compositor,
+    compositor: Option<Compositor>,
     encoder: StreamingEncoder,
     audio: Option<AudioStreamHandle>,
     mixer: Option<LiveAudioMixer>,
@@ -157,7 +157,6 @@ impl NativeRecordingSession {
         } else {
             PixelFormat::Bgra8
         };
-        let compositor = Compositor::new(config.output, format, 4).map_err(native_error)?;
         let encode_config = StreamingEncoderConfig {
             loop_animated_images: config.loop_animated_images,
             output_path: config.output_path.clone(),
@@ -232,7 +231,7 @@ impl NativeRecordingSession {
             effects,
             config,
             capture,
-            compositor,
+            compositor: None,
             encoder,
             audio,
             mixer,
@@ -429,24 +428,45 @@ impl NativeRecordingSession {
                 bytes: tile.pixels.as_slice(),
             })
             .collect();
-        let image = match self.compositor.compose_with_highlight(
-            &[Layer {
-                image: &frame.image,
-                source: PixelRect {
-                    x: 0,
-                    y: 0,
-                    width: size.width,
-                    height: size.height,
-                },
-                destination,
-            }],
-            &overlays,
-            &highlight,
-            true,
+        let output_format = if self.config.capture.dynamic_range == DynamicRange::Hdr {
+            PixelFormat::P010
+        } else {
+            PixelFormat::Bgra8
+        };
+        let image = if encoder_accepts_source(
+            frame.image.size(),
+            frame.image.format(),
+            self.config.output,
+            output_format,
+            destination,
+            overlays.is_empty() && highlight.is_empty(),
         ) {
-            Ok(image) => image,
-            Err(MacError::Timeout) => return Ok(NativeRecordingEvent::Idle),
-            Err(error) => return Err(native_error(error)),
+            frame.image.clone()
+        } else {
+            if self.compositor.is_none() {
+                self.compositor = Some(
+                    Compositor::new(self.config.output, output_format, 4).map_err(native_error)?,
+                );
+            }
+            match self.compositor.as_mut().unwrap().compose_with_highlight(
+                &[Layer {
+                    image: &frame.image,
+                    source: PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: size.width,
+                        height: size.height,
+                    },
+                    destination,
+                }],
+                &overlays,
+                &highlight,
+                true,
+            ) {
+                Ok(image) => image,
+                Err(MacError::Timeout) => return Ok(NativeRecordingEvent::Idle),
+                Err(error) => return Err(native_error(error)),
+            }
         };
         if self.config.capture.cancellation.is_canceled() {
             return Err(native_error(MacError::Canceled));
@@ -520,6 +540,26 @@ impl NativeRecordingSession {
             cpu_readbacks: self.cpu_readbacks,
         })
     }
+}
+
+fn encoder_accepts_source(
+    image: PixelSize,
+    image_format: PixelFormat,
+    output: PixelSize,
+    output_format: PixelFormat,
+    destination: PixelRect,
+    no_overlays: bool,
+) -> bool {
+    no_overlays
+        && image_format == output_format
+        && image == output
+        && destination
+            == PixelRect {
+                x: 0,
+                y: 0,
+                width: output.width,
+                height: output.height,
+            }
 }
 
 fn audio_discontinuity(
@@ -629,5 +669,52 @@ mod tests {
             snow_recording_model::media::DiscontinuityReason::AudioOverflow
         ));
         assert_eq!(ends[0], Some(start + Duration::from_millis(240)));
+    }
+    #[test]
+    fn fullscreen_sdr_without_overlays_skips_a_second_composite() {
+        let size = PixelSize::new(1920, 1080).unwrap();
+        let full = PixelRect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        assert!(encoder_accepts_source(
+            size,
+            PixelFormat::Bgra8,
+            size,
+            PixelFormat::Bgra8,
+            full,
+            true
+        ));
+        assert!(!encoder_accepts_source(
+            size,
+            PixelFormat::Rgba16Float,
+            size,
+            PixelFormat::P010,
+            full,
+            true
+        ));
+        assert!(!encoder_accepts_source(
+            size,
+            PixelFormat::Bgra8,
+            size,
+            PixelFormat::Bgra8,
+            full,
+            false
+        ));
+        assert!(!encoder_accepts_source(
+            size,
+            PixelFormat::Bgra8,
+            PixelSize::new(1280, 720).unwrap(),
+            PixelFormat::Bgra8,
+            PixelRect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720
+            },
+            true
+        ));
     }
 }

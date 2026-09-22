@@ -5,6 +5,7 @@ mod error;
 pub mod permission;
 pub use error::{MacError, MacResult};
 pub mod audio;
+pub mod bench;
 pub mod capabilities;
 pub mod capture;
 pub mod compositor;

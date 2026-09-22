@@ -4,8 +4,9 @@ use crate::{
     MacError, MacResult,
     capture::{CaptureConfig, NativeFrame, Target, VideoStream},
     compositor::{Compositor, Layer},
-    content::{self, DisplayInfo},
+    content::{self, DisplayInfo, SharedSnapshot, WindowProbe},
 };
+use objc2_screen_capture_kit::SCShareableContent;
 use snow_media::{
     CursorMode, DynamicRange, PixelFormat,
     geometry::{DesktopRect, DesktopSpace, DesktopTransform, PixelRect, PixelSize},
@@ -187,18 +188,22 @@ fn region_plan(
 impl Plan {
     fn resolve(config: &DesktopConfig) -> MacResult<Self> {
         let deadline = crate::deadline::Deadline::new(config.timeout)?;
+        let content =
+            content::shareable_content_cancelable(deadline.remaining()?, &config.cancellation)?;
+        Self::resolve_with(config, &content)
+    }
+    fn resolve_with(config: &DesktopConfig, content: &SCShareableContent) -> MacResult<Self> {
         let displays = if matches!(config.target, DesktopTarget::Window(_)) {
             Vec::new()
         } else {
-            content::displays_cancelable(deadline.remaining()?, &config.cancellation)?
+            content::displays_from(content)?
         };
         if let DesktopTarget::Region(bounds) = config.target {
             return region_plan(bounds, &displays, config.output);
         }
         let (target, process_id, bounds, size) = match config.target {
             DesktopTarget::Window(WindowId(id)) => {
-                let window =
-                    content::window_cancelable(id, deadline.remaining()?, &config.cancellation)?;
+                let window = content::window_from(content, id)?;
                 if !window.on_screen {
                     return Err(MacError::TargetUnavailable);
                 }
@@ -296,6 +301,8 @@ pub struct DesktopSession {
     configuration_pending: bool,
     failure: Option<MacError>,
     inspected_at: Instant,
+    window_probe: Option<WindowProbe>,
+    pending_content: Option<SharedSnapshot>,
 }
 impl DesktopSession {
     pub fn new(mut config: DesktopConfig) -> MacResult<Self> {
@@ -316,6 +323,10 @@ impl DesktopSession {
             config.target = DesktopTarget::Display(DisplayId(id));
         }
         let compositor = Compositor::new(plan.transform.output, output_format(&config), 4)?;
+        let window_probe = match config.target {
+            DesktopTarget::Window(WindowId(id)) => content::probe_window(id),
+            _ => None,
+        };
         Ok(Self {
             latest: vec![None; plan.sources.len()],
             config,
@@ -328,6 +339,8 @@ impl DesktopSession {
             configuration_pending: true,
             failure: None,
             inspected_at: Instant::now(),
+            window_probe,
+            pending_content: None,
         })
     }
     /// Replace the cancellation token between one-shot operations. Streams must be stopped.
@@ -364,7 +377,22 @@ impl DesktopSession {
         if current == self.topology && !window_check {
             return Ok(());
         }
-        let next = Plan::resolve(&self.config)?;
+        if window_check
+            && current == self.topology
+            && let DesktopTarget::Window(WindowId(id)) = self.config.target
+            && content::probe_window(id)
+                .is_some_and(|probe| self.window_probe.as_ref() == Some(&probe))
+        {
+            self.inspected_at = Instant::now();
+            return Ok(());
+        }
+        let deadline = crate::deadline::Deadline::new(self.config.timeout)?;
+        let content = content::shareable_content_cancelable(
+            deadline.remaining()?,
+            &self.config.cancellation,
+        )?;
+        let next = Plan::resolve_with(&self.config, &content)?;
+        self.pending_content = Some(SharedSnapshot::new(content));
         if matches!(self.config.target, DesktopTarget::Window(_))
             && self.plan.sources.first().map(|s| s.process_id)
                 != next.sources.first().map(|s| s.process_id)
@@ -372,6 +400,10 @@ impl DesktopSession {
             return Err(MacError::TargetUnavailable);
         }
         self.inspected_at = Instant::now();
+        self.window_probe = match self.config.target {
+            DesktopTarget::Window(WindowId(id)) => content::probe_window(id),
+            _ => None,
+        };
         if current != self.topology || next != self.plan {
             self.streams.clear();
             self.latest = vec![None; next.sources.len()];
@@ -418,10 +450,22 @@ impl DesktopSession {
             });
         }
         if self.streams.is_empty() {
+            let deadline = crate::deadline::Deadline::new(self.config.timeout)?;
+            let shared = if let Some(content) = self.pending_content.take() {
+                Some(content)
+            } else if self.plan.sources.len() > 1 {
+                Some(SharedSnapshot::new(content::shareable_content_cancelable(
+                    deadline.remaining()?,
+                    &self.config.cancellation,
+                )?))
+            } else {
+                None
+            };
             let mut streams = Vec::with_capacity(self.plan.sources.len());
             for i in 0..self.plan.sources.len() {
-                streams.push(VideoStream::start(
+                streams.push(VideoStream::start_with(
                     &self.plan.capture_config(&self.config, i),
+                    shared.as_deref(),
                 )?);
             }
             self.streams = streams;
@@ -475,10 +519,17 @@ impl DesktopSession {
     fn snapshot_inner(&mut self) -> MacResult<DesktopFrame> {
         let deadline = crate::deadline::Deadline::new(self.config.timeout)?;
         self.refresh()?;
+        let content = match self.pending_content.take() {
+            Some(content) => content,
+            None => SharedSnapshot::new(content::shareable_content_cancelable(
+                deadline.remaining()?,
+                &self.config.cancellation,
+            )?),
+        };
         for i in 0..self.plan.sources.len() {
             let mut options = self.plan.capture_config(&self.config, i);
             options.timeout = deadline.remaining()?;
-            self.latest[i] = Some(crate::capture::screenshot(&options)?);
+            self.latest[i] = Some(crate::capture::screenshot_with(&options, &content)?);
         }
         if topology()? != self.topology {
             return Err(MacError::Inactive);
@@ -516,7 +567,19 @@ impl DesktopSession {
             width: self.plan.transform.output.width,
             height: self.plan.transform.output.height,
         };
-        let image = if layers.len() == 1 && layers[0].destination == full && !self.config.opaque {
+        let display = matches!(
+            self.plan.sources.first().map(|source| source.target),
+            Some(Target::Display(_))
+        );
+        let image = if layers.len() == 1
+            && should_clone_source(
+                layers[0].source,
+                layers[0].destination,
+                frames[0].image.size(),
+                full,
+                self.config.opaque,
+                display,
+            ) {
             frames[0].image.clone()
         } else {
             self.compositor.compose(&layers, self.config.opaque)?
@@ -552,6 +615,23 @@ fn latch_failure(slot: &mut Option<MacError>, error: &MacError) -> bool {
     } else {
         false
     }
+}
+fn should_clone_source(
+    source: PixelRect,
+    destination: PixelRect,
+    image: PixelSize,
+    output: PixelRect,
+    opaque: bool,
+    display: bool,
+) -> bool {
+    source.x == 0
+        && source.y == 0
+        && source.width == image.width
+        && source.height == image.height
+        && destination == output
+        && image.width == output.width
+        && image.height == output.height
+        && (!opaque || display)
 }
 fn output_format(config: &DesktopConfig) -> PixelFormat {
     match config.dynamic_range {
@@ -656,5 +736,30 @@ mod tests {
         assert_eq!(plan.sources[1].destination.x, 300);
         bounds.space = DesktopSpace::PhysicalPixels;
         assert!(region_plan(bounds, &displays, None).is_err());
+    }
+    #[test]
+    fn opaque_display_frames_reuse_the_source_and_windows_do_not() {
+        let full = PixelRect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 10,
+        };
+        let image = PixelSize::new(20, 10).unwrap();
+        assert!(should_clone_source(full, full, image, full, true, true));
+        assert!(should_clone_source(full, full, image, full, false, false));
+        assert!(!should_clone_source(full, full, image, full, true, false));
+        assert!(!should_clone_source(
+            PixelRect {
+                width: 10,
+                height: 10,
+                ..full
+            },
+            full,
+            image,
+            full,
+            false,
+            true
+        ));
     }
 }

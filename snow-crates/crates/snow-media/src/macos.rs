@@ -208,6 +208,75 @@ impl PixelBuffer {
             bytes: bytes.into(),
         })
     }
+
+    /// Write tightly packed 8-bit pixels into `destination`.
+    /// `swap_red_blue` exchanges channels while copying, instead of a second pass.
+    pub fn copy_packed(
+        &self,
+        destination: &mut [u8],
+        swap_red_blue: bool,
+    ) -> Result<(), PixelBufferError> {
+        if !matches!(self.format, PixelFormat::Bgra8 | PixelFormat::Rgba8) {
+            return Err(crate::CpuFormatError::Unsupported.into());
+        }
+        let _guard = self
+            .storage
+            .mapping
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let buffer = &self.storage.buffer;
+        let result =
+            unsafe { CVPixelBufferLockBaseAddress(buffer, CVPixelBufferLockFlags::ReadOnly) };
+        if result != 0 {
+            return Err(PixelBufferError::Lock(result));
+        }
+        struct Unlock<'a>(&'a CVPixelBuffer);
+        impl Drop for Unlock<'_> {
+            fn drop(&mut self) {
+                unsafe {
+                    CVPixelBufferUnlockBaseAddress(self.0, CVPixelBufferLockFlags::ReadOnly);
+                }
+            }
+        }
+        let _unlock = Unlock(buffer);
+        if CVPixelBufferIsPlanar(buffer) {
+            return Err(PixelBufferError::Layout);
+        }
+        let width = self.size.width as usize;
+        let height = self.size.height as usize;
+        let stride = CVPixelBufferGetBytesPerRow(buffer);
+        let row_bytes = width.checked_mul(4).ok_or(PixelBufferError::Layout)?;
+        let needed = row_bytes
+            .checked_mul(height)
+            .ok_or(PixelBufferError::Layout)?;
+        if destination.len() != needed || stride < row_bytes {
+            return Err(PixelBufferError::Layout);
+        }
+        let ptr = CVPixelBufferGetBaseAddress(buffer);
+        if ptr.is_null() {
+            return Err(PixelBufferError::Layout);
+        }
+        let readable = stride
+            .checked_mul(height.saturating_sub(1))
+            .and_then(|value| value.checked_add(row_bytes))
+            .ok_or(PixelBufferError::Layout)?;
+        let source = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), readable) };
+        if !swap_red_blue && stride == row_bytes {
+            destination.copy_from_slice(source);
+            return Ok(());
+        }
+        for row in 0..height {
+            let start = row * stride;
+            let src = &source[start..start + row_bytes];
+            let dst = &mut destination[row * row_bytes..(row + 1) * row_bytes];
+            if swap_red_blue {
+                crate::convert::copy_swap_red_blue(src, dst);
+            } else {
+                dst.copy_from_slice(src);
+            }
+        }
+        Ok(())
+    }
 }
 
 fn read_color(
@@ -262,5 +331,71 @@ fn read_color(
             fallback.range = ColorRange::Video;
         }
         Ok(fallback)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_core_foundation::{CFDictionary, CFNumber, CFType};
+    use std::ptr::NonNull;
+
+    fn padded_bgra(width: usize, height: usize) -> PixelBuffer {
+        let alignment = CFNumber::new_i64(64);
+        let attrs = CFDictionary::<CFType, CFType>::from_slices(
+            &[unsafe { kCVPixelBufferBytesPerRowAlignmentKey }.as_ref()],
+            &[alignment.as_ref()],
+        );
+        let mut out = std::ptr::null_mut();
+        let status = unsafe {
+            CVPixelBufferCreate(
+                None,
+                width,
+                height,
+                kCVPixelFormatType_32BGRA,
+                Some(attrs.as_opaque()),
+                NonNull::from(&mut out),
+            )
+        };
+        assert_eq!(status, 0, "pixel buffer allocation");
+        let buffer = unsafe { CFRetained::from_raw(NonNull::new(out).unwrap()) };
+        let image = unsafe { PixelBuffer::from_retained(buffer, ColorDescription::SRGB).unwrap() };
+        let stride = unsafe { CVPixelBufferGetBytesPerRow(image.native_buffer()) };
+        assert!(stride > width * 4, "expected row padding, stride {stride}");
+        unsafe {
+            assert_eq!(
+                CVPixelBufferLockBaseAddress(
+                    image.native_buffer(),
+                    CVPixelBufferLockFlags::empty()
+                ),
+                0
+            );
+            let ptr = CVPixelBufferGetBaseAddress(image.native_buffer()).cast::<u8>();
+            for y in 0..height {
+                for x in 0..width {
+                    let pixel = ptr.add(y * stride + x * 4);
+                    pixel.write(x as u8);
+                    pixel.add(1).write(y as u8);
+                    pixel.add(2).write(7);
+                    pixel.add(3).write(255);
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(image.native_buffer(), CVPixelBufferLockFlags::empty());
+        }
+        image
+    }
+
+    #[test]
+    fn packed_copy_drops_padding_and_swaps_in_one_pass() {
+        let image = padded_bgra(3, 2);
+        let mut packed = vec![0; 3 * 2 * 4];
+        image.copy_packed(&mut packed, false).unwrap();
+        assert_eq!(packed, image.to_cpu().unwrap().bytes.as_ref());
+        let mut swapped = vec![0; packed.len()];
+        image.copy_packed(&mut swapped, true).unwrap();
+        let mut reference = packed.clone();
+        crate::convert::swap_red_blue(&mut reference);
+        assert_eq!(swapped, reference);
+        assert!(image.copy_packed(&mut [0; 4], false).is_err());
     }
 }

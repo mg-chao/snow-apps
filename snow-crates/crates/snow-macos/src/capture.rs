@@ -1,7 +1,4 @@
-use crate::{
-    MacError, MacResult,
-    content::{desktop_rect, shareable_content_cancelable},
-};
+use crate::{MacError, MacResult, content::desktop_rect};
 use block2::RcBlock;
 use crossbeam_channel::{Receiver, Sender};
 use dispatch2::{DispatchQueue, DispatchRetained};
@@ -132,6 +129,14 @@ fn excluded_window_is_exception(window_excluded: bool, application_excluded: boo
     window_excluded && !application_excluded
 }
 pub(crate) fn prepare(options: &CaptureConfig) -> MacResult<Prepared> {
+    let content =
+        crate::content::shareable_content_cancelable(options.timeout, &options.cancellation)?;
+    prepare_with(options, &content)
+}
+pub(crate) fn prepare_with(
+    options: &CaptureConfig,
+    content: &objc2_screen_capture_kit::SCShareableContent,
+) -> MacResult<Prepared> {
     if options.excluded_windows.len() > 4096 || options.excluded_processes.len() > 4096 {
         return Err(MacError::InvalidConfig(
             "capture exclusions exceed 4096 entries".into(),
@@ -157,7 +162,6 @@ pub(crate) fn prepare(options: &CaptureConfig) -> MacResult<Prepared> {
             "ScreenCaptureKit HDR requires Apple Silicon".into(),
         ));
     }
-    let content = shareable_content_cancelable(options.timeout, &options.cancellation)?;
     unsafe {
         let filter = match options.target {
             Target::Display(id) => {
@@ -279,7 +283,18 @@ pub(crate) fn prepare(options: &CaptureConfig) -> MacResult<Prepared> {
 
 pub fn screenshot(options: &CaptureConfig) -> MacResult<NativeFrame> {
     let deadline = crate::deadline::Deadline::new(options.timeout)?;
-    let prepared = prepare(options)?;
+    let content =
+        crate::content::shareable_content_cancelable(deadline.remaining()?, &options.cancellation)?;
+    let mut options = options.clone();
+    options.timeout = deadline.remaining()?;
+    screenshot_with(&options, &content)
+}
+pub(crate) fn screenshot_with(
+    options: &CaptureConfig,
+    content: &objc2_screen_capture_kit::SCShareableContent,
+) -> MacResult<NativeFrame> {
+    let deadline = crate::deadline::Deadline::new(options.timeout)?;
+    let prepared = prepare_with(options, content)?;
     let (tx, rx) = crossbeam_channel::bounded(1);
     let color = prepared.color;
     let completion = RcBlock::new(move |sample: *mut CMSampleBuffer, error: *mut NSError| {
@@ -409,8 +424,17 @@ unsafe impl Send for VideoStream {}
 
 impl VideoStream {
     pub fn start(options: &CaptureConfig) -> MacResult<Self> {
+        Self::start_with(options, None)
+    }
+    pub(crate) fn start_with(
+        options: &CaptureConfig,
+        content: Option<&objc2_screen_capture_kit::SCShareableContent>,
+    ) -> MacResult<Self> {
         let deadline = crate::deadline::Deadline::new(options.timeout)?;
-        let prepared = prepare(options)?;
+        let prepared = match content {
+            Some(content) => prepare_with(options, content)?,
+            None => prepare(options)?,
+        };
         let (tx, source_frames) = crossbeam_channel::bounded(1);
         let (delivery, frames) = crossbeam_channel::bounded(1);
         let (done, worker_done) = crossbeam_channel::bounded(1);
@@ -589,6 +613,8 @@ fn copy_frames(
         snow_media::PixelFormat,
         crate::compositor::Compositor,
     )> = None;
+    // A failed blit must not be retried in front of Core Image on every frame.
+    let mut blit = true;
     while !state.closed.load(Ordering::Acquire) && !state.cancellation.is_canceled() {
         let Ok(mut frame) = source.recv_timeout(Duration::from_millis(20)) else {
             continue;
@@ -603,7 +629,7 @@ fn copy_frames(
             .as_ref()
             .is_none_or(|(s, f, _)| *s != size || *f != format)
         {
-            match crate::compositor::Compositor::new(size, format, 4) {
+            match crate::compositor::Compositor::new(size, format, 8) {
                 Ok(value) => compositor = Some((size, format, value)),
                 Err(error) => {
                     state.fail(error);
@@ -622,14 +648,32 @@ fn copy_frames(
             width: size.width,
             height: size.height,
         };
-        match compositor.as_mut().unwrap().2.compose(
-            &[crate::compositor::Layer {
-                image: &frame.image,
-                source: rect,
-                destination: rect,
-            }],
-            false,
-        ) {
+        let copied = if blit {
+            match compositor.as_mut().unwrap().2.copy_identical(&frame.image) {
+                Err(MacError::Unsupported(_)) => {
+                    blit = false;
+                    compositor.as_mut().unwrap().2.compose(
+                        &[crate::compositor::Layer {
+                            image: &frame.image,
+                            source: rect,
+                            destination: rect,
+                        }],
+                        false,
+                    )
+                }
+                other => other,
+            }
+        } else {
+            compositor.as_mut().unwrap().2.compose(
+                &[crate::compositor::Layer {
+                    image: &frame.image,
+                    source: rect,
+                    destination: rect,
+                }],
+                false,
+            )
+        };
+        match copied {
             Ok(image) => {
                 frame.image = image;
                 if !state.closed.load(Ordering::Acquire)
