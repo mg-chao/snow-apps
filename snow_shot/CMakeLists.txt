@@ -3326,11 +3326,38 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_window_shortcuts
     )
     if(WIN32)
+        target_sources(snow-shot-pinned-window-tests PRIVATE
+            include/snow_shot/presentation/screenshotcapturecoordinator.h
+            src/presentation/capture/screenshotcapturecoordinator.cpp
+            src/presentation/capture/screenshotcapturepolicy.cpp
+            src/presentation/capture/screenshotcaptureworker.cpp
+        )
+        target_include_directories(snow-shot-pinned-window-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
+            "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
+        )
         target_link_libraries(snow-shot-pinned-window-tests PRIVATE
             Qt6::GuiPrivate
+            snow_shot_diagnostics
+            snow_capture_c
+            PkgConfig::SNOW_SHOT_FFMPEG
+            advapi32
+            bcrypt
             comctl32
+            d3d11
             dwmapi
+            dxgi
+            dxguid
+            gdi32
+            ole32
+            oleaut32
+            psapi
+            runtimeobject
             user32
+            userenv
+            winmm
+            windowsapp
+            ws2_32
         )
     endif()
     add_test(
@@ -7102,6 +7129,13 @@ if(WIN32 AND SNOW_SHOT_BUILD_TESTS)
             LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 90
             ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_pin_factor};SNOW_PIN_TEST_DPR=${_pin_scale}")
     endforeach()
+    # Uses the machine's real monitor scale. QT_SCALE_FACTOR would hide the
+    # selection-to-pin content shift reproduced at 677,395 869x937.
+    add_test(NAME snow-shot-pinned-selection-content-alignment-tests
+        COMMAND snow-shot-pinned-window-tests --selection-content-alignment-only -platform windows)
+    set_tests_properties(snow-shot-pinned-selection-content-alignment-tests PROPERTIES
+        LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 90
+        ENVIRONMENT "QT_QPA_PLATFORM=windows")
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)

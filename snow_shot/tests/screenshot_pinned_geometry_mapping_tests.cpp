@@ -53,6 +53,16 @@ void physicalAndLogicalExtentsRemainDistinct() {
     }
 }
 
+void fractionalWidthDoesNotGrowPastTheClient() {
+    const ScreenshotPinnedGeometryMapping mapping(QRect(677, 395, 869, 937), QSizeF(579, 625),
+                                                  1.5);
+    const QSize covering = mapping.coveringLogicalSize();
+    require(qRound(covering.width() * 1.5) == 869,
+            "869 device pixels at 1.5x must stay on the logical size that rounds back to 869");
+    require(qRound(covering.height() * 1.5) >= 937 && covering.height() <= 625,
+            "937 device pixels at 1.5x must be covered without a larger logical height");
+}
+
 void edgesRoundIndependently() {
     const ScreenshotPinnedGeometryMapping mapping(QRect(-100, -100, 321, 181), QSizeF(257, 145),
                                                   1.25);
@@ -81,6 +91,7 @@ void invalidSnapshotsStayInvalid() {
 int main() {
     try {
         physicalAndLogicalExtentsRemainDistinct();
+        fractionalWidthDoesNotGrowPastTheClient();
         edgesRoundIndependently();
         invalidSnapshotsStayInvalid();
     } catch (const std::exception& error) {

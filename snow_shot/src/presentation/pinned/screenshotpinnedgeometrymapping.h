@@ -55,9 +55,25 @@ class ScreenshotPinnedGeometryMapping final {
         return isValid() ? QSizeF(m_client.size()) / m_dpr : QSizeF();
     }
 
+    // Smallest integer DIP extent whose Qt native rounding still covers the
+    // client. Ceil(client / DPR) can be one DIP larger, and qRound of that
+    // size is then a device pixel past the HWND. On a fractional scale the
+    // extra column is clipped from the origin side, so the screenshot slides
+    // by one physical pixel inside an unmoved window.
+    [[nodiscard]] static int minimumCoveringLogicalExtent(int nativePixels, qreal dpr) {
+        if (nativePixels <= 0 || !(dpr > 0.0))
+            return 0;
+        int logical = std::max(1, qRound(static_cast<qreal>(nativePixels) / dpr));
+        while (qRound(logical * dpr) < nativePixels)
+            ++logical;
+        return logical;
+    }
+
     [[nodiscard]] QSize coveringLogicalSize() const {
-        const QSizeF viewport = logicalViewportSize();
-        return isValid() ? QSize(qCeil(viewport.width()), qCeil(viewport.height())) : QSize();
+        if (!isValid())
+            return {};
+        return QSize(minimumCoveringLogicalExtent(m_client.width(), m_dpr),
+                     minimumCoveringLogicalExtent(m_client.height(), m_dpr));
     }
 
     [[nodiscard]] double viewportZoom(const QSizeF& canvasSize) const {

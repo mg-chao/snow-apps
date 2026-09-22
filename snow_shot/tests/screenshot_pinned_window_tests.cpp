@@ -20,6 +20,7 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
+#include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
@@ -91,6 +92,11 @@
 #include <QTableView>
 #include <QThread>
 #include <QTimer>
+#if defined(Q_OS_WIN) || defined(_WIN32)
+#include "screenshotcaptureworker.h"
+#include "snow_shot/presentation/screenshotcapturecoordinator.h"
+#include <QEventLoop>
+#endif
 #include <QTextBrowser>
 #include <QTextDocument>
 #include <QTranslator>
@@ -100,6 +106,7 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <limits>
 #include <functional>
 #include <initializer_list>
 #include <iostream>
@@ -9562,6 +9569,295 @@ void pinnedAutoFilterPreservesBackgroundAndSession() {
             "changed background dimensions make record stale without clearing it");
 }
 
+QRgb opaqueRgb(const QImage& image, int x, int y) {
+    return image.pixel(x, y) & 0x00ffffffu;
+}
+
+// The best integer translation of `actual` onto `expected` inside the inset,
+// measured on a center patch so a one-pixel content shift is reported directly.
+QPoint contentTranslation(const QImage& actual, const QImage& expected, int inset) {
+    const int width = std::min(actual.width(), expected.width());
+    const int height = std::min(actual.height(), expected.height());
+    const QRect interior(inset, inset, std::max(0, width - 2 * inset),
+                         std::max(0, height - 2 * inset));
+    if (interior.isEmpty()) {
+        return {};
+    }
+    const QRect patch = QRect(interior.center(), QSize(1, 1))
+                            .adjusted(-24, -24, 24, 24)
+                            .intersected(interior);
+    int bestScore = std::numeric_limits<int>::max();
+    QPoint best;
+    for (int dy = -12; dy <= 12; ++dy) {
+        for (int dx = -12; dx <= 12; ++dx) {
+            int mismatches = 0;
+            for (int y = patch.top(); y <= patch.bottom(); y += 2) {
+                for (int x = patch.left(); x <= patch.right(); x += 2) {
+                    const int sx = x - dx;
+                    const int sy = y - dy;
+                    if (sx < 0 || sy < 0 || sx >= expected.width() || sy >= expected.height() ||
+                        opaqueRgb(actual, x, y) != opaqueRgb(expected, sx, sy)) {
+                        ++mismatches;
+                    }
+                }
+            }
+            const int distance = dx * dx + dy * dy;
+            const int bestDistance = best.x() * best.x() + best.y() * best.y();
+            // A flat or repeating patch can match at several offsets. Keep the
+            // smallest one so an exact alignment is not reported as a shift.
+            if (mismatches < bestScore || (mismatches == bestScore && distance < bestDistance)) {
+                bestScore = mismatches;
+                best = QPoint(dx, dy);
+            }
+        }
+    }
+    return best;
+}
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+ScreenshotCaptureResult captureEntireScreen() {
+    ScreenshotCaptureWorker worker;
+    ScreenshotCaptureCoordinator coordinator;
+    ScreenshotCaptureResult result;
+    bool received = false;
+    QEventLoop loop;
+    QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &coordinator,
+                     [&](const ScreenshotCaptureResult& value) {
+                         result = value;
+                         received = true;
+                         loop.quit();
+                     });
+    ScreenshotCaptureRequest request;
+    request.requestId = 1;
+    worker.capture(request, &coordinator, nullptr);
+    QTimer::singleShot(20000, &loop, &QEventLoop::quit);
+    loop.exec();
+    if (!received || !result.succeeded || result.displays.isEmpty()) {
+        const QString detail = result.errorMessage.isEmpty()
+                                   ? QStringLiteral("screenshot capture returned no frame")
+                                   : result.errorMessage;
+        throw std::runtime_error(detail.toStdString());
+    }
+    return result;
+}
+
+// Copy the captured frame's own pixels inside the selection. No resampling:
+// each selection pixel is the screenshot pixel that the canvas rectangle covers.
+QImage cropCapturedSelection(const ScreenshotDisplaySession& session, const QRect& selection) {
+    QImage cropped(selection.size(), QImage::Format_ARGB32_Premultiplied);
+    cropped.fill(Qt::transparent);
+    bool found = false;
+    session.forEachImageSource([&](qsizetype, const CapturedDisplayModel& display) {
+        const QRectF canvas = ScreenshotGeometryMapper::displayImageSourceCanvasRect(display);
+        if (display.image.isNull() || !canvas.intersects(QRectF(selection))) {
+            return;
+        }
+        require(canvas == QRectF(canvas.toRect()) && display.image.size() == canvas.size().toSize(),
+                "the screenshot frame must map one pixel onto each canvas unit");
+        const QRect overlap = selection.intersected(canvas.toRect());
+        if (overlap.isEmpty()) {
+            return;
+        }
+        const QRect source(overlap.left() - canvas.toRect().left(),
+                           overlap.top() - canvas.toRect().top(), overlap.width(),
+                           overlap.height());
+        QPainter painter(&cropped);
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+        painter.drawImage(QPoint(overlap.left() - selection.left(), overlap.top() - selection.top()),
+                          display.image, source);
+        found = true;
+    });
+    require(found, "the selection does not intersect the captured screenshot");
+    return cropped;
+}
+
+QImage captureWindow(HWND window, const QSize& size) {
+    if (window == nullptr || size.isEmpty())
+        return {};
+    const HDC screen = GetDC(nullptr);
+    const HDC memory = CreateCompatibleDC(screen);
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = size.width();
+    info.bmiHeader.biHeight = -size.height();
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* pixels = nullptr;
+    const HBITMAP bitmap = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
+    QImage result;
+    if (memory != nullptr && bitmap != nullptr && pixels != nullptr) {
+        const HGDIOBJ previous = SelectObject(memory, bitmap);
+        // PW_RENDERFULLCONTENT reads the layered surface the user sees.
+        if (PrintWindow(window, memory, 0x00000002) != FALSE) {
+            GdiFlush();
+            result = QImage(static_cast<const uchar*>(pixels), size.width(), size.height(),
+                            QImage::Format_RGB32)
+                         .copy();
+        }
+        SelectObject(memory, previous);
+    }
+    if (bitmap != nullptr)
+        DeleteObject(bitmap);
+    if (memory != nullptr)
+        DeleteDC(memory);
+    if (screen != nullptr)
+        ReleaseDC(nullptr, screen);
+    return result;
+}
+#endif
+
+// Capture the whole screen with the screenshot API, crop that frame by the
+// selection, then pin the exported selection. The pinned window must show the
+// cropped screenshot pixels rather than a separately sampled desktop image.
+void pinnedSelectionContentMatchesScreenshotSelection() {
+#if !defined(Q_OS_WIN) && !defined(_WIN32)
+    require(false, "pinned selection content alignment requires the current Windows device");
+#else
+    require(QGuiApplication::platformName() == QStringLiteral("windows"),
+            "pinned selection content alignment must use the current device's windows platform");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    const QRect selection(677, 395, 869, 937);
+    const ScreenshotCaptureResult capturedFrame = captureEntireScreen();
+    ScreenshotDisplaySession session;
+    for (const CapturedDisplayModel& display : capturedFrame.displays) {
+        session.appendDisplay(display);
+    }
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(session);
+    const QRectF canvasBounds = geometry.canvasBounds();
+    if (!canvasBounds.contains(QRectF(selection))) {
+        std::cout << "skipped pinned selection content alignment; captured canvas "
+                  << canvasBounds.x() << ',' << canvasBounds.y() << ' ' << canvasBounds.width()
+                  << 'x' << canvasBounds.height() << " does not contain 677,395 869x937\n";
+        return;
+    }
+
+    const QImage expected = cropCapturedSelection(session, selection);
+    QList<CanvasExportSource> sources;
+    session.forEachImageSource([&](qsizetype, const CapturedDisplayModel& display) {
+        const QRectF canvas = ScreenshotGeometryMapper::displayImageSourceCanvasRect(display);
+        if (!display.image.isNull() && canvas.intersects(QRectF(selection))) {
+            sources.push_back(CanvasExportSource{display.image, canvas});
+        }
+    });
+    SnowCanvasRuntime exportRuntime;
+    require(exportRuntime.isValid(), "selection export runtime creation failed");
+    const ScreenshotSelectionRenderSpec spec = screenshotSelectionRenderSpec(session, selection);
+    require(spec.isValid(), "the selection render spec must be valid for the captured screenshot");
+    const QImage exported =
+        exportRuntime.renderToImage(QRectF(selection), spec.pixelSize, sources);
+    require(!exported.isNull(), "the selection export did not produce an image");
+
+    const QRect selectionOnScreen(selection.topLeft() + geometry.canvasOrigin(), selection.size());
+    const ScreenshotPinnedImagePlacement placement =
+        geometry.pinnedImagePlacement(session, selection, selection.size(), 0);
+    require(placement.valid && placement.geometry.nativeGeometry == selectionOnScreen,
+            "pin placement must cover the screenshot selection on this screen");
+
+    CursorPositionRestorer cursor;
+    setSystemCursorPosition(
+        ScreenshotGeometryMapper::physicalRectForScreen(*screen).bottomRight());
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct ClosePinnedWindow {
+        ScreenshotPinnedWindow& window;
+        ~ClosePinnedWindow() {
+            window.close();
+        }
+    } closePinnedWindow{window};
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = placement.geometry.nativeGeometry;
+    config.canvasSourceRect = QRectF(selection);
+    config.contentCanvasRect = QRectF(selection);
+    config.surfaceCanvasRect = QRectF(selection);
+    config.initialWindowSize = selection.size();
+    config.imageSource = ScreenshotImageSource::fromImage(exported, config.canvasSourceRect);
+    config.screen = screen;
+    config.enableEditing = false;
+    config.automaticTextRecognition = false;
+    require(window.present(config), "pinning the screenshot selection failed");
+    SetWindowPos(toNativeHwnd(window.winId()), HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    waitForUi(50);
+
+    const QRect pinnedNative = window.currentNativeGeometry();
+    const qreal dpr = screen->devicePixelRatio();
+    QImage painted(selection.size(), QImage::Format_ARGB32_Premultiplied);
+    painted.setDevicePixelRatio(dpr);
+    painted.fill(Qt::transparent);
+    {
+        QPainter painter(&painted);
+        window.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+    }
+    painted.setDevicePixelRatio(1.0);
+    const QImage composited = captureWindow(toNativeHwnd(window.winId()), pinnedNative.size());
+
+    constexpr int kInset = 4;
+    const bool sameSize = painted.size() == expected.size() && exported.size() == expected.size() &&
+                          composited.size() == expected.size();
+    const QPoint paintedShift =
+        sameSize ? contentTranslation(painted, expected, kInset) : QPoint(999, 999);
+    const QPoint exportShift =
+        sameSize ? contentTranslation(exported, expected, kInset) : QPoint(999, 999);
+    const QPoint compositedShift =
+        sameSize ? contentTranslation(composited, expected, kInset) : QPoint(999, 999);
+    int paintedMismatches = sameSize ? 0 : -1;
+    int exportMismatches = sameSize ? 0 : -1;
+    int compositedMismatches = sameSize ? 0 : -1;
+    if (sameSize) {
+        for (int y = kInset; y < expected.height() - kInset; ++y) {
+            for (int x = kInset; x < expected.width() - kInset; ++x) {
+                if (opaqueRgb(painted, x, y) != opaqueRgb(expected, x, y))
+                    ++paintedMismatches;
+                if (opaqueRgb(exported, x, y) != opaqueRgb(expected, x, y))
+                    ++exportMismatches;
+                if (opaqueRgb(composited, x, y) != opaqueRgb(expected, x, y))
+                    ++compositedMismatches;
+            }
+        }
+    }
+    if (pinnedNative != selectionOnScreen || paintedMismatches != 0 || exportMismatches != 0 ||
+        compositedMismatches != 0) {
+        throw std::runtime_error(
+            QStringLiteral(
+                "pinned window content is offset from the captured screenshot selection at "
+                "677,395 869x937 (dpr=%1 canvas=%2,%3 %4x%5 native=%6,%7 %8x%9 "
+                "expectedNative=%10,%11 %12x%13 exportShift=%14,%15 exportMismatches=%16 "
+                "paintedShift=%17,%18 paintedMismatches=%19 compositedShift=%20,%21 "
+                "compositedMismatches=%22 export=%23x%24)")
+                .arg(dpr)
+                .arg(canvasBounds.x())
+                .arg(canvasBounds.y())
+                .arg(canvasBounds.width())
+                .arg(canvasBounds.height())
+                .arg(pinnedNative.x())
+                .arg(pinnedNative.y())
+                .arg(pinnedNative.width())
+                .arg(pinnedNative.height())
+                .arg(selectionOnScreen.x())
+                .arg(selectionOnScreen.y())
+                .arg(selectionOnScreen.width())
+                .arg(selectionOnScreen.height())
+                .arg(exportShift.x())
+                .arg(exportShift.y())
+                .arg(exportMismatches)
+                .arg(paintedShift.x())
+                .arg(paintedShift.y())
+                .arg(paintedMismatches)
+                .arg(compositedShift.x())
+                .arg(compositedShift.y())
+                .arg(compositedMismatches)
+                .arg(exported.width())
+                .arg(exported.height())
+                .toStdString());
+    }
+#endif
+}
+
 } // namespace
 
 void pinnedOddPixelExtentRemainsSharp() {
@@ -10060,6 +10356,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--selection-content-alignment-only"))) {
+            pinnedSelectionContentMatchesScreenshotSelection();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--physical-authority-only"))) {
             pinnedPhysicalAuthoritySurvivesObservations();
             return 0;
