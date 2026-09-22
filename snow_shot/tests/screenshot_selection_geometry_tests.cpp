@@ -1,10 +1,17 @@
+#include "snow_shot/platform/windows/monitorgeometry.h"
+#include "snow_shot/presentation/historypinplacement.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/storage/capturehistorytypes.h"
 #include "../src/presentation/toolbar/screenshottoolbarplacement.h"
 #include "../src/presentation/capture/scrollingselectionmovement.h"
 
+#include <QGuiApplication>
 #include <QRectF>
+#include <QScreen>
 
 #include <cmath>
 #include <cstdlib>
@@ -672,7 +679,228 @@ void logicalPinSelectionUsesDesktopBounds() {
 }
 } // namespace
 
+snow_shot::storage::CaptureHistoryRecord historyRecord(const QRect& selection, const QSize& image,
+                                                       int shadowWidth) {
+    snow_shot::storage::CaptureHistoryRecord record;
+    record.selection.rectangle = selection;
+    record.selection.shadowWidth = shadowWidth;
+    record.selection.shadowColor = QColor(0x33, 0x33, 0x33);
+    record.result = snow_shot::storage::CaptureHistoryResultRecord{image, 1};
+    record.scrolling = false;
+    return record;
+}
+
+ScreenshotPinnedSelectionRequest
+placeHistoryPin(ScreenshotDisplaySession& displays,
+                const snow_shot::storage::CaptureHistoryRecord& record, const QRect& selection,
+                const char* message) {
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    const ScreenshotResultStyle style{record.selection.cornerRadius, record.selection.shadowWidth,
+                                      record.selection.shadowColor};
+    const auto actual =
+        snow_shot::presentation::historySelectionPinPlacement(record, displays, geometry);
+    const auto live = screenshotSelectionPinRequest(displays, geometry, selection, style);
+    const auto layout = ScreenshotResultCompositor::layoutForContent(selection.size(), style);
+    const auto expected = geometry.pinnedImagePlacement(
+        displays, selection, layout.outputRect.size(), layout.effectInsets.left());
+    const int padding = layout.effectInsets.left();
+    const QRectF expectedSurface = QRectF(selection).adjusted(-padding, -padding, padding, padding);
+    require(layout.isValid() && expected.valid &&
+                actual.geometry.nativeGeometry == live.geometry.nativeGeometry &&
+                actual.geometry.canvasSourceRect == live.geometry.canvasSourceRect &&
+                actual.surfaceCanvasRect == live.surfaceCanvasRect &&
+                actual.contentCanvasRect == live.contentCanvasRect &&
+                actual.initialWindowSize == live.initialWindowSize &&
+                actual.selection == live.selection &&
+                actual.geometry.nativeGeometry == expected.geometry.nativeGeometry &&
+                actual.initialWindowSize == layout.outputRect.size() &&
+                actual.surfaceCanvasRect == expectedSurface &&
+                actual.surfaceCanvasRect.size() == QSizeF(actual.initialWindowSize),
+            message);
+    return actual;
+}
+
+void historyPinMatchesScreenshotSelectionPlacement() {
+    {
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.physicalRect = QRect(0, 0, 1920, 1080);
+        displays.appendDisplay(std::move(display));
+        const auto plain =
+            placeHistoryPin(displays, historyRecord(QRect(40, 50, 200, 100), QSize(200, 100), 0),
+                            QRect(40, 50, 200, 100),
+                            "a shadowless history selection must use the recorded "
+                            "rectangle");
+        require(plain.geometry.nativeGeometry == QRect(40, 50, 200, 100),
+                "a shadowless history pin must keep the selection position and size");
+        const auto shadowed =
+            placeHistoryPin(displays, historyRecord(QRect(40, 50, 200, 100), QSize(216, 116), 8),
+                            QRect(40, 50, 200, 100),
+                            "a shadowed history selection must match screenshot pin placement");
+        require(shadowed.geometry.nativeGeometry == QRect(32, 42, 216, 116) &&
+                    shadowed.initialWindowSize == QSize(216, 116),
+                "shadow padding must expand the history pin the same way as a screenshot pin");
+    }
+    {
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.physicalRect = QRect(-1920, 0, 1920, 1080);
+        displays.appendDisplay(std::move(display));
+        const auto placed = placeHistoryPin(
+            displays, historyRecord(QRect(100, 80, 300, 200), QSize(300, 200), 0),
+            QRect(100, 80, 300, 200),
+            "a selection on a negative-origin display must keep its desktop position");
+        require(placed.geometry.nativeGeometry == QRect(-1820, 80, 300, 200),
+                "negative display origins must be added back to the recorded canvas selection");
+    }
+    {
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.canvasUsesPoints = true;
+        display.capturedLogicalRect = QRect(-800, -300, 800, 600);
+        display.physicalRect = display.capturedLogicalRect;
+        display.backingScale = 2.0;
+        displays.appendDisplay(std::move(display));
+        const auto placed =
+            placeHistoryPin(displays, historyRecord(QRect(100, 80, 120, 60), QSize(256, 136), 4),
+                            QRect(100, 80, 120, 60),
+                            "a point-space history selection must match screenshot pin placement");
+        require(placed.geometry.nativeGeometry == QRect(-704, -224, 128, 68) &&
+                    placed.initialWindowSize == QSize(128, 68) &&
+                    placed.surfaceCanvasRect.size() == QSizeF(128, 68) &&
+                    placed.geometry.nativeGeometry.size() != QSize(256, 136),
+                "high-dpi history pins must keep the logical selection size, including shadow");
+    }
+    {
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.canvasUsesPoints = true;
+        display.capturedLogicalRect = QRect(0, 0, 800, 600);
+        display.physicalRect = display.capturedLogicalRect;
+        display.backingScale = 1.5;
+        displays.appendDisplay(std::move(display));
+        const QRect selection(10, 20, 101, 50);
+        const QSize image = screenshotSelectionCompositedPixelSize(selection.size(), 1.5, 1);
+        const auto placed =
+            placeHistoryPin(displays, historyRecord(selection, image, 1), selection,
+                            "a fractional-scale history selection must keep the canvas surface");
+        require(placed.initialWindowSize == QSize(103, 52) &&
+                    placed.surfaceCanvasRect == QRectF(9, 19, 103, 52) &&
+                    placed.geometry.nativeGeometry.size() == placed.initialWindowSize &&
+                    placed.initialWindowSize != image,
+                "fractional scale must pin the selection surface, not the bitmap pixel size");
+    }
+    {
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.physicalRect = QRect(0, 0, 1920, 1080);
+        displays.appendDisplay(std::move(display));
+        ScreenshotGeometryMapper geometry;
+        geometry.rebuild(displays);
+        auto scrolling = historyRecord(QRect(20, 30, 300, 200), QSize(300, 2400), 0);
+        scrolling.scrolling = true;
+        auto legacy = historyRecord(QRect(40, 50, 200, 100), QSize(200, 100), 0);
+        legacy.scrolling = std::nullopt;
+        auto imported = historyRecord(QRect(40, 50, 200, 100), QSize(200, 100), 0);
+        imported.contentKind = snow_shot::storage::CaptureHistoryContentKind::Image;
+        const auto scrollingPin =
+            snow_shot::presentation::historySelectionPinPlacement(scrolling, displays, geometry);
+        const auto legacyPin =
+            snow_shot::presentation::historySelectionPinPlacement(legacy, displays, geometry);
+        const auto imagePin =
+            snow_shot::presentation::historySelectionPinPlacement(imported, displays, geometry);
+        const auto offScreen = snow_shot::presentation::historySelectionPinPlacement(
+            historyRecord(QRect(5000, 5000, 80, 40), QSize(80, 40), 0), displays, geometry);
+        require(scrollingPin.geometry.nativeGeometry.isEmpty() &&
+                    legacyPin.geometry.nativeGeometry.isEmpty() &&
+                    imagePin.geometry.nativeGeometry.isEmpty() &&
+                    offScreen.geometry.nativeGeometry.isEmpty(),
+                "scrolling captures, marker-less records, imported images, and off-desktop "
+                "selections must not use selection placement");
+        // The marker, not the bitmap size, decides: the same tall image pins at its selection
+        // once the record says the capture was not scrolling.
+        const auto marked = placeHistoryPin(
+            displays, historyRecord(QRect(20, 30, 300, 200), QSize(300, 2400), 0),
+            QRect(20, 30, 300, 200),
+            "a non-scrolling record must keep selection placement regardless of image size");
+        require(marked.geometry.nativeGeometry == QRect(20, 30, 300, 200),
+                "a non-scrolling record with a tall image must pin at the recorded selection");
+    }
+}
+
+void historyPinDesktopUsesNativeMonitorRects() {
+    int argc = 1;
+    char argument[] = "history-pin-desktop";
+    char* argv[] = {argument, nullptr};
+    QGuiApplication application(argc, argv);
+    const QList<QScreen*> screens = QGuiApplication::screens();
+    require(!screens.isEmpty(), "history pin desktop needs a screen");
+
+    // A rectangle unlike anything Qt reports for the screen, so an accidental fallback to
+    // pre-capture geometry cannot pass.
+    const QRect monitor(1919, -1079, 1234, 555);
+    auto displays = snow_shot::presentation::historyPinDisplaySession(
+        screens, [&monitor](const QScreen&) { return monitor; });
+    require(displays.size() == screens.size(), "history pin desktop must include every screen");
+#ifdef Q_OS_WIN
+    for (qsizetype index = 0; index < displays.size(); ++index) {
+        require(displays.displayAt(index).physicalRect == monitor,
+                "history pin desktop must use the native monitor rectangle, not Qt geometry");
+    }
+
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    const QRect selection(4, 8, 64, 40);
+    const auto placed = snow_shot::presentation::historySelectionPinPlacement(
+        historyRecord(selection, selection.size(), 0), displays, geometry);
+    require(placed.isPrepared() &&
+                placed.geometry.nativeGeometry == selection.translated(geometry.canvasOrigin()),
+            "history pin must return to the recorded selection on the native desktop");
+
+    // One unreadable monitor fails the whole desktop instead of pinning from mixed spaces.
+    const auto failed = snow_shot::presentation::historyPinDisplaySession(
+        screens, [](const QScreen&) { return QRect(); });
+    require(failed.size() == 0, "an unreadable monitor must fail the whole history pin desktop");
+
+    // The real query needs the native Windows platform; offscreen runs skip it.
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        for (QScreen* screen : screens) {
+            const QRect native = snow_shot::platform::windows::nativeMonitorRect(*screen);
+            const QRect logical = screen->geometry();
+            const qreal ratio = screen->devicePixelRatio();
+            require(!native.isEmpty() && native.size() == QSize(qRound(logical.width() * ratio),
+                                                                qRound(logical.height() * ratio)),
+                    "the native monitor rectangle must report physical pixels");
+        }
+    }
+#endif
+}
+
+void selectionResultPixelSizeMatchesExportLayout() {
+    const QSize selection(101, 50);
+    const qreal scale = 1.5;
+    const int shadowWidth = 1;
+    const QSize content = screenshotSelectionRenderedPixelSize(selection, scale);
+    const int shadowPixels = screenshotSelectionRenderedShadowPixels(shadowWidth, scale);
+    const QSize composed = screenshotSelectionCompositedPixelSize(selection, scale, shadowWidth);
+    const ScreenshotResultStyle style{0, shadowPixels, QColor(0x33, 0x33, 0x33)};
+    const auto layout = ScreenshotResultCompositor::layoutForContent(content, style);
+    require(content == QSize(152, 75) && shadowPixels == 2 && composed == QSize(156, 79) &&
+                layout.isValid() && layout.outputRect.size() == composed,
+            "export pixel size must use the render spec and compositor layout");
+    require(screenshotSelectionRenderedPixelSize(QSize(1, 1), 1.1) == QSize(2, 2),
+            "composited selections ceil partial pixels");
+}
+
 int main() {
+    selectionResultPixelSizeMatchesExportLayout();
+    historyPinMatchesScreenshotSelectionPlacement();
     logicalPinSelectionUsesDesktopBounds();
     shadowWidthPreservesSelectionAndToolbarPlacement();
     lockedAspectRatioAppliesToEveryResizeHandle();
@@ -701,5 +929,6 @@ int main() {
     physicalWindowRectIsClippedAndMappedAcrossMonitors();
     selectorDisplayIdentityPreventsMixedScaleCrossMapping();
     dragAnchorDoesNotReplaceTheActualCursorPosition();
+    historyPinDesktopUsesNativeMonitorRects();
     return 0;
 }

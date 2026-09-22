@@ -51,6 +51,7 @@ directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptu
     draft.source = request.target == DirectCaptureTarget::FocusedWindow
                        ? storage::CaptureHistorySource::FocusedWindow
                        : storage::CaptureHistorySource::CurrentMonitor;
+    draft.scrolling = false;
     return draft;
 }
 } // namespace snow_shot::presentation

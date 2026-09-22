@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectionpin.h"
 
 #include "screenshotclipboardperfinstrumentation.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
@@ -41,16 +42,6 @@ QList<CanvasExportSource> exportSourcesForSelection(const ScreenshotDisplaySessi
     return sources;
 }
 
-const CapturedDisplayModel* displayForPinAnchor(const ScreenshotDisplaySession& displaySession,
-                                                const ScreenshotGeometryMapper& geometry,
-                                                const QRect& selection) {
-    const QPointF topLeft(static_cast<qreal>(selection.left()),
-                          static_cast<qreal>(selection.top()));
-    const CapturedDisplayModel* display = geometry.displayForCanvasPoint(displaySession, topLeft);
-    return display != nullptr ? display
-                              : geometry.displayForCanvasRect(displaySession, QRectF(selection));
-}
-
 QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect& selection,
                                          const ScreenshotResultStyle& style,
                                          const QList<CanvasExportSource>& sources,
@@ -81,46 +72,14 @@ QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect
     SNOW_SHOT_PIN_PERF_SCOPE("export.compose_result");
     ScreenshotResultStyle outputStyle = style;
     outputStyle.cornerRadius = qRound(style.cornerRadius * spec.scale);
-    outputStyle.shadowWidth = qRound(style.shadowWidth * spec.scale);
+    outputStyle.shadowWidth =
+        screenshotSelectionRenderedShadowPixels(style.shadowWidth, spec.scale);
     QImage result = ScreenshotResultCompositor::compose(content, outputStyle);
     if (result.isNull()) {
         qWarning("Screenshot selection export failed: stage=compose_result width=%d height=%d",
                  content.width(), content.height());
     }
     return result;
-}
-
-ScreenshotPinnedSelectionRequest
-preparePinnedSelectionRequest(const ScreenshotDisplaySession& displaySession,
-                              const ScreenshotGeometryMapper& geometry, const QRect& selection,
-                              const ScreenshotResultStyle& style) {
-    ScreenshotPinnedSelectionRequest request;
-    const CapturedDisplayModel* display = displayForPinAnchor(displaySession, geometry, selection);
-    if (display == nullptr) {
-        return request;
-    }
-    request.resultStyle = ScreenshotResultCompositor::normalizedStyle(style);
-    const ScreenshotResultLayout layout =
-        ScreenshotResultCompositor::layoutForContent(selection.size(), request.resultStyle);
-    if (!layout.isValid()) {
-        return request;
-    }
-    const int shadowPadding = layout.effectInsets.left();
-    const ScreenshotPinnedImagePlacement placement = geometry.pinnedImagePlacement(
-        displaySession, selection, layout.outputRect.size(), shadowPadding);
-    if (!placement.valid) {
-        return request;
-    }
-    request.selection = selection;
-    request.contentCanvasRect = QRectF(selection);
-    request.surfaceCanvasRect = request.contentCanvasRect.adjusted(
-        -static_cast<qreal>(shadowPadding), -static_cast<qreal>(shadowPadding),
-        static_cast<qreal>(shadowPadding), static_cast<qreal>(shadowPadding));
-    request.geometry = placement.geometry;
-    request.geometry.canvasSourceRect = request.surfaceCanvasRect;
-    request.initialWindowSize = layout.outputRect.size();
-    request.screen = placement.screen;
-    return request;
 }
 
 class ScreenshotExportWorker final : public QObject {
@@ -365,7 +324,7 @@ ScreenshotExportService::preparePinnedSelection(const QRect& selection,
         return std::nullopt;
     }
     SNOW_SHOT_PIN_PERF_SCOPE("export.prepare_pin_plan");
-    ScreenshotPinnedSelectionRequest request = preparePinnedSelectionRequest(
+    ScreenshotPinnedSelectionRequest request = screenshotSelectionPinRequest(
         m_context.displaySession, m_context.geometry, selection, style);
     if (!request.isPrepared()) {
         return std::nullopt;

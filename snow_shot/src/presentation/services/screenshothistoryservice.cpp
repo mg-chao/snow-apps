@@ -119,6 +119,7 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
             ScreenshotImageEncodingOptions{100, ScreenshotImageFileService::compressionLevelForKey(
                                                     settings.compressionLevel())})
             .compression_level;
+    draft.scrolling = entry.scrolling;
     return draft;
 }
 
@@ -131,6 +132,7 @@ placeholderRecord(const snow_shot::storage::CaptureHistoryDraft& draft) {
     record.canvasBounds = draft.canvasBounds;
     record.selection = draft.selection;
     record.source = draft.source;
+    record.scrolling = draft.scrolling;
     record.canvasBytes = draft.canvasHistory.size();
     if (draft.resultImage.has_value() || draft.preparedResultImage.has_value()) {
         const QSize resultSize = draft.preparedResultImage.has_value()
@@ -162,6 +164,7 @@ presentationEntry(const snow_shot::storage::CaptureHistoryRecord& record,
     entry.selection = presentationSelection(record.selection);
     entry.canvasHistory = payload.canvasHistory;
     entry.source = record.source;
+    entry.scrolling = record.scrolling;
     entry.persistent = true;
     for (qsizetype index = 0; index < record.displays.size(); ++index) {
         entry.displays.push_back(

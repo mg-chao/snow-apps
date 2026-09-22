@@ -158,6 +158,9 @@ QJsonObject recordJson(const StoredRecord& stored) {
     if (record.contentKind == CaptureHistoryContentKind::Image) {
         object.insert(QStringLiteral("content_kind"), QStringLiteral("image"));
     }
+    if (record.scrolling.has_value()) {
+        object.insert(QStringLiteral("scrolling"), *record.scrolling);
+    }
     return object;
 }
 
@@ -185,6 +188,12 @@ bool parseRecord(const QJsonObject& object, StoredRecord* stored) {
         if (contentKind.toString() != QStringLiteral("image"))
             return false;
         record.contentKind = CaptureHistoryContentKind::Image;
+    }
+    const QJsonValue scrolling = object.value(QStringLiteral("scrolling"));
+    if (!scrolling.isUndefined()) {
+        if (!scrolling.isBool())
+            return false;
+        record.scrolling = scrolling.toBool();
     }
     record.id = object.value(QStringLiteral("id")).toString();
     const QString date = object.value(QStringLiteral("created_utc")).toString();
@@ -377,6 +386,7 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
     record.canvasBounds = draft.canvasBounds;
     record.selection = draft.selection;
     record.source = draft.source;
+    record.scrolling = draft.scrolling;
     record.canvasBytes = draft.canvasHistory.size();
     record.totalBytes = record.canvasBytes;
     result->files.insert(stored.canvasFileName, draft.canvasHistory);

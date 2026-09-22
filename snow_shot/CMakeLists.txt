@@ -1012,6 +1012,7 @@ set(PROJECT_HEADERS
     include/snow_shot/app/singleinstancecoordinator.h
     include/snow_shot/platform/windows/autostartregistration.h
     include/snow_shot/platform/windows/focusedfullscreenwindow.h
+    include/snow_shot/platform/windows/monitorgeometry.h
     include/snow_shot/platform/windows/windowchrome.h
     include/snow_shot/platform/windowcaptureexclusion.h
     include/snow_shot/platform/physicalcursor.h
@@ -1054,6 +1055,8 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotimagefileservice.h
     include/snow_shot/presentation/screenshotimagerowsource.h
     include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
+    include/snow_shot/presentation/historypinplacement.h
+    include/snow_shot/presentation/screenshotselectionpin.h
     include/snow_shot/presentation/screenshotgeometry.h
     include/snow_shot/presentation/screenshotguidelinerendering.h
     include/snow_shot/presentation/screenshothistoryservice.h
@@ -1144,6 +1147,7 @@ set(PROJECT_CXX_SOURCES
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
+    src/platform/windows/monitorgeometry.cpp
     src/platform/windows/windowchrome.cpp
     src/platform/windows/windowcursorrefresh.h
     src/platform/windows/scrollinput.cpp
@@ -1190,6 +1194,8 @@ set(PROJECT_CXX_SOURCES
         src/presentation/services/screenshotpdfexport.cpp
     src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
     src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
+    src/presentation/services/historypinplacement.cpp
+    src/presentation/services/screenshotselectionpin.cpp
     src/presentation/core/screenshotgeometry.cpp
     src/presentation/core/screenshotcanvastoolstyles.cpp
     src/presentation/core/screenshotintelligentselectionmodel.cpp
@@ -1789,10 +1795,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotgeometry.h
         include/snow_shot/presentation/screenshotresultcompositor.h
         include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+        include/snow_shot/presentation/screenshotselectionpin.h
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotexportservice.cpp
+        src/presentation/services/screenshotselectionpin.cpp
     )
     target_compile_definitions(snow-shot-screenshot-export-service-tests PRIVATE NOMINMAX)
     target_include_directories(snow-shot-screenshot-export-service-tests PRIVATE
@@ -2783,14 +2791,23 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-selection-geometry-tests
         tests/screenshot_selection_geometry_tests.cpp
+        include/snow_shot/platform/windows/monitorgeometry.h
+        include/snow_shot/presentation/historypinplacement.h
         include/snow_shot/presentation/screenshotgeometry.h
+        include/snow_shot/presentation/screenshotresultcompositor.h
+        include/snow_shot/presentation/screenshotselectionpin.h
         include/snow_shot/presentation/screenshotselectiongeometry.h
         include/snow_shot/presentation/screenshotselectionmodel.h
         include/snow_shot/presentation/screenshotselectionparams.h
+        include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+        src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
+        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp
         src/presentation/selection/screenshotselectionparams.cpp
+        src/presentation/services/historypinplacement.cpp
+        src/presentation/services/screenshotselectionpin.cpp
     )
     target_include_directories(snow-shot-selection-geometry-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -2798,14 +2815,35 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-selection-geometry-tests PRIVATE
         Qt6::Gui
     )
+    if(WIN32)
+        target_link_libraries(snow-shot-selection-geometry-tests PRIVATE user32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-selection-geometry-tests)
     add_test(
         NAME snow-shot-selection-geometry-tests
         COMMAND snow-shot-selection-geometry-tests
     )
     set_tests_properties(snow-shot-selection-geometry-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    if(WIN32)
+        # Re-runs the binary on the real Windows platform, where the native monitor query
+        # inside historyPinDesktopUsesNativeMonitorRects executes; the offscreen pass
+        # skips that query by design.
+        add_test(
+            NAME snow-shot-selection-geometry-windows-desktop-tests
+            COMMAND snow-shot-selection-geometry-tests
+        )
+        set_tests_properties(snow-shot-selection-geometry-windows-desktop-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+            LABELS "unit;windows"
+        )
+    endif()
 
     add_executable(snow-shot-selection-export-workflow-tests
         tests/screenshot_selection_export_workflow_tests.cpp
@@ -5936,11 +5974,13 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         include/snow_shot/presentation/screenshotgeometry.h
         include/snow_shot/presentation/screenshotresultcompositor.h
         include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+        include/snow_shot/presentation/screenshotselectionpin.h
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/services/screenshotclipboardperfinstrumentation.h
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotexportservice.cpp
+        src/presentation/services/screenshotselectionpin.cpp
     )
     target_compile_definitions(snow-shot-clipboard-performance-benchmark PRIVATE
         NOMINMAX

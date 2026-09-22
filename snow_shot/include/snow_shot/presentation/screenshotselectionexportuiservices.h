@@ -54,6 +54,11 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                           ScreenshotClipboardOriginalContent originalContent = {},
                                           ScreenshotImageLoader imageLoader = {},
                                           PinnedCompletion completion = {});
+    // An already composited selection bitmap placed by screenshotSelectionPinRequest.
+    [[nodiscard]] bool
+    presentCompositedSelectionImage(const QImage& image,
+                                    const ScreenshotPinnedSelectionRequest& request,
+                                    PinnedCompletion completion = {});
     [[nodiscard]] bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
                                               ScreenshotPinnedSelectionResultHandle result,
                                               PinnedCompletion completion) override;
@@ -67,6 +72,13 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void restorePersistedWindows();
 
   private:
+    [[nodiscard]] bool presentPinnedImageOnCanvas(
+        const QImage& image, QScreen* screen, const QRect& nativeGeometry,
+        const QSize& initialWindowSize, const QRectF& canvasRect,
+        std::shared_ptr<QTextDocument> formattedTextDocument, const QString& formattedPlainText,
+        qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
+        ScreenshotImageLoader imageLoader, PinnedCompletion completion);
+
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;
     SnowShotApiClient* m_tableRecognition = nullptr;

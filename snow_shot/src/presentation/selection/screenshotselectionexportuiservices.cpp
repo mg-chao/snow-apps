@@ -745,11 +745,43 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     const QString& formattedPlainText, qreal formattedTextDevicePixelRatio,
     ScreenshotClipboardOriginalContent originalContent, ScreenshotImageLoader imageLoader,
     PinnedCompletion completion) {
-    SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
         nativeGeometry.isEmpty()) {
+        return false;
+    }
+    return presentPinnedImageOnCanvas(image, screen, nativeGeometry, initialWindowSize,
+                                      QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)),
+                                      std::move(formattedTextDocument), formattedPlainText,
+                                      formattedTextDevicePixelRatio, std::move(originalContent),
+                                      std::move(imageLoader), std::move(completion));
+}
+
+bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
+    const QImage& image, const ScreenshotPinnedSelectionRequest& request,
+    PinnedCompletion completion) {
+    if (image.isNull() || image.size().isEmpty() || !request.isPrepared() ||
+        request.screen.isNull() ||
+        request.surfaceCanvasRect.size() != QSizeF(request.initialWindowSize)) {
+        return false;
+    }
+    return presentPinnedImageOnCanvas(image, request.screen.data(), request.geometry.nativeGeometry,
+                                      request.initialWindowSize, request.surfaceCanvasRect, {}, {},
+                                      1.0, {}, {}, std::move(completion));
+}
+
+bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
+    const QImage& image, QScreen* screen, const QRect& nativeGeometry,
+    const QSize& initialWindowSize, const QRectF& canvasRect,
+    std::shared_ptr<QTextDocument> formattedTextDocument, const QString& formattedPlainText,
+    qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
+    ScreenshotImageLoader imageLoader, PinnedCompletion completion) {
+    SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
+    const QSize imageSize =
+        !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
+    if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
+        nativeGeometry.isEmpty() || !canvasRect.isValid() || canvasRect.isEmpty()) {
         return false;
     }
 
@@ -776,12 +808,12 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = nativeGeometry;
-    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(imageSize));
+    config.canvasSourceRect = canvasRect;
     if (!image.isNull()) {
-        config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+        config.imageSource = ScreenshotImageSource::fromImage(image, canvasRect);
     }
-    config.contentCanvasRect = config.canvasSourceRect;
-    config.surfaceCanvasRect = config.canvasSourceRect;
+    config.contentCanvasRect = canvasRect;
+    config.surfaceCanvasRect = canvasRect;
     config.initialWindowSize = initialWindowSize.isEmpty() ? imageSize : initialWindowSize;
     config.screen = screen;
     config.enableEditing = true;

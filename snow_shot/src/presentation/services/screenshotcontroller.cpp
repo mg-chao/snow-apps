@@ -38,6 +38,7 @@
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 #include "snow_shot/presentation/screenshotdialogowner.h"
 #include "widgets/modal.h"
+#include "snow_shot/presentation/historypinplacement.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -2907,10 +2908,22 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
         return;
     }
 
-    QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
-    if (screen == nullptr) {
-        screen = QGuiApplication::primaryScreen();
+    const snow_shot::storage::CaptureHistoryRecord record = *iterator;
+    QScreen* cursorScreen = QGuiApplication::screenAt(QCursor::pos());
+    if (cursorScreen == nullptr) {
+        cursorScreen = QGuiApplication::primaryScreen();
     }
+    ScreenshotPinnedSelectionRequest selectionPlacement;
+    if (snow_shot::presentation::historyRecordSupportsSelectionPin(record)) {
+        ScreenshotDisplaySession pinDisplays =
+            snow_shot::presentation::currentHistoryPinDisplaySession();
+        ScreenshotGeometryMapper pinGeometry;
+        pinGeometry.rebuild(pinDisplays);
+        selectionPlacement =
+            snow_shot::presentation::historySelectionPinPlacement(record, pinDisplays, pinGeometry);
+    }
+    const bool selectionPinned = selectionPlacement.isPrepared();
+    QScreen* screen = selectionPinned ? selectionPlacement.screen.data() : cursorScreen;
     if (screen == nullptr) {
         qWarning("Screenshot history pin failed: no screen is available");
         reportUnavailable();
@@ -2922,8 +2935,7 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
 
     const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
     const QPointer<ScreenshotController> receiver(&owner);
-    const QPointer<QScreen> guardedScreen(screen);
-    const snow_shot::storage::CaptureHistoryRecord record = *iterator;
+    const QPointer<QScreen> guardedScreen(cursorScreen);
     const quint64 epoch = m_historyPinEpoch;
     const quint64 requestId = ++m_historyPinSerial;
     HistoryPinRequest request;
@@ -2952,8 +2964,8 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
             loaded.image = std::move(*image);
             return loaded;
         },
-        [receiver, guardedScreen, autoResizeWindow, epoch,
-         requestId](ScreenshotExportTaskResult result) {
+        [receiver, guardedScreen, autoResizeWindow, epoch, requestId,
+         selectionPlacement](ScreenshotExportTaskResult result) {
             if (receiver.isNull() || receiver->m_impl == nullptr) {
                 return;
             }
@@ -2965,8 +2977,10 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
                 result.failureStage == ScreenshotExportFailureStage::Cancelled) {
                 return;
             }
-            if (!result.succeeded() || result.image.isNull() || guardedScreen.isNull() ||
-                impl.m_selectionExportUiServices == nullptr) {
+            const bool canPlaceSelection = selectionPlacement.isPrepared();
+            if (!result.succeeded() || result.image.isNull() ||
+                impl.m_selectionExportUiServices == nullptr ||
+                (!canPlaceSelection && guardedScreen.isNull())) {
                 qWarning("Screenshot history pin failed: %s", qPrintable(result.error));
                 if (impl.m_messages != nullptr) {
                     impl.m_messages->error(
@@ -2977,19 +2991,26 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
                 return;
             }
 
-            const bool presented = impl.presentDecodedImageOnScreen(
-                guardedScreen, result.image, guardedScreen->devicePixelRatio(), autoResizeWindow,
-                {}, [receiver, epoch](bool success, QImage) {
-                    if (success || receiver.isNull() || receiver->m_impl == nullptr ||
-                        epoch != receiver->m_impl->m_historyPinEpoch ||
-                        receiver->m_impl->m_messages == nullptr) {
-                        return;
-                    }
-                    receiver->m_impl->m_messages->error(
-                        QString::fromLatin1(kPinHistoryMessageKey),
-                        QCoreApplication::translate("ScreenshotController",
-                                                    "The screenshot could not be pinned"));
-                });
+            auto completion = [receiver, epoch](bool success, QImage) {
+                if (success || receiver.isNull() || receiver->m_impl == nullptr ||
+                    epoch != receiver->m_impl->m_historyPinEpoch ||
+                    receiver->m_impl->m_messages == nullptr) {
+                    return;
+                }
+                receiver->m_impl->m_messages->error(
+                    QString::fromLatin1(kPinHistoryMessageKey),
+                    QCoreApplication::translate("ScreenshotController",
+                                                "The screenshot could not be pinned"));
+            };
+            bool presented = false;
+            if (canPlaceSelection) {
+                presented = impl.m_selectionExportUiServices->presentCompositedSelectionImage(
+                    result.image, selectionPlacement, std::move(completion));
+            } else {
+                presented = impl.presentDecodedImageOnScreen(
+                    guardedScreen, result.image, guardedScreen->devicePixelRatio(),
+                    autoResizeWindow, {}, std::move(completion));
+            }
             if (!presented) {
                 qWarning("Screenshot history pin could not be presented");
                 if (impl.m_messages != nullptr) {
@@ -4128,6 +4149,12 @@ bool ScreenshotController::Impl::prepareHistoryCandidate(
         return true;
     }
     *candidate = m_historyService->snapshotCurrent(true);
+    if (candidate->has_value()) {
+        // Exports route on the scrolling controller, not the interaction mode, which can
+        // lag while a selection resize pauses scrolling capture.
+        (*candidate)->scrolling =
+            m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active();
+    }
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.history_snapshot.exit");
     return true;
 }
