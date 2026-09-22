@@ -597,12 +597,9 @@ pub fn arrow_hit_test(arrow: &ArrowData, point: Point<f64>, hit_tolerance: f64) 
                     .take(polygon.len())
                     .any(|(&a, &b)| distance_point_to_segment(point, a, b) <= threshold)
         });
-        let opposite = match shaft.destination {
-            ArrowEndpointPosition::Start => ArrowEndpointPosition::End,
-            ArrowEndpointPosition::End => ArrowEndpointPosition::Start,
-        };
         return hit
-            || arrowhead_render_primitives(arrow, opposite)
+            || shaft
+                .arrowhead_primitives
                 .iter()
                 .any(|p| arrowhead_primitive_hit_test(p, point, threshold));
     }

@@ -103,7 +103,7 @@ pub enum ArrowType {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// Stored preference. Unsupported destination heads render plain without changing it.
+/// Stored preference. Unsupported arrowheads render plain without changing it.
 pub enum ArrowShaftType {
     #[default]
     Plain,

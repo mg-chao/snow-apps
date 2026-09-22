@@ -153,6 +153,40 @@ void indentedTriangleStyleRoundTrips() {
 }
 
 void taperedShaftsRenderAndRoundTrip() {
+    {
+        SnowCanvasRuntime runtime;
+        SnowCanvasWidget canvas(runtime);
+        canvas.resize(600, 360);
+        canvas.show();
+        QApplication::processEvents();
+        require(canvas.setCanvasTool(SnowCanvasTool::Arrow),
+                "activate double-headed tapered arrow tool");
+        SnowCanvasShapeStyle style;
+        style.arrowShaftType = SnowCanvasArrowShaftType::Tapered;
+        style.startArrowhead = SnowCanvasArrowhead::Arrow;
+        style.endArrowhead = SnowCanvasArrowhead::Arrow;
+        style.stroke = QColor(255, 0, 0, 128);
+        style.strokeWidth = 4.0;
+        require(canvas.setCanvasShapeStylePatch(style,
+                                                SnowCanvasShapeStylePropertyArrowShaftType |
+                                                    SnowCanvasShapeStylePropertyStartArrowhead |
+                                                    SnowCanvasShapeStylePropertyEndArrowhead |
+                                                    SnowCanvasShapeStylePropertyStrokeColor |
+                                                    SnowCanvasShapeStylePropertyStrokeWidth,
+                                                SnowCanvasShapeKind::Arrow),
+                "set double-headed tapered arrow defaults");
+        createArrow(canvas, runtime);
+        const QImage image =
+            runtime.renderToImage(QRectF(-300, -180, 600, 360), QSize(600, 360), {});
+        const int startInteriorAlpha = image.pixelColor(90, 180).alpha();
+        require(startInteriorAlpha >= 120 && startInteriorAlpha <= 130,
+                "both open-arrow heads must use the filled tapered rendering");
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x)
+                require(image.pixelColor(x, y).alpha() <= 130,
+                        "double-headed taper must not double-paint either head join");
+    }
+
     for (const auto head :
          {SnowCanvasArrowhead::Arrow, SnowCanvasArrowhead::Triangle,
           SnowCanvasArrowhead::TriangleOutline, SnowCanvasArrowhead::IndentedTriangle}) {

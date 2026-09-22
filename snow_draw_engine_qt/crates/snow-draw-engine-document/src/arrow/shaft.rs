@@ -3,7 +3,8 @@ use crate::{ArrowData, arrowhead_render_primitives};
 use snow_draw_engine_core::{
     PathCommand,
     arrow::{
-        ArrowEndpointPosition, ArrowShaftType, Arrowhead, ArrowheadRenderPrimitive, StrokeStyle,
+        ArrowEndpointPosition, ArrowShaftType, Arrowhead, ArrowheadDashMode, ArrowheadFillMode,
+        ArrowheadPolygonPrimitive, ArrowheadPrimitiveKind, ArrowheadRenderPrimitive, StrokeStyle,
     },
 };
 type P = [f64; 2];
@@ -12,6 +13,7 @@ pub struct ArrowShaftGeometry {
     pub contours: Vec<Vec<P>>,
     pub hollow: bool,
     pub destination: ArrowEndpointPosition,
+    pub arrowhead_primitives: Vec<ArrowheadRenderPrimitive>,
 }
 impl ArrowShaftGeometry {
     pub fn path_commands(&self) -> Vec<PathCommand> {
@@ -111,7 +113,15 @@ fn at_distance(points: &[P], distances: &[f64], d: f64) -> P {
     )
 }
 // Limited offset joins cannot produce the unbounded spikes of an acute miter.
-fn ribbon(points: &[P], distances: &[f64], total: f64, width: f64, start: f64, end: f64) -> Vec<P> {
+fn ribbon(
+    points: &[P],
+    distances: &[f64],
+    total: f64,
+    start_width: f64,
+    end_width: f64,
+    start: f64,
+    end: f64,
+) -> Vec<P> {
     let mut samples = vec![(at_distance(points, distances, start), start)];
     samples.extend(
         points
@@ -135,7 +145,7 @@ fn ribbon(points: &[P], distances: &[f64], total: f64, width: f64, start: f64, e
             let dot = bisector[0] * normal(after)[0] + bisector[1] * normal(after)[1];
             mul(bisector, 1.0 / dot.max(0.5))
         };
-        let radius = width * d / total;
+        let radius = start_width + (end_width - start_width) * d / total;
         let turn = before[0] * after[1] - before[1] * after[0];
         if i > 0 && i + 1 < samples.len() && turn.abs() > 1e-6 {
             let from = normal(before);
@@ -161,37 +171,64 @@ fn ribbon(points: &[P], distances: &[f64], total: f64, width: f64, start: f64, e
     left
 }
 
-pub fn tapered_arrow_geometry(arrow: &ArrowData) -> Option<ArrowShaftGeometry> {
-    if arrow.arrow_shaft_type != ArrowShaftType::Tapered
-        || arrow.is_line()
-        || arrow.is_pen_highlight()
-        || arrow.stroke_width <= 0.0
-    {
-        return None;
-    }
-    let reverse = arrow.end_arrowhead.is_none() && arrow.start_arrowhead.is_some();
-    let head = if reverse {
-        arrow.start_arrowhead?
-    } else {
-        arrow.end_arrowhead?
-    };
-    if !matches!(
+fn supports_tapered_shaft(head: Arrowhead) -> bool {
+    matches!(
         head,
         Arrowhead::Arrow
             | Arrowhead::Triangle
             | Arrowhead::TriangleOutline
             | Arrowhead::IndentedTriangle
-    ) {
-        return None;
+    )
+}
+
+struct HeadGeometry {
+    head: Arrowhead,
+    tip: P,
+    a: P,
+    b: P,
+    back: P,
+    neck: P,
+    direction: P,
+    width: f64,
+}
+
+impl HeadGeometry {
+    fn contour(&self) -> Vec<P> {
+        if self.head == Arrowhead::IndentedTriangle {
+            vec![mix(self.back, self.tip, 0.25), self.a, self.tip, self.b]
+        } else {
+            vec![self.back, self.a, self.tip, self.b]
+        }
     }
-    let destination = if reverse {
-        ArrowEndpointPosition::Start
-    } else {
-        ArrowEndpointPosition::End
+
+    fn separate_render_primitive(&self) -> ArrowheadRenderPrimitive {
+        let mut points = self.contour();
+        points.push(points[0]);
+        ArrowheadRenderPrimitive::Polygon(ArrowheadPolygonPrimitive {
+            kind: ArrowheadPrimitiveKind::Polygon,
+            points,
+            fill_mode: if self.head == Arrowhead::TriangleOutline {
+                ArrowheadFillMode::Background
+            } else {
+                ArrowheadFillMode::Stroke
+            },
+            dash_mode: ArrowheadDashMode::Solid,
+            roughness_cap: Some(1.0),
+        })
+    }
+}
+
+fn head_geometry(
+    arrow: &ArrowData,
+    position: ArrowEndpointPosition,
+    tip: P,
+) -> Option<HeadGeometry> {
+    let head = match position {
+        ArrowEndpointPosition::Start => arrow.start_arrowhead?,
+        ArrowEndpointPosition::End => arrow.end_arrowhead?,
     };
-    let primitives = arrowhead_render_primitives(arrow, destination);
     let mut vertices = Vec::new();
-    for primitive in primitives {
+    for primitive in arrowhead_render_primitives(arrow, position) {
         match primitive {
             ArrowheadRenderPrimitive::Line(p) => {
                 vertices.push(p.from);
@@ -201,15 +238,7 @@ pub fn tapered_arrow_geometry(arrow: &ArrowData) -> Option<ArrowShaftGeometry> {
             _ => {}
         }
     }
-    let mut points = flatten(arrow.path_commands());
-    if reverse {
-        points.reverse();
-    }
-    if points.len() < 2 || vertices.len() < 3 {
-        return None;
-    }
-    let tip = *points.last()?;
-    vertices.retain(|p| length(sub(*p, tip)) > 1e-6);
+    vertices.retain(|point| length(sub(*point, tip)) > 1e-6);
     // The two widest vertices are the arrowhead's shoulders; the indented head also has a notch.
     let mut shoulders = None;
     let mut span = 0.0;
@@ -223,49 +252,151 @@ pub fn tapered_arrow_geometry(arrow: &ArrowData) -> Option<ArrowShaftGeometry> {
         }
     }
     let (mut a, mut b) = shoulders?;
+    if span < 1e-6 {
+        return None;
+    }
     let back = mix(a, b, 0.5);
     let direction = unit(sub(tip, back));
     if (a[0] - back[0]) * normal(direction)[0] + (a[1] - back[1]) * normal(direction)[1] < 0.0 {
         std::mem::swap(&mut a, &mut b);
     }
-    let mut distances = vec![0.0];
-    for pair in points.windows(2) {
-        distances.push(distances.last()? + length(sub(pair[1], pair[0])));
-    }
-    let full = *distances.last()?;
     // Intersect the indented head's shoulder-to-notch edges at half the head width.
     let neck = if head == Arrowhead::IndentedTriangle {
         mix(back, tip, 0.125)
     } else {
         back
     };
-    let head_length = length(sub(tip, neck)).min(full * 0.8);
-    let total = full - head_length;
-    if total < 1e-6 || span < 1e-6 {
+    Some(HeadGeometry {
+        head,
+        tip,
+        a,
+        b,
+        back,
+        neck,
+        direction,
+        width: span * 0.25,
+    })
+}
+
+fn clipped_centerline(
+    points: &[P],
+    distances: &[f64],
+    start: f64,
+    end: f64,
+    start_neck: Option<P>,
+    end_neck: P,
+) -> Option<(Vec<P>, Vec<f64>, f64)> {
+    let total = end - start;
+    if total < 1e-6 {
         return None;
     }
-    let cut = at_distance(&points, &distances, total);
-    let keep = distances.partition_point(|d| *d < total);
-    points.truncate(keep);
-    distances.truncate(keep);
-    points.push(cut);
-    distances.push(total);
-    // Match existing shoulders exactly, including curved-head orientation.
-    *points.last_mut()? = neck;
-    let width = span * 0.25;
-    let hollow = head == Arrowhead::TriangleOutline;
-    let mut contours = Vec::new();
-    let head_contour = if head == Arrowhead::IndentedTriangle {
-        vec![mix(back, tip, 0.25), a, tip, b]
+    let mut clipped_points = vec![at_distance(points, distances, start)];
+    let mut clipped_distances = vec![0.0];
+    for (&point, &distance) in points.iter().zip(distances) {
+        if distance > start && distance < end {
+            clipped_points.push(point);
+            clipped_distances.push(distance - start);
+        }
+    }
+    clipped_points.push(at_distance(points, distances, end));
+    clipped_distances.push(total);
+    if let Some(neck) = start_neck {
+        clipped_points[0] = neck;
+    }
+    *clipped_points.last_mut()? = end_neck;
+    Some((clipped_points, clipped_distances, total))
+}
+
+pub fn tapered_arrow_geometry(arrow: &ArrowData) -> Option<ArrowShaftGeometry> {
+    if arrow.arrow_shaft_type != ArrowShaftType::Tapered
+        || arrow.is_line()
+        || arrow.is_pen_highlight()
+        || arrow.stroke_width <= 0.0
+    {
+        return None;
+    }
+    let present_heads = [arrow.start_arrowhead, arrow.end_arrowhead];
+    if present_heads.iter().flatten().next().is_none()
+        || present_heads
+            .iter()
+            .flatten()
+            .any(|head| !supports_tapered_shaft(*head))
+    {
+        return None;
+    }
+
+    let reverse = arrow.end_arrowhead.is_none();
+    let destination = if reverse {
+        ArrowEndpointPosition::Start
     } else {
-        vec![back, a, tip, b]
+        ArrowEndpointPosition::End
     };
+    let opposite = if reverse {
+        ArrowEndpointPosition::End
+    } else {
+        ArrowEndpointPosition::Start
+    };
+    let mut points = flatten(arrow.path_commands());
+    if reverse {
+        points.reverse();
+    }
+    if points.len() < 2 {
+        return None;
+    }
+    let primary = head_geometry(arrow, destination, *points.last()?)?;
+    let secondary = match opposite {
+        ArrowEndpointPosition::Start if arrow.start_arrowhead.is_some() => {
+            Some(head_geometry(arrow, opposite, points[0])?)
+        }
+        ArrowEndpointPosition::End if arrow.end_arrowhead.is_some() => {
+            Some(head_geometry(arrow, opposite, points[0])?)
+        }
+        _ => None,
+    };
+
+    let mut distances = vec![0.0];
+    for pair in points.windows(2) {
+        distances.push(distances.last()? + length(sub(pair[1], pair[0])));
+    }
+    let full = *distances.last()?;
+    let start = secondary
+        .as_ref()
+        .map_or(0.0, |head| length(sub(head.tip, head.neck)).min(full * 0.8));
+    let end = full - length(sub(primary.tip, primary.neck)).min(full * 0.8);
+    let start_width = secondary.as_ref().map_or(0.0, |head| head.width);
+    let (points, distances, total) = clipped_centerline(
+        &points,
+        &distances,
+        start,
+        end,
+        secondary.as_ref().map(|head| head.neck),
+        primary.neck,
+    )?;
+
+    let hollow = primary.head == Arrowhead::TriangleOutline;
+    let integrate_secondary = secondary
+        .as_ref()
+        .is_some_and(|head| !hollow && head.head != Arrowhead::TriangleOutline);
+    let mut contours = Vec::new();
+    let head_contour = primary.contour();
     if hollow || arrow.stroke_style == StrokeStyle::Solid {
-        let mut contour = ribbon(&points, &distances, total, width, 0.0, total);
+        let mut contour = ribbon(
+            &points,
+            &distances,
+            total,
+            start_width,
+            primary.width,
+            0.0,
+            total,
+        );
         let half = contour.len() / 2;
-        contour[half - 1] = add(neck, mul(normal(direction), width));
-        contour[half] = sub(neck, mul(normal(direction), width));
-        contour.splice(half..half, [a, tip, b]);
+        contour[half - 1] = add(primary.neck, mul(normal(primary.direction), primary.width));
+        contour[half] = sub(primary.neck, mul(normal(primary.direction), primary.width));
+        contour.splice(half..half, [primary.a, primary.tip, primary.b]);
+        if integrate_secondary {
+            let secondary = secondary.as_ref()?;
+            contour.extend([secondary.a, secondary.tip, secondary.b]);
+        }
         contours.push(contour);
     } else {
         let stroke = arrow.stroke_width;
@@ -284,7 +415,7 @@ pub fn tapered_arrow_geometry(arrow: &ArrowData) -> Option<ArrowShaftGeometry> {
             if arrow.stroke_style == StrokeStyle::Dotted {
                 let d = (start + end) * 0.5;
                 let center = at_distance(&points, &distances, d);
-                let radius = width * d / total;
+                let radius = start_width + (primary.width - start_width) * d / total;
                 contours.push(
                     (0..20)
                         .map(|i| {
@@ -295,15 +426,32 @@ pub fn tapered_arrow_geometry(arrow: &ArrowData) -> Option<ArrowShaftGeometry> {
                         .collect(),
                 );
             } else {
-                contours.push(ribbon(&points, &distances, total, width, start, end));
+                contours.push(ribbon(
+                    &points,
+                    &distances,
+                    total,
+                    start_width,
+                    primary.width,
+                    start,
+                    end,
+                ));
             }
             start += dash + gap;
         }
         contours.push(head_contour);
+        if integrate_secondary {
+            contours.push(secondary.as_ref()?.contour());
+        }
     }
     Some(ArrowShaftGeometry {
         contours,
         hollow,
         destination,
+        arrowhead_primitives: secondary
+            .as_ref()
+            .filter(|_| !integrate_secondary)
+            .map(HeadGeometry::separate_render_primitive)
+            .into_iter()
+            .collect(),
     })
 }

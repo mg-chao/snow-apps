@@ -5,9 +5,10 @@ use snow_draw_engine_display::{
     DisplayFilterType, DisplaySerialNumberType, FilterDisplayItem, FilterRenderSpec,
 };
 use snow_draw_engine_document::{
-    CanvasFilterType, FilterData, FreeDrawData, PenFilterData, SerialNumberType,
-    SerialPaintGeometry, TextHorizontalAlign, TextPaintGeometry, TextVerticalAlign, filter_bounds,
-    pen_filter_bounds, resolve_serial_number_square_corner_radius,
+    ArrowShaftGeometry, CanvasFilterType, FilterData, FreeDrawData, PenFilterData,
+    SerialNumberType, SerialPaintGeometry, TextHorizontalAlign, TextPaintGeometry,
+    TextVerticalAlign, filter_bounds, pen_filter_bounds,
+    resolve_serial_number_square_corner_radius,
 };
 use snow_draw_engine_editor::{
     BindingHighlightPresentation, FreeDrawPreview, MIN_BINDING_HIGHLIGHT_ZOOM, PenFilterPreview,
@@ -127,8 +128,7 @@ pub(crate) fn scene_item_from_arrow(id: ElementId, arrow: ArrowData) -> SceneDis
         path_commands.clone(),
         fill_path_is_closed,
     ));
-    let arrowhead_primitives =
-        arrowhead_display_primitives(&arrow, shaft.as_ref().map(|g| g.destination));
+    let arrowhead_primitives = arrowhead_display_primitives(&arrow, shaft.as_ref());
     SceneDisplayItem::Arrow(ArrowDisplayItem {
         bound_text_id: None,
         label_bounds: None,
@@ -253,11 +253,18 @@ pub(crate) fn free_draw_preview_bounds(preview: &FreeDrawPreview) -> DrawRect {
 
 fn arrowhead_display_primitives(
     arrow: &ArrowData,
-    joined_head: Option<ArrowEndpointPosition>,
+    shaft: Option<&ArrowShaftGeometry>,
 ) -> Vec<ArrowheadDisplayPrimitive> {
+    if let Some(shaft) = shaft {
+        return shaft
+            .arrowhead_primitives
+            .iter()
+            .cloned()
+            .map(arrowhead_display_primitive)
+            .collect();
+    }
     [ArrowEndpointPosition::Start, ArrowEndpointPosition::End]
         .into_iter()
-        .filter(|position| joined_head != Some(*position))
         .flat_map(|position| arrowhead_render_primitives(arrow, position))
         .map(arrowhead_display_primitive)
         .collect()
@@ -680,10 +687,7 @@ pub(crate) fn hover_arrow_item(arrow: &ArrowData, zoom: f64) -> UiFocusConnectio
         stroke: SELECTION_COLOR,
         stroke_width: 1.0 / zoom.max(0.0001),
         stroke_style: StrokeStyle::Solid,
-        arrowhead_primitives: arrowhead_display_primitives(
-            arrow,
-            shaft.as_ref().map(|g| g.destination),
-        ),
+        arrowhead_primitives: arrowhead_display_primitives(arrow, shaft.as_ref()),
     }
 }
 
@@ -1474,6 +1478,28 @@ mod shaft_tests {
         assert!(
             bounds.max_y >= scene.geometry.canvas_bounds[3] + frame.surface.height as f64 * 0.5
         );
+
+        arrow.start_arrowhead = Some(snow_draw_engine_core::arrow::Arrowhead::Arrow);
+        arrow.end_arrowhead = Some(snow_draw_engine_core::arrow::Arrowhead::Arrow);
+        let expected = snow_draw_engine_document::tapered_arrow_geometry(&arrow)
+            .unwrap()
+            .path_commands();
+        let SceneDisplayItem::Arrow(scene) = scene_item_from_arrow(
+            ElementId {
+                index: 0,
+                generation: 0,
+            },
+            arrow.clone(),
+        ) else {
+            panic!("expected arrow")
+        };
+        assert_eq!(scene.path_commands, expected);
+        assert_eq!(scene.arrow_shaft_type, ArrowShaftType::Tapered);
+        assert!(
+            scene.arrowhead_primitives.is_empty(),
+            "both filled widening heads belong to the same contour"
+        );
+
         arrow.end_arrowhead = Some(snow_draw_engine_core::arrow::Arrowhead::Circle);
         let SceneDisplayItem::Arrow(scene) = scene_item_from_arrow(
             ElementId {
