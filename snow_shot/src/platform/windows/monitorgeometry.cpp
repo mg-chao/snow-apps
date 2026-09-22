@@ -30,6 +30,7 @@ QRect nativeMonitorRect(const QScreen& screen) {
     return QRect(static_cast<int>(info.rcMonitor.left), static_cast<int>(info.rcMonitor.top), width,
                  height);
 #else
+    static_cast<void>(screen);
     return {};
 #endif
 }
