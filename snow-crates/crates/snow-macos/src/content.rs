@@ -5,9 +5,8 @@ use objc2_core_foundation::{
     CFArray, CFBoolean, CFDictionary, CFNumber, CFRetained, CFString, CFType, CGRect,
 };
 use objc2_core_graphics::{
-    CGMainDisplayID, CGRectMakeWithDictionaryRepresentation,
-    CGWindowListCreateDescriptionFromArray, kCGWindowBounds, kCGWindowIsOnscreen, kCGWindowNumber,
-    kCGWindowOwnerPID,
+    CGMainDisplayID, CGRectMakeWithDictionaryRepresentation, CGWindowListCopyWindowInfo,
+    CGWindowListOption, kCGWindowBounds, kCGWindowIsOnscreen, kCGWindowNumber, kCGWindowOwnerPID,
 };
 use objc2_foundation::NSError;
 use objc2_screen_capture_kit::*;
@@ -291,15 +290,24 @@ pub(crate) struct WindowProbe {
     pub height: f64,
 }
 pub(crate) fn probe_window(id: u32) -> Option<WindowProbe> {
-    let number = CFNumber::new_i64(i64::from(id));
-    let array = CFArray::<CFNumber>::from_objects(&[number.as_ref()]);
-    let list = unsafe { CGWindowListCreateDescriptionFromArray(Some(array.as_ref()))? };
+    probe_window_with(id, |options, id| CGWindowListCopyWindowInfo(options, id))
+}
+
+fn probe_window_with(
+    id: u32,
+    query: impl FnOnce(CGWindowListOption, u32) -> Option<CFRetained<CFArray>>,
+) -> Option<WindowProbe> {
+    // The single-window API takes a CGWindowID directly. DescriptionFromArray
+    // instead requires pointer-sized IDs, not boxed Core Foundation numbers.
+    let list = query(CGWindowListOption::OptionIncludingWindow, id)?;
     if list.count() < 1 {
         return None;
     }
     let value = unsafe { list.value_at_index(0) };
-    let dict = NonNull::new(value.cast_mut())?.cast::<CFDictionary>();
-    let dict = unsafe { CFRetained::<CFDictionary>::retain(dict) };
+    let value = NonNull::new(value.cast_mut())?.cast::<CFType>();
+    let dict = unsafe { CFRetained::retain(value) }
+        .downcast::<CFDictionary>()
+        .ok()?;
     let window_id = dictionary_value::<CFNumber>(&dict, unsafe { kCGWindowNumber })?.as_i64()?;
     if window_id != i64::from(id) {
         return None;
@@ -333,4 +341,95 @@ fn dictionary_value<T: objc2_core_foundation::ConcreteType>(
     let raw = unsafe { dict.value(std::ptr::from_ref(key).cast()) };
     let ptr = NonNull::new(raw.cast_mut().cast::<CFType>())?;
     unsafe { CFRetained::retain(ptr) }.downcast().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_core_foundation::{CGPoint, CGSize};
+    use objc2_core_graphics::CGRectCreateDictionaryRepresentation;
+
+    fn description(id: u32, on_screen: bool, x: f64) -> CFRetained<CFArray> {
+        let bounds = CGRectCreateDictionaryRepresentation(CGRect {
+            origin: CGPoint { x, y: 12.5 },
+            size: CGSize {
+                width: 320.0,
+                height: 180.0,
+            },
+        });
+        let dict = CFDictionary::<CFType, CFType>::from_slices(
+            &unsafe {
+                [
+                    kCGWindowNumber.as_ref(),
+                    kCGWindowOwnerPID.as_ref(),
+                    kCGWindowIsOnscreen.as_ref(),
+                    kCGWindowBounds.as_ref(),
+                ]
+            },
+            &[
+                CFNumber::new_i64(i64::from(id)).as_ref(),
+                CFNumber::new_i64(123).as_ref(),
+                CFBoolean::new(on_screen).as_ref(),
+                bounds.as_ref(),
+            ],
+        );
+        let array = CFArray::<CFType>::from_objects(&[dict.as_ref()]);
+        unsafe { CFRetained::retain(NonNull::from(array.as_opaque())) }
+    }
+
+    #[test]
+    fn window_probe_queries_only_the_requested_id_and_tracks_geometry_and_visibility() {
+        // No WindowServer or capture permission required: exercise the native
+        // query contract and decode actual Core Foundation window dictionaries.
+        for id in [1, 42, u32::MAX] {
+            let probe = |on_screen, x| {
+                probe_window_with(id, |options, requested| {
+                    assert_eq!(options, CGWindowListOption::OptionIncludingWindow);
+                    assert_eq!(requested, id);
+                    Some(description(id, on_screen, x))
+                })
+                .unwrap()
+            };
+            let initial = probe(true, -10.25);
+            assert_eq!(
+                initial,
+                WindowProbe {
+                    process_id: 123,
+                    on_screen: true,
+                    x: -10.25,
+                    y: 12.5,
+                    width: 320.0,
+                    height: 180.0,
+                }
+            );
+            assert_eq!(initial, probe(true, -10.25));
+            assert_ne!(initial, probe(true, 22.0));
+            assert_ne!(initial, probe(false, -10.25));
+        }
+    }
+
+    #[test]
+    fn window_probe_rejects_unavailable_mismatched_and_malformed_descriptions() {
+        assert!(probe_window_with(42, |_, _| None).is_none());
+        assert!(
+            probe_window_with(42, |_, _| {
+                let array = CFArray::<CFType>::empty();
+                Some(unsafe { CFRetained::retain(NonNull::from(array.as_opaque())) })
+            })
+            .is_none()
+        );
+        assert!(probe_window_with(42, |_, _| Some(description(43, true, 0.0))).is_none());
+        for value in [
+            CFNumber::new_i64(42).as_ref() as &CFType,
+            CFDictionary::<CFType, CFType>::empty().as_ref(),
+        ] {
+            assert!(
+                probe_window_with(42, |_, _| {
+                    let array = CFArray::from_objects(&[value]);
+                    Some(unsafe { CFRetained::retain(NonNull::from(array.as_opaque())) })
+                })
+                .is_none()
+            );
+        }
+    }
 }
