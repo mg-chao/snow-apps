@@ -75,7 +75,7 @@ ScreenshotImageRowSource rowSourceFor(const QImage& source, std::function<bool()
     return rows;
 }
 
-void clipboardAndSaveShareCanonicalEncoding() {
+void clipboardAndSaveShareCanonicalEncoding(ScreenshotCompressionLevel saveCompression) {
     const QImage image = testImage();
     for (bool rowBacked : {false, true}) {
         std::atomic_int materializations = 0;
@@ -87,12 +87,14 @@ void clipboardAndSaveShareCanonicalEncoding() {
                 return rowSourceFor(image, std::move(cancellation));
             };
         }
-        ScreenshotExportArtifact artifact(ScreenshotExportSource::fromProducer(
-            [&materializations, image](const ScreenshotExportCancellation&) {
-                ++materializations;
-                return image;
-            },
-            factory));
+        ScreenshotExportArtifact artifact(
+            ScreenshotExportSource::fromProducer(
+                [&materializations, image](const ScreenshotExportCancellation&) {
+                    ++materializations;
+                    return image;
+                },
+                factory),
+            ScreenshotCompressionLevel::Low);
         QTemporaryDir directory;
         require(directory.isValid(), "temporary save directory unavailable");
         QObject receiver;
@@ -129,7 +131,7 @@ void clipboardAndSaveShareCanonicalEncoding() {
         require(artifact.requestSaveToPath(
                     &receiver, directory.filePath(QStringLiteral("system.png")),
                     ScreenshotImageFileFormat::Png,
-                    ScreenshotImageEncodingOptions{100, ScreenshotCompressionLevel::Low},
+                    ScreenshotImageEncodingOptions{100, saveCompression},
                     [&](ScreenshotExportTaskResult result) {
                         require(result.succeeded(), "system-dialog PNG save failed");
                         systemPath = result.savedPath;
@@ -161,6 +163,22 @@ void clipboardAndSaveShareCanonicalEncoding() {
         processUntil([&] { return callbacks == 5; });
         require(rowFactories == (rowBacked ? 1 : 0),
                 "cached clipboard request recreated the row source");
+        require(artifact.requestSaveToPath(
+                    &receiver, directory.filePath(QStringLiteral("compatible.bmp")),
+                    ScreenshotImageFileFormat::Bmp,
+                    ScreenshotImageEncodingOptions{100, saveCompression},
+                    [&](ScreenshotExportTaskResult result) {
+                        QFile file(result.savedPath);
+                        require(
+                            result.succeeded() && file.open(QIODevice::ReadOnly) &&
+                                file.readAll().startsWith("BM") &&
+                                QImage(result.savedPath).convertToFormat(QImage::Format_RGBA8888) ==
+                                    image,
+                            "non-PNG output reused incompatible canonical PNG bytes");
+                        ++callbacks;
+                    }),
+                "non-PNG path save request rejected");
+        processUntil([&] { return callbacks == 6; });
     }
 }
 
@@ -361,31 +379,34 @@ void rowRequestsCoalesceAndReuseBackingImage() {
 void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
     const QImage image = testImage();
     auto prepared = snow_shot::storage::PreparedPngImage::fromBytes(
-        image.size(), snow_shot::image_codec::encodePng(image));
+        image.size(), snow_shot::image_codec::encodePng(image, 9));
     require(prepared.has_value(), "adoption PNG fixture is invalid");
 
     std::atomic_bool entered = false;
     std::atomic_bool release = false;
     std::atomic_int factories = 0;
-    ScreenshotExportArtifact pending(ScreenshotExportSource::fromProducer(
-        {}, [&image, &entered, &release, &factories](std::function<bool()> cancellation) {
-            ++factories;
-            ScreenshotImageRowSource rows = rowSourceFor(image, cancellation);
-            const auto read = rows.readRows;
-            rows.readRows = [read, &entered, &release, cancellation = std::move(cancellation)](
-                                int first, int count, qsizetype stride, uchar* destination,
-                                qsizetype capacity) {
-                entered.store(true, std::memory_order_release);
-                while (!release.load(std::memory_order_acquire) &&
-                       !(cancellation && cancellation())) {
-                    QThread::msleep(1);
-                }
-                return !(cancellation && cancellation()) &&
-                       read(first, count, stride, destination, capacity);
-            };
-            return rows;
-        }));
-    require(!pending.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
+    ScreenshotExportArtifact pending(
+        ScreenshotExportSource::fromProducer(
+            {},
+            [&image, &entered, &release, &factories](std::function<bool()> cancellation) {
+                ++factories;
+                ScreenshotImageRowSource rows = rowSourceFor(image, cancellation);
+                const auto read = rows.readRows;
+                rows.readRows = [read, &entered, &release, cancellation = std::move(cancellation)](
+                                    int first, int count, qsizetype stride, uchar* destination,
+                                    qsizetype capacity) {
+                    entered.store(true, std::memory_order_release);
+                    while (!release.load(std::memory_order_acquire) &&
+                           !(cancellation && cancellation())) {
+                        QThread::msleep(1);
+                    }
+                    return !(cancellation && cancellation()) &&
+                           read(first, count, stride, destination, capacity);
+                };
+                return rows;
+            }),
+        ScreenshotCompressionLevel::Low);
+    require(!pending.adoptCanonicalPng(*prepared),
             "canonical PNG was adopted before the row source was known");
     QObject receiver;
     int rowCallbacks = 0;
@@ -397,8 +418,10 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
                                      }),
             "pending adoption row request rejected");
     processUntil([&] { return rowCallbacks == 1; });
-    require(!pending.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::High),
-            "a canonical PNG with mismatched compression was adopted");
+    auto wrongSize = snow_shot::storage::PreparedPngImage::fromBytes(
+        QSize(1, 1), snow_shot::image_codec::encodePng(image.copy(0, 0, 1, 1)));
+    require(wrongSize.has_value() && !pending.adoptCanonicalPng(*wrongSize),
+            "a canonical PNG with mismatched dimensions was adopted");
 
     int encodingCallbacks = 0;
     const QByteArray* adoptedBytes = prepared->sharedBytes().get();
@@ -411,16 +434,14 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
                 }),
             "pending canonical encoding request rejected");
     processUntil([&] { return entered.load(std::memory_order_acquire); });
-    require(pending.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
-            "pending canonical PNG adoption failed");
+    require(pending.adoptCanonicalPng(*prepared), "pending canonical PNG adoption failed");
     release.store(true, std::memory_order_release);
     processUntil([&] { return encodingCallbacks == 1; });
     require(factories == 1, "pending adoption recreated the row source");
 
     auto alternate = snow_shot::storage::PreparedPngImage::fromBytes(
         image.size(), snow_shot::image_codec::encodePng(image.flipped(Qt::Horizontal)));
-    require(alternate.has_value() &&
-                pending.adoptCanonicalPng(*alternate, ScreenshotCompressionLevel::Low),
+    require(alternate.has_value() && pending.adoptCanonicalPng(*alternate),
             "ready canonical PNG adoption was rejected");
     require(pending.requestCanonicalPng(
                 &receiver,
@@ -456,8 +477,7 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
                                        }),
             "failed canonical request rejected");
     processUntil([&] { return failures == 1; });
-    require(failed.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
-            "failed canonical phase did not recover");
+    require(failed.adoptCanonicalPng(*prepared), "failed canonical phase did not recover");
     require(failed.requestCanonicalPng(
                 &receiver,
                 [&](ScreenshotExportEncodingResult result) {
@@ -468,7 +488,7 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
             "recovered canonical request rejected");
     require(failures == 2, "recovered canonical result was not delivered immediately");
     failed.cancel();
-    require(!failed.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
+    require(!failed.adoptCanonicalPng(*prepared),
             "cancelled artifact accepted canonical PNG adoption");
 }
 
@@ -787,7 +807,11 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         quickSaveUsesOnlyConfiguredOutput();
-        clipboardAndSaveShareCanonicalEncoding();
+        for (auto compression :
+             {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::Medium,
+              ScreenshotCompressionLevel::High}) {
+            clipboardAndSaveShareCanonicalEncoding(compression);
+        }
         nonPngSaveReadsPixelsWithoutEncodingPng();
         imageRequestsShareOneAsyncLoad();
         canonicalEncodingCoalescesAndPreservesBufferIdentity();

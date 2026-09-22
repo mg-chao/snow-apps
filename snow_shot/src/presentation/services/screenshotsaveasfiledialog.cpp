@@ -1104,8 +1104,7 @@ class SaveContent final : public QWidget {
                     return;
                 }
                 if (adoptedPng->has_value())
-                    static_cast<void>(m_artifact->adoptCanonicalPng(
-                        std::move(**adoptedPng), m_state.output.compressionLevel));
+                    static_cast<void>(m_artifact->adoptCanonicalPng(std::move(**adoptedPng)));
                 static_cast<void>(
                     snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
                         QFileInfo(result.savedPath).absolutePath()));

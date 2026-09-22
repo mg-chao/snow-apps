@@ -105,8 +105,8 @@ class ScreenshotExportArtifact final : public QObject {
     using RowSourceCallback = std::function<void(ScreenshotImageRowSource, QString)>;
     [[nodiscard]] bool requestRowSource(QObject* receiver, RowSourceCallback callback);
     [[nodiscard]] bool requestCanonicalPng(QObject* receiver, EncodingCallback callback);
-    [[nodiscard]] bool adoptCanonicalPng(snow_shot::storage::PreparedPngImage image,
-                                         ScreenshotCompressionLevel compressionLevel);
+    // Reuse a PNG of the same source pixels regardless of its compression level.
+    [[nodiscard]] bool adoptCanonicalPng(snow_shot::storage::PreparedPngImage image);
     [[nodiscard]] bool requestClipboard(QObject* receiver, ClipboardCallback callback);
     [[nodiscard]] bool requestSaveToPath(QObject* receiver, QString path,
                                          ScreenshotImageFileFormat format,

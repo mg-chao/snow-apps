@@ -572,8 +572,7 @@ void ScreenshotExportArtifact::startCanonicalPngFromRows(ScreenshotImageRowSourc
         job.cancel();
 }
 
-bool ScreenshotExportArtifact::adoptCanonicalPng(snow_shot::storage::PreparedPngImage image,
-                                                 ScreenshotCompressionLevel compressionLevel) {
+bool ScreenshotExportArtifact::adoptCanonicalPng(snow_shot::storage::PreparedPngImage image) {
     if (!image.isValid() || m_impl == nullptr)
         return false;
 
@@ -581,9 +580,8 @@ bool ScreenshotExportArtifact::adoptCanonicalPng(snow_shot::storage::PreparedPng
     std::vector<Impl::EncodingSubscriber> subscribers;
     {
         QMutexLocker lock(&m_impl->mutex);
-        if (m_impl->cancelled || compressionLevel != m_impl->compressionLevel ||
-            m_impl->rowSourcePhase != RequestPhase::Ready || !m_impl->rowSource.isValid() ||
-            image.pixelSize() != m_impl->rowSource.size) {
+        if (m_impl->cancelled || m_impl->rowSourcePhase != RequestPhase::Ready ||
+            !m_impl->rowSource.isValid() || image.pixelSize() != m_impl->rowSource.size) {
             return false;
         }
         if (m_impl->encodingPhase == RequestPhase::Ready)
@@ -837,8 +835,8 @@ bool ScreenshotExportArtifact::requestSaveToPath(QObject* receiver, QString path
         if (!retained)
             job.cancel();
     };
-    if (format == ScreenshotImageFileFormat::Png &&
-        encoding.compressionLevel == m_impl->compressionLevel) {
+    // PNG compression changes size and encoding effort, not pixels. Share the canonical bytes.
+    if (format == ScreenshotImageFileFormat::Png) {
         return requestCanonicalPng(
             this, [schedule = std::move(schedule)](ScreenshotExportEncodingResult result) mutable {
                 schedule(std::move(result.image), {}, std::move(result.error));

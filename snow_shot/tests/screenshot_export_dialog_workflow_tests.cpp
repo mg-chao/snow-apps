@@ -2222,8 +2222,8 @@ void sourceSizedPngAdoptsHistoryEncoding(QWidget& owner, const QTemporaryDir& te
     const storage::ScreenshotSettings settings;
     require(settings.setCompressionLevel(QStringLiteral("low")),
             "global PNG compression fixture failed");
-    for (const auto& [customCompression, shouldAdopt] : std::array{
-             std::pair{QStringLiteral("low"), true}, std::pair{QStringLiteral("high"), false}}) {
+    for (const auto& customCompression :
+         {QStringLiteral("low"), QStringLiteral("medium"), QStringLiteral("high")}) {
         require(settings.setLastManualSaveState(
                     QStringLiteral("png"),
                     QJsonObject{
@@ -2278,13 +2278,8 @@ void sourceSizedPngAdoptsHistoryEncoding(QWidget& owner, const QTemporaryDir& te
         QFile saved(savedPath);
         require(saved.open(QIODevice::ReadOnly), "source-sized PNG save is unreadable");
         const QByteArray savedPng = saved.readAll();
-        if (shouldAdopt) {
-            require(reads->load() == readsBeforeSave && savedPng == historyPng,
-                    "matching PNG compression did not seed history with the retained artifact");
-        } else {
-            require(reads->load() > readsBeforeSave && savedPng != historyPng,
-                    "mismatched PNG compression incorrectly replaced the canonical history PNG");
-        }
+        require(reads->load() == readsBeforeSave && savedPng == historyPng,
+                "compatible PNG did not seed history with the retained artifact");
         flush();
     }
 }
