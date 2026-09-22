@@ -23,7 +23,7 @@ const AX_ERROR_NO_VALUE: AXError = kAXErrorNoValue;
 const AX_ERROR_PARAMETERIZED_ATTRIBUTE_UNSUPPORTED: AXError =
     kAXErrorParameterizedAttributeUnsupported;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Element(CFType);
 
 impl Element {
@@ -324,6 +324,7 @@ fn text_for_range(
 trait SelectionReader {
     type Range;
 
+    fn selected_text(&self) -> Result<Option<String>, SelectionError>;
     fn multiple(&self) -> Result<Option<Vec<Self::Range>>, SelectionError>;
     fn single(&self) -> Result<Option<Self::Range>, SelectionError>;
     fn length(&self, range: &Self::Range) -> Result<usize, SelectionError>;
@@ -339,6 +340,17 @@ struct AxSelectionReader<'a> {
 
 impl SelectionReader for AxSelectionReader<'_> {
     type Range = CFType;
+
+    fn selected_text(&self) -> Result<Option<String>, SelectionError> {
+        copy_attribute(
+            self.element,
+            kAXSelectedTextAttribute,
+            self.context,
+            self.deadline,
+        )?
+        .map(|value| checked_text(value, "AXSelectedText", self.context))
+        .transpose()
+    }
 
     fn multiple(&self) -> Result<Option<Vec<Self::Range>>, SelectionError> {
         let Some(value) = copy_attribute(
@@ -394,7 +406,8 @@ impl SelectionReader for AxSelectionReader<'_> {
 }
 
 fn read_ranges(reader: &impl SelectionReader, limit: usize) -> Result<Probe, SelectionError> {
-    let range_values = if let Some(ranges) = reader.multiple()? {
+    let range_values = if let Some(ranges) = reader.multiple()?.filter(|ranges| !ranges.is_empty())
+    {
         ranges
     } else if let Some(range) = reader.single()? {
         vec![range]
@@ -445,12 +458,39 @@ fn read_ranges(reader: &impl SelectionReader, limit: usize) -> Result<Probe, Sel
     }
 }
 
+// AX providers may expose selected text without range APIs, or return an empty
+// range list even though AXSelectedText contains the selection.
+fn read_selection(reader: &impl SelectionReader, limit: usize) -> Result<Probe, SelectionError> {
+    let ranges = read_ranges(reader, limit);
+    match &ranges {
+        Ok(Probe::Selected(_)) => return ranges,
+        Err(error) if !is_recoverable(error) => return ranges,
+        _ => {}
+    }
+    if let Some(text) = reader.selected_text()? {
+        if text.len() > limit {
+            return Err(SelectionError::new(
+                ErrorKind::LimitExceeded,
+                "AXSelectedText",
+            ));
+        }
+        if !text.is_empty() {
+            return Ok(Probe::Selected(vec![SelectedRange {
+                text,
+                bounds: Vec::new(),
+            }]));
+        }
+        return Ok(Probe::Empty);
+    }
+    ranges
+}
+
 fn selection(
     element: &Element,
     context: &Context,
     deadline: Instant,
 ) -> Result<Probe, SelectionError> {
-    read_ranges(
+    read_selection(
         &AxSelectionReader {
             element,
             context,
@@ -481,11 +521,11 @@ fn focused(
     application: &Element,
     context: &Context,
     deadline: Instant,
-) -> Result<Element, SelectionError> {
-    let value = copy_attribute(application, kAXFocusedUIElementAttribute, context, deadline)?
-        .ok_or_else(|| {
-            SelectionError::new(ErrorKind::TargetUnavailable, "AX focused UI element")
-        })?;
+) -> Result<Option<Element>, SelectionError> {
+    let Some(value) = copy_attribute(application, kAXFocusedUIElementAttribute, context, deadline)?
+    else {
+        return Ok(None);
+    };
     let element = Element::from_value(value, "AX focused UI element type")?;
     let mut process_id = 0;
     let code = unsafe { AXUIElementGetPid(element.raw(), &mut process_id) };
@@ -493,7 +533,7 @@ fn focused(
         return Err(error("AXUIElementGetPid", code));
     }
     ensure_focus_process(process_id, context.source.process_id)?;
-    Ok(element)
+    Ok(Some(element))
 }
 
 fn ensure_focus_process(process_id: i32, expected: u32) -> Result<(), SelectionError> {
@@ -515,19 +555,16 @@ fn capture_inner(context: &Context, deadline: Instant) -> Result<Probe, Selectio
     }
     validate(context)?;
     let application = Element::application(context.source.process_id)?;
-    let element = focused(&application, context, deadline)?;
+    let Some(element) = focused(&application, context, deadline)? else {
+        return Ok(Probe::Unsupported);
+    };
     secure(&element, context, deadline)?;
     let result = selection(&element, context, deadline)?;
     context.check()?;
     validate(context)?;
     let current = focused(&application, context, deadline)?;
-    if element.0 != current.0 {
-        return Err(SelectionError::new(
-            ErrorKind::TargetChanged,
-            "AX focused UI element changed",
-        ));
-    }
-    secure(&current, context, deadline)?;
+    ensure_same_focus(Some(&element), current.as_ref())?;
+    secure(&element, context, deadline)?;
     Ok(result)
 }
 
@@ -540,7 +577,7 @@ pub(super) fn capture(context: &Context, deadline: Instant) -> Result<Probe, Sel
 
 pub(super) struct CopyTarget {
     application: Element,
-    element: Element,
+    element: Option<Element>,
 }
 
 impl CopyTarget {
@@ -551,14 +588,25 @@ impl CopyTarget {
     ) -> Result<(), SelectionError> {
         validate(context)?;
         let current = focused(&self.application, context, deadline)?;
-        if self.element.0 != current.0 {
-            return Err(SelectionError::new(
-                ErrorKind::TargetChanged,
-                "AX focused UI element changed",
-            ));
+        ensure_same_focus(self.element.as_ref(), current.as_ref())?;
+        if let Some(current) = current {
+            secure(&current, context, deadline)?;
         }
-        secure(&current, context, deadline)
+        Ok(())
     }
+}
+
+fn ensure_same_focus<T: PartialEq>(
+    expected: Option<&T>,
+    current: Option<&T>,
+) -> Result<(), SelectionError> {
+    if expected != current {
+        return Err(SelectionError::new(
+            ErrorKind::TargetChanged,
+            "AX focused UI element changed",
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn prepare_copy_target(
@@ -574,7 +622,9 @@ pub(super) fn prepare_copy_target(
     validate(context)?;
     let application = Element::application(context.source.process_id)?;
     let element = focused(&application, context, deadline)?;
-    secure(&element, context, deadline)?;
+    if let Some(element) = &element {
+        secure(element, context, deadline)?;
+    }
     Ok(CopyTarget {
         application,
         element,
@@ -593,6 +643,7 @@ mod tests {
     }
 
     struct MockSelection {
+        selected_text: Option<String>,
         multiple: Option<Vec<usize>>,
         single: Option<usize>,
         ranges: Vec<MockRange>,
@@ -600,6 +651,10 @@ mod tests {
 
     impl SelectionReader for MockSelection {
         type Range = usize;
+
+        fn selected_text(&self) -> Result<Option<String>, SelectionError> {
+            Ok(self.selected_text.clone())
+        }
 
         fn multiple(&self) -> Result<Option<Vec<Self::Range>>, SelectionError> {
             Ok(self.multiple.clone())
@@ -632,6 +687,80 @@ mod tests {
                 width: 3.0,
                 height: 4.0,
             }],
+        }
+    }
+
+    #[test]
+    fn direct_selected_text_handles_missing_and_empty_range_apis() {
+        for multiple in [None, Some(Vec::new()), Some(vec![0])] {
+            let selection = MockSelection {
+                selected_text: Some("你好😀\0".into()),
+                multiple,
+                single: None,
+                ranges: vec![mock_range(0, None)],
+            };
+            let Probe::Selected(ranges) = read_selection(&selection, 32).unwrap() else {
+                panic!("direct AXSelectedText must be usable without range support")
+            };
+            assert_eq!(ranges[0].text, "你好😀\0");
+            assert_eq!(
+                read_selection(&selection, 2).unwrap_err().kind,
+                ErrorKind::LimitExceeded
+            );
+        }
+    }
+
+    #[test]
+    fn empty_range_list_checks_single_range_before_reporting_unsupported() {
+        let mut selection = MockSelection {
+            selected_text: None,
+            multiple: Some(Vec::new()),
+            single: Some(0),
+            ranges: vec![mock_range(3, Some("abc"))],
+        };
+        assert!(matches!(
+            read_selection(&selection, 16),
+            Ok(Probe::Selected(_))
+        ));
+        selection.single = None;
+        assert!(matches!(
+            read_selection(&selection, 16),
+            Ok(Probe::Unsupported)
+        ));
+        selection.selected_text = Some(String::new());
+        assert!(matches!(read_selection(&selection, 16), Ok(Probe::Empty)));
+    }
+
+    #[test]
+    fn direct_text_does_not_replace_noncontiguous_ranges_or_hide_malformed_data() {
+        let mut selection = MockSelection {
+            selected_text: Some("aggregate".into()),
+            multiple: Some(vec![0, 1]),
+            single: None,
+            ranges: vec![mock_range(1, Some("a")), mock_range(1, Some("b"))],
+        };
+        let Probe::Selected(ranges) = read_selection(&selection, 16).unwrap() else {
+            panic!("noncontiguous ranges should be retained")
+        };
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(ranges[1].text, "b");
+        assert_eq!(ranges[0].bounds.len(), 1);
+        selection.ranges[0].text = Some(String::new());
+        assert_eq!(
+            read_selection(&selection, 16).unwrap_err().kind,
+            ErrorKind::MalformedData
+        );
+    }
+
+    #[test]
+    fn absent_ax_focus_allows_copy_but_focus_transitions_are_rejected() {
+        assert!(ensure_same_focus::<u32>(None, None).is_ok());
+        assert!(ensure_same_focus(Some(&1), Some(&1)).is_ok());
+        for (before, after) in [(None, Some(&1)), (Some(&1), None), (Some(&1), Some(&2))] {
+            assert_eq!(
+                ensure_same_focus(before, after).unwrap_err().kind,
+                ErrorKind::TargetChanged
+            );
         }
     }
 
@@ -710,6 +839,7 @@ mod tests {
     #[test]
     fn mocked_single_and_multiple_ranges_preserve_unicode_order_and_bounds() {
         let single = MockSelection {
+            selected_text: None,
             multiple: None,
             single: Some(0),
             ranges: vec![mock_range(4, Some("你好😀"))],
@@ -721,6 +851,7 @@ mod tests {
         assert_eq!(ranges[0].bounds[0].left, 1.0);
 
         let multiple = MockSelection {
+            selected_text: None,
             multiple: Some(vec![0, 1, 2]),
             single: None,
             ranges: vec![
@@ -744,22 +875,16 @@ mod tests {
 
     #[test]
     fn mocked_ranges_distinguish_empty_unsupported_malformed_and_limits() {
-        for selection in [
-            MockSelection {
-                multiple: Some(Vec::new()),
-                single: None,
-                ranges: Vec::new(),
-            },
-            MockSelection {
-                multiple: Some(vec![0]),
-                single: None,
-                ranges: vec![mock_range(0, None)],
-            },
-        ] {
-            assert!(matches!(read_ranges(&selection, 16), Ok(Probe::Empty)));
-        }
+        let caret = MockSelection {
+            selected_text: None,
+            multiple: Some(vec![0]),
+            single: None,
+            ranges: vec![mock_range(0, None)],
+        };
+        assert!(matches!(read_selection(&caret, 16), Ok(Probe::Empty)));
 
         let unsupported = MockSelection {
+            selected_text: None,
             multiple: None,
             single: None,
             ranges: Vec::new(),
@@ -769,6 +894,7 @@ mod tests {
             Ok(Probe::Unsupported)
         ));
         let unsupported_text = MockSelection {
+            selected_text: None,
             multiple: Some(vec![0]),
             single: None,
             ranges: vec![mock_range(1, None)],
@@ -778,6 +904,7 @@ mod tests {
             Ok(Probe::Unsupported)
         ));
         let malformed = MockSelection {
+            selected_text: None,
             multiple: Some(vec![0]),
             single: None,
             ranges: vec![mock_range(1, Some(""))],
@@ -787,6 +914,7 @@ mod tests {
             ErrorKind::MalformedData
         );
         let oversized = MockSelection {
+            selected_text: None,
             multiple: Some(vec![0, 1]),
             single: None,
             ranges: vec![mock_range(1, Some("ab")), mock_range(1, Some("cd"))],
@@ -796,6 +924,7 @@ mod tests {
             ErrorKind::LimitExceeded
         );
         let too_many = MockSelection {
+            selected_text: None,
             multiple: Some(vec![0; MAX_RANGES + 1]),
             single: None,
             ranges: vec![mock_range(1, Some("x"))],
