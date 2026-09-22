@@ -1017,6 +1017,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotcaptureruntimeadapter.h
     include/snow_shot/presentation/screenshotcapturestate.h
     include/snow_shot/presentation/screenshotcaptureworkflow.h
+    include/snow_shot/presentation/screenshotstartupcontext.h
     include/snow_shot/presentation/screenshotcanvascolorsampler.h
     include/snow_shot/presentation/screenshotcanvascolorsamplerwindow.h
     include/snow_shot/presentation/screenshotcaptureworkflowports.h
@@ -4402,6 +4403,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     list(REMOVE_DUPLICATES _color_picker_lifecycle_sources)
     add_executable(snow-shot-color-picker-lifecycle-tests
         tests/screenshot_color_picker_lifecycle_tests.cpp
+        src/presentation/services/screenshotcolorpickercontroller.cpp
+        src/platform/physicalcursor.cpp
         ${_color_picker_lifecycle_sources}
         src/presentation/overlay/screenshotoverlaycoordinator.cpp
         src/presentation/overlay/screenshotoverlayuihost.cpp
@@ -4420,7 +4423,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     elseif(APPLE)
         target_sources(snow-shot-color-picker-lifecycle-tests PRIVATE
             src/platform/macos/screenshotnative.mm)
-        target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE "-framework AppKit")
+        target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
+            "-framework AppKit" "-framework CoreGraphics")
     endif()
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
     add_test(NAME snow-shot-color-picker-lifecycle-tests
@@ -7243,7 +7247,7 @@ endif()
 
 # Physical cursor warps enter Qt's platform input path so Qt's pointer state and
 # widget grabs remain consistent with subsequent native mouse events.
-foreach(_cursor_host IN ITEMS snow_shot snow-shot-physical-cursor-tests
+foreach(_cursor_host IN ITEMS snow_shot snow-shot-physical-cursor-tests snow-shot-color-picker-lifecycle-tests
         snow-shot-pinned-window-tests snow-shot-file-pin-batch-performance-benchmark)
     if(TARGET ${_cursor_host})
         target_link_libraries(${_cursor_host} PRIVATE Qt6::GuiPrivate)

@@ -62,6 +62,17 @@ void snow_ui_selector_service_destroy(SnowUiSelectorService*);
 uint8_t snow_ui_selector_service_release_cache(SnowUiSelectorService*);
 uint8_t snow_ui_selector_service_refresh(SnowUiSelectorService*, uint64_t epoch,
                                          SnowUiSelectorBackend, const uintptr_t*, size_t);
+/* Geometry is copied before returning; count must be 1..128. Coordinates are native desktop
+ * pixels on Windows (space=0), Quartz points plus oriented pixel dimensions on macOS (space=1). */
+typedef struct SnowUiSelectorDisplay {
+    uint32_t version, struct_size, display_id, coordinate_space;
+    double x, y, width, height;
+    uint32_t pixel_width, pixel_height;
+} SnowUiSelectorDisplay;
+uint8_t snow_ui_selector_service_refresh_with_displays(SnowUiSelectorService*, uint64_t epoch,
+                                                       SnowUiSelectorBackend, const uintptr_t*,
+                                                       size_t, const SnowUiSelectorDisplay*,
+                                                       size_t);
 uint8_t snow_ui_selector_service_query(SnowUiSelectorService*, const SnowUiSelectorQuery*);
 uint8_t snow_ui_selector_service_refine(SnowUiSelectorService*, const SnowUiSelectorQuery*);
 /* Pass prompt=1 only for an explicit user action. This never prompts when prompt=0. */

@@ -2,9 +2,12 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTDISPLAYSESSION_H
 
 #include "snow_shot/presentation/screenshottypes.h"
+#include "snow_shot/presentation/screenshotstartupcontext.h"
 
+#include <QCursor>
 #include <QVector>
 
+#include <memory>
 #include <utility>
 
 class ScreenshotDisplaySession final {
@@ -15,6 +18,27 @@ class ScreenshotDisplaySession final {
     };
 
   public:
+    // Same object the capture workflow owns. Null after the workflow is destroyed.
+    std::shared_ptr<ScreenshotStartupContext> startup;
+    [[nodiscard]] QPoint logicalCursorPosition() const {
+        if (startup) {
+            if (const std::optional<QPoint> anchored = startup->anchoredLogicalCursor())
+                return *anchored;
+        }
+        return QCursor::pos();
+    }
+    [[nodiscard]] std::optional<QPoint> anchoredCursorPosition() const {
+        return startup ? startup->anchoredLogicalCursor() : std::nullopt;
+    }
+    [[nodiscard]] const CapturedDisplayModel* startupDisplay() const {
+        if (!startup || startup->displaySlot < 0 || startup->displaySlot >= m_slots.size())
+            return nullptr;
+        const auto& display = m_slots[startup->displaySlot].display;
+        return display.active && display.stableId == startup->displayId ? &display : nullptr;
+    }
+    [[nodiscard]] ScreenshotOverlayWindow* startupOverlay() const {
+        return startupDisplay() ? overlayAt(startup->displaySlot) : nullptr;
+    }
     void clear() {
         m_slots.clear();
         m_sources.clear();

@@ -295,7 +295,11 @@ void rebuildDisplayGeometry(ScreenshotDisplaySession& displaySession, QPoint& ca
             return;
         }
 
-        if (display.canvasUsesPoints && !display.capturedLogicalRect.isEmpty()) {
+        if (display.geometryResolved) {
+            display.canvasRect =
+                (display.canvasUsesPoints ? display.logicalRect : display.physicalRect)
+                    .translated(-canvasOrigin);
+        } else if (display.canvasUsesPoints && !display.capturedLogicalRect.isEmpty()) {
             display.logicalRect = display.capturedLogicalRect;
             display.canvasRect = display.logicalRect.translated(-canvasOrigin);
 #ifdef Q_OS_MACOS
@@ -752,6 +756,7 @@ CapturedDisplayModel ScreenshotGeometryMapper::preCaptureDisplayModel(QScreen& s
     display.physicalRect = physicalRectForScreen(screen);
     display.canvasRect = display.physicalRect;
     display.screen = &screen;
+    display.primary = &screen == QGuiApplication::primaryScreen();
     display.active = true;
 #ifdef Q_OS_MACOS
     // Selection can finish before image acquisition. Use the same display identity

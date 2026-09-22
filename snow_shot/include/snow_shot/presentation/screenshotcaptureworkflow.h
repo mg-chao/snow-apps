@@ -5,8 +5,11 @@
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshottypes.h"
 
+#include "snow_shot/presentation/screenshotstartupcontext.h"
+#include <QCursor>
 #include <cstdint>
 #include <functional>
+#include <memory>
 
 struct ScreenshotCaptureState;
 class ScreenshotDisplaySession;
@@ -42,6 +45,7 @@ struct ScreenshotCaptureWorkflowContext {
         return ScreenshotIntelligentSelectionTarget::WindowSubElement;
     };
     std::function<void(bool, const QString&)> recaptureCompleted = [](bool, const QString&) {};
+    std::function<QPoint()> cursorPosition = [] { return QCursor::pos(); };
 };
 
 class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink {
@@ -83,6 +87,7 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void completeRecapture(bool succeeded, const QString& errorMessage = {});
     void showCapturePresentationWhenReady(quint64 sessionId);
     void enterOverlaySelectionModeAtCursor();
+    void handleLayoutReady(const ScreenshotCaptureLayout& layout) override;
     void handleCapturePrepared(quint64 requestId, bool ok) override;
     void handleCaptureFinished(const ScreenshotCaptureResult& result) override;
     void handleLayoutRefreshed(quint64 requestId, bool ok) override;
@@ -92,6 +97,7 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void resetCanvasRuntimeState();
     [[nodiscard]] bool capturePresentationPrepared(quint64 sessionId) const;
 
+    std::shared_ptr<ScreenshotStartupContext> m_startup;
     ScreenshotCaptureWorkflowContext m_context;
     ScreenshotCaptureState& m_state;
     quint64 m_preparedPresentationSessionId = 0;

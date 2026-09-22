@@ -43,6 +43,14 @@ fn display_id(display: &DisplayInfo) -> MonitorId {
         format!("display:{}", display.id),
         display.primary,
     )
+    .with_desktop_geometry(crate::monitor::MonitorDesktopGeometry {
+        x: display.bounds.x,
+        y: display.bounds.y,
+        width: display.bounds.width,
+        height: display.bounds.height,
+        pixel_width: display.pixels.width,
+        pixel_height: display.pixels.height,
+    })
 }
 fn displays() -> CaptureResult<Vec<DisplayInfo>> {
     content::displays(TIMEOUT).map_err(map_error)

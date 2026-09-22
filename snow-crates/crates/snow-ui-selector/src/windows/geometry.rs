@@ -17,6 +17,30 @@ pub(crate) struct MonitorCache {
 }
 
 impl MonitorCache {
+    pub(crate) fn from_displays(displays: Option<&[crate::DisplayGeometry]>) -> Self {
+        Self::from_displays_or(displays, Self::new)
+    }
+
+    fn from_displays_or(
+        displays: Option<&[crate::DisplayGeometry]>,
+        enumerate: impl FnOnce() -> Self,
+    ) -> Self {
+        match displays {
+            None => enumerate(),
+            Some(displays) => Self {
+                rects: displays
+                    .iter()
+                    .map(|d| RECT {
+                        left: d.x.round() as i32,
+                        top: d.y.round() as i32,
+                        right: (d.x + f64::from(d.pixel_width)).round() as i32,
+                        bottom: (d.y + f64::from(d.pixel_height)).round() as i32,
+                    })
+                    .collect(),
+            },
+        }
+    }
+
     /// Enumerate all active monitors and cache their work-area rects.
     pub(crate) fn new() -> Self {
         let mut rects: Vec<RECT> = Vec::with_capacity(4);
@@ -124,6 +148,32 @@ mod tests {
 
     fn tuple(rect: RECT) -> (i32, i32, i32, i32) {
         (rect.left, rect.top, rect.right, rect.bottom)
+    }
+
+    #[test]
+    fn supplied_layout_skips_enumeration_and_legacy_calls_it_once() {
+        let calls = std::cell::Cell::new(0);
+        let enumerate = || {
+            calls.set(calls.get() + 1);
+            MonitorCache { rects: vec![] }
+        };
+        let geometry = crate::DisplayGeometry {
+            display_id: 0,
+            x: -100.,
+            y: 20.,
+            width: 100.,
+            height: 80.,
+            pixel_width: 100,
+            pixel_height: 80,
+        };
+        let cache = MonitorCache::from_displays_or(Some(&[geometry]), enumerate);
+        assert_eq!(calls.get(), 0);
+        assert_eq!(
+            cache.clip_rect_to_visible_area(rect(-150, 0, 50, 200)),
+            Some(rect(-100, 20, 0, 100))
+        );
+        MonitorCache::from_displays_or(None, enumerate);
+        assert_eq!(calls.get(), 1);
     }
 
     #[test]

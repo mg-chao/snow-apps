@@ -13,6 +13,7 @@ class ScreenshotCaptureWorkerEventSink {
   public:
     virtual ~ScreenshotCaptureWorkerEventSink() = default;
 
+    virtual void handleLayoutReady(const ScreenshotCaptureLayout& layout) = 0;
     virtual void handleCapturePrepared(quint64 requestId, bool ok) = 0;
     virtual void handleCaptureFinished(const ScreenshotCaptureResult& result) = 0;
     virtual void handleLayoutRefreshed(quint64 requestId, bool ok) = 0;

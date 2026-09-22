@@ -263,6 +263,7 @@ fn foreground_queue_coalesces_refreshes_and_queries_with_terminal_delivery() {
     };
     assert!(queue.submit(
         ForegroundCommand::Refresh {
+            displays: None,
             epoch: 1,
             backend: SnowUiSelectorBackend::Uia,
             excluded: vec![],
@@ -285,6 +286,7 @@ fn foreground_queue_coalesces_refreshes_and_queries_with_terminal_delivery() {
     assert_eq!(queue.pending.lock().unwrap().len(), 2);
     assert!(queue.submit(
         ForegroundCommand::Refresh {
+            displays: None,
             epoch: 2,
             backend: SnowUiSelectorBackend::Accessibility,
             excluded: vec![],
@@ -385,6 +387,102 @@ fn refinement_rebuilds_when_a_snapshot_is_replaced_with_the_same_epoch() {
     queue.wake.try_send(()).unwrap();
     worker.join().unwrap();
     unsafe {
+        drop(Box::from_raw(context));
+    }
+}
+
+struct LayoutService;
+impl WorkerService for LayoutService {
+    fn create(_: AccessibilityBackend, _: &[usize]) -> SelectorResult<Self> {
+        panic!("unexpected native enumeration")
+    }
+    fn refresh(&mut self, _: &[usize]) -> SelectorResult<()> {
+        panic!("unexpected native enumeration")
+    }
+    fn create_with_displays(
+        _: AccessibilityBackend,
+        _: &[usize],
+        displays: Option<&[snow_ui_selector::DisplayGeometry]>,
+    ) -> SelectorResult<Self> {
+        assert_eq!(displays.unwrap()[0].x, -200.0);
+        Ok(Self)
+    }
+    fn refresh_with_displays(
+        &mut self,
+        _: &[usize],
+        displays: Option<&[snow_ui_selector::DisplayGeometry]>,
+    ) -> SelectorResult<()> {
+        assert_eq!(displays.unwrap()[0].x, -300.0);
+        Ok(())
+    }
+    fn backend(&self) -> AccessibilityBackend {
+        AccessibilityBackend::Uia
+    }
+    fn snapshot(&self) -> Option<WindowSnapshot> {
+        None
+    }
+    fn from_snapshot(_: &WindowSnapshot) -> SelectorResult<Self> {
+        Ok(Self)
+    }
+    fn release(&mut self) {}
+    fn query(
+        &mut self,
+        _: Point,
+        _: HitTestMode,
+        _: &QueryControl<'_>,
+        _: &mut dyn FnMut(&[snow_ui_selector::ElementRect]),
+    ) -> SelectorResult<QueryResult> {
+        Ok(empty(StopReason::Complete))
+    }
+}
+#[test]
+fn supplied_display_geometry_reaches_creation_and_refresh() {
+    let (sender, events) = mpsc::channel::<Delivery>();
+    let context = Box::into_raw(Box::new(sender));
+    let service = start_service::<LayoutService>(Some(event), Some(refresh), context.cast());
+    let mut display = SnowUiSelectorDisplay {
+        version: 1,
+        struct_size: std::mem::size_of::<SnowUiSelectorDisplay>() as u32,
+        display_id: 1,
+        coordinate_space: u32::from(cfg!(target_os = "macos")),
+        x: -200.0,
+        y: 0.0,
+        width: 200.0,
+        height: 100.0,
+        pixel_width: 200,
+        pixel_height: 100,
+    };
+    unsafe {
+        assert_eq!(
+            snow_ui_selector_service_refresh_with_displays(
+                service,
+                1,
+                SnowUiSelectorBackend::Uia,
+                std::ptr::null(),
+                0,
+                &display,
+                1
+            ),
+            1
+        );
+        assert_eq!(receive(&events), Delivery::Refresh(1));
+        display.x = -300.0;
+        assert_eq!(
+            snow_ui_selector_service_refresh_with_displays(
+                service,
+                2,
+                SnowUiSelectorBackend::Uia,
+                std::ptr::null(),
+                0,
+                &display,
+                1
+            ),
+            1
+        );
+        display.x = 0.0;
+        assert_eq!(display.x, 0.0);
+        assert_eq!(receive(&events), Delivery::Refresh(2));
+        snow_ui_selector_service_destroy(service);
         drop(Box::from_raw(context));
     }
 }

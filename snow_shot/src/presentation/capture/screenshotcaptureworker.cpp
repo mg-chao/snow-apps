@@ -15,6 +15,7 @@
 #include <QMetaObject>
 
 #include <limits>
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -85,11 +86,78 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.session_ready");
 
+    std::unique_ptr<SnowCaptureDesktopLayout, decltype(&snow_capture_desktop_layout_destroy)>
+        layout(nullptr, snow_capture_desktop_layout_destroy);
+    if (request.purpose == ScreenshotCapturePurpose::Initial) {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("capture.layout_snapshot");
+        layout.reset(
+            snow_capture_desktop_session_layout_snapshot(m_session, request.refreshLayout ? 1 : 0));
+        if (!layout) {
+            captureResult.errorMessage = nativeCaptureError("Failed to snapshot desktop layout");
+            postCaptureResult(coordinator, std::move(captureResult));
+            return;
+        }
+        ScreenshotCaptureLayout prepared;
+        prepared.requestId = request.requestId;
+        prepared.generation = request.requestId;
+        const size_t displayCount = snow_capture_desktop_layout_count(layout.get());
+        bool validLayout = displayCount > 0 && displayCount <= 128;
+        for (size_t i = 0; validLayout && i < displayCount; ++i) {
+            SnowCaptureDisplayDescriptor d{};
+            d.version = 1;
+            d.struct_size = sizeof(d);
+            if (!snow_capture_desktop_layout_display(layout.get(), i, &d) || !std::isfinite(d.x) ||
+                !std::isfinite(d.y) || !std::isfinite(d.width) || !std::isfinite(d.height) ||
+                !std::isfinite(d.backing_scale) || d.backing_scale <= 0 || d.coordinate_space > 1 ||
+                d.width < 1 || d.height < 1 || d.width > std::numeric_limits<int>::max() ||
+                d.height > std::numeric_limits<int>::max() ||
+                d.x < std::numeric_limits<int>::min() || d.y < std::numeric_limits<int>::min() ||
+                d.x + std::max(d.width, static_cast<double>(d.pixel_width)) >
+                    std::numeric_limits<int>::max() ||
+                d.y + std::max(d.height, static_cast<double>(d.pixel_height)) >
+                    std::numeric_limits<int>::max() ||
+                d.pixel_width == 0 || d.pixel_height == 0 ||
+                d.pixel_width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+                d.pixel_height > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+                validLayout = false;
+                break;
+            }
+            CapturedDisplayModel display;
+            display.stableId = QString::fromUtf8(d.stable_id);
+            display.name = QString::fromUtf8(d.name);
+            display.nativeDisplayId = d.display_id;
+            display.physicalRect = QRect(qRound(d.x), qRound(d.y), static_cast<int>(d.pixel_width),
+                                         static_cast<int>(d.pixel_height));
+            display.canvasUsesPoints = d.coordinate_space == 1;
+            if (display.canvasUsesPoints) {
+                display.capturedLogicalRect =
+                    QRect(qRound(d.x), qRound(d.y), qRound(d.width), qRound(d.height));
+                display.backingScale = d.backing_scale;
+            }
+            display.primary = d.is_primary != 0;
+            display.active = true;
+            prepared.displays.push_back(std::move(display));
+        }
+        if (!validLayout) {
+            captureResult.errorMessage = QStringLiteral("Invalid desktop layout snapshot");
+            postCaptureResult(coordinator, std::move(captureResult));
+            return;
+        }
+        SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.layout_ready");
+        QMetaObject::invokeMethod(
+            coordinator,
+            [coordinator, prepared = std::move(prepared)]() {
+                if (coordinator)
+                    emit coordinator->layoutReady(prepared);
+            },
+            Qt::QueuedConnection);
+    }
+
     SnowCaptureScreenshotRequest nativeRequest{};
     nativeRequest.version = SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION;
     nativeRequest.struct_size = sizeof(nativeRequest);
     nativeRequest.flags =
-        request.refreshLayout ? SNOW_CAPTURE_SCREENSHOT_REQUEST_REFRESH_LAYOUT : 0;
+        request.refreshLayout && !layout ? SNOW_CAPTURE_SCREENSHOT_REQUEST_REFRESH_LAYOUT : 0;
     if (request.restoreOriginalScreenColors) {
         nativeRequest.flags |= SNOW_CAPTURE_SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS;
     }
@@ -101,7 +169,9 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     SnowCaptureScreenshotResult* nativeResult = nullptr;
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("capture.native_ffi");
-        nativeResult = snow_capture_desktop_session_capture(m_session, &nativeRequest);
+        nativeResult = layout ? snow_capture_desktop_session_capture_with_layout(
+                                    m_session, &nativeRequest, layout.get())
+                              : snow_capture_desktop_session_capture(m_session, &nativeRequest);
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.native_returned");
     if (nativeResult == nullptr) {

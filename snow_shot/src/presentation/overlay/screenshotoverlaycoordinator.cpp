@@ -472,13 +472,13 @@ void ScreenshotOverlayCoordinator::setColorPickerCenterGuideLineColor(const QCol
 
 void ScreenshotOverlayCoordinator::updateShortcutHints(ScreenshotOverlayWindow* overlay,
                                                        const ScreenshotShortcutHintContext& context,
-                                                       qreal opacity,
-                                                       const QRectF& selectionGlobal) {
-    m_uiHost.updateShortcutHints(overlay, context, opacity, selectionGlobal);
+                                                       qreal opacity, const QRectF& selectionGlobal,
+                                                       const QPoint& cursorPosition) {
+    m_uiHost.updateShortcutHints(overlay, context, opacity, selectionGlobal, cursorPosition);
 }
 
-bool ScreenshotOverlayCoordinator::screenshotUiContainsGlobalCursor() const {
-    return m_uiHost.screenshotUiContainsGlobalCursor();
+bool ScreenshotOverlayCoordinator::screenshotUiContainsGlobalPoint(const QPoint& position) const {
+    return m_uiHost.screenshotUiContainsGlobalPoint(position);
 }
 
 bool ScreenshotOverlayCoordinator::stepToolbarStrokeWidth(int direction) {
@@ -583,14 +583,15 @@ void ScreenshotOverlayCoordinator::createColorPicker(const QPoint& initialCursor
 
 void ScreenshotOverlayCoordinator::prepareColorPickerSurface(
     const ScreenshotDisplaySession& displaySession) {
-    ScreenshotOverlayWindow* owner = nullptr;
-    displaySession.forEachActiveOverlay(
-        [&](qsizetype, const CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
-            if (owner == nullptr &&
-                display.logicalRect.contains(m_colorPickerInitialCursorGlobalPosition)) {
-                owner = overlay;
-            }
-        });
+    ScreenshotOverlayWindow* owner = displaySession.startupOverlay();
+    if (owner == nullptr) {
+        displaySession.forEachActiveOverlay(
+            [&](qsizetype, const CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
+                if (owner == nullptr &&
+                    display.logicalRect.contains(m_colorPickerInitialCursorGlobalPosition))
+                    owner = overlay;
+            });
+    }
     // The invocation display may have disappeared during capture preparation.
     if (owner == nullptr) {
         owner = displaySession.firstActiveOverlay();

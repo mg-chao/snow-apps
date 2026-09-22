@@ -8,6 +8,7 @@
 #include <cstdint>
 
 class ScreenshotDisplaySession;
+struct CapturedDisplayModel;
 
 enum class ScreenshotSelectorHitTestMode {
     Window,
@@ -45,6 +46,21 @@ class ScreenshotSelectorServicePort {
   public:
     virtual ~ScreenshotSelectorServicePort() = default;
 
+    // Layout refresh never enumerates. Call startRefresh for a system enumeration.
+    [[nodiscard]] virtual bool
+    startRefreshWithDisplays(const QVector<std::uintptr_t>& excluded,
+                             const QVector<CapturedDisplayModel>& displays) {
+        Q_UNUSED(excluded);
+        Q_UNUSED(displays);
+        return false;
+    }
+    [[nodiscard]] virtual bool requestHitTestOnDisplay(const QPoint& point,
+                                                       ScreenshotSelectorHitTestMode mode,
+                                                       quint32 displayId) {
+        if (displayId != 0)
+            return false;
+        return requestHitTest(point, mode);
+    }
     [[nodiscard]] virtual bool ready() const = 0;
     [[nodiscard]] virtual bool refreshInFlight() const = 0;
     [[nodiscard]] virtual bool startRefresh(const QVector<std::uintptr_t>& excludedHwnds) = 0;

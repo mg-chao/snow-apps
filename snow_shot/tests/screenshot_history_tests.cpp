@@ -2803,6 +2803,32 @@ void canvasColorSamplingConsumesOneCanvasClick() {
 }
 } // namespace
 
+void startupInputWaitsForRevealAndIgnoresSyntheticEvents() {
+    ScreenshotCaptureState state;
+    auto startup = std::make_shared<ScreenshotStartupContext>();
+    startup->phase = ScreenshotStartupContext::Phase::Preparing;
+    ScreenshotDisplaySession displays;
+    displays.startup = startup;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    ScreenshotOverlayInputHandler handler(
+        {state, interaction, selection, intelligent, geometry, displays, {}});
+    require(!handler.acceptInput() && !handler.acceptInput(false),
+            "startup must reject input before reveal");
+    startup->phase = ScreenshotStartupContext::Phase::Revealed;
+    require(startup->suppressesInput() && startup->anchored(),
+            "reading the gate must not release the invocation anchor");
+    require(!handler.acceptInput(false) && startup->anchored(),
+            "synthetic focus/show input must preserve the invocation anchor");
+    require(handler.acceptInput() && !startup->anchored(),
+            "the first real input must resume live tracking");
+    startup->phase = ScreenshotStartupContext::Phase::Preparing;
+    startup->anchorCursor = false;
+    require(handler.acceptInput(), "external drags must continue receiving input before reveal");
+}
+
 int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -2863,6 +2889,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--shortcut-input-only"))) {
+        startupInputWaitsForRevealAndIgnoresSyntheticEvents();
         shortcutExitConfirmationGatesCancellation();
         rightClickSeparatesDismissalFromSelectionChanges();
         scrollingCaptureRoutesEveryToolbarShortcut();

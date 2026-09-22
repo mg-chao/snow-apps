@@ -18,6 +18,8 @@
 #include <iostream>
 #include <memory>
 
+struct SnowCaptureDesktopLayoutImpl {};
+
 struct SnowCaptureDesktopSessionImpl {
     SnowCaptureDesktopSessionConfig config{};
     bool prepared = false;
@@ -50,6 +52,7 @@ int captured = 0;
 int leases = 0;
 bool failCreation = false;
 bool failCapture = false;
+bool invalidLayout = false;
 uint8_t preparedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 uint8_t refreshedBackend = SNOW_CAPTURE_BACKEND_AUTO;
 uint32_t capturedFlags = 0;
@@ -82,6 +85,15 @@ ScreenshotCaptureResult capture(ScreenshotCaptureWorker& worker, bool restoreCol
     ScreenshotCaptureCoordinator coordinator;
     ScreenshotCaptureResult result;
     bool received = false;
+    int layouts = 0;
+    QObject::connect(
+        &coordinator, &ScreenshotCaptureCoordinator::layoutReady, &coordinator,
+        [&](const ScreenshotCaptureLayout& layout) {
+            require(!received && layout.requestId == 42 && layout.generation == 42 &&
+                        layout.displays.size() == 1,
+                    "native layout must be queued before frames with the same request identity");
+            ++layouts;
+        });
     QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &coordinator,
                      [&](const ScreenshotCaptureResult& value) {
                          result = value;
@@ -96,6 +108,8 @@ ScreenshotCaptureResult capture(ScreenshotCaptureWorker& worker, bool restoreCol
     worker.capture(request, &coordinator, nullptr);
     QCoreApplication::sendPostedEvents(&coordinator);
     require(received && result.requestId == request.requestId, "capture result was not delivered");
+    require(!result.succeeded || layouts == 1,
+            "successful initial capture must publish exactly one layout");
     return result;
 }
 
@@ -123,6 +137,16 @@ void recaptureExclusionsReplaceSessionAndDoNotLeak() {
             "recapture must recover with the requested exclusions");
     require(capture(worker).succeeded && capturedWindowIds.isEmpty(),
             "ordinary capture must clear recapture exclusions");
+}
+
+void invalidLayoutDoesNotAcquireFrames() {
+    ScreenshotCaptureWorker worker;
+    const int before = captured;
+    invalidLayout = true;
+    require(!capture(worker).succeeded && captured == before,
+            "invalid native layout must fail before frame acquisition");
+    invalidLayout = false;
+    require(capture(worker).succeeded, "valid layout must recover on the next invocation");
 }
 
 void requireBackend(ScreenshotCaptureWorker& worker, uint8_t expected) {
@@ -336,6 +360,42 @@ void cursorCompositionFailureDoesNotPublishAnImage() {
 // Substitute only the native API; settings, policy, worker, and result delivery are production
 // code.
 extern "C" {
+SnowCaptureDesktopLayout*
+snow_capture_desktop_session_layout_snapshot(SnowCaptureDesktopSession* session, uint8_t refresh) {
+    if (refresh)
+        snow_capture_desktop_session_refresh_layout(session);
+    return new SnowCaptureDesktopLayout;
+}
+void snow_capture_desktop_layout_destroy(SnowCaptureDesktopLayout* layout) {
+    delete layout;
+}
+size_t snow_capture_desktop_layout_count(const SnowCaptureDesktopLayout*) {
+    return 1;
+}
+uint8_t snow_capture_desktop_layout_display(const SnowCaptureDesktopLayout*, size_t,
+                                            SnowCaptureDisplayDescriptor* d) {
+    d->stable_id = "test";
+    d->name = "test";
+    d->x = 0;
+    d->y = 0;
+    d->width = 1;
+    d->height = 1;
+    d->pixel_width = 1;
+    d->pixel_height = 1;
+    d->backing_scale = invalidLayout ? 0 : 1;
+#ifdef Q_OS_MACOS
+    d->coordinate_space = 1;
+    d->display_id = 1;
+#endif
+    return 1;
+}
+SnowCaptureScreenshotResult*
+snow_capture_desktop_session_capture_with_layout(SnowCaptureDesktopSession* session,
+                                                 const SnowCaptureScreenshotRequest* request,
+                                                 const SnowCaptureDesktopLayout*) {
+    return snow_capture_desktop_session_capture(session, request);
+}
+
 SnowCaptureDesktopSession*
 snow_capture_desktop_session_create(const SnowCaptureDesktopSessionConfig* config) {
     if (failCreation) {
@@ -492,6 +552,7 @@ int main(int argc, char** argv) {
     static_cast<void>(storage.initialize({temporary.filePath(QStringLiteral("bin")),
                                           temporary.filePath(QStringLiteral("data")), 60000}));
     recaptureExclusionsReplaceSessionAndDoNotLeak();
+    invalidLayoutDoesNotAcquireFrames();
     changedModeReplacesPrewarmedSession();
     allModeTransitionsApplyWithoutRestart();
     colorRestorationAppliesAcrossBackendChanges();

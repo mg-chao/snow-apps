@@ -11,7 +11,6 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QApplication>
-#include <QCursor>
 
 #include <algorithm>
 #include <utility>
@@ -115,8 +114,20 @@ void ScreenshotOverlayInputHandler::finishSelectionResizeAtCanvasPosition(
     finishSelectionDrag(overlay, {}, canvasPosition);
 }
 
+bool ScreenshotOverlayInputHandler::acceptInput(bool genuine) {
+    ScreenshotStartupContext* startup = m_context.displaySession.startup.get();
+    if (!startup || !startup->suppressesInput())
+        return true;
+    if (!genuine || startup->phase == ScreenshotStartupContext::Phase::Preparing)
+        return false;
+    startup->resumeLiveInput();
+    return true;
+}
+
 void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* overlay,
                                                      const QPointF& localPosition) {
+    if (!acceptInput())
+        return;
     if (m_externalDragActive)
         return;
     if (m_canvasColorSamplingArmed) {
@@ -284,6 +295,8 @@ bool ScreenshotOverlayInputHandler::shouldHandleMouseEvent(const ScreenshotOverl
 
 void ScreenshotOverlayInputHandler::handleMouseMove(ScreenshotOverlayWindow* overlay,
                                                     const QPointF& localPosition) {
+    if (!acceptInput())
+        return;
     if (m_externalDragActive)
         return;
     if (m_canvasColorSamplingArmed) {
@@ -375,6 +388,8 @@ void ScreenshotOverlayInputHandler::updateSelectionDrag(const QPointF& virtualPo
 
 void ScreenshotOverlayInputHandler::handleMouseRelease(ScreenshotOverlayWindow* overlay,
                                                        const QPointF& localPosition) {
+    if (!acceptInput())
+        return;
     if (m_externalDragActive)
         return;
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
@@ -439,6 +454,8 @@ void ScreenshotOverlayInputHandler::finishSelectionDrag(ScreenshotOverlayWindow*
 ScreenshotOverlayRightClickResult
 ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay,
                                                 const QPointF& localPosition) {
+    if (!acceptInput())
+        return ScreenshotOverlayRightClickResult::Handled;
     if (m_externalDragActive)
         return ScreenshotOverlayRightClickResult::Handled;
     if (m_canvasColorSamplingArmed) {
@@ -479,6 +496,8 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
                                                 const QPointF& localPosition,
                                                 const QPoint& angleDelta,
                                                 const QPoint& pixelDelta) {
+    if (!acceptInput())
+        return true;
     if (m_externalDragActive)
         return true;
     if (m_context.interaction.scrollingCapture()) {
@@ -656,14 +675,22 @@ bool ScreenshotOverlayInputHandler::toggleIntelligentSelectionTargetShortcut() {
         m_context.selection.clearSelection();
     }
     m_context.actions.requestUiSelectorHitTest(m_context.geometry.physicalPositionForLogicalPoint(
-        m_context.displaySession, QCursor::pos()));
+        m_context.displaySession, m_context.displaySession.logicalCursorPosition()));
     m_context.actions.updateOverlayState();
     return true;
 }
 
 void ScreenshotOverlayInputHandler::requestIntelligentSelectionHitTest(
     const QPointF& virtualPosition) {
-    m_context.actions.requestUiSelectorHitTest(physicalPositionForCanvasPoint(virtualPosition));
+    const QPoint point = physicalPositionForCanvasPoint(virtualPosition);
+    if (m_context.actions.requestUiSelectorHitTestOnDisplay) {
+        const auto* display =
+            m_context.geometry.displayForCanvasPoint(m_context.displaySession, virtualPosition);
+        m_context.actions.requestUiSelectorHitTestOnDisplay(point,
+                                                            display ? display->nativeDisplayId : 0);
+    } else {
+        m_context.actions.requestUiSelectorHitTest(point);
+    }
 }
 
 void ScreenshotOverlayInputHandler::setIntelligentSelectionIndex(int index) {

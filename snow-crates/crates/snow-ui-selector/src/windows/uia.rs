@@ -31,9 +31,12 @@ pub(crate) struct UiaBackend {
 }
 
 impl UiaBackend {
-    pub(crate) fn new_excluding_hwnds(excluded_hwnds: &[HWND]) -> Result<Self> {
+    pub(crate) fn new_excluding_hwnds(
+        excluded_hwnds: &[HWND],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> Result<Self> {
         let provider = NativeProvider::new()?;
-        let (windows, window_index) = build_uia_window_cache(excluded_hwnds)?;
+        let (windows, window_index) = build_uia_window_cache(excluded_hwnds, displays)?;
         Ok(Self {
             windows,
             window_index,
@@ -41,9 +44,13 @@ impl UiaBackend {
         })
     }
 
-    pub(crate) fn refresh(&mut self, excluded_hwnds: &[HWND]) -> Result<()> {
+    pub(crate) fn refresh(
+        &mut self,
+        excluded_hwnds: &[HWND],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> Result<()> {
         self.release_cache();
-        let (windows, window_index) = build_uia_window_cache(excluded_hwnds)?;
+        let (windows, window_index) = build_uia_window_cache(excluded_hwnds, displays)?;
         self.windows = windows;
         self.window_index = window_index;
         Ok(())
@@ -248,9 +255,12 @@ impl Batch for NativeBatch {
     }
 }
 
-fn build_uia_window_cache(excluded_hwnds: &[HWND]) -> Result<(Vec<UiaWindow>, WindowSpatialIndex)> {
+fn build_uia_window_cache(
+    excluded_hwnds: &[HWND],
+    displays: Option<&[crate::DisplayGeometry]>,
+) -> Result<(Vec<UiaWindow>, WindowSpatialIndex)> {
     let hwnds = window::enumerate_top_windows()?;
-    let monitors = MonitorCache::new();
+    let monitors = MonitorCache::from_displays(displays);
     Ok(collect_window_snapshot(hwnds, excluded_hwnds, |hwnd| {
         if window::is_window_cloaked(hwnd) {
             return None;

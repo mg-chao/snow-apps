@@ -1,4 +1,7 @@
 #include "snow_shot/presentation/screenshotcolorpickerwindow.h"
+#include "snow_shot/presentation/screenshotcolorpickercontroller.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/screenshotoverlayuihost.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
@@ -265,11 +268,81 @@ void invocationMonitorOwnsThePreparedSurface() {
                 "a removed invocation display must fall back to an active overlay");
     }
 }
+
+void startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor() {
+    NoopOverlayEventSink sink;
+    SnowCanvasRuntime canvas;
+    snow_shot::presentation::WindowShortcutManager shortcuts;
+    ScreenshotOverlayWindow first(sink, new SnowCanvasWidget);
+    ScreenshotOverlayWindow second(sink, new SnowCanvasWidget);
+    first.setGeometry(0, 0, 80, 60);
+    second.setGeometry(80, 0, 80, 60);
+    CapturedDisplayModel left;
+    left.stableId = QStringLiteral("left");
+    left.logicalRect = first.geometry();
+    left.physicalRect = left.logicalRect;
+    left.active = true;
+    left.geometryResolved = true;
+    left.image = QImage(80, 60, QImage::Format_RGB32);
+    left.image.fill(Qt::red);
+    auto right = left;
+    right.stableId = QStringLiteral("right");
+    right.logicalRect = second.geometry();
+    right.physicalRect = right.logicalRect;
+    right.image = QImage(80, 60, QImage::Format_RGB32);
+    right.image.fill(Qt::blue);
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(left, &first);
+    displays.appendDisplay(right, &second);
+    auto startup = std::make_shared<ScreenshotStartupContext>();
+    startup->phase = ScreenshotStartupContext::Phase::Revealed;
+    startup->displaySlot = 1;
+    startup->displayId = right.stableId;
+    startup->logicalPosition = QPoint(100, 20);
+    startup->physicalPosition = startup->logicalPosition;
+    displays.startup = startup;
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    int reads = 0;
+    snow_shot::platform::PhysicalCursor cursor({true,
+                                                [&]() -> std::optional<QPoint> {
+                                                    ++reads;
+                                                    return QPoint(20, 20);
+                                                },
+                                                [](const QPoint&) { return true; },
+                                                [&]() -> std::optional<QPointF> {
+                                                    ++reads;
+                                                    return QPointF(20, 20);
+                                                }});
+    ScreenshotOverlayCoordinator coordinator(sink, canvas, shortcuts);
+    coordinator.createColorPicker(QPoint(20, 20));
+    coordinator.prepareColorPickerSurface(displays);
+    ScreenshotColorPickerController controller(coordinator, geometry, displays, cursor);
+    ScreenshotColorPickerContext context;
+    context.active = true;
+    context.moveToolActive = true;
+    context.intelligentSelecting = true;
+    controller.updateAtCurrentCursor(context);
+    require(reads == 0 && coordinator.colorPicker()->parentWidget() == &second &&
+                coordinator.colorPicker()->currentColorText().compare(QStringLiteral("#0000ff"),
+                                                                      Qt::CaseInsensitive) == 0,
+            "startup picker must share the invocation owner and sample without reading the live "
+            "cursor");
+    require(startup->suppressesInput(), "reading the gate must keep the invocation anchor");
+    startup->resumeLiveInput();
+    require(!startup->anchored(), "revealed input must release the cursor anchor");
+    controller.updateAtCurrentCursor(context);
+    require(reads == 1 && coordinator.colorPicker()->parentWidget() == &first,
+            "live picker must sample once and follow the newly selected display");
+    coordinator.releaseColorPicker();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     pickerLifetimeFollowsExplicitSessionOperations();
     invocationMonitorOwnsThePreparedSurface();
+    startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor();
     return 0;
 }

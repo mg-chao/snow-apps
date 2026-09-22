@@ -103,6 +103,7 @@ struct ScreenshotOverlayInputActions {
         [](ScreenshotIntelligentSelectionTarget) {};
     std::function<bool()> recaptureAvailable = []() { return false; };
     std::function<bool()> cancelCaptureViaShortcut = []() { return false; };
+    std::function<void(const QPoint&, quint32)> requestUiSelectorHitTestOnDisplay;
 };
 
 struct ScreenshotOverlayInputHandlerContext {
@@ -131,6 +132,7 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] bool externalDragActive() const {
         return m_externalDragActive;
     }
+    [[nodiscard]] bool acceptInput(bool genuine = true);
     void beginExternalSelectionDrag(const QPointF& canvasPosition);
     void updateExternalSelectionDrag(const QPointF& canvasPosition);
 

@@ -6,7 +6,6 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 
-#include <QCursor>
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include <QGuiApplication>
 #include <QScreen>
@@ -162,8 +161,7 @@ void scheduleOverlayActivation(ScreenshotOverlayWindow* overlay) {
 
 constexpr qreal kFramePacedFallbackRefreshRate = 60.0;
 
-int framePacedActivationDelayMs() {
-    const QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+int framePacedActivationDelayMs(const QScreen* screen) {
     const qreal rate = screen != nullptr ? screen->refreshRate() : 0.0;
     return std::max(1, static_cast<int>(std::ceil(
                            1000.0 / (rate > 0.0 ? rate : kFramePacedFallbackRefreshRate))));
@@ -183,7 +181,7 @@ void scheduleFramePacedOverlayActivation(ScreenshotOverlayWindow* overlay) {
     // while a global-mouse drag runs on hook input. Keep the cursor sprite and
     // the raise() above immediate, but run activation one frame after the
     // reveal so the first paced drag updates are not queued behind it.
-    QTimer::singleShot(framePacedActivationDelayMs(), overlay, [overlay]() {
+    QTimer::singleShot(framePacedActivationDelayMs(overlay->screen()), overlay, [overlay]() {
         if (overlay == nullptr || !overlay->isVisible()) {
             return;
         }
@@ -257,7 +255,8 @@ void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay, bool fra
 void showCapturedImageOverlaysForDisplaySession(const ScreenshotDisplaySession& displaySession,
                                                 bool framePaced) {
     const QVector<ActiveOverlayEntry> entries = activeOverlayEntries(displaySession);
-    const qsizetype preferredIndex = preferredOverlayEntryIndex(entries, QCursor::pos());
+    const qsizetype preferredIndex =
+        preferredOverlayEntryIndex(entries, displaySession.logicalCursorPosition());
 
     if (preferredIndex >= 0 && preferredIndex < entries.size()) {
         showCapturedImageOverlayNow(*entries.at(preferredIndex).overlay, framePaced);

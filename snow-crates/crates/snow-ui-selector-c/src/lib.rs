@@ -144,11 +144,15 @@ fn mode(value: SnowUiSelectorHitTestMode) -> HitTestMode {
     }
 }
 
+mod display_layout;
+pub use display_layout::*;
+
 enum ForegroundCommand {
     Refresh {
         epoch: u64,
         backend: SnowUiSelectorBackend,
         excluded: Vec<usize>,
+        displays: Option<Vec<snow_ui_selector::DisplayGeometry>>,
         revision: u64,
     },
     Query(SnowUiSelectorQuery),
@@ -225,6 +229,23 @@ pub struct SnowUiSelectorServiceImpl {
 }
 
 trait WorkerService: Sized {
+    fn create_with_displays(
+        backend: AccessibilityBackend,
+        excluded: &[usize],
+        displays: Option<&[snow_ui_selector::DisplayGeometry]>,
+    ) -> SelectorResult<Self> {
+        let _ = displays;
+        Self::create(backend, excluded)
+    }
+    fn refresh_with_displays(
+        &mut self,
+        excluded: &[usize],
+        displays: Option<&[snow_ui_selector::DisplayGeometry]>,
+    ) -> SelectorResult<()> {
+        let _ = displays;
+        self.refresh(excluded)
+    }
+
     fn create(backend: AccessibilityBackend, excluded: &[usize]) -> SelectorResult<Self>;
     fn backend(&self) -> AccessibilityBackend;
     fn refresh(&mut self, excluded: &[usize]) -> SelectorResult<()>;
@@ -240,6 +261,21 @@ trait WorkerService: Sized {
     ) -> SelectorResult<QueryResult>;
 }
 impl WorkerService for ElementRegionService {
+    fn create_with_displays(
+        backend: AccessibilityBackend,
+        excluded: &[usize],
+        displays: Option<&[snow_ui_selector::DisplayGeometry]>,
+    ) -> SelectorResult<Self> {
+        Self::with_backend_and_displays(backend, excluded, displays)
+    }
+    fn refresh_with_displays(
+        &mut self,
+        excluded: &[usize],
+        displays: Option<&[snow_ui_selector::DisplayGeometry]>,
+    ) -> SelectorResult<()> {
+        ElementRegionService::refresh_with_displays(self, excluded, displays)
+    }
+
     fn create(backend: AccessibilityBackend, excluded: &[usize]) -> SelectorResult<Self> {
         Self::with_backend_excluding_ids(backend, excluded)
     }
@@ -292,14 +328,16 @@ fn foreground_worker<S: WorkerService>(
                 epoch,
                 backend: selected,
                 excluded,
+                displays,
                 revision,
             } => {
                 let selected = backend(selected);
                 let result =
                     if let Some(service) = service.as_mut().filter(|s| s.backend() == selected) {
-                        service.refresh(&excluded)
+                        service.refresh_with_displays(&excluded, displays.as_deref())
                     } else {
-                        S::create(selected, &excluded).map(|s| service = Some(s))
+                        S::create_with_displays(selected, &excluded, displays.as_deref())
+                            .map(|s| service = Some(s))
                     };
                 if result.is_err() {
                     service = None;
@@ -584,6 +622,17 @@ pub unsafe extern "C" fn snow_ui_selector_service_refresh(
     excluded: *const usize,
     count: usize,
 ) -> u8 {
+    unsafe { refresh_with_layout(service, epoch, backend, excluded, count, None) }
+}
+
+unsafe fn refresh_with_layout(
+    service: *mut SnowUiSelectorServiceImpl,
+    epoch: u64,
+    backend: SnowUiSelectorBackend,
+    excluded: *const usize,
+    count: usize,
+    displays: Option<Vec<snow_ui_selector::DisplayGeometry>>,
+) -> u8 {
     let Some(s) = (unsafe { service.as_ref() }) else {
         return 0;
     };
@@ -604,6 +653,7 @@ pub unsafe extern "C" fn snow_ui_selector_service_refresh(
             epoch,
             backend,
             excluded,
+            displays,
             revision,
         },
         &s.shared,

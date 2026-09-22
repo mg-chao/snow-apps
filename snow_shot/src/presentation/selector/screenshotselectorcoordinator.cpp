@@ -36,7 +36,11 @@ ScreenshotSelectorCoordinator::ScreenshotSelectorCoordinator(QObject* parent,
                     const QVector<std::uintptr_t> excludedHwnds = m_lastExcludedHwnds;
                     releaseCache();
                     if (refreshRequired) {
-                        static_cast<void>(startRefresh(excludedHwnds));
+                        if (m_lastDisplays.isEmpty())
+                            static_cast<void>(startRefresh(excludedHwnds));
+                        else
+                            static_cast<void>(
+                                startRefreshWithDisplays(excludedHwnds, m_lastDisplays));
                     }
                 });
     }
@@ -99,16 +103,21 @@ void ScreenshotSelectorCoordinator::destroyService() {
     m_serviceClient->destroyService();
 }
 
-bool ScreenshotSelectorCoordinator::startRefresh(const QVector<std::uintptr_t>& excludedHwnds) {
-    if (m_refreshInFlight) {
+bool ScreenshotSelectorCoordinator::dispatchRefresh(const QVector<std::uintptr_t>& excludedHwnds,
+                                                    const QVector<CapturedDisplayModel>* displays) {
+    if (m_refreshInFlight || (displays != nullptr && displays->isEmpty()))
         return false;
-    }
     resetHitTestState();
     m_lastExcludedHwnds = excludedHwnds;
+    m_lastDisplays = displays != nullptr ? *displays : QVector<CapturedDisplayModel>{};
     const quint64 requestId = ++m_refreshRequestId;
     m_refreshInFlight = true;
     m_ready = false;
-    if (!m_serviceClient->startRefresh(requestId, excludedHwnds)) {
+    const bool started =
+        displays != nullptr
+            ? m_serviceClient->startRefreshWithDisplays(requestId, excludedHwnds, *displays)
+            : m_serviceClient->startRefresh(requestId, excludedHwnds);
+    if (!started) {
         m_refreshInFlight = false;
         m_ready = false;
         return false;
@@ -116,13 +125,27 @@ bool ScreenshotSelectorCoordinator::startRefresh(const QVector<std::uintptr_t>& 
     return true;
 }
 
+bool ScreenshotSelectorCoordinator::startRefresh(const QVector<std::uintptr_t>& excludedHwnds) {
+    return dispatchRefresh(excludedHwnds, nullptr);
+}
+
+bool ScreenshotSelectorCoordinator::startRefreshWithDisplays(
+    const QVector<std::uintptr_t>& excludedHwnds, const QVector<CapturedDisplayModel>& displays) {
+    return dispatchRefresh(excludedHwnds, &displays);
+}
+
 bool ScreenshotSelectorCoordinator::requestHitTest(const QPoint& physicalPoint,
                                                    ScreenshotSelectorHitTestMode mode) {
+    return requestHitTestOnDisplay(physicalPoint, mode, 0);
+}
+
+bool ScreenshotSelectorCoordinator::requestHitTestOnDisplay(const QPoint& physicalPoint,
+                                                            ScreenshotSelectorHitTestMode mode,
+                                                            quint32 displayId) {
     if ((!m_ready && !m_refreshInFlight) || !m_serviceClient->hasService()) {
         return false;
     }
 
-    const quint32 displayId = ScreenshotSelectorServiceClient::displayIdAtCursor();
     if (m_hasTarget && m_pendingHitTestPoint == physicalPoint && m_pendingHitTestMode == mode &&
         m_pendingDisplayId == displayId) {
         return true;
@@ -168,6 +191,11 @@ void ScreenshotSelectorCoordinator::handleRefreshFinished(quint64 requestId, boo
     m_ready = ok;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_finished");
     SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.refresh_ok", ok ? 1 : 0);
+    if (!ok) {
+        m_hasPendingHitTestPoint = false;
+        m_hasTarget = false;
+        m_hitTestInFlight = false;
+    }
     emit refreshFinished(ok);
     if (ok)
         startNextHitTest();

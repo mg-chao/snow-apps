@@ -13,6 +13,8 @@
 #include <QCursor>
 #include <QDebug>
 #include <QGuiApplication>
+#include <QScreen>
+#include <QSet>
 
 #include <algorithm>
 #include <utility>
@@ -27,32 +29,17 @@
 #include <windows.h>
 #endif
 
-namespace {
-QPoint currentPhysicalCursorPosition(const ScreenshotDisplaySession& displaySession,
-                                     const ScreenshotGeometryMapper& geometry) {
-    if (!geometry.isEmpty()) {
-        return geometry.physicalPositionForLogicalPoint(displaySession, QCursor::pos());
-    }
-
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    POINT cursor{};
-    if (GetCursorPos(&cursor) != FALSE) {
-        return QPoint(cursor.x, cursor.y);
-    }
-#endif
-
-    return geometry.physicalPositionForLogicalPoint(displaySession, QCursor::pos());
-}
-} // namespace
-
 ScreenshotCaptureWorkflow::ScreenshotCaptureWorkflow(ScreenshotCaptureWorkflowContext context)
-    : m_context(std::move(context)), m_state(m_context.state) {
+    : m_startup(std::make_shared<ScreenshotStartupContext>()), m_context(std::move(context)),
+      m_state(m_context.state) {
     m_context.runtime.setEventSink(this);
+    m_context.displaySession.startup = m_startup;
 }
 
 ScreenshotCaptureWorkflow::~ScreenshotCaptureWorkflow() {
     completeRecapture(false);
     m_context.runtime.setEventSink(nullptr);
+    m_context.displaySession.startup.reset();
 }
 
 void ScreenshotCaptureWorkflow::prewarmResources() {
@@ -72,7 +59,7 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
 
 void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation toolbarPreparation,
                                              ToolbarVisibility toolbarVisibility) {
-    const QPoint initialCursorGlobalPosition = QCursor::pos();
+    const QPoint initialCursorGlobalPosition = m_context.cursorPosition();
     completeRecapture(false);
     if (m_deferredExportCleanup) {
         completeDeferredExportCleanup();
@@ -112,6 +99,12 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_context.intelligentSelection.beginCaptureSession(mode != StartMode::ExternalDrag &&
                                                            m_context.smartSelectionEnabled(),
                                                        m_context.preferredSelectionTarget());
+    *m_startup = {};
+    m_startup->sessionId = sessionId;
+    m_startup->invocationLogicalPosition = initialCursorGlobalPosition;
+    m_startup->logicalPosition = initialCursorGlobalPosition;
+    m_startup->anchorCursor = mode != StartMode::ExternalDrag;
+    m_startup->phase = ScreenshotStartupContext::Phase::Preparing;
     m_context.runtime.createColorPicker(initialCursorGlobalPosition);
     beginCapturePreparation(sessionId);
 }
@@ -179,6 +172,7 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
 }
 
 void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
+    *m_startup = {};
     SNOW_SHOT_PIN_PERF_SCOPE("cleanup.cancel_capture_for_export");
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.export_cancel_requested");
     SNOW_SHOT_PIN_PERF_MILESTONE("cleanup.export_cancel_started");
@@ -218,6 +212,7 @@ void ScreenshotCaptureWorkflow::resetCaptureModels() {
 }
 
 void ScreenshotCaptureWorkflow::clearDisplays() {
+    *m_startup = {};
     clearCapturePresentationReadiness();
     m_context.runtime.clearDisplays(m_context.displaySession);
     m_context.geometry.clear();
@@ -339,6 +334,12 @@ void ScreenshotCaptureWorkflow::shutdownCaptureWorker() {
 }
 
 void ScreenshotCaptureWorkflow::handleDisplayConfigurationChanged() {
+    if (m_startup->phase == ScreenshotStartupContext::Phase::Preparing) {
+        m_state.layoutDirty = true;
+        ++m_layoutChangeSerial;
+        cancelCapture();
+        return;
+    }
     if (m_startMode == StartMode::ExternalDrag &&
         (m_state.captureInProgress || m_context.interaction.dragging())) {
         cancelCapture();
@@ -377,6 +378,11 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     if (m_context.refreshCanvasCreationStyles) {
         m_context.refreshCanvasCreationStyles();
     }
+    m_context.displaySession.forEachActiveDisplay(
+        [this](qsizetype slot, const CapturedDisplayModel& display) {
+            m_startup->qtDisplays.push_back(display);
+            m_startup->qtDisplaySlots.push_back(slot);
+        });
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.overlay_prep_done");
     // Once Snow Shot's windows are excluded, start native acquisition at
     // once. The capture worker can initialize lazy GPU resources while the
@@ -392,25 +398,8 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
     }
-    m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
-    if (preCapturePrepared) {
-        m_canvasRuntimeClean = false;
-
-        // Build the selector snapshot for this capture after overlay exclusions
-        // are known, so the frame and initial smart selection use the same layout.
-        if (m_startMode != StartMode::ExternalDrag) {
-            m_context.runtime.startWorkflowRefresh();
-        }
-        // Prewarm the hidden editing-toolbar surface only after the capture has
-        // been dispatched so its construction overlaps the worker's frame
-        // acquisition instead of delaying the capture or the editing reveal.
-        if (m_toolbarPreparation == ToolbarPreparation::Prewarm) {
-            m_context.runtime.prewarmToolbarSurface(m_context.displaySession);
-        }
-    }
-    const bool presentationBegun = preCapturePrepared && beginCapturePresentation(sessionId);
-    if (presentationBegun) {
-        prepareOverlayPresentation(sessionId);
+    if (preCapturePrepared && m_toolbarPreparation == ToolbarPreparation::Prewarm) {
+        m_context.runtime.prewarmToolbarSurface(m_context.displaySession);
     }
 }
 
@@ -420,8 +409,8 @@ bool ScreenshotCaptureWorkflow::beginCapturePresentation(quint64 sessionId) {
         return false;
     }
 
-    m_context.geometry.clear();
     m_context.geometry.rebuild(m_context.displaySession);
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("startup.geometry_builds", 1);
     if (m_context.geometry.isEmpty()) {
         return false;
     }
@@ -458,30 +447,41 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
         return;
     }
 
-    const bool presentationPrepared = capturePresentationPrepared(sessionId);
-    m_context.geometry.clear();
-    ScreenshotCaptureDisplayModelReconciler::applySnapshots(m_context.displaySession,
-                                                            result.displays);
-
-    if (!m_context.displaySession.hasActiveDisplays()) {
+    if (!m_startup->displays || result.displays.size() != m_startup->displays->size()) {
+        m_state.layoutDirty = true;
         cancelCapture();
         return;
     }
-    m_context.geometry.rebuild(m_context.displaySession);
+    QSet<QString> attached;
+    bool layoutMatches = true;
+    m_context.displaySession.forEachMutableActiveDisplay(
+        [&](qsizetype, CapturedDisplayModel& display) {
+            const auto found = std::find_if(result.displays.cbegin(), result.displays.cend(),
+                                            [&](const CapturedDisplayModel& frame) {
+                                                return frame.stableId == display.stableId;
+                                            });
+            if (found == result.displays.cend() || attached.contains(display.stableId) ||
+                !startupFrameMatchesDisplay(display, *found) ||
+                (QGuiApplication::instance() &&
+                 (!display.screen || display.screen->geometry() != display.logicalRect))) {
+                layoutMatches = false;
+                return;
+            }
+            attached.insert(display.stableId);
+            display.image = found->image;
+            display.backend = found->backend;
+        });
+    if (!layoutMatches || attached.size() != result.displays.size()) {
+        m_state.layoutDirty = true;
+        cancelCapture();
+        return;
+    }
     const bool refreshAfterCapture = m_refreshAfterCapture;
     m_refreshAfterCapture = false;
-    if (!refreshAfterCapture) {
-        m_state.layoutDirty = false;
-    }
-
+    m_state.layoutDirty = false;
     m_state.captureInProgress = false;
-    if (!presentationPrepared || m_context.interaction.inactive()) {
-        m_state.sessionState = ScreenshotSessionState::OverlayVisible;
-        enterOverlaySelectionModeAtCursor();
-    }
 
     m_context.runtime.applyDisplayModels(m_context.displaySession);
-    m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
     m_canvasRuntimeClean = false;
     if (m_context.presentation.updateOverlayState) {
         m_context.presentation.updateOverlayState();
@@ -570,6 +570,16 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
         return;
     }
 
+    if (QGuiApplication::instance() &&
+        std::any_of(
+            m_startup->qtDisplays.cbegin(), m_startup->qtDisplays.cend(), [](const auto& d) {
+                return !d.screen || d.screen->geometry() != d.logicalRect ||
+                       ScreenshotGeometryMapper::physicalRectForScreen(*d.screen) != d.physicalRect;
+            })) {
+        m_state.layoutDirty = true;
+        cancelCapture();
+        return;
+    }
     m_visiblePresentationSessionId = sessionId;
     if (m_context.presentation.beforeCapturePresented) {
         m_context.presentation.beforeCapturePresented();
@@ -592,6 +602,7 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION();
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.composited");
     SNOW_SHOT_CAPTURE_PERF_FINISH(true);
+    m_startup->phase = ScreenshotStartupContext::Phase::Revealed;
     if (m_context.presentation.updateColorPicker) {
         m_context.presentation.updateColorPicker();
     }
@@ -631,13 +642,77 @@ void ScreenshotCaptureWorkflow::enterOverlaySelectionModeAtCursor() {
 
     if (!m_context.runtime.selectorHitTestInFlight()) {
         m_initialSmartSelectionPendingSessionId = m_state.sessionId;
-        if (m_context.runtime.updateSelectorSelectionAt(
-                currentPhysicalCursorPosition(m_context.displaySession, m_context.geometry))) {
+        if (m_context.runtime.updateSelectorSelectionAt(m_startup->physicalPosition)) {
             return;
         }
         m_initialSmartSelectionPendingSessionId = 0;
         showCapturePresentationWhenReady(m_state.sessionId);
     }
+}
+
+void ScreenshotCaptureWorkflow::handleLayoutReady(const ScreenshotCaptureLayout& layout) {
+    if (layout.requestId != m_state.sessionId || !m_state.captureInProgress || m_startup->displays)
+        return;
+    const auto fail = [this] {
+        m_state.layoutDirty = true;
+        cancelCapture();
+    };
+    const auto matched = matchStartupDisplays(
+        m_startup->qtDisplays, m_startup->qtDisplaySlots, layout.displays,
+        [](const CapturedDisplayModel& qt) {
+            if (QGuiApplication::instance() == nullptr)
+                return true;
+            return qt.screen && qt.screen->geometry() == qt.logicalRect &&
+                   ScreenshotGeometryMapper::physicalRectForScreen(*qt.screen) == qt.physicalRect;
+        });
+    if (!matched) {
+        fail();
+        return;
+    }
+    QVector<CapturedDisplayModel> resolved;
+    resolved.reserve(matched->size());
+    for (const StartupDisplayBinding& binding : *matched) {
+        m_context.displaySession.displayAt(binding.slot) = binding.display;
+        resolved.push_back(binding.display);
+    }
+    m_startup->layoutGeneration = layout.generation;
+    m_startup->displays = std::make_shared<const QVector<CapturedDisplayModel>>(resolved);
+    const CapturedDisplayModel* owner = nullptr;
+    for (const auto& display : *m_startup->displays)
+        if (ScreenshotHalfOpenRect::fromRect(display.logicalRect)
+                .contains(m_startup->logicalPosition)) {
+            owner = &display;
+            break;
+        }
+    if (!owner) {
+        const auto primary =
+            std::find_if(m_startup->displays->cbegin(), m_startup->displays->cend(),
+                         [](const auto& d) { return d.primary; });
+        owner = primary == m_startup->displays->cend() ? &m_startup->displays->first() : &*primary;
+        m_startup->logicalPosition =
+            QPoint(std::clamp(m_startup->logicalPosition.x(), owner->logicalRect.left(),
+                              owner->logicalRect.right()),
+                   std::clamp(m_startup->logicalPosition.y(), owner->logicalRect.top(),
+                              owner->logicalRect.bottom()));
+    }
+    m_startup->displayId = owner->stableId;
+    m_context.displaySession.forEachActiveDisplay(
+        [&](qsizetype slot, const CapturedDisplayModel& display) {
+            if (display.stableId == owner->stableId)
+                m_startup->displaySlot = slot;
+        });
+    m_startup->nativeDisplayId = owner->nativeDisplayId;
+    m_startup->physicalPosition =
+        owner->physicalRect.topLeft() +
+        QPoint(qRound(static_cast<double>(m_startup->logicalPosition.x() - owner->logicalRect.x()) *
+                      owner->physicalRect.width() / owner->logicalRect.width()),
+               qRound(static_cast<double>(m_startup->logicalPosition.y() - owner->logicalRect.y()) *
+                      owner->physicalRect.height() / owner->logicalRect.height()));
+    m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
+    if (m_startMode != StartMode::ExternalDrag)
+        m_context.runtime.startWorkflowRefresh();
+    if (beginCapturePresentation(layout.requestId))
+        prepareOverlayPresentation(layout.requestId);
 }
 
 void ScreenshotCaptureWorkflow::handleCapturePrepared(quint64, bool ok) {

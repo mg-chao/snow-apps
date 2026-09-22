@@ -13,6 +13,7 @@
 #include <functional>
 
 #include "snow_shot/presentation/screenshotselectorworkflowports.h"
+#include "snow_shot/presentation/screenshottypes.h"
 
 class ScreenshotSelectorServiceClient;
 
@@ -33,6 +34,12 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     void releaseCache();
     void destroyService();
 
+    [[nodiscard]] bool
+    startRefreshWithDisplays(const QVector<std::uintptr_t>& excluded,
+                             const QVector<CapturedDisplayModel>& displays) override;
+    [[nodiscard]] bool requestHitTestOnDisplay(const QPoint& point,
+                                               ScreenshotSelectorHitTestMode mode,
+                                               quint32 displayId) override;
     [[nodiscard]] bool startRefresh(const QVector<std::uintptr_t>& excludedHwnds) override;
     [[nodiscard]] bool requestHitTest(const QPoint& physicalPoint,
                                       ScreenshotSelectorHitTestMode mode) override;
@@ -45,6 +52,8 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     void accessibilityPermissionRequired();
 
   private:
+    [[nodiscard]] bool dispatchRefresh(const QVector<std::uintptr_t>& excludedHwnds,
+                                       const QVector<CapturedDisplayModel>* displays);
     void startNextHitTest();
     void handleRefreshFinished(quint64 requestId, bool ok);
     void handleResult(const ScreenshotSelectorResult& result);
@@ -71,6 +80,7 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     quint32 m_pendingDisplayId = 0;
     ScreenshotSelectorHitTestMode m_pendingHitTestMode = ScreenshotSelectorHitTestMode::Window;
     QVector<std::uintptr_t> m_lastExcludedHwnds;
+    QVector<CapturedDisplayModel> m_lastDisplays;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORCOORDINATOR_H

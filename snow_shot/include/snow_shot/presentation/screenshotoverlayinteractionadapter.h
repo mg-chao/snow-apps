@@ -17,6 +17,7 @@ class ScreenshotOverlayEventAdapter final : public ScreenshotOverlayEventSink {
     void setEventTargets(ScreenshotOverlayInputHandler& inputHandler,
                          std::function<void()> raiseToolbarForCanvasInteraction);
     void clearEventTargets();
+    bool acceptOverlayInput(bool genuine) override;
 
     [[nodiscard]] bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow* overlay,
                                                      const QPointF& localPosition,

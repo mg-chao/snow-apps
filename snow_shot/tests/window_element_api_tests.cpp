@@ -625,6 +625,16 @@ uint8_t snow_ui_selector_service_refresh(SnowUiSelectorService* service, uint64_
     service->refresh(epoch, 1, service->userdata);
     return 1;
 }
+uint8_t snow_ui_selector_service_refresh_with_displays(SnowUiSelectorService* service,
+                                                       uint64_t epoch,
+                                                       SnowUiSelectorBackend backend,
+                                                       const uintptr_t* excluded, size_t count,
+                                                       const SnowUiSelectorDisplay* displays,
+                                                       size_t displayCount) {
+    if (displays == nullptr || displayCount == 0)
+        return 0;
+    return snow_ui_selector_service_refresh(service, epoch, backend, excluded, count);
+}
 uint8_t snow_ui_selector_service_query(SnowUiSelectorService* service,
                                        const SnowUiSelectorQuery* query) {
     currentMode = query->mode;

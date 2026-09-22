@@ -703,6 +703,13 @@ bool ScreenshotOverlayWindow::handleCanvasEvent(QEvent* event) {
         return false;
     }
 
+    if ((event->type() == QEvent::KeyPress || event->type() == QEvent::MouseButtonPress ||
+         event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonRelease ||
+         event->type() == QEvent::Wheel) &&
+        !m_eventSink.acceptOverlayInput(event->spontaneous())) {
+        event->accept();
+        return true;
+    }
     if (event->type() == QEvent::KeyPress) {
         return handleCanvasKeyPress(static_cast<QKeyEvent*>(event));
     }

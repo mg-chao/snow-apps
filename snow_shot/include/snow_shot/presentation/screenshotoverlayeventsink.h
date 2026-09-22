@@ -12,6 +12,10 @@ enum class ScreenshotOverlayRightClickResult { Ignored, Handled, CancelCapture }
 class ScreenshotOverlayEventSink {
   public:
     virtual ~ScreenshotOverlayEventSink() = default;
+    virtual bool acceptOverlayInput(bool genuine) {
+        Q_UNUSED(genuine);
+        return true;
+    }
 
     [[nodiscard]] virtual bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow* overlay,
                                                              const QPointF& localPosition,

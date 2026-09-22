@@ -131,8 +131,11 @@ fn hwnd_from_raw(hwnd: isize) -> HWND {
 }
 
 impl MsaaBackend {
-    pub(crate) fn new_excluding_hwnds(excluded_hwnds: &[HWND]) -> Result<Self> {
-        let (windows, window_index) = build_msaa_window_cache(excluded_hwnds)?;
+    pub(crate) fn new_excluding_hwnds(
+        excluded_hwnds: &[HWND],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> Result<Self> {
+        let (windows, window_index) = build_msaa_window_cache(excluded_hwnds, displays)?;
         Ok(Self {
             windows,
             window_index,
@@ -140,8 +143,12 @@ impl MsaaBackend {
         })
     }
 
-    pub(crate) fn refresh(&mut self, excluded_hwnds: &[HWND]) -> Result<()> {
-        let (windows, window_index) = build_msaa_window_cache(excluded_hwnds)?;
+    pub(crate) fn refresh(
+        &mut self,
+        excluded_hwnds: &[HWND],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> Result<()> {
+        let (windows, window_index) = build_msaa_window_cache(excluded_hwnds, displays)?;
         self.windows = windows;
         self.window_index = window_index;
         self.worker = MsaaWorker::spawn();
@@ -269,9 +276,10 @@ fn rect_sort_key(rect: &RECT) -> (i64, i32, i32, i32, i32) {
 
 fn build_msaa_window_cache(
     excluded_hwnds: &[HWND],
+    displays: Option<&[crate::DisplayGeometry]>,
 ) -> Result<(Vec<MsaaWindow>, WindowSpatialIndex)> {
     let hwnds = window::enumerate_top_windows()?;
-    let monitors = MonitorCache::new();
+    let monitors = MonitorCache::from_displays(displays);
     let mut excluded_raw = excluded_hwnds
         .iter()
         .map(|hwnd| hwnd.0 as isize)

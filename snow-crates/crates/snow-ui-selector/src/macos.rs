@@ -28,11 +28,18 @@ impl ElementRegionService {
         Self::with_backend_excluding_ids(backend, &[])
     }
     pub fn with_backend_excluding_ids(
-        _: AccessibilityBackend,
+        backend: AccessibilityBackend,
         excluded: &[usize],
     ) -> SelectorResult<Self> {
+        Self::with_backend_and_displays(backend, excluded, None)
+    }
+    pub fn with_backend_and_displays(
+        _: AccessibilityBackend,
+        excluded: &[usize],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> SelectorResult<Self> {
         Ok(Self {
-            snapshot: native::snapshot(excluded)?,
+            snapshot: native::snapshot_with_displays(excluded, displays)?,
             owns_session: true,
             _thread_bound: PhantomData,
         })
@@ -44,7 +51,14 @@ impl ElementRegionService {
         self.refresh_excluding_ids(&[])
     }
     pub fn refresh_excluding_ids(&mut self, excluded: &[usize]) -> SelectorResult<()> {
-        let mut snapshot = native::snapshot(excluded)?;
+        self.refresh_with_displays(excluded, None)
+    }
+    pub fn refresh_with_displays(
+        &mut self,
+        excluded: &[usize],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> SelectorResult<()> {
+        let mut snapshot = native::snapshot_with_displays(excluded, displays)?;
         if self.owns_session && !self.snapshot.activation.closed() {
             snapshot.activation = self.snapshot.activation.clone();
         }

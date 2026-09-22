@@ -48,7 +48,7 @@ class ScreenshotSelectorWorkflow final {
     [[nodiscard]] QVector<std::uintptr_t> excludedHwnds() const;
 
     [[nodiscard]] bool updateSelectionAt(const QPoint& physicalPoint);
-    [[nodiscard]] bool requestHitTest(const QPoint& physicalPoint);
+    [[nodiscard]] bool requestHitTest(const QPoint& physicalPoint, quint32 displayId = 0);
     void handleInitialResult(bool ok, const QVector<QRectF>& hitRects, quint32 displayId = 0);
     void handleRefinement(const QVector<QRectF>& hitRects, quint32 displayId = 0,
                           bool replacePath = false);

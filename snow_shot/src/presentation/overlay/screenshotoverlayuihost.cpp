@@ -16,7 +16,6 @@
 #include <utility>
 
 #include <QCoreApplication>
-#include <QCursor>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QGuiApplication>
@@ -547,8 +546,7 @@ bool ScreenshotOverlayUiHost::colorPickerBelongsToOverlay(
     return m_colorPicker->parentWidget() == overlay;
 }
 
-bool ScreenshotOverlayUiHost::screenshotUiContainsGlobalCursor() const {
-    const QPoint globalPosition = QCursor::pos();
+bool ScreenshotOverlayUiHost::screenshotUiContainsGlobalPoint(const QPoint& globalPosition) const {
     if (m_toolbar != nullptr && m_toolbar->isVisible() &&
         m_toolbar->containsInteractiveGlobalPoint(globalPosition)) {
         return true;
@@ -565,7 +563,8 @@ bool ScreenshotOverlayUiHost::screenshotUiContainsGlobalCursor() const {
 
 void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overlay,
                                                   const ScreenshotShortcutHintContext& context,
-                                                  qreal opacity, const QRectF& selectionGlobal) {
+                                                  qreal opacity, const QRectF& selectionGlobal,
+                                                  const QPoint& cursorPosition) {
     const ScreenshotShortcutHintMode mode = screenshotShortcutHintModeForContext(context);
     auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
     if (overlay == nullptr || hints == nullptr || mode == ScreenshotShortcutHintMode::Hidden ||
@@ -593,7 +592,7 @@ void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overl
         std::max(kShortcutHintsMargin, overlay->height() - hints->height() - kShortcutHintsMargin);
     hints->move(kShortcutHintsMargin, y);
     hints->setObscuringSelection(selectionGlobal);
-    hints->refreshVisibility(QCursor::pos());
+    hints->refreshVisibility(cursorPosition);
 }
 
 void ScreenshotOverlayUiHost::hideShortcutHints() {

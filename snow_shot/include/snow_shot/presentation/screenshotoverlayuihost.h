@@ -48,10 +48,10 @@ class ScreenshotOverlayUiHost final {
     void resetColorPickerForNewCapture();
     void hideColorPickerForOverlay(ScreenshotOverlayWindow* overlay) const;
     [[nodiscard]] bool colorPickerBelongsToOverlay(const ScreenshotOverlayWindow* overlay) const;
-    [[nodiscard]] bool screenshotUiContainsGlobalCursor() const;
+    [[nodiscard]] bool screenshotUiContainsGlobalPoint(const QPoint& position) const;
     void updateShortcutHints(ScreenshotOverlayWindow* overlay,
                              const ScreenshotShortcutHintContext& context, qreal opacity,
-                             const QRectF& selectionGlobal = {});
+                             const QRectF& selectionGlobal, const QPoint& cursorPosition);
     void hideShortcutHints();
     [[nodiscard]] bool stepToolbarStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);

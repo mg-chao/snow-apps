@@ -11,6 +11,10 @@ void ScreenshotOverlayEventAdapter::setEventTargets(
     m_raiseToolbarForCanvasInteraction = std::move(raiseToolbarForCanvasInteraction);
 }
 
+bool ScreenshotOverlayEventAdapter::acceptOverlayInput(bool genuine) {
+    return m_inputHandler && m_inputHandler->acceptInput(genuine);
+}
+
 void ScreenshotOverlayEventAdapter::clearEventTargets() {
     m_inputHandler = nullptr;
     m_raiseToolbarForCanvasInteraction = nullptr;

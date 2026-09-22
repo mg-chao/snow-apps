@@ -43,6 +43,10 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         operations.push_back(QStringLiteral("capture-dispatched"));
         lastCaptureRequest = request;
         captureWasQueuedBeforeSelectorRefresh = !selectorRefreshActive;
+        if (!failCaptureSynchronously && seedActiveDisplayOnPrepare &&
+            request.purpose == ScreenshotCapturePurpose::Initial) {
+            deliverLayout();
+        }
         if (failCaptureSynchronously && eventSink != nullptr) {
             ScreenshotCaptureResult result;
             result.requestId = request.requestId;
@@ -50,6 +54,23 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
             result.errorMessage = QStringLiteral("Synchronous capture setup failure");
             eventSink->handleCaptureFinished(result);
         }
+    }
+    void deliverLayout() {
+        ScreenshotCaptureLayout layout;
+        layout.requestId = lastCaptureRequest.requestId;
+        layout.generation = layout.requestId;
+        preparedDisplays->forEachActiveDisplay(
+            [&](qsizetype, const CapturedDisplayModel& d) { layout.displays.push_back(d); });
+        eventSink->handleLayoutReady(layout);
+    }
+    void deliverResult(const ScreenshotCaptureResult& result) {
+        if (result.purpose == ScreenshotCapturePurpose::Initial && result.succeeded &&
+            preparedDisplays && preparedDisplays->startup &&
+            preparedDisplays->startup->phase == ScreenshotStartupContext::Phase::Preparing &&
+            !preparedDisplays->startup->displays &&
+            result.requestId == lastCaptureRequest.requestId)
+            deliverLayout();
+        eventSink->handleCaptureFinished(result);
     }
     void cancelActiveCapture() override {
         ++cancelActiveCaptureCalls;
@@ -78,7 +99,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         selectorRefreshActive = true;
     }
     void clearSelectorSelection() override {}
-    [[nodiscard]] bool updateSelectorSelectionAt(const QPoint&) override {
+    [[nodiscard]] bool updateSelectorSelectionAt(const QPoint& point) override {
+        queriedPoint = point;
         return acceptSelectorHitTest;
     }
 
@@ -104,7 +126,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override {
         ++preparePreCaptureOverlayCalls;
         operations.push_back(QStringLiteral("prepare-overlays"));
-        if (seedActiveDisplayOnPrepare) {
+        preparedDisplays = &displaySession;
+        displaySession.clear();
+        {
             CapturedDisplayModel display;
             display.stableId = QStringLiteral("primary");
             display.name = QStringLiteral("Primary");
@@ -197,7 +221,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     bool acceptSelectorHitTest = false;
     bool captureWasQueuedBeforeSelectorRefresh = false;
     bool failCaptureSynchronously = false;
-    bool seedActiveDisplayOnPrepare = false;
+    bool seedActiveDisplayOnPrepare = true;
+    ScreenshotDisplaySession* preparedDisplays = nullptr;
+    QPoint queriedPoint;
     ScreenshotCaptureRequest lastCaptureRequest;
     QVector<QString> operations;
 };
@@ -565,10 +591,10 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
     workflow.startCapture();
     require(runtime.eventSink != nullptr, "capture workflow did not register its event sink");
     const ScreenshotCaptureResult result = successfulResult(state.sessionId, snapshot);
-    runtime.eventSink->handleCaptureFinished(result);
-    runtime.eventSink->handleCaptureFinished(result);
+    runtime.deliverResult(result);
+    runtime.deliverResult(result);
 
-    require(runtime.prepareColorPickerCalls == 2 &&
+    require(runtime.prepareColorPickerCalls == 1 &&
                 runtime.operations.lastIndexOf(QStringLiteral("prepare-picker")) <
                     runtime.operations.indexOf(QStringLiteral("show-overlays")),
             "displays supplied by the capture result must prepare the picker before presentation");
@@ -607,7 +633,7 @@ void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
         if (selectionFirst) {
             workflow.handleInitialSmartSelectionResolved(state.sessionId);
         } else {
-            runtime.eventSink->handleCaptureFinished(result);
+            runtime.deliverResult(result);
         }
         require(runtime.showOverlayCalls == 0,
                 "neither the image nor the selection alone may show or warm the overlay");
@@ -616,7 +642,7 @@ void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
                 "a different session's selection must not release the reveal gate");
 
         if (selectionFirst) {
-            runtime.eventSink->handleCaptureFinished(result);
+            runtime.deliverResult(result);
         } else {
             workflow.handleInitialSmartSelectionResolved(state.sessionId);
         }
@@ -624,7 +650,7 @@ void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
                     runtime.applyDisplayModelsCalls == 1,
                 "image and selection readiness must reveal the prepared overlay once");
         workflow.handleInitialSmartSelectionResolved(state.sessionId);
-        runtime.eventSink->handleCaptureFinished(result);
+        runtime.deliverResult(result);
         require(runtime.showOverlayCalls == 1 && runtime.capturedImageShowCalls == 1,
                 "duplicate readiness callbacks must not reveal or repaint the frame again");
     }
@@ -696,7 +722,7 @@ void overlayCaptureDoesNotWarmNativeSurfaceAfterCaptureDispatch() {
     snapshot.image.fill(Qt::blue);
 
     require(runtime.eventSink != nullptr, "capture workflow did not register its event sink");
-    runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+    runtime.deliverResult(successfulResult(state.sessionId, snapshot));
 
     require(runtime.capturedImageShowCalls == 1 && runtime.warmSurfaceShowCalls == 0 &&
                 runtime.showOverlayCalls == 1 && capturePresentedCalls == 1 &&
@@ -735,17 +761,16 @@ void displayChangesRefreshWithoutCancelingIdleOrActiveCapture() {
                      activeSelection, activeSmartSelection, activeRuntime);
     activeWorkflow.startCapture();
     activeWorkflow.handleDisplayConfigurationChanged();
-    require(activeState.captureInProgress && activeRuntime.refreshLayoutCalls == 0 &&
-                activeRuntime.cancelActiveCaptureCalls == 0,
-            "display changes during capture must leave capture running");
+    require(!activeState.captureInProgress && activeRuntime.refreshLayoutCalls == 1 &&
+                activeRuntime.cancelActiveCaptureCalls == 1,
+            "display changes during startup must cancel capture and refresh layout");
 
     CapturedDisplayModel snapshot;
     snapshot.stableId = QStringLiteral("primary");
     snapshot.name = QStringLiteral("Primary");
     snapshot.physicalRect = QRect(0, 0, 64, 48);
     snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGBA8888);
-    activeRuntime.eventSink->handleCaptureFinished(
-        successfulResult(activeState.sessionId, snapshot));
+    activeRuntime.deliverResult(successfulResult(activeState.sessionId, snapshot));
     require(activeRuntime.refreshLayoutCalls == 1 && activeState.layoutDirty,
             "a display change during capture must refresh after capture completion");
 }
@@ -859,6 +884,13 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     workflow.handleRefinement({physical(bounds)}, 1, true);
     require(intelligent.currentSelection() == bounds && readyCount == 2,
             "permission revocation during refinement must replace children with the window");
+    ++state.sessionId;
+    interaction.returnToSelectionMode(true);
+    workflow.handleRefreshFinished(false);
+    require(interaction.manualSelecting() && readyCount == 3,
+            "failed selector refresh must switch to manual selection and unblock initial reveal");
+    workflow.handleRefreshFinished(false);
+    require(readyCount == 3, "failed refresh must resolve initial readiness only once");
 }
 
 void phasedSelectionPreservesUserIntent() {
@@ -1070,8 +1102,7 @@ void toolbarVisibilityIsIndependentOfInputAndPreparation() {
                 snapshot.logicalRect = snapshot.physicalRect;
                 snapshot.image = QImage(64, 48, QImage::Format_RGBA8888);
                 snapshot.image.fill(Qt::blue);
-                runtime.eventSink->handleCaptureFinished(
-                    successfulResult(state.sessionId, snapshot));
+                runtime.deliverResult(successfulResult(state.sessionId, snapshot));
                 selection.setSelectionStartEnd({10, 10}, {30, 20});
                 interaction.finishDrag();
                 interaction.confirmSelection();
@@ -1142,7 +1173,7 @@ void noToolbarCaptureWaitsForUserSelection() {
             snapshot.logicalRect = snapshot.physicalRect;
             snapshot.image = QImage(64, 48, QImage::Format_RGBA8888);
             snapshot.image.fill(Qt::blue);
-            runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+            runtime.deliverResult(successfulResult(state.sessionId, snapshot));
 
             require(runtime.capturedImageShowCalls == 1 && !interaction.inactive(),
                     "no-toolbar hotkey capture must present the selection overlay");
@@ -1203,8 +1234,8 @@ void externalDragBypassesSelectorAndPreparesBeforeReveal() {
         snapshot.image = QImage(64, 48, QImage::Format_RGBA8888);
         snapshot.image.fill(Qt::blue);
         const auto result = successfulResult(state.sessionId, snapshot);
-        runtime.eventSink->handleCaptureFinished(result);
-        runtime.eventSink->handleCaptureFinished(result);
+        runtime.deliverResult(result);
+        runtime.deliverResult(result);
         const bool framePacedReveal =
             !cancelBeforeReveal && runtime.showOverlayModes.size() == 1 &&
             runtime.showOverlayModes.first() == ScreenshotOverlayShowMode::CapturedImageFramePaced;
@@ -1254,7 +1285,7 @@ void externalDragDisplayChangesInvalidatePendingCapture() {
     snapshot.physicalRect = QRect(0, 0, 100, 100);
     snapshot.image = QImage(100, 100, QImage::Format_RGBA8888);
     snapshot.image.fill(Qt::red);
-    runtime.eventSink->handleCaptureFinished(successfulResult(pending, snapshot));
+    runtime.deliverResult(successfulResult(pending, snapshot));
     require(runtime.capturedImageShowCalls == 0 && interaction.inactive(),
             "cancelled global capture results must never reopen the overlay");
 }
@@ -1327,7 +1358,7 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     const ScreenshotCaptureMode modeBefore = interaction.mode();
     CapturedDisplayModel replacement = original;
     replacement.image.fill(Qt::blue);
-    runtime.eventSink->handleCaptureFinished(
+    runtime.deliverResult(
         successfulRecaptureResult(runtime.lastCaptureRequest.requestId, replacement));
     require(runtime.createColorPickerCalls == 0 && runtime.releaseColorPickerCalls == 0,
             "recapture must leave the existing session picker lifetime unchanged");
@@ -1347,7 +1378,7 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     failed.requestId = runtime.lastCaptureRequest.requestId;
     failed.purpose = ScreenshotCapturePurpose::Recapture;
     failed.errorMessage = QStringLiteral("capture failed");
-    runtime.eventSink->handleCaptureFinished(failed);
+    runtime.deliverResult(failed);
     require(completions == 2 && !lastSucceeded &&
                 displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue) &&
                 state.sessionState == ScreenshotSessionState::Editing &&
@@ -1360,7 +1391,7 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     empty.requestId = runtime.lastCaptureRequest.requestId;
     empty.purpose = ScreenshotCapturePurpose::Recapture;
     empty.succeeded = true;
-    runtime.eventSink->handleCaptureFinished(empty);
+    runtime.deliverResult(empty);
     require(completions == 3 && !lastSucceeded &&
                 displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
             "empty successful results must be rejected without clearing the old image");
@@ -1369,15 +1400,14 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     const quint64 pendingRequestId = runtime.lastCaptureRequest.requestId;
     ScreenshotCaptureResult wrongPurpose = successfulRecaptureResult(pendingRequestId, replacement);
     wrongPurpose.purpose = ScreenshotCapturePurpose::Initial;
-    runtime.eventSink->handleCaptureFinished(wrongPurpose);
+    runtime.deliverResult(wrongPurpose);
     require(workflow.recaptureInProgress() && completions == 3,
             "an initial-capture result must not complete a pending recapture");
     workflow.shutdownCaptureWorker();
     require(!workflow.recaptureInProgress() && completions == 4 && !lastSucceeded &&
                 displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
             "worker teardown must cancel recapture without changing the current image");
-    runtime.eventSink->handleCaptureFinished(
-        successfulRecaptureResult(pendingRequestId, replacement));
+    runtime.deliverResult(successfulRecaptureResult(pendingRequestId, replacement));
     require(completions == 4 && displays.displayAt(0).image.pixelColor(0, 0) == QColor(Qt::blue),
             "a stale recapture callback after teardown must be ignored");
 }
@@ -1422,16 +1452,299 @@ void colorPickerFollowsCaptureSessionLifetime() {
     ScreenshotCaptureResult failed;
     failed.requestId = runtime.lastCaptureRequest.requestId;
     failed.purpose = ScreenshotCapturePurpose::Initial;
-    runtime.eventSink->handleCaptureFinished(failed);
+    runtime.deliverResult(failed);
     require(!runtime.colorPickerAlive && runtime.releaseColorPickerCalls == 3,
             "asynchronous capture failure must release the picker");
     const int preparations = runtime.prepareColorPickerCalls;
-    runtime.eventSink->handleCaptureFinished(failed);
+    runtime.deliverResult(failed);
     require(runtime.createColorPickerCalls == 3 && runtime.prepareColorPickerCalls == preparations,
             "stale capture results must not recreate or prepare the picker");
 }
 
+void invocationSnapshotIsSharedUntilInput() {
+    ScreenshotCaptureState state;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    CaptureRuntime runtime;
+    runtime.seedActiveDisplayOnPrepare = false;
+    runtime.acceptSelectorHitTest = true;
+    int cursorReads = 0;
+    QPoint liveCursor(17, 11);
+    ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                             interaction, selection, intelligent, {}};
+    context.cursorPosition = [&] {
+        ++cursorReads;
+        return liveCursor;
+    };
+    ScreenshotCaptureWorkflow workflow(context);
+    workflow.startCapture();
+    require(cursorReads == 1 && runtime.startWorkflowRefreshCalls == 0 && geometry.isEmpty(),
+            "startup must sample invocation once and wait for native layout before mapping or "
+            "selection");
+    liveCursor = QPoint(50, 40);
+    require(displays.startup->suppressesInput() &&
+                displays.startup->phase == ScreenshotStartupContext::Phase::Preparing,
+            "normal startup must reject input before first reveal");
+    displays.startup->resumeLiveInput();
+    require(displays.startup->phase == ScreenshotStartupContext::Phase::Preparing,
+            "resuming before reveal must not release the invocation anchor");
+    runtime.deliverLayout();
+    require(
+        runtime.queriedPoint == QPoint(17, 11) && cursorReads == 1,
+        "initial selector query must use the invocation position despite later cursor movement");
+    const auto immutableLayout = displays.startup->displays;
+    require(immutableLayout && displays.startup->layoutGeneration == state.sessionId,
+            "native geometry must be retained with the session generation");
+    const QRect originalCanvas = displays.displayAt(0).canvasRect;
+    auto frame = displays.displayAt(0);
+    frame.image = QImage(64, 48, QImage::Format_RGB32);
+    frame.image.fill(Qt::red);
+    runtime.deliverResult(successfulResult(state.sessionId, frame));
+    require(runtime.showOverlayCalls == 0, "frames must wait for the invocation selection result");
+    workflow.handleInitialSmartSelectionResolved(state.sessionId);
+    require(runtime.showOverlayCalls == 1 && displays.startup->anchored() &&
+                displays.anchoredCursorPosition() == std::optional<QPoint>(QPoint(17, 11)),
+            "first reveal must retain the invocation cursor context");
+    require(displays.startup->displays == immutableLayout &&
+                displays.displayAt(0).canvasRect == originalCanvas &&
+                runtime.prepareColorPickerCalls == 1,
+            "image attachment must preserve geometry and picker preparation");
+    require(displays.startup->suppressesInput() && displays.startup->anchored(),
+            "reveal must keep the invocation anchor until real input");
+    displays.startup->resumeLiveInput();
+    require(!displays.startup->anchored() && !displays.anchoredCursorPosition(),
+            "the next real input must release the invocation anchor");
+    workflow.cancelCapture();
+    require(!displays.startup->displays && !displays.anchoredCursorPosition(),
+            "cancel must release geometry and cursor state");
+}
+
+void startupMapsMixedDpiAndRejectsChangedLayouts() {
+    for (const QPoint invocation : {QPoint(-1, 10), QPoint(0, 10), QPoint(400, 200)}) {
+        ScreenshotCaptureState state;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        runtime.seedActiveDisplayOnPrepare = false;
+        ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                 interaction, selection, intelligent, {}};
+        context.cursorPosition = [=] { return invocation; };
+        ScreenshotCaptureWorkflow workflow(context);
+        workflow.startCapture();
+        CapturedDisplayModel left;
+        left.name = QStringLiteral("Left");
+        left.stableId = QStringLiteral("left");
+        left.logicalRect = QRect(-100, 0, 100, 100);
+        left.physicalRect = QRect(-100, 0, 200, 200);
+        left.active = true;
+        CapturedDisplayModel right;
+        right.name = QStringLiteral("Right");
+        right.stableId = QStringLiteral("right");
+        right.logicalRect = QRect(0, 0, 100, 100);
+        right.physicalRect = right.logicalRect;
+        right.active = true;
+        right.primary = true;
+        displays.clear();
+        displays.appendDisplay(left);
+        displays.appendDisplay(right);
+        displays.startup->qtDisplays = {left, right};
+        displays.startup->qtDisplaySlots = {0, 1};
+        runtime.eventSink->handleLayoutReady({state.sessionId, state.sessionId, {right, left}});
+        require(displays.startup->displays && !geometry.isEmpty(),
+                "reordered native geometry must match saved screens");
+        const QPoint expected = invocation.x() < 0    ? QPoint(98, 20)
+                                : invocation.x() == 0 ? QPoint(0, 10)
+                                                      : QPoint(99, 99);
+        require(displays.startup->physicalPosition == expected,
+                "DPI mapping, half-open edges, and gap clamping must agree");
+        auto frame = left;
+        frame.physicalRect.setWidth(201);
+        frame.image = QImage(201, 200, QImage::Format_RGB32);
+        auto other = right;
+        other.image = QImage(100, 100, QImage::Format_RGB32);
+        ScreenshotCaptureResult result;
+        result.requestId = state.sessionId;
+        result.succeeded = true;
+        result.displays = {frame, other};
+        runtime.deliverResult(result);
+        require(!state.captureInProgress && runtime.showOverlayCalls == 0 &&
+                    runtime.refreshLayoutCalls == 1,
+                "changed capture geometry must cancel without revealing mismatched pixels");
+    }
+}
+
+void topologyInvalidatesEveryStartupStage() {
+    for (int stage = 0; stage < 3; ++stage) {
+        ScreenshotCaptureState state;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        runtime.seedActiveDisplayOnPrepare = false;
+        runtime.acceptSelectorHitTest = true;
+        auto workflow =
+            makeWorkflow(state, displays, geometry, interaction, selection, intelligent, runtime);
+        workflow.startCapture();
+        const quint64 oldSession = state.sessionId;
+        if (stage > 0)
+            runtime.deliverLayout();
+        if (stage > 1) {
+            auto frame = displays.displayAt(0);
+            frame.image = QImage(64, 48, QImage::Format_RGB32);
+            runtime.deliverResult(successfulResult(oldSession, frame));
+        }
+        workflow.handleDisplayConfigurationChanged();
+        runtime.eventSink->handleLayoutReady({oldSession, oldSession, {}});
+        workflow.handleInitialSmartSelectionResolved(oldSession);
+        require(state.sessionId != oldSession && runtime.showOverlayCalls == 0 &&
+                    !displays.startup->displays,
+                "topology changes must invalidate layout, pixels, and selector readiness before "
+                "reveal");
+        require(runtime.refreshLayoutCalls == 1,
+                "invalidated startup must refresh idle layout once");
+        workflow.startCapture();
+        runtime.deliverLayout();
+        require(displays.startup->displays && state.sessionId != oldSession,
+                "the next explicit capture must establish a new snapshot");
+    }
+}
+
+void startupMatchesNativeDisplayIdentityInLogicalCoordinateSpace() {
+    ScreenshotCaptureState state;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    CaptureRuntime runtime;
+    runtime.seedActiveDisplayOnPrepare = false;
+    ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                             interaction, selection, intelligent, {}};
+    context.cursorPosition = [] { return QPoint(-25, 10); };
+    ScreenshotCaptureWorkflow workflow(context);
+    workflow.startCapture();
+    CapturedDisplayModel qt;
+    qt.name = QStringLiteral("Qt display name");
+    qt.nativeDisplayId = 42;
+    qt.logicalRect = QRect(-100, 0, 100, 80);
+    qt.physicalRect = QRect(-100, 0, 200, 160);
+    qt.active = true;
+    displays.clear();
+    displays.appendDisplay(qt);
+    displays.startup->qtDisplays = {qt};
+    displays.startup->qtDisplaySlots = {0};
+    auto native = qt;
+    native.name = QStringLiteral("Different native display name");
+    native.stableId = QStringLiteral("display:42");
+    native.canvasUsesPoints = true;
+    native.capturedLogicalRect = qt.logicalRect;
+    native.backingScale = 2;
+    runtime.eventSink->handleLayoutReady({state.sessionId, state.sessionId, {native}});
+    require(displays.startup->displays && displays.startup->nativeDisplayId == 42 &&
+                displays.startup->physicalPosition == QPoint(50, 20) &&
+                displays.displayAt(0).canvasUsesPoints,
+            "logical native geometry must match by display ID and retain backing pixels");
+    auto frame = native;
+    frame.nativeDisplayId = 43;
+    frame.image = QImage(200, 160, QImage::Format_RGB32);
+    runtime.deliverResult(successfulResult(state.sessionId, frame));
+    require(!displays.startup->displays && runtime.showOverlayCalls == 0,
+            "a frame from a different native display must invalidate startup");
+}
+
+void startupDisplayIdentityMatchesByNameRectOrNativeId() {
+    const auto alwaysCurrent = [](const CapturedDisplayModel&) { return true; };
+    const auto display = [](const char* name, const QRect& rect, quint32 id, bool points) {
+        CapturedDisplayModel model;
+        model.name = QString::fromUtf8(name);
+        model.stableId = QString::fromUtf8(name);
+        model.physicalRect = rect;
+        model.logicalRect = rect;
+        model.capturedLogicalRect = rect;
+        model.nativeDisplayId = id;
+        model.canvasUsesPoints = points;
+        model.active = true;
+        return model;
+    };
+    const CapturedDisplayModel left = display("Left", QRect(-100, 0, 200, 200), 0, false);
+    const CapturedDisplayModel right = display("Right", QRect(0, 0, 100, 100), 0, false);
+    const auto matched = matchStartupDisplays({left, right}, {0, 1}, {right, left}, alwaysCurrent);
+    require(matched && matched->size() == 2 && (*matched)[0].slot == 1 &&
+                (*matched)[0].identity.sameDeviceName(StartupDisplayIdentity::fromDisplay(right)),
+            "reordered monitors must bind by device name");
+
+    CapturedDisplayModel renamed = left;
+    renamed.name = QStringLiteral("Other");
+    renamed.stableId = QStringLiteral("native-left");
+    const auto byRect = matchStartupDisplays({left}, {0}, {renamed}, alwaysCurrent);
+    require(
+        byRect && byRect->size() == 1 && byRect->first().slot == 0 &&
+            byRect->first().identity.samePhysicalRect(StartupDisplayIdentity::fromDisplay(left)),
+        "Windows monitors with different names must bind by physical rect");
+
+    const CapturedDisplayModel qt = display("Qt", QRect(0, 0, 200, 160), 42, false);
+    CapturedDisplayModel native = display("Native", qt.physicalRect, 42, true);
+    native.stableId = QStringLiteral("display:42");
+    const auto byId = matchStartupDisplays({qt}, {3}, {native}, alwaysCurrent);
+    require(byId && byId->size() == 1 && byId->first().slot == 3 &&
+                byId->first().display.geometryResolved && byId->first().identity.usesNativeId,
+            "logical displays must bind by native display id");
+
+    CapturedDisplayModel wrongId = native;
+    wrongId.nativeDisplayId = 43;
+    wrongId.stableId = QStringLiteral("display:43");
+    require(!matchStartupDisplays({qt}, {3}, {wrongId}, alwaysCurrent),
+            "a different native display id must not fall through to the same rect");
+
+    CapturedDisplayModel duplicate = left;
+    duplicate.stableId = QStringLiteral("duplicate");
+    require(!matchStartupDisplays({left, left}, {0, 1}, {duplicate}, alwaysCurrent),
+            "two Qt displays with the same device name are ambiguous");
+}
+
+void injectedLayoutRefreshDoesNotFallBackToEnumeration() {
+    class Service final : public ScreenshotSelectorServicePort {
+      public:
+        int enumerated = 0;
+        bool ready() const override {
+            return false;
+        }
+        bool refreshInFlight() const override {
+            return false;
+        }
+        bool startRefresh(const QVector<std::uintptr_t>&) override {
+            ++enumerated;
+            return true;
+        }
+        bool requestHitTest(const QPoint&, ScreenshotSelectorHitTestMode) override {
+            return false;
+        }
+    } service;
+    require(!service.startRefreshWithDisplays({}, {}),
+            "a layout refresh with no displays must fail");
+    require(service.enumerated == 0, "failed layout refresh must not enumerate monitors");
+    require(service.startRefresh({}), "explicit refresh may enumerate");
+    require(service.enumerated == 1, "explicit refresh must be the enumeration path");
+    require(
+        !service.requestHitTestOnDisplay(QPoint(1, 1), ScreenshotSelectorHitTestMode::Window, 7),
+        "a hit test with a display id must not drop that id");
+}
+
 int main() {
+    startupDisplayIdentityMatchesByNameRectOrNativeId();
+    injectedLayoutRefreshDoesNotFallBackToEnumeration();
+    startupMatchesNativeDisplayIdentityInLogicalCoordinateSpace();
+    invocationSnapshotIsSharedUntilInput();
+    startupMapsMixedDpiAndRejectsChangedLayouts();
+    topologyInvalidatesEveryStartupStage();
     colorPickerFollowsCaptureSessionLifetime();
     recapturePreservesEditingStateAndRollsBackFailures();
     toolbarVisibilityIsIndependentOfInputAndPreparation();

@@ -1,6 +1,8 @@
 #![allow(clippy::missing_safety_doc)]
 
+mod desktop_layout;
 mod frame_geometry;
+pub use desktop_layout::*;
 
 use snow_capture::exclusions::SnowCaptureExclusions;
 use std::cell::RefCell;
@@ -898,6 +900,7 @@ fn same_monitor_layout(left: &[MonitorEntry], right: &[MonitorEntry]) -> bool {
                     && candidate.expected_width == existing.expected_width
                     && candidate.expected_height == existing.expected_height
                     && candidate.is_primary == existing.is_primary
+                    && candidate.id.desktop_geometry() == existing.id.desktop_geometry()
             })
         })
 }
@@ -3300,8 +3303,22 @@ mod tests {
         second.expected_width += 1;
         assert!(!same_monitor_layout(
             &[first.clone(), original_second],
-            &[first, second]
+            &[first.clone(), second]
         ));
+
+        let mut moved = first.clone();
+        moved.id = moved
+            .id
+            .with_desktop_geometry(snow_capture::monitor::MonitorDesktopGeometry {
+                x: 1.0,
+                y: 2.0,
+                width: 3.0,
+                height: 4.0,
+                pixel_width: 6,
+                pixel_height: 8,
+            });
+        assert!(!same_monitor_layout(&[first.clone()], &[moved.clone()]));
+        assert!(same_monitor_layout(&[moved.clone()], &[moved]));
     }
 }
 

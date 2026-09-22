@@ -9,8 +9,6 @@
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
 
-#include <QCursor>
-
 #include <utility>
 
 ScreenshotSelectorWorkflow::ScreenshotSelectorWorkflow(ScreenshotSelectorWorkflowContext context)
@@ -21,7 +19,13 @@ void ScreenshotSelectorWorkflow::startRefresh() {
         return;
     }
 
-    if (!m_context.selectorService.startRefresh(excludedHwnds())) {
+    QVector<CapturedDisplayModel> displays;
+    m_context.displaySession.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& d) {
+        auto geometry = d;
+        geometry.image = {};
+        displays.push_back(std::move(geometry));
+    });
+    if (!m_context.selectorService.startRefreshWithDisplays(excludedHwnds(), displays)) {
         return;
     }
 }
@@ -32,6 +36,17 @@ void ScreenshotSelectorWorkflow::handleRefreshFinished(bool ok) {
     }
 
     if (!ok) {
+        if (m_context.interaction.intelligentSelecting() && !m_context.interaction.dragging()) {
+            m_context.interaction.returnToSelectionMode(false);
+            m_context.intelligentSelection.clearTransientState();
+            if (m_context.presentation.updateOverlayState)
+                m_context.presentation.updateOverlayState();
+            if (m_context.presentation.smartSelectionResultReady &&
+                m_initialNotifiedSession != m_context.captureState.sessionId) {
+                m_initialNotifiedSession = m_context.captureState.sessionId;
+                m_context.presentation.smartSelectionResultReady(m_context.captureState.sessionId);
+            }
+        }
         return;
     }
 
@@ -39,7 +54,7 @@ void ScreenshotSelectorWorkflow::handleRefreshFinished(bool ok) {
         m_context.selection.pixelSelection().isEmpty()) {
         m_context.interaction.returnToSelectionMode(true);
         static_cast<void>(updateSelectionAt(m_context.geometry.physicalPositionForLogicalPoint(
-            m_context.displaySession, QCursor::pos())));
+            m_context.displaySession, m_context.displaySession.logicalCursorPosition())));
         if (m_context.presentation.updateColorPicker) {
             m_context.presentation.updateColorPicker();
         }
@@ -58,7 +73,7 @@ bool ScreenshotSelectorWorkflow::updateSelectionAt(const QPoint& physicalPoint) 
     return requestHitTest(physicalPoint);
 }
 
-bool ScreenshotSelectorWorkflow::requestHitTest(const QPoint& physicalPoint) {
+bool ScreenshotSelectorWorkflow::requestHitTest(const QPoint& physicalPoint, quint32 displayId) {
     if (!m_context.interaction.intelligentSelecting() ||
         (!m_context.selectorService.ready() && !m_context.selectorService.refreshInFlight())) {
         return false;
@@ -69,7 +84,18 @@ bool ScreenshotSelectorWorkflow::requestHitTest(const QPoint& physicalPoint) {
                 ScreenshotIntelligentSelectionTarget::Window
             ? ScreenshotSelectorHitTestMode::Window
             : ScreenshotSelectorHitTestMode::WindowSubElement;
-    return m_context.selectorService.requestHitTest(physicalPoint, hitTestMode);
+    const ScreenshotStartupContext* startup = m_context.displaySession.startup.get();
+    if (startup && startup->anchored()) {
+        displayId = startup->nativeDisplayId;
+        return m_context.selectorService.requestHitTestOnDisplay(startup->physicalPosition,
+                                                                 hitTestMode, displayId);
+    }
+    if (displayId == 0) {
+        if (const auto* display =
+                m_context.geometry.displayForPhysicalPoint(m_context.displaySession, physicalPoint))
+            displayId = display->nativeDisplayId;
+    }
+    return m_context.selectorService.requestHitTestOnDisplay(physicalPoint, hitTestMode, displayId);
 }
 
 void ScreenshotSelectorWorkflow::handleInitialResult(bool ok, const QVector<QRectF>& hitRects,

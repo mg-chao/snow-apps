@@ -124,6 +124,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                                actions.localShortcutInputAllowed();
                     },
                     [this]() {
+                        if (!inputHandler.acceptInput())
+                            return false;
                         inputHandler.confirmSelection();
                         return true;
                     })));
@@ -137,7 +139,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                         return !inputHandler.externalDragActive() && interaction.moveToolActive() &&
                                !interaction.dragging() && actions.localShortcutInputAllowed();
                     },
-                    [this]() { return actions.cycleColorPickerFormat(); })));
+                    [this]() {
+                        return inputHandler.acceptInput() && actions.cycleColorPickerFormat();
+                    })));
     }
 
     void registerConfiguredBindings() {
@@ -237,6 +241,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                 };
             }
             binding.activate = [this, actionId](const auto& context) {
+                if (actionId != QStringLiteral("cancel_screenshot") && !inputHandler.acceptInput())
+                    return false;
                 if (actionId == QStringLiteral("move_cursor_up")) {
                     return actions.moveCursorOnePixel(
                         snow_shot::platform::PhysicalCursorDirection::Up);

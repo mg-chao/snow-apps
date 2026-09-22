@@ -47,10 +47,14 @@ enum BackendImpl {
 }
 
 impl BackendImpl {
-    fn refresh(&mut self, excluded_hwnds: &[HWND]) -> Result<()> {
+    fn refresh(
+        &mut self,
+        excluded_hwnds: &[HWND],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> Result<()> {
         match self {
-            Self::Uia(b) => b.refresh(excluded_hwnds),
-            Self::Msaa(b) => b.refresh(excluded_hwnds),
+            Self::Uia(b) => b.refresh(excluded_hwnds, displays),
+            Self::Msaa(b) => b.refresh(excluded_hwnds, displays),
         }
     }
 
@@ -95,16 +99,24 @@ impl ElementRegionService {
         backend: AccessibilityBackend,
         excluded: &[usize],
     ) -> SelectorResult<Self> {
+        Self::with_backend_and_displays(backend, excluded, None)
+    }
+
+    pub fn with_backend_and_displays(
+        backend: AccessibilityBackend,
+        excluded: &[usize],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> SelectorResult<Self> {
         let excluded_hwnds: Vec<_> = excluded.iter().map(|&id| HWND(id as *mut _)).collect();
         enable_high_dpi_support();
         let com = com::ComApartment::new()?;
         let backend = match backend {
-            AccessibilityBackend::Uia | AccessibilityBackend::Accessibility => {
-                BackendImpl::Uia(uia::UiaBackend::new_excluding_hwnds(&excluded_hwnds)?)
-            }
-            AccessibilityBackend::Msaa => {
-                BackendImpl::Msaa(msaa::MsaaBackend::new_excluding_hwnds(&excluded_hwnds)?)
-            }
+            AccessibilityBackend::Uia | AccessibilityBackend::Accessibility => BackendImpl::Uia(
+                uia::UiaBackend::new_excluding_hwnds(&excluded_hwnds, displays)?,
+            ),
+            AccessibilityBackend::Msaa => BackendImpl::Msaa(
+                msaa::MsaaBackend::new_excluding_hwnds(&excluded_hwnds, displays)?,
+            ),
         };
 
         Ok(Self {
@@ -123,8 +135,16 @@ impl ElementRegionService {
     }
 
     pub fn refresh_excluding_ids(&mut self, excluded: &[usize]) -> SelectorResult<()> {
+        self.refresh_with_displays(excluded, None)
+    }
+
+    pub fn refresh_with_displays(
+        &mut self,
+        excluded: &[usize],
+        displays: Option<&[crate::DisplayGeometry]>,
+    ) -> SelectorResult<()> {
         let hwnds: Vec<_> = excluded.iter().map(|&id| HWND(id as *mut _)).collect();
-        Ok(self.backend.refresh(&hwnds)?)
+        Ok(self.backend.refresh(&hwnds, displays)?)
     }
 
     /// Releases the current desktop/window snapshot while keeping the COM

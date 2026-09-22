@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotuipreferences.h"
 
 #include <QPoint>
+#include <optional>
 #include <QPointer>
 #include <QRect>
 #include <QRectF>
@@ -47,7 +48,8 @@ class ScreenshotColorPickerController final {
                           const ScreenshotColorPickerContext& context);
     void updateAtPhysicalPoint(const QPoint& physicalPoint,
                                const ScreenshotColorPickerContext& context, qreal opacity = 1.0,
-                               const CapturedDisplayModel* display = nullptr);
+                               const CapturedDisplayModel* display = nullptr,
+                               std::optional<QPoint> cursorLogicalPosition = std::nullopt);
     void updateAtCurrentCursor(const ScreenshotColorPickerContext& context);
     void updateForSelectionDrag(const QPointF& virtualPosition,
                                 const ScreenshotColorPickerContext& context);
@@ -60,13 +62,13 @@ class ScreenshotColorPickerController final {
 
   private:
     void updateAtCanvasPoint(const QPointF& point, const ScreenshotColorPickerContext& context,
-                             qreal opacity = 1.0);
+                             qreal opacity = 1.0,
+                             std::optional<QPoint> cursorLogicalPosition = std::nullopt);
     [[nodiscard]] const CapturedDisplayModel* displayForPhysicalPoint(const QPointF& point) const;
     [[nodiscard]] QPoint logicalPositionForPhysicalPoint(const QPointF& point,
                                                          const CapturedDisplayModel& display) const;
     [[nodiscard]] QPoint physicalPositionForCanvasPoint(const QPointF& point) const;
     [[nodiscard]] QPointF canvasPositionForPhysicalPoint(const QPointF& point) const;
-    [[nodiscard]] bool screenshotUiContainsGlobalCursor() const;
     [[nodiscard]] qreal opacityForPoint(const QPointF& canvasPoint, bool selectionDrag,
                                         const ScreenshotColorPickerContext& context) const;
 

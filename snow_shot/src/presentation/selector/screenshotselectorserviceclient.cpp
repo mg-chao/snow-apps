@@ -76,16 +76,6 @@ ScreenshotSelectorServiceClient::~ScreenshotSelectorServiceClient() {
     destroyService();
 }
 
-quint32 ScreenshotSelectorServiceClient::displayIdAtCursor() {
-    uint32_t displayId = 0;
-#ifdef Q_OS_MACOS
-    const QPoint cursor = QCursor::pos();
-    uint32_t count = 0;
-    CGGetDisplaysWithPoint(CGPointMake(cursor.x(), cursor.y()), 1, &displayId, &count);
-#endif
-    return displayId;
-}
-
 bool ScreenshotSelectorServiceClient::hasService() const {
     return m_service != nullptr;
 }
@@ -128,9 +118,8 @@ void ScreenshotSelectorServiceClient::destroyService() {
 
 bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
                                                    const QVector<std::uintptr_t>& excludedHwnds) {
-    if (!ensureService()) {
+    if (!ensureService())
         return false;
-    }
 
     m_serviceBackend = static_cast<int>(selectorBackendForCurrentMode());
     const std::uintptr_t* data = excludedHwnds.isEmpty() ? nullptr : excludedHwnds.constData();
@@ -138,6 +127,36 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
         snow_ui_selector_service_refresh(m_service, requestId,
                                          static_cast<SnowUiSelectorBackend>(m_serviceBackend), data,
                                          static_cast<size_t>(excludedHwnds.size())) != 0;
+    if (started)
+        SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
+    return started;
+}
+
+bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
+    quint64 requestId, const QVector<std::uintptr_t>& excludedHwnds,
+    const QVector<CapturedDisplayModel>& displays) {
+    if (displays.isEmpty() || !ensureService())
+        return false;
+
+    m_serviceBackend = static_cast<int>(selectorBackendForCurrentMode());
+    const std::uintptr_t* data = excludedHwnds.isEmpty() ? nullptr : excludedHwnds.constData();
+    QVector<SnowUiSelectorDisplay> descriptors;
+    descriptors.reserve(displays.size());
+    for (const auto& display : displays) {
+        const QRect rect =
+            display.canvasUsesPoints ? display.capturedLogicalRect : display.physicalRect;
+        descriptors.push_back(SnowUiSelectorDisplay{
+            1, sizeof(SnowUiSelectorDisplay), display.nativeDisplayId,
+            display.canvasUsesPoints ? 1U : 0U, static_cast<double>(rect.x()),
+            static_cast<double>(rect.y()), static_cast<double>(rect.width()),
+            static_cast<double>(rect.height()), static_cast<uint32_t>(display.physicalRect.width()),
+            static_cast<uint32_t>(display.physicalRect.height())});
+    }
+    const bool started =
+        snow_ui_selector_service_refresh_with_displays(
+            m_service, requestId, static_cast<SnowUiSelectorBackend>(m_serviceBackend), data,
+            static_cast<size_t>(excludedHwnds.size()), descriptors.constData(),
+            static_cast<size_t>(descriptors.size())) != 0;
     if (started)
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
     return started;
@@ -228,9 +247,6 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
 
 #else
 // Native selector unavailable on unsupported platforms.
-quint32 ScreenshotSelectorServiceClient::displayIdAtCursor() {
-    return 0;
-}
 struct ScreenshotSelectorServiceClient::CallbackBridge {};
 ScreenshotSelectorServiceClient::ScreenshotSelectorServiceClient(
     ScreenshotSelectorServiceClientCallbacks callbacks, QObject* parent)
@@ -247,6 +263,10 @@ bool ScreenshotSelectorServiceClient::releaseCache() {
 }
 void ScreenshotSelectorServiceClient::destroyService() {}
 bool ScreenshotSelectorServiceClient::startRefresh(quint64, const QVector<std::uintptr_t>&) {
+    return false;
+}
+bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
+    quint64, const QVector<std::uintptr_t>&, const QVector<CapturedDisplayModel>&) {
     return false;
 }
 bool ScreenshotSelectorServiceClient::startHitTest(quint64, quint64, quint64, const QPoint&,

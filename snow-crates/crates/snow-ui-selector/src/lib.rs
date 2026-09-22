@@ -10,6 +10,41 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::{ElementRegionService, accessibility_permission};
 
+/// Owned display geometry supplied by a capture session. No native objects cross threads.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DisplayGeometry {
+    pub display_id: u32,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+}
+impl DisplayGeometry {
+    pub fn valid(&self) -> bool {
+        [
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+            self.x + self.width,
+            self.y + self.height,
+        ]
+        .iter()
+        .all(|n| n.is_finite() && *n >= f64::from(i32::MIN) && *n <= f64::from(i32::MAX))
+            && self.width > 0.0
+            && self.height > 0.0
+            && self.pixel_width > 0
+            && self.pixel_height > 0
+            && self.pixel_width <= i32::MAX as u32
+            && self.pixel_height <= i32::MAX as u32
+            && self.x + f64::from(self.pixel_width) <= f64::from(i32::MAX)
+            && self.y + f64::from(self.pixel_height) <= f64::from(i32::MAX)
+            && (!cfg!(target_os = "macos") || self.display_id != 0)
+    }
+}
+
 pub type SelectorResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

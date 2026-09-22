@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 typedef struct SnowCaptureDesktopSessionImpl SnowCaptureDesktopSession;
+typedef struct SnowCaptureDesktopLayoutImpl SnowCaptureDesktopLayout;
 typedef struct SnowCaptureRegionSessionImpl SnowCaptureRegionSession;
 typedef struct SnowCaptureWindowSessionImpl SnowCaptureWindowSession;
 typedef struct SnowCaptureMonitorSessionImpl SnowCaptureMonitorSession;
@@ -295,6 +296,27 @@ void snow_capture_desktop_session_destroy(SnowCaptureDesktopSession* session);
 uint8_t snow_capture_desktop_session_prepare(SnowCaptureDesktopSession* session);
 uint8_t snow_capture_desktop_session_state(SnowCaptureDesktopSession* session,
                                            SnowCaptureDesktopSessionState* out_state);
+/* Immutable owned snapshot. Descriptor strings live until snapshot destruction. Snapshot calls
+ * run on the session's owning thread; descriptor reads may run on any thread. */
+typedef struct SnowCaptureDisplayDescriptor {
+    uint32_t version, struct_size;
+    const char* stable_id;
+    const char* name;
+    uint32_t display_id, coordinate_space;
+    double x, y, width, height, backing_scale;
+    uint32_t pixel_width, pixel_height, is_primary;
+} SnowCaptureDisplayDescriptor;
+SnowCaptureDesktopLayout* snow_capture_desktop_session_layout_snapshot(SnowCaptureDesktopSession*,
+                                                                       uint8_t refresh);
+void snow_capture_desktop_layout_destroy(SnowCaptureDesktopLayout*);
+size_t snow_capture_desktop_layout_count(const SnowCaptureDesktopLayout*);
+uint8_t snow_capture_desktop_layout_display(const SnowCaptureDesktopLayout*, size_t,
+                                            SnowCaptureDisplayDescriptor*);
+SnowCaptureScreenshotResult*
+snow_capture_desktop_session_capture_with_layout(SnowCaptureDesktopSession*,
+                                                 const SnowCaptureScreenshotRequest*,
+                                                 const SnowCaptureDesktopLayout*);
+
 uint8_t snow_capture_desktop_session_refresh_layout(SnowCaptureDesktopSession* session);
 uint8_t snow_capture_desktop_session_reset_to_prepared(SnowCaptureDesktopSession* session);
 /* Captures every display and, when focused_window is nonzero, the requested

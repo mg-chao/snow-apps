@@ -38,6 +38,11 @@ void ScreenshotCaptureRuntimeAdapter::ensureCaptureCoordinator() {
                              m_captureEventSink->handleLayoutRefreshed(requestId, ok);
                          }
                      });
+    QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::layoutReady,
+                     m_captureCoordinator.get(), [this](const ScreenshotCaptureLayout& layout) {
+                         if (m_captureEventSink)
+                             m_captureEventSink->handleLayoutReady(layout);
+                     });
     QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::captureFinished,
                      m_captureCoordinator.get(), [this](const ScreenshotCaptureResult& result) {
                          if (m_captureEventSink != nullptr) {

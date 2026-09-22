@@ -131,7 +131,32 @@ fn process_executable(pid: i32) -> Option<String> {
         .map(str::to_owned)
 }
 
-pub(super) fn snapshot(excluded: &[usize]) -> SelectorResult<WindowSnapshot> {
+pub(super) fn snapshot_with_displays(
+    excluded: &[usize],
+    supplied: Option<&[crate::DisplayGeometry]>,
+) -> SelectorResult<WindowSnapshot> {
+    let displays = if let Some(displays) = supplied {
+        displays
+            .iter()
+            .map(|d| DisplayInfo {
+                id: d.display_id,
+                bounds: super::geometry::Rect {
+                    x: d.x,
+                    y: d.y,
+                    width: d.width,
+                    height: d.height,
+                },
+                width: d.pixel_width,
+                height: d.pixel_height,
+            })
+            .collect()
+    } else {
+        enumerate_displays()?
+    };
+    snapshot_windows(excluded, displays)
+}
+
+fn enumerate_displays() -> SelectorResult<Vec<DisplayInfo>> {
     let mut count = 0;
     if unsafe { CGGetActiveDisplayList(0, ptr::null_mut(), &mut count) } != 0
         || count == 0
@@ -161,6 +186,13 @@ pub(super) fn snapshot(excluded: &[usize]) -> SelectorResult<WindowSnapshot> {
     if displays.is_empty() {
         return Err("no valid display geometry".into());
     }
+    Ok(displays)
+}
+
+fn snapshot_windows(
+    excluded: &[usize],
+    displays: Vec<DisplayInfo>,
+) -> SelectorResult<WindowSnapshot> {
     // On-screen only | exclude desktop elements. Quartz returns front-to-back order.
     let list = owned(unsafe { CGWindowListCopyWindowInfo(1 | 16, 0) }.cast())
         .ok_or("could not enumerate windows")?;

@@ -133,8 +133,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void setColorPickerCenterGuideLineColor(const QColor& color);
     void updateShortcutHints(ScreenshotOverlayWindow* overlay,
                              const ScreenshotShortcutHintContext& context, qreal opacity,
-                             const QRectF& selectionGlobal = {});
-    [[nodiscard]] bool screenshotUiContainsGlobalCursor() const;
+                             const QRectF& selectionGlobal, const QPoint& cursorPosition);
+    [[nodiscard]] bool screenshotUiContainsGlobalPoint(const QPoint& position) const;
     [[nodiscard]] bool stepToolbarStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);
     [[nodiscard]] bool stepToolbarSpotlightOpacity(int direction);

@@ -27,6 +27,17 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
     hash
 }
 
+/// Desktop coordinate bounds and oriented backing pixels captured in one enumeration.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MonitorDesktopGeometry {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct MonitorId {
     pub(crate) key: MonitorKey,
@@ -36,6 +47,7 @@ pub struct MonitorId {
     name: String,
 
     is_primary: bool,
+    desktop_geometry: Option<MonitorDesktopGeometry>,
 }
 
 impl MonitorId {
@@ -54,6 +66,7 @@ impl MonitorId {
             handle: raw_handle,
             name: name.into(),
             is_primary,
+            desktop_geometry: None,
         }
     }
 
@@ -64,6 +77,7 @@ impl MonitorId {
             handle: raw_handle,
             name,
             is_primary,
+            desktop_geometry: None,
         }
     }
 
@@ -78,6 +92,16 @@ impl MonitorId {
         } else {
             None
         }
+    }
+
+    /// Logical desktop bounds and oriented pixel dimensions from the same native enumeration.
+    pub fn desktop_geometry(&self) -> Option<MonitorDesktopGeometry> {
+        self.desktop_geometry
+    }
+
+    pub fn with_desktop_geometry(mut self, bounds: MonitorDesktopGeometry) -> Self {
+        self.desktop_geometry = Some(bounds);
+        self
     }
 
     pub fn name(&self) -> &str {
