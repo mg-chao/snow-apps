@@ -96,6 +96,62 @@ fn arrowhead_and_tail_details_grow_sublinearly_with_stroke_width() {
 }
 
 #[test]
+fn curved_endpoint_styles_preserve_straight_endpoint_shapes() {
+    // Pairwise distances are invariant under rotation: bending the shaft may
+    // orient an endpoint differently, but must not deform any part of it.
+    for style in STYLES {
+        for position in [ArrowEndpointPosition::Start, ArrowEndpointPosition::End] {
+            for width in [2.0, 8.0, 32.0] {
+                let straight = arrowhead_render_primitives(
+                    &arrow(style, width, ArrowType::Straight),
+                    position,
+                );
+                let curved =
+                    arrowhead_render_primitives(&arrow(style, width, ArrowType::Curve), position);
+                assert_eq!(straight.len(), curved.len());
+                let mut straight_points = Vec::new();
+                let mut curved_points = Vec::new();
+                for (straight, curved) in straight.iter().zip(&curved) {
+                    match (straight, curved) {
+                        (ArrowheadRenderPrimitive::Line(a), ArrowheadRenderPrimitive::Line(b)) => {
+                            straight_points.extend([a.from, a.to]);
+                            curved_points.extend([b.from, b.to]);
+                        }
+                        (
+                            ArrowheadRenderPrimitive::Polygon(a),
+                            ArrowheadRenderPrimitive::Polygon(b),
+                        ) => {
+                            assert_eq!(a.points.len(), b.points.len());
+                            straight_points.extend_from_slice(&a.points);
+                            curved_points.extend_from_slice(&b.points);
+                        }
+                        (
+                            ArrowheadRenderPrimitive::Circle(a),
+                            ArrowheadRenderPrimitive::Circle(b),
+                        ) => {
+                            assert_eq!(a.center, b.center);
+                            assert!((a.diameter - b.diameter).abs() < 1e-8);
+                        }
+                        _ => panic!("endpoint primitive kind changed for {style:?}"),
+                    }
+                }
+                for i in 0..straight_points.len() {
+                    for j in i + 1..straight_points.len() {
+                        let distance = |points: &[[f64; 2]]| {
+                            (points[i][0] - points[j][0]).hypot(points[i][1] - points[j][1])
+                        };
+                        assert!(
+                            (distance(&straight_points) - distance(&curved_points)).abs() < 1e-8,
+                            "{style:?} deformed at {position:?}, width {width}, vertices {i}/{j}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn short_arrow_endpoint_sizes_remain_bounded() {
     for style in STYLES {
         let mut short = arrow(style, 32.0, ArrowType::Straight);

@@ -176,31 +176,10 @@ pub fn get_arrowhead_points(input: &ArrowheadPointsInput) -> Option<ArrowheadPoi
         input.arrowhead,
         Arrowhead::Diamond | Arrowhead::DiamondOutline | Arrowhead::Square
     ) {
-        let previous_point = match input.position {
-            ArrowEndpointPosition::Start => {
-                if arrow_points.len() > 1 {
-                    arrow_points[1]
-                } else {
-                    [0.0, 0.0]
-                }
-            }
-            ArrowEndpointPosition::End => {
-                if arrow_points.len() > 1 {
-                    arrow_points[arrow_points.len() - 2]
-                } else {
-                    [0.0, 0.0]
-                }
-            }
-        };
-        let opposite_seed = match input.position {
-            ArrowEndpointPosition::Start => [x2 + min_size * 2.0, y2],
-            ArrowEndpointPosition::End => [x2 - min_size * 2.0, y2],
-        };
-        let opposite_angle = match input.position {
-            ArrowEndpointPosition::Start => (previous_point[1] - y2).atan2(previous_point[0] - x2),
-            ArrowEndpointPosition::End => (y2 - previous_point[1]).atan2(x2 - previous_point[0]),
-        };
-        let [ox, oy] = rotate_point(opposite_seed, [x2, y2], opposite_angle);
+        // Keep the rear vertex on the same axis as the shoulders. The chord
+        // between arrow points diverges from this direction on curved shafts.
+        let ox = x2 - direction[0] * min_size * 2.0;
+        let oy = y2 - direction[1] * min_size * 2.0;
 
         return Some(vec![x2, y2, x3, y3, ox, oy, x4, y4]);
     }
