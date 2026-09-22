@@ -134,8 +134,7 @@ void ScreenshotColorPickerController::updateAtCurrentCursor(
                               context, 1.0, display);
     else
         hide();
-    return;
-#endif
+#else
     std::optional<QPoint> currentPosition = m_physicalCursor.position();
     if (!currentPosition.has_value() && !m_physicalCursor.isSupported()) {
         currentPosition =
@@ -146,6 +145,7 @@ void ScreenshotColorPickerController::updateAtCurrentCursor(
         return;
     }
     updateAtPhysicalPoint(currentPosition.value(), context);
+#endif
 }
 
 void ScreenshotColorPickerController::updateForSelectionDrag(
