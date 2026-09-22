@@ -322,6 +322,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().pdfPageSize();
     case SettingsSelectBinding::ScreenshotImageFormat:
         return storage::ScreenshotSettings().imageFormat();
+    case SettingsSelectBinding::ScreenshotCompressionLevel:
+        return storage::ScreenshotSettings().compressionLevel();
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
         return storage::ScreenshotSettings().saveAsFileDialog();
     case SettingsSelectBinding::TrayLeftClickAction:
@@ -435,6 +437,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setPdfPageSize(value.toString());
     case SettingsSelectBinding::ScreenshotImageFormat:
         return storage::ScreenshotSettings().setImageFormat(value.toString());
+    case SettingsSelectBinding::ScreenshotCompressionLevel:
+        return storage::ScreenshotSettings().setCompressionLevel(value.toString());
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
         return storage::ScreenshotSettings().setSaveAsFileDialog(value.toString());
     case SettingsSelectBinding::TrayLeftClickAction:
@@ -802,6 +806,8 @@ int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
     switch (binding) {
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().shortcutHintOpacity();
+    case SettingsSliderBinding::ScreenshotImageQuality:
+        return storage::ScreenshotSettings().imageQuality();
     }
     return 0;
 }
@@ -810,6 +816,8 @@ bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int
     switch (binding) {
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().setShortcutHintOpacity(value);
+    case SettingsSliderBinding::ScreenshotImageQuality:
+        return storage::ScreenshotSettings().setImageQuality(value);
     }
     return false;
 }
@@ -1463,6 +1471,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                  QStringLiteral("screenshot/pdf_page_size"))},
             {QStringLiteral("screenshot/image_format"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("screenshot/image_format"))},
+            {QStringLiteral("screenshot/compression_level"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/compression_level"))},
+            {QStringLiteral("screenshot/image_quality"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/image_quality"))},
             {QStringLiteral("screenshot/manual_save_filename_format"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/manual_save_filename_format"))},

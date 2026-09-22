@@ -3,7 +3,9 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
+#include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "screenshotclipboardperfinstrumentation.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
@@ -167,14 +169,17 @@ class ScreenshotExportWorker final : public QObject {
         return image;
     }
 
-    ScreenshotSelectionClipboardResult prepareSelectionClipboard(
-        const QByteArray& documentSession, const SnowCanvasSmartEraseSnapshot& smartErase,
-        const QRect& selection, const ScreenshotResultStyle& style,
-        const QList<CanvasExportSource>& sources, const ScreenshotSelectionRenderSpec& spec = {}) {
+    ScreenshotSelectionClipboardResult
+    prepareSelectionClipboard(const QByteArray& documentSession,
+                              const SnowCanvasSmartEraseSnapshot& smartErase,
+                              const QRect& selection, const ScreenshotResultStyle& style,
+                              const QList<CanvasExportSource>& sources,
+                              const ScreenshotSelectionRenderSpec& spec, int pngCompressionLevel) {
         ScreenshotSelectionClipboardResult result;
         result.image =
             renderSelection(documentSession, smartErase, selection, style, sources, spec);
-        result.payload = ScreenshotClipboardService::prepareImage(result.image);
+        result.payload =
+            ScreenshotClipboardService::prepareImage(result.image, {}, pngCompressionLevel);
         return result;
     }
 
@@ -317,19 +322,26 @@ bool ScreenshotExportService::requestSelectionClipboard(const QRect& selection,
     }
 
     auto* worker = static_cast<ScreenshotExportWorker*>(m_worker);
+    const snow_shot::storage::ScreenshotSettings settings;
+    const int pngCompressionLevel =
+        ScreenshotImageFileService::encodeOptions(
+            ScreenshotImageFileFormat::Png,
+            ScreenshotImageEncodingOptions{100, ScreenshotImageFileService::compressionLevelForKey(
+                                                    settings.compressionLevel())})
+            .compression_level;
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<QObject> guardedCompletionContext(m_completionContext);
     const snow_shot::presentation::clipboard_perf::Stopwatch workerQueueTimer;
     const bool scheduled = QMetaObject::invokeMethod(
         worker,
         [worker, guardedReceiver, guardedCompletionContext, documentSession, smartErase, selection,
-         style, sources, spec, requestTimer, workerQueueTimer,
+         style, sources, spec, pngCompressionLevel, requestTimer, workerQueueTimer,
          callback = std::move(callback)]() mutable {
             snow_shot::presentation::clipboard_perf::duration(
                 "export.worker_queue_delay", workerQueueTimer.elapsedNanoseconds());
             auto result = std::make_shared<ScreenshotSelectionClipboardResult>(
                 worker->prepareSelectionClipboard(documentSession, smartErase, selection, style,
-                                                  sources, spec));
+                                                  sources, spec, pngCompressionLevel));
             if (guardedReceiver.isNull() || guardedCompletionContext.isNull()) {
                 SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
                 return;

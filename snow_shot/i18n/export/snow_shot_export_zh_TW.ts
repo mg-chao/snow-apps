@@ -160,6 +160,10 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Compression level</source>
+            <translation>壓縮等級</translation>
+        </message>
+        <message>
             <source>Delete</source>
             <translation>刪除</translation>
         </message>
@@ -188,6 +192,10 @@
             <translation>高度</translation>
         </message>
         <message>
+            <source>High</source>
+            <translation>高</translation>
+        </message>
+        <message>
             <source>Image format</source>
             <translation>影像格式</translation>
         </message>
@@ -206,6 +214,14 @@
         <message>
             <source>Lossless</source>
             <translation>無損</translation>
+        </message>
+        <message>
+            <source>Low</source>
+            <translation>低</translation>
+        </message>
+        <message>
+            <source>Medium</source>
+            <translation>中</translation>
         </message>
         <message>
             <source>Name</source>

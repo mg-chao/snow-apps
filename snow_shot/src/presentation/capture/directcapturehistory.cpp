@@ -46,6 +46,10 @@ storage::CaptureHistoryDraft directCaptureHistoryDraft(const DirectCaptureReques
         draft.preparedResultImage =
             storage::PreparedPngImage::fromBytes(frame.image.size(), frame.canonicalPng);
     }
+    draft.pngCompressionLevel = ScreenshotImageFileService::encodeOptions(
+                                    ScreenshotImageFileFormat::Png,
+                                    ScreenshotImageEncodingOptions{100, request.compressionLevel})
+                                    .compression_level;
     draft.source = request.target == DirectCaptureTarget::FocusedWindow
                        ? storage::CaptureHistorySource::FocusedWindow
                        : storage::CaptureHistorySource::CurrentMonitor;

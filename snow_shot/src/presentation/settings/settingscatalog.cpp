@@ -746,6 +746,33 @@ SettingsItemDefinition screenshotImageFormatItem() {
          {QStringLiteral("pdf"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "PDF"))}});
 }
 
+SettingsItemDefinition screenshotCompressionLevelItem() {
+    return fixedSelectItem(
+        QStringLiteral("screenshot-output.compression-level"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Compression level"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Choose the compression effort used for image output and screenshot history"),
+        QStringLiteral("screenshot/compression_level"),
+        SettingsSelectBinding::ScreenshotCompressionLevel,
+        {{QStringLiteral("low"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Low"))},
+         {QStringLiteral("medium"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium"))},
+         {QStringLiteral("high"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "High"))}});
+}
+
+SettingsItemDefinition screenshotImageQualityItem() {
+    return {
+        QStringLiteral("screenshot-output.image-quality"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image quality")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Set image quality for saves made with the system file dialog")),
+        {},
+        QStringLiteral("screenshot/image_quality"),
+        SettingsSliderDefinition{SettingsSliderBinding::ScreenshotImageQuality,
+                                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))},
+    };
+}
+
 SettingsItemDefinition ocrFillStyleItem() {
     return fixedSelectItem(
         QStringLiteral("interface.text-recognition.fill-style"),
@@ -782,6 +809,8 @@ QVector<SettingsItemDefinition> screenshotOutputItems() {
             SettingsDirectoryPathBinding::ScreenshotImageDirectory,
             QT_TRANSLATE_NOOP("SettingsCatalog", "Select image save directory")),
         screenshotImageFormatItem(),
+        screenshotCompressionLevelItem(),
+        screenshotImageQualityItem(),
         fixedSelectItem(QStringLiteral("screenshot-output.pdf-page-size"),
                         QT_TRANSLATE_NOOP("SettingsCatalog", "PDF page size"),
                         QT_TRANSLATE_NOOP(
@@ -3186,6 +3215,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::ScreenshotImageFormat:
                         expectedKey = QStringLiteral("screenshot/image_format");
                         break;
+                    case SettingsSelectBinding::ScreenshotCompressionLevel:
+                        expectedKey = QStringLiteral("screenshot/compression_level");
+                        break;
                     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
                         expectedKey = QStringLiteral("screenshot/save_as_file_dialog");
                         break;
@@ -3494,6 +3526,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     switch (slider->binding) {
                     case SettingsSliderBinding::ShortcutHintOpacity:
                         expectedKey = QStringLiteral("screenshot_ui/shortcut_hint_opacity");
+                        break;
+                    case SettingsSliderBinding::ScreenshotImageQuality:
+                        expectedKey = QStringLiteral("screenshot/image_quality");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

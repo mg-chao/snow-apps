@@ -994,6 +994,10 @@
             <translation>選擇系統匣使用的內建圖示</translation>
         </message>
         <message>
+            <source>Choose the compression effort used for image output and screenshot history</source>
+            <translation>選擇用於影像輸出和螢幕截圖歷史記錄的壓縮力度</translation>
+        </message>
+        <message>
             <source>Choose the dialog used for manual screenshot saves</source>
             <translation>選擇手動儲存擷取畫面時使用的對話框</translation>
         </message>
@@ -1116,6 +1120,10 @@
         <message>
             <source>Color picker display mode</source>
             <translation>色彩選擇器顯示模式</translation>
+        </message>
+        <message>
+            <source>Compression level</source>
+            <translation>壓縮等級</translation>
         </message>
         <message>
             <source>Configuration</source>
@@ -1614,6 +1622,10 @@
             <translation>影像格式</translation>
         </message>
         <message>
+            <source>Image quality</source>
+            <translation>影像品質</translation>
+        </message>
+        <message>
             <source>Image save directory</source>
             <translation>影像儲存目錄</translation>
         </message>
@@ -1744,6 +1756,10 @@
         <message>
             <source>Loop Animated Images</source>
             <translation>循環播放動圖</translation>
+        </message>
+        <message>
+            <source>Low</source>
+            <translation>低</translation>
         </message>
         <message>
             <source>MSAA</source>
@@ -2420,6 +2436,10 @@
         <message>
             <source>Serial number</source>
             <translation>序號</translation>
+        </message>
+        <message>
+            <source>Set image quality for saves made with the system file dialog</source>
+            <translation>設定透過系統檔案對話框儲存時的影像品質</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>

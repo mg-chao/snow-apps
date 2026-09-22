@@ -93,6 +93,9 @@ class ScreenshotExportArtifact final : public QObject {
     using ClipboardCallback = std::function<void(ScreenshotExportClipboardResult)>;
 
     explicit ScreenshotExportArtifact(ScreenshotExportSource source, QObject* parent = nullptr);
+    ScreenshotExportArtifact(ScreenshotExportSource source,
+                             ScreenshotCompressionLevel compressionLevel,
+                             QObject* parent = nullptr);
     ~ScreenshotExportArtifact() override;
 
     ScreenshotExportArtifact(const ScreenshotExportArtifact&) = delete;
@@ -102,8 +105,14 @@ class ScreenshotExportArtifact final : public QObject {
     using RowSourceCallback = std::function<void(ScreenshotImageRowSource, QString)>;
     [[nodiscard]] bool requestRowSource(QObject* receiver, RowSourceCallback callback);
     [[nodiscard]] bool requestCanonicalPng(QObject* receiver, EncodingCallback callback);
-    [[nodiscard]] bool adoptCanonicalPng(snow_shot::storage::PreparedPngImage image);
+    [[nodiscard]] bool adoptCanonicalPng(snow_shot::storage::PreparedPngImage image,
+                                         ScreenshotCompressionLevel compressionLevel);
     [[nodiscard]] bool requestClipboard(QObject* receiver, ClipboardCallback callback);
+    [[nodiscard]] bool requestSaveToPath(QObject* receiver, QString path,
+                                         ScreenshotImageFileFormat format,
+                                         ScreenshotImageEncodingOptions encoding,
+                                         ScreenshotExportCoordinator::Completion callback,
+                                         ScreenshotPdfOptions pdf = {});
     [[nodiscard]] bool requestAutomaticSave(QObject* receiver, QStringList directories,
                                             ScreenshotImageFileFormat format,
                                             QString filenameFormat,

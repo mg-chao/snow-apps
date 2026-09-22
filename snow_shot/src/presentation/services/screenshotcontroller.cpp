@@ -403,12 +403,13 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> recognitionFileSaveArtifact() const;
     void quickSaveSelection() override;
     void saveImageToFile(QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
-                         ScreenshotPdfOptions pdf, quint64 generation,
+                         ScreenshotPdfOptions pdf, ScreenshotImageEncodingOptions encoding,
+                         quint64 generation,
                          std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
                          snow_shot::storage::CaptureHistorySource historySource);
     void saveSnapshotToFile(ScreenshotScrollingSnapshot snapshot, const QString& outputPath,
                             ScreenshotImageFileFormat format, ScreenshotPdfOptions pdf,
-                            quint64 generation,
+                            ScreenshotImageEncodingOptions encoding, quint64 generation,
                             std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
                             snow_shot::storage::CaptureHistorySource historySource);
     void completeFileSave(ScreenshotExportTaskResult result, quint64 generation,
@@ -3273,6 +3274,9 @@ void ScreenshotController::Impl::saveSelectionToFile() {
     }
     const ScreenshotImageFileFormat format =
         ScreenshotImageFileService::formatForDialogSelection(selectedPath, selectedFilter);
+    const ScreenshotImageEncodingOptions encoding{
+        outputSettings.imageQuality(),
+        ScreenshotImageFileService::compressionLevelForKey(outputSettings.compressionLevel())};
     static_cast<void>(
         outputSettings.setLastManualSaveFormat(ScreenshotImageFileService::formatKey(format)));
     if (!ensureExportFeature()) {
@@ -3296,13 +3300,13 @@ void ScreenshotController::Impl::saveSelectionToFile() {
 
     const QPointer<ScreenshotController> receiver(&owner);
     const auto imageReady = [receiver, generation = *exportGeneration, outputPath, format, pdf,
-                             historyCandidate](QImage image) mutable {
+                             encoding, historyCandidate](QImage image) mutable {
         if (receiver.isNull() || receiver->m_impl == nullptr ||
             !receiver->m_impl->imageExportCurrent(generation)) {
             return;
         }
-        receiver->m_impl->saveImageToFile(std::move(image), outputPath, format, pdf, generation,
-                                          historyCandidate, historySource);
+        receiver->m_impl->saveImageToFile(std::move(image), outputPath, format, pdf, encoding,
+                                          generation, historyCandidate, historySource);
     };
 
     bool scheduled = false;
@@ -3315,14 +3319,15 @@ void ScreenshotController::Impl::saveSelectionToFile() {
             });
     } else if (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()) {
         scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
-            [receiver, generation = *exportGeneration, outputPath, format, pdf,
+            [receiver, generation = *exportGeneration, outputPath, format, pdf, encoding,
              historyCandidate](ScreenshotScrollingSnapshot snapshot) mutable {
                 if (receiver.isNull() || receiver->m_impl == nullptr ||
                     !receiver->m_impl->imageExportCurrent(generation)) {
                     return;
                 }
                 receiver->m_impl->saveSnapshotToFile(std::move(snapshot), outputPath, format, pdf,
-                                                     generation, historyCandidate, historySource);
+                                                     encoding, generation, historyCandidate,
+                                                     historySource);
             });
     } else if (m_selection.hasPixelSelection() && m_exportService != nullptr) {
         const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
@@ -3452,95 +3457,59 @@ void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
 
 void ScreenshotController::Impl::saveImageToFile(
     QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
-    ScreenshotPdfOptions pdf, quint64 generation,
+    ScreenshotPdfOptions pdf, ScreenshotImageEncodingOptions encoding, quint64 generation,
     std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
     snow_shot::storage::CaptureHistorySource historySource) {
     const QPointer<ScreenshotController> receiver(&owner);
-    auto artifact =
-        std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image));
-    m_exportJob = ScreenshotExportCoordinator::shared().submit(
-        &owner, ScreenshotExportCoordinator::Priority::Foreground,
-        [image = std::move(image), outputPath, pdf,
-         format](const ScreenshotExportCancellation& cancellation) mutable {
-            if (cancellation.isCancellationRequested()) {
-                return ScreenshotExportTaskResult::failure(
-                    ScreenshotExportFailureStage::Cancelled,
-                    QStringLiteral("The screenshot save was cancelled"));
-            }
-            const ScreenshotImageFileSaveResult saved =
-                ScreenshotImageFileService::write(image, outputPath, format, pdf, [&cancellation] {
-                    return cancellation.isCancellationRequested();
-                });
-            if (!saved.succeeded()) {
-                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
-                                                           saved.error);
-            }
-            ScreenshotExportTaskResult result;
-            result.savedPath = saved.path;
-            return result;
-        },
-        [receiver, generation, historyCandidate = std::move(historyCandidate), historySource,
+    auto artifact = std::make_shared<ScreenshotExportArtifact>(
+        ScreenshotExportSource::fromImage(std::move(image)), encoding.compressionLevel);
+    std::erase_if(m_saveArtifacts, [](const auto& weak) { return weak.expired(); });
+    m_saveArtifacts.push_back(artifact);
+    const bool started = artifact->requestSaveToPath(
+        &owner, outputPath, format, encoding,
+        [receiver, generation, historyCandidate, historySource,
          artifact](ScreenshotExportTaskResult result) mutable {
             if (!receiver.isNull() && receiver->m_impl != nullptr) {
-                receiver->m_impl->completeFileSave(std::move(result), generation,
-                                                   std::move(historyCandidate), historySource,
-                                                   artifact);
+                receiver->m_impl->completeFileSave(std::move(result), generation, historyCandidate,
+                                                   historySource, artifact);
             }
-        });
-    trackExportJob(m_exportJob);
-    if (!m_exportJob.isValid()) {
+        },
+        pdf);
+    if (!started) {
         completeFileSave(ScreenshotExportTaskResult::failure(
                              ScreenshotExportFailureStage::Queue,
                              QStringLiteral("The screenshot export queue is full")),
-                         generation, std::move(historyCandidate), historySource);
+                         generation, std::move(historyCandidate), historySource, artifact);
     }
 }
 
 void ScreenshotController::Impl::saveSnapshotToFile(
     ScreenshotScrollingSnapshot snapshot, const QString& outputPath,
-    ScreenshotImageFileFormat format, ScreenshotPdfOptions pdf, quint64 generation,
+    ScreenshotImageFileFormat format, ScreenshotPdfOptions pdf,
+    ScreenshotImageEncodingOptions encoding, quint64 generation,
     std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
     snow_shot::storage::CaptureHistorySource historySource) {
     const QPointer<ScreenshotController> receiver(&owner);
     auto artifact = std::make_shared<ScreenshotExportArtifact>(
-        ScreenshotExportSource::fromScrollingSnapshot(snapshot));
-    m_exportJob = ScreenshotExportCoordinator::shared().submit(
-        &owner, ScreenshotExportCoordinator::Priority::Foreground,
-        [snapshot = std::move(snapshot), outputPath, pdf,
-         format](const ScreenshotExportCancellation& cancellation) mutable {
-            const ScreenshotImageRowSource source = snapshot.rowSource(
-                [&cancellation]() { return cancellation.isCancellationRequested(); });
-            if (!source.isValid()) {
-                return ScreenshotExportTaskResult::failure(
-                    ScreenshotExportFailureStage::Source,
-                    QStringLiteral("The scrolling screenshot is unavailable"));
-            }
-            const ScreenshotImageFileSaveResult saved =
-                ScreenshotImageFileService::write(source, outputPath, format, pdf);
-            if (!saved.succeeded()) {
-                return ScreenshotExportTaskResult::failure(
-                    cancellation.isCancellationRequested() ? ScreenshotExportFailureStage::Cancelled
-                                                           : ScreenshotExportFailureStage::File,
-                    saved.error);
-            }
-            ScreenshotExportTaskResult result;
-            result.savedPath = saved.path;
-            return result;
-        },
-        [receiver, generation, historyCandidate = std::move(historyCandidate), historySource,
+        ScreenshotExportSource::fromScrollingSnapshot(std::move(snapshot)),
+        encoding.compressionLevel);
+    std::erase_if(m_saveArtifacts, [](const auto& weak) { return weak.expired(); });
+    m_saveArtifacts.push_back(artifact);
+    const bool started = artifact->requestSaveToPath(
+        &owner, outputPath, format, encoding,
+        [receiver, generation, historyCandidate, historySource,
          artifact](ScreenshotExportTaskResult result) mutable {
             if (!receiver.isNull() && receiver->m_impl != nullptr) {
-                receiver->m_impl->completeFileSave(std::move(result), generation,
-                                                   std::move(historyCandidate), historySource,
-                                                   artifact);
+                receiver->m_impl->completeFileSave(std::move(result), generation, historyCandidate,
+                                                   historySource, artifact);
             }
-        });
-    trackExportJob(m_exportJob);
-    if (!m_exportJob.isValid()) {
+        },
+        pdf);
+    if (!started) {
         completeFileSave(ScreenshotExportTaskResult::failure(
                              ScreenshotExportFailureStage::Queue,
                              QStringLiteral("The screenshot export queue is full")),
-                         generation, std::move(historyCandidate), historySource);
+                         generation, std::move(historyCandidate), historySource, artifact);
     }
 }
 

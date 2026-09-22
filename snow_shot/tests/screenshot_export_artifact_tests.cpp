@@ -100,6 +100,7 @@ void clipboardAndSaveShareCanonicalEncoding() {
         QByteArray canonical;
         QByteArray clipboard;
         QString path;
+        QString systemPath;
         require(artifact.requestCanonicalPng(&receiver,
                                              [&](ScreenshotExportEncodingResult result) {
                                                  require(result.succeeded(),
@@ -125,12 +126,25 @@ void clipboardAndSaveShareCanonicalEncoding() {
                         ++callbacks;
                     }),
                 "save request rejected");
-        processUntil([&] { return callbacks == 3; });
+        require(artifact.requestSaveToPath(
+                    &receiver, directory.filePath(QStringLiteral("system.png")),
+                    ScreenshotImageFileFormat::Png,
+                    ScreenshotImageEncodingOptions{100, ScreenshotCompressionLevel::Low},
+                    [&](ScreenshotExportTaskResult result) {
+                        require(result.succeeded(), "system-dialog PNG save failed");
+                        systemPath = result.savedPath;
+                        ++callbacks;
+                    }),
+                "system-dialog save request rejected");
+        processUntil([&] { return callbacks == 4; });
         require(canonical.constData() == clipboard.constData(),
                 "clipboard did not reuse the canonical PNG buffer");
         QFile saved(path);
         require(saved.open(QIODevice::ReadOnly) && saved.readAll() == canonical,
                 "saved PNG differs from clipboard/history encoding");
+        QFile systemSaved(systemPath);
+        require(systemSaved.open(QIODevice::ReadOnly) && systemSaved.readAll() == canonical,
+                "system-dialog PNG save did not reuse the canonical history bytes");
         require(materializations == (rowBacked ? 0 : 1),
                 "image source was materialized more than once");
         require(rowFactories == (rowBacked ? 1 : 0),
@@ -144,7 +158,7 @@ void clipboardAndSaveShareCanonicalEncoding() {
                                               ++callbacks;
                                           }),
                 "cached clipboard request rejected");
-        processUntil([&] { return callbacks == 4; });
+        processUntil([&] { return callbacks == 5; });
         require(rowFactories == (rowBacked ? 1 : 0),
                 "cached clipboard request recreated the row source");
     }
@@ -371,7 +385,7 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
             };
             return rows;
         }));
-    require(!pending.adoptCanonicalPng(*prepared),
+    require(!pending.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
             "canonical PNG was adopted before the row source was known");
     QObject receiver;
     int rowCallbacks = 0;
@@ -383,6 +397,8 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
                                      }),
             "pending adoption row request rejected");
     processUntil([&] { return rowCallbacks == 1; });
+    require(!pending.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::High),
+            "a canonical PNG with mismatched compression was adopted");
 
     int encodingCallbacks = 0;
     const QByteArray* adoptedBytes = prepared->sharedBytes().get();
@@ -395,14 +411,16 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
                 }),
             "pending canonical encoding request rejected");
     processUntil([&] { return entered.load(std::memory_order_acquire); });
-    require(pending.adoptCanonicalPng(*prepared), "pending canonical PNG adoption failed");
+    require(pending.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
+            "pending canonical PNG adoption failed");
     release.store(true, std::memory_order_release);
     processUntil([&] { return encodingCallbacks == 1; });
     require(factories == 1, "pending adoption recreated the row source");
 
     auto alternate = snow_shot::storage::PreparedPngImage::fromBytes(
         image.size(), snow_shot::image_codec::encodePng(image.flipped(Qt::Horizontal)));
-    require(alternate.has_value() && pending.adoptCanonicalPng(*alternate),
+    require(alternate.has_value() &&
+                pending.adoptCanonicalPng(*alternate, ScreenshotCompressionLevel::Low),
             "ready canonical PNG adoption was rejected");
     require(pending.requestCanonicalPng(
                 &receiver,
@@ -438,7 +456,8 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
                                        }),
             "failed canonical request rejected");
     processUntil([&] { return failures == 1; });
-    require(failed.adoptCanonicalPng(*prepared), "failed canonical phase did not recover");
+    require(failed.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
+            "failed canonical phase did not recover");
     require(failed.requestCanonicalPng(
                 &receiver,
                 [&](ScreenshotExportEncodingResult result) {
@@ -449,7 +468,7 @@ void canonicalPngAdoptionHandlesPendingAndFailedEncoding() {
             "recovered canonical request rejected");
     require(failures == 2, "recovered canonical result was not delivered immediately");
     failed.cancel();
-    require(!failed.adoptCanonicalPng(*prepared),
+    require(!failed.adoptCanonicalPng(*prepared, ScreenshotCompressionLevel::Low),
             "cancelled artifact accepted canonical PNG adoption");
 }
 
@@ -569,7 +588,8 @@ void quickSaveUsesOnlyConfiguredOutput() {
     require(settings.setImageSaveDirectory(output) &&
                 settings.setAutoSaveFilenameFormat(QStringLiteral("Quick_output")) &&
                 settings.setLastManualSaveDirectory(directory.path()) &&
-                settings.setLastManualSaveFormat(QStringLiteral("jpeg")),
+                settings.setLastManualSaveFormat(QStringLiteral("jpeg")) &&
+                settings.setCompressionLevel(QStringLiteral("high")) && settings.setImageQuality(0),
             "quick save settings setup failed");
     require(settings.setPdfPageSize(QStringLiteral("a4_landscape")),
             "PDF page setting must persist");
@@ -613,8 +633,24 @@ void quickSaveUsesOnlyConfiguredOutput() {
                     "quick save must honor the PDF setting and default to lossless");
         }
         if (format == QStringLiteral("png")) {
-            require(QImage(first.savedPath).convertToFormat(QImage::Format_RGBA8888) == image,
-                    "quick save must preserve composed source pixels");
+            QFile file(first.savedPath);
+            require(file.open(QIODevice::ReadOnly) &&
+                        file.readAll() == snow_shot::image_codec::encodePng(image, 9) &&
+                        QImage(first.savedPath).convertToFormat(QImage::Format_RGBA8888) == image,
+                    "quick save must preserve pixels and honor global PNG compression");
+        }
+        if (format == QStringLiteral("jpeg")) {
+            const QString referencePath = directory.filePath(QStringLiteral("jpeg-reference.jpg"));
+            require(ScreenshotImageFileService::write(
+                        image, referencePath, ScreenshotImageFileFormat::Jpeg, {}, {},
+                        ScreenshotImageEncodingOptions{100, ScreenshotCompressionLevel::High})
+                        .succeeded(),
+                    "quick-save JPEG reference could not be encoded");
+            QFile saved(first.savedPath);
+            QFile reference(referencePath);
+            require(saved.open(QIODevice::ReadOnly) && reference.open(QIODevice::ReadOnly) &&
+                        saved.readAll() == reference.readAll(),
+                    "global image quality must not lower automatic or quick-save quality");
         }
     }
     require(settings.lastManualSaveDirectory() == directory.path() &&

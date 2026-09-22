@@ -85,6 +85,7 @@ struct CaptureHistoryDraft {
     QVector<CaptureHistoryDisplayDraft> displays;
     std::optional<QImage> resultImage;
     std::optional<PreparedPngImage> preparedResultImage;
+    int pngCompressionLevel = 0;
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
 };
 

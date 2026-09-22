@@ -2568,7 +2568,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_include_directories(snow-shot-direct-capture-workflow-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    target_link_libraries(snow-shot-direct-capture-workflow-tests PRIVATE Qt6::Gui)
+    target_link_libraries(snow-shot-direct-capture-workflow-tests PRIVATE
+        snow_shot_image_codec
+        Qt6::Gui
+    )
     add_test(NAME snow-shot-direct-capture-workflow-tests
         COMMAND snow-shot-direct-capture-workflow-tests)
 
@@ -2858,6 +2861,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotselectionmodel.h
         include/snow_shot/presentation/screenshotselectionparams.h
         src/presentation/services/screenshothistoryservice.cpp
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotpdfexport.cpp
         src/presentation/services/screenshotshortcutexitconfirmation.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotintelligentselectionmodel.cpp
@@ -2870,9 +2875,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_include_directories(snow-shot-screenshot-history-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
     )
     target_link_libraries(snow-shot-screenshot-history-tests PRIVATE
         snow_draw_engine_qt_canvas
+        snow_shot_image_codec
         snow_shot_window_shortcuts
         ant_design_qt
         Qt6::Widgets

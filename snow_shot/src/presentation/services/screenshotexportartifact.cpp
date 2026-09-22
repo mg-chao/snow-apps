@@ -45,7 +45,8 @@ void dispatchResult(QObject* receiver, Callback callback, Result result) {
         Qt::QueuedConnection));
 }
 
-ScreenshotExportEncodingResult encodeCanonicalPng(const ScreenshotImageRowSource& source) {
+ScreenshotExportEncodingResult encodeCanonicalPng(const ScreenshotImageRowSource& source,
+                                                  ScreenshotCompressionLevel compressionLevel) {
     if (!source.isValid()) {
         return {{}, QStringLiteral("The screenshot row source is unavailable")};
     }
@@ -54,8 +55,8 @@ ScreenshotExportEncodingResult encodeCanonicalPng(const ScreenshotImageRowSource
     if (!buffer.open(QIODevice::WriteOnly)) {
         return {{}, QStringLiteral("The screenshot PNG buffer could not be opened")};
     }
-    snow::image::EncodeOptions options;
-    options.compression_level = 1;
+    const snow::image::EncodeOptions options = ScreenshotImageFileService::encodeOptions(
+        ScreenshotImageFileFormat::Png, ScreenshotImageEncodingOptions{100, compressionLevel});
     QString error;
     if (!snow_shot::image_codec::encodeToDevice(source, &buffer, snow::image::Format::png, options,
                                                 &error)) {
@@ -142,9 +143,11 @@ struct ScreenshotExportArtifact::Impl final {
         RowSourceCallback callback;
     };
 
-    explicit Impl(ScreenshotExportSource value) : source(std::move(value)) {}
+    Impl(ScreenshotExportSource value, ScreenshotCompressionLevel compression)
+        : source(std::move(value)), compressionLevel(compression) {}
 
     ScreenshotExportSource source;
+    const ScreenshotCompressionLevel compressionLevel;
     const QString diagnosticId = QUuid::createUuid().toString(QUuid::Id128);
     mutable QMutex mutex;
     bool cancelled = false;
@@ -167,7 +170,15 @@ struct ScreenshotExportArtifact::Impl final {
 };
 
 ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source, QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(std::move(source))) {}
+    : ScreenshotExportArtifact(std::move(source),
+                               ScreenshotImageFileService::compressionLevelForKey(
+                                   snow_shot::storage::ScreenshotSettings().compressionLevel()),
+                               parent) {}
+
+ScreenshotExportArtifact::ScreenshotExportArtifact(ScreenshotExportSource source,
+                                                   ScreenshotCompressionLevel compressionLevel,
+                                                   QObject* parent)
+    : QObject(parent), m_impl(std::make_unique<Impl>(std::move(source), compressionLevel)) {}
 
 QString ScreenshotExportArtifact::diagnosticId() const {
     return m_impl->diagnosticId;
@@ -523,14 +534,17 @@ void ScreenshotExportArtifact::startCanonicalPngFromRows(ScreenshotImageRowSourc
     auto encoded = std::make_shared<ScreenshotExportEncodingResult>();
     const ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
         this, ScreenshotExportCoordinator::Priority::Background,
-        [source = std::move(source), encoded](const ScreenshotExportCancellation& cancellation) {
+        [source = std::move(source), encoded, compressionLevel = m_impl->compressionLevel](
+            const ScreenshotExportCancellation& cancellation) {
             if (cancellation.isCancellationRequested()) {
                 return ScreenshotExportTaskResult::failure(
                     ScreenshotExportFailureStage::Cancelled,
                     QStringLiteral("The screenshot PNG encoding was cancelled"));
             }
-            *encoded = encodeCanonicalPng(withCancellation(
-                source, [&cancellation] { return cancellation.isCancellationRequested(); }));
+            *encoded = encodeCanonicalPng(
+                withCancellation(
+                    source, [&cancellation] { return cancellation.isCancellationRequested(); }),
+                compressionLevel);
             return encoded->succeeded() ? ScreenshotExportTaskResult{}
                                         : ScreenshotExportTaskResult::failure(
                                               ScreenshotExportFailureStage::Render, encoded->error);
@@ -558,7 +572,8 @@ void ScreenshotExportArtifact::startCanonicalPngFromRows(ScreenshotImageRowSourc
         job.cancel();
 }
 
-bool ScreenshotExportArtifact::adoptCanonicalPng(snow_shot::storage::PreparedPngImage image) {
+bool ScreenshotExportArtifact::adoptCanonicalPng(snow_shot::storage::PreparedPngImage image,
+                                                 ScreenshotCompressionLevel compressionLevel) {
     if (!image.isValid() || m_impl == nullptr)
         return false;
 
@@ -566,8 +581,9 @@ bool ScreenshotExportArtifact::adoptCanonicalPng(snow_shot::storage::PreparedPng
     std::vector<Impl::EncodingSubscriber> subscribers;
     {
         QMutexLocker lock(&m_impl->mutex);
-        if (m_impl->cancelled || m_impl->rowSourcePhase != RequestPhase::Ready ||
-            !m_impl->rowSource.isValid() || image.pixelSize() != m_impl->rowSource.size) {
+        if (m_impl->cancelled || compressionLevel != m_impl->compressionLevel ||
+            m_impl->rowSourcePhase != RequestPhase::Ready || !m_impl->rowSource.isValid() ||
+            image.pixelSize() != m_impl->rowSource.size) {
             return false;
         }
         if (m_impl->encodingPhase == RequestPhase::Ready)
@@ -745,6 +761,95 @@ bool ScreenshotExportArtifact::requestQuickSave(QObject* receiver,
         ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())});
 }
 
+bool ScreenshotExportArtifact::requestSaveToPath(QObject* receiver, QString path,
+                                                 ScreenshotImageFileFormat format,
+                                                 ScreenshotImageEncodingOptions encoding,
+                                                 ScreenshotExportCoordinator::Completion callback,
+                                                 ScreenshotPdfOptions pdf) {
+    if (receiver == nullptr || !callback || isCancelled())
+        return false;
+    const QPointer<ScreenshotExportArtifact> guarded(this);
+    const QPointer<QObject> target(receiver);
+    auto schedule = [guarded, target, path = std::move(path), format, encoding, pdf,
+                     callback = std::move(callback)](snow_shot::storage::PreparedPngImage png,
+                                                     ScreenshotImageRowSource rows,
+                                                     QString error) mutable {
+        if (guarded.isNull() || guarded->isCancelled() || target.isNull())
+            return;
+        if (!error.isEmpty()) {
+            dispatchResult(target, std::move(callback),
+                           ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,
+                                                               std::move(error)));
+            return;
+        }
+        auto completion =
+            std::make_shared<ScreenshotExportCoordinator::Completion>(std::move(callback));
+        const ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
+            target, ScreenshotExportCoordinator::Priority::Foreground,
+            [path, format, encoding, pdf, png = std::move(png),
+             rows = std::move(rows)](const ScreenshotExportCancellation& cancellation) mutable {
+                if (cancellation.isCancellationRequested()) {
+                    return ScreenshotExportTaskResult::failure(
+                        ScreenshotExportFailureStage::Cancelled,
+                        QStringLiteral("The screenshot save was cancelled"));
+                }
+                ScreenshotImageFileSaveResult saved;
+                if (png.isValid()) {
+                    saved = ScreenshotImageFileService::write(png, path, [&cancellation] {
+                        return cancellation.isCancellationRequested();
+                    });
+                } else {
+                    rows = withCancellation(
+                        rows, [&cancellation] { return cancellation.isCancellationRequested(); });
+                    saved = ScreenshotImageFileService::write(rows, path, format, pdf, encoding);
+                }
+                if (!saved.succeeded()) {
+                    return ScreenshotExportTaskResult::failure(
+                        cancellation.isCancellationRequested()
+                            ? ScreenshotExportFailureStage::Cancelled
+                            : ScreenshotExportFailureStage::File,
+                        saved.error);
+                }
+                ScreenshotExportTaskResult result;
+                result.savedPath = saved.path;
+                return result;
+            },
+            [guarded, target, completion](ScreenshotExportTaskResult result) mutable {
+                if (!guarded.isNull() && !guarded->isCancelled() && !target.isNull()) {
+                    dispatchResult(target, std::move(*completion), std::move(result));
+                }
+            });
+        if (!job.isValid()) {
+            dispatchResult(target, std::move(*completion),
+                           ScreenshotExportTaskResult::failure(
+                               ScreenshotExportFailureStage::Queue,
+                               QStringLiteral("The screenshot export queue is full")));
+            return;
+        }
+        bool retained = false;
+        {
+            QMutexLocker lock(&guarded->m_impl->mutex);
+            if (!guarded->m_impl->cancelled) {
+                guarded->m_impl->outputJobs.push_back(job);
+                retained = true;
+            }
+        }
+        if (!retained)
+            job.cancel();
+    };
+    if (format == ScreenshotImageFileFormat::Png &&
+        encoding.compressionLevel == m_impl->compressionLevel) {
+        return requestCanonicalPng(
+            this, [schedule = std::move(schedule)](ScreenshotExportEncodingResult result) mutable {
+                schedule(std::move(result.image), {}, std::move(result.error));
+            });
+    }
+    return requestRowSource(this, [schedule = std::move(schedule)](ScreenshotImageRowSource source,
+                                                                   QString error) mutable {
+        schedule({}, std::move(source), std::move(error));
+    });
+}
+
 bool ScreenshotExportArtifact::requestAutomaticSave(
     QObject* receiver, QStringList directories, ScreenshotImageFileFormat format,
     QString filenameFormat, ScreenshotExportCoordinator::Completion callback,
@@ -753,7 +858,8 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
         return false;
     const QPointer<ScreenshotExportArtifact> guarded(this);
     const QPointer<QObject> target(receiver);
-    auto schedule = [guarded, target, directories = std::move(directories), format, pdf,
+    const ScreenshotImageEncodingOptions encoding{100, m_impl->compressionLevel};
+    auto schedule = [guarded, target, directories = std::move(directories), format, pdf, encoding,
                      filenameFormat = std::move(filenameFormat), callback = std::move(callback)](
                         snow_shot::storage::PreparedPngImage png, ScreenshotImageRowSource rows,
                         QString error) mutable {
@@ -769,7 +875,7 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
             std::make_shared<ScreenshotExportCoordinator::Completion>(std::move(callback));
         auto job = ScreenshotExportCoordinator::shared().submit(
             target, ScreenshotExportCoordinator::Priority::Background,
-            [directories, format, pdf, filenameFormat, png = std::move(png),
+            [directories, format, pdf, encoding, filenameFormat, png = std::move(png),
              rows = std::move(rows)](const ScreenshotExportCancellation& cancellation) mutable {
                 if (cancellation.isCancellationRequested()) {
                     return ScreenshotExportTaskResult::failure(
@@ -785,7 +891,7 @@ bool ScreenshotExportArtifact::requestAutomaticSave(
                         rows, [&cancellation] { return cancellation.isCancellationRequested(); });
                     saved = ScreenshotImageFileService::saveAutomatically(
                         rows, directories, format, filenameFormat, QDateTime::currentDateTime(),
-                        pdf);
+                        pdf, encoding);
                 }
                 if (!saved.succeeded()) {
                     return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::File,

@@ -185,6 +185,11 @@ uint32_t bridgeFormat(snow::image::Format format) noexcept {
     return SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN;
 }
 
+snow::image::EncoderOptionRange
+encoderOptionRange(const SnowShotImageCodecEncoderOptionRange& range) noexcept {
+    return {range.minimum, range.maximum, range.default_value};
+}
+
 uint8_t bridgeChromaSubsampling(snow::image::ChromaSubsampling value) noexcept {
     switch (value) {
     case snow::image::ChromaSubsampling::none:
@@ -373,6 +378,27 @@ QByteArray readFile(const QString& path) {
 
 } // namespace
 
+std::optional<snow::image::EncoderInfo> encoderInfo(snow::image::Format format) {
+    const uint32_t requestedFormat = bridgeFormat(format);
+    if (!backendAbiIsCompatible() || requestedFormat == SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN)
+        return std::nullopt;
+    SnowShotImageCodecEncoderInfo bridge{};
+    bridge.struct_size = sizeof(bridge);
+    bridge.abi_version = SNOW_SHOT_IMAGE_CODEC_ABI_VERSION;
+    if (snow_shot_image_codec_encoder_info(requestedFormat, &bridge) == 0 ||
+        bridge.format != requestedFormat) {
+        return std::nullopt;
+    }
+    snow::image::EncoderInfo result;
+    result.format = format;
+    result.features = static_cast<snow::image::EncoderFeature>(bridge.features);
+    result.quality = encoderOptionRange(bridge.quality);
+    result.effort = encoderOptionRange(bridge.effort);
+    result.lossless_effort = encoderOptionRange(bridge.lossless_effort);
+    result.compression_level = encoderOptionRange(bridge.compression_level);
+    return result;
+}
+
 bool encodeToDevice(const ScreenshotImageRowSource& source, QIODevice* device,
                     snow::image::Format format, const snow::image::EncodeOptions& options,
                     QString* error, EncodeResult* result) {
@@ -496,9 +522,9 @@ bool resizeToRgba8(const ScreenshotImageRowSource& source, const QSize& outputSi
     return true;
 }
 
-QByteArray encodePng(const QImage& image) {
+QByteArray encodePng(const QImage& image, int compressionLevel) {
     snow::image::EncodeOptions options;
-    options.compression_level = 1;
+    options.compression_level = qBound(0, compressionLevel, 9);
     return encodeImage(image, snow::image::Format::png, options, nullptr);
 }
 
@@ -530,11 +556,11 @@ ScreenshotImageRowSource srgbRowSource(const QImage& image) {
     return source;
 }
 
-QByteArray encodePng(const ScreenshotImageRowSource& source) {
+QByteArray encodePng(const ScreenshotImageRowSource& source, int compressionLevel) {
     QByteArray bytes;
     QBuffer buffer(&bytes);
     snow::image::EncodeOptions options;
-    options.compression_level = 1;
+    options.compression_level = qBound(0, compressionLevel, 9);
     if (!buffer.open(QIODevice::WriteOnly) ||
         !encodeToDevice(source, &buffer, snow::image::Format::png, options)) {
         return {};

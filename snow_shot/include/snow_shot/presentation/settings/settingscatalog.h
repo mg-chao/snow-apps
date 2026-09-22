@@ -94,6 +94,7 @@ enum class SettingsSelectBinding {
     ScreenRecordingEncoder,
     ScreenRecordingEncodingPreset,
     ScreenshotImageFormat,
+    ScreenshotCompressionLevel,
     ScreenshotPdfPageSize,
     ScreenshotSaveAsFileDialog,
     TrayLeftClickAction,
@@ -168,6 +169,7 @@ struct SettingsIntegerDefinition {
 
 enum class SettingsSliderBinding {
     ShortcutHintOpacity,
+    ScreenshotImageQuality,
 };
 
 struct SettingsSliderDefinition {

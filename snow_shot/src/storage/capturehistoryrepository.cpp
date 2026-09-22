@@ -403,9 +403,9 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
                                                      : draft.resultImage->size();
         stored.resultFileName = QStringLiteral("capture_result.png");
         const qint64 bytes = addImage(size, *stored.resultFileName, [&]() {
-            return draft.preparedResultImage
-                       ? draft.preparedResultImage->bytes()
-                       : snow_shot::image_codec::encodePng(*draft.resultImage);
+            return draft.preparedResultImage ? draft.preparedResultImage->bytes()
+                                             : snow_shot::image_codec::encodePng(
+                                                   *draft.resultImage, draft.pngCompressionLevel);
         });
         if (bytes == 0)
             return false;
@@ -444,7 +444,7 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
             return false;
         const QString name = QStringLiteral("display_%1.png").arg(i);
         const qint64 bytes = addImage(display.image.size(), name, [&]() {
-            return snow_shot::image_codec::encodePng(display.image);
+            return snow_shot::image_codec::encodePng(display.image, draft.pngCompressionLevel);
         });
         if (bytes == 0)
             return false;

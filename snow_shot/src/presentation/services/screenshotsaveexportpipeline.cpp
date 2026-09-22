@@ -219,9 +219,11 @@ QSize encoderLimits(ScreenshotImageFileFormat format) {
             int(qMin(height, uint32_t(std::numeric_limits<int>::max() / 4)))};
 }
 ScreenshotSaveExportOptions normalizedOptions(ScreenshotSaveExportOptions options) {
-    const bool supportsQuality = options.format != ScreenshotImageFileFormat::Png &&
-                                 options.format != ScreenshotImageFileFormat::Bmp;
-    options.quality = supportsQuality ? qBound(1, options.quality, 100) : 100;
+    options.quality = ScreenshotImageFileService::supportsQuality(options.format)
+                          ? qBound(0, options.quality, 100)
+                          : 100;
+    if (!ScreenshotImageFileService::supportsCompressionLevel(options.format))
+        options.compressionLevel = ScreenshotCompressionLevel::Low;
     if (options.format != ScreenshotImageFileFormat::Pdf) {
         options.pdfPageSize = ScreenshotPdfPageSize::PortraitA4;
         options.pdfTitle.clear();
@@ -313,8 +315,9 @@ std::shared_ptr<Encoded> render(std::shared_ptr<PreparedPixels> pixels,
                                             : snow::image::PixelRoundTrip::codec_artifact;
         return result;
     }
-    snow::image::EncodeOptions encodeOptions =
-        ScreenshotImageFileService::encodeOptions(result->options.format, result->options.quality);
+    snow::image::EncodeOptions encodeOptions = ScreenshotImageFileService::encodeOptions(
+        result->options.format,
+        ScreenshotImageEncodingOptions{result->options.quality, result->options.compressionLevel});
     encodeOptions.verified_alpha_content = result->pixels->alphaContent;
     if (!snow_shot::image_codec::encodeToDevice(
             rows, &output, ScreenshotImageFileService::snowImageFormat(result->options.format),

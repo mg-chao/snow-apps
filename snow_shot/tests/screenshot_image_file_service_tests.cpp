@@ -368,23 +368,88 @@ void retriesNextDirectoryAndPublishesFileOnlyClipboardData() {
             "file clipboard mode must publish a local file URL without image data");
 }
 
-void codecOptionsUseFastLosslessAndMaximumJpegQuality() {
-    const auto jpeg = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Jpeg);
-    require(jpeg.format == snow::image::Format::jpeg && jpeg.quality == 100,
-            "JPEG saves must use quality 100");
-    const auto png = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png);
-    require(png.format == snow::image::Format::png && png.compression_level == 0,
-            "PNG saves must use the fastest compression setting");
-    const auto bmp = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Bmp);
-    require(bmp.format == snow::image::Format::bmp,
-            "BMP saves must select the snow_image BMP encoder");
-    const auto webp = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Webp);
-    require(webp.lossless && webp.lossless_effort == 0,
-            "lossless WebP saves must use the fastest lossless effort");
-    const auto jxl = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Jxl);
-    const auto avif = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Avif);
-    require(jxl.lossless && jxl.effort == 1 && avif.lossless && avif.effort == 1,
-            "lossless JXL and AVIF saves must use the fastest effort");
+void codecCapabilitiesAndEncodingOptionsMatchTheOutputContract() {
+    for (const auto format : {ScreenshotImageFileFormat::Jpeg, ScreenshotImageFileFormat::Webp,
+                              ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
+                              ScreenshotImageFileFormat::Pdf}) {
+        require(ScreenshotImageFileService::supportsQuality(format),
+                "quality-supporting format was not advertised");
+    }
+    for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Bmp}) {
+        require(!ScreenshotImageFileService::supportsQuality(format),
+                "quality must be hidden for PNG and BMP");
+    }
+    for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Webp,
+                              ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif}) {
+        require(ScreenshotImageFileService::supportsCompressionLevel(format),
+                "compression-supporting format was not advertised");
+    }
+    for (const auto format : {ScreenshotImageFileFormat::Jpeg, ScreenshotImageFileFormat::Bmp,
+                              ScreenshotImageFileFormat::Pdf}) {
+        require(!ScreenshotImageFileService::supportsCompressionLevel(format),
+                "compression must be hidden for JPEG, BMP, and PDF");
+    }
+
+    const auto options = [](ScreenshotImageFileFormat format, int quality,
+                            ScreenshotCompressionLevel compression) {
+        return ScreenshotImageFileService::encodeOptions(
+            format, ScreenshotImageEncodingOptions{quality, compression});
+    };
+    require(options(ScreenshotImageFileFormat::Png, 100, ScreenshotCompressionLevel::Low)
+                        .compression_level == 0 &&
+                options(ScreenshotImageFileFormat::Png, 100, ScreenshotCompressionLevel::Medium)
+                        .compression_level == 6 &&
+                options(ScreenshotImageFileFormat::Png, 100, ScreenshotCompressionLevel::High)
+                        .compression_level == 9,
+            "PNG compression must map Low/Medium/High to 0/6/9");
+    const auto webpLossyLow =
+        options(ScreenshotImageFileFormat::Webp, 85, ScreenshotCompressionLevel::Low);
+    const auto webpLossyMedium =
+        options(ScreenshotImageFileFormat::Webp, 85, ScreenshotCompressionLevel::Medium);
+    const auto webpLossyHigh =
+        options(ScreenshotImageFileFormat::Webp, 85, ScreenshotCompressionLevel::High);
+    require(!webpLossyLow.lossless && webpLossyLow.effort == 0 && webpLossyMedium.effort == 4 &&
+                webpLossyHigh.effort == 6,
+            "lossy WebP compression must map Low/Medium/High to effort 0/4/6");
+    const auto webpLosslessLow =
+        options(ScreenshotImageFileFormat::Webp, 100, ScreenshotCompressionLevel::Low);
+    const auto webpLosslessMedium =
+        options(ScreenshotImageFileFormat::Webp, 100, ScreenshotCompressionLevel::Medium);
+    const auto webpLosslessHigh =
+        options(ScreenshotImageFileFormat::Webp, 100, ScreenshotCompressionLevel::High);
+    require(webpLosslessLow.lossless && webpLosslessLow.lossless_effort == 0 &&
+                webpLosslessMedium.lossless_effort == 6 && webpLosslessHigh.lossless_effort == 9,
+            "lossless WebP compression must map Low/Medium/High to effort 0/6/9");
+    require(
+        options(ScreenshotImageFileFormat::Jxl, 100, ScreenshotCompressionLevel::Low).effort == 1 &&
+            options(ScreenshotImageFileFormat::Jxl, 100, ScreenshotCompressionLevel::Medium)
+                    .effort == 7 &&
+            options(ScreenshotImageFileFormat::Jxl, 100, ScreenshotCompressionLevel::High).effort ==
+                10,
+        "JPEG XL compression must map Low/Medium/High to effort 1/7/10");
+    require(options(ScreenshotImageFileFormat::Avif, 100, ScreenshotCompressionLevel::Low).effort ==
+                    1 &&
+                options(ScreenshotImageFileFormat::Avif, 100, ScreenshotCompressionLevel::Medium)
+                        .effort == 6 &&
+                options(ScreenshotImageFileFormat::Avif, 100, ScreenshotCompressionLevel::High)
+                        .effort == 9,
+            "AVIF compression must map Low/Medium/High to effort 1/6/9");
+    require(
+        options(ScreenshotImageFileFormat::Jxl, 100, ScreenshotCompressionLevel::Low).lossless &&
+            options(ScreenshotImageFileFormat::Avif, 100, ScreenshotCompressionLevel::Low)
+                .lossless &&
+            options(ScreenshotImageFileFormat::Jpeg, 0, ScreenshotCompressionLevel::High).quality ==
+                0,
+        "quality 100 must select supported lossless modes and quality 0 must be preserved");
+
+    QTemporaryDir directory;
+    require(directory.isValid() &&
+                ScreenshotImageFileService::write(
+                    image(), directory.filePath(QStringLiteral("quality-zero.jpg")),
+                    ScreenshotImageFileFormat::Jpeg, {}, {},
+                    ScreenshotImageEncodingOptions{0, ScreenshotCompressionLevel::Low})
+                    .succeeded(),
+            "the JPEG codec must normalize the preserved quality-zero request when encoding");
 }
 
 void encodedFilesPublishAtomically() {
@@ -435,7 +500,7 @@ int main(int argc, char** argv) {
         configuredAutomaticOutputUsesFormatDirectoryAndFilename();
         saveDialogPrefersTheLastExistingDirectory();
         retriesNextDirectoryAndPublishesFileOnlyClipboardData();
-        codecOptionsUseFastLosslessAndMaximumJpegQuality();
+        codecCapabilitiesAndEncodingOptionsMatchTheOutputContract();
         encodedFilesPublishAtomically();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -392,14 +392,15 @@ bool ScreenshotClipboardPayload::isValid() const {
 
 ScreenshotClipboardPayload
 ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
-                                    const QByteArray& canonicalPng) {
+                                    const QByteArray& canonicalPng, int pngCompressionLevel) {
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.prepare_total");
     if (!source.isValid() || (source.cancellationRequested && source.cancellationRequested())) {
         return {};
     }
     ScreenshotClipboardPayload payload;
-    payload.m_pngBytes =
-        canonicalPng.isEmpty() ? snow_shot::image_codec::encodePng(source) : canonicalPng;
+    payload.m_pngBytes = canonicalPng.isEmpty()
+                             ? snow_shot::image_codec::encodePng(source, pngCompressionLevel)
+                             : canonicalPng;
     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("clipboard.png_encoded", canonicalPng.isEmpty() ? 1 : 0);
     if (payload.m_pngBytes.isEmpty())
         return {};
@@ -414,9 +415,10 @@ ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
     return payload;
 }
 
-ScreenshotClipboardPayload
-ScreenshotClipboardService::prepareImage(const QImage& image, const QByteArray& canonicalPng) {
-    return prepare(snow_shot::image_codec::srgbRowSource(image), canonicalPng);
+ScreenshotClipboardPayload ScreenshotClipboardService::prepareImage(const QImage& image,
+                                                                    const QByteArray& canonicalPng,
+                                                                    int pngCompressionLevel) {
+    return prepare(snow_shot::image_codec::srgbRowSource(image), canonicalPng, pngCompressionLevel);
 }
 
 ScreenshotClipboardCommitHandle

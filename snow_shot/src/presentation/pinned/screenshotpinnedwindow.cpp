@@ -4756,6 +4756,9 @@ void ScreenshotPinnedWindow::saveAsFile() {
     if (artifact == nullptr)
         return;
     const snow_shot::storage::ScreenshotSettings outputSettings;
+    const ScreenshotImageEncodingOptions encoding{
+        outputSettings.imageQuality(),
+        ScreenshotImageFileService::compressionLevelForKey(outputSettings.compressionLevel())};
     if (outputSettings.saveAsFileDialog() == QStringLiteral("snow_shot")) {
         setProperty("saveDialogOpen", true);
         if (!ScreenshotSaveAsFileDialog::open(
@@ -4801,70 +4804,29 @@ void ScreenshotPinnedWindow::saveAsFile() {
         outputSettings.setLastManualSaveFormat(ScreenshotImageFileService::formatKey(format)));
     const QString outputPath = ScreenshotImageFileService::normalizedPath(selectedPath, format);
     invalidatePendingCopy();
+    m_fileSaveJob.cancel();
+    m_fileSaveJob = {};
     m_exportArtifact = artifact;
-    if (!artifact->requestImage(this, [this, artifact, outputPath, pdf,
-                                       format](ScreenshotExportImageResult result) mutable {
-            if (!result.succeeded() || m_closing || m_exportArtifact != artifact) {
-                if (!m_closing) {
-                    showPinnedRecognitionMessage(
-                        this, translatePinnedText("The pinned image could not be prepared"), true);
-                }
-                if (m_exportArtifact == artifact) {
-                    m_exportArtifact.reset();
-                }
-                return;
-            }
-            m_fileSaveJob.cancel();
-            m_fileSaveJob = ScreenshotExportCoordinator::shared().submit(
-                this, ScreenshotExportCoordinator::Priority::Foreground,
-                [image = std::move(result.image), outputPath, pdf,
-                 format](const ScreenshotExportCancellation& cancellation) mutable {
-                    if (cancellation.isCancellationRequested()) {
-                        return ScreenshotExportTaskResult::failure(
-                            ScreenshotExportFailureStage::Cancelled,
-                            QStringLiteral("The pinned image save was cancelled"));
-                    }
-                    const ScreenshotImageFileSaveResult saved = ScreenshotImageFileService::write(
-                        image, outputPath, format, pdf,
-                        [&cancellation] { return cancellation.isCancellationRequested(); });
-                    if (!saved.succeeded()) {
-                        return ScreenshotExportTaskResult::failure(
-                            ScreenshotExportFailureStage::File, saved.error);
-                    }
-                    ScreenshotExportTaskResult result;
-                    result.savedPath = saved.path;
-                    return result;
-                },
-                [this](ScreenshotExportTaskResult result) {
-                    m_fileSaveJob = {};
-                    if (result.succeeded()) {
-                        static_cast<void>(
-                            snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
-                                QFileInfo(result.savedPath).absolutePath()));
-                    }
-                    if (!result.succeeded() &&
-                        result.failureStage != ScreenshotExportFailureStage::Cancelled) {
-                        showPinnedRecognitionMessage(
-                            this,
-                            QCoreApplication::translate("ScreenshotController",
-                                                        "The screenshot could not be saved: %1")
-                                .arg(result.error),
-                            true);
-                    }
-                });
-            if (!m_fileSaveJob.isValid()) {
-                m_fileSaveJob = {};
-                showPinnedRecognitionMessage(
-                    this,
-                    QCoreApplication::translate("ScreenshotController",
-                                                "The screenshot could not be saved: %1")
-                        .arg(QStringLiteral("The screenshot export queue is full")),
-                    true);
-            }
-            if (m_exportArtifact == artifact) {
+    if (!artifact->requestSaveToPath(
+            this, outputPath, format, encoding,
+            [this, artifact](ScreenshotExportTaskResult result) {
+                if (m_closing || m_exportArtifact != artifact)
+                    return;
                 m_exportArtifact.reset();
-            }
-        })) {
+                if (result.succeeded()) {
+                    static_cast<void>(
+                        snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
+                            QFileInfo(result.savedPath).absolutePath()));
+                } else if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+                    showPinnedRecognitionMessage(
+                        this,
+                        QCoreApplication::translate("ScreenshotController",
+                                                    "The screenshot could not be saved: %1")
+                            .arg(result.error),
+                        true);
+                }
+            },
+            pdf)) {
         if (m_exportArtifact == artifact) {
             m_exportArtifact.reset();
         }

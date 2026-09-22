@@ -649,6 +649,39 @@ uint32_t snow_shot_image_codec_abi_version(void) {
     return SNOW_SHOT_IMAGE_CODEC_ABI_VERSION;
 }
 
+int32_t snow_shot_image_codec_encoder_info(uint32_t bridgeFormat,
+                                           SnowShotImageCodecEncoderInfo* output) {
+    try {
+        snow::image::Format format;
+        if (output == nullptr || output->struct_size != sizeof(*output) ||
+            output->abi_version != SNOW_SHOT_IMAGE_CODEC_ABI_VERSION ||
+            !formatFromBridge(bridgeFormat, &format)) {
+            return 0;
+        }
+        const auto* info = service().encoder_info(format);
+        if (info == nullptr)
+            return 0;
+        const auto range = [](const snow::image::EncoderOptionRange& source) {
+            return SnowShotImageCodecEncoderOptionRange{source.minimum, source.maximum,
+                                                        source.default_value};
+        };
+        const uint32_t structSize = output->struct_size;
+        const uint32_t abiVersion = output->abi_version;
+        *output = {};
+        output->struct_size = structSize;
+        output->abi_version = abiVersion;
+        output->format = formatToBridge(info->format);
+        output->features = static_cast<uint32_t>(info->features);
+        output->quality = range(info->quality);
+        output->effort = range(info->effort);
+        output->lossless_effort = range(info->lossless_effort);
+        output->compression_level = range(info->compression_level);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
 int32_t snow_shot_image_codec_encode_rgba8(const uint8_t* pixels, uint64_t pixelsSize,
                                            uint32_t width, uint32_t height, uint64_t rowStride,
                                            const SnowShotImageCodecEncodeOptions* bridgeOptions,

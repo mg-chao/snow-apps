@@ -160,6 +160,10 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Compression level</source>
+            <translation>Compression level</translation>
+        </message>
+        <message>
             <source>Delete</source>
             <translation>Delete</translation>
         </message>
@@ -188,6 +192,10 @@
             <translation>Height</translation>
         </message>
         <message>
+            <source>High</source>
+            <translation>High</translation>
+        </message>
+        <message>
             <source>Image format</source>
             <translation>Image format</translation>
         </message>
@@ -206,6 +214,14 @@
         <message>
             <source>Lossless</source>
             <translation>Lossless</translation>
+        </message>
+        <message>
+            <source>Low</source>
+            <translation>Low</translation>
+        </message>
+        <message>
+            <source>Medium</source>
+            <translation>Medium</translation>
         </message>
         <message>
             <source>Name</source>

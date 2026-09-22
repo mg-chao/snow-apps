@@ -6,6 +6,7 @@
 #include "snow_shot/storage/persistedwindowgeometry.h"
 
 #include <QColor>
+#include <QJsonObject>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -178,6 +179,13 @@ class ScreenshotSettings final {
     bool setPdfPageSize(const QString& pageSize) const;
     [[nodiscard]] QString imageFormat() const;
     bool setImageFormat(const QString& format) const;
+    [[nodiscard]] QString compressionLevel() const;
+    bool setCompressionLevel(const QString& level) const;
+    [[nodiscard]] int imageQuality() const;
+    bool setImageQuality(int quality) const;
+    [[nodiscard]] QJsonObject manualSaveFormatOptions() const;
+    bool setManualSaveFormatOptions(const QJsonObject& options) const;
+    bool setLastManualSaveState(const QString& format, const QJsonObject& options) const;
     [[nodiscard]] QString manualSaveFilenameFormat() const;
     bool setManualSaveFilenameFormat(const QString& format) const;
     [[nodiscard]] QString autoSaveFilenameFormat() const;

@@ -664,6 +664,38 @@ bool ScreenshotSettings::setImageFormat(const QString& format) const {
     return cache().setValue(QStringLiteral("screenshot/image_format"), format);
 }
 
+QString ScreenshotSettings::compressionLevel() const {
+    return cache().value(QStringLiteral("screenshot/compression_level")).toString();
+}
+
+bool ScreenshotSettings::setCompressionLevel(const QString& level) const {
+    return cache().setValue(QStringLiteral("screenshot/compression_level"), level);
+}
+
+int ScreenshotSettings::imageQuality() const {
+    return cache().value(QStringLiteral("screenshot/image_quality")).toInt();
+}
+
+bool ScreenshotSettings::setImageQuality(int quality) const {
+    return cache().setValue(QStringLiteral("screenshot/image_quality"), quality);
+}
+
+QJsonObject ScreenshotSettings::manualSaveFormatOptions() const {
+    return cache().value(QStringLiteral("screenshot/manual_save_format_options")).toObject();
+}
+
+bool ScreenshotSettings::setManualSaveFormatOptions(const QJsonObject& options) const {
+    return cache().setValue(QStringLiteral("screenshot/manual_save_format_options"), options);
+}
+
+bool ScreenshotSettings::setLastManualSaveState(const QString& format,
+                                                const QJsonObject& options) const {
+    return cache().setValues({
+        {QStringLiteral("screenshot/last_manual_save_format"), format},
+        {QStringLiteral("screenshot/manual_save_format_options"), options},
+    });
+}
+
 QString ScreenshotSettings::manualSaveFilenameFormat() const {
     return cache().value(QStringLiteral("screenshot/manual_save_filename_format")).toString();
 }

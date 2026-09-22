@@ -28,6 +28,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QLabel>
 #include <QPointer>
 #include <QRegularExpression>
@@ -39,6 +40,7 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <optional>
 
@@ -56,6 +58,10 @@ using Shortcut = snow_shot::storage::ScreenshotSavePathShortcut;
 constexpr int kSaveFormContentWidth = 328;
 constexpr int kAspectRatioLockButtonSize = 32;
 constexpr int kMaximumDimension = 1000000;
+
+constexpr std::array<Format, 7> kFormats{
+    Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl, Format::Avif, Format::Pdf,
+};
 
 bool formatSupportsLossless(Format format) {
     return format == Format::Pdf || format == Format::Webp || format == Format::Jxl ||
@@ -81,6 +87,8 @@ class SaveContent final : public QWidget {
         : m_modal(modal), m_artifact(std::move(artifact)), m_saved(std::move(saved)) {
         setObjectName(QStringLiteral("saveDialogContent"));
         m_state = ScreenshotSaveDialogState::initial({});
+        loadRememberedFormatOptions();
+        applyRememberedFormatOptions();
         auto* layout = new QHBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(20);
@@ -176,10 +184,13 @@ class SaveContent final : public QWidget {
         m_quality = new AdSlider(m_form);
         m_quality->setTracking(false);
         m_quality->setObjectName(QStringLiteral("saveQualitySlider"));
-        m_quality->setRange(1, 100);
-        m_quality->setValue(100);
+        m_quality->setRange(0, 100);
+        m_quality->setValue(m_state.output.quality);
         m_quality->setSingleStep(1);
-        addField("Quality", m_quality, "quality");
+        m_qualityItem = addField("Quality", m_quality, "quality");
+        m_compression = new AdSelect(m_form);
+        m_compression->setObjectName(QStringLiteral("saveCompressionLevelSelect"));
+        m_compressionItem = addField("Compression level", m_compression, "compression-level");
         m_error = new QLabel(m_form);
         m_error->setObjectName(QStringLiteral("saveErrorLabel"));
         m_error->setWordWrap(true);
@@ -207,7 +218,9 @@ class SaveContent final : public QWidget {
                 validateFields();
         });
         connect(m_format, &AdSelect::currentValueChanged, this, [this](const QVariant& value) {
+            rememberCurrentFormatOptions();
             m_state.output.format = ScreenshotImageFileService::formatForKey(value.toString());
+            applyRememberedFormatOptions();
             changed();
         });
         connect(m_width, &AdInputNumber::valueChanged, this,
@@ -236,6 +249,13 @@ class SaveContent final : public QWidget {
         });
         connect(m_quality, &AdSlider::valueChanged, this, [this](double value) {
             m_state.output.quality = qRound(value);
+            rememberCurrentFormatOptions();
+            changed();
+        });
+        connect(m_compression, &AdSelect::currentValueChanged, this, [this](const QVariant& value) {
+            m_state.output.compressionLevel =
+                ScreenshotImageFileService::compressionLevelForKey(value.toString());
+            rememberCurrentFormatOptions();
             changed();
         });
         retranslate();
@@ -342,9 +362,59 @@ class SaveContent final : public QWidget {
         input->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         return input;
     }
-    void addField(const char* label, QWidget* editor, const char* key) {
+    AdFormItem* addField(const char* label, QWidget* editor, const char* key) {
         auto* item = m_form->addField({}, editor, QString::fromLatin1(key));
         item->setProperty("exportLabel", label);
+        return item;
+    }
+    void loadRememberedFormatOptions() {
+        const QJsonObject remembered =
+            snow_shot::storage::ScreenshotSettings().manualSaveFormatOptions();
+        for (Format format : kFormats) {
+            ScreenshotImageEncodingOptions options;
+            const QJsonObject stored =
+                remembered.value(ScreenshotImageFileService::formatKey(format)).toObject();
+            options.quality = stored.value(QStringLiteral("quality")).toInt(100);
+            options.compressionLevel = ScreenshotImageFileService::compressionLevelForKey(
+                stored.value(QStringLiteral("compression_level")).toString());
+            m_formatOptions.insert(static_cast<int>(format), options);
+        }
+    }
+    void rememberCurrentFormatOptions() {
+        m_formatOptions.insert(static_cast<int>(m_state.output.format),
+                               ScreenshotImageEncodingOptions{m_state.output.quality,
+                                                              m_state.output.compressionLevel});
+    }
+    void applyRememberedFormatOptions() {
+        const auto options = m_formatOptions.value(static_cast<int>(m_state.output.format));
+        m_state.output.quality = options.quality;
+        m_state.output.compressionLevel = options.compressionLevel;
+        if (m_quality != nullptr) {
+            const QSignalBlocker blocker(m_quality);
+            m_quality->setValue(options.quality);
+        }
+        if (m_compression != nullptr) {
+            const QSignalBlocker blocker(m_compression);
+            m_compression->setCurrentValue(
+                ScreenshotImageFileService::compressionLevelKey(options.compressionLevel));
+        }
+    }
+    QJsonObject serializedFormatOptions() const {
+        QJsonObject result;
+        for (Format format : kFormats) {
+            const auto options = m_formatOptions.value(static_cast<int>(format));
+            QJsonObject stored;
+            if (ScreenshotImageFileService::supportsQuality(format))
+                stored.insert(QStringLiteral("quality"), qBound(0, options.quality, 100));
+            if (ScreenshotImageFileService::supportsCompressionLevel(format)) {
+                stored.insert(
+                    QStringLiteral("compression_level"),
+                    ScreenshotImageFileService::compressionLevelKey(options.compressionLevel));
+            }
+            if (!stored.isEmpty())
+                result.insert(ScreenshotImageFileService::formatKey(format), stored);
+        }
+        return result;
     }
     void validateFields() {
         if (!m_source.rows.isValid())
@@ -398,6 +468,7 @@ class SaveContent final : public QWidget {
         updateOutputDescriptionTheme();
         updateOutputDescription();
         m_quality->setAccessibleName(tr("Quality"));
+        m_compression->setAccessibleName(tr("Compression level"));
         for (auto* item : findChildren<AdFormItem*>()) {
             const QByteArray source = item->property("exportLabel").toByteArray();
             if (!source.isEmpty())
@@ -422,6 +493,16 @@ class SaveContent final : public QWidget {
                              ? QStringLiteral("jpeg")
                              : ScreenshotImageFileService::extension(m_state.output.format);
         m_format->setCurrentValue(key);
+        {
+            const QSignalBlocker compressionBlocker(m_compression);
+            m_compression->setOptions({
+                {QStringLiteral("low"), tr("Low")},
+                {QStringLiteral("medium"), tr("Medium")},
+                {QStringLiteral("high"), tr("High")},
+            });
+            m_compression->setCurrentValue(
+                ScreenshotImageFileService::compressionLevelKey(m_state.output.compressionLevel));
+        }
         rebuildShortcuts();
         updateControls();
         retranslateSecondary();
@@ -738,8 +819,10 @@ class SaveContent final : public QWidget {
         changed();
     }
     void updateControls() {
-        m_quality->setEnabled(m_state.output.format != Format::Png &&
-                              m_state.output.format != Format::Bmp);
+        m_qualityItem->setVisible(
+            ScreenshotImageFileService::supportsQuality(m_state.output.format));
+        m_compressionItem->setVisible(
+            ScreenshotImageFileService::supportsCompressionLevel(m_state.output.format));
         AdSlider::Mark minimumMark;
         minimumMark.label = tr("0%");
         AdSlider::Mark maximumMark;
@@ -947,8 +1030,10 @@ class SaveContent final : public QWidget {
     void beginSave() {
         if (m_saving || m_closed)
             return;
-        static_cast<void>(snow_shot::storage::ScreenshotSettings().setLastManualSaveFormat(
-            ScreenshotImageFileService::formatKey(m_state.output.format)));
+        rememberCurrentFormatOptions();
+        static_cast<void>(snow_shot::storage::ScreenshotSettings().setLastManualSaveState(
+            ScreenshotImageFileService::formatKey(m_state.output.format),
+            serializedFormatOptions()));
         m_saving = true;
         m_savePath = m_state.outputPath();
         m_form->setDisabled(true);
@@ -1019,7 +1104,8 @@ class SaveContent final : public QWidget {
                     return;
                 }
                 if (adoptedPng->has_value())
-                    static_cast<void>(m_artifact->adoptCanonicalPng(std::move(**adoptedPng)));
+                    static_cast<void>(m_artifact->adoptCanonicalPng(
+                        std::move(**adoptedPng), m_state.output.compressionLevel));
                 static_cast<void>(
                     snow_shot::storage::ScreenshotSettings().setLastManualSaveDirectory(
                         QFileInfo(result.savedPath).absolutePath()));
@@ -1065,6 +1151,10 @@ class SaveContent final : public QWidget {
     bool m_percentage = false;
     AspectRatioLockButton* m_lock = nullptr;
     AdSlider* m_quality = nullptr;
+    AdFormItem* m_qualityItem = nullptr;
+    AdSelect* m_compression = nullptr;
+    AdFormItem* m_compressionItem = nullptr;
+    QHash<int, ScreenshotImageEncodingOptions> m_formatOptions;
     QLabel* m_error = nullptr;
     QWidget* m_shortcutsHost = nullptr;
     adqt::widgets::detail::FlowLayout* m_shortcutsLayout = nullptr;
@@ -1083,6 +1173,10 @@ class SaveContent final : public QWidget {
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Width"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Height"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Quality"),
+    QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Compression level"),
+    QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Low"),
+    QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "Medium"),
+    QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "High"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "0%"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "100%"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "PNG"),
@@ -1112,6 +1206,13 @@ ScreenshotSaveDialogState ScreenshotSaveDialogState::initial(QSize size) {
     result.output.size = size;
     result.output.format =
         ScreenshotImageFileService::formatForKey(settings.lastManualSaveFormat());
+    const QJsonObject rememberedOptions =
+        settings.manualSaveFormatOptions()
+            .value(ScreenshotImageFileService::formatKey(result.output.format))
+            .toObject();
+    result.output.quality = rememberedOptions.value(QStringLiteral("quality")).toInt(100);
+    result.output.compressionLevel = ScreenshotImageFileService::compressionLevelForKey(
+        rememberedOptions.value(QStringLiteral("compression_level")).toString());
     return result;
 }
 void ScreenshotSaveDialogState::setDimension(bool width, int value) {

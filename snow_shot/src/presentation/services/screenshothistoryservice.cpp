@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
+#include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -110,6 +112,13 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
     }
     draft.resultImage = entry.resultImage;
     draft.preparedResultImage = entry.preparedResultImage;
+    const snow_shot::storage::ScreenshotSettings settings;
+    draft.pngCompressionLevel =
+        ScreenshotImageFileService::encodeOptions(
+            ScreenshotImageFileFormat::Png,
+            ScreenshotImageEncodingOptions{100, ScreenshotImageFileService::compressionLevelForKey(
+                                                    settings.compressionLevel())})
+            .compression_level;
     return draft;
 }
 

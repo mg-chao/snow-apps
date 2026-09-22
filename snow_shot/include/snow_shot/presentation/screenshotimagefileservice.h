@@ -29,6 +29,20 @@ enum class ScreenshotImageFileFormat {
     Pdf,
 };
 
+enum class ScreenshotCompressionLevel {
+    Low,
+    Medium,
+    High,
+};
+
+struct ScreenshotImageEncodingOptions {
+    int quality = 100;
+    ScreenshotCompressionLevel compressionLevel = ScreenshotCompressionLevel::Low;
+
+    friend bool operator==(const ScreenshotImageEncodingOptions&,
+                           const ScreenshotImageEncodingOptions&) = default;
+};
+
 struct ScreenshotImageFileSaveResult {
     QString path;
     QString error;
@@ -60,22 +74,32 @@ class ScreenshotImageFileService final {
     [[nodiscard]] static ScreenshotImageFileFormat
     formatForDialogSelection(const QString& path, const QString& selectedFilter);
     [[nodiscard]] static snow::image::Format snowImageFormat(ScreenshotImageFileFormat format);
+    [[nodiscard]] static bool supportsQuality(ScreenshotImageFileFormat format);
+    [[nodiscard]] static bool supportsCompressionLevel(ScreenshotImageFileFormat format);
+    [[nodiscard]] static QString compressionLevelKey(ScreenshotCompressionLevel level);
+    [[nodiscard]] static ScreenshotCompressionLevel compressionLevelForKey(const QString& key);
+    [[nodiscard]] static snow::image::EncodeOptions
+    encodeOptions(ScreenshotImageFileFormat format, ScreenshotImageEncodingOptions options = {});
     [[nodiscard]] static snow::image::EncodeOptions encodeOptions(ScreenshotImageFileFormat format,
-                                                                  int quality = 100);
+                                                                  int quality);
     [[nodiscard]] static ScreenshotImageFileSaveResult
     writeEncodedFile(const QString& encodedFile, const QString& path,
                      ScreenshotImageFileFormat format, std::function<bool()> cancelled = {});
+    [[nodiscard]] static ScreenshotImageFileSaveResult
+    write(const snow_shot::storage::PreparedPngImage& png, const QString& path,
+          std::function<bool()> cancelled = {});
 
     [[nodiscard]] static ScreenshotImageFileSaveResult
     writePdf(const screenshot_pdf::Payload& payload, const QString& path,
              ScreenshotPdfOptions options, std::function<bool()> cancelled = {});
     [[nodiscard]] static ScreenshotImageFileSaveResult
     write(const QImage& image, const QString& path, ScreenshotImageFileFormat format,
-          ScreenshotPdfOptions pdf = {}, std::function<bool()> cancelled = {});
-    [[nodiscard]] static ScreenshotImageFileSaveResult write(const ScreenshotImageRowSource& source,
-                                                             const QString& path,
-                                                             ScreenshotImageFileFormat format,
-                                                             ScreenshotPdfOptions pdf = {});
+          ScreenshotPdfOptions pdf = {}, std::function<bool()> cancelled = {},
+          ScreenshotImageEncodingOptions encoding = {});
+    [[nodiscard]] static ScreenshotImageFileSaveResult
+    write(const ScreenshotImageRowSource& source, const QString& path,
+          ScreenshotImageFileFormat format, ScreenshotPdfOptions pdf = {},
+          ScreenshotImageEncodingOptions encoding = {});
     [[nodiscard]] static ScreenshotImageFileSaveResult
     saveAutomatically(const QImage& image, const QStringList& candidateDirectories,
                       const QDateTime& timestamp);
@@ -83,11 +107,13 @@ class ScreenshotImageFileService final {
     saveAutomatically(const QImage& image, const QStringList& candidateDirectories,
                       ScreenshotImageFileFormat format, const QString& filenameFormat,
                       const QDateTime& timestamp = QDateTime::currentDateTime(),
-                      ScreenshotPdfOptions pdf = {});
-    [[nodiscard]] static ScreenshotImageFileSaveResult saveAutomatically(
-        const ScreenshotImageRowSource& source, const QStringList& candidateDirectories,
-        ScreenshotImageFileFormat format, const QString& filenameFormat,
-        const QDateTime& timestamp = QDateTime::currentDateTime(), ScreenshotPdfOptions pdf = {});
+                      ScreenshotPdfOptions pdf = {}, ScreenshotImageEncodingOptions encoding = {});
+    [[nodiscard]] static ScreenshotImageFileSaveResult
+    saveAutomatically(const ScreenshotImageRowSource& source,
+                      const QStringList& candidateDirectories, ScreenshotImageFileFormat format,
+                      const QString& filenameFormat,
+                      const QDateTime& timestamp = QDateTime::currentDateTime(),
+                      ScreenshotPdfOptions pdf = {}, ScreenshotImageEncodingOptions encoding = {});
     [[nodiscard]] static bool publishFileToClipboard(QClipboard* clipboard, const QString& path);
     [[nodiscard]] static ScreenshotImageFileSaveResult
     saveAutomatically(const snow_shot::storage::PreparedPngImage& png,

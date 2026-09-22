@@ -276,6 +276,7 @@ void queuedRequestsRetainTargetsAndOutputSettings() {
     request.historyEnabled = true;
     request.directories = {QStringLiteral("original-directory")};
     request.imageFormat = QStringLiteral("pdf");
+    request.compressionLevel = ScreenshotCompressionLevel::High;
     request.pdf.pageSize = ScreenshotPdfPageSize::LandscapeA4;
     request.filenameFormat = QStringLiteral("original-filename");
     f.workflow.enqueue({});
@@ -296,6 +297,7 @@ void queuedRequestsRetainTargetsAndOutputSettings() {
                     queued.requestedAt.toMSecsSinceEpoch() == 123456 &&
                     queued.directories == QStringList{QStringLiteral("original-directory")} &&
                     queued.imageFormat == QStringLiteral("pdf") &&
+                    queued.compressionLevel == ScreenshotCompressionLevel::High &&
                     queued.pdf.pageSize == ScreenshotPdfPageSize::LandscapeA4 &&
                     queued.pdf.quality == 100 &&
                     queued.filenameFormat == QStringLiteral("original-filename"),

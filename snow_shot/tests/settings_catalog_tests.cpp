@@ -226,11 +226,11 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 40, "macOS adds one permissions section");
-    require(itemCount == 167, "macOS adds login settings and omits administrator controls, "
+    require(itemCount == 169, "macOS adds login settings and omits administrator controls, "
                               "Windows-only choices, and tray middle-click");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
-    require(itemCount == 169, "catalog must contain one hundred sixty-nine items");
+    require(itemCount == 171, "catalog must contain one hundred seventy-one items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -722,8 +722,28 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* pdfPageSize =
         catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
                       QStringLiteral("screenshot-output.pdf-page-size")});
-    require(pdfPageSize != nullptr && storagePage->sections.at(0).items.at(2).id == pdfPageSize->id,
-            "PDF page size must immediately follow image format");
+    const auto* compressionLevel =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
+                      QStringLiteral("screenshot-output.compression-level")});
+    const auto* imageQuality =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
+                      QStringLiteral("screenshot-output.image-quality")});
+    require(compressionLevel != nullptr && imageQuality != nullptr && pdfPageSize != nullptr &&
+                storagePage->sections.at(0).items.at(2).id == compressionLevel->id &&
+                storagePage->sections.at(0).items.at(3).id == imageQuality->id &&
+                storagePage->sections.at(0).items.at(4).id == pdfPageSize->id,
+            "compression and quality must follow image format before PDF page size");
+    const auto& compression =
+        std::get<settings::SettingsSelectDefinition>(compressionLevel->payload);
+    const auto& quality = std::get<settings::SettingsSliderDefinition>(imageQuality->payload);
+    require(compression.binding == settings::SettingsSelectBinding::ScreenshotCompressionLevel &&
+                compression.options.size() == 3 &&
+                compression.options.at(0).value == QStringLiteral("low") &&
+                compression.options.at(1).value == QStringLiteral("medium") &&
+                compression.options.at(2).value == QStringLiteral("high") &&
+                quality.binding == settings::SettingsSliderBinding::ScreenshotImageQuality &&
+                quality.suffix.translated() == QStringLiteral("%"),
+            "image compression and quality controls must expose their fixed settings bindings");
     const auto& paper = std::get<settings::SettingsSelectDefinition>(pdfPageSize->payload);
     require(paper.binding == settings::SettingsSelectBinding::ScreenshotPdfPageSize &&
                 paper.options.size() == 3 &&

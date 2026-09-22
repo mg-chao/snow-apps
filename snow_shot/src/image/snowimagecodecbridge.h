@@ -148,8 +148,27 @@ typedef struct SnowShotImageCodecEncodeResult {
     uint8_t reserved[6];
 } SnowShotImageCodecEncodeResult;
 
+typedef struct SnowShotImageCodecEncoderOptionRange {
+    int32_t minimum;
+    int32_t maximum;
+    int32_t default_value;
+} SnowShotImageCodecEncoderOptionRange;
+
+typedef struct SnowShotImageCodecEncoderInfo {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    uint32_t format;
+    uint32_t features;
+    SnowShotImageCodecEncoderOptionRange quality;
+    SnowShotImageCodecEncoderOptionRange effort;
+    SnowShotImageCodecEncoderOptionRange lossless_effort;
+    SnowShotImageCodecEncoderOptionRange compression_level;
+} SnowShotImageCodecEncoderInfo;
+
 SNOW_SHOT_IMAGE_CODEC_API uint32_t SNOW_SHOT_IMAGE_CODEC_CALL
 snow_shot_image_codec_abi_version(void);
+SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL
+snow_shot_image_codec_encoder_info(uint32_t format, SnowShotImageCodecEncoderInfo* output);
 
 // Output buffers must be zero-initialized and released before being reused.
 SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_codec_encode_rgba8(
