@@ -14,14 +14,21 @@ import shutil
 import sys
 import time
 
-ALLOWED = (
+WINDOWS_PACKAGES = (
     'setup/snow-shot_windows-x64-offline.exe',
     'setup/snow-shot_windows-x64-online.exe',
     'setup/snow-shot_windows-x64-portable.zip',
     'setup/snow-shot_windows-x64-offline-update.zip',
     'setup/snow-shot_windows-x64-online-update.zip',
-    'setup/SHA256SUMS', 'latest-version.json', 'latest-version.txt',
 )
+MACOS_PACKAGES = (
+    'setup/snow-shot_macos-arm64.dmg',
+    'setup/snow-shot_macos-arm64.dmg.sha256',
+    'setup/install-snow-shot-macos.sh',
+)
+METADATA = ('setup/SHA256SUMS', 'latest-version.json', 'latest-version.txt')
+WINDOWS_ALLOWED = WINDOWS_PACKAGES + METADATA
+ALLOWED = WINDOWS_PACKAGES + MACOS_PACKAGES + METADATA
 VERSION = re.compile(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)'
                      r'(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?'
                      r'(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?', re.ASCII)
@@ -120,12 +127,16 @@ class Publisher:
     def restore(self, identifier):
         directory = self.release(identifier)
         journal = json.loads((directory / 'journal.json').read_text(encoding='utf-8'))
-        for name in ALLOWED:
+        # Older Windows-only transactions must never remove later macOS files.
+        if set(journal['files']) not in (set(WINDOWS_ALLOWED), set(ALLOWED)):
+            raise ValueError('Invalid rollback file allowlist')
+        managed = ALLOWED if set(journal['files']) == set(ALLOWED) else WINDOWS_ALLOWED
+        for name in managed:
             backup = directory / 'before' / name
             if name in journal['before']:
                 if digest(backup) != journal['before'][name]:
                     raise ValueError('Rollback backup checksum mismatch')
-        for name in ALLOWED:
+        for name in managed:
             if name in journal['before']:
                 self.replace(directory / 'before' / name, name)
             elif (self.web / name).exists():
@@ -156,9 +167,12 @@ class Publisher:
             identifier = request['id']
             directory = self.release(identifier)
             files = request['files']
-            if set(files) != set(ALLOWED):
+            if set(files) not in (set(WINDOWS_ALLOWED), set(ALLOWED)):
                 raise ValueError('The publish file allowlist does not match')
-            for name in ALLOWED:
+            managed = ALLOWED if set(files) == set(ALLOWED) else WINDOWS_ALLOWED
+            if managed == WINDOWS_ALLOWED and any((self.web / name).exists() for name in MACOS_PACKAGES):
+                raise ValueError('macOS is published; configure the Mac host to release both platforms together')
+            for name in managed:
                 path = directory / 'files' / name
                 no_links(path)
                 if path.stat().st_size != files[name]['size'] or digest(path) != files[name]['sha256']:
@@ -177,12 +191,12 @@ class Publisher:
                 if key < old_key:
                     raise ValueError('Refusing a release downgrade; use explicit rollback')
                 if key == old_key:
-                    if all((self.web / n).exists() and digest(self.web / n) == files[n]['sha256'] for n in ALLOWED):
+                    if all((self.web / n).exists() and digest(self.web / n) == files[n]['sha256'] for n in managed):
                         shutil.rmtree(directory)
                         return {'idempotent': True, 'version': version}
                     raise ValueError('Refusing different artifacts under the same release version')
             before = {}
-            for name in ALLOWED:
+            for name in managed:
                 source = self.web / name
                 if source.exists():
                     backup = directory / 'before' / name
@@ -195,10 +209,10 @@ class Publisher:
             atomic_json(directory / 'journal.json', journal)
             atomic_json(self.private / 'pending.json', {'id': identifier, 'createdAt': time.time()})
             try:
-                for name in ALLOWED:
+                for name in managed:
                     self.replace(directory / 'files' / name, name)
                     checkpoint(name)
-                for name in ALLOWED:
+                for name in managed:
                     if digest(self.web / name) != files[name]['sha256']:
                         raise ValueError('Published artifact verification failed')
                 # Keep pending until the client verifies through public HTTPS and commits.

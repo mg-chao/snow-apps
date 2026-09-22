@@ -12,6 +12,12 @@ param(
     [Parameter(Mandatory)][uri]$PublicBaseUrl,
     [string]$SigningKeyPath,
     [switch]$SkipBuild,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$MacHost,
+    [ValidatePattern('^[A-Za-z0-9_-]+$')][string]$MacUser,
+    [ValidateRange(1, 65535)][int]$MacPort = 22,
+    [string]$MacIdentityFile,
+    [string]$MacKnownHostsFile,
+    [string]$MacProjectDirectory,
     [switch]$AuditOnly,
     [ValidateRange(1, 256)][int]$Parallelism = 4
 )
@@ -27,7 +33,17 @@ if ($PublicBaseUrl.Scheme -ne 'https' -or $PublicBaseUrl.UserInfo) { throw 'Publ
 if ($RemoteWebRoot -notmatch '^/[A-Za-z0-9_./-]+$' -or $RemoteWebRoot.Contains('..')) { throw 'Invalid remote web root.' }
 $allowed = @('setup/snow-shot_windows-x64-offline.exe', 'setup/snow-shot_windows-x64-online.exe',
     'setup/snow-shot_windows-x64-portable.zip', 'setup/snow-shot_windows-x64-offline-update.zip',
-    'setup/snow-shot_windows-x64-online-update.zip', 'setup/SHA256SUMS', 'latest-version.json', 'latest-version.txt')
+    'setup/snow-shot_windows-x64-online-update.zip')
+if ($MacHost) {
+    if (-not $MacProjectDirectory) { throw 'MacProjectDirectory is required with MacHost.' }
+    if (-not $MacUser) { throw 'MacUser is required with MacHost.' }
+    if ($MacProjectDirectory -notmatch '^/[A-Za-z0-9_./-]+$' -or $MacProjectDirectory.Contains('..')) {
+        throw 'MacProjectDirectory must be an absolute POSIX path without spaces or traversal.'
+    }
+    $allowed += @('setup/snow-shot_macos-arm64.dmg', 'setup/snow-shot_macos-arm64.dmg.sha256',
+        'setup/install-snow-shot-macos.sh')
+} elseif ($MacProjectDirectory) { throw 'MacHost is required with MacProjectDirectory.' }
+$allowed += @('setup/SHA256SUMS', 'latest-version.json', 'latest-version.txt')
 if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version; fixed files under $RemoteWebRoot", $Operation)) {
     $allowed | ForEach-Object { Write-Output $_ }
     return
@@ -77,13 +93,41 @@ try {
 }
 if (-not [IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory = Join-Path $repo $BuildDirectory }
 $BuildDirectory = [IO.Path]::GetFullPath($BuildDirectory)
-if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot 'package-snow-shot.ps1') -BuildDirectory $BuildDirectory -Parallelism $Parallelism
-    if ($LASTEXITCODE -ne 0) { throw 'Packaging failed.' }
-}
 $transaction = [guid]::NewGuid().ToString('N')
 $releaseDirectory = Join-Path $repo "artifacts/publish-$transaction"
 $null = New-Item -ItemType Directory -Path (Join-Path $releaseDirectory 'setup')
+$macJob = $null
+try {
+    if ($MacHost) {
+        $macParameters = @{ MacHost = $MacHost; MacUser = $MacUser; MacPort = $MacPort;
+            MacIdentityFile = $MacIdentityFile; MacKnownHostsFile = $MacKnownHostsFile;
+            MacProjectDirectory = $MacProjectDirectory; Version = $Version; Parallelism = $Parallelism;
+            OutputDirectory = (Join-Path $releaseDirectory 'setup'); SkipBuild = [bool]$SkipBuild }
+        $macJob = Start-Job -ScriptBlock {
+            param($script, $parameters)
+            $ErrorActionPreference = 'Stop'
+            & $script @parameters
+        } -ArgumentList (Join-Path $PSScriptRoot 'package-snow-shot-remote-macos.ps1'), $macParameters
+        Write-Output "macOS packaging runs alongside Windows. Log: $releaseDirectory/setup/macos-build.log"
+    }
+    if (-not $SkipBuild) {
+        & (Join-Path $PSScriptRoot 'package-snow-shot.ps1') -BuildDirectory $BuildDirectory -Parallelism $Parallelism
+        if ($LASTEXITCODE -ne 0) { throw 'Packaging failed.' }
+    }
+} finally {
+    # Join even if Windows fails: do not leave an unattended SSH packaging process.
+    if ($macJob) {
+        try {
+            $macJob | Wait-Job | Receive-Job -ErrorAction Stop
+            if ($macJob.State -ne 'Completed') { throw "macOS packaging failed; see $releaseDirectory/setup/macos-build.log" }
+        } finally { Remove-Job $macJob }
+    }
+}
+if ($MacHost) {
+    # Normalize Git's Windows line endings: this file is executed by Apple's Bash.
+    $installer = (Get-Content -Raw (Join-Path $PSScriptRoot 'install-snow-shot-macos.sh')).Replace("`r`n", "`n")
+    [IO.File]::WriteAllText((Join-Path $releaseDirectory 'setup/install-snow-shot-macos.sh'), $installer, [Text.UTF8Encoding]::new($false))
+}
 $packages = @()
 foreach ($variant in @('online', 'offline', 'portable')) {
     $kinds = if ($variant -eq 'portable') { @('portable') } else { @('installer', 'update') }
@@ -146,7 +190,14 @@ if ($published.ContainsKey('latest-version.txt') -and $published.ContainsKey('la
     }
 }
 [IO.File]::WriteAllText((Join-Path $releaseDirectory 'latest-version.txt'), $Version, [Text.UTF8Encoding]::new($false))
-($packages | ForEach-Object { "$($_.sha256)  $([IO.Path]::GetFileName($_.path))" }) -join "`n" |
+$checksums = @($packages | ForEach-Object { "$($_.sha256)  $([IO.Path]::GetFileName($_.path))" })
+if ($MacHost) {
+    foreach ($name in @('snow-shot_macos-arm64.dmg', 'install-snow-shot-macos.sh')) {
+        $hash = (Get-FileHash -LiteralPath (Join-Path $releaseDirectory "setup/$name") -Algorithm SHA256).Hash.ToLowerInvariant()
+        $checksums += "$hash  $name"
+    }
+}
+$checksums -join "`n" |
     Set-Content -LiteralPath (Join-Path $releaseDirectory 'setup/SHA256SUMS') -Encoding ascii
 $files = @{}
 foreach ($name in $allowed) {

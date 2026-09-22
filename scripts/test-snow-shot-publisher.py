@@ -23,12 +23,12 @@ class PublisherTests(unittest.TestCase):
         (self.web / 'index.html').write_bytes(b'preserve website')
         self.publisher = module.Publisher(self.web)
 
-    def stage(self, version='1.0.0-beta', content=b'release'):
+    def stage(self, version='1.0.0-beta', content=b'release', allowed=None):
         identifier = uuid.uuid4().hex
         response = self.publisher.begin({'id': identifier})
         directory = Path(response['uploadDirectory'])
         files = {}
-        for name in module.ALLOWED:
+        for name in (allowed or module.ALLOWED):
             data = content + name.encode()
             if name == 'latest-version.txt':
                 data = version.encode()
@@ -143,6 +143,38 @@ class PublisherTests(unittest.TestCase):
         for version in ('01.0.0', '1.0', '1.0.0-beta.01', '1.0.0_a', '1.0.0-beta_1'):
             with self.assertRaises(ValueError):
                 module.version_key(version)
+
+    def test_both_platforms_required_after_macos_launch(self):
+        first = self.stage()
+        self.publisher.activate(first)
+        self.publisher.commit(first)
+        request = self.stage('1.0.1', allowed=module.WINDOWS_ALLOWED)
+        with self.assertRaisesRegex(ValueError, 'both platforms'):
+            self.publisher.activate(request)
+        self.assertEqual((self.web / 'latest-version.txt').read_text(), '1.0.0-beta')
+
+    def test_partial_macos_release_rejected(self):
+        request = self.stage()
+        del request['files']['setup/snow-shot_macos-arm64.dmg.sha256']
+        with self.assertRaisesRegex(ValueError, 'allowlist'):
+            self.publisher.activate(request)
+        self.assertFalse((self.web / module.MACOS_PACKAGES[0]).exists())
+
+    def test_windows_to_combined_release_and_legacy_rollback(self):
+        windows = self.stage(allowed=module.WINDOWS_ALLOWED)
+        self.publisher.activate(windows)
+        self.publisher.commit(windows)
+        combined = self.stage('1.0.1')
+        self.publisher.activate(combined)
+        self.publisher.commit(combined)
+        self.publisher.rollback({})
+        self.assertTrue(all(not (self.web / name).exists() for name in module.MACOS_PACKAGES))
+        # A legacy transaction owns only its journaled paths, even if a separate
+        # operator later placed a Mac artifact on the server.
+        mac = self.web / module.MACOS_PACKAGES[0]
+        mac.write_bytes(b'outside the legacy transaction')
+        self.publisher.rollback({})
+        self.assertEqual(mac.read_bytes(), b'outside the legacy transaction')
 
 
 if __name__ == '__main__':
