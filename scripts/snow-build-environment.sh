@@ -64,6 +64,7 @@ snow_setup_tools() {
         grep -Eq '"QtVersion"[[:space:]]*:[[:space:]]*"6\.11\.1"' "$snow_qt_stamp" || snow_die 'The static Qt build stamp has the wrong Qt version.'
         grep -Eq '"Architecture"[[:space:]]*:[[:space:]]*"'"$snow_arch"'"' "$snow_qt_stamp" || snow_die 'The static Qt build stamp has the wrong architecture.'
         grep -Eq '"Configuration"[[:space:]]*:[[:space:]]*"Release"' "$snow_qt_stamp" || snow_die 'The static Qt build stamp is not a Release kit.'
+        grep -Eq '"DeploymentTarget"[[:space:]]*:[[:space:]]*"14\.0"' "$snow_qt_stamp" || snow_die 'The static Qt build has the wrong deployment target.'
         grep -Eq '"Ltcg"[[:space:]]*:[[:space:]]*true' "$snow_qt_stamp" || snow_die 'The static Qt build does not enable LTO.'
         grep -Eq '"SystemPng"[[:space:]]*:[[:space:]]*true' "$snow_qt_stamp" || snow_die 'The static Qt build does not use the audited system libpng.'
         grep -Eq '"SystemZlib"[[:space:]]*:[[:space:]]*true' "$snow_qt_stamp" || snow_die 'The static Qt build does not use the audited system zlib.'

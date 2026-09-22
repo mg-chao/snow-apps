@@ -8,6 +8,7 @@ usage() {
 }
 
 qt_version=6.11.1
+qt_deployment_target=14.0
 arch="$(snow_default_arch)"
 install_prefix=''
 dependency_prefix=''
@@ -46,7 +47,7 @@ export PATH="$snow_repo_root/.tools/macos-dev/bin:$snow_repo_root/.tools/macos-m
 for tool in cmake ninja curl tar python3 shasum xcrun; do
     command -v "$tool" >/dev/null || snow_die "Missing $tool. Install the prerequisites listed in docs-macos-build.md."
 done
-export MACOSX_DEPLOYMENT_TARGET=15.0
+export MACOSX_DEPLOYMENT_TARGET="$qt_deployment_target"
 
 # Qt's source configure requires a discoverable full-Xcode version by default,
 # even though Apple Command Line Tools provide the compiler and SDK needed by
@@ -103,6 +104,7 @@ if [[ -f "$qt_config" && "$force" == 0 ]]; then
         grep -Eq '"QtVersion"[[:space:]]*:[[:space:]]*"6\.11\.1"' "$stamp" &&
         grep -Eq '"Architecture"[[:space:]]*:[[:space:]]*"'"$arch"'"' "$stamp" &&
         grep -Eq '"Configuration"[[:space:]]*:[[:space:]]*"Release"' "$stamp" &&
+        grep -Eq '"DeploymentTarget"[[:space:]]*:[[:space:]]*"14\.0"' "$stamp" &&
         grep -Eq '"Ltcg"[[:space:]]*:[[:space:]]*true' "$stamp" &&
         grep -Eq '"SystemPng"[[:space:]]*:[[:space:]]*true' "$stamp" &&
         grep -Eq '"SystemZlib"[[:space:]]*:[[:space:]]*true' "$stamp" &&
@@ -144,7 +146,7 @@ mkdir -p "$build_dir"
         -skip qtlanguageserver -skip qtshadertools \
         -nomake tests -nomake examples -- \
         -DCMAKE_OSX_ARCHITECTURES="$cmake_arch" \
-        -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="$qt_deployment_target" \
         -DCMAKE_PREFIX_PATH="$dependency_prefix" \
         -DZLIB_ROOT="$dependency_prefix" -DPNG_ROOT="$dependency_prefix" \
         -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
@@ -181,12 +183,14 @@ for component in root qtbase qtsvg qttools; do
     cp -R "$component_source/LICENSES" "$license_root/$component/"
 done
 mkdir -p "$(dirname "$stamp")"
-python3 - "$stamp" "$qt_version" "$arch" "$dependency_fingerprint" "$source_url" "$parallelism" <<'PY'
+python3 - "$stamp" "$qt_version" "$arch" "$qt_deployment_target" \
+    "$dependency_fingerprint" "$source_url" "$parallelism" <<'PY'
 import json, pathlib, sys
-path, version, arch, fingerprint, source, parallelism = sys.argv[1:]
+path, version, arch, deployment_target, fingerprint, source, parallelism = sys.argv[1:]
 value = {
     'SchemaVersion': 1, 'QtVersion': version, 'Architecture': arch,
-    'Configuration': 'Release', 'DependencyFingerprint': fingerprint,
+    'Configuration': 'Release', 'DeploymentTarget': deployment_target,
+    'DependencyFingerprint': fingerprint,
     'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
     'LicenseBundle': 'share/snow-apps/qt-licenses', 'SourceArchive': source,
     'Submodules': ['qtbase', 'qtsvg', 'qttools'], 'Parallelism': int(parallelism),

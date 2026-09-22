@@ -122,6 +122,7 @@ if name == 'openssl':
         stamp.parent.mkdir(parents=True)
         stamp.write_text(json.dumps({"SchemaVersion": 1, "QtVersion": "6.11.1",
                                      "Architecture": "arm64", "Configuration": "Release",
+                                     "DeploymentTarget": "14.0",
                                      "Ltcg": True, "SystemPng": True, "SystemZlib": True}))
         (self.root / "Qt kit/share/snow-apps/qt-licenses").mkdir()
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
@@ -252,7 +253,8 @@ if name == 'openssl':
         stamp = prefix / 'share/snow-apps/static-qt-build.json'
         stamp.write_text(json.dumps({
             'SchemaVersion': 1, 'QtVersion': '6.11.1', 'Architecture': 'arm64',
-            'Configuration': 'Release', 'DependencyFingerprint': fingerprint,
+            'Configuration': 'Release', 'DeploymentTarget': '14.0',
+            'DependencyFingerprint': fingerprint,
             'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
         }, indent=2))
         calls = self.run_script('build-static-qt.sh', '--install-prefix', str(prefix),
@@ -266,6 +268,8 @@ if name == 'openssl':
         self.assertIn('xcrun --show-sdk-path', builder)
         self.assertIn('qt_apple_options+=(-DQT_NO_XCODE_MIN_VERSION_CHECK=ON)', builder)
         self.assertIn('"${qt_apple_options[@]}"', builder)
+        self.assertIn('qt_deployment_target=14.0', builder)
+        self.assertIn('-DCMAKE_OSX_DEPLOYMENT_TARGET="$qt_deployment_target"', builder)
 
     def test_launch_bundle_with_arguments(self):
         app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
