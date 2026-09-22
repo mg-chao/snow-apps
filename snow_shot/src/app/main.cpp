@@ -1,4 +1,5 @@
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/app/applicationrestart.h"
 #include <QTemporaryDir>
 #include <QProcess>
 #include <QLocalServer>
@@ -99,6 +100,14 @@ int main(int argc, char* argv[]) {
     }
     QCoreApplication::setApplicationName(applicationName);
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_DIAGNOSTICS_VERSION));
+    bool applicationRestart = false;
+    if (argc > 1 && QString::fromLocal8Bit(argv[1]) == u"--restart-helper") {
+        QCoreApplication helper(argc, argv);
+        const int result = snow_shot::app::dispatchApplicationRestartHelper(helper.arguments());
+        if (result != -1)
+            return result;
+        applicationRestart = true;
+    }
     bool administratorRestart = false;
     if (argc > 1 && QString::fromLocal8Bit(argv[1]) == u"--administrator-helper") {
         QCoreApplication helper(argc, argv);
@@ -387,7 +396,9 @@ int main(int argc, char* argv[]) {
     snow_shot::presentation::capture_perf::configureTrace(
         qEnvironmentVariable("SNOW_SHOT_CAPTURE_PERF_TRACE"));
 #endif
-    auto launchArguments = QApplication::arguments();
+    auto launchArguments =
+        applicationRestart ? snow_shot::app::normalApplicationArguments(QApplication::arguments())
+                           : QApplication::arguments();
 #ifdef Q_OS_MACOS
     launchArguments = snow_shot::platform::macos::loginItemLaunchArguments(
         launchArguments, snow_shot::platform::macos::initialNativeLoginItemLaunch());

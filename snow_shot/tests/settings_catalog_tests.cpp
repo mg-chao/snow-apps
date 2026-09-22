@@ -1366,7 +1366,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(3).id == QStringLiteral("other") &&
                 trayGroups.at(3).options.size() == 4 &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
-                trayGroups.at(4).options.size() == 3 && trayOptionIds.size() == 20 &&
+                trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 21 &&
                 trayOptionIds.at(8) == QStringLiteral("quick.pin-clipboard-content") &&
                 trayOptionIds.at(9) == QStringLiteral("quick.pin-selected-files") &&
                 trayOptionIds.at(10) == QStringLiteral("quick.screen-record") &&
@@ -1381,9 +1381,18 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
                 trayOptionIds.at(18) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(19) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
+                trayOptionIds.at(19) == QStringLiteral("tray.restart-app") &&
+                trayGroups.at(4).options.at(2).kind ==
+                    settings::SettingsTrayMenuOptionKind::RestartApp &&
+                trayGroups.at(4).options.at(2).iconFactory &&
+                trayGroups.at(4).options.at(2).iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::Restart() &&
+                trayOptionIds.at(20) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
+
+    require(!trayMenuSchema->defaultValue.toArray().contains(QStringLiteral("tray.restart-app")),
+            "Restart App must remain unchecked in the default tray customization");
 
     const settings::SettingsTrayMenuOptionDefinition* hotkeyToggleTrayOption = nullptr;
     for (const auto& group : trayGroups) {

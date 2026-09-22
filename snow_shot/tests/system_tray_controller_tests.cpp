@@ -369,6 +369,7 @@ int main(int argc, char* argv[]) {
     auto* recordingToggleMenuAction = actionForId(QStringLiteral("quick.screen-record-copy"));
     auto* hotkeyToggleMenuAction = actionForId(QStringLiteral("quick.toggle-global-hotkeys"));
     auto* showMainWindowMenuAction = actionForId(QStringLiteral("tray.show-main-window"));
+    auto* restartMenuAction = actionForId(QStringLiteral("tray.restart-app"));
     auto* exitMenuAction = actionForId(QStringLiteral("tray.exit"));
     auto* windowGroupMenuAction =
         actionForObjectName(QStringLiteral("systemTrayWindowGroupAction"));
@@ -383,7 +384,9 @@ int main(int argc, char* argv[]) {
             hotkeyToggleMenuAction != nullptr && hotkeyToggleMenuAction->isVisible() &&
             hotkeyToggleMenuAction->isCheckable() && !hotkeyToggleMenuAction->isChecked() &&
             showMainWindowMenuAction != nullptr && showMainWindowMenuAction->isVisible() &&
-            !showMainWindowMenuAction->icon().isNull() && exitMenuAction != nullptr &&
+            !showMainWindowMenuAction->icon().isNull() && restartMenuAction != nullptr &&
+            !restartMenuAction->isVisible() && !restartMenuAction->isCheckable() &&
+            !restartMenuAction->icon().isNull() && exitMenuAction != nullptr &&
             exitMenuAction->isVisible() && !exitMenuAction->icon().isNull() &&
             windowGroupMenuAction != nullptr && windowGroupMenuAction->isVisible() &&
             actionForId(QStringLiteral("tray.window-grouping")) == windowGroupMenuAction &&
@@ -447,7 +450,21 @@ int main(int argc, char* argv[]) {
     controller.setScreenshotDelaySeconds(3);
     requireActionText(showMainWindowMenuAction, QStringLiteral("Show main interface"),
                       "Show main interface should follow Disable global hotkeys");
+    requireActionText(restartMenuAction, QStringLiteral("Restart App"),
+                      "Restart App should use its catalog label");
     requireActionText(exitMenuAction, QStringLiteral("Exit"), "Exit should be last");
+
+    QStringList menuWithRestart = defaultMenuOptions;
+    menuWithRestart.push_back(QStringLiteral("tray.restart-app"));
+    controller.setMenuOptions(menuWithRestart);
+    const QList<QAction*> visibleWithRestart = visibleActions();
+    require(restartMenuAction->isVisible() &&
+                visibleWithRestart.indexOf(restartMenuAction) ==
+                    visibleWithRestart.indexOf(showMainWindowMenuAction) + 1 &&
+                visibleWithRestart.indexOf(exitMenuAction) ==
+                    visibleWithRestart.indexOf(restartMenuAction) + 1,
+            "Restart App should be opt-in directly below Show main interface and above Exit");
+    controller.setMenuOptions(defaultMenuOptions);
 
     snow_shot::presentation::PinnedWindowGroupManager groupManager;
     controller.setGroupManager(&groupManager);
@@ -614,6 +631,7 @@ int main(int argc, char* argv[]) {
 
     int screenshotRequests = 0;
     int showMainWindowRequests = 0;
+    int restartRequests = 0;
     int exitRequests = 0;
     QVector<snow_shot::presentation::GlobalShortcutAction> quickActions;
     QObject::connect(&controller,
@@ -622,6 +640,8 @@ int main(int argc, char* argv[]) {
     QObject::connect(&controller,
                      &snow_shot::presentation::SystemTrayController::showMainWindowRequested,
                      [&showMainWindowRequests]() { ++showMainWindowRequests; });
+    QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::restartRequested,
+                     [&restartRequests]() { ++restartRequests; });
     QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::exitRequested,
                      [&exitRequests]() { ++exitRequests; });
     QObject::connect(&controller,
@@ -725,6 +745,7 @@ int main(int argc, char* argv[]) {
 
     screenshotMenuAction->trigger();
     showMainWindowMenuAction->trigger();
+    restartMenuAction->trigger();
     exitMenuAction->trigger();
     require(quickActions ==
                 QVector<snow_shot::presentation::GlobalShortcutAction>{
@@ -732,6 +753,7 @@ int main(int argc, char* argv[]) {
             "generated tray actions should emit their catalog shortcut commands");
     require(screenshotRequests == 1 && showMainWindowRequests == 2,
             "Show main interface should emit the dedicated tray request");
+    require(restartRequests == 1, "Restart App should emit its dedicated tray request once");
     require(exitRequests == 1, "the Exit action should emit its request");
 
     hotkeyToggleMenuAction->trigger();

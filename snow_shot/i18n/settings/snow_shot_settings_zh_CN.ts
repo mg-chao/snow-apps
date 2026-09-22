@@ -2226,6 +2226,10 @@
             <translation>重启</translation>
         </message>
         <message>
+            <source>Restart App</source>
+            <translation>重启应用</translation>
+        </message>
+        <message>
             <source>Restart Snow Shot with administrator privileges</source>
             <translation>以管理员权限重启 Snow Shot</translation>
         </message>

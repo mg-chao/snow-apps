@@ -223,6 +223,37 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
     </context>
     <context>
+        <name>ApplicationRestart</name>
+        <message>
+            <source>Another restart operation is in progress.</source>
+            <translation>另一個重新啟動作業正在進行中。</translation>
+        </message>
+        <message>
+            <source>Could not create the restart handoff.</source>
+            <translation>無法建立重新啟動交接。</translation>
+        </message>
+        <message>
+            <source>Could not start the replacement application.</source>
+            <translation>無法啟動替代應用程式。</translation>
+        </message>
+        <message>
+            <source>Finish capturing, recording, exporting, or updating before restarting.</source>
+            <translation>請完成擷取、錄製、匯出或更新後再重新啟動。</translation>
+        </message>
+        <message>
+            <source>The replacement application did not acknowledge the restart.</source>
+            <translation>替代應用程式未確認重新啟動。</translation>
+        </message>
+        <message>
+            <source>The replacement application did not become ready.</source>
+            <translation>替代應用程式尚未準備就緒。</translation>
+        </message>
+        <message>
+            <source>Your settings could not be saved. Please retry before restarting.</source>
+            <translation>無法儲存您的設定。請在重新啟動前重試。</translation>
+        </message>
+    </context>
+    <context>
         <name>DiagnosticsService</name>
         <message>
             <source>A log file could not be read.</source>
@@ -597,6 +628,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Restart and update</source>
             <translation>重新啟動並更新</translation>
+        </message>
+        <message>
+            <source>Restart failed</source>
+            <translation>重新啟動失敗</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

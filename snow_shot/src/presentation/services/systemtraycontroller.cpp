@@ -348,6 +348,10 @@ class SystemTrayController::Impl {
                     QObject::connect(action, &QAction::triggered, &q,
                                      &SystemTrayController::showMainWindowRequested);
                     break;
+                case settings::SettingsTrayMenuOptionKind::RestartApp:
+                    QObject::connect(action, &QAction::triggered, &q,
+                                     &SystemTrayController::restartRequested);
+                    break;
                 case settings::SettingsTrayMenuOptionKind::Exit:
                     menu->setActionDanger(action);
                     QObject::connect(action, &QAction::triggered, &q,

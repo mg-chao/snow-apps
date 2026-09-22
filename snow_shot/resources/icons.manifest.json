@@ -735,6 +735,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "Restart",
+      "name": "restart",
+      "source": "../src/presentation/components/icons/resources/restart.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Save",
       "name": "save",
       "source": "../src/presentation/components/icons/resources/save.svg",

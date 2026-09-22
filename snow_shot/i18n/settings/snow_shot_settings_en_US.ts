@@ -2226,6 +2226,10 @@
             <translation>Restart</translation>
         </message>
         <message>
+            <source>Restart App</source>
+            <translation>Restart App</translation>
+        </message>
+        <message>
             <source>Restart Snow Shot with administrator privileges</source>
             <translation>Restart Snow Shot with administrator privileges</translation>
         </message>
