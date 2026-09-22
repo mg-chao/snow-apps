@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
 
 pub type Result<T> = std::result::Result<T, UpdateError>;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateError {
     pub code: Cow<'static, str>,
@@ -29,6 +29,25 @@ impl UpdateError {
         }
         self.detail = Some(text);
         self
+    }
+
+    // Keep the readable prefix compatible with older coordinators and retain
+    // structured diagnostics through the detached worker and result file.
+    pub fn handoff_message(&self) -> String {
+        format!(
+            "{}\t{}",
+            self.message,
+            serde_json::to_string(self).expect("serializable error")
+        )
+    }
+
+    pub fn from_handoff_message(message: &str) -> Self {
+        if let Some((_, json)) = message.split_once('\t')
+            && let Ok(error) = serde_json::from_str(json)
+        {
+            return error;
+        }
+        Self::from_message(message)
     }
 
     pub fn from_message(message: impl Into<String>) -> Self {
@@ -61,4 +80,26 @@ pub fn require(condition: bool, code: &'static str, message: &'static str) -> Re
     condition
         .then_some(())
         .ok_or_else(|| UpdateError::new(code, message))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handoff_preserves_diagnostics_and_accepts_legacy_messages() {
+        let error = UpdateError::new(
+            "registered_version_update_failed",
+            "Could not update the registered application version",
+        )
+        .detail("RegSetValueExW HKLM\\test: Win32 error 5");
+        let restored = UpdateError::from_handoff_message(&error.handoff_message());
+        assert_eq!(restored.code, error.code);
+        assert_eq!(restored.message, error.message);
+        assert_eq!(restored.detail, error.detail);
+        assert_eq!(
+            UpdateError::from_handoff_message("legacy failure").message,
+            "legacy failure"
+        );
+    }
 }

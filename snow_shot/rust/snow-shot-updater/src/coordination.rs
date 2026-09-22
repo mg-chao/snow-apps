@@ -460,7 +460,7 @@ mod windows_coordination {
         loop {
             match OpenOptions::new().read(true).write(true).open(&path) {
                 Ok(mut stream) => {
-                    let message = format!("failed:{}\n", error.message);
+                    let message = format!("failed:{}\n", error.handoff_message());
                     let _ = stream.write_all(message.as_bytes());
                     let _ = stream.flush();
                     return;
@@ -479,7 +479,11 @@ mod windows_coordination {
         };
         let pipe = format!("{pipe}-worker");
         if let Ok(mut coordinator) = connect_client(&pipe).await {
-            let _ = write_line(&mut coordinator, &format!("failed:{}", error.message)).await;
+            let _ = write_line(
+                &mut coordinator,
+                &format!("failed:{}", error.handoff_message()),
+            )
+            .await;
         }
     }
 
@@ -779,7 +783,7 @@ mod windows_coordination {
         verify_coordinator_copy(server.as_raw_handle())?;
         let status = read_line(&mut server, PRE_HANDOFF_TIMEOUT).await?;
         if let Some(message) = status.strip_prefix("failed:") {
-            return Err(UpdateError::from_message(message));
+            return Err(UpdateError::from_handoff_message(message));
         }
         require(
             status == "ready",
@@ -894,7 +898,7 @@ mod windows_coordination {
         let status = match read_line(&mut server, TRANSACTION_TIMEOUT).await {
             Ok(status) => status,
             Err(error) => {
-                let status = format!("failed:{}", error.message);
+                let status = format!("failed:{}", error.handoff_message());
                 write_result(&path_option(args, "--result")?, &status)?;
                 return Ok(1);
             }
@@ -931,14 +935,22 @@ mod windows_coordination {
         validate_installed_bootstrap(args, &root)?;
         if elevated {
             require(
-                platform::registered_target_matches(&root),
+                platform::registered_target_matches(&root)?,
                 "elevation_target_invalid",
                 "Elevation requires a registered Snow Shot installation",
             )?;
         }
-        if !writable(&root) {
+        let registry_needs_elevation = platform::registered_version_requires_elevation(&root)?;
+        if elevated && registry_needs_elevation {
+            return Err(UpdateError::new(
+                "registered_version_update_failed",
+                "Could not update the registered application version",
+            )
+            .detail("Registry write access is still denied after elevation"));
+        }
+        if !writable(&root) || registry_needs_elevation {
             require(
-                !elevated && platform::registered_target_matches(&root),
+                !elevated && platform::registered_target_matches(&root)?,
                 "elevation_target_invalid",
                 "Elevation requires a registered Snow Shot installation",
             )?;
@@ -1090,7 +1102,7 @@ mod windows_coordination {
             let _ = fs::remove_file(path);
         }
         let text = if let Err(error) = status {
-            format!("failed:{}", error.message)
+            format!("failed:{}", error.handoff_message())
         } else {
             "success".to_owned()
         };

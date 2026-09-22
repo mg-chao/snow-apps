@@ -14,9 +14,17 @@ struct ServiceProcess {
 
 impl ServiceProcess {
     fn start() -> (TempDir, Self) {
+        Self::start_with_result(None)
+    }
+
+    fn start_with_result(result: Option<&str>) -> (TempDir, Self) {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path().join("installation");
         let cache = temporary.path().join("cache");
+        if let Some(result) = result {
+            std::fs::create_dir_all(&cache).unwrap();
+            std::fs::write(cache.join("result.txt"), result).unwrap();
+        }
         std::fs::create_dir_all(root.join("bin")).unwrap();
         std::fs::write(root.join("bin/snow_shot.exe"), []).unwrap();
         std::fs::write(
@@ -94,6 +102,38 @@ impl ServiceProcess {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+}
+
+#[test]
+fn worker_result_preserves_registry_diagnostics_in_service_status() {
+    let error = snow_shot_updater::UpdateError::new(
+        "registered_version_update_failed",
+        "Could not update the registered application version",
+    )
+    .detail("RegCreateKeyExW HKLM\\Software\\test (32-bit view): Win32 error 5");
+    for structured in [false, true] {
+        let message = if structured {
+            error.handoff_message()
+        } else {
+            error.message.to_string()
+        };
+        let (temporary, mut service) =
+            ServiceProcess::start_with_result(Some(&format!("failed:{message}")));
+        assert_eq!(service.read()["type"], "hello");
+        let status = service.read();
+        assert_eq!(status["status"]["state"], "Failed");
+        assert_eq!(status["status"]["error"]["message"], error.message.as_ref());
+        if structured {
+            assert_eq!(status["status"]["error"]["code"], error.code.as_ref());
+            assert_eq!(
+                status["status"]["error"]["detail"],
+                error.detail.as_deref().unwrap()
+            );
+        }
+        assert!(!temporary.path().join("cache/result.txt").exists());
+        service.close_input();
+        assert!(service.wait().success());
     }
 }
 

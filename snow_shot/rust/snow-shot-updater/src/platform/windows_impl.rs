@@ -4,16 +4,20 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use windows::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{
+    CloseHandle, ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS,
+    HANDLE, WAIT_OBJECT_0, WIN32_ERROR,
+};
 use windows::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
 use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, GetFileAttributesW, INVALID_FILE_ATTRIBUTES,
     MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
 };
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_SET_VALUE, KEY_WOW64_32KEY,
-    REG_OPTION_NON_VOLATILE, REG_SZ, REG_VALUE_TYPE, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6432KEY,
-    RegCloseKey, RegCreateKeyExW, RegGetValueW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_CREATE_SUB_KEY, KEY_QUERY_VALUE,
+    KEY_SET_VALUE, KEY_WOW64_32KEY, REG_OPTION_NON_VOLATILE, REG_SZ, REG_VALUE_TYPE, RRF_RT_REG_SZ,
+    RRF_SUBKEY_WOW6432KEY, RegCloseKey, RegCreateKeyExW, RegGetValueW, RegOpenKeyExW,
+    RegSetValueExW,
 };
 use windows::Win32::System::Threading::{
     OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -80,42 +84,120 @@ pub fn path_has_reparse(path: &Path) -> bool {
     attributes != INVALID_FILE_ATTRIBUTES && attributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
 }
 
-fn registered_hive(root: &Path) -> Option<HKEY> {
-    let subkey = wide("Software\\Snow Apps\\SnowShot");
+const INSTALL_KEY: &str = "Software\\Snow Apps\\SnowShot";
+const UNINSTALL_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SnowShot";
+
+fn registry_error(hive: HKEY, key: &str, operation: &str, status: WIN32_ERROR) -> UpdateError {
+    let hive = if hive == HKEY_LOCAL_MACHINE {
+        "HKLM"
+    } else {
+        "HKCU"
+    };
+    UpdateError::new(
+        "registered_version_update_failed",
+        "Could not update the registered application version",
+    )
+    .detail(format!(
+        "{operation} {hive}\\{key} (32-bit view): Win32 error {}",
+        status.0
+    ))
+}
+
+fn read_registry_string(hive: HKEY, key: &str, name: &str) -> Result<Option<String>> {
+    let subkey = wide(key);
+    let name = wide(name);
+    let mut buffer = vec![0_u16; 32_768];
+    let mut bytes = (buffer.len() * size_of::<u16>()) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            hive,
+            PCWSTR(subkey.as_ptr()),
+            PCWSTR(name.as_ptr()),
+            RRF_RT_REG_SZ | RRF_SUBKEY_WOW6432KEY,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&mut bytes),
+        )
+    };
+    if status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND {
+        return Ok(None);
+    }
+    if status != ERROR_SUCCESS {
+        return Err(registry_error(hive, key, "RegGetValueW", status));
+    }
+    let length = bytes as usize / size_of::<u16>();
+    Ok(Some(String::from_utf16_lossy(
+        &buffer[..length.saturating_sub(1)],
+    )))
+}
+
+fn registered_hive(root: &Path) -> Result<Option<HKEY>> {
+    let mut discovery_error = None;
     for hive in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
-        let mut buffer = vec![0_u16; 32_768];
-        let mut bytes = (buffer.len() * size_of::<u16>()) as u32;
+        match read_registry_string(hive, INSTALL_KEY, "") {
+            Ok(Some(registered)) if path_eq(Path::new(&registered), root) => return Ok(Some(hive)),
+            Err(error) => discovery_error = Some(error),
+            _ => {}
+        }
+    }
+    // An inaccessible registration is not evidence of a portable installation.
+    match discovery_error {
+        Some(error) => Err(error),
+        None => Ok(None),
+    }
+}
+
+pub fn registered_target_matches(root: &Path) -> Result<bool> {
+    registered_hive(root).map(|hive| hive.is_some())
+}
+
+// No registry mutation: for a missing key, check creation rights on its nearest
+// existing ancestor. A successful check is repeated in the elevated bootstrap.
+pub fn registered_version_requires_elevation(root: &Path) -> Result<bool> {
+    let Some(hive) = registered_hive(root)? else {
+        return Ok(false);
+    };
+    let mut path = UNINSTALL_KEY;
+    let mut rights = KEY_QUERY_VALUE | KEY_SET_VALUE;
+    loop {
+        let subkey = wide(path);
+        let mut key = HKEY::default();
         let status = unsafe {
-            RegGetValueW(
+            RegOpenKeyExW(
                 hive,
                 PCWSTR(subkey.as_ptr()),
-                PCWSTR::null(),
-                RRF_RT_REG_SZ | RRF_SUBKEY_WOW6432KEY,
                 None,
-                Some(buffer.as_mut_ptr().cast()),
-                Some(&mut bytes),
+                rights | KEY_WOW64_32KEY,
+                &mut key,
             )
         };
         if status == ERROR_SUCCESS {
-            let length = bytes as usize / size_of::<u16>();
-            let registered = String::from_utf16_lossy(&buffer[..length.saturating_sub(1)]);
-            if path_eq(Path::new(&registered), root) {
-                return Some(hive);
-            }
+            let _ = unsafe { RegCloseKey(key) };
+            return Ok(false);
         }
+        if status == ERROR_ACCESS_DENIED {
+            return Ok(true);
+        }
+        if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND)
+            && let Some((parent, _)) = path.rsplit_once('\\')
+        {
+            path = parent;
+            rights = KEY_CREATE_SUB_KEY;
+            continue;
+        }
+        return Err(registry_error(hive, path, "RegOpenKeyExW", status));
     }
-    None
-}
-
-pub fn registered_target_matches(root: &Path) -> bool {
-    registered_hive(root).is_some()
 }
 
 pub fn write_registered_version(root: &Path, version: &str) -> Result<()> {
-    let Some(hive) = registered_hive(root) else {
+    let Some(hive) = registered_hive(root)? else {
         return Ok(());
     };
-    let subkey = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SnowShot");
+    // Also lets legacy recovery finish when a denied write left the old value intact.
+    if read_registry_string(hive, UNINSTALL_KEY, "DisplayVersion")?.as_deref() == Some(version) {
+        return Ok(());
+    }
+    let subkey = wide(UNINSTALL_KEY);
     let mut key = HKEY::default();
     let status = unsafe {
         RegCreateKeyExW(
@@ -130,11 +212,14 @@ pub fn write_registered_version(root: &Path, version: &str) -> Result<()> {
             None,
         )
     };
-    require(
-        status == ERROR_SUCCESS,
-        "registered_version_update_failed",
-        "Could not update the registered application version",
-    )?;
+    if status != ERROR_SUCCESS {
+        return Err(registry_error(
+            hive,
+            UNINSTALL_KEY,
+            "RegCreateKeyExW",
+            status,
+        ));
+    }
     let name = wide("DisplayVersion");
     let value = wide(version);
     let status = unsafe {
@@ -150,11 +235,15 @@ pub fn write_registered_version(root: &Path, version: &str) -> Result<()> {
         )
     };
     let _ = unsafe { RegCloseKey(key) };
-    require(
-        status == ERROR_SUCCESS,
-        "registered_version_update_failed",
-        "Could not update the registered application version",
-    )
+    if status != ERROR_SUCCESS {
+        return Err(registry_error(
+            hive,
+            UNINSTALL_KEY,
+            "RegSetValueExW",
+            status,
+        ));
+    }
+    Ok(())
 }
 
 struct Handle(HANDLE);

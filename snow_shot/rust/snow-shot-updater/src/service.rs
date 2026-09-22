@@ -529,7 +529,7 @@ impl Service {
         let text = String::from_utf8_lossy(&bytes);
         if let Some(message) = text.strip_prefix("failed:") {
             self.status.state = "Failed".to_owned();
-            self.status.error = Some(UpdateError::from_message(message.trim().to_owned()));
+            self.status.error = Some(UpdateError::from_handoff_message(message.trim()));
         }
     }
 

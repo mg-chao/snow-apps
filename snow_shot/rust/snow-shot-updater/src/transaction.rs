@@ -47,7 +47,15 @@ struct Journal {
     state: String,
     version: String,
     previous_version: String,
+    // Older journals may already have changed the registry. New transactions
+    // persist this intent before the registry write, covering process crashes.
+    #[serde(default = "registry_restore_default")]
+    restore_registry: bool,
     files: Vec<JournalEntry>,
+}
+
+fn registry_restore_default() -> bool {
+    true
 }
 
 #[derive(Default)]
@@ -579,7 +587,9 @@ fn restore(root: &Path) -> Result<()> {
             })?;
         }
     }
-    platform::write_registered_version(root, &journal.previous_version)?;
+    if journal.restore_registry {
+        platform::write_registered_version(root, &journal.previous_version)?;
+    }
     write_atomic(
         &work_path(root, "failed-version.txt"),
         journal.version.as_bytes(),
@@ -751,6 +761,7 @@ pub fn apply_transaction(
         state: "applying".to_owned(),
         version: release.version.clone(),
         previous_version: installed.version,
+        restore_registry: false,
         files: entries,
     };
     save_journal(root, &journal)?;
@@ -776,7 +787,15 @@ pub fn apply_transaction(
                 checkpoint(name);
             }
         }
-        platform::write_registered_version(root, &release.version)?;
+        journal.restore_registry = true;
+        save_journal(root, &journal)?;
+        if let Err(error) = platform::write_registered_version(root, &release.version) {
+            // A failed RegSetValueExW did not modify DisplayVersion. Do not make
+            // file rollback depend on retrying the same denied registry write.
+            journal.restore_registry = false;
+            save_journal(root, &journal)?;
+            return Err(error);
+        }
         if let Some(checkpoint) = hooks.checkpoint {
             checkpoint("registry");
         }

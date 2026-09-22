@@ -34,8 +34,8 @@ pub fn write_registered_version(_root: &Path, _version: &str) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-pub fn registered_target_matches(_root: &Path) -> bool {
-    false
+pub fn registered_target_matches(_root: &Path) -> Result<bool> {
+    Ok(false)
 }
 
 #[cfg(not(windows))]
