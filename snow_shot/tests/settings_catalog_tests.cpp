@@ -226,8 +226,8 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 40, "macOS adds one permissions section");
-    require(itemCount == 169, "macOS adds login settings and omits administrator controls, "
-                              "Windows-only choices, and tray middle-click");
+    require(itemCount == 170, "macOS adds login settings and omits administrator controls "
+                              "and Windows-only choices");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
     require(itemCount == 171, "catalog must contain one hundred seventy-one items");
@@ -568,19 +568,6 @@ void builtInCatalogIsCompleteAndValid() {
         "Drawing settings must expose the default-off remembered drawing tool switch");
 
     const auto& traySection = functionPage->sections.at(6);
-#ifdef Q_OS_MACOS
-    require(traySection.items.size() == 2 &&
-                traySection.items.at(0).id == QStringLiteral("tray.left-click-action") &&
-                traySection.items.at(1).id == QStringLiteral("tray.menu-options") &&
-                catalog.item({QStringLiteral("function-settings"), QStringLiteral("tray-settings"),
-                              QStringLiteral("tray.middle-click-action")}) == nullptr,
-            "macOS tray settings must omit the unsupported middle-click action");
-    const auto& leftTray =
-        std::get<settings::SettingsSelectDefinition>(traySection.items.at(0).payload);
-    require(leftTray.binding == settings::SettingsSelectBinding::TrayLeftClickAction &&
-                leftTray.options.size() == 5,
-            "macOS must retain the configurable left-click actions");
-#else
     require(traySection.items.size() == 3 &&
                 traySection.items.at(0).id == QStringLiteral("tray.left-click-action") &&
                 traySection.items.at(1).id == QStringLiteral("tray.middle-click-action") &&
@@ -605,7 +592,6 @@ void builtInCatalogIsCompleteAndValid() {
                         middleTray.options.at(index).label.translated(),
                 "tray selectors must share ordered values and labels");
     }
-#endif
 
     const auto* pinDoubleClick =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("pin-to-screen-settings"),

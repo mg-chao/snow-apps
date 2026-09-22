@@ -1605,10 +1605,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         },
         [this]() { return canRecapture(); },
         [this]() { return requestCancelCaptureViaShortcut(); },
-    };
-    actions.requestUiSelectorHitTestOnDisplay = [this](const QPoint& point, quint32 displayId) {
-        if (m_selectorWorkflow)
-            static_cast<void>(m_selectorWorkflow->requestHitTest(point, displayId));
+        [this](const QPoint& point, quint32 displayId) {
+            if (m_selectorWorkflow)
+                static_cast<void>(m_selectorWorkflow->requestHitTest(point, displayId));
+        },
     };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{

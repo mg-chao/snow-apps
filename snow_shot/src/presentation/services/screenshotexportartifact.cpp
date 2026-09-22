@@ -18,6 +18,7 @@
 
 #include <array>
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <utility>
 #include <vector>
@@ -182,10 +183,15 @@ struct ScreenshotExportArtifact::Impl final {
     // The source pixels and PNG options other than compression are immutable.
     std::array<PngEncoding, 10> pngEncodings;
 
+    // PNG compression levels are 0..9. std::array indexes with size_t.
+    [[nodiscard]] PngEncoding& encodingAt(int level) {
+        return pngEncodings[static_cast<std::size_t>(level)];
+    }
+
     // Called under mutex. Pending encodings are never evicted; their subscribers
     // receive the result even when it is too large to retain in this cache.
     void retainPng(int level, const snow_shot::storage::PreparedPngImage& encoded) {
-        auto& target = pngEncodings[level];
+        auto& target = encodingAt(level);
         target.phase = RequestPhase::Empty;
         target.image = {};
         const qsizetype bytes = encoded.bytes().size();
@@ -538,7 +544,7 @@ bool ScreenshotExportArtifact::shouldCachePng(QSize pixelSize) const {
 snow_shot::storage::PreparedPngImage
 ScreenshotExportArtifact::cachedPng(ScreenshotCompressionLevel compression) {
     QMutexLocker lock(&m_impl->mutex);
-    auto& entry = m_impl->pngEncodings[pngCompression(compression)];
+    auto& entry = m_impl->encodingAt(pngCompression(compression));
     if (m_impl->cancelled || entry.phase != RequestPhase::Ready)
         return {};
     entry.lastUsed = ++m_impl->pngUseSerial;
@@ -567,15 +573,15 @@ bool ScreenshotExportArtifact::requestPngCompression(QObject* receiver, int comp
         if (m_impl->cancelled || !m_impl->source.isValid()) {
             return false;
         }
-        if (m_impl->pngEncodings[compressionLevel].phase == RequestPhase::Ready) {
-            ready.image = m_impl->pngEncodings[compressionLevel].image;
-            m_impl->pngEncodings[compressionLevel].lastUsed = ++m_impl->pngUseSerial;
+        if (m_impl->encodingAt(compressionLevel).phase == RequestPhase::Ready) {
+            ready.image = m_impl->encodingAt(compressionLevel).image;
+            m_impl->encodingAt(compressionLevel).lastUsed = ++m_impl->pngUseSerial;
             dispatchReady = true;
         } else {
-            m_impl->pngEncodings[compressionLevel].subscribers.push_back(
+            m_impl->encodingAt(compressionLevel).subscribers.push_back(
                 {receiver, std::move(callback)});
-            if (m_impl->pngEncodings[compressionLevel].phase == RequestPhase::Empty) {
-                m_impl->pngEncodings[compressionLevel].phase = RequestPhase::Pending;
+            if (m_impl->encodingAt(compressionLevel).phase == RequestPhase::Empty) {
+                m_impl->encodingAt(compressionLevel).phase = RequestPhase::Pending;
                 start = true;
             }
         }
@@ -609,7 +615,7 @@ void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
     {
         QMutexLocker lock(&m_impl->mutex);
         if (m_impl->cancelled ||
-            m_impl->pngEncodings[compressionLevel].phase != RequestPhase::Pending)
+            m_impl->encodingAt(compressionLevel).phase != RequestPhase::Pending)
             return;
     }
     const QPointer<ScreenshotExportArtifact> guarded(this);
@@ -649,8 +655,8 @@ void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
     {
         QMutexLocker lock(&m_impl->mutex);
         if (!m_impl->cancelled &&
-            m_impl->pngEncodings[compressionLevel].phase == RequestPhase::Pending) {
-            m_impl->pngEncodings[compressionLevel].job = job;
+            m_impl->encodingAt(compressionLevel).phase == RequestPhase::Pending) {
+            m_impl->encodingAt(compressionLevel).job = job;
             retained = true;
         }
     }
@@ -664,7 +670,7 @@ void ScreenshotExportArtifact::completePng(int compressionLevel,
     {
         QMutexLocker lock(&m_impl->mutex);
         if (m_impl->cancelled ||
-            m_impl->pngEncodings[compressionLevel].phase != RequestPhase::Pending) {
+            m_impl->encodingAt(compressionLevel).phase != RequestPhase::Pending) {
             return;
         }
         if (result.succeeded()) {
@@ -672,12 +678,12 @@ void ScreenshotExportArtifact::completePng(int compressionLevel,
         } else {
             // Only successful encodings are cached. A new user request may retry a
             // transient queue/read failure; current subscribers all receive this failure.
-            m_impl->pngEncodings[compressionLevel].phase = RequestPhase::Empty;
+            m_impl->encodingAt(compressionLevel).phase = RequestPhase::Empty;
             if (result.error.isEmpty())
                 result.error = QStringLiteral("The screenshot PNG is unavailable");
         }
-        subscribers = std::move(m_impl->pngEncodings[compressionLevel].subscribers);
-        m_impl->pngEncodings[compressionLevel].subscribers.clear();
+        subscribers = std::move(m_impl->encodingAt(compressionLevel).subscribers);
+        m_impl->encodingAt(compressionLevel).subscribers.clear();
     }
     for (auto& subscriber : subscribers) {
         if (!subscriber.receiver.isNull()) {

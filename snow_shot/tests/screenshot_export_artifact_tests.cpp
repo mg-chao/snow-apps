@@ -864,7 +864,12 @@ void pinnedViewportSourceRendersExpectedPixels() {
     QImage background(QSize(64, 48), QImage::Format_ARGB32_Premultiplied);
     background.fill(QColor(12, 24, 36, 255));
     ScreenshotPinnedViewportExportSource source{
-        session, std::move(background), QRectF(0.0, 0.0, 64.0, 48.0), QSize(64, 48), {},
+        session,
+        std::move(background),
+        QRectF(0.0, 0.0, 64.0, 48.0),
+        QSize(64, 48),
+        {},
+        {},
     };
     ScreenshotExportArtifact artifact(
         ScreenshotExportSource::fromPinnedViewport(std::move(source)));
