@@ -43,10 +43,23 @@ if [[ -z "$dependency_prefix" ]]; then
 fi
 
 export PATH="$snow_repo_root/.tools/macos-dev/bin:$snow_repo_root/.tools/macos-media/host/bin:$PATH"
-for tool in cmake ninja curl tar python3 shasum; do
+for tool in cmake ninja curl tar python3 shasum xcrun; do
     command -v "$tool" >/dev/null || snow_die "Missing $tool. Install the prerequisites listed in docs-macos-build.md."
 done
 export MACOSX_DEPLOYMENT_TARGET=15.0
+
+# Qt's source configure requires a discoverable full-Xcode version by default,
+# even though Apple Command Line Tools provide the compiler and SDK needed by
+# this Ninja build. Keep Qt's SDK checks, but skip only its Xcode-version check
+# when xcodebuild reports that the selected developer directory is CLT-only.
+qt_apple_options=()
+if ! xcodebuild -version >/dev/null 2>&1; then
+    if ! xcrun --show-sdk-path >/dev/null 2>&1; then
+        snow_die 'The selected Apple developer tools do not provide a macOS SDK.'
+    fi
+    qt_apple_options+=(-DQT_NO_XCODE_MIN_VERSION_CHECK=ON)
+    printf 'Full Xcode is unavailable; building Qt with Apple Command Line Tools.\n'
+fi
 
 canonical_path() {
     python3 - "$1" <<'PY'
@@ -141,7 +154,8 @@ mkdir -p "$build_dir"
         -DQT_FEATURE_testlib=OFF -DQT_FEATURE_assistant=OFF \
         -DQT_FEATURE_designer=OFF -DQT_FEATURE_pixeltool=OFF \
         -DQT_FEATURE_qdbus=OFF -DQT_FEATURE_qtattributionsscanner=OFF \
-        -DQT_FEATURE_qtdiag=OFF -DQT_FEATURE_qtplugininfo=OFF
+        -DQT_FEATURE_qtdiag=OFF -DQT_FEATURE_qtplugininfo=OFF \
+        "${qt_apple_options[@]}"
 )
 
 cache="$build_dir/CMakeCache.txt"

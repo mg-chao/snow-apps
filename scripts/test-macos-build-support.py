@@ -260,6 +260,13 @@ if name == 'openssl':
         self.assertFalse(any(call[0] == 'cmake' for call in calls))
         self.assertIn('Validated static Qt 6.11.1 (arm64)', self.last_result.stdout)
 
+    def test_static_qt_builder_supports_command_line_tools_without_full_xcode(self):
+        builder = (ROOT / 'scripts/build-static-qt.sh').read_text()
+        self.assertIn('if ! xcodebuild -version >/dev/null 2>&1; then', builder)
+        self.assertIn('xcrun --show-sdk-path', builder)
+        self.assertIn('qt_apple_options+=(-DQT_NO_XCODE_MIN_VERSION_CHECK=ON)', builder)
+        self.assertIn('"${qt_apple_options[@]}"', builder)
+
     def test_launch_bundle_with_arguments(self):
         app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
         binary = app / 'Contents/MacOS/snow_shot'
