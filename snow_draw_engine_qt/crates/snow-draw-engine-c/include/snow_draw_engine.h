@@ -745,6 +745,19 @@ typedef struct SnowArrowTextLayoutResult {
     SnowTextLayoutSize size;
 } SnowArrowTextLayoutResult;
 
+typedef struct SnowArrowTextLayoutMetrics {
+    SnowElementId text_id;
+    uint64_t key;
+    SnowTextLayoutSize size;
+    /* Natural layout width; size.width must be min(natural_width, max_width).
+       Zero means
+     * unknown and restricts reuse to the original constraint. */
+    double natural_width;
+} SnowArrowTextLayoutMetrics;
+
+/* Call before requesting replacement layouts after host font or DPI changes. */
+SnowError snow_viewport_invalidate_arrow_text_layouts(SnowRuntime runtime, SnowViewport viewport);
+
 /* Pending host measurement for the empty label attached by an active serial
    number drag; measure the empty draft for this font and apply the result. */
 typedef struct SnowSerialLabelLayoutRequest {
@@ -764,6 +777,9 @@ SnowError snow_viewport_apply_arrow_text_layouts_ex(SnowRuntime runtime, SnowVie
                                                     const SnowArrowTextLayoutResult* layouts,
                                                     uint32_t count,
                                                     SnowChangedViewportList* out_changed_viewports);
+SnowError snow_viewport_apply_arrow_text_layout_metrics_ex(
+    SnowRuntime runtime, SnowViewport viewport, const SnowArrowTextLayoutMetrics* layouts,
+    uint32_t count, SnowChangedViewportList* out_changed_viewports);
 SnowError snow_viewport_get_serial_label_layout_request(SnowRuntime runtime, SnowViewport viewport,
                                                         SnowSerialLabelLayoutRequest* out_request,
                                                         uint8_t* out_has_request);

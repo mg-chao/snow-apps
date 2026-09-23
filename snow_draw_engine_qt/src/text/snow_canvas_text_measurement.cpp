@@ -6,6 +6,8 @@
 
 #include <QSizeF>
 #include <QString>
+#include <QDataStream>
+#include <QIODevice>
 
 #include <algorithm>
 #include <cstdint>
@@ -21,6 +23,36 @@ SnowCanvasSceneItem previewItemForStyle(const SnowTextElementInfo& info,
 }
 
 } // namespace
+
+NaturalTextLayoutCache::NaturalTextLayoutCache(int maximumBytes) : m_layouts(maximumBytes) {}
+
+snow_canvas_text_layout::TextMeasuredLayout
+NaturalTextLayoutCache::measure(const QString& text, const QFont& baseFont,
+                                const SnowSceneDisplayItem& item) {
+    const auto resolution = snow_canvas_text_layout::resolveFont(baseFont, item, 1.0);
+    QByteArray key;
+    QDataStream stream(&key, QIODevice::WriteOnly);
+    stream << text << resolution.font << resolution.scale
+           << static_cast<quint32>(item.text_horizontal_align);
+    if (const auto* cached = m_layouts.object(key)) {
+        return *cached;
+    }
+    const auto measured = snow_canvas_text_layout::measureNaturalTextLayout(text, baseFont, item);
+    ++m_measurementCount;
+    const qsizetype cost = key.size() + sizeof(measured);
+    if (cost <= m_layouts.maxCost()) {
+        m_layouts.insert(key, new snow_canvas_text_layout::TextMeasuredLayout(measured), cost);
+    }
+    return measured;
+}
+
+void NaturalTextLayoutCache::clear() {
+    m_layouts.clear();
+}
+
+std::uint64_t NaturalTextLayoutCache::measurementCount() const {
+    return m_measurementCount;
+}
 
 TextLayoutOverrideMeasurement
 measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequest& request) {

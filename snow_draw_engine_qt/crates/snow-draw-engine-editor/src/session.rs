@@ -75,15 +75,19 @@ impl EditorSession {
     ) -> Vec<crate::ArrowTextLayoutRequest> {
         self.editor.arrow_text_layout_requests(document)
     }
+    pub fn invalidate_arrow_text_measurements(&mut self) {
+        self.editor.invalidate_arrow_text_measurements();
+    }
     pub fn apply_arrow_text_measurement(
         &mut self,
         document: &DocumentModel,
         id: ElementId,
         key: u64,
         size: TextLayoutSize,
+        natural_width: f64,
     ) -> Result<bool, ErrorCode> {
         self.editor
-            .apply_arrow_text_measurement(document, id, key, size)
+            .apply_arrow_text_measurement(document, id, key, size, natural_width)
     }
     pub fn append_arrow_text_layouts(
         &self,

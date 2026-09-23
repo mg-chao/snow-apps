@@ -88,21 +88,35 @@ impl Engine {
     pub fn apply_arrow_text_measurements(
         &mut self,
         viewport: ViewportId,
-        layouts: &[(ElementId, u64, TextLayoutSize)],
+        layouts: &[(ElementId, u64, TextLayoutSize, f64)],
     ) -> Result<MutationResult, ErrorCode> {
         self.ensure_viewport(viewport)?;
         let before = self.editor.snapshot();
         let editor_before = self.editor.clone();
-        for (id, key, size) in layouts {
-            if let Err(error) =
-                self.editor
-                    .apply_arrow_text_measurement(&self.model, *id, *key, *size)
-            {
+        for (id, key, size, natural_width) in layouts {
+            if let Err(error) = self.editor.apply_arrow_text_measurement(
+                &self.model,
+                *id,
+                *key,
+                *size,
+                *natural_width,
+            ) {
                 self.editor = editor_before;
                 return Err(error);
             }
         }
         self.refresh_after_session_mutation(before)
+    }
+
+    /// Invalidate host metrics before obtaining and applying replacement layouts.
+    /// No intermediate scene is published with the now-missing measurements.
+    pub fn invalidate_arrow_text_measurements(
+        &mut self,
+        viewport: ViewportId,
+    ) -> Result<(), ErrorCode> {
+        self.ensure_viewport(viewport)?;
+        self.editor.invalidate_arrow_text_measurements();
+        Ok(())
     }
 
     pub fn arrow_text_target(

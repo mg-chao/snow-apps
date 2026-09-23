@@ -83,6 +83,71 @@ pub unsafe extern "C" fn snow_viewport_get_arrow_text_layout_requests(
     })
 }
 
+/// Invalidate font-dependent metrics before requesting replacement layouts.
+/// # Safety
+/// Handles must be live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_invalidate_arrow_text_layouts(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+) -> SnowError {
+    ffi_error(|| {
+        ffi_status(with_runtime_viewport_mut(
+            runtime,
+            viewport,
+            |engine, id| {
+                engine
+                    .invalidate_arrow_text_measurements(id)
+                    .map_err(SnowError::from)
+            },
+        ))
+    })
+}
+
+/// # Safety
+/// Handles must be live, `layouts` must hold `count` entries and output must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_apply_arrow_text_layout_metrics_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    layouts: *const SnowArrowTextLayoutMetrics,
+    count: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() || (count != 0 && layouts.is_null()) {
+            return SnowError::InvalidArgument;
+        }
+        let layouts = if count == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(layouts, count as usize) }
+        };
+        let layouts: Vec<_> = layouts
+            .iter()
+            .map(|r| {
+                (
+                    snow_element_id_to_rust(r.text_id),
+                    r.key,
+                    r.size.into(),
+                    r.natural_width,
+                )
+            })
+            .collect();
+        ffi_status(with_runtime_viewport_mut(
+            runtime,
+            viewport,
+            |engine, id| {
+                let result = engine
+                    .apply_arrow_text_measurements(id, &layouts)
+                    .map_err(SnowError::from)?;
+                write_changed_viewports(out_changed_viewports, result.changed_viewports);
+                Ok(())
+            },
+        ))
+    })
+}
+
 /// # Safety
 /// Handles must be live, `layouts` must hold `count` entries and output must be writable.
 #[unsafe(no_mangle)]
@@ -104,7 +169,14 @@ pub unsafe extern "C" fn snow_viewport_apply_arrow_text_layouts_ex(
         };
         let layouts: Vec<_> = layouts
             .iter()
-            .map(|r| (snow_element_id_to_rust(r.text_id), r.key, r.size.into()))
+            .map(|r| {
+                (
+                    snow_element_id_to_rust(r.text_id),
+                    r.key,
+                    r.size.into(),
+                    0.0,
+                )
+            })
             .collect();
         ffi_status(with_runtime_viewport_mut(
             runtime,
