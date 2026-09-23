@@ -12066,7 +12066,6 @@ void regionSwitcherRetranslatesAndRenders() {
     auto& appTheme = snow_shot::presentation::styles::ThemeManager::instance();
     const auto oldMode = appTheme.themeMode();
     ScreenshotRegionTypeControl floating(nullptr, true);
-    floating.typeChanged = [](ScreenshotRegionType type) { setScreenshotRegionPreference(type); };
     floating.show();
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
@@ -12089,16 +12088,16 @@ void regionSwitcherRetranslatesAndRenders() {
             QCoreApplication::processEvents();
             auto* curve = floating.findChild<adqt::widgets::AdButton*>(
                 QStringLiteral("screenshotRegionType_curve"));
-            require(curve && curve->isChecked() &&
-                        curve->toolTip() == QCoreApplication::translate(
-                                                "ScreenshotRegionTypeControl", "Curve region"),
+            require(curve && curve->toolTip() == QCoreApplication::translate(
+                                                     "ScreenshotRegionTypeControl", "Curve region"),
                     "floating control retranslates and synchronizes preference");
             require(curve->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                         curve->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
-                        !curve->checkedUsesActiveStyle() && curve->iconRef().colors().isEmpty() &&
+                        !curve->isCheckable() && curve->focusPolicy() == Qt::NoFocus &&
+                        curve->iconRef().colors().isEmpty() &&
                         adqt::icons::describeIcon(curve->iconRef()).colorModel ==
                             adqt::icons::IconColorModel::Monochrome,
-                    "floating region button uses the drawing toolbar active style and inherits its "
+                    "floating region icon uses the drawing toolbar active style and inherits its "
                     "icon color");
             const QImage buttonImage = renderButton(*curve);
             const auto containsColor = [&buttonImage](const QColor& color) {
@@ -12118,9 +12117,10 @@ void regionSwitcherRetranslatesAndRenders() {
                         scheme.map.colorBgContainer,
                     "floating region surface uses the drawing toolbar container background");
             auto* hint = floating.findChild<QLabel*>();
-            require(hint &&
-                        hint->heightForWidth(hint->width()) <= hint->fontMetrics().lineSpacing(),
-                    "floating hint stays on one line when the screen has room");
+            require(
+                hint && hint->heightForWidth(hint->width()) <= hint->fontMetrics().lineSpacing() &&
+                    hint->palette().color(QPalette::WindowText) == scheme.map.colorTextSecondary,
+                "floating hint stays on one line and uses the secondary theme text color");
             if (!snapshots.isEmpty()) {
                 const auto suffix =
                     locale + (dark ? QStringLiteral("-dark") : QStringLiteral("-light"));

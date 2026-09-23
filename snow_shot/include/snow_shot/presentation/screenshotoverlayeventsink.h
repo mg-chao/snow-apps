@@ -32,7 +32,6 @@ class ScreenshotOverlayEventSink {
     virtual void completeRightClickCancellation() {}
     // Optional completion-gesture notifications. Lightweight event sinks can
     // keep the defaults when they only handle the mouse and keyboard surface.
-    virtual void setRegionType(ScreenshotRegionType) {}
     virtual bool handleRegionDoubleClick(ScreenshotOverlayWindow*, const QPointF&) {
         return false;
     }

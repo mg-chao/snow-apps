@@ -65,9 +65,6 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     layout->addWidget(m_canvas);
 
     m_regionTypeControl = new ScreenshotRegionTypeControl(this, true);
-    m_regionTypeControl->typeChanged = [this](ScreenshotRegionType type) {
-        m_eventSink.setRegionType(type);
-    };
     m_regionTypeControl->hide();
     m_scrollingThumbnail = new ScreenshotScrollingThumbnailWidget(*this);
     m_scrollingThumbnail->hide();

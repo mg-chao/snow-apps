@@ -1583,7 +1583,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                      selectionBorderCornerRadius))
                : selectionShapePath(m_selectionState.bounds, selectionBorderCornerRadius,
                                     context.canvasToViewTransform, 0.5);
-    if (visibleCornerRadius > 0 || shaped || !m_selectionState.draftVertices.isEmpty()) {
+    if (visibleCornerRadius > 0 || shaped || !m_selectionState.draftPath.isEmpty()) {
         painter.setRenderHint(QPainter::Antialiasing, true);
     }
 
@@ -1605,8 +1605,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                                   m_cursorGuideLineColor, m_monitorCenterGuideLineColor,
                                   &context.exposedRegion);
     }
-    if (m_renderMode == RenderMode::Standard &&
-        (!m_selectionState.draftPath.isEmpty() || !m_selectionState.draftVertices.isEmpty())) {
+    if (m_renderMode == RenderMode::Standard && !m_selectionState.draftPath.isEmpty()) {
         const auto color =
             m_selectionState.subtracting ? m_selectionState.dangerColor : m_selectionBorderColor;
         QPen pen(color, kSelectionBorderWidth);
@@ -1615,10 +1614,6 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         painter.setPen(pen);
         painter.setBrush(Qt::NoBrush);
         painter.drawPath(context.canvasToViewTransform.map(m_selectionState.draftPath));
-        painter.setBrush(color);
-        painter.setPen(QPen(Qt::white, 1));
-        for (const auto& vertex : m_selectionState.draftVertices)
-            painter.drawEllipse(context.canvasToViewTransform.map(vertex), 2.5, 2.5);
     }
     if (m_renderMode == RenderMode::Standard && m_selectionState.present) {
         const QColor selectionAccent = m_selectionBorderColor;
@@ -1746,15 +1741,10 @@ void ScreenshotCanvasRenderer::setSelectionDraft(const QPainterPath& path,
     if (next == m_selectionState)
         return;
     const QRectF before = m_selectionState.draftPath.boundingRect();
-    const auto previousVertices = m_selectionState.draftVertices;
     applySelectionState(next);
     QRegion damage(m_canvas.canvasToViewTransform()
                        .mapRect(before.united(path.boundingRect()))
                        .adjusted(-5, -5, 5, 5)
                        .toAlignedRect());
-    for (const auto& point : previousVertices + vertices) {
-        const auto view = m_canvas.canvasToViewTransform().map(point);
-        damage += QRectF(view - QPointF(5, 5), QSizeF(10, 10)).toAlignedRect();
-    }
     m_canvas.update(damage);
 }

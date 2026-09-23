@@ -9,33 +9,30 @@
 #include "snow_shot/storage/configurationstore.h"
 #include "widgets/button.h"
 
-#include <QButtonGroup>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPalette>
 #include <QVBoxLayout>
 
 #include <array>
 #include <algorithm>
-#include <functional>
 
 class ScreenshotRegionTypeControl final : public QWidget {
   public:
     explicit ScreenshotRegionTypeControl(QWidget* parent, bool showHint = false)
         : QWidget(parent), m_floating(showHint) {
         setObjectName(QStringLiteral("screenshotRegionTypeControl"));
-        setMouseTracking(showHint);
+        setAttribute(Qt::WA_TransparentForMouseEvents, true);
         auto* layout = new QVBoxLayout(this);
         layout->setContentsMargins(showHint ? 8 : 0, showHint ? 8 : 0, showHint ? 8 : 0,
                                    showHint ? 8 : 0);
         layout->setSpacing(6);
         auto* row = new QHBoxLayout;
         row->setSpacing(2);
-        auto* group = new QButtonGroup(this);
-        group->setExclusive(true);
         namespace icons = snow_shot::presentation::icons::custom::outlined;
         const std::array refs{icons::ScreenshotRegionRectangle(), icons::ScreenshotRegionPolyline(),
                               icons::ScreenshotRegionCurved(), icons::ScreenshotRegionFreehand()};
@@ -43,29 +40,19 @@ class ScreenshotRegionTypeControl final : public QWidget {
             auto* button = new adqt::widgets::AdButton(this);
             button->setObjectName(QStringLiteral("screenshotRegionType_") +
                                   screenshotRegionTypeId(ScreenshotRegionType(i)));
-            button->setCheckable(true);
-            // Keep the selection state for accessibility while matching the drawing toolbar's
-            // resting and hover colors for its active tool.
-            button->setCheckedUsesActiveStyle(false);
             button->setFixedSize(32, 32);
             button->setIconSize(QSize(24, 24));
             button->setIconRef(refs[static_cast<std::size_t>(i)]);
-            button->setFocusPolicy(showHint ? Qt::StrongFocus : Qt::NoFocus);
-            button->setMouseTracking(showHint);
-            group->addButton(button, i);
+            button->setFocusPolicy(Qt::NoFocus);
+            button->setAttribute(Qt::WA_TransparentForMouseEvents, true);
             row->addWidget(button);
             m_buttons[static_cast<std::size_t>(i)] = button;
-            connect(button, &QPushButton::clicked, this, [this, i] {
-                if (typeChanged)
-                    typeChanged(ScreenshotRegionType(i));
-            });
         }
         layout->addLayout(row);
         if (showHint) {
             m_hint = new QLabel(this);
             m_hint->setAlignment(Qt::AlignCenter);
             m_hint->setWordWrap(true);
-            m_hint->setMouseTracking(true);
             layout->addWidget(m_hint);
             if (QCoreApplication::instance() != nullptr)
                 QCoreApplication::instance()->installEventFilter(this);
@@ -82,9 +69,12 @@ class ScreenshotRegionTypeControl final : public QWidget {
         if (m_floating) {
             const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
             connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged,
-                    this,
-                    [this](const snow_shot::presentation::styles::ThemeColorScheme&) { update(); });
+                    this, [this](const snow_shot::presentation::styles::ThemeColorScheme&) {
+                        updateHintColor();
+                        update();
+                    });
         }
+        updateHintColor();
     }
     QSize sizeHint() const override {
         const auto base = QWidget::sizeHint();
@@ -97,7 +87,6 @@ class ScreenshotRegionTypeControl final : public QWidget {
         return QSize(width, layout()->hasHeightForWidth() ? layout()->heightForWidth(width)
                                                           : base.height());
     }
-    std::function<void(ScreenshotRegionType)> typeChanged;
     void setPresentationVisible(bool visible, const QRectF& selectionGlobal,
                                 const QPointF& cursorGlobal) {
         m_requestedVisible = visible;
@@ -111,14 +100,8 @@ class ScreenshotRegionTypeControl final : public QWidget {
             return;
         }
         const QRectF hintArea(mapToGlobal(QPoint()), size());
-        const QPoint localCursor = mapFromGlobal(cursorGlobal.toPoint());
-        const bool overButton =
-            std::any_of(m_buttons.begin(), m_buttons.end(), [localCursor](const auto* button) {
-                return button->geometry().contains(localCursor);
-            });
-        const QPointF obscuringCursor = overButton ? QPointF(-1.0e9, -1.0e9) : cursorGlobal;
         const bool obscured =
-            screenshotShortcutHintAreaIsObscured(hintArea, m_selectionGlobal, obscuringCursor);
+            screenshotShortcutHintAreaIsObscured(hintArea, m_selectionGlobal, cursorGlobal);
         setVisible(!obscured);
         if (!obscured)
             raise();
@@ -127,7 +110,6 @@ class ScreenshotRegionTypeControl final : public QWidget {
         for (int i = 0; i < 4; ++i) {
             auto* button = m_buttons[static_cast<std::size_t>(i)];
             const bool selected = i == int(type);
-            button->setChecked(selected);
             button->setButtonStyle(selected ? adqt::widgets::AdButton::ButtonStyle::Solid
                                             : adqt::widgets::AdButton::ButtonStyle::Text);
             button->setAccentRole(selected ? adqt::widgets::AdButton::AccentRole::Primary
@@ -162,6 +144,14 @@ class ScreenshotRegionTypeControl final : public QWidget {
     }
 
   private:
+    void updateHintColor() {
+        if (!m_hint)
+            return;
+        QPalette palette = m_hint->palette();
+        const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+        palette.setColor(QPalette::WindowText, scheme.map.colorTextSecondary);
+        m_hint->setPalette(palette);
+    }
     void retranslate() {
         const char* names[] = {QT_TRANSLATE_NOOP("ScreenshotRegionTypeControl", "Rectangle region"),
                                QT_TRANSLATE_NOOP("ScreenshotRegionTypeControl", "Polyline region"),

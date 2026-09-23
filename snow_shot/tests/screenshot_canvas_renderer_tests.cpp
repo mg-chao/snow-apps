@@ -3714,16 +3714,14 @@ void regionEventsRemainOwnedByOverlay() {
     auto* control = overlay.findChild<QWidget*>(QStringLiteral("screenshotRegionTypeControl"));
     auto* button = overlay.findChild<QPushButton*>(QStringLiteral("screenshotRegionType_curve"));
     require(control && button && overlay.rect().contains(control->geometry()),
-            "floating region controls fit a narrow screenshot window");
-    const QPointF center(button->rect().center());
-    for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
-        QMouseEvent event(type, center, button->mapToGlobal(center.toPoint()), Qt::LeftButton,
-                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
-                          Qt::NoModifier);
-        QApplication::sendEvent(button, &event);
-    }
-    require(sink.presses == 1 && sink.releases == 2,
-            "region switcher clicks must not add vertices to the canvas");
+            "floating region hint fits a narrow screenshot window");
+    require(control->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                overlay.childAt(button->mapTo(&overlay, button->rect().center())) == canvas &&
+                button->focusPolicy() == Qt::NoFocus && !button->isCheckable(),
+            "region hint is transparent to pointer and keyboard input");
+    button->click();
+    require(!button->isChecked() && sink.presses == 1 && sink.releases == 2,
+            "region hint cannot change its display state or consume selection input");
     const QPointF outside = overlay.mapToGlobal(QPoint(0, overlay.height() - 1));
     const QRectF controlGlobal(control->mapToGlobal(QPoint()), control->size());
     overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Polyline, controlGlobal,
@@ -3745,7 +3743,7 @@ void regionEventsRemainOwnedByOverlay() {
     require(control->isVisible(), "area type hint returns when the pointer moves away");
     overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Polyline, {},
                                         button->mapToGlobal(button->rect().center()));
-    require(control->isVisible(), "region buttons remain accessible on hover");
+    require(!control->isVisible(), "pointer movement over a region icon hides the hint");
     overlay.setRegionTypeControlVisible(false, ScreenshotRegionType::Polyline, {}, outside);
     require(!control->isVisible(), "disabled area type hint remains hidden");
 }
@@ -4224,6 +4222,24 @@ void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
             "a non-rectangular draft must keep its visible blue outline");
     require(output.pixelColor(10, 80).red() < 200,
             "the screenshot mask must still dim pixels outside the draft");
+
+    renderer.setSelectionDraft(draft, {});
+    require(renderCanvas(canvas) == output,
+            "polyline draft vertices must not add control points to the visible outline");
+
+    QPainterPath curve;
+    curve.moveTo(10, 10);
+    curve.cubicTo(40, 0, 80, 0, 90, 10);
+    curve.cubicTo(90, 60, 70, 90, 50, 90);
+    curve.cubicTo(30, 90, 10, 60, 10, 10);
+    curve.closeSubpath();
+    const auto curveRegion = ScreenshotRegionGeometry::fromPath(curve, ScreenshotRegionType::Curve);
+    renderer.setSelectionRegion(curveRegion, curveRegion, {}, false, Qt::red);
+    renderer.setSelectionDraft(curve, {QPointF(10, 10), QPointF(90, 10), QPointF(50, 90)});
+    const QImage curveWithVertices = renderCanvas(canvas);
+    renderer.setSelectionDraft(curve, {});
+    require(renderCanvas(canvas) == curveWithVertices,
+            "curve draft vertices must not add control points to the visible outline");
 }
 
 int main(int argc, char** argv) {

@@ -595,7 +595,7 @@ ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay
 
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
     const QPoint physicalPoint = physicalPositionForCanvasPoint(virtualPosition);
-    if (m_context.interaction.intelligentSelecting()) {
+    if (m_context.interaction.preselectionActive(m_context.selection)) {
         return ScreenshotOverlayRightClickResult::CancelCapture;
     }
 
@@ -1132,8 +1132,12 @@ void ScreenshotOverlayInputHandler::updateRegionDraft(const QPointF& pointer, bo
     auto vertices = m_regionPoints;
     if (includePointer && !vertices.isEmpty() && QLineF(vertices.last(), pointer).length() > 0.01)
         vertices.append(pointer);
+    const auto type = m_context.selection.regionType();
+    if (type == ScreenshotRegionType::Freehand && vertices.size() > 1 &&
+        vertices.last() == vertices.first())
+        vertices.removeLast();
     QPainterPath path;
-    if (m_context.selection.regionType() == ScreenshotRegionType::Curve) {
+    if (type == ScreenshotRegionType::Curve || type == ScreenshotRegionType::Freehand) {
         path = snowCanvasCatmullRomPath(vertices, vertices.size() >= 3);
     } else if (!vertices.isEmpty()) {
         path.moveTo(vertices.first());

@@ -186,7 +186,7 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
         if (overlay)
             overlay->setRegionTypeControlVisible(
                 m_uiPreferences.screenshotAreaTypeHintEnabled && overlay == cursorOwner &&
-                    (m_context.interaction.selecting() || m_context.selection.constructionActive()),
+                    m_context.interaction.preselectionActive(m_context.selection),
                 m_context.selection.regionType(), selectionGlobal, cursorPosition);
     });
     if (m_context.selection.regionOperationActive() ||

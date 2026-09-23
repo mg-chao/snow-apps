@@ -18,6 +18,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "widgets/modal.h"
 
@@ -2579,6 +2580,69 @@ void rightClickSeparatesDismissalFromSelectionChanges() {
             "color sampling cancellation must not dismiss the overlay");
 }
 
+void areaTypesExitFromPreselectionButKeepDraftCancellation() {
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("area-types"), QStringLiteral("area-types"),
+                                   QRect(0, 0, 300, 300), solidImage(QSize(300, 300), Qt::white)));
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    int exits = 0;
+    int expectedExits = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.cancelCapture = [&] { ++exits; };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+
+    for (const auto type : {ScreenshotRegionType::Rectangle, ScreenshotRegionType::Polyline,
+                            ScreenshotRegionType::Curve, ScreenshotRegionType::Freehand}) {
+        selection.clearSelection();
+        selection.setRegionType(type);
+        interaction.enterOverlayVisible(type == ScreenshotRegionType::Rectangle);
+        if (type == ScreenshotRegionType::Rectangle)
+            selection.setSelectionRect(QRectF(20, 20, 80, 60)); // Smart hover candidate.
+        require(interaction.preselectionActive(selection),
+                "the initial area-selection phase must include every region type");
+        require(handler.handleRightClick(nullptr, QPointF(10, 10)) ==
+                        ScreenshotOverlayRightClickResult::CancelCapture &&
+                    exits == expectedExits,
+                "right press during preselection must defer capture exit for every region type");
+        handler.completeRightClickCancellation();
+        require(exits == ++expectedExits, "release completion must exit once for each area type");
+
+        if (type != ScreenshotRegionType::Rectangle) {
+            handler.handleMousePress(nullptr, QPointF(20, 20));
+            require(selection.constructionActive() && !interaction.preselectionActive(selection),
+                    "starting a custom outline must end the initial area-selection phase");
+            require(handler.handleRightClick(nullptr, QPointF(20, 20)) ==
+                            ScreenshotOverlayRightClickResult::Handled &&
+                        !selection.constructionActive() && exits == expectedExits,
+                    "right press during a custom outline must cancel its draft");
+            require(interaction.preselectionActive(selection),
+                    "canceling an initial outline must restore the initial selection phase");
+        } else {
+            static_cast<void>(interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee));
+            require(!interaction.preselectionActive(selection),
+                    "a rectangle drag must hide the area type indicator");
+            interaction.cancelDrag();
+        }
+        selection.setSelectionRect(QRectF(20, 20, 80, 60));
+        interaction.confirmSelection();
+        require(!interaction.preselectionActive(selection),
+                "a confirmed area must not display the initial area type indicator");
+    }
+
+    selection.clearSelection();
+    interaction.enterOverlayVisible(false);
+    require(interaction.preselectionActive(selection) &&
+                handler.handleRightClick(nullptr, {}) ==
+                    ScreenshotOverlayRightClickResult::CancelCapture,
+            "manual rectangle fallback must also exit from the initial selection phase");
+}
+
 void scrollingCaptureRoutesEveryToolbarShortcut() {
     const storage::ScreenshotShortcutSettings settings;
     const auto original = settings.allShortcuts();
@@ -3436,10 +3500,25 @@ void customRegionInputTransactions() {
     handler.handleMousePress(nullptr, QPointF(70, 50));
     handler.handleMouseMove(nullptr, QPointF(100, 50));
     handler.handleMouseMove(nullptr, QPointF(90, 95));
+    QCoreApplication::processEvents();
+    const auto expectedFreehandPath =
+        snowCanvasCatmullRomPath({{70, 50}, {100, 50}, {90, 95}}, true);
+    require(selection.draftPath() == expectedFreehandPath &&
+                selection.draftPath().elementAt(1).type == QPainterPath::CurveToElement,
+            "freehand preview uses the same smooth path as Free Draw");
     handler.handleMouseRelease(nullptr, QPointF(70, 50));
     require(!selection.selectionRegion().contains(QPointF(87, 65)),
             "freehand release commits a cutout");
     const auto withHole = selection.selectionRegion();
+    const auto operands = withHole.toJson().value(QStringLiteral("operands")).toArray();
+    require(operands.size() >= 2, "committed freehand region retains its vector operand");
+    const auto freehandOperand = operands.at(1).toObject();
+    const auto freehandCommands = freehandOperand.value(QStringLiteral("commands")).toArray();
+    require(freehandOperand.value(QStringLiteral("type")) ==
+                    QJsonValue(QStringLiteral("freehand")) &&
+                freehandCommands.size() >= 2 &&
+                freehandCommands.at(1).toArray().at(0).toInt() == int(QPainterPath::CurveToElement),
+            "committed freehand region retains smooth segments");
     handler.beginRegionOperation(false);
     handler.setRegionType(ScreenshotRegionType::Polyline);
     handler.handleMousePress(nullptr, QPointF(250, 200));
@@ -3558,6 +3637,7 @@ int main(int argc, char** argv) {
         startupInputWaitsForRevealAndIgnoresSyntheticEvents();
         shortcutExitConfirmationGatesCancellation();
         rightClickSeparatesDismissalFromSelectionChanges();
+        areaTypesExitFromPreselectionButKeepDraftCancellation();
         scrollingCaptureRoutesEveryToolbarShortcut();
         externalSelectionSupportsHeldShortcuts();
         colorCopyEndsCaptureOnlyAfterSuccessfulCopy();

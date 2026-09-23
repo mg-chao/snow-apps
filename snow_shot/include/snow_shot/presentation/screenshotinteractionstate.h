@@ -3,6 +3,8 @@
 
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 
+class ScreenshotSelectionModel;
+
 enum class ScreenshotActiveTool {
     Move,
     Select,
@@ -74,6 +76,7 @@ class ScreenshotInteractionState final {
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool scrollingCapture() const;
     [[nodiscard]] bool selecting() const;
+    [[nodiscard]] bool preselectionActive(const ScreenshotSelectionModel& selection) const;
     [[nodiscard]] bool cursorMovementEnabled() const;
     [[nodiscard]] bool selectionToolbarMode() const;
     [[nodiscard]] bool canResizeSelection() const;

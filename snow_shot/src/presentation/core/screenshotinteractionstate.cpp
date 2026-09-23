@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotinteractionstate.h"
+#include "snow_shot/presentation/screenshotselectionmodel.h"
 
 namespace {
 bool recognitionTool(ScreenshotActiveTool tool) {
@@ -177,6 +178,15 @@ bool ScreenshotInteractionState::scrollingCapture() const {
 
 bool ScreenshotInteractionState::selecting() const {
     return intelligentSelecting() || manualSelecting();
+}
+
+bool ScreenshotInteractionState::preselectionActive(
+    const ScreenshotSelectionModel& selection) const {
+    if (!selecting() || m_dragging || selection.constructionActive() ||
+        selection.regionOperationActive()) {
+        return false;
+    }
+    return intelligentSelecting() || !selection.hasPixelSelection();
 }
 
 bool ScreenshotInteractionState::cursorMovementEnabled() const {
