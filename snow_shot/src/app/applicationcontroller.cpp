@@ -5,7 +5,6 @@
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/applicationactivation.h"
 #include "snow_shot/presentation/permissionguidecontroller.h"
-#include "snow_shot/presentation/components/updatenotice.h"
 #endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/translation/translationservice.h"
@@ -238,18 +237,19 @@ class ApplicationController::Impl {
         updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
         updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
                                 u"system");
-#ifdef Q_OS_MACOS
         QObject::connect(updates, &update::UpdateService::automaticUpdateAvailable, &q,
                          [this](const QString& version) {
-                             auto* notice = new presentation::UpdateNotice(version, mainWindow);
-                             notice->setAttribute(Qt::WA_DeleteOnClose);
-                             notice->show();
+                             systemTray.showUpdateMessage(
+                                 ApplicationController::tr(
+                                     "Snow Shot %1 is available. Open About for update options.")
+                                     .arg(version));
                          });
-#endif
+#ifndef Q_OS_MACOS
         QObject::connect(updates, &update::UpdateService::updateReady, &q, [this] {
             systemTray.showUpdateMessage(ApplicationController::tr(
                 "An update is ready. Open About to restart and update Snow Shot."));
         });
+#endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
             if (platform::windows::administratorOperationPending())

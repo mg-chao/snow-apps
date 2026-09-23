@@ -724,12 +724,12 @@ int main(int argc, char* argv[]) {
     const int screenshotRequestsBeforeMessageClicks = screenshotRequests;
     const int showMainWindowRequestsBeforeMessageClicks = showMainWindowRequests;
     const int functionSettingsRequestsBeforeMessageClicks = functionSettingsRequests;
-    controller.showUpdateMessage(QStringLiteral("An update is ready."));
+    controller.showUpdateMessage(QStringLiteral("Snow Shot 2.0.0 is available."));
     trayIcon->messageClicked();
     require(aboutRequests == 1 && screenshotRequests == screenshotRequestsBeforeMessageClicks &&
                 showMainWindowRequests == showMainWindowRequestsBeforeMessageClicks &&
                 functionSettingsRequests == functionSettingsRequestsBeforeMessageClicks,
-            "clicking an update balloon must request only the About page");
+            "clicking a new-version system notification must request only the About page");
     controller.showCaptureMessage(QStringLiteral("Capture failed"), false);
     controller.showWarningMessage(QStringLiteral("Feature unavailable"),
                                   QStringLiteral("Screenshot is unavailable"));

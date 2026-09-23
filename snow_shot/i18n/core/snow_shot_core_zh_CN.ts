@@ -634,6 +634,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>重启失败</translation>
         </message>
         <message>
+            <source>Snow Shot %1 is available. Open About for update options.</source>
+            <translation>Snow Shot %1 已推出。打开“关于”查看更新选项。</translation>
+        </message>
+        <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>
             <translation>Snow Shot 将关闭并重启以安装更新。是否继续？</translation>
         </message>

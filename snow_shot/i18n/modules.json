@@ -87,7 +87,6 @@
   ],
   "updates": [
     "UpdateErrors",
-    "UpdateNotice",
     "UpdateService",
     "snow_shot::update::UpdateService"
   ]
