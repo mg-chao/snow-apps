@@ -223,6 +223,45 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
     }
     storage.shutdown();
 }
+
+void visibleRecaptureWindowsIncludePicker() {
+    NoopOverlayEventSink sink;
+    SnowCanvasRuntime runtime;
+    snow_shot::presentation::WindowShortcutManager shortcuts;
+    ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget);
+    overlay.setGeometry(0, 0, 320, 240);
+    overlay.show();
+    QApplication::processEvents();
+
+    CapturedDisplayModel display;
+    display.logicalRect = overlay.geometry();
+    display.physicalRect = display.logicalRect;
+    display.active = true;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display, &overlay);
+    ScreenshotOverlayCoordinator coordinator(sink, runtime, shortcuts);
+    coordinator.createColorPicker(overlay.geometry().center());
+    coordinator.prepareColorPickerSurface(displays);
+    auto* picker = coordinator.colorPicker();
+    require(picker != nullptr && !picker->isVisible() &&
+                coordinator.visibleRecaptureWindows(displays) == QVector<QWidget*>{&overlay},
+            "recapture must include the visible overlay but not the prepared hidden picker");
+
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::red);
+    coordinator.updateColorPicker(&overlay, image, image.rect(), QPoint(8, 8), QPointF(50, 50),
+                                  1.0);
+    QApplication::processEvents();
+    require(picker->isVisible() && picker->isWindow() &&
+                coordinator.visibleRecaptureWindows(displays) ==
+                    QVector<QWidget*>{&overlay, picker},
+            "recapture must protect the visible native picker as well as its overlay");
+
+    coordinator.hideColorPicker();
+    require(coordinator.visibleRecaptureWindows(displays) == QVector<QWidget*>{&overlay},
+            "recapture must stop protecting the picker after it is hidden");
+}
+
 void invocationMonitorOwnsThePreparedSurface() {
     NoopOverlayEventSink sink;
     SnowCanvasRuntime runtime;
@@ -411,6 +450,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--canvas-sampler-only")))
         return 0;
     pickerLifetimeFollowsExplicitSessionOperations();
+    visibleRecaptureWindowsIncludePicker();
     invocationMonitorOwnsThePreparedSurface();
     startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor();
     return 0;

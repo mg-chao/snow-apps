@@ -1728,16 +1728,8 @@ void ScreenshotController::Impl::prepareRecaptureWindows(quint64 generation) {
         return;
     }
 
-    QVector<QWidget*> visibleWindows;
-    m_displaySession.forEachOverlay([&visibleWindows](qsizetype, ScreenshotOverlayWindow* overlay) {
-        if (overlay != nullptr && overlay->isVisible() && !visibleWindows.contains(overlay)) {
-            visibleWindows.push_back(overlay);
-        }
-    });
-    if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar();
-        toolbar != nullptr && toolbar->isVisible() && !visibleWindows.contains(toolbar)) {
-        visibleWindows.push_back(toolbar);
-    }
+    const QVector<QWidget*> visibleWindows =
+        m_overlayCoordinator->visibleRecaptureWindows(m_displaySession);
 
 #ifdef Q_OS_MACOS
     // ScreenCaptureKit filters explicit window IDs while the editing UI stays visible.

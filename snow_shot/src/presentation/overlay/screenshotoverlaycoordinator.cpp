@@ -546,6 +546,21 @@ void ScreenshotOverlayCoordinator::destroyUiResources() {
     m_uiHost.destroyUiResources();
 }
 
+QVector<QWidget*> ScreenshotOverlayCoordinator::visibleRecaptureWindows(
+    const ScreenshotDisplaySession& displaySession) const {
+    QVector<QWidget*> windows;
+    const auto appendVisible = [&windows](QWidget* window) {
+        if (window != nullptr && window->isVisible() && !windows.contains(window)) {
+            windows.push_back(window);
+        }
+    };
+    displaySession.forEachOverlay(
+        [&appendVisible](qsizetype, ScreenshotOverlayWindow* overlay) { appendVisible(overlay); });
+    appendVisible(m_uiHost.toolbar());
+    appendVisible(m_uiHost.colorPicker());
+    return windows;
+}
+
 QVector<std::uintptr_t>
 ScreenshotOverlayCoordinator::excludedHwnds(const ScreenshotDisplaySession& displaySession) const {
     QVector<std::uintptr_t> hwnds;

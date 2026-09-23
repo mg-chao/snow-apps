@@ -150,6 +150,9 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void raiseSelectionToolbar();
     void destroyUiResources();
 
+    [[nodiscard]] QVector<QWidget*>
+    visibleRecaptureWindows(const ScreenshotDisplaySession& displaySession) const;
+
     [[nodiscard]] QVector<std::uintptr_t>
     excludedHwnds(const ScreenshotDisplaySession& displaySession) const override;
 
