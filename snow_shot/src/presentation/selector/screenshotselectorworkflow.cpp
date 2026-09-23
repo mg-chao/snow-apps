@@ -15,6 +15,8 @@ ScreenshotSelectorWorkflow::ScreenshotSelectorWorkflow(ScreenshotSelectorWorkflo
     : m_context(std::move(context)) {}
 
 void ScreenshotSelectorWorkflow::startRefresh() {
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
+        return;
     if (m_context.interaction.inactive() || !m_context.displaySession.hasActiveDisplays()) {
         return;
     }
@@ -31,6 +33,8 @@ void ScreenshotSelectorWorkflow::startRefresh() {
 }
 
 void ScreenshotSelectorWorkflow::handleRefreshFinished(bool ok) {
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
+        return;
     if (m_context.interaction.inactive()) {
         return;
     }
@@ -74,7 +78,8 @@ bool ScreenshotSelectorWorkflow::updateSelectionAt(const QPoint& physicalPoint) 
 }
 
 bool ScreenshotSelectorWorkflow::requestHitTest(const QPoint& physicalPoint, quint32 displayId) {
-    if (!m_context.interaction.intelligentSelecting() ||
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+        !m_context.interaction.intelligentSelecting() ||
         (!m_context.selectorService.ready() && !m_context.selectorService.refreshInFlight())) {
         return false;
     }
@@ -104,7 +109,8 @@ void ScreenshotSelectorWorkflow::handleInitialResult(bool ok, const QVector<QRec
         return;
     }
 
-    if (m_context.interaction.intelligentSelecting()) {
+    if (m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+        m_context.interaction.intelligentSelecting()) {
         if (ok) {
             SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_apply_hit_path");
             applyHitPath(hitRects, displayId);
@@ -123,6 +129,8 @@ void ScreenshotSelectorWorkflow::handleInitialResult(bool ok, const QVector<QRec
 }
 
 void ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects, quint32 displayId) {
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
+        return;
     QVector<QRectF> canvasHitRects;
     canvasHitRects.reserve(hitRects.size());
     for (const QRectF& hitRect : hitRects) {
@@ -177,7 +185,8 @@ void ScreenshotSelectorWorkflow::handleTargetChanged() {
 
 void ScreenshotSelectorWorkflow::handleRefinement(const QVector<QRectF>& hitRects,
                                                   quint32 displayId, bool replacePath) {
-    if (!m_context.interaction.intelligentSelecting() ||
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+        !m_context.interaction.intelligentSelecting() ||
         m_context.intelligentSelection.pressActive())
         return;
     if (replacePath) {

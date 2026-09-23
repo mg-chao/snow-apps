@@ -3,7 +3,7 @@
 
 #include <QColor>
 #include <QRect>
-#include <QRegion>
+#include "snow_shot/image/screenshotregiongeometry.h"
 #include <optional>
 #include <QString>
 #include <QVector>
@@ -16,7 +16,7 @@ struct ScreenshotSelectionParams {
     bool lockAspectRatio = false;
     bool lockDragAspectRatio = false;
     // Absent for legacy rectangles and named presets; present geometry is authoritative.
-    std::optional<QRegion> region;
+    std::optional<ScreenshotRegionGeometry> region;
 
     bool operator==(const ScreenshotSelectionParams& other) const {
         return selection == other.selection && radius == other.radius &&

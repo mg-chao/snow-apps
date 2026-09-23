@@ -11,6 +11,9 @@ constexpr qreal kNewMarqueeAspectRatio = 1.0;
 } // namespace
 
 void ScreenshotSelectionModel::reset() {
+    m_cachedSelectionRegion.reset();
+    m_draftVertices.clear();
+    m_draftRegion.reset();
     m_region.reset();
     m_confirmedRegion = {};
     m_regionOperation = RegionOperation::Replace;
@@ -39,6 +42,9 @@ bool ScreenshotSelectionModel::hasPixelSelection() const {
 }
 
 void ScreenshotSelectionModel::clearSelection() {
+    m_cachedSelectionRegion.reset();
+    m_draftVertices.clear();
+    m_draftRegion.reset();
     m_region.reset();
     m_confirmedRegion = {};
     m_regionOperation = RegionOperation::Replace;
@@ -48,6 +54,9 @@ void ScreenshotSelectionModel::clearSelection() {
 }
 
 void ScreenshotSelectionModel::setSelectionRect(const QRectF& selection) {
+    m_cachedSelectionRegion.reset();
+    m_draftVertices.clear();
+    m_draftRegion.reset();
     m_region.reset();
     const QRectF normalized = selection.normalized();
     m_start = normalized.topLeft();
@@ -97,7 +106,7 @@ bool ScreenshotSelectionModel::adjustFromToolbar(int minDx, int minDy, int maxDx
     if (!rectangular() && (minDx != maxDx || minDy != maxDy)) {
         return false;
     }
-    const QRegion originalRegion = selectionRegion();
+    const ScreenshotRegionGeometry originalRegion = selectionRegion();
     QRectF selection = normalizedSelection();
     if (!selection.isValid() || selection.width() < minimumSelectionSize ||
         selection.height() < minimumSelectionSize) {
@@ -240,21 +249,24 @@ bool ScreenshotSelectionModel::applyParams(const ScreenshotSelectionParams& para
     return true;
 }
 
-QRegion ScreenshotSelectionModel::confirmedRegion() const {
+ScreenshotRegionGeometry ScreenshotSelectionModel::confirmedRegion() const {
     return regionOperationActive() ? m_confirmedRegion : selectionRegion();
 }
 
-QRegion ScreenshotSelectionModel::selectionRegion() const {
-    const QRegion marquee(pixelSelection());
+ScreenshotRegionGeometry ScreenshotSelectionModel::selectionRegion() const {
+    if (m_cachedSelectionRegion)
+        return *m_cachedSelectionRegion;
+    const ScreenshotRegionGeometry marquee =
+        m_draftRegion.value_or(ScreenshotRegionGeometry(pixelSelection()));
     if (m_regionOperation == RegionOperation::Add)
-        return m_confirmedRegion.united(marquee);
+        return *(m_cachedSelectionRegion = m_confirmedRegion.united(marquee));
     if (m_regionOperation == RegionOperation::Subtract)
-        return m_confirmedRegion.subtracted(marquee);
-    return m_region.value_or(marquee);
+        return *(m_cachedSelectionRegion = m_confirmedRegion.subtracted(marquee));
+    return m_draftRegion.value_or(m_region.value_or(marquee));
 }
 
 bool ScreenshotSelectionModel::rectangular() const {
-    return !regionOperationActive() && selectionRegion().rectCount() == 1;
+    return !constructionActive() && !regionOperationActive() && selectionRegion().rectCount() == 1;
 }
 
 bool ScreenshotSelectionModel::regionOperationActive() const {
@@ -266,18 +278,18 @@ ScreenshotSelectionModel::RegionOperation ScreenshotSelectionModel::regionOperat
 }
 
 QRectF ScreenshotSelectionModel::pendingMarquee() const {
-    return regionOperationActive() ? normalizedSelection() : QRectF();
+    return regionOperationActive() && !constructionActive() ? normalizedSelection() : QRectF();
 }
 
 void ScreenshotSelectionModel::beginRegionOperation(RegionOperation operation) {
-    const QRegion confirmed = confirmedRegion();
+    const ScreenshotRegionGeometry confirmed = confirmedRegion();
     clearSelection();
     m_confirmedRegion = confirmed;
     m_regionOperation = operation;
 }
 
-void ScreenshotSelectionModel::setSelectionRegion(const QRegion& region) {
-    const QRegion snapshot = region;
+void ScreenshotSelectionModel::setSelectionRegion(const ScreenshotRegionGeometry& region) {
+    const ScreenshotRegionGeometry snapshot = region;
     setSelectionRect(QRectF(snapshot.boundingRect()));
     m_regionOperation = RegionOperation::Replace;
     m_confirmedRegion = {};
@@ -313,4 +325,29 @@ ScreenshotResultStyle ScreenshotSelectionModel::resultStyle() const {
         style.region = m_region->translated(-pixelSelection().topLeft());
     }
     return style;
+}
+
+void ScreenshotSelectionModel::setDraftRegion(const ScreenshotRegionGeometry& region,
+                                              const QVector<QPointF>& vertices) {
+    m_cachedSelectionRegion.reset();
+    m_draftVertices = vertices;
+    m_draftRegion = region;
+    const QRectF bounds(region.boundingRect());
+    m_start = bounds.topLeft();
+    m_end = bounds.bottomRight();
+}
+
+void ScreenshotSelectionModel::clearDraftRegion() {
+    m_cachedSelectionRegion.reset();
+    m_draftVertices.clear();
+    m_draftRegion.reset();
+    m_start = {};
+    m_end = {};
+}
+
+void ScreenshotSelectionModel::commitDraftRegion(const QRect& canvasBounds) {
+    if (m_draftRegion) {
+        const auto region = selectionRegion();
+        setSelectionRegion(canvasBounds.isEmpty() ? region : region.intersected(canvasBounds));
+    }
 }

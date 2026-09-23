@@ -299,7 +299,10 @@ void ScreenshotSelectionShadowRenderer::renderResultShadow(QPainter& painter,
     renderShadow(painter, contentBounds, cornerRadius, shadowWidth, shadowColor, devicePixelRatio);
 }
 
-QPainterPath screenshotRegionPath(const QRegion& region, qreal radius) {
+QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qreal radius) {
+    if (geometry.custom())
+        return geometry.path();
+    const QRegion& region = geometry.rectangles();
     // The region's scanline rectangles are a storage decomposition, not contours.
     // Simplify their union before rounding so shared edges never become visible.
     struct Cache {
@@ -442,7 +445,10 @@ QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
     transform.translate(layout.contentRect.x(), layout.contentRect.y());
     transform.scale(scale, scale);
     const QPainterPath path = transform.map(
-        screenshotRegionPath(*style.region, style.cornerRadius * layout.devicePixelRatio / scale));
+        (style.region->custom()
+             ? style.region->path(scale)
+             : screenshotRegionPath(*style.region,
+                                    style.cornerRadius * layout.devicePixelRatio / scale)));
     struct Cache {
         QPainterPath path;
         QSize size;
@@ -492,6 +498,8 @@ ScreenshotResultCompositor::normalizedStyle(const ScreenshotResultStyle& style) 
     ScreenshotResultStyle normalized = style;
     normalized.cornerRadius = std::clamp(
         normalized.cornerRadius, 0, snow_shot::presentation::kScreenshotSelectionCornerRadiusMax);
+    if (normalized.region && normalized.region->custom())
+        normalized.cornerRadius = 0;
     normalized.shadowWidth = std::clamp(
         normalized.shadowWidth, 0, snow_shot::presentation::kScreenshotSelectionShadowWidthMax);
     if (!normalized.shadowColor.isValid()) {

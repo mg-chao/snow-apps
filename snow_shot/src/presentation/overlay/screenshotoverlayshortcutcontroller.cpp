@@ -83,8 +83,8 @@ struct ScreenshotOverlayShortcutController::Impl {
     }
 
     [[nodiscard]] bool toolbarToolShortcutState() const {
-        return !inputHandler.externalDragActive() && actions.mainToolbarVisible() &&
-               actions.localShortcutInputAllowed();
+        return !inputHandler.externalDragActive() && !inputHandler.regionOperationActive() &&
+               actions.mainToolbarVisible() && actions.localShortcutInputAllowed();
     }
 
     [[nodiscard]] bool cursorMovementShortcutState() const {
@@ -111,6 +111,31 @@ struct ScreenshotOverlayShortcutController::Impl {
     }
 
     void registerFixedBindings() {
+        for (bool reverse : {false, true}) {
+            static_cast<void>(shortcutManager.addBinding(
+                &q, fixedBinding(
+                        reverse ? QStringLiteral("screenshot.region_previous")
+                                : QStringLiteral("screenshot.region_next"),
+                        {QKeyCombination(reverse ? Qt::ControlModifier | Qt::ShiftModifier
+                                                 : Qt::ControlModifier,
+                                         Qt::Key_Tab)},
+                        ShortcutManager::StandardPriority::WindowCommand,
+                        [this] {
+                            return actions.localShortcutInputAllowed() &&
+                                   (interaction.selecting() || interaction.moveToolActive());
+                        },
+                        [this, reverse] { return inputHandler.cycleRegionType(reverse); })));
+        }
+        static_cast<void>(shortcutManager.addBinding(
+            &q, fixedBinding(
+                    QStringLiteral("screenshot.region_remove_vertex"),
+                    {QKeyCombination(Qt::Key_Backspace)},
+                    ShortcutManager::StandardPriority::WindowCommand,
+                    [this] {
+                        return actions.localShortcutInputAllowed() &&
+                               inputHandler.customRegionInputActive();
+                    },
+                    [this] { return inputHandler.removeRegionVertex(); })));
         QList<QKeyCombination> confirmationKeys = anyModifierCombinations(Qt::Key_Return);
         confirmationKeys.append(anyModifierCombinations(Qt::Key_Enter));
         static_cast<void>(shortcutManager.addBinding(
@@ -188,8 +213,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                     actionId != QStringLiteral("cancel_screenshot")) {
                     return false;
                 }
-                if (actionId == QStringLiteral("copy_to_clipboard") &&
-                    inputHandler.regionOperationActive())
+                if (inputHandler.regionOperationActive() &&
+                    actionId != QStringLiteral("cancel_screenshot") &&
+                    !actionId.startsWith(QStringLiteral("move_cursor_")))
                     return false;
                 if (actionId == QStringLiteral("cancel_screenshot") ||
                     actionId == QStringLiteral("copy_to_clipboard")) {

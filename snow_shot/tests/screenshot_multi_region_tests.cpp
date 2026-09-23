@@ -1,8 +1,11 @@
+#include "snow_shot/image/screenshotregionpoints.h"
+#include <QLineF>
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
 
+#include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QPainterPathStroker>
@@ -19,7 +22,7 @@ void require(bool condition, const char* message) {
 }
 void apply(ScreenshotSelectionModel& model, ScreenshotSelectionModel::RegionOperation operation,
            const QRect& rectangle) {
-    const QRegion before = model.selectionRegion();
+    const auto before = model.selectionRegion();
     model.beginRegionOperation(operation);
     require(model.confirmedRegion() == before, "entry must preserve confirmed geometry");
     model.setSelectionRect(rectangle);
@@ -166,9 +169,154 @@ void persistenceAndHandlePolicy() {
     interaction.confirmSelection();
     require(interaction.selectionHandlesVisible(), "confirmed rectangle handles return");
 }
+
+void customGeometryTransactionsAndPersistence() {
+    const QVector<QPointF> vertices{{10.25, 10.5}, {110.75, 20.25}, {65.5, 100.75}, {20.25, 70.5}};
+    QPainterPath polygon;
+    polygon.addPolygon(QPolygonF(vertices));
+    polygon.closeSubpath();
+    const auto polyline =
+        ScreenshotRegionGeometry::fromPath(polygon, ScreenshotRegionType::Polyline);
+    const auto curvePath = snowCanvasCatmullRomPath(vertices, true);
+    const auto curve = ScreenshotRegionGeometry::fromPath(curvePath, ScreenshotRegionType::Curve);
+    require(curve.path() == curvePath &&
+                curve.path().elementAt(1).type == QPainterPath::CurveToElement,
+            "curve regions must retain engine cubics exactly before Boolean operations");
+    require(curve.custom() && curve.rectCount() > 1,
+            "custom shapes must not acquire rectangle handles");
+    const auto hole = curve.subtracted(QRect(40, 35, 20, 20));
+    require(!hole.contains(QPointF(50, 45)) && hole.contains(QPointF(65, 65)),
+            "curve subtraction preserves holes");
+    const auto expanded = hole.united(QRect(150, 20, 20, 20));
+    require(expanded.contains(QPointF(155, 25)) && !expanded.contains(QPointF(130, 25)),
+            "disconnected vector components");
+    require(expanded.translated(9, 13).contains(QPointF(164, 38)),
+            "translate every vector operand");
+    const auto decoded = ScreenshotRegionGeometry::fromJson(expanded.toJson());
+    require(decoded && *decoded == expanded && decoded->path(2.0) == expanded.path(2.0),
+            "vector operand codec round trip at another scale");
+    auto corrupt = expanded.toJson();
+    auto operands = corrupt.value(QStringLiteral("operands")).toArray();
+    auto first = operands.first().toObject();
+    first.insert(QStringLiteral("commands"), QJsonArray{QJsonArray{2, 4, 8}});
+    operands[0] = first;
+    corrupt.insert(QStringLiteral("operands"), operands);
+    require(!ScreenshotRegionGeometry::fromJson(corrupt), "reject orphan cubic control points");
+    corrupt = expanded.toJson();
+    corrupt.insert(QStringLiteral("version"), 999);
+    require(!ScreenshotRegionGeometry::fromJson(corrupt), "reject unsupported geometry versions");
+
+    ScreenshotSelectionModel model;
+    model.setSelectionRect(QRect(0, 0, 200, 200));
+    static_cast<void>(model.setCornerRadius(20));
+    model.beginRegionOperation(ScreenshotSelectionModel::RegionOperation::Add);
+    model.setDraftRegion(polyline);
+    model.commitDraftRegion();
+    require(model.cornerRadiusApplicable(),
+            "contained custom addition must not disable rectangle rounding");
+    model.beginRegionOperation(ScreenshotSelectionModel::RegionOperation::Subtract);
+    model.setDraftRegion(polyline);
+    require(!model.cornerRadiusApplicable(), "custom contribution suppresses rounding in preview");
+    model.cancelRegionOperation();
+    require(model.cornerRadiusApplicable() && model.cornerRadius() == 20,
+            "cancel restores radius eligibility and value");
+    model.beginRegionOperation(ScreenshotSelectionModel::RegionOperation::Subtract);
+    model.setDraftRegion(polyline);
+    model.commitDraftRegion();
+    require(!model.cornerRadiusApplicable() && model.cornerRadius() == 20,
+            "commit retains radius preference without applying it");
+    const auto params = model.params(QRect(0, 0, 300, 300));
+    ScreenshotSelectionModel restored;
+    require(restored.applyParams(params, QRect(0, 0, 300, 300)) &&
+                restored.selectionRegion() == model.selectionRegion(),
+            "custom selection model restoration");
+    require(ScreenshotResultCompositor::normalizedStyle(model.resultStyle()).cornerRadius == 0,
+            "compositor centrally suppresses custom rounding");
+    model.setSelectionRect(QRect(0, 0, 200, 200));
+    require(model.cornerRadiusApplicable(), "replacement rectangle restores radius eligibility");
+
+    snow_shot::storage::PersistedSelection persisted;
+    persisted.shadowColor = Qt::black;
+    persisted.rectangle = expanded.boundingRect();
+    persisted.region = expanded;
+    const auto normalization = snow_shot::storage::normalizePersistedSelection(
+        snow_shot::storage::persistedSelectionToJson(persisted));
+    require(normalization.valid && normalization.value == persisted,
+            "history/previous selection vector codec");
+    QImage content(200, 150, QImage::Format_ARGB32_Premultiplied);
+    content.fill(Qt::red);
+    ScreenshotResultStyle style;
+    style.region = expanded;
+    style.cornerRadius = 40;
+    const auto raster = ScreenshotResultCompositor::compose(content, style);
+    require(raster.pixelColor(50, 45).alpha() == 0 && raster.pixelColor(155, 25).alpha() == 255,
+            "export uses holes and components");
+    bool antialiased = false;
+    for (int y = 0; y < raster.height(); ++y)
+        for (int x = 0; x < raster.width(); ++x) {
+            const int alpha = raster.pixelColor(x, y).alpha();
+            antialiased |= alpha > 0 && alpha < 255;
+        }
+    require(antialiased, "custom contour edges must be antialiased");
+    const auto repeated = snowCanvasCatmullRomPath({{10, 10}, {10, 10}, {50, 10}, {30, 50}}, true);
+    require(!repeated.isEmpty(), "curve bridge supports degenerate neighbor fallback");
+}
+void shapeCodecAndSamplingBoundaries() {
+    QVector<QPointF> samples;
+    for (int i = 0; i <= 1000; ++i)
+        samples.append(QPointF(i * 0.1, std::sin(i * 0.01) * 20));
+    const auto reduced = simplifyScreenshotRegionPoints(samples, 0.25);
+    require(reduced.size() < samples.size() / 10 && reduced.first() == samples.first() &&
+                reduced.last() == samples.last(),
+            "Freehand removes redundant samples and retains endpoints");
+    for (const auto& point : samples) {
+        qreal distance = 1e9;
+        for (int i = 1; i < reduced.size(); ++i) {
+            const auto delta = reduced[i] - reduced[i - 1];
+            const auto offset = point - reduced[i - 1];
+            const auto length = QPointF::dotProduct(delta, delta);
+            const auto t = std::clamp(QPointF::dotProduct(offset, delta) / length, 0.0, 1.0);
+            distance = std::min(distance, QLineF(point, reduced[i - 1] + t * delta).length());
+        }
+        require(distance <= 0.250001, "Freehand simplification obeys subpixel error bound");
+    }
+    QPainterPath crossing;
+    crossing.addPolygon(QPolygonF{{0, 0}, {100, 100}, {0, 100}, {100, 0}});
+    crossing.closeSubpath();
+    const auto region =
+        ScreenshotRegionGeometry::fromPath(crossing, ScreenshotRegionType::Polyline);
+    require(region.contains({50, 10}) && !region.contains({10, 50}),
+            "self-intersections use odd-even filling");
+    ScreenshotSelectionModel model;
+    model.setDraftRegion(region);
+    model.commitDraftRegion(QRect(25, 0, 50, 100));
+    require(model.selectionRegion().boundingRect() == QRect(25, 0, 50, 100) &&
+                !model.selectionRegion().contains({15, 5}),
+            "commit clips to the available canvas");
+    ScreenshotResultStyle style{20, 8, Qt::black};
+    style.region = model.selectionRegion();
+    style.regionScale = 1.75;
+    const auto encoded = encodeScreenshotResultStyle(style);
+    const auto decoded = decodeScreenshotResultStyle(encoded);
+    require(decoded && decoded->region == style.region && decoded->regionScale == 1.75,
+            "pinned style codec retains vector geometry and scale");
+    require(!decodeScreenshotResultStyle(encoded.chopped(5)),
+            "truncated pinned geometry rejects the record");
+    QByteArray legacy;
+    QDataStream legacyStream(&legacy, QIODevice::WriteOnly);
+    legacyStream << style.cornerRadius << style.shadowWidth << style.shadowColor;
+    const auto oldStyle = decodeScreenshotResultStyle(legacy);
+    require(oldStyle && !oldStyle->region && oldStyle->cornerRadius == 20,
+            "legacy pinned result styles remain readable");
+    style.region.reset();
+    require(decodeScreenshotResultStyle(encodeScreenshotResultStyle(style)).has_value(),
+            "rectangle style extensions round trip without geometry");
+}
 } // namespace
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
+    shapeCodecAndSamplingBoundaries();
+    customGeometryTransactionsAndPersistence();
     geometryAndTransactions();
     outlinesAndEffects();
     persistenceAndHandlePolicy();

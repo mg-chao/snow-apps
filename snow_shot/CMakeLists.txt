@@ -1086,6 +1086,10 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotselectionexportuiservices.h
     include/snow_shot/presentation/screenshotselectiongeometry.h
     include/snow_shot/presentation/screenshotselectionlimits.h
+    include/snow_shot/image/screenshotregiongeometry.h
+    include/snow_shot/image/screenshotregionpoints.h
+    include/snow_shot/presentation/screenshotregionpreferences.h
+    include/snow_shot/presentation/screenshotregiontypecontrol.h
     include/snow_shot/presentation/screenshotselectionmodel.h
     include/snow_shot/presentation/screenshotselectionexportworkflowports.h
     include/snow_shot/presentation/screenshotselectionparams.h
@@ -2802,12 +2806,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/storage/persistedselectioncodec.cpp
     )
     target_include_directories(snow-shot-multi-region-tests PRIVATE include)
-    target_link_libraries(snow-shot-multi-region-tests PRIVATE Qt6::Gui)
+    target_link_libraries(snow-shot-multi-region-tests PRIVATE Qt6::Gui snow_draw_engine_qt_canvas)
     if(WIN32)
         target_link_libraries(snow-shot-multi-region-tests PRIVATE user32)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-multi-region-tests)
     add_test(NAME snow-shot-multi-region-tests COMMAND snow-shot-multi-region-tests)
+    add_test(NAME snow-shot-region-overlay-input-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --region-input-only -platform offscreen)
+    set_tests_properties(snow-shot-region-overlay-input-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-region-shape-input-tests COMMAND snow-shot-screenshot-history-tests --region-shapes-only)
+    set_tests_properties(snow-shot-region-shape-input-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
     set_tests_properties(snow-shot-multi-region-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}" LABELS "unit")
 
@@ -7267,6 +7276,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-selection-render-tests COMMAND snow-shot-selection-render-tests)
     set_tests_properties(snow-shot-selection-render-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
 endif()
+
+# Overlay hosts also own the shared region switcher and its custom icon pack.
+get_property(_region_switcher_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_target IN LISTS _region_switcher_targets)
+    get_target_property(_sources ${_target} SOURCES)
+    if(_sources MATCHES "screenshotoverlaywindow.cpp" AND NOT _sources MATCHES "snowshoticons.cpp")
+        target_sources(${_target} PRIVATE src/presentation/components/icons/snowshoticons.cpp)
+    endif()
+endforeach()
 
 if(APPLE)
     get_property(_screenshot_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)

@@ -21,6 +21,7 @@ struct ScreenshotToolbarPresentationState {
     bool editing = false;
     bool ocrAvailable = true;
     bool selectionResizable = true;
+    bool cornerRadiusApplicable = true;
     bool aspectRatioLocked = false;
     int cornerRadius = 0;
     int shadowWidth = 0;

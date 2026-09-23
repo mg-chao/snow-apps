@@ -420,7 +420,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     quint64 m_presentationGeneration = 0;
     SnowCanvasWidget* m_canvas = nullptr;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
-    QFrame* m_borderFrame = nullptr;
     QFrame* m_controlsPanel = nullptr;
     CanvasStatusReadout* m_scaleLabel = nullptr;
     QTimer* m_scaleLabelTimer = nullptr;

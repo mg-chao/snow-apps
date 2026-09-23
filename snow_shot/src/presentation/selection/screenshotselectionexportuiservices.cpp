@@ -25,6 +25,7 @@
 #include <QStringList>
 #include <QTimer>
 #include <QDataStream>
+#include <QJsonDocument>
 #include <QUuid>
 
 #include <algorithm>
@@ -72,15 +73,6 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
                 static_cast<void>(storage.pinnedWindows().upsert(record));
             }
         };
-}
-
-ScreenshotResultStyle decodeResultStyle(const QByteArray& bytes) {
-    ScreenshotResultStyle style;
-    if (!bytes.isEmpty()) {
-        QDataStream stream(bytes);
-        stream >> style.cornerRadius >> style.shadowWidth >> style.shadowColor;
-    }
-    return style;
 }
 
 // Restore display-local positions within the current usable area. Window
@@ -922,7 +914,10 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.initialWindowSize = record.initialWindowSize;
         config.screen = targetScreen;
         config.enableEditing = true;
-        config.resultStyle = decodeResultStyle(record.resultStyle);
+        const auto restoredStyle = decodeScreenshotResultStyle(record.resultStyle);
+        if (!restoredStyle)
+            continue;
+        config.resultStyle = *restoredStyle;
         config.borderAppearance = record.borderAppearance;
         config.persistenceId = record.id;
         config.restorePersistentState = true;

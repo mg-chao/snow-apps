@@ -419,7 +419,9 @@ QJsonValue borderAppearanceToJson(const std::optional<PinnedBorderAppearance>& a
                        {QStringLiteral("content_rect"), rectFToJson(appearance->contentRect)},
                        {QStringLiteral("corner_radius"), appearance->cornerRadius},
                        {QStringLiteral("has_shadow"), appearance->hasShadow}};
-    if (appearance->region) {
+    if (appearance->region && appearance->region->custom()) {
+        result.insert(QStringLiteral("geometry"), appearance->region->toJson());
+    } else if (appearance->region) {
         QJsonArray regions;
         for (const QRect& rect : *appearance->region)
             regions.push_back(rectToJson(rect));
@@ -438,7 +440,15 @@ std::optional<PinnedBorderAppearance> borderAppearanceFromJson(const QJsonValue&
         !QRectF(QPointF(), QSizeF(appearance.sourceSize)).contains(appearance.contentRect)) {
         return {};
     }
-    if (object.contains(QStringLiteral("regions"))) {
+    if (object.contains(QStringLiteral("geometry"))) {
+        const auto geometry =
+            ScreenshotRegionGeometry::fromJson(object.value(QStringLiteral("geometry")));
+        if (!geometry || geometry->isEmpty() ||
+            !QRectF(QPointF(), appearance.contentRect.size())
+                 .contains(geometry->path().boundingRect()))
+            return std::nullopt;
+        appearance.region = *geometry;
+    } else if (object.contains(QStringLiteral("regions"))) {
         const auto regions = object.value(QStringLiteral("regions"));
         if (!regions.isArray() || regions.toArray().isEmpty() || regions.toArray().size() > 65536)
             return {};
@@ -814,6 +824,11 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     record.showBorder = object.value(QStringLiteral("show_border")).toBool(true);
     record.borderAppearance =
         borderAppearanceFromJson(object.value(QStringLiteral("border_appearance")));
+    if (object.value(QStringLiteral("border_appearance"))
+            .toObject()
+            .contains(QStringLiteral("geometry")) &&
+        !record.borderAppearance)
+        return false;
     const auto accentValue = object.value(QStringLiteral("hide_to_top_accent_index"));
     const int accent = accentValue.toInt(-1);
     record.hideToTopAccentIndex =

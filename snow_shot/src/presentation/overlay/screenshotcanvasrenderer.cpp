@@ -20,6 +20,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QPainter>
+#include <QPainterPathStroker>
 #include <QPainterPath>
 #include <QPen>
 #include <QPointF>
@@ -1016,7 +1017,8 @@ void ScreenshotCanvasRenderer::setSelection(const QRectF& selection, bool handle
     applySelectionState(next);
 }
 
-void ScreenshotCanvasRenderer::setSelectionRegion(const QRegion& region, const QRegion& confirmed,
+void ScreenshotCanvasRenderer::setSelectionRegion(const ScreenshotRegionGeometry& region,
+                                                  const ScreenshotRegionGeometry& confirmed,
                                                   const QRectF& marquee, bool subtracting,
                                                   const QColor& danger) {
     auto state = m_selectionState;
@@ -1269,6 +1271,12 @@ void ScreenshotCanvasRenderer::reset() {
     m_pinnedResultStyle = {};
     m_pinnedBackgroundColor = {};
     m_bakedSelectionPath = {};
+    m_outlineCachePath = {};
+    m_outlineCache = {};
+    m_pinnedBorderPath = {};
+    m_pinnedBorderClientBounds = {};
+    m_pinnedBorderColor = {};
+    m_pinnedBorderVisible = false;
     m_selectionState = ScreenshotSelectionVisualState{};
     m_renderMode = RenderMode::Standard;
     m_maskVisible = false;
@@ -1505,6 +1513,47 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             painter.fillRect(context.viewportRect, m_pinnedBackgroundColor);
             painter.restore();
         }
+        if (m_pinnedBorderVisible && !m_pinnedBorderPath.isEmpty()) {
+            painter.save();
+            const QTransform surface = painter.combinedTransform();
+            QPainterPath outline =
+                surface.map(context.canvasToViewTransform.map(m_pinnedBorderPath));
+            bool invertible = false;
+            const auto inverse = surface.inverted(&invertible);
+            if (invertible) {
+                painter.setTransform(painter.transform() * inverse);
+                const QRectF extent = surface.mapRect(m_pinnedBorderClientBounds.isEmpty()
+                                                          ? QRectF(context.viewportRect)
+                                                          : m_pinnedBorderClientBounds);
+                QRect client(QPoint(qRound(extent.left()), qRound(extent.top())),
+                             QSize(qRound(extent.width()), qRound(extent.height())));
+                painter.setClipRect(client, Qt::IntersectClip);
+                QPainterPath rectangular;
+                rectangular.addRect(outline.boundingRect());
+                if (outline == rectangular) {
+                    const auto bounds = outline.boundingRect();
+                    const QRect outer(qRound(bounds.x()), qRound(bounds.y()),
+                                      qRound(bounds.right()) - qRound(bounds.x()),
+                                      qRound(bounds.bottom()) - qRound(bounds.y()));
+                    const QRect clipped = outer.intersected(client);
+                    QPainterPath ring;
+                    ring.setFillRule(Qt::OddEvenFill);
+                    ring.addRect(clipped);
+                    if (clipped.width() > 4 && clipped.height() > 4)
+                        ring.addRect(clipped.adjusted(2, 2, -2, -2));
+                    painter.setRenderHint(QPainter::Antialiasing, false);
+                    painter.fillPath(ring, m_pinnedBorderColor);
+                } else {
+                    QPainterPathStroker stroker;
+                    stroker.setWidth(4.0);
+                    stroker.setJoinStyle(Qt::RoundJoin);
+                    painter.setRenderHint(QPainter::Antialiasing, true);
+                    painter.fillPath(stroker.createStroke(outline).intersected(outline),
+                                     m_pinnedBorderColor);
+                }
+            }
+            painter.restore();
+        }
         if (m_ocrVisible && m_ocrPresentation != nullptr &&
             m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText &&
             m_ocrTextLayer != nullptr) {
@@ -1534,7 +1583,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                      selectionBorderCornerRadius))
                : selectionShapePath(m_selectionState.bounds, selectionBorderCornerRadius,
                                     context.canvasToViewTransform, 0.5);
-    if (visibleCornerRadius > 0) {
+    if (visibleCornerRadius > 0 || shaped || !m_selectionState.draftVertices.isEmpty()) {
         painter.setRenderHint(QPainter::Antialiasing, true);
     }
 
@@ -1543,11 +1592,10 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         dimPath.setFillRule(Qt::OddEvenFill);
         dimPath.addRect(QRectF(context.viewportRect));
         if (m_selectionState.present) {
-            // Difference rather than XOR also works when contours extend beyond this monitor.
-            if (shaped)
-                dimPath = dimPath.subtracted(effectivePath);
-            else
-                dimPath.addPath(effectivePath);
+            // The painter clips to this viewport. Odd-even filling complements the
+            // selection inside it, including holes and contours spanning monitors,
+            // without rebuilding a Boolean path for every paint.
+            dimPath.addPath(effectivePath);
         }
         painter.fillPath(dimPath, m_maskColor);
     }
@@ -1556,6 +1604,23 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         paintScreenshotGuideLines(painter, viewport, QPointF(m_guideLineCursorPosition),
                                   m_cursorGuideLineColor, m_monitorCenterGuideLineColor,
                                   &context.exposedRegion);
+    }
+    if (m_renderMode == RenderMode::Standard &&
+        (!m_selectionState.draftPath.isEmpty() || !m_selectionState.draftVertices.isEmpty())) {
+        const auto color =
+            m_selectionState.subtracting ? m_selectionState.dangerColor : m_selectionBorderColor;
+        QPen pen(color, kSelectionBorderWidth);
+        if (m_selectionState.subtracting)
+            pen.setStyle(Qt::DashLine);
+        painter.setPen(pen);
+        QColor fill = color;
+        fill.setAlpha(24);
+        painter.setBrush(fill);
+        painter.drawPath(context.canvasToViewTransform.map(m_selectionState.draftPath));
+        painter.setBrush(color);
+        painter.setPen(QPen(Qt::white, 1));
+        for (const auto& vertex : m_selectionState.draftVertices)
+            painter.drawEllipse(context.canvasToViewTransform.map(vertex), 2.5, 2.5);
     }
     if (m_renderMode == RenderMode::Standard && m_selectionState.present) {
         const QColor selectionAccent = m_selectionBorderColor;
@@ -1583,7 +1648,41 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         } else if (m_selectionState.borderVisible) {
             painter.setPen(QPen(selectionAccent, kSelectionBorderWidth));
             painter.setBrush(Qt::NoBrush);
-            painter.drawPath(outlinePath);
+            // Confirmed compound outlines remain unchanged while the pending
+            // operand moves. Cache their antialiased stroke independently of the
+            // changing fill; thousands of tiny Boolean contour edges otherwise
+            // make Qt's general-purpose stroker dominate each preview frame.
+            const qreal scale = std::max(qreal(1), context.devicePixelRatio);
+            const QRect pixelBounds =
+                QTransform::fromScale(scale, scale)
+                    .mapRect(outlinePath.boundingRect().adjusted(-2, -2, 2, 2))
+                    .toAlignedRect();
+            const bool cacheOutline =
+                shaped && !m_selectionState.confirmedRegion.isEmpty() &&
+                qint64(pixelBounds.width()) * pixelBounds.height() <= 16 * 1024 * 1024;
+            if (cacheOutline) {
+                if (m_outlineCache.isNull() || m_outlineCachePath != outlinePath ||
+                    m_outlineCacheColor != selectionAccent || m_outlineCacheScale != scale) {
+                    m_outlineCachePath = outlinePath;
+                    m_outlineCacheColor = selectionAccent;
+                    m_outlineCacheScale = scale;
+                    m_outlineCacheBounds = QRectF(QPointF(pixelBounds.topLeft()) / scale,
+                                                  QSizeF(pixelBounds.size()) / scale);
+                    m_outlineCache =
+                        QImage(pixelBounds.size(), QImage::Format_ARGB32_Premultiplied);
+                    m_outlineCache.setDevicePixelRatio(scale);
+                    m_outlineCache.fill(Qt::transparent);
+                    QPainter cachePainter(&m_outlineCache);
+                    cachePainter.setRenderHint(QPainter::Antialiasing);
+                    cachePainter.translate(-m_outlineCacheBounds.topLeft());
+                    cachePainter.setPen(QPen(selectionAccent, kSelectionBorderWidth));
+                    cachePainter.setBrush(Qt::NoBrush);
+                    cachePainter.drawPath(outlinePath);
+                }
+                painter.drawImage(m_outlineCacheBounds.topLeft(), m_outlineCache);
+            } else {
+                painter.drawPath(outlinePath);
+            }
             if (!m_selectionState.marquee.isEmpty()) {
                 QPen pen(m_selectionState.subtracting ? m_selectionState.dangerColor
                                                       : selectionAccent,
@@ -1627,4 +1726,37 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         }
     }
     painter.restore();
+}
+
+void ScreenshotCanvasRenderer::setPinnedBorder(const QPainterPath& path, const QColor& color,
+                                               bool visible, const QRectF& clientLogicalBounds) {
+    if (m_pinnedBorderPath == path && m_pinnedBorderColor == color &&
+        m_pinnedBorderVisible == visible && m_pinnedBorderClientBounds == clientLogicalBounds)
+        return;
+    m_pinnedBorderPath = path;
+    m_pinnedBorderColor = color;
+    m_pinnedBorderVisible = visible;
+    m_pinnedBorderClientBounds = clientLogicalBounds;
+    m_canvas.update();
+}
+
+void ScreenshotCanvasRenderer::setSelectionDraft(const QPainterPath& path,
+                                                 const QVector<QPointF>& vertices) {
+    auto next = m_selectionState;
+    next.draftPath = path;
+    next.draftVertices = vertices;
+    if (next == m_selectionState)
+        return;
+    const QRectF before = m_selectionState.draftPath.boundingRect();
+    const auto previousVertices = m_selectionState.draftVertices;
+    applySelectionState(next);
+    QRegion damage(m_canvas.canvasToViewTransform()
+                       .mapRect(before.united(path.boundingRect()))
+                       .adjusted(-5, -5, 5, 5)
+                       .toAlignedRect());
+    for (const auto& point : previousVertices + vertices) {
+        const auto view = m_canvas.canvasToViewTransform().map(point);
+        damage += QRectF(view - QPointF(5, 5), QSizeF(10, 10)).toAlignedRect();
+    }
+    m_canvas.update(damage);
 }

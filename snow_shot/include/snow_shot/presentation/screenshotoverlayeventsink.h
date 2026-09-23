@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYEVENTSINK_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYEVENTSINK_H
 
+#include "snow_shot/image/screenshotregiongeometry.h"
 #include <QPoint>
 #include <QPointF>
 #include <Qt>
@@ -31,6 +32,10 @@ class ScreenshotOverlayEventSink {
     virtual void completeRightClickCancellation() {}
     // Optional completion-gesture notifications. Lightweight event sinks can
     // keep the defaults when they only handle the mouse and keyboard surface.
+    virtual void setRegionType(ScreenshotRegionType) {}
+    virtual bool handleRegionDoubleClick(ScreenshotOverlayWindow*, const QPointF&) {
+        return false;
+    }
     virtual void handleUnhandledLeftDoubleClick() {}
     virtual void handleUnhandledMiddleClick() {}
     [[nodiscard]] virtual bool handleOverlayWheel(ScreenshotOverlayWindow* overlay,

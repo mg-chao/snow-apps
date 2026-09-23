@@ -39,6 +39,7 @@
     "ScreenshotAutoFilterController",
     "ScreenshotController",
     "ScreenshotOverlayWindow",
+    "ScreenshotRegionTypeControl",
     "ScreenshotSelectionResizeModalContent",
     "ScreenshotSelectionResizeWorkflow",
     "ScreenshotSelectionToolbarWidget",

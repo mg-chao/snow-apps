@@ -130,6 +130,8 @@ void ScreenshotToolbarWindow::initializePalette() {
                         snow_shot::storage::ScreenshotSettings().captureCursor());
                 }
             });
+    connect(toolPalette, &ScreenshotToolPalette::screenshotRegionTypeRequested, this,
+            [this](int type) { m_commands.setScreenshotRegionType(type); });
     connect(toolPalette, &ScreenshotToolPalette::addScreenshotRegionRequested, this,
             [this]() { m_commands.addScreenshotRegion(); });
     connect(toolPalette, &ScreenshotToolPalette::subtractScreenshotRegionRequested, this,

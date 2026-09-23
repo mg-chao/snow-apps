@@ -15,6 +15,8 @@ class ScreenshotSelectionSettingsStore final : public ScreenshotSelectionParamsS
     [[nodiscard]] ScreenshotSelectionParams previousSelectionParams() const;
     void setPreviousSelectionParams(const ScreenshotSelectionParams& params) override;
 
+    ScreenshotRegionType regionType() const;
+    void setRegionType(ScreenshotRegionType type);
     [[nodiscard]] int cornerRadius() const;
     [[nodiscard]] int shadowWidth() const;
     void setSelectionEffects(int cornerRadius, int shadowWidth);

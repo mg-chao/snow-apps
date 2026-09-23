@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
+#include "snow_shot/image/screenshotregionpoints.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -110,6 +112,8 @@ struct FrameSample {
     std::size_t shadowRetainedBytes = 0;
     std::size_t shadowTransientAllocations = 0;
     std::size_t selectionDamagePathFallbacks = 0;
+    double mutationMs = 0;
+    double paintMs = 0;
 };
 
 struct ScenarioResult {
@@ -165,6 +169,7 @@ FrameSample measureFrame(BenchmarkFixture& fixture, const std::function<void()>&
     QElapsedTimer timer;
     timer.start();
     mutation();
+    const auto mutationNs = timer.nsecsElapsed();
     QApplication::processEvents();
     const qint64 elapsedNanoseconds = timer.nsecsElapsed();
     const QRegion requested = fixture.paintProbe.region();
@@ -183,6 +188,8 @@ FrameSample measureFrame(BenchmarkFixture& fixture, const std::function<void()>&
         shadowDiagnostics.retainedBytes,
         shadowDiagnostics.selectionSizedTransientAllocations,
         selectionDiagnostics.pathFallbacks,
+        mutationNs / 1'000'000.0,
+        (elapsedNanoseconds - mutationNs) / 1'000'000.0,
     };
 }
 
@@ -222,7 +229,7 @@ double mean(const std::vector<double>& values) {
 
 QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm,
                       const DwmSnapshot& afterDwm) {
-    std::vector<double> milliseconds;
+    std::vector<double> milliseconds, mutationMs, paintMs;
     std::vector<double> requestedRegionRatios;
     std::vector<double> paintedRegionRatios;
     std::vector<double> selectionDamageRatios;
@@ -237,6 +244,8 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
     std::size_t selectionDamagePathFallbacks = 0;
     for (const FrameSample& sample : result.samples) {
         milliseconds.push_back(sample.milliseconds);
+        mutationMs.push_back(sample.mutationMs);
+        paintMs.push_back(sample.paintMs);
         requestedRegionRatios.push_back(sample.requestedPaintRegionRatio);
         paintedRegionRatios.push_back(sample.paintedPaintRegionRatio);
         selectionDamageRatios.push_back(sample.selectionDamageRegionRatio);
@@ -253,6 +262,8 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
     object.insert(QStringLiteral("available"), result.available);
     object.insert(QStringLiteral("sampleCount"), static_cast<qint64>(result.samples.size()));
     object.insert(QStringLiteral("p50Ms"), percentile(milliseconds, 0.50));
+    object.insert(QStringLiteral("mutationP95Ms"), percentile(mutationMs, 0.95));
+    object.insert(QStringLiteral("paintP95Ms"), percentile(paintMs, 0.95));
     object.insert(QStringLiteral("p95Ms"), p95);
     object.insert(QStringLiteral("p99Ms"), percentile(milliseconds, 0.99));
     object.insert(QStringLiteral("meanRequestedPaintRegionRatio"), mean(requestedRegionRatios));
@@ -365,9 +376,14 @@ int main(int argc, char** argv) {
     parser.addOption({QStringLiteral("warmup"), QStringLiteral("Warmup frames per scenario"),
                       QStringLiteral("count"), QString::number(kDefaultWarmup)});
     parser.addOption({QStringLiteral("list"), QStringLiteral("List benchmark scenarios and exit")});
+    parser.addOption({QStringLiteral("scenario"), QStringLiteral("Run one scenario (repeatable)"),
+                      QStringLiteral("name")});
     parser.process(application);
 
     const QStringList scenarioNames{
+        QStringLiteral("custom-freehand"),
+        QStringLiteral("custom-curve"),
+        QStringLiteral("custom-mixed-operations"),
         QStringLiteral("one-pixel-move"),
         QStringLiteral("one-pixel-resize"),
         QStringLiteral("smart-selection-animation"),
@@ -405,13 +421,80 @@ int main(int argc, char** argv) {
 
     const auto run = [&](const QString& name, const std::function<void(int)>& mutation,
                          bool available = true) {
+        if (parser.isSet(QStringLiteral("scenario")) &&
+            !parser.values(QStringLiteral("scenario")).contains(name))
+            return;
         const DwmSnapshot before = dwmSnapshot(fixture.window);
         const ScenarioResult result =
             runScenario(fixture, name, warmup, iterations, mutation, available);
         const DwmSnapshot after = dwmSnapshot(fixture.window);
-        reports.append(summarize(result, before, after));
+        auto report = summarize(result, before, after);
+        report.insert(QStringLiteral("outlineCacheRetainedBytes"),
+                      renderer.selectionOutlineCacheBytes());
+        reports.append(report);
     };
 
+    QVector<QPointF> freehand;
+    freehand.reserve(10000);
+    for (int i = 0; i < 10000; ++i) {
+        const qreal angle = i * 6.283185307179586 / 9999.0;
+        freehand.append(
+            QPointF(700 * std::cos(angle), 450 * std::sin(angle) + 4 * std::sin(angle * 75)));
+    }
+    const auto simplified = simplifyScreenshotRegionPoints(freehand, 0.25);
+    QPainterPath freehandPath;
+    freehandPath.addPolygon(QPolygonF(simplified));
+    freehandPath.closeSubpath();
+    const auto freehandRegion =
+        ScreenshotRegionGeometry::fromPath(freehandPath, ScreenshotRegionType::Freehand);
+    QVector<QPointF> curveVertices;
+    for (int i = 0; i < 128; ++i) {
+        const qreal angle = i * 6.283185307179586 / 128.0;
+        const qreal radius = 500 + 60 * std::sin(angle * 9);
+        curveVertices.append(QPointF(radius * std::cos(angle), radius * std::sin(angle)));
+    }
+    const auto curveRegion = ScreenshotRegionGeometry::fromPath(
+        snowCanvasCatmullRomPath(curveVertices, true), ScreenshotRegionType::Curve);
+    run(QStringLiteral("custom-freehand"), [&](int index) {
+        auto points = simplified;
+        points.last() += QPointF(index & 1, 0);
+        QPainterPath path;
+        path.addPolygon(QPolygonF(points));
+        path.closeSubpath();
+        renderer.setSelectionRegion(
+            ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Freehand), {}, {}, false,
+            Qt::red);
+    });
+    run(QStringLiteral("custom-curve"), [&](int index) {
+        auto points = curveVertices;
+        points.last() += QPointF(index & 1, 0);
+        renderer.setSelectionRegion(
+            ScreenshotRegionGeometry::fromPath(snowCanvasCatmullRomPath(points, true),
+                                               ScreenshotRegionType::Curve),
+            {}, {}, false, Qt::red);
+    });
+    auto mixed = curveRegion;
+    for (int i = 0; i < 12; ++i)
+        mixed = mixed.subtracted(QRect(-300 + i * 45, -250, 20, 400));
+    run(QStringLiteral("custom-mixed-operations"), [&](int index) {
+        const auto candidate = mixed.united(freehandRegion.translated(index & 1, 0));
+        renderer.setSelectionRegion(candidate, mixed, {}, false, Qt::red);
+    });
+    QElapsedTimer commitTimer;
+    commitTimer.start();
+    const auto committed = mixed.united(freehandRegion);
+    const auto commitPath = committed.path();
+    const double commitMs = commitTimer.nsecsElapsed() / 1'000'000.0;
+    for (auto& report : reports) {
+        report.insert(QStringLiteral("freehandInputPoints"), freehand.size());
+        report.insert(QStringLiteral("freehandRetainedPoints"), simplified.size());
+        report.insert(QStringLiteral("mixedCommitMs"), commitMs);
+        report.insert(QStringLiteral("mixedSerializedBytes"),
+                      QJsonDocument(committed.toJson()).toJson(QJsonDocument::Compact).size());
+        report.insert(QStringLiteral("mixedDerivedPathElements"), commitPath.elementCount());
+        report.insert(QStringLiteral("geometryRetainedBytesEstimate"),
+                      committed.retainedBytesEstimate());
+    }
     run(QStringLiteral("one-pixel-move"), [&](int index) {
         renderer.setSelection(QRectF(baseSelection.left() + (index & 1), baseSelection.top(),
                                      baseSelection.width(), baseSelection.height()),

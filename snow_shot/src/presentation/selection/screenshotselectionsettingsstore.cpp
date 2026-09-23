@@ -136,3 +136,12 @@ void ScreenshotSelectionSettingsStore::clear() {
         {QStringLiteral("screenshot_selection/lock_aspect_ratio"), false},
     }));
 }
+
+ScreenshotRegionType ScreenshotSelectionSettingsStore::regionType() const {
+    return screenshotRegionTypeFromId(
+        configuration().value(QStringLiteral("screenshot_selection/region_type")).toString());
+}
+void ScreenshotSelectionSettingsStore::setRegionType(ScreenshotRegionType type) {
+    static_cast<void>(configuration().setValue(QStringLiteral("screenshot_selection/region_type"),
+                                               screenshotRegionTypeId(type)));
+}

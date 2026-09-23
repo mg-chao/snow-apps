@@ -622,6 +622,39 @@ void showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
     require(loaded.has_value() && loaded->showBorder && !loaded->borderAppearance,
             "legacy records must restore with the border visible");
 }
+void malformedCustomBorderRejectsRecord() {
+    QTemporaryDir directory;
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(200, 100), 5));
+    record.borderAppearance =
+        storage::PinnedBorderAppearance{QSize(200, 100), QRectF(0, 0, 200, 100), 0, false};
+    QPainterPath shape;
+    shape.addEllipse(QRectF(0, 0, 200, 100));
+    record.borderAppearance->region =
+        ScreenshotRegionGeometry::fromPath(shape, ScreenshotRegionType::Curve);
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "save custom pin fixture");
+    }
+    const auto manifest =
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows_v2/index.json"));
+    auto root = QJsonDocument::fromJson(readBytes(manifest)).object();
+    auto records = root.value(QStringLiteral("records")).toArray();
+    auto item = records.first().toObject();
+    auto border = item.value(QStringLiteral("border_appearance")).toObject();
+    border.insert(QStringLiteral("geometry"), QJsonObject{{QStringLiteral("version"), 999}});
+    item.insert(QStringLiteral("border_appearance"), border);
+    records[0] = item;
+    root.insert(QStringLiteral("records"), records);
+    QFile file(manifest);
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "open malformed pin fixture");
+    file.write(QJsonDocument(root).toJson());
+    file.close();
+    storage::PinnedWindowRepository repository(directory.path());
+    require(!repository.loadRecord(id),
+            "malformed custom outline must not restore as a bounding rectangle");
+}
 void thumbnailStateSurvivesRestartAndExit() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary thumbnail storage is unavailable");
@@ -769,6 +802,7 @@ int main(int argc, char* argv[]) {
     clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
     alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
     showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
+    malformedCustomBorderRejectsRecord();
     thumbnailStateSurvivesRestartAndExit();
     hideToTopRoundTripsAndRecoversLegacyMetadata();
     return 0;

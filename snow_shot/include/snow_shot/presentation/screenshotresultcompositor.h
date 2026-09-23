@@ -7,8 +7,9 @@
 #include <QRect>
 #include <QRectF>
 #include <QSize>
-#include <QRegion>
+#include "snow_shot/image/screenshotregiongeometry.h"
 #include <QPainterPath>
+#include <QIODevice>
 #include <optional>
 
 class QPainter;
@@ -18,9 +19,48 @@ struct ScreenshotResultStyle {
     int shadowWidth = 0;
     QColor shadowColor = QColor(0x33, 0x33, 0x33);
     // Immutable geometry snapshot, relative to the content origin, in canvas units.
-    std::optional<QRegion> region;
+    std::optional<ScreenshotRegionGeometry> region;
     qreal regionScale = 1.0;
 };
+
+inline QByteArray encodeScreenshotResultStyle(const ScreenshotResultStyle& style) {
+    QByteArray bytes;
+    QDataStream stream(&bytes, QIODevice::WriteOnly);
+    stream << style.cornerRadius << style.shadowWidth << style.shadowColor;
+    stream << quint32(0x53535247) << quint8(1) << style.regionScale
+           << (style.region ? QJsonDocument(style.region->toJson()).toJson(QJsonDocument::Compact)
+                            : QByteArray());
+    return bytes;
+}
+
+// An invalid extension rejects the record: silently dropping its geometry would
+// expose pixels outside the selected outline when editing a restored pin.
+inline std::optional<ScreenshotResultStyle> decodeScreenshotResultStyle(const QByteArray& bytes) {
+    ScreenshotResultStyle style;
+    if (bytes.isEmpty())
+        return style;
+    QDataStream stream(bytes);
+    stream >> style.cornerRadius >> style.shadowWidth >> style.shadowColor;
+    if (stream.status() != QDataStream::Ok)
+        return std::nullopt;
+    if (stream.atEnd())
+        return style;
+    quint32 marker = 0;
+    quint8 version = 0;
+    QByteArray geometry;
+    stream >> marker >> version >> style.regionScale >> geometry;
+    if (stream.status() != QDataStream::Ok || !stream.atEnd() || marker != 0x53535247 ||
+        version != 1 || !std::isfinite(style.regionScale) || style.regionScale <= 0 ||
+        style.regionScale > 256)
+        return std::nullopt;
+    if (!geometry.isEmpty()) {
+        style.region =
+            ScreenshotRegionGeometry::fromJson(QJsonDocument::fromJson(geometry).object());
+        if (!style.region || style.region->isEmpty())
+            return std::nullopt;
+    }
+    return style;
+}
 
 struct ScreenshotResultLayout {
     QRect contentRect;
@@ -34,7 +74,8 @@ struct ScreenshotResultLayout {
     }
 };
 
-[[nodiscard]] QPainterPath screenshotRegionPath(const QRegion& region, qreal radius = 0.0);
+[[nodiscard]] QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& region,
+                                                qreal radius = 0.0);
 
 class ScreenshotResultCompositor final {
   public:

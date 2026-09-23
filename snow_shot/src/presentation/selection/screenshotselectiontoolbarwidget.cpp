@@ -373,6 +373,7 @@ bool ScreenshotSelectionToolbarWidget::eventFilter(QObject* watched, QEvent* eve
 void ScreenshotSelectionToolbarWidget::changeEvent(QEvent* event) {
     if (event != nullptr && event->type() == QEvent::LanguageChange) {
         retranslateUi();
+        setCornerRadiusApplicable(m_cornerRadiusApplicable);
     }
     QWidget::changeEvent(event);
 }
@@ -538,6 +539,8 @@ void ScreenshotSelectionToolbarWidget::setSelectionResizable(bool enabled) {
 }
 
 void ScreenshotSelectionToolbarWidget::handleFieldWheel(Field field, int deltaY) {
+    if (field == Field::Radius && !m_cornerRadiusApplicable)
+        return;
     if (!m_selectionResizable && (field == Field::Width || field == Field::Height))
         return;
     const int direction = deltaY > 0 ? 1 : -1;
@@ -741,4 +744,11 @@ void ScreenshotSelectionToolbarWidget::updateWindowSize() {
 
 QPoint ScreenshotSelectionToolbarWidget::contentOffset() const {
     return QPoint(toolbar_widgets::ShadowMargin, toolbar_widgets::ShadowMargin);
+}
+
+void ScreenshotSelectionToolbarWidget::setCornerRadiusApplicable(bool enabled) {
+    m_cornerRadiusApplicable = enabled;
+    m_radiusLabel->setEnabled(enabled);
+    m_radiusLabel->setToolTip(enabled ? tr("Corner radius")
+                                      : tr("Corner radius is unavailable for custom regions"));
 }

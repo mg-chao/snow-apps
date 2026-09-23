@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
@@ -11756,8 +11757,8 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
             "Move must materialize and display its dedicated options row");
     require(
         layout->indexOf(addRegion) == 0 && layout->indexOf(subtractRegion) == 2 &&
-            layout->indexOf(regionSeparator) == 4 && layout->indexOf(cursor) == 6 &&
-            layout->indexOf(recapture) == 8 &&
+            layout->indexOf(regionSeparator) == 6 && layout->indexOf(cursor) == 8 &&
+            layout->indexOf(recapture) == 10 &&
             layout->indexOf(hideSelectionToolbar) == layout->count() - 1 &&
             layout->itemAt(layout->indexOf(hideSelectionToolbar) - 2) != nullptr &&
             qobject_cast<QFrame*>(
@@ -11766,6 +11767,31 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
             "Capture cursor must use the same state-driven action button as scrolling screenshot");
 
+    auto* regionTypes = palette.findChild<QWidget*>(QStringLiteral("screenshotRegionTypeControl"));
+    require(regionTypes && layout->indexOf(regionTypes) == layout->indexOf(subtractRegion) + 2,
+            "shape group follows subtract region");
+    int selectedType = -1;
+    QObject::connect(&palette, &ScreenshotToolPalette::screenshotRegionTypeRequested,
+                     [&](int type) {
+                         selectedType = type;
+                         setScreenshotRegionPreference(ScreenshotRegionType(type));
+                     });
+    for (const auto type : {ScreenshotRegionType::Rectangle, ScreenshotRegionType::Polyline,
+                            ScreenshotRegionType::Curve, ScreenshotRegionType::Freehand}) {
+        auto* button = regionTypes->findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotRegionType_") + screenshotRegionTypeId(type));
+        require(button && !button->accessibleName().isEmpty() &&
+                    button->size() == subtractRegion->size(),
+                "region controls share toolbar metrics and names");
+        button->click();
+        require(selectedType == int(type) && button->isChecked(),
+                "region button dispatches and reflects exclusive state");
+        int checked = 0;
+        for (auto* option : regionTypes->findChildren<adqt::widgets::AdButton*>())
+            checked += option->isChecked() ? 1 : 0;
+        require(checked == 1, "exactly one region type is checked");
+    }
+    setScreenshotRegionPreference(ScreenshotRegionType::Rectangle);
     int additions = 0, subtractions = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::addScreenshotRegionRequested,
                      [&] { ++additions; });
@@ -11935,6 +11961,63 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                     nullptr,
             "Resize window Move must remain unchanged without screenshot capture options");
 }
+
+void regionSwitcherRetranslatesAndRenders() {
+#if defined(Q_OS_WIN)
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/msyh.ttc")) >= 0,
+            "region snapshots need Chinese font coverage");
+#endif
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    auto& appTheme = snow_shot::presentation::styles::ThemeManager::instance();
+    const auto oldMode = appTheme.themeMode();
+    ScreenshotRegionTypeControl floating(nullptr, true);
+    floating.typeChanged = [](ScreenshotRegionType type) { setScreenshotRegionPreference(type); };
+    floating.show();
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    options.showMoveOptionsToolbar = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+    palette.show();
+    const auto snapshots = qEnvironmentVariable("SNOW_SHOT_REGION_SNAPSHOTS");
+    if (!snapshots.isEmpty())
+        require(QDir().mkpath(snapshots), "create region snapshots directory");
+    for (const bool dark : {false, true}) {
+        appTheme.setThemeMode(dark ? snow_shot::presentation::styles::ThemeMode::Dark
+                                   : snow_shot::presentation::styles::ThemeMode::Light);
+        adqt::theme::ThemeManager::instance().applyTo(*qApp);
+        for (const auto& locale :
+             {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+            require(language.setLanguage(locale), "region catalog loads");
+            setScreenshotRegionPreference(ScreenshotRegionType::Curve);
+            QCoreApplication::processEvents();
+            auto* curve = floating.findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotRegionType_curve"));
+            require(curve && curve->isChecked() &&
+                        curve->toolTip() == QCoreApplication::translate(
+                                                "ScreenshotRegionTypeControl", "Curve region"),
+                    "floating control retranslates and synchronizes preference");
+            auto* hint = floating.findChild<QLabel*>();
+            require(hint &&
+                        hint->heightForWidth(hint->width()) <= hint->fontMetrics().lineSpacing(),
+                    "floating hint stays on one line when the screen has room");
+            if (!snapshots.isEmpty()) {
+                const auto suffix =
+                    locale + (dark ? QStringLiteral("-dark") : QStringLiteral("-light"));
+                require(floating.grab().save(QDir(snapshots).filePath(
+                            QStringLiteral("region-switcher-") + suffix + QStringLiteral(".png"))),
+                        "save floating switcher snapshot");
+                require(palette.actionPanel()->grab().save(QDir(snapshots).filePath(
+                            QStringLiteral("region-toolbar-") + suffix + QStringLiteral(".png"))),
+                        "save Move toolbar snapshot");
+            }
+        }
+    }
+    setScreenshotRegionPreference(ScreenshotRegionType::Rectangle);
+    require(language.setLanguage(QStringLiteral("en_US")), "restore test language");
+    appTheme.setThemeMode(oldMode);
+    adqt::theme::ThemeManager::instance().applyTo(*qApp);
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -12022,6 +12105,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--move-options-only"))) {
         moveToolExposesCaptureCursorAndRecaptureOptions();
+        regionSwitcherRetranslatesAndRenders();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

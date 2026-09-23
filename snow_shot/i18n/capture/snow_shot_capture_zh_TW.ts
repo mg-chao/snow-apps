@@ -158,6 +158,29 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotRegionTypeControl</name>
+        <message>
+            <source>Ctrl+Tab to switch region type</source>
+            <translation>按 Ctrl+Tab 切換區域類型</translation>
+        </message>
+        <message>
+            <source>Curve region</source>
+            <translation>曲線區域</translation>
+        </message>
+        <message>
+            <source>Freehand region</source>
+            <translation>自由繪製區域</translation>
+        </message>
+        <message>
+            <source>Polyline region</source>
+            <translation>折線區域</translation>
+        </message>
+        <message>
+            <source>Rectangle region</source>
+            <translation>矩形區域</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotSelectionResizeModalContent</name>
         <message>
             <source>%1 x %2</source>
@@ -276,6 +299,10 @@
         <message>
             <source>Corner radius</source>
             <translation>圓角半徑</translation>
+        </message>
+        <message>
+            <source>Corner radius is unavailable for custom regions</source>
+            <translation>自訂區域不支援圓角半徑</translation>
         </message>
         <message>
             <source>Height</source>

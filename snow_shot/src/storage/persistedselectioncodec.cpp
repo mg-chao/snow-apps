@@ -64,7 +64,9 @@ QJsonObject persistedSelectionToJson(const PersistedSelection& selection) {
         {QStringLiteral("lock_aspect_ratio"), selection.lockAspectRatio},
         {QStringLiteral("lock_drag_aspect_ratio"), selection.lockDragAspectRatio},
     };
-    if (selection.region) {
+    if (selection.region && selection.region->custom()) {
+        result.insert(QStringLiteral("geometry"), selection.region->toJson());
+    } else if (selection.region) {
         QJsonArray regions;
         for (const QRect& rect : *selection.region) {
             regions.push_back(QJsonObject{{QStringLiteral("x"), rect.x()},
@@ -97,7 +99,14 @@ PersistedSelectionNormalization normalizePersistedSelection(const QJsonValue& va
         !object.value(QStringLiteral("lock_drag_aspect_ratio")).isBool()) {
         return {};
     }
-    if (object.contains(QStringLiteral("regions"))) {
+    if (object.contains(QStringLiteral("geometry"))) {
+        const auto geometry =
+            ScreenshotRegionGeometry::fromJson(object.value(QStringLiteral("geometry")));
+        if (!geometry || geometry->isEmpty())
+            return {};
+        selection.region = *geometry;
+        selection.rectangle = geometry->boundingRect();
+    } else if (object.contains(QStringLiteral("regions"))) {
         const auto regionValue = object.value(QStringLiteral("regions"));
         if (!regionValue.isArray() || regionValue.toArray().isEmpty() ||
             regionValue.toArray().size() > 65536)

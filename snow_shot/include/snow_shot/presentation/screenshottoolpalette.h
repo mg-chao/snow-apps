@@ -417,6 +417,7 @@ class ScreenshotToolPalette final : public QWidget,
     void moveRequested();
     void captureCursorToggled(bool enabled);
     void recaptureRequested();
+    void screenshotRegionTypeRequested(int type);
     void addScreenshotRegionRequested();
     void subtractScreenshotRegionRequested();
     void selectionToolbarHiddenChanged(bool hidden);

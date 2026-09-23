@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
@@ -3099,7 +3100,7 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
         auto* controls =
             pinnedWindow->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
         auto* border = pinnedWindow->findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
-        require(canvas != nullptr && controls != nullptr && border != nullptr,
+        require(canvas != nullptr && controls != nullptr && border == nullptr,
                 "physical pin widgets were not found");
         PinnedPresentationObserver observer(*pinnedWindow);
         require(pinnedWindow->present(config), "physical-pixel pin presentation failed");
@@ -3594,7 +3595,7 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
         QStringLiteral("screenshotPinnedEditButton"));
     auto* closeButton = pinnedWindow->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotPinnedCloseButton"));
-    require(panel != nullptr && border != nullptr && canvas != nullptr && editButton != nullptr &&
+    require(panel != nullptr && border == nullptr && canvas != nullptr && editButton != nullptr &&
                 closeButton != nullptr,
             "pinned window should use named border and control widgets");
     setPinnedWindowHovered(*pinnedWindow, false);
@@ -3608,9 +3609,8 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
                 !canvas->testAttribute(Qt::WA_OpaquePaintEvent) &&
                 canvas->testAttribute(Qt::WA_NoSystemBackground),
             "pinned result widgets should use per-pixel transparency");
-    require(border->geometry() == pinnedWindow->rect() && border->isVisible() &&
-                border->testAttribute(Qt::WA_TransparentForMouseEvents) && border->mask().isEmpty(),
-            "the pinned border should cover the edges without obstructing the canvas");
+    require(pinnedWindow->persistenceSnapshot().showBorder,
+            "the canvas border must be enabled without an obstructing child widget");
     require(editButton->shape() == adqt::widgets::AdButton::Shape::Circle &&
                 closeButton->shape() == adqt::widgets::AdButton::Shape::Circle &&
                 editButton->size() == QSize(32, 32) && closeButton->size() == QSize(32, 32),
@@ -3633,8 +3633,6 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     const QColor liveBorderColor(QStringLiteral("#276EF1"));
     ScreenshotPinnedWindow::setRuntimeBorderColor(liveBorderColor);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(border->property("borderColor").value<QColor>() == liveBorderColor,
-            "a live border-color update should reach an existing pinned window");
     const QImage recoloredPinnedWindow = renderWidget(*pinnedWindow);
     requireColorNear(recoloredPinnedWindow.pixelColor(0, middleY), liveBorderColor, 0,
                      "a live border-color update should repaint the pinned border");
@@ -3642,22 +3640,16 @@ void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
 
     const QColor defaultActiveBorderColor(QStringLiteral("#69B1FF"));
     setPinnedWindowActive(*pinnedWindow, true);
-    require(border->property("borderColor").value<QColor>() == defaultActiveBorderColor,
-            "an activated pinned window should draw the active border color");
     const QImage activatedPinnedWindow = renderWidget(*pinnedWindow);
     requireColorNear(activatedPinnedWindow.pixelColor(0, middleY), defaultActiveBorderColor, 0,
                      "an activated pinned window should repaint with the active border color");
     const QColor liveActiveBorderColor(QStringLiteral("#276EF1"));
     ScreenshotPinnedWindow::setRuntimeBorderActiveColor(liveActiveBorderColor);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(border->property("borderColor").value<QColor>() == liveActiveBorderColor,
-            "a live active border-color update should reach an activated pinned window");
     const QImage activeRecoloredPinnedWindow = renderWidget(*pinnedWindow);
     requireColorNear(activeRecoloredPinnedWindow.pixelColor(0, middleY), liveActiveBorderColor, 0,
                      "a live active border-color update should repaint the pinned border");
     setPinnedWindowActive(*pinnedWindow, false);
-    require(border->property("borderColor").value<QColor>() == borderColor,
-            "a deactivated pinned window should return to the regular border color");
     const QImage deactivatedPinnedWindow = renderWidget(*pinnedWindow);
     requireColorNear(deactivatedPinnedWindow.pixelColor(0, middleY), borderColor, 0,
                      "a deactivated pinned window should repaint with the regular border color");
@@ -3716,9 +3708,7 @@ void pinnedBorderUsesTwoPhysicalPixels(SnowCanvasRuntime&) {
         return pinnedWindow;
     };
     const auto renderAtScale = [](ScreenshotPinnedWindow& pinnedWindow, qreal deviceScale) {
-        // The image mirrors the paint surface the border frame anchors to:
-        // the window's device extent with each edge qRound-ed, the same
-        // convention the border frame uses.
+        // Include Qt's backing-store overshoot so native-client clipping remains observable.
         QImage rendered(qRound(pinnedWindow.width() * deviceScale),
                         qRound(pinnedWindow.height() * deviceScale),
                         QImage::Format_ARGB32_Premultiplied);
@@ -3739,7 +3729,16 @@ void pinnedBorderUsesTwoPhysicalPixels(SnowCanvasRuntime&) {
     for (const qreal renderScale : renderScales) {
         auto* pinnedWindow = presentWindow(400);
         QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-        const QImage rendered = renderAtScale(*pinnedWindow, renderScale);
+        const QImage surface = renderAtScale(*pinnedWindow, renderScale);
+        const qreal geometryScale =
+            snow_shot::presentation::kPinnedGeometryUnits ==
+                    snow_shot::presentation::PinnedGeometryUnits::LogicalPixels
+                ? 1.0
+                : screen->devicePixelRatio();
+        const QSize contentExtent(
+            qRound(pinnedWindow->currentNativeGeometry().width() * renderScale / geometryScale),
+            qRound(pinnedWindow->currentNativeGeometry().height() * renderScale / geometryScale));
+        const QImage rendered = surface.copy(QRect(QPoint(), contentExtent));
 
         const int lastColumn = rendered.width() - 1;
         const int lastRow = rendered.height() - 1;
@@ -7261,7 +7260,7 @@ void pinnedAlwaysOnTopOffscreen() {
     }
 }
 
-void pinnedCompoundSelectionOffscreen() {
+void pinnedCompoundSelectionOffscreen(bool curved = false) {
     using Access = ScreenshotPinnedWindowTestAccess;
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "compound selection needs a screen");
@@ -7269,6 +7268,14 @@ void pinnedCompoundSelectionOffscreen() {
     ScreenshotResultStyle style;
     style.cornerRadius = 12;
     style.region = QRegion(0, 0, 400, 400).subtracted(QRegion(120, 120, 160, 160));
+    if (curved) {
+        style.region =
+            ScreenshotRegionGeometry::fromPath(
+                snowCanvasCatmullRomPath({{0, 200}, {200, 0}, {400, 200}, {200, 400}}, true),
+                ScreenshotRegionType::Curve)
+                .subtracted(QRect(120, 120, 160, 160))
+                .united(QRect(375, 375, 25, 25));
+    }
     const QImage composed =
         ScreenshotResultCompositor::compose(config.imageSource.materializedImage, style);
     config.imageSource = ScreenshotImageSource::fromImage(composed, config.canvasSourceRect);
@@ -7278,10 +7285,13 @@ void pinnedCompoundSelectionOffscreen() {
     window.show();
     waitForUi(20);
     auto* border = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
-    require(border != nullptr, "compound selection border exists");
-    const auto outline = border->property("regionOutline").value<QPainterPath>();
-    require(outline.contains(QPointF(50, 50)) && !outline.contains(QPointF(200, 200)),
-            "pinned outline retains selected content and its cutout");
+    require(border == nullptr, "compound border must be painted by the canvas");
+    setPinnedWindowActive(window, false);
+    const auto image = renderWidget(window);
+    require(image.pixelColor(200, 200).alpha() == 0,
+            "canvas border must leave the hole transparent");
+    requireColorNear(image.pixelColor(119, 200), QColor(219, 219, 219), 2,
+                     "inner border must follow the cutout on the selected side");
     QImage exported;
     auto artifact = Access::fileSave(window);
     require(artifact && artifact->requestImage(&window,
@@ -7295,8 +7305,20 @@ void pinnedCompoundSelectionOffscreen() {
         waitForUi(5);
     }
     require(!exported.isNull() && exported.pixelColor(200, 200).alpha() == 0 &&
-                exported.pixelColor(50, 50).alpha() == 255,
+                exported.pixelColor(100, 200).alpha() == 255 &&
+                exported.pixelColor(119, 200) != QColor(219, 219, 219),
             "pinned exports retain transparent cutouts");
+    if (curved) {
+        require(image.pixelColor(0, 0).alpha() == 0 && image.pixelColor(385, 385).alpha() == 255,
+                "custom pin leaves curve corners empty and retains detached components");
+        Access::transformReplacement(window);
+        const auto transformed = renderWidget(window);
+        require(transformed.pixelColor(200, 200).alpha() == 0,
+                "rotation and reflection retain the transparent curved selection cutout");
+        Access::scaleBorderFixture(window, 150);
+        require(renderWidget(window).pixelColor(300, 300).alpha() == 0,
+                "zoom preserves the curved selection hole");
+    }
     auto snapshot = window.persistenceSnapshot();
     require(snapshot.borderAppearance == config.borderAppearance,
             "pin snapshots retain compound geometry");
@@ -7318,87 +7340,73 @@ void pinnedSelectionBorderOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "selection border needs a screen");
+    const QColor borderColor(219, 219, 219);
+    const auto colorBounds = [&](const QImage& image) {
+        QRect result;
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x)
+                if (image.pixelColor(x, y) == borderColor)
+                    result = result.united(QRect(x, y, 1, 1));
+        return result;
+    };
     for (const int padding : {0, 8}) {
         for (const int radius : {0, 32}) {
             ScreenshotPinnedWindow window;
             auto config = clickThroughTestConfig(*screen);
-            config.borderAppearance = screenshotSelectionBorderAppearance(
-                QSize(400 - 2 * padding, 400 - 2 * padding),
-                ScreenshotResultStyle{radius, padding, QColor(0x33, 0x33, 0x33)});
+            const QSize contentSize(400 - 2 * padding, 400 - 2 * padding);
+            const ScreenshotResultStyle style{radius, padding, QColor(0x33, 0x33, 0x33)};
+            config.borderAppearance = screenshotSelectionBorderAppearance(contentSize, style);
+            const auto source =
+                config.imageSource.materializedImage.copy(QRect(QPoint(), contentSize));
+            config.imageSource = ScreenshotImageSource::fromImage(
+                ScreenshotResultCompositor::compose(source, style), config.canvasSourceRect);
             Access::prepareReplacement(window, config);
             window.show();
             waitForUi(20);
-            auto* border = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
             auto* action =
                 window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
-            require(border && action && border->isVisible() == (padding == 0) &&
+            require(action && window.persistenceSnapshot().showBorder == (padding == 0) &&
                         action->isChecked() == (padding == 0),
-                    "selection shadow must determine initial border visibility and menu state");
-            if (padding) {
+                    "selection shadow determines initial border visibility and menu state");
+            if (padding)
                 action->trigger();
-            }
             setPinnedWindowActive(window, false);
-            for (const qreal scale : {1.0, 0.8, 0.75}) {
-                QImage raster(qRound(border->width() * scale), qRound(border->height() * scale),
-                              QImage::Format_ARGB32_Premultiplied);
-                raster.setDevicePixelRatio(scale);
-                raster.fill(Qt::transparent);
-                QPainter painter(&raster);
-                border->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
-                painter.end();
-                raster.setDevicePixelRatio(1.0);
-                const int inset = qRound(padding * border->width() / 400.0 * scale);
-                const int middle = raster.height() / 2;
-                if (raster.pixelColor(inset, middle).alpha() != 255 ||
-                    raster.pixelColor(inset + 1, middle).alpha() != 255 ||
-                    raster.pixelColor(inset + 2, middle).alpha() != 0) {
-                    std::cerr << "border padding=" << padding << " radius=" << radius
-                              << " scale=" << scale << " inset=" << inset
-                              << " alpha=" << raster.pixelColor(inset, middle).alpha() << ","
-                              << raster.pixelColor(inset + 1, middle).alpha() << ","
-                              << raster.pixelColor(inset + 2, middle).alpha() << '\n';
-                }
-                require(
-                    raster.pixelColor(inset, middle).alpha() == 255 &&
-                        raster.pixelColor(inset + 1, middle).alpha() == 255 &&
-                        raster.pixelColor(inset + 2, middle).alpha() == 0,
-                    "selection outline must have exactly two physical pixels at fractional scales");
-                require(raster.pixelColor(inset, inset).alpha() == (radius ? 0 : 255),
-                        "rounded border must leave content corners clear");
-                if (inset) {
-                    require(raster.pixelColor(0, middle).alpha() == 0,
-                            "manual border must leave shadow padding outside its rim");
-                }
-            }
-            const QRectF originalOutline = border->property("contentOutline").toRectF();
-            const QSizeF originalRadii = border->property("cornerRadii").toSizeF();
-            Access::scaleBorderFixture(window, 50);
-            const QRectF scaledOutline = border->property("contentOutline").toRectF();
-            const QSizeF scaledRadii = border->property("cornerRadii").toSizeF();
-            require(qAbs(scaledOutline.width() * 2 - originalOutline.width()) < 0.01 &&
-                        qAbs(scaledRadii.width() * 2 - originalRadii.width()) < 0.01,
-                    "zoom must scale both the content outline and corner radius");
+            const QImage raster = renderWidget(window);
+            const int inset = qRound(padding * raster.width() / 400.0);
+            const int middle = raster.height() / 2;
+            requireColorNear(raster.pixelColor(inset, middle), borderColor, 2,
+                             "canvas border begins at content edge");
+            requireColorNear(raster.pixelColor(inset + 1, middle), borderColor, 2,
+                             "canvas border is two physical pixels wide");
+            require(raster.pixelColor(inset + 2, middle) != borderColor,
+                    "canvas border does not extend into third pixel");
+            if (radius)
+                require(raster.pixelColor(inset, inset) != borderColor,
+                        "rounded border must not fill the bounding-box corner");
+            const QRect originalOutline = colorBounds(raster);
+            Access::scaleBorderFixture(window, 150);
+            const QRect scaledOutline = colorBounds(renderWidget(window));
+            require(qAbs(scaledOutline.width() - originalOutline.width() * 1.5) <= 3,
+                    "border tracks canvas zoom");
+            Access::scaleBorderFixture(window, 100);
             Access::thumbnailForHideTest(window, true);
-            require(border->property("contentOutline").toRectF().width() < originalOutline.width(),
-                    "thumbnail border must follow the reduced content");
+            require(colorBounds(renderWidget(window)).width() < originalOutline.width(),
+                    "thumbnail scales the image border");
             Access::thumbnailForHideTest(window, false);
             Access::scaleBorderFixture(window, 100);
-            require(qAbs(border->property("contentOutline").toRectF().width() -
-                         originalOutline.width()) < 0.01,
-                    "leaving thumbnail mode must restore the border outline");
+            require(qAbs(colorBounds(renderWidget(window)).width() - originalOutline.width()) <= 2,
+                    "thumbnail exit restores border extent");
             Access::transformReplacement(window);
-            require(qAbs(border->property("cornerRadii").toSizeF().width() -
-                         originalRadii.width()) < 0.01,
-                    "rotation and flipping must keep the displayed corner radius");
+            require(qAbs(colorBounds(renderWidget(window)).width() - originalOutline.width()) <= 2,
+                    "rotation and reflection preserve square border extent");
             require(window.persistenceSnapshot().borderAppearance == config.borderAppearance,
-                    "rotation and flipping must preserve source border metadata");
+                    "transforms preserve source border metadata");
             ScreenshotClipboardContent replacement;
             replacement.image = config.imageSource.materializedImage;
             require(Access::replace(window, std::move(replacement)),
                     "replace styled screenshot content");
-            require(!window.persistenceSnapshot().borderAppearance &&
-                        !border->property("contentOutline").toRectF().isValid(),
-                    "content replacement must clear selection outline metadata");
+            require(!window.persistenceSnapshot().borderAppearance,
+                    "replacement clears old shape metadata");
             window.close();
         }
     }
@@ -7450,17 +7458,15 @@ void pinnedShowBorderOffscreen() {
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
     auto* management =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedWindowManagementAction"));
-    auto* borderFrame = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
     require(menu != nullptr && alwaysOnTop != nullptr && showBorder != nullptr &&
-                management != nullptr && management->menu() != nullptr && borderFrame != nullptr,
-            "show border fixture needs the pinned menu and border frame");
+                management != nullptr && management->menu() != nullptr,
+            "show border fixture needs the pinned menu");
     emit menu->aboutToShow();
     const QList<QAction*> managementActions = management->menu()->actions();
     require(showBorder->isCheckable() && showBorder->isChecked() &&
                 managementActions.indexOf(alwaysOnTop) == 0 &&
                 managementActions.indexOf(showBorder) == 1,
             "Show border must be a checked item directly below Always on Top");
-    require(borderFrame->isVisible(), "a new pin must render its border by default");
     setPinnedWindowActive(window, false);
     requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2),
                      QColor(QStringLiteral("#DBDBDB")), 0,
@@ -7468,8 +7474,7 @@ void pinnedShowBorderOffscreen() {
 
     showBorder->trigger();
     waitForUi(20);
-    require(!showBorder->isChecked() && !borderFrame->isVisible() &&
-                !window.persistenceSnapshot().showBorder,
+    require(!showBorder->isChecked() && !window.persistenceSnapshot().showBorder,
             "unchecking must stop rendering the pinned border");
     requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2), QColor(42, 84, 126),
                      0, "a hidden border must let the rim show image content");
@@ -7479,8 +7484,7 @@ void pinnedShowBorderOffscreen() {
 
     showBorder->trigger();
     waitForUi(20);
-    require(showBorder->isChecked() && borderFrame->isVisible() &&
-                window.persistenceSnapshot().showBorder,
+    require(showBorder->isChecked() && window.persistenceSnapshot().showBorder,
             "re-checking must render the border again");
     requireColorNear(renderWidget(window).pixelColor(0, window.height() / 2),
                      QColor(QStringLiteral("#DBDBDB")), 0,
@@ -7502,15 +7506,16 @@ void pinnedShowBorderOffscreen() {
             QStringLiteral("screenshotPinnedContextMenu"));
         auto* restoredAction =
             restored.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
-        auto* restoredBorder =
-            restored.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
-        require(restoredMenu != nullptr && restoredAction != nullptr && restoredBorder != nullptr,
-                "restored show border fixture needs the pinned menu and border frame");
+        require(restoredMenu != nullptr && restoredAction != nullptr,
+                "restored show border fixture needs the pinned menu");
         emit restoredMenu->aboutToShow();
         require(restoredAction->isChecked() == persisted &&
-                    restoredBorder->isVisible() == persisted &&
                     restored.persistenceSnapshot().showBorder == persisted,
                 "a restored pin must adopt its saved border visibility");
+        setPinnedWindowActive(restored, false);
+        requireColorNear(renderWidget(restored).pixelColor(0, restored.height() / 2),
+                         persisted ? QColor(219, 219, 219) : QColor(42, 84, 126), 0,
+                         "restored border visibility changes the rendered rim");
         restored.close();
     }
 }
@@ -9241,7 +9246,7 @@ void pinnedFileDrop() {
     window.show();
     QCoreApplication::processEvents();
     auto* border = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
-    require(border != nullptr, "drop target must have a border");
+    require(border == nullptr, "drop target uses the canvas border");
     const QColor inactive(QStringLiteral("#DBDBDB"));
     const QColor active(QStringLiteral("#69B1FF"));
     ScreenshotPinnedWindow::setRuntimeBorderColor(inactive);
@@ -9252,27 +9257,27 @@ void pinnedFileDrop() {
     const QRect geometry = window.geometry();
     const qreal opacity = window.windowOpacity();
     require(enter(&window, mime) && Access::fileDragActive(window), "valid enter must highlight");
-    require(border->property("borderColor").value<QColor>() == active,
+    require(renderWidget(window).pixelColor(0, window.height() / 2) == active,
             "inactive pin must use active border while dragging");
     require(QApplication::focusWidget() == focus && window.geometry() == geometry &&
                 window.windowOpacity() == opacity,
             "drag hover must not change focus, geometry, or opacity");
     QApplication::sendEvent(&window, &deactivate);
-    require(border->property("borderColor").value<QColor>() == active,
+    require(renderWidget(window).pixelColor(0, window.height() / 2) == active,
             "deactivation during a drag must retain highlight");
     const QColor live(QStringLiteral("#276EF1"));
     ScreenshotPinnedWindow::setRuntimeBorderActiveColor(live);
-    require(border->property("borderColor").value<QColor>() == live,
+    require(renderWidget(window).pixelColor(0, window.height() / 2) == live,
             "runtime border setting must apply during drag");
     leave();
     require(!Access::fileDragActive(window) &&
-                border->property("borderColor").value<QColor>() == inactive,
+                renderWidget(window).pixelColor(0, window.height() / 2) == inactive,
             "leave or cancellation must restore inactive border");
     QEvent activate(QEvent::WindowActivate);
     QApplication::sendEvent(&window, &activate);
     require(enter(&window, mime), "active pin must accept drag");
     leave();
-    require(border->property("borderColor").value<QColor>() == live,
+    require(renderWidget(window).pixelColor(0, window.height() / 2) == live,
             "leave must preserve actual activation border");
     ScreenshotPinnedWindow::setRuntimeBorderActiveColor(active);
 
@@ -10019,6 +10024,11 @@ void pinnedOddPixelExtentRemainsSharp() {
         waitForUi(20);
         require(window.geometry() == beforeBackingChange,
                 "backing notifications must not clamp cross-display or oversized selections");
+        auto* showBorder =
+            window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
+        require(showBorder && showBorder->isChecked(),
+                "alignment fixture starts with border chrome");
+        showBorder->trigger();
         const qreal dpr = canvas->devicePixelRatioF();
         QImage rendered(QSize(qRound(canvas->width() * dpr), qRound(canvas->height() * dpr)),
                         QImage::Format_ARGB32_Premultiplied);
@@ -10050,6 +10060,25 @@ void pinnedOddPixelExtentRemainsSharp() {
                 }
             }
         }
+        showBorder->trigger();
+        setPinnedWindowActive(window, false);
+        rendered.fill(Qt::transparent);
+        canvas->render(&rendered);
+        const QColor borderColor(219, 219, 219);
+        const int middleX = source.width() / 2, middleY = source.height() / 2;
+        for (int inset = 0; inset < 2; ++inset) {
+            requireColorNear(rendered.pixelColor(inset, middleY), borderColor, 0,
+                             "left border physical width");
+            requireColorNear(rendered.pixelColor(source.width() - 1 - inset, middleY), borderColor,
+                             0, "right border physical width");
+            requireColorNear(rendered.pixelColor(middleX, inset), borderColor, 0,
+                             "top border physical width");
+            requireColorNear(rendered.pixelColor(middleX, source.height() - 1 - inset), borderColor,
+                             0, "bottom border physical width");
+        }
+        require(rendered.pixel(2, middleY) == source.pixel(2, middleY) &&
+                    rendered.pixel(middleX, 2) == source.pixel(middleX, 2),
+                "border stays exactly two physical pixels at every display scale");
         ScreenshotPinnedWindowTestAccess::copyCurrentViewport(window);
         const auto artifact = ScreenshotPinnedWindowTestAccess::exportArtifact(window);
         QImage exported;
@@ -10595,6 +10624,7 @@ int main(int argc, char* argv[]) {
             pinnedShowBorderOffscreen();
             pinnedSelectionBorderOffscreen();
             pinnedCompoundSelectionOffscreen();
+            pinnedCompoundSelectionOffscreen(true);
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)

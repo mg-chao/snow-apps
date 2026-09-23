@@ -599,6 +599,7 @@ void ScreenshotSelectionResizeModalContent::applyParamsToFields(
     const ScreenshotSelectionParams clamped =
         clampScreenshotSelectionParams(params, m_selectionBounds);
     m_fieldRegion = clamped.region;
+    m_radiusInput->setEnabled(!m_fieldRegion || !m_fieldRegion->custom());
     if (m_fieldRegion && m_fieldRegion->rectCount() == 1)
         m_fieldRegion.reset();
     const bool rectangular = !m_fieldRegion || m_fieldRegion->rectCount() == 1;

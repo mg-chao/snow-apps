@@ -853,6 +853,14 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     const auto physical = [](const QRectF& rect) {
         return QRectF(rect.topLeft() * 2, rect.size() * 2);
     };
+    selection.setRegionType(ScreenshotRegionType::Curve);
+    workflow.handleInitialResult(true, {physical(bounds)}, 1);
+    workflow.handleRefreshFinished(true);
+    workflow.handleRefinement({physical(bounds)}, 1, true);
+    require(!workflow.requestHitTest(QPoint(10, 10), 1) && selection.pixelSelection().isEmpty() &&
+                readyCount == 0 && updates == 0,
+            "custom mode suppresses requests and stale selector replies");
+    selection.setRegionType(ScreenshotRegionType::Rectangle);
     workflow.handleInitialResult(true, {physical(bounds)}, 1);
     require(intelligent.currentSelection() == bounds,
             "permission fallback must apply the window on the queried display");
@@ -1763,7 +1771,37 @@ void injectedLayoutRefreshDoesNotFallBackToEnumeration() {
         "a hit test with a display id must not drop that id");
 }
 
+void customCaptureDoesNotWaitForSelector() {
+    for (auto type : {ScreenshotRegionType::Polyline, ScreenshotRegionType::Curve,
+                      ScreenshotRegionType::Freehand}) {
+        ScreenshotCaptureState state;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        selection.setRegionType(type);
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        runtime.seedActiveDisplayOnPrepare = true;
+        runtime.acceptSelectorHitTest = true;
+        auto workflow =
+            makeWorkflow(state, displays, geometry, interaction, selection, intelligent, runtime);
+        workflow.startCapture();
+        CapturedDisplayModel snapshot;
+        snapshot.stableId = QStringLiteral("primary");
+        snapshot.physicalRect = QRect(0, 0, 64, 48);
+        snapshot.logicalRect = snapshot.physicalRect;
+        snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGB32);
+        snapshot.image.fill(Qt::blue);
+        runtime.deliverResult(successfulResult(state.sessionId, snapshot));
+        require(runtime.showOverlayCalls == 1 && runtime.startWorkflowRefreshCalls == 0 &&
+                    interaction.manualSelecting() && intelligent.currentSelection().isEmpty(),
+                "custom capture reveals immediately without selector readiness or highlighting");
+    }
+}
+
 int main() {
+    customCaptureDoesNotWaitForSelector();
     startupDisplayIdentityMatchesByNameRectOrNativeId();
     injectedLayoutRefreshDoesNotFallBackToEnumeration();
     startupMatchesNativeDisplayIdentityInLogicalCoordinateSpace();

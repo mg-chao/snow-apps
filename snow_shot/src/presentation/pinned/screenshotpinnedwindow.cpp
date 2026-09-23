@@ -119,13 +119,6 @@ QList<QKeyCombination> standardKeyCombinations(QKeySequence::StandardKey standar
     return combinations;
 }
 
-QByteArray serializeResultStyle(const ScreenshotResultStyle& style) {
-    QByteArray bytes;
-    QDataStream stream(&bytes, QIODevice::WriteOnly);
-    stream << style.cornerRadius << style.shadowWidth << style.shadowColor;
-    return bytes;
-}
-
 QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& results) {
     if (results.isEmpty()) {
         return {};
@@ -300,9 +293,7 @@ constexpr int kMaximumOpacityPercent = 100;
 constexpr int kWheelOpacityStep = 5;
 const QColor kDefaultPinnedBorderColor(219, 219, 219, 255);
 const QColor kDefaultPinnedBorderActiveColor(105, 177, 255, 255);
-constexpr int kPinnedBorderDevicePixels = 2;
 constexpr auto kTranslationSourceProperty = "screenshotPinnedTranslationSource";
-constexpr auto kPinnedBorderColorProperty = "borderColor";
 constexpr auto kShortcutDisplayProperty = "screenshotPinnedShortcutDisplay";
 constexpr auto kRecognitionMessageKey = "screenshot-pinned-recognition-status";
 constexpr auto kModelDownloadMessageKey = "screenshot-pinned-model-download-status";
@@ -410,14 +401,6 @@ void applyStaysOnTopFlag(QWidget* window, bool staysOnTop,
     window->overrideWindowFlags(flags);
 }
 
-void updatePinnedBorderGeometry(QFrame& border, const QRect& geometry) {
-    // No widget mask: the frame paints only its rim in physical device
-    // pixels, so the interior never covers the canvas. A mask would have to
-    // track every paint-surface scale factor and would clip the rim band
-    // whenever its logical inset mapped below the band's device thickness.
-    border.setGeometry(geometry);
-}
-
 QList<QPointer<ScreenshotPinnedWindow>>& livePinnedWindows() {
     static QList<QPointer<ScreenshotPinnedWindow>> windows;
     return windows;
@@ -521,119 +504,6 @@ class PinnedFileDropRouting final : public QObject {
     }
 
     QWidget* m_owner;
-};
-
-// Paints the pinned window border in physical device pixels. A style sheet
-// border is sized in logical pixels, which land on fractional device-pixel
-// positions on fractional-scale screens and rasterize with uneven
-// anti-aliased edges. Snapping each side to the device grid keeps the border
-// exactly kPinnedBorderDevicePixels physical pixels wide at every scale
-// factor, anchored to the window's true native client edges.
-class PinnedBorderFrame final : public QFrame {
-  public:
-    explicit PinnedBorderFrame(QWidget* parent = nullptr) : QFrame(parent) {}
-
-  protected:
-    void paintEvent(QPaintEvent*) override {
-        QColor color = property(kPinnedBorderColorProperty).value<QColor>();
-        if (!color.isValid()) {
-            color = kDefaultPinnedBorderColor;
-        }
-
-        QPainter painter(this);
-        const QTransform surfaceTransform = painter.combinedTransform();
-        // The frame spans its window. Map its logical rect through the
-        // combined transform (device pixel ratio included) and round each
-        // edge with qRound, the same convention QHighDpi uses, to get the
-        // physical extent in painter device units. On Windows the pinned
-        // window preserves arbitrary physical sizes, so Qt's integer logical
-        // size can map one device row past the native client edge at
-        // fractional scale factors; the backing store is then wider than the
-        // client and USER32 drops the overshoot column at flush. Only the
-        // client edge is the window's true outer edge, so it wins the
-        // intersection and keeps the border two full device pixels wide on
-        // every side.
-        const QRectF mappedExtent = surfaceTransform.mapRect(QRectF(rect()));
-        QRect deviceRect = ScreenshotPinnedGeometryMapping::roundedDeviceRect(mappedExtent);
-        if (const auto* root = qobject_cast<ScreenshotPinnedWindow*>(window());
-            root != nullptr && root->internalWinId() != 0) {
-            QRect client = root->currentNativeGeometry();
-            if (pinned_platform::kPinnedGeometryUnits ==
-                pinned_platform::PinnedGeometryUnits::LogicalPixels)
-                client.setSize(QSize(qRound(client.width() * devicePixelRatioF()),
-                                     qRound(client.height() * devicePixelRatioF())));
-            if (client.isValid() && !client.isEmpty()) {
-                const ScreenshotPinnedGeometryMapping mapping(client, size(), devicePixelRatioF());
-                deviceRect = mapping.clippedDeviceRect(mappedExtent);
-            }
-        }
-
-        if (deviceRect.width() < 2 * kPinnedBorderDevicePixels ||
-            deviceRect.height() < 2 * kPinnedBorderDevicePixels) {
-            return;
-        }
-
-        // Neutralize the whole combined transform (world transform plus the
-        // paint device's scale, e.g. a backing store or QImage device pixel
-        // ratio) so painter units become physical pixels of the paint device
-        // and the integer fills below align exactly to the device grid.
-        bool invertible = false;
-        const QTransform toSurface = surfaceTransform.inverted(&invertible);
-        if (!invertible) {
-            return;
-        }
-        painter.setTransform(painter.transform() * toSurface);
-        const auto regionOutline = property("regionOutline").value<QPainterPath>();
-        if (!regionOutline.isEmpty()) {
-            painter.setClipRect(deviceRect);
-            painter.setRenderHint(QPainter::Antialiasing);
-            painter.setPen(QPen(color, kPinnedBorderDevicePixels));
-            painter.setBrush(Qt::NoBrush);
-            painter.drawPath(surfaceTransform.map(regionOutline));
-            return;
-        }
-        const QRectF contentOutline = property("contentOutline").toRectF();
-        if (contentOutline.isValid()) {
-            const QRectF mappedOutline = surfaceTransform.mapRect(contentOutline);
-            const QSizeF radii =
-                surfaceTransform.mapRect(QRectF(QPointF(), property("cornerRadii").toSizeF()))
-                    .size();
-            const QRectF outer = ScreenshotPinnedGeometryMapping::roundedDeviceRect(mappedOutline)
-                                     .intersected(deviceRect);
-            const qreal rx = std::min(radii.width(), outer.width() / 2.0);
-            const qreal ry = std::min(radii.height(), outer.height() / 2.0);
-            QPainterPath ring;
-            ring.setFillRule(Qt::OddEvenFill);
-            ring.addRoundedRect(outer, rx, ry);
-            const QRectF inner =
-                outer.adjusted(kPinnedBorderDevicePixels, kPinnedBorderDevicePixels,
-                               -kPinnedBorderDevicePixels, -kPinnedBorderDevicePixels);
-            if (inner.isValid()) {
-                ring.addRoundedRect(inner, std::max(0.0, rx - kPinnedBorderDevicePixels),
-                                    std::max(0.0, ry - kPinnedBorderDevicePixels));
-            }
-            painter.setClipRect(deviceRect);
-            painter.setRenderHint(QPainter::Antialiasing, rx > 0 && ry > 0);
-            painter.fillPath(ring, color);
-            return;
-        }
-        const int left = deviceRect.left();
-        const int top = deviceRect.top();
-        const int right = deviceRect.right();
-        const int bottom = deviceRect.bottom();
-        const int sideHeight = bottom - top + 1 - 2 * kPinnedBorderDevicePixels;
-        painter.fillRect(QRect(left, top, right - left + 1, kPinnedBorderDevicePixels), color);
-        painter.fillRect(QRect(left, bottom - kPinnedBorderDevicePixels + 1, right - left + 1,
-                               kPinnedBorderDevicePixels),
-                         color);
-        painter.fillRect(
-            QRect(left, top + kPinnedBorderDevicePixels, kPinnedBorderDevicePixels, sideHeight),
-            color);
-        painter.fillRect(QRect(right - kPinnedBorderDevicePixels + 1,
-                               top + kPinnedBorderDevicePixels, kPinnedBorderDevicePixels,
-                               sideHeight),
-                         color);
-    }
 };
 
 QColor pinnedControlBackground(const QWidget* widget) {
@@ -1405,7 +1275,7 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
     record.alwaysOnTop = m_alwaysOnTop;
     record.showBorder = m_showBorder;
     record.preThumbnailNativeGeometry = m_preThumbnailNativeGeometry;
-    record.resultStyle = serializeResultStyle(m_resultStyle);
+    record.resultStyle = encodeScreenshotResultStyle(m_resultStyle);
     record.borderAppearance = m_borderAppearance;
     record.canvasSession = m_runtime.serializeDocumentSession();
     record.recognitionResults =
@@ -1437,9 +1307,7 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
             : 50;
     m_borderAppearance = config.borderAppearance;
     m_showBorder = !m_borderAppearance || !m_borderAppearance->hasShadow;
-    if (m_borderFrame) {
-        m_borderFrame->setVisible(m_showBorder);
-    }
+    updateBorderOutline();
     if (!config.restorePersistentState) {
         return;
     }
@@ -1448,9 +1316,7 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
     m_alwaysOnTop = config.persistedAlwaysOnTop;
     applyStaysOnTopFlag(this, m_alwaysOnTop, m_platform.get());
     m_showBorder = config.persistedShowBorder;
-    if (m_borderFrame != nullptr) {
-        m_borderFrame->setVisible(m_showBorder);
-    }
+    updateBorderOutline();
     // The scale value is not restored state: it derives from the restored
     // physical geometry alone, so the monitor DPI never influences it.
     m_hideToTop->setAccentIndex(config.persistedHideToTopAccentIndex);
@@ -1544,10 +1410,7 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     if (scaleMayHaveChanged && !m_platform->usesControlledInteraction()) {
         m_preserveScaleForSettledGeometry = false;
         scheduleNativeScaleAdoption();
-        if (m_borderFrame != nullptr) {
-            updatePinnedBorderGeometry(*m_borderFrame, rect());
-            m_borderFrame->update();
-        }
+        updateBorderOutline();
     }
     if (nativeGeometryMayHaveSettled) {
         if (m_nativeGeometryController != nullptr &&
@@ -1898,7 +1761,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     SNOW_SHOT_PIN_PERF_MILESTONE("window.pinned_toolbar_deferred");
     // Recognition availability is derived from the recognition pointers, and the
     // lazily constructed feature is only reachable through the provider, so it
-    // must be resolved here â€” before anything can ask whether recognition is
+    // must be resolved here — before anything can ask whether recognition is
     // possible, not only once a recognition action has been triggered.
     ensureRecognitionProviders();
     // Cached recognition results arrive with the config, while the deferred
@@ -2246,10 +2109,7 @@ void ScreenshotPinnedWindow::resizeEvent(QResizeEvent* event) {
         return;
     }
     invalidatePendingCopy();
-    if (m_borderFrame != nullptr) {
-        updatePinnedBorderGeometry(*m_borderFrame, rect());
-        m_borderFrame->raise();
-    }
+    updateBorderOutline();
     updateCanvasViewport();
     updateRecognitionContentGeometry();
     updateControlsGeometry();
@@ -2411,13 +2271,7 @@ void ScreenshotPinnedWindow::createUi() {
             &ScreenshotPinnedWindow::invalidatePendingCopy);
     layout->addWidget(m_canvas);
 
-    m_borderFrame = new PinnedBorderFrame(this);
-    m_borderFrame->setObjectName(QStringLiteral("screenshotPinnedBorder"));
-    m_borderFrame->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    applyRuntimeBorderColor();
-    updatePinnedBorderGeometry(*m_borderFrame, rect());
-    m_borderFrame->raise();
-    m_borderFrame->setVisible(m_showBorder);
+    updateBorderOutline();
 
     m_scaleLabel = new CanvasStatusReadout(this);
     m_scaleLabel->setObjectName(QStringLiteral("screenshotPinnedScaleLabel"));
@@ -2702,13 +2556,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
 }
 
 void ScreenshotPinnedWindow::applyRuntimeBorderColor() {
-    if (m_borderFrame == nullptr) {
-        return;
-    }
-    const QColor color = (m_windowActive || m_fileDragActive) ? configuredPinnedBorderActiveColor()
-                                                              : configuredPinnedBorderColor();
-    m_borderFrame->setProperty(kPinnedBorderColorProperty, color);
-    m_borderFrame->update();
+    updateBorderOutline();
 }
 
 void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
@@ -2917,55 +2765,51 @@ void ScreenshotPinnedWindow::showContextMenu(const QPoint& globalPosition) {
 }
 
 void ScreenshotPinnedWindow::updateBorderOutline() {
-    if (!m_borderFrame || !m_canvas) {
+    if (!m_canvas || !m_screenshotRenderer)
         return;
-    }
-    QRectF outline;
-    QSizeF radii;
-    QPainterPath regionOutline;
+    QPainterPath outline;
+    outline.addRect(m_backgroundCanvasRect);
     if (m_borderAppearance && !m_borderAppearance->sourceSize.isEmpty() &&
         !m_originalPixelSize.isEmpty()) {
         const auto& appearance = *m_borderAppearance;
-        const qreal sx = qreal(m_originalPixelSize.width()) / appearance.sourceSize.width();
-        const qreal sy = qreal(m_originalPixelSize.height()) / appearance.sourceSize.height();
         QTransform sourceScale;
-        sourceScale.scale(sx, sy);
+        sourceScale.scale(qreal(m_originalPixelSize.width()) / appearance.sourceSize.width(),
+                          qreal(m_originalPixelSize.height()) / appearance.sourceSize.height());
         const QTransform rotation = QImage::trueMatrix(
             m_imageTransform, m_originalPixelSize.width(), m_originalPixelSize.height());
-        const QRectF transformedBounds =
+        const auto transformedBounds =
             rotation.mapRect(QRectF(QPointF(), QSizeF(m_originalPixelSize)));
-        QTransform toCanvas;
-        toCanvas.translate(m_backgroundCanvasRect.x(), m_backgroundCanvasRect.y());
-        toCanvas.scale(m_backgroundCanvasRect.width() / transformedBounds.width(),
-                       m_backgroundCanvasRect.height() / transformedBounds.height());
-        const QTransform mapping =
-            sourceScale * rotation * toCanvas * m_canvas->canvasToViewTransform();
-        if (appearance.region) {
-            auto path = screenshotRegionPath(*appearance.region, appearance.cornerRadius);
-            path.translate(appearance.contentRect.topLeft());
-            regionOutline = mapping.map(path);
-            regionOutline.translate(m_canvas->mapTo(this, QPoint()) - m_borderFrame->pos());
+        if (!transformedBounds.isEmpty()) {
+            QTransform toCanvas;
+            toCanvas.translate(m_backgroundCanvasRect.x(), m_backgroundCanvasRect.y());
+            toCanvas.scale(m_backgroundCanvasRect.width() / transformedBounds.width(),
+                           m_backgroundCanvasRect.height() / transformedBounds.height());
+            const QTransform sourceToCanvas = sourceScale * rotation * toCanvas;
+            const QTransform sourceToView = sourceToCanvas * m_canvas->canvasToViewTransform();
+            const qreal contourScale = m_canvas->devicePixelRatioF() *
+                                       std::max(std::hypot(sourceToView.m11(), sourceToView.m12()),
+                                                std::hypot(sourceToView.m21(), sourceToView.m22()));
+            QPainterPath source;
+            if (appearance.region) {
+                source = appearance.region->custom()
+                             ? appearance.region->path(contourScale)
+                             : screenshotRegionPath(*appearance.region, appearance.cornerRadius);
+                source.translate(appearance.contentRect.topLeft());
+            } else {
+                source.addRoundedRect(appearance.contentRect, appearance.cornerRadius,
+                                      appearance.cornerRadius);
+            }
+            outline = sourceToCanvas.map(source);
         }
-        outline = mapping.mapRect(appearance.contentRect);
-        outline.translate(m_canvas->mapTo(this, QPoint()) - m_borderFrame->pos());
-        const qreal radius = std::min(
-            appearance.cornerRadius,
-            std::min(appearance.contentRect.width(), appearance.contentRect.height()) / 2.0);
-        radii = mapping.mapRect(QRectF(0, 0, radius, radius)).size();
     }
-    m_borderFrame->setProperty("regionOutline", QVariant::fromValue(regionOutline));
-    if (m_screenshotRenderer) {
-        QTransform toCanvas;
-        toCanvas.translate(m_backgroundCanvasRect.x(), m_backgroundCanvasRect.y());
-        if (!m_transformedImage.isNull())
-            toCanvas.scale(m_backgroundCanvasRect.width() / m_transformedImage.width(),
-                           m_backgroundCanvasRect.height() / m_transformedImage.height());
-        m_screenshotRenderer->setBakedSelectionPath(
-            toCanvas.map(bakedSelectionPath(m_transformedImage.size())));
-    }
-    m_borderFrame->setProperty("contentOutline", outline);
-    m_borderFrame->setProperty("cornerRadii", radii);
-    m_borderFrame->update();
+    // Border and annotation clipping share the exact same destination-scale outline.
+    m_screenshotRenderer->setBakedSelectionPath(
+        m_borderAppearance && m_borderAppearance->region ? outline : QPainterPath());
+    const auto color = (m_windowActive || m_fileDragActive) ? configuredPinnedBorderActiveColor()
+                                                            : configuredPinnedBorderColor();
+    const qreal geometryScale = pinned_platform::pinnedGeometryScale(m_canvas->devicePixelRatioF());
+    const QRectF clientBounds(QPointF(), QSizeF(currentNativeGeometry().size()) / geometryScale);
+    m_screenshotRenderer->setPinnedBorder(outline, color, m_showBorder, clientBounds);
 }
 
 void ScreenshotPinnedWindow::updateCanvasViewport() {
@@ -2996,8 +2840,7 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
     // A native resize can deliver a nested Qt resize while projecting the
     // covering extent. Refresh the rim from the final layout, not that event's
     // intermediate dimensions.
-    if (m_borderFrame)
-        updatePinnedBorderGeometry(*m_borderFrame, rect());
+    updateBorderOutline();
     const QSize windowViewport = nativeGeometry.isValid() && !nativeGeometry.isEmpty()
                                      ? nativeGeometry.size()
                                      : QSize(qRound(m_canvas->width() * devicePixelRatio),
@@ -3631,9 +3474,7 @@ void ScreenshotPinnedWindow::updateRecognitionContentGeometry() {
     static_cast<void>(
         m_recognitionContent->updateSelectionGeometry(m_canvas->geometry(), viewport));
     m_recognitionContent->raise();
-    if (m_borderFrame != nullptr) {
-        m_borderFrame->raise();
-    }
+    updateBorderOutline();
 }
 
 void ScreenshotPinnedWindow::activateRecognitionMode(int mode, bool showToolbar) {
@@ -3896,9 +3737,7 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                         m_recognitionContent->setFocus(Qt::OtherFocusReason);
                     }
                 }
-                if (m_borderFrame != nullptr) {
-                    m_borderFrame->raise();
-                }
+                updateBorderOutline();
                 synchronizeHiddenTextSelection();
                 updateControlsGeometry();
                 schedulePersistence();
@@ -4197,9 +4036,7 @@ void ScreenshotPinnedWindow::synchronizeHiddenTextSelection() {
     updateOcrPresentation();
     m_recognitionContent->show();
     updateRecognitionContentGeometry();
-    if (m_borderFrame != nullptr) {
-        m_borderFrame->raise();
-    }
+    updateBorderOutline();
 }
 
 void ScreenshotPinnedWindow::updateOcrPresentation() {
@@ -4277,9 +4114,7 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
         if (m_recognitionContent != nullptr) {
             m_recognitionContent->setOcrPresentation(m_displayOcrPresentation);
             m_recognitionContent->raise();
-            if (m_borderFrame != nullptr) {
-                m_borderFrame->raise();
-            }
+            updateBorderOutline();
         }
     }
 }
@@ -5714,9 +5549,7 @@ void ScreenshotPinnedWindow::setShowBorder(bool enabled) {
         return;
     }
     m_showBorder = enabled;
-    if (m_borderFrame != nullptr) {
-        m_borderFrame->setVisible(enabled);
-    }
+    updateBorderOutline();
     refreshContextMenu();
     schedulePersistence();
 }
@@ -6414,17 +6247,21 @@ QPainterPath ScreenshotPinnedWindow::bakedSelectionPath(const QSize& pixelSize) 
         m_originalPixelSize.isEmpty() || m_borderAppearance->sourceSize.isEmpty())
         return {};
     const auto& appearance = *m_borderAppearance;
-    auto path = screenshotRegionPath(*appearance.region, appearance.cornerRadius);
-    path.translate(appearance.contentRect.topLeft());
     QTransform scale;
     scale.scale(qreal(m_originalPixelSize.width()) / appearance.sourceSize.width(),
                 qreal(m_originalPixelSize.height()) / appearance.sourceSize.height());
     const QTransform rotation = QImage::trueMatrix(m_imageTransform, m_originalPixelSize.width(),
                                                    m_originalPixelSize.height());
-    path = (scale * rotation).map(path);
     const auto transformed = rotation.mapRect(QRectF(QPointF(), QSizeF(m_originalPixelSize)));
     QTransform outputScale;
     outputScale.scale(pixelSize.width() / transformed.width(),
                       pixelSize.height() / transformed.height());
-    return outputScale.map(path);
+    const auto mapping = scale * rotation * outputScale;
+    const qreal contourScale = std::max(std::hypot(mapping.m11(), mapping.m12()),
+                                        std::hypot(mapping.m21(), mapping.m22()));
+    auto path = appearance.region->custom()
+                    ? appearance.region->path(contourScale)
+                    : screenshotRegionPath(*appearance.region, appearance.cornerRadius);
+    path.translate(appearance.contentRect.topLeft());
+    return mapping.map(path);
 }

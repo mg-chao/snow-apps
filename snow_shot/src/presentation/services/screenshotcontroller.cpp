@@ -341,6 +341,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void undoCanvasEdit() override;
     void redoCanvasEdit() override;
     void requestRecapture() override;
+    void setScreenshotRegionType(int type) override {
+        m_overlayInputHandler->setRegionType(ScreenshotRegionType(type));
+    }
     void addScreenshotRegion() override {
         m_overlayInputHandler->beginRegionOperation(false);
     }
@@ -1388,6 +1391,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 }
             },
             [this]() {
+                m_selection.setRegionType(m_selectionSettings->regionType());
                 static_cast<void>(m_selection.setCornerRadius(m_selectionSettings->cornerRadius()));
                 static_cast<void>(m_selection.setShadowWidth(m_selectionSettings->shadowWidth()));
                 static_cast<void>(m_selection.setAspectRatioLockEnabled(

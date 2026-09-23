@@ -43,6 +43,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPointer>
+#include <QPushButton>
 #include <QRegion>
 #include <QScrollBar>
 #include <QTextBoundaryFinder>
@@ -80,7 +81,7 @@ QImage testRenderOcrFilteredImage(const QImage& source, const QRectF& canvasRect
     return filtered;
 }
 
-class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
+class NoopOverlayEventSink : public ScreenshotOverlayEventSink {
   public:
     ScreenshotOverlayRightClickResult rightClickResult = ScreenshotOverlayRightClickResult::Ignored;
     bool consumeWheel = false;
@@ -3671,6 +3672,60 @@ void canvasWheelZoomCanBeDisabled() {
             "a disabled canvas should ignore wheel zoom");
 }
 
+void regionEventsRemainOwnedByOverlay() {
+    class Sink final : public NoopOverlayEventSink {
+      public:
+        int presses = 0, releases = 0, doubles = 0, completions = 0;
+        bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow*, const QPointF&,
+                                           bool) const override {
+            return true;
+        }
+        void handleOverlayMousePress(ScreenshotOverlayWindow*, const QPointF&) override {
+            ++presses;
+        }
+        void handleOverlayMouseRelease(ScreenshotOverlayWindow*, const QPointF&) override {
+            ++releases;
+        }
+        bool handleRegionDoubleClick(ScreenshotOverlayWindow*, const QPointF&) override {
+            ++doubles;
+            return true;
+        }
+        void handleUnhandledLeftDoubleClick() override {
+            ++completions;
+        }
+    } sink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(sink, canvas);
+    overlay.resize(320, 240);
+    overlay.show();
+    QApplication::processEvents();
+    const QPointF point(100, 150);
+    for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease,
+                      QEvent::MouseButtonDblClick, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, point, canvas->mapToGlobal(point.toPoint()), Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(canvas, &event);
+    }
+    require(sink.presses == 1 && sink.releases == 2 && sink.doubles == 1 && sink.completions == 0,
+            "Qt double-click sequence must reach region handling without invoking completion");
+    overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Polyline);
+    QApplication::processEvents();
+    auto* control = overlay.findChild<QWidget*>(QStringLiteral("screenshotRegionTypeControl"));
+    auto* button = overlay.findChild<QPushButton*>(QStringLiteral("screenshotRegionType_curve"));
+    require(control && button && overlay.rect().contains(control->geometry()),
+            "floating region controls fit a narrow screenshot window");
+    const QPointF center(button->rect().center());
+    for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, center, button->mapToGlobal(center.toPoint()), Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(button, &event);
+    }
+    require(sink.presses == 1 && sink.releases == 2,
+            "region switcher clicks must not add vertices to the canvas");
+}
+
 void overlayPassesTextDraftWheelToCanvas() {
     NoopOverlayEventSink eventSink;
     eventSink.consumeWheel = true;
@@ -4086,6 +4141,26 @@ void compoundSelectionRendersUnifiedMaskAndOutline() {
             ++gapPixels;
     }
     require(dangerPixels > 0 && gapPixels > 0, "subtraction marquee must use dashed danger color");
+    QPainterPath customPath;
+    customPath.addEllipse(QRectF(-30, 10, 150, 100));
+    const auto custom = ScreenshotRegionGeometry::fromPath(customPath, ScreenshotRegionType::Curve)
+                            .subtracted(QRect(30, 40, 30, 30));
+    renderer.setSelectionBorderVisible(false);
+    renderer.setSelectionRegion(custom, custom, {}, false, Qt::red);
+    const auto preview = renderCanvas(canvas);
+    ScreenshotResultStyle style;
+    style.region = custom;
+    const auto exported = ScreenshotResultCompositor::compose(background, style);
+    for (int y = 0; y < 120; ++y)
+        for (int x = 0; x < 120; ++x) {
+            const int alpha = exported.pixelColor(x, y).alpha();
+            if (alpha == 255)
+                require(preview.pixelColor(x, y).red() >= 250,
+                        "custom preview preserves exported interior across display bounds");
+            else if (alpha == 0)
+                require(preview.pixelColor(x, y).red() < 200,
+                        "custom preview dims exported cutouts and exterior");
+        }
     const auto before = ScreenshotSelectionVisualState{QRectF(region.boundingRect()), true};
     auto after = before;
     after.region = region;
@@ -4097,6 +4172,10 @@ void compoundSelectionRendersUnifiedMaskAndOutline() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--region-input-only"))) {
+        regionEventsRemainOwnedByOverlay();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--text-wheel-only"))) {
         overlayPassesTextDraftWheelToCanvas();
         return 0;

@@ -1462,6 +1462,11 @@ SnowError snow_patch_get_decoration_dirty_rects(SnowPatchHandle patch,
                                                 const SnowDirtyRect** out_rects,
                                                 uint32_t* out_count);
 
+// Stateless curve construction; null commands queries the required count.
+SnowError snow_build_catmull_rom_path(const SnowArrowPoint* vertices, size_t vertex_count,
+                                      uint8_t closed, SnowArrowPathCommand* commands,
+                                      size_t capacity, size_t* count);
+
 #ifdef __cplusplus
 }
 #endif

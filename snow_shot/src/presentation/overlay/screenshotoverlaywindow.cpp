@@ -18,6 +18,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QRegion>
+#include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include <QResizeEvent>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -63,6 +64,11 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     layout->setSpacing(0);
     layout->addWidget(m_canvas);
 
+    m_regionTypeControl = new ScreenshotRegionTypeControl(this, true);
+    m_regionTypeControl->typeChanged = [this](ScreenshotRegionType type) {
+        m_eventSink.setRegionType(type);
+    };
+    m_regionTypeControl->hide();
     m_scrollingThumbnail = new ScreenshotScrollingThumbnailWidget(*this);
     m_scrollingThumbnail->hide();
     m_framePresenter = std::make_unique<ScreenshotOverlayFramePresenter>(*this);
@@ -174,10 +180,9 @@ void ScreenshotOverlayWindow::setScreenshotSelection(const QRectF& selection, bo
     }
 }
 
-void ScreenshotOverlayWindow::setScreenshotSelectionRegion(const QRegion& region,
-                                                           const QRegion& confirmed,
-                                                           const QRectF& marquee, bool subtracting,
-                                                           const QColor& danger) {
+void ScreenshotOverlayWindow::setScreenshotSelectionRegion(
+    const ScreenshotRegionGeometry& region, const ScreenshotRegionGeometry& confirmed,
+    const QRectF& marquee, bool subtracting, const QColor& danger) {
     if (m_screenshotRenderer)
         m_screenshotRenderer->setSelectionRegion(region, confirmed, marquee, subtracting, danger);
 }
@@ -713,7 +718,7 @@ bool ScreenshotOverlayWindow::handleCanvasEvent(QEvent* event) {
 
     if ((event->type() == QEvent::KeyPress || event->type() == QEvent::MouseButtonPress ||
          event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonRelease ||
-         event->type() == QEvent::Wheel) &&
+         event->type() == QEvent::MouseButtonDblClick || event->type() == QEvent::Wheel) &&
         !m_eventSink.acceptOverlayInput(event->spontaneous())) {
         event->accept();
         return true;
@@ -722,7 +727,8 @@ bool ScreenshotOverlayWindow::handleCanvasEvent(QEvent* event) {
         return handleCanvasKeyPress(static_cast<QKeyEvent*>(event));
     }
     if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseMove ||
-        event->type() == QEvent::MouseButtonRelease) {
+        event->type() == QEvent::MouseButtonRelease ||
+        event->type() == QEvent::MouseButtonDblClick) {
         return handleCanvasMouseEvent(static_cast<QMouseEvent*>(event));
     }
     if (event->type() == QEvent::Wheel) {
@@ -751,6 +757,11 @@ bool ScreenshotOverlayWindow::handleCanvasMouseEvent(QMouseEvent* event) {
         return false;
     }
 
+    if (event->type() == QEvent::MouseButtonDblClick && event->button() == Qt::LeftButton &&
+        m_eventSink.handleRegionDoubleClick(this, event->position())) {
+        event->accept();
+        return true;
+    }
     if (event->type() == QEvent::MouseButtonPress && event->button() == Qt::RightButton) {
         const auto action = m_eventSink.handleOverlayRightClick(this, event->position());
         if (action == ScreenshotOverlayRightClickResult::CancelCapture) {
@@ -821,4 +832,22 @@ bool ScreenshotOverlayWindow::dispatchHandledMouseEvent(QMouseEvent* event) {
     }
 
     return false;
+}
+
+void ScreenshotOverlayWindow::setRegionTypeControlVisible(bool visible, ScreenshotRegionType type) {
+    m_regionTypeControl->setType(type);
+    if (visible) {
+        m_regionTypeControl->setMaximumWidth(std::max(1, width() - 16));
+        m_regionTypeControl->adjustSize();
+        m_regionTypeControl->move(
+            std::max(0, (width() - m_regionTypeControl->width()) / 2),
+            std::max(0, std::min(12, height() - m_regionTypeControl->height())));
+        m_regionTypeControl->raise();
+    }
+    m_regionTypeControl->setVisible(visible);
+}
+
+void ScreenshotOverlayWindow::setSelectionDraft(const QPainterPath& path,
+                                                const QVector<QPointF>& vertices) {
+    m_screenshotRenderer->setSelectionDraft(path, vertices);
 }

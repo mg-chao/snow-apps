@@ -8,6 +8,7 @@
 #include <QColor>
 #include <QJsonObject>
 #include <QRegion>
+#include "snow_shot/image/screenshotregiongeometry.h"
 #include <QWidget>
 
 #include <memory>
@@ -26,6 +27,7 @@ class ScreenshotOcrPresentation;
 class ScreenshotOverlayEventSink;
 class ScreenshotOverlayFramePresenter;
 class ScreenshotScrollingThumbnailWidget;
+class ScreenshotRegionTypeControl;
 
 struct ScreenshotImageSource;
 
@@ -50,8 +52,11 @@ class ScreenshotOverlayWindow final : public QWidget {
                                 int shadowWidth = 0,
                                 const QColor& shadowColor = QColor(0x33, 0x33, 0x33),
                                 bool selectionToolbarHovered = false);
+    void setRegionTypeControlVisible(bool visible, ScreenshotRegionType type);
+    void setSelectionDraft(const QPainterPath& path, const QVector<QPointF>& vertices);
     void clearScreenshotSelection();
-    void setScreenshotSelectionRegion(const QRegion& region, const QRegion& confirmed,
+    void setScreenshotSelectionRegion(const ScreenshotRegionGeometry& region,
+                                      const ScreenshotRegionGeometry& confirmed,
                                       const QRectF& marquee, bool subtracting,
                                       const QColor& danger);
     [[nodiscard]] bool hasScreenshotSelection() const;
@@ -113,6 +118,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     ScreenshotOverlayEventSink& m_eventSink;
     snow_shot::presentation::MouseReleaseActionController m_mouseReleaseAction;
     SnowCanvasWidget* m_canvas = nullptr;
+    ScreenshotRegionTypeControl* m_regionTypeControl = nullptr;
     ScreenshotScrollingThumbnailWidget* m_scrollingThumbnail = nullptr;
     std::unique_ptr<ScreenshotOverlayFramePresenter> m_framePresenter;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;

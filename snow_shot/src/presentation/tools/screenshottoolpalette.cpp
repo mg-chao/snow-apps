@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
+#include "snow_shot/presentation/screenshotregiontypecontrol.h"
 
 #include "screenshottoolbarperfinstrumentation.h"
 #include "../recording/screenrecordingperfinstrumentation.h"
@@ -2940,6 +2941,10 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
               m_subtractRegionButton}) {
             configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
         }
+        if (auto* regionTypes =
+                static_cast<ScreenshotRegionTypeControl*>(m_selectActionPanel->findChild<QWidget*>(
+                    QStringLiteral("screenshotRegionTypeControl"))))
+            regionTypes->setType(screenshotRegionPreference());
         if (m_scrollingRecognitionControls != nullptr &&
             m_scrollingRecognitionControls->layout() != nullptr) {
             m_scrollingRecognitionControls->layout()->setSpacing(0);
@@ -6875,6 +6880,16 @@ void ScreenshotToolPalette::createMoveActionFamily() {
         custom_outlined_icons::ScreenshotRegionReduce(), actionButtonMetrics(m_physicalScale));
     m_subtractRegionButton->setObjectName(QStringLiteral("screenshotSubtractRegionButton"));
     layout->addWidget(m_subtractRegionButton);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+    auto* regionTypes = new ScreenshotRegionTypeControl(m_moveActionControls);
+    regionTypes->typeChanged = [this](ScreenshotRegionType type) {
+        emit screenshotRegionTypeRequested(int(type));
+    };
+    for (auto* button : regionTypes->findChildren<adqt::widgets::AdButton*>())
+        configureScreenshotToolPaletteStyleButton(button, nullptr,
+                                                  actionButtonMetrics(m_physicalScale));
+    regionTypes->setType(screenshotRegionPreference());
+    layout->addWidget(regionTypes);
     connect(m_addRegionButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::addScreenshotRegionRequested);
     connect(m_subtractRegionButton, &adqt::widgets::AdButton::clicked, this,
@@ -6921,8 +6936,8 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     });
     m_selectActionLayout->addWidget(m_moveActionControls);
     stampScreenshotToolbarReferenceWidth(
-        m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 5 + STYLE_ITEM_SPACING * 2 +
-                                  STYLE_GROUP_SPACING * 8 + TOOLBAR_SEPARATOR_WIDTH * 2);
+        m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 9 + STYLE_ITEM_SPACING * 2 +
+                                  STYLE_GROUP_SPACING * 9 + 6 + TOOLBAR_SEPARATOR_WIDTH * 2);
     setCaptureCursorEnabled(m_captureCursorEnabled);
     setSelectionToolbarHidden(m_selectionToolbarHidden);
     setRecaptureBusy(m_recaptureBusy);

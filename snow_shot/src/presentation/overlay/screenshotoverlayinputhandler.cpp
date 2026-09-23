@@ -10,7 +10,11 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/storage/settingsadapters.h"
 
+#include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
+#include "snow_shot/presentation/screenshotregionpreferences.h"
 #include <QApplication>
+#include <QLineF>
+#include "snow_shot/image/screenshotregionpoints.h"
 
 #include <algorithm>
 #include <utility>
@@ -45,7 +49,13 @@ bool screenshotCompletionGestureTool(ScreenshotActiveTool tool) {
 
 ScreenshotOverlayInputHandler::ScreenshotOverlayInputHandler(
     ScreenshotOverlayInputHandlerContext context)
-    : m_context(std::move(context)) {}
+    : m_context(std::move(context)) {
+    m_regionPreviewTimer.setSingleShot(true);
+    QObject::connect(&m_regionPreviewTimer, &QTimer::timeout, &m_regionPreviewTimer, [this] {
+        if (customRegionInputActive() && m_context.selection.constructionActive())
+            updateRegionDraft(m_pendingRegionPointer, m_pendingRegionEdge);
+    });
+}
 
 ScreenshotSelectionDragMode ScreenshotOverlayInputHandler::selectionResizeDragModeAtCanvasPosition(
     const QPointF& canvasPosition) const {
@@ -138,6 +148,25 @@ void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* ov
     updateGuideLines(overlay, localPosition);
     m_context.actions.updateColorPickerForOverlay(overlay, localPosition);
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
+    if (customRegionInputActive()) {
+        if (!m_context.selection.constructionActive())
+            m_regionPoints.clear();
+        if (m_context.selection.regionType() == ScreenshotRegionType::Freehand) {
+            m_regionPoints.clear();
+            m_freehandPressed = true;
+            m_freehandRawStart = 0;
+        }
+        m_context.actions.pauseIntelligentSelection();
+        m_context.intelligentSelection.clearTransientState();
+        m_context.interaction.returnToSelectionMode(false);
+        m_context.actions.hideMainToolbar();
+        if (m_regionPoints.size() < 16384 &&
+            (m_regionPoints.isEmpty() ||
+             QLineF(m_regionPoints.last(), virtualPosition).length() > 0.01))
+            m_regionPoints.append(virtualPosition);
+        updateRegionDraft(virtualPosition, false);
+        return;
+    }
     const ScreenshotActiveTool activeTool = m_context.interaction.activeTool();
     const ScreenshotSelectionDragMode borderDragMode =
         dragModeForVirtualPosition(virtualPosition, true);
@@ -269,7 +298,7 @@ void ScreenshotOverlayInputHandler::handleIntelligentSelectionPress(
 bool ScreenshotOverlayInputHandler::shouldHandleMouseEvent(const ScreenshotOverlayWindow* overlay,
                                                            const QPointF& localPosition,
                                                            bool) const {
-    if (m_externalDragActive)
+    if (m_externalDragActive || customRegionInputActive() || m_consumeRegionRelease)
         return true;
     if (m_canvasColorSamplingArmed) {
         return true;
@@ -307,6 +336,38 @@ void ScreenshotOverlayInputHandler::handleMouseMove(ScreenshotOverlayWindow* ove
         return;
     }
     updateGuideLines(overlay, localPosition);
+    if (customRegionInputActive()) {
+        const QPointF pointer = virtualPositionForOverlay(overlay, localPosition);
+        if (m_freehandPressed && (m_regionPoints.isEmpty() || m_regionPoints.last() != pointer)) {
+            if (m_regionPoints.size() < 65532)
+                m_regionPoints.append(pointer);
+            // Finalized chunks are never simplified again during the drag. Reserve
+            // half the error budget for this reduction and half for release.
+            if (m_regionPoints.size() - m_freehandRawStart >= 128) {
+                qreal scale = 1.0;
+                m_context.displaySession.forEachActiveDisplay(
+                    [&](qsizetype, const CapturedDisplayModel& display) {
+                        if (display.canvasUsesPoints)
+                            scale = std::max(scale, display.backingScale);
+                    });
+                const auto tail = simplifyScreenshotRegionPoints(
+                    m_regionPoints.mid(m_freehandRawStart), 0.125 / scale);
+                m_regionPoints.resize(m_freehandRawStart);
+                m_regionPoints.append(tail);
+                m_freehandRawStart = m_regionPoints.size() - 1;
+            }
+        }
+        if (m_context.selection.constructionActive()) {
+            m_pendingRegionPointer = pointer;
+            m_pendingRegionEdge = !m_freehandPressed;
+            if (!m_regionPreviewTimer.isActive())
+                m_regionPreviewTimer.start(0);
+        } else
+            m_context.actions.updateOverlayState();
+        m_context.actions.setOverlayCursor(overlay, ScreenshotSelectionDragMode::Marquee);
+        m_context.actions.updateColorPickerForOverlay(overlay, localPosition);
+        return;
+    }
     if (m_context.interaction.intelligentSelecting()) {
         const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
         handleIntelligentSelectionMove(overlay, localPosition, virtualPosition);
@@ -396,6 +457,23 @@ void ScreenshotOverlayInputHandler::handleMouseRelease(ScreenshotOverlayWindow* 
     if (m_externalDragActive)
         return;
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
+    if (m_consumeRegionRelease) {
+        m_consumeRegionRelease = false;
+        return;
+    }
+    if (customRegionInputActive()) {
+        if (m_freehandPressed) {
+            if (m_regionPoints.isEmpty() || m_regionPoints.last() != virtualPosition)
+                m_regionPoints.append(virtualPosition);
+            m_freehandPressed = false;
+            if (!finishRegionDraft()) {
+                m_regionPoints.clear();
+                m_context.selection.clearDraftRegion();
+                m_context.actions.updateOverlayState();
+            }
+        }
+        return;
+    }
     if (m_context.interaction.intelligentSelecting()) {
         handleIntelligentSelectionRelease(virtualPosition);
         return;
@@ -534,7 +612,8 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
         return m_context.actions.stepWatermarkFontSize(deltaY > 0 ? 1 : -1);
     }
 
-    if (!m_context.interaction.intelligentSelecting()) {
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+        !m_context.interaction.intelligentSelecting()) {
         return false;
     }
 
@@ -668,7 +747,8 @@ bool ScreenshotOverlayInputHandler::releaseKeepSelectionAspectRatioShortcut() {
 }
 
 bool ScreenshotOverlayInputHandler::toggleIntelligentSelectionTargetShortcut() {
-    if (!m_context.interaction.intelligentSelecting() ||
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+        !m_context.interaction.intelligentSelecting() ||
         !m_context.intelligentSelection.toggleSelectionTarget()) {
         return false;
     }
@@ -688,6 +768,8 @@ bool ScreenshotOverlayInputHandler::toggleIntelligentSelectionTargetShortcut() {
 
 void ScreenshotOverlayInputHandler::requestIntelligentSelectionHitTest(
     const QPointF& virtualPosition) {
+    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
+        return;
     const QPoint point = physicalPositionForCanvasPoint(virtualPosition);
     if (m_context.actions.requestUiSelectorHitTestOnDisplay) {
         const auto* display =
@@ -709,7 +791,7 @@ void ScreenshotOverlayInputHandler::setIntelligentSelectionIndex(int index) {
 }
 
 void ScreenshotOverlayInputHandler::confirmSelection() {
-    if (m_context.interaction.dragging()) {
+    if (m_context.interaction.dragging() || m_context.selection.constructionActive()) {
         return;
     }
     if (m_context.selection.regionOperationActive()) {
@@ -737,6 +819,8 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
+    if (customRegionInputActive() || m_consumeRegionRelease)
+        return;
     executeConfiguredCompletionAction(snow_shot::storage::ScreenshotSettings().doubleClickAction());
 }
 
@@ -865,6 +949,11 @@ void ScreenshotOverlayInputHandler::resetTransientShortcuts() {
     m_aspectShortcutUsedForSelectionDrag = false;
     m_cycleColorFormatIfAspectShortcutUnused = false;
     finishTransientDrag();
+    if (!m_context.selection.constructionActive()) {
+        m_regionPoints.clear();
+        m_freehandPressed = false;
+        m_consumeRegionRelease = false;
+    }
 }
 
 bool ScreenshotOverlayInputHandler::canvasColorSamplingActive() const {
@@ -898,10 +987,21 @@ void ScreenshotOverlayInputHandler::beginRegionOperation(bool subtract) {
 }
 
 bool ScreenshotOverlayInputHandler::regionOperationActive() const {
-    return m_context.selection.regionOperationActive();
+    return m_context.selection.regionOperationActive() || m_context.selection.constructionActive();
 }
 
 bool ScreenshotOverlayInputHandler::cancelRegionOperation() {
+    if (m_context.selection.constructionActive()) {
+        m_regionPoints.clear();
+        m_freehandPressed = false;
+        m_context.selection.clearDraftRegion();
+        if (!m_context.selection.regionOperationActive()) {
+            m_context.selection.clearSelection();
+            m_context.interaction.returnToSelectionMode(false);
+            m_context.actions.updateOverlayState();
+            return true;
+        }
+    }
     if (!m_context.selection.regionOperationActive())
         return false;
     resetTransientShortcuts();
@@ -911,5 +1011,128 @@ bool ScreenshotOverlayInputHandler::cancelRegionOperation() {
     m_context.captureState.sessionState = ScreenshotSessionState::Editing;
     m_context.actions.updateOverlayState();
     m_context.actions.showToolbar();
+    return true;
+}
+
+bool ScreenshotOverlayInputHandler::customRegionInputActive() const {
+    return !m_externalDragActive &&
+           m_context.selection.regionType() != ScreenshotRegionType::Rectangle &&
+           (m_context.interaction.selecting() || m_context.selection.regionOperationActive());
+}
+
+void ScreenshotOverlayInputHandler::setRegionType(ScreenshotRegionType type) {
+    if (type == m_context.selection.regionType())
+        return;
+    m_regionPreviewTimer.stop();
+    const bool selecting =
+        m_context.interaction.selecting() || m_context.selection.regionOperationActive();
+    m_regionPoints.clear();
+    m_freehandPressed = false;
+    m_consumeRegionRelease = m_context.interaction.dragging();
+    m_context.interaction.cancelDrag();
+    if (selecting) {
+        m_context.selection.clearDraftRegion();
+        if (!m_context.selection.regionOperationActive())
+            m_context.selection.clearSelection();
+    }
+    m_context.selection.setRegionType(type);
+    setScreenshotRegionPreference(type);
+    m_context.actions.pauseIntelligentSelection();
+    m_context.intelligentSelection.clearTransientState();
+    if (selecting && !m_context.selection.regionOperationActive() &&
+        type == ScreenshotRegionType::Rectangle) {
+        static_cast<void>(m_context.actions.returnToIntelligentSelection(
+            m_context.geometry.physicalPositionForLogicalPoint(
+                m_context.displaySession, m_context.displaySession.logicalCursorPosition())));
+    } else if (selecting) {
+        m_context.interaction.returnToSelectionMode(false);
+    }
+    m_context.actions.updateOverlayState();
+}
+
+bool ScreenshotOverlayInputHandler::cycleRegionType(bool reverse) {
+    if (m_externalDragActive || !m_context.actions.localShortcutInputAllowed() ||
+        !(m_context.interaction.selecting() || m_context.interaction.moveToolActive()))
+        return false;
+    setRegionType(
+        ScreenshotRegionType((int(m_context.selection.regionType()) + (reverse ? 3 : 1)) % 4));
+    return true;
+}
+
+bool ScreenshotOverlayInputHandler::removeRegionVertex() {
+    if (!m_context.selection.constructionActive() || m_freehandPressed || m_regionPoints.isEmpty())
+        return false;
+    m_regionPoints.removeLast();
+    updateRegionDraft(m_regionPoints.isEmpty() ? QPointF() : m_regionPoints.last(), false);
+    return true;
+}
+
+void ScreenshotOverlayInputHandler::updateRegionDraft(const QPointF& pointer, bool includePointer) {
+    m_regionPreviewTimer.stop();
+    auto vertices = m_regionPoints;
+    if (includePointer && !vertices.isEmpty() && QLineF(vertices.last(), pointer).length() > 0.01)
+        vertices.append(pointer);
+    QPainterPath path;
+    if (m_context.selection.regionType() == ScreenshotRegionType::Curve) {
+        path = snowCanvasCatmullRomPath(vertices, vertices.size() >= 3);
+    } else if (!vertices.isEmpty()) {
+        path.moveTo(vertices.first());
+        for (qsizetype i = 1; i < vertices.size(); ++i)
+            path.lineTo(vertices[i]);
+        if (vertices.size() >= 3)
+            path.closeSubpath();
+    }
+    path.setFillRule(Qt::OddEvenFill);
+    auto draft = ScreenshotRegionGeometry::fromPath(path, m_context.selection.regionType());
+    m_context.selection.setDraftRegion(draft, m_context.selection.regionType() ==
+                                                      ScreenshotRegionType::Freehand
+                                                  ? QVector<QPointF>()
+                                                  : m_regionPoints);
+    m_context.actions.updateOverlayState();
+}
+
+bool ScreenshotOverlayInputHandler::finishRegionDraft() {
+    if (m_regionPoints.size() < 3)
+        return false;
+    if (m_context.selection.regionType() == ScreenshotRegionType::Freehand) {
+        qreal scale = 1.0;
+        m_context.displaySession.forEachActiveDisplay(
+            [&](qsizetype, const CapturedDisplayModel& display) {
+                if (display.canvasUsesPoints)
+                    scale = std::max(scale, display.backingScale);
+            });
+        m_regionPoints = simplifyScreenshotRegionPoints(m_regionPoints, 0.125 / scale);
+        if (m_regionPoints.size() < 3)
+            return false;
+    }
+    updateRegionDraft(m_regionPoints.last(), false);
+    // A line (including collinear clicks) has no filled area.
+    if (m_context.selection.draftPath().simplified().isEmpty())
+        return false;
+    m_context.selection.commitDraftRegion(m_context.geometry.canvasBounds().toAlignedRect());
+    m_regionPoints.clear();
+    m_context.interaction.finishDrag();
+    if (!m_context.selection.hasPixelSelection()) {
+        m_context.interaction.returnToSelectionMode(false);
+        m_context.actions.updateOverlayState();
+        return true;
+    }
+    confirmSelection();
+    return true;
+}
+
+bool ScreenshotOverlayInputHandler::handleRegionDoubleClick(ScreenshotOverlayWindow* overlay,
+                                                            const QPointF& position) {
+    if (!customRegionInputActive())
+        return false;
+    m_consumeRegionRelease = true;
+    if (m_context.selection.regionType() == ScreenshotRegionType::Freehand)
+        return true;
+    const auto point = virtualPositionForOverlay(overlay, position);
+    if (m_regionPoints.isEmpty())
+        m_regionPoints.append(point);
+    else
+        m_regionPoints.last() = point;
+    static_cast<void>(finishRegionDraft());
     return true;
 }

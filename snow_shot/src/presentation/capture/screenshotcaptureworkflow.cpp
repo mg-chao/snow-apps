@@ -609,13 +609,21 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     if (m_context.presentation.capturePresented) {
         m_context.presentation.capturePresented();
     }
-    if (m_startMode != StartMode::ExternalDrag && !m_context.runtime.selectorReady() &&
+    if (m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+        m_startMode != StartMode::ExternalDrag && !m_context.runtime.selectorReady() &&
         !m_context.runtime.selectorRefreshInFlight()) {
         m_context.runtime.startWorkflowRefresh();
     }
 }
 
 void ScreenshotCaptureWorkflow::enterOverlaySelectionModeAtCursor() {
+    if (m_startMode != StartMode::ExternalDrag &&
+        m_context.selection.regionType() != ScreenshotRegionType::Rectangle) {
+        m_context.interaction.enterOverlayVisible(false);
+        m_context.intelligentSelection.clearTransientState();
+        m_context.runtime.clearSelectorSelection();
+        return;
+    }
     if (m_startMode == StartMode::ExternalDrag) {
         m_context.interaction.enterOverlayVisible(false);
         static_cast<void>(
@@ -705,7 +713,8 @@ void ScreenshotCaptureWorkflow::handleLayoutReady(const ScreenshotCaptureLayout&
     m_startup->physicalPosition = m_context.geometry.physicalPositionForLogicalPoint(
         m_context.displaySession, m_startup->logicalPosition);
     m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
-    if (m_startMode != StartMode::ExternalDrag)
+    if (m_startMode != StartMode::ExternalDrag &&
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle)
         m_context.runtime.startWorkflowRefresh();
     if (beginCapturePresentation(layout.requestId))
         prepareOverlayPresentation(layout.requestId);

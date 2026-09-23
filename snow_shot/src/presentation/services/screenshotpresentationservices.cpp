@@ -161,6 +161,16 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
             m_context.interaction.dragging());
     }
 
+    m_context.displaySession.forEachOverlay([&](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay)
+            overlay->setSelectionDraft(m_context.selection.draftPath(),
+                                       m_context.selection.draftVertices());
+        if (overlay)
+            overlay->setRegionTypeControlVisible(
+                overlay == cursorOwner &&
+                    (m_context.interaction.selecting() || m_context.selection.constructionActive()),
+                m_context.selection.regionType());
+    });
     if (m_context.selection.regionOperationActive() ||
         m_context.selection.selectionRegion().rectCount() > 1) {
         const auto danger =

@@ -9,7 +9,7 @@
 #include <QDateTime>
 #include <QImage>
 #include <QRect>
-#include <QRegion>
+#include "snow_shot/image/screenshotregiongeometry.h"
 #include <QString>
 #include <QUrl>
 #include <QVector>
@@ -33,7 +33,7 @@ struct PersistedSelection {
     QColor shadowColor;
     bool lockAspectRatio = false;
     bool lockDragAspectRatio = false;
-    std::optional<QRegion> region;
+    std::optional<ScreenshotRegionGeometry> region;
 
     friend bool operator==(const PersistedSelection& first, const PersistedSelection& second) {
         return first.rectangle == second.rectangle && first.cornerRadius == second.cornerRadius &&

@@ -6,7 +6,7 @@
 #include <QDateTime>
 #include <QImage>
 #include <QRect>
-#include <QRegion>
+#include "snow_shot/image/screenshotregiongeometry.h"
 #include <QRectF>
 #include <QSize>
 #include <QString>
@@ -24,7 +24,7 @@ struct PinnedBorderAppearance final {
     QRectF contentRect;
     qreal cornerRadius = 0.0;
     bool hasShadow = false;
-    std::optional<QRegion> region;
+    std::optional<ScreenshotRegionGeometry> region;
 
     friend bool operator==(const PinnedBorderAppearance&, const PinnedBorderAppearance&) = default;
 };

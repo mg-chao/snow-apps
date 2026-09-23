@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotregionpreferences.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/presentation/directcapturehistory.h"
 #include "snowimageqtcodec.h"
@@ -2959,7 +2960,7 @@ void regionOperationsUseMarqueeAndRestoreOnCancel() {
     };
     ScreenshotOverlayInputHandler handler(
         {capture, interaction, selection, intelligent, geometry, displays, actions});
-    const QRegion original = selection.selectionRegion();
+    const auto original = selection.selectionRegion();
     handler.beginRegionOperation(false);
     require(interaction.manualSelecting() && !interaction.selectionHandlesVisible(),
             "add entry must force manual selection without handles");
@@ -3010,6 +3011,114 @@ void regionOperationsUseMarqueeAndRestoreOnCancel() {
             "manual recovery after total subtraction");
 }
 
+void customRegionInputTransactions() {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("custom"), QStringLiteral("custom"),
+                                   QRect(0, 0, 500, 500),
+                                   solidImage(QSize(500, 500), qRgb(0, 0, 0))));
+    ScreenshotGeometryMapper mapper;
+    mapper.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    int confirmations = 0, completions = 0, hitTests = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.selectionConfirmed = [&] { ++confirmations; };
+    actions.activateScreenshotShortcut = [&](const QString&) {
+        ++completions;
+        return true;
+    };
+    actions.requestUiSelectorHitTest = [&](const QPoint&) { ++hitTests; };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, mapper, displays, actions});
+    for (const auto type : {ScreenshotRegionType::Polyline, ScreenshotRegionType::Curve}) {
+        selection.clearSelection();
+        interaction.enterOverlayVisible(false);
+        handler.setRegionType(type);
+        handler.handleMouseMove(nullptr, QPointF(20, 20));
+        require(hitTests == 0, "custom preselection must not request window elements");
+        handler.handleMousePress(nullptr, QPointF(20, 20));
+        handler.handleMouseRelease(nullptr, QPointF(20, 20));
+        handler.handleMousePress(nullptr, QPointF(180, 20));
+        handler.handleMouseRelease(nullptr, QPointF(180, 20));
+        require(selection.constructionActive() && interaction.selecting(),
+                "clicks retain unfinished custom transaction");
+        handler.confirmSelection();
+        require(selection.constructionActive(),
+                "Enter cannot export or confirm an unfinished outline");
+        handler.handleMousePress(nullptr, QPointF(90, 180));
+        handler.handleMouseRelease(nullptr, QPointF(90, 180));
+        require(handler.handleRegionDoubleClick(nullptr, QPointF(90, 180)),
+                "double click is consumed by region construction");
+        handler.handleMouseRelease(nullptr, QPointF(90, 180));
+        require(!selection.constructionActive() && !selection.rectangular() &&
+                    interaction.movingSelection(),
+                "double click confirms custom selection");
+        require(completions == 0, "finalizing a region must not invoke completion action");
+        require(selection.selectionRegion().contains(QPointF(90, 70)),
+                "custom region retains its interior");
+    }
+    require(confirmations == 2, "each outline confirms exactly once");
+    const auto confirmed = selection.selectionRegion();
+    handler.beginRegionOperation(true);
+    handler.handleMousePress(nullptr, QPointF(70, 50));
+    handler.handleMouseRelease(nullptr, QPointF(70, 50));
+    handler.setRegionType(ScreenshotRegionType::Freehand);
+    require(selection.regionOperationActive() && !selection.constructionActive() &&
+                selection.confirmedRegion() == confirmed,
+            "type change restarts only the draft and retains subtract intent");
+    handler.handleMousePress(nullptr, QPointF(70, 50));
+    handler.handleMouseMove(nullptr, QPointF(100, 50));
+    handler.handleMouseMove(nullptr, QPointF(90, 95));
+    handler.handleMouseRelease(nullptr, QPointF(70, 50));
+    require(!selection.selectionRegion().contains(QPointF(87, 65)),
+            "freehand release commits a cutout");
+    const auto withHole = selection.selectionRegion();
+    handler.beginRegionOperation(false);
+    handler.setRegionType(ScreenshotRegionType::Polyline);
+    handler.handleMousePress(nullptr, QPointF(250, 200));
+    handler.handleMouseRelease(nullptr, QPointF(250, 200));
+    handler.handleMousePress(nullptr, QPointF(350, 200));
+    require(handler.removeRegionVertex() && selection.draftVertices().size() == 1,
+            "Backspace removes one vertex");
+    require(handler.cancelRegionOperation() && selection.selectionRegion() == withHole,
+            "cancel retains previous cutout exactly");
+    require(screenshotRegionPreference() == ScreenshotRegionType::Polyline,
+            "region preference survives across captures");
+    QWidget shortcutWindow;
+    snow_shot::presentation::WindowShortcutManager shortcuts;
+    shortcuts.addScopeWindow(&shortcutWindow);
+    ScreenshotOverlayShortcutController controller(shortcuts, handler, interaction, intelligent,
+                                                   actions);
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Tab, Qt::ControlModifier) &&
+                selection.regionType() == ScreenshotRegionType::Curve,
+            "Ctrl+Tab advances region type in Move mode");
+    require(
+        dispatchShortcut(shortcutWindow, Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier) &&
+            selection.regionType() == ScreenshotRegionType::Polyline,
+        "Ctrl+Shift+Tab reverses region type");
+    interaction.enterOverlayVisible(false);
+    selection.clearSelection();
+    handler.handleMousePress(nullptr, QPointF(20, 20));
+    handler.handleMouseRelease(nullptr, QPointF(20, 20));
+    handler.handleMousePress(nullptr, QPointF(80, 20));
+    handler.handleMouseRelease(nullptr, QPointF(80, 20));
+    require(handler.handleRegionDoubleClick(nullptr, QPointF(80, 20)) &&
+                selection.constructionActive(),
+            "degenerate double click keeps the draft available for correction");
+    handler.handleMouseRelease(nullptr, QPointF(80, 20));
+    require(handler.cancelRegionOperation() && !selection.constructionActive(),
+            "cancel initial draft returns to preselection");
+    handler.setRegionType(ScreenshotRegionType::Freehand);
+    handler.handleMousePress(nullptr, QPointF(20, 20));
+    handler.handleMouseRelease(nullptr, QPointF(80, 20));
+    require(!selection.constructionActive() && interaction.selecting(),
+            "invalid freehand release leaves the operation ready");
+    handler.setRegionType(ScreenshotRegionType::Rectangle);
+}
+
 int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -3043,6 +3152,12 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--region-shapes-only"))) {
+        customRegionInputTransactions();
+        regionOperationsUseMarqueeAndRestoreOnCancel();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     regionOperationsUseMarqueeAndRestoreOnCancel();
     if (QCoreApplication::arguments().contains(QStringLiteral("--completion-gestures-only"))) {
         completionGesturesRequireAConfirmedSelectionAndSupportedTool();
