@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H
 
+#include "snow_shot/storage/pinnedwindowtypes.h"
+
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
@@ -45,15 +47,14 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void prewarmPinnedWindow(QScreen* screen = nullptr);
     // A null image is accepted when imageLoader is provided and
     // initialWindowSize supplies the known canvas dimensions.
-    [[nodiscard]] bool presentPinnedImage(const QImage& image, QScreen* screen,
-                                          const QRect& nativeGeometry,
-                                          const QSize& initialWindowSize = {},
-                                          std::shared_ptr<QTextDocument> formattedTextDocument = {},
-                                          const QString& formattedPlainText = {},
-                                          qreal formattedTextDevicePixelRatio = 1.0,
-                                          ScreenshotClipboardOriginalContent originalContent = {},
-                                          ScreenshotImageLoader imageLoader = {},
-                                          PinnedCompletion completion = {});
+    [[nodiscard]] bool presentPinnedImage(
+        const QImage& image, QScreen* screen, const QRect& nativeGeometry,
+        const QSize& initialWindowSize = {},
+        std::shared_ptr<QTextDocument> formattedTextDocument = {},
+        const QString& formattedPlainText = {}, qreal formattedTextDevicePixelRatio = 1.0,
+        ScreenshotClipboardOriginalContent originalContent = {},
+        ScreenshotImageLoader imageLoader = {}, PinnedCompletion completion = {},
+        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {});
     // An already composited selection bitmap placed by screenshotSelectionPinRequest.
     [[nodiscard]] bool
     presentCompositedSelectionImage(const QImage& image,
@@ -77,7 +78,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         const QSize& initialWindowSize, const QRectF& canvasRect,
         std::shared_ptr<QTextDocument> formattedTextDocument, const QString& formattedPlainText,
         qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
-        ScreenshotImageLoader imageLoader, PinnedCompletion completion);
+        ScreenshotImageLoader imageLoader, PinnedCompletion completion,
+        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {});
 
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;

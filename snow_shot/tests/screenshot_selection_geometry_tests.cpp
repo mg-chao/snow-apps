@@ -971,7 +971,28 @@ void selectionResultPixelSizeMatchesExportLayout() {
             "composited selections ceil partial pixels");
 }
 
+void historyBorderAppearanceDoesNotDependOnPlacement() {
+    auto record = historyRecord(QRect(5000, 5000, 100, 50), QSize(232, 132), 8);
+    record.selection.cornerRadius = 12;
+    record.desktopGeometry.reset();
+    const auto appearance = snow_shot::presentation::historySelectionBorderAppearance(record);
+    require(appearance && appearance->hasShadow && appearance->cornerRadius == 12 &&
+                appearance->sourceSize == QSize(116, 66) &&
+                appearance->contentRect == QRectF(8, 8, 100, 50),
+            "history fallback must retain capture-time appearance and logical-to-raster scale");
+    record.scrolling = true;
+    record.result->imageSize = QSize(232, 1016);
+    const auto scrolling = snow_shot::presentation::historySelectionBorderAppearance(record);
+    require(scrolling && scrolling->contentRect == QRectF(16, 16, 200, 984) &&
+                scrolling->cornerRadius == 24,
+            "scrolling history must derive content height from its saved raster");
+    record.contentKind = snow_shot::storage::CaptureHistoryContentKind::Image;
+    require(!snow_shot::presentation::historySelectionBorderAppearance(record),
+            "imported history images must not inherit selection settings");
+}
+
 int main() {
+    historyBorderAppearanceDoesNotDependOnPlacement();
     historyPinPreservesDesktopCoordinatesAcrossLayoutChanges();
     selectionResultPixelSizeMatchesExportLayout();
     historyPinMatchesScreenshotSelectionPlacement();

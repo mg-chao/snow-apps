@@ -37,6 +37,33 @@ bool applyNativeMonitorRect(CapturedDisplayModel& display, const QScreen& screen
 #endif
 } // namespace
 
+std::optional<snow_shot::storage::PinnedBorderAppearance>
+historySelectionBorderAppearance(const snow_shot::storage::CaptureHistoryRecord& record) {
+    if (record.contentKind != snow_shot::storage::CaptureHistoryContentKind::ScreenshotSession ||
+        !record.result || record.result->imageSize.isEmpty()) {
+        return {};
+    }
+    const auto style = ScreenshotResultCompositor::normalizedStyle({record.selection.cornerRadius,
+                                                                    record.selection.shadowWidth,
+                                                                    record.selection.shadowColor});
+    if (!record.selection.rectangle.size().isEmpty() && record.scrolling != true) {
+        return screenshotSelectionBorderAppearance(record.selection.rectangle.size(), style);
+    }
+    // Scrolling changes the content height, but retains the selection width.
+    const qreal scale = record.selection.rectangle.width() > 0
+                            ? qreal(record.result->imageSize.width()) /
+                                  (record.selection.rectangle.width() + 2 * style.shadowWidth)
+                            : 1.0;
+    const qreal padding = style.shadowWidth * scale;
+    const QRectF content = QRectF(QPointF(), QSizeF(record.result->imageSize))
+                               .adjusted(padding, padding, -padding, -padding);
+    if (!content.isValid()) {
+        return {};
+    }
+    return snow_shot::storage::PinnedBorderAppearance{
+        record.result->imageSize, content, style.cornerRadius * scale, style.shadowWidth > 0};
+}
+
 bool historyRecordSupportsSelectionPin(const snow_shot::storage::CaptureHistoryRecord& record) {
     // Legacy canvas coordinates alone cannot recover an absolute desktop position.
     return record.contentKind == snow_shot::storage::CaptureHistoryContentKind::ScreenshotSession &&

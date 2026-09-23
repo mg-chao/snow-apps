@@ -3,6 +3,7 @@
 #include "snow_shot/diagnostics/diagnostics.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
@@ -573,6 +574,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     // The worker loader returns a fully composited result image. Keep the live
     // renderer neutral so the result style is not applied twice after loading.
     config.resultStyle = ScreenshotResultStyle{};
+    config.borderAppearance =
+        screenshotSelectionBorderAppearance(request.selection.size(), request.resultStyle);
     config.initialWindowSize = request.initialWindowSize;
     config.screen = request.screen;
     config.enableEditing = true;
@@ -744,18 +747,19 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     const QSize& initialWindowSize, std::shared_ptr<QTextDocument> formattedTextDocument,
     const QString& formattedPlainText, qreal formattedTextDevicePixelRatio,
     ScreenshotClipboardOriginalContent originalContent, ScreenshotImageLoader imageLoader,
-    PinnedCompletion completion) {
+    PinnedCompletion completion,
+    std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance) {
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
         nativeGeometry.isEmpty()) {
         return false;
     }
-    return presentPinnedImageOnCanvas(image, screen, nativeGeometry, initialWindowSize,
-                                      QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)),
-                                      std::move(formattedTextDocument), formattedPlainText,
-                                      formattedTextDevicePixelRatio, std::move(originalContent),
-                                      std::move(imageLoader), std::move(completion));
+    return presentPinnedImageOnCanvas(
+        image, screen, nativeGeometry, initialWindowSize,
+        QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)), std::move(formattedTextDocument),
+        formattedPlainText, formattedTextDevicePixelRatio, std::move(originalContent),
+        std::move(imageLoader), std::move(completion), std::move(borderAppearance));
 }
 
 bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
@@ -766,9 +770,10 @@ bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
         request.surfaceCanvasRect.size() != QSizeF(request.initialWindowSize)) {
         return false;
     }
-    return presentPinnedImageOnCanvas(image, request.screen.data(), request.geometry.nativeGeometry,
-                                      request.initialWindowSize, request.surfaceCanvasRect, {}, {},
-                                      1.0, {}, {}, std::move(completion));
+    return presentPinnedImageOnCanvas(
+        image, request.screen.data(), request.geometry.nativeGeometry, request.initialWindowSize,
+        request.surfaceCanvasRect, {}, {}, 1.0, {}, {}, std::move(completion),
+        screenshotSelectionBorderAppearance(request.selection.size(), request.resultStyle));
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
@@ -776,7 +781,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     const QSize& initialWindowSize, const QRectF& canvasRect,
     std::shared_ptr<QTextDocument> formattedTextDocument, const QString& formattedPlainText,
     qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
-    ScreenshotImageLoader imageLoader, PinnedCompletion completion) {
+    ScreenshotImageLoader imageLoader, PinnedCompletion completion,
+    std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
@@ -809,6 +815,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = nativeGeometry;
     config.canvasSourceRect = canvasRect;
+    config.borderAppearance = std::move(borderAppearance);
     if (!image.isNull()) {
         config.imageSource = ScreenshotImageSource::fromImage(image, canvasRect);
     }
@@ -916,6 +923,7 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.screen = targetScreen;
         config.enableEditing = true;
         config.resultStyle = decodeResultStyle(record.resultStyle);
+        config.borderAppearance = record.borderAppearance;
         config.persistenceId = record.id;
         config.restorePersistentState = true;
         config.persistedOpacityPercent = record.opacityPercent;

@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
 #include <QNativeGestureEvent>
@@ -353,6 +354,9 @@ class ScreenshotPinnedWindowTestAccess {
     static void recognitionForHideTest(ScreenshotPinnedWindow& window) {
         window.activateRecognitionMode(0);
     }
+    static void scaleBorderFixture(ScreenshotPinnedWindow& window, int percent) {
+        window.applyScale(percent);
+    }
     static void thumbnailForHideTest(ScreenshotPinnedWindow& window, bool enabled) {
         window.setThumbnailMode(enabled, false);
     }
@@ -481,6 +485,7 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_resultSurfaceCanvasRect = config.canvasSourceRect;
         window.m_initialWindowSize = config.initialWindowSize;
         window.m_originalImage = config.imageSource.materializedImage;
+        window.m_originalPixelSize = window.m_originalImage.size();
         window.m_transformedImage = window.m_originalImage;
         window.m_persistenceId = config.persistenceId;
         window.m_persistenceWriter = config.persistenceWriter;
@@ -3460,44 +3465,57 @@ void historySelectionPresentationPreservesCompositedCanvas() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
     for (const int scale : {1, 2}) {
-        QImage content(QSize(100, 50) * scale, QImage::Format_ARGB32_Premultiplied);
-        content.fill(QColor(84, 168, 112));
-        const QImage image = ScreenshotResultCompositor::compose(
-            content, ScreenshotResultStyle{0, 8 * scale, QColor(0x33, 0x33, 0x33)});
-        ScreenshotPinnedSelectionRequest request;
-        request.selection = QRect(100, 80, 100, 50);
-        request.contentCanvasRect = request.selection;
-        request.surfaceCanvasRect = QRectF(92, 72, 116, 66);
-        request.initialWindowSize = QSize(116, 66);
-        request.geometry = ScreenshotGeometryMapper::pinnedImageGeometry(
-            physicalPinGeometry(*screen, QPoint(92, 72), request.initialWindowSize), image.size());
-        request.geometry.canvasSourceRect = request.surfaceCanvasRect;
-        request.resultStyle = ScreenshotResultStyle{0, 8, QColor(0x33, 0x33, 0x33)};
-        request.screen = screen;
-        ScreenshotSelectionExportUiServices services;
-        require(services.presentCompositedSelectionImage(image, request),
-                "history selection presentation failed");
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        ScreenshotPinnedWindow* window = nullptr;
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            auto* candidate = qobject_cast<ScreenshotPinnedWindow*>(widget);
-            if (candidate != nullptr && candidate->isVisible()) {
-                window = candidate;
-                break;
+        for (const bool direct : {false, true}) {
+            QImage content(QSize(100, 50) * scale, QImage::Format_ARGB32_Premultiplied);
+            content.fill(QColor(84, 168, 112));
+            const QImage image = ScreenshotResultCompositor::compose(
+                content, ScreenshotResultStyle{12 * scale, 8 * scale, QColor(0x33, 0x33, 0x33)});
+            ScreenshotPinnedSelectionRequest request;
+            request.selection = QRect(100, 80, 100, 50);
+            request.contentCanvasRect = request.selection;
+            request.surfaceCanvasRect = QRectF(92, 72, 116, 66);
+            request.initialWindowSize = QSize(116, 66);
+            request.geometry = ScreenshotGeometryMapper::pinnedImageGeometry(
+                physicalPinGeometry(*screen, QPoint(92, 72), request.initialWindowSize),
+                image.size());
+            request.geometry.canvasSourceRect = request.surfaceCanvasRect;
+            request.resultStyle = ScreenshotResultStyle{12, 8, QColor(0x33, 0x33, 0x33)};
+            request.screen = screen;
+            ScreenshotSelectionExportUiServices services;
+            require(direct ? services.presentPinnedArtifact(
+                                 request, std::make_shared<ScreenshotExportArtifact>(
+                                              ScreenshotExportSource::fromImage(image)))
+                           : services.presentCompositedSelectionImage(image, request),
+                    "history selection presentation failed");
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            ScreenshotPinnedWindow* window = nullptr;
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                auto* candidate = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                if (candidate != nullptr && candidate->isVisible()) {
+                    window = candidate;
+                    break;
+                }
             }
-        }
-        require(window != nullptr, "history selection pin was not shown");
-        const auto snapshot = window->persistenceSnapshot();
-        require(snapshot.canvasSourceRect == request.surfaceCanvasRect &&
+            require(window != nullptr, "history selection pin was not shown");
+            const auto snapshot = window->persistenceSnapshot();
+            require(!snapshot.showBorder && snapshot.borderAppearance ==
+                                                screenshotSelectionBorderAppearance(
+                                                    request.selection.size(), request.resultStyle),
+                    "direct and history pins must retain the same border appearance without a "
+                    "visible shadow rim");
+            require(
+                snapshot.canvasSourceRect == request.surfaceCanvasRect &&
                     snapshot.contentCanvasRect == request.surfaceCanvasRect &&
                     snapshot.surfaceCanvasRect == request.surfaceCanvasRect &&
                     snapshot.initialWindowSize == request.initialWindowSize &&
                     snapshot.image == image,
                 "history presentation must preserve canvas mapping and must not composite shadow "
                 "twice");
-        QPointer<ScreenshotPinnedWindow> guardedWindow(window);
-        window->close();
-        require(processUntilDeleted(guardedWindow, 2000), "history selection pin was not closed");
+            QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+            window->close();
+            require(processUntilDeleted(guardedWindow, 2000),
+                    "history selection pin was not closed");
+        }
     }
 }
 
@@ -7243,6 +7261,116 @@ void pinnedAlwaysOnTopOffscreen() {
     }
 }
 
+void pinnedSelectionBorderOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "selection border needs a screen");
+    for (const int padding : {0, 8}) {
+        for (const int radius : {0, 32}) {
+            ScreenshotPinnedWindow window;
+            auto config = clickThroughTestConfig(*screen);
+            config.borderAppearance = screenshotSelectionBorderAppearance(
+                QSize(400 - 2 * padding, 400 - 2 * padding),
+                ScreenshotResultStyle{radius, padding, QColor(0x33, 0x33, 0x33)});
+            Access::prepareReplacement(window, config);
+            window.show();
+            waitForUi(20);
+            auto* border = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
+            auto* action =
+                window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
+            require(border && action && border->isVisible() == (padding == 0) &&
+                        action->isChecked() == (padding == 0),
+                    "selection shadow must determine initial border visibility and menu state");
+            if (padding) {
+                action->trigger();
+            }
+            setPinnedWindowActive(window, false);
+            for (const qreal scale : {1.0, 0.8, 0.75}) {
+                QImage raster(qRound(border->width() * scale), qRound(border->height() * scale),
+                              QImage::Format_ARGB32_Premultiplied);
+                raster.setDevicePixelRatio(scale);
+                raster.fill(Qt::transparent);
+                QPainter painter(&raster);
+                border->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+                painter.end();
+                raster.setDevicePixelRatio(1.0);
+                const int inset = qRound(padding * border->width() / 400.0 * scale);
+                const int middle = raster.height() / 2;
+                if (raster.pixelColor(inset, middle).alpha() != 255 ||
+                    raster.pixelColor(inset + 1, middle).alpha() != 255 ||
+                    raster.pixelColor(inset + 2, middle).alpha() != 0) {
+                    std::cerr << "border padding=" << padding << " radius=" << radius
+                              << " scale=" << scale << " inset=" << inset
+                              << " alpha=" << raster.pixelColor(inset, middle).alpha() << ","
+                              << raster.pixelColor(inset + 1, middle).alpha() << ","
+                              << raster.pixelColor(inset + 2, middle).alpha() << '\n';
+                }
+                require(
+                    raster.pixelColor(inset, middle).alpha() == 255 &&
+                        raster.pixelColor(inset + 1, middle).alpha() == 255 &&
+                        raster.pixelColor(inset + 2, middle).alpha() == 0,
+                    "selection outline must have exactly two physical pixels at fractional scales");
+                require(raster.pixelColor(inset, inset).alpha() == (radius ? 0 : 255),
+                        "rounded border must leave content corners clear");
+                if (inset) {
+                    require(raster.pixelColor(0, middle).alpha() == 0,
+                            "manual border must leave shadow padding outside its rim");
+                }
+            }
+            const QRectF originalOutline = border->property("contentOutline").toRectF();
+            const QSizeF originalRadii = border->property("cornerRadii").toSizeF();
+            Access::scaleBorderFixture(window, 50);
+            const QRectF scaledOutline = border->property("contentOutline").toRectF();
+            const QSizeF scaledRadii = border->property("cornerRadii").toSizeF();
+            require(qAbs(scaledOutline.width() * 2 - originalOutline.width()) < 0.01 &&
+                        qAbs(scaledRadii.width() * 2 - originalRadii.width()) < 0.01,
+                    "zoom must scale both the content outline and corner radius");
+            Access::thumbnailForHideTest(window, true);
+            require(border->property("contentOutline").toRectF().width() < originalOutline.width(),
+                    "thumbnail border must follow the reduced content");
+            Access::thumbnailForHideTest(window, false);
+            Access::scaleBorderFixture(window, 100);
+            require(qAbs(border->property("contentOutline").toRectF().width() -
+                         originalOutline.width()) < 0.01,
+                    "leaving thumbnail mode must restore the border outline");
+            Access::transformReplacement(window);
+            require(qAbs(border->property("cornerRadii").toSizeF().width() -
+                         originalRadii.width()) < 0.01,
+                    "rotation and flipping must keep the displayed corner radius");
+            require(window.persistenceSnapshot().borderAppearance == config.borderAppearance,
+                    "rotation and flipping must preserve source border metadata");
+            ScreenshotClipboardContent replacement;
+            replacement.image = config.imageSource.materializedImage;
+            require(Access::replace(window, std::move(replacement)),
+                    "replace styled screenshot content");
+            require(!window.persistenceSnapshot().borderAppearance &&
+                        !border->property("contentOutline").toRectF().isValid(),
+                    "content replacement must clear selection outline metadata");
+            window.close();
+        }
+    }
+    // Reusing a shell must reset defaults, while restoration must honor explicit overrides.
+    ScreenshotPinnedWindow reused;
+    auto shadow = clickThroughTestConfig(*screen);
+    shadow.borderAppearance = screenshotSelectionBorderAppearance(
+        QSize(384, 384), ScreenshotResultStyle{32, 8, QColor(0x33, 0x33, 0x33)});
+    Access::restoreOffscreen(reused, shadow);
+    require(!reused.persistenceSnapshot().showBorder, "shadow shell must start without a border");
+    Access::restoreOffscreen(reused, clickThroughTestConfig(*screen));
+    require(reused.persistenceSnapshot().showBorder &&
+                !reused.persistenceSnapshot().borderAppearance,
+            "reused shell must reset border visibility and appearance");
+    for (const bool visible : {false, true}) {
+        shadow.restorePersistentState = true;
+        shadow.persistedShowBorder = visible;
+        Access::restoreOffscreen(reused, shadow);
+        require(reused.persistenceSnapshot().showBorder == visible &&
+                    reused.persistenceSnapshot().borderAppearance == shadow.borderAppearance,
+                "saved border visibility must take precedence over the shadow default");
+    }
+    reused.close();
+}
+
 void pinnedShowBorderOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -10412,6 +10540,7 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--show-border-only"))) {
             pinnedShowBorderOffscreen();
+            pinnedSelectionBorderOffscreen();
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)

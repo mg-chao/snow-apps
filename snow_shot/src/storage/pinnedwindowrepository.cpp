@@ -411,6 +411,31 @@ bool placementFromJson(const QJsonValue& value, PinnedWindowPlacement* placement
     return placement->isValid();
 }
 
+QJsonValue borderAppearanceToJson(const std::optional<PinnedBorderAppearance>& appearance) {
+    if (!appearance) {
+        return QJsonValue();
+    }
+    return QJsonObject{{QStringLiteral("source_size"), sizeToJson(appearance->sourceSize)},
+                       {QStringLiteral("content_rect"), rectFToJson(appearance->contentRect)},
+                       {QStringLiteral("corner_radius"), appearance->cornerRadius},
+                       {QStringLiteral("has_shadow"), appearance->hasShadow}};
+}
+
+std::optional<PinnedBorderAppearance> borderAppearanceFromJson(const QJsonValue& value) {
+    const auto object = value.toObject();
+    PinnedBorderAppearance appearance;
+    double radius = 0;
+    if (!sizeFromJson(object.value(QStringLiteral("source_size")), &appearance.sourceSize) ||
+        !rectFFromJson(object.value(QStringLiteral("content_rect")), &appearance.contentRect) ||
+        !finiteNumber(object.value(QStringLiteral("corner_radius")), 0, 1e9, &radius) ||
+        !QRectF(QPointF(), QSizeF(appearance.sourceSize)).contains(appearance.contentRect)) {
+        return {};
+    }
+    appearance.cornerRadius = radius;
+    appearance.hasShadow = object.value(QStringLiteral("has_shadow")).toBool(false);
+    return appearance;
+}
+
 QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& payloads) {
     return QJsonObject{
         {QStringLiteral("id"), record.id},
@@ -448,6 +473,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("click_through_mode"), record.clickThroughMode},
         {QStringLiteral("always_on_top"), record.alwaysOnTop},
         {QStringLiteral("show_border"), record.showBorder},
+        {QStringLiteral("border_appearance"), borderAppearanceToJson(record.borderAppearance)},
         {QStringLiteral("recognition_visible"), record.recognitionVisible},
         {QStringLiteral("translation_visible"), record.translationVisible},
         {QStringLiteral("pre_thumbnail_geometry"), rectToJson(record.preThumbnailNativeGeometry)},
@@ -765,6 +791,8 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     // Pins saved before the preference existed always drew their rim, so a
     // missing key must restore with the border visible.
     record.showBorder = object.value(QStringLiteral("show_border")).toBool(true);
+    record.borderAppearance =
+        borderAppearanceFromJson(object.value(QStringLiteral("border_appearance")));
     const auto accentValue = object.value(QStringLiteral("hide_to_top_accent_index"));
     const int accent = accentValue.toInt(-1);
     record.hideToTopAccentIndex =

@@ -2999,9 +2999,16 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
                 presented = impl.m_selectionExportUiServices->presentCompositedSelectionImage(
                     result.image, selectionPlacement, std::move(completion));
             } else {
-                presented = impl.presentDecodedImageOnScreen(
-                    fallbackScreen, result.image, fallbackScreen->devicePixelRatio(),
-                    autoResizeWindow, {}, std::move(completion));
+                const auto fit = snow_shot::presentation::fitPinnedImageOnScreen(
+                    *fallbackScreen,
+                    snow_shot::presentation::pinnedImageWindowSize(
+                        result.image, fallbackScreen->devicePixelRatio()),
+                    autoResizeWindow);
+                presented = fit.valid &&
+                            impl.m_selectionExportUiServices->presentPinnedImage(
+                                result.image, fallbackScreen, fit.nativeGeometry,
+                                fit.initialWindowSize, {}, {}, 1.0, {}, {}, std::move(completion),
+                                snow_shot::presentation::historySelectionBorderAppearance(record));
             }
             if (!presented) {
                 qWarning("Screenshot history pin could not be presented");

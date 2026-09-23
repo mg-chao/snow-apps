@@ -10,8 +10,21 @@
 #include <QSize>
 #include <QString>
 #include <QTransform>
+#include <optional>
 
 namespace snow_shot::storage {
+
+// Outline in a reference screenshot raster of sourceSize pixels. The displayed
+// image may have a higher backing resolution (for example, a Retina capture).
+// This describes window chrome only; it must never be applied to image exports.
+struct PinnedBorderAppearance final {
+    QSize sourceSize;
+    QRectF contentRect;
+    qreal cornerRadius = 0.0;
+    bool hasShadow = false;
+
+    friend bool operator==(const PinnedBorderAppearance&, const PinnedBorderAppearance&) = default;
+};
 
 struct PinnedWindowGroup final {
     QString id;
@@ -65,6 +78,7 @@ struct PinnedWindowRecord final {
     bool clickThroughMode = false;
     bool alwaysOnTop = true;
     bool showBorder = true;
+    std::optional<PinnedBorderAppearance> borderAppearance;
     QRect preThumbnailNativeGeometry;
     QByteArray resultStyle;
     QByteArray canvasSession;

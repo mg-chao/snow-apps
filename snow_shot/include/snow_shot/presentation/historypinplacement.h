@@ -11,6 +11,9 @@ class QScreen;
 
 namespace snow_shot::presentation {
 
+[[nodiscard]] std::optional<snow_shot::storage::PinnedBorderAppearance>
+historySelectionBorderAppearance(const snow_shot::storage::CaptureHistoryRecord& record);
+
 // Native monitor rectangle for one screen in the coordinate space the capture backend reports.
 // Injected so tests can supply rectangles without native screens.
 using HistoryPinNativeMonitorRect = std::function<QRect(const QScreen&)>;

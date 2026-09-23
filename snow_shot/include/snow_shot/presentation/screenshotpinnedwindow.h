@@ -105,6 +105,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         QRectF contentCanvasRect;
         QRectF surfaceCanvasRect;
         ScreenshotResultStyle resultStyle;
+        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance;
         QSize initialWindowSize;
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;
@@ -229,6 +230,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void refreshContextMenu();
     void showContextMenu(const QPoint& globalPosition);
     void updateCanvasViewport();
+    void updateBorderOutline();
     void updateControlsGeometry();
     // Single writer for hover presence: the live native cursor against the
     // complete window frame. Native mouse messages, queued Enter/Leave, and
@@ -456,6 +458,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QRectF m_backgroundCanvasRect;
     QRectF m_resultSurfaceCanvasRect;
     ScreenshotResultStyle m_resultStyle;
+    std::optional<snow_shot::storage::PinnedBorderAppearance> m_borderAppearance;
     ScreenshotImageSource m_imageSource;
     QImage m_originalImage;
     QImage m_transformedImage;

@@ -81,6 +81,7 @@
 #include <QMimeData>
 #include <QMoveEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPaintEvent>
 #include <QResizeEvent>
 #include <QRegion>
@@ -582,6 +583,31 @@ class PinnedBorderFrame final : public QFrame {
             return;
         }
         painter.setTransform(painter.transform() * toSurface);
+        const QRectF contentOutline = property("contentOutline").toRectF();
+        if (contentOutline.isValid()) {
+            const QRectF mappedOutline = surfaceTransform.mapRect(contentOutline);
+            const QSizeF radii =
+                surfaceTransform.mapRect(QRectF(QPointF(), property("cornerRadii").toSizeF()))
+                    .size();
+            const QRectF outer = ScreenshotPinnedGeometryMapping::roundedDeviceRect(mappedOutline)
+                                     .intersected(deviceRect);
+            const qreal rx = std::min(radii.width(), outer.width() / 2.0);
+            const qreal ry = std::min(radii.height(), outer.height() / 2.0);
+            QPainterPath ring;
+            ring.setFillRule(Qt::OddEvenFill);
+            ring.addRoundedRect(outer, rx, ry);
+            const QRectF inner =
+                outer.adjusted(kPinnedBorderDevicePixels, kPinnedBorderDevicePixels,
+                               -kPinnedBorderDevicePixels, -kPinnedBorderDevicePixels);
+            if (inner.isValid()) {
+                ring.addRoundedRect(inner, std::max(0.0, rx - kPinnedBorderDevicePixels),
+                                    std::max(0.0, ry - kPinnedBorderDevicePixels));
+            }
+            painter.setClipRect(deviceRect);
+            painter.setRenderHint(QPainter::Antialiasing, rx > 0 && ry > 0);
+            painter.fillPath(ring, color);
+            return;
+        }
         const int left = deviceRect.left();
         const int top = deviceRect.top();
         const int right = deviceRect.right();
@@ -1371,6 +1397,7 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
     record.showBorder = m_showBorder;
     record.preThumbnailNativeGeometry = m_preThumbnailNativeGeometry;
     record.resultStyle = serializeResultStyle(m_resultStyle);
+    record.borderAppearance = m_borderAppearance;
     record.canvasSession = m_runtime.serializeDocumentSession();
     record.recognitionResults =
         m_recognitionTargetReady && m_recognitionSession != nullptr
@@ -1399,6 +1426,11 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
         config.restorePersistentState && clickThroughPercent >= 0 && clickThroughPercent <= 100
             ? clickThroughPercent
             : 50;
+    m_borderAppearance = config.borderAppearance;
+    m_showBorder = !m_borderAppearance || !m_borderAppearance->hasShadow;
+    if (m_borderFrame) {
+        m_borderFrame->setVisible(m_showBorder);
+    }
     if (!config.restorePersistentState) {
         return;
     }
@@ -2875,6 +2907,41 @@ void ScreenshotPinnedWindow::showContextMenu(const QPoint& globalPosition) {
     m_contextMenu->popupAt(globalPosition);
 }
 
+void ScreenshotPinnedWindow::updateBorderOutline() {
+    if (!m_borderFrame || !m_canvas) {
+        return;
+    }
+    QRectF outline;
+    QSizeF radii;
+    if (m_borderAppearance && !m_borderAppearance->sourceSize.isEmpty() &&
+        !m_originalPixelSize.isEmpty()) {
+        const auto& appearance = *m_borderAppearance;
+        const qreal sx = qreal(m_originalPixelSize.width()) / appearance.sourceSize.width();
+        const qreal sy = qreal(m_originalPixelSize.height()) / appearance.sourceSize.height();
+        QTransform sourceScale;
+        sourceScale.scale(sx, sy);
+        const QTransform rotation = QImage::trueMatrix(
+            m_imageTransform, m_originalPixelSize.width(), m_originalPixelSize.height());
+        const QRectF transformedBounds =
+            rotation.mapRect(QRectF(QPointF(), QSizeF(m_originalPixelSize)));
+        QTransform toCanvas;
+        toCanvas.translate(m_backgroundCanvasRect.x(), m_backgroundCanvasRect.y());
+        toCanvas.scale(m_backgroundCanvasRect.width() / transformedBounds.width(),
+                       m_backgroundCanvasRect.height() / transformedBounds.height());
+        const QTransform mapping =
+            sourceScale * rotation * toCanvas * m_canvas->canvasToViewTransform();
+        outline = mapping.mapRect(appearance.contentRect);
+        outline.translate(m_canvas->mapTo(this, QPoint()) - m_borderFrame->pos());
+        const qreal radius = std::min(
+            appearance.cornerRadius,
+            std::min(appearance.contentRect.width(), appearance.contentRect.height()) / 2.0);
+        radii = mapping.mapRect(QRectF(0, 0, radius, radius)).size();
+    }
+    m_borderFrame->setProperty("contentOutline", outline);
+    m_borderFrame->setProperty("cornerRadii", radii);
+    m_borderFrame->update();
+}
+
 void ScreenshotPinnedWindow::updateCanvasViewport() {
     if (m_canvas == nullptr || !m_resultSurfaceCanvasRect.isValid() ||
         m_resultSurfaceCanvasRect.isEmpty() || m_canvas->width() <= 0 || m_canvas->height() <= 0) {
@@ -2918,6 +2985,7 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
     // physical viewport so rounding cannot translate the screenshot content.
     m_viewportCenter += mapping.viewportCenterOffset(m_viewportZoom);
     m_canvas->setViewportCamera(m_viewportCenter.x(), m_viewportCenter.y(), m_viewportZoom);
+    updateBorderOutline();
     updateRecognitionContentGeometry();
 }
 
@@ -3130,6 +3198,7 @@ bool ScreenshotPinnedWindow::installMaterializedImage(QImage image) {
         m_screenshotRenderer->setImageSource(m_imageSource);
     }
     m_recognitionTargetReady = false;
+    updateBorderOutline();
     return true;
 }
 
@@ -4714,6 +4783,7 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content) 
         }
     }
     m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, backgroundRect);
+    m_borderAppearance.reset();
     if (m_replacementPersistenceWriter) {
         m_persistenceWriter = m_replacementPersistenceWriter;
     }
