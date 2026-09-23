@@ -36,6 +36,7 @@ struct DirectCaptureRequest {
     QStringList directories;
     QString imageFormat;
     ScreenshotCompressionLevel compressionLevel = ScreenshotCompressionLevel::Low;
+    ScreenshotCompressionLevel historyDisplayCompressionLevel = ScreenshotCompressionLevel::Medium;
     ScreenshotPdfOptions pdf;
     QString filenameFormat;
     bool restoreOriginalScreenColors = false;

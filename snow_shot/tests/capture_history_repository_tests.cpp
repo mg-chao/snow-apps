@@ -1,4 +1,5 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snowimageqtcodec.h"
 
 #include <QCoreApplication>
 #include <QBuffer>
@@ -430,6 +431,47 @@ void preparedResultBytesAreCommittedWithoutReplacement() {
     const auto loadedPng = repository->loadResultPng(published.record);
     require(loadedPng.has_value() && loadedPng->bytes() == *sharedBytes,
             "history clipboard read must preserve the stored PNG bytes");
+}
+
+void displayCompressionIsIndependentOfResultCompression() {
+    QImage image(QSize(96, 64), QImage::Format_RGBA8888);
+    for (int row = 0; row < image.height(); ++row) {
+        for (int column = 0; column < image.width(); ++column) {
+            image.setPixel(column, row,
+                           qRgba((column / 4 + row * 5) % 256, (column + row / 3) % 256,
+                                 (column * 3 + row) % 256, 255));
+        }
+    }
+    QVector<QByteArray> displayEncodings;
+    for (const int compression : {0, 6, 9}) {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "failed to create compression fixture directory");
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        auto draft = draftAt(QDateTime::currentDateTimeUtc(), image.size());
+        draft.displays.front().image = image;
+        draft.resultImage = image;
+        draft.pngCompressionLevel = 0;
+        draft.displayPngCompressionLevel = compression;
+        const auto published = repository->publish(draft).get();
+        require(published.storage.success, "compressed history publication failed");
+        const QDir directory(onlyRecordDirectory(temporary.path()));
+        QFile displayFile(directory.filePath(QStringLiteral("display_0.png")));
+        QFile resultFile(directory.filePath(QStringLiteral("capture_result.png")));
+        require(displayFile.open(QIODevice::ReadOnly) && resultFile.open(QIODevice::ReadOnly),
+                "compressed history files are missing");
+        const QByteArray displayBytes = displayFile.readAll();
+        require(displayBytes == snow_shot::image_codec::encodePng(image, compression) &&
+                    resultFile.readAll() == snow_shot::image_codec::encodePng(image, 0),
+                "display compression must not change the result PNG encoding");
+        const auto payload = repository->load(published.record);
+        require(payload.has_value() && payload->displayImages.size() == 1 &&
+                    payload->displayImages.front().pixelColor(17, 12) == image.pixelColor(17, 12),
+                "display compression changed decoded pixels");
+        displayEncodings.push_back(displayBytes);
+    }
+    require(displayEncodings[0] != displayEncodings[1] &&
+                displayEncodings[1] != displayEncodings[2],
+            "low, medium, and high must produce distinct display encodings");
 }
 
 void quickCaptureSourcesRoundTrip() {
@@ -971,6 +1013,7 @@ int main(int argc, char** argv) {
     desktopGeometryRoundTripsAndValidatesCoordinates();
     publicationAndRecovery();
     preparedResultBytesAreCommittedWithoutReplacement();
+    displayCompressionIsIndependentOfResultCompression();
     quickCaptureSourcesRoundTrip();
     trustedStartupAndExplicitClear();
     policyBoundariesAndDisabledPreservation();

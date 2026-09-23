@@ -408,6 +408,22 @@ void pdfDialogAndSettings(QWidget& owner, const QTemporaryDir& temp) {
             backend.applySliderValue(settings::SettingsSliderBinding::ScreenshotImageQuality, 0) &&
             backend.sliderValue(settings::SettingsSliderBinding::ScreenshotImageQuality) == 0,
         "global image encoding settings must round-trip through the settings backend");
+    require(storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("capture_history/compression_level")) == QStringLiteral("medium") &&
+                backend.selectValue(settings::SettingsSelectBinding::HistoryCompressionLevel) ==
+                    QStringLiteral("medium") &&
+                backend.applySelectValue(settings::SettingsSelectBinding::HistoryCompressionLevel,
+                                         QStringLiteral("high")) &&
+                backend.selectValue(settings::SettingsSelectBinding::HistoryCompressionLevel) ==
+                    QStringLiteral("high") &&
+                settings.compressionLevel() == QStringLiteral("high") &&
+                !backend.applySelectValue(settings::SettingsSelectBinding::HistoryCompressionLevel,
+                                          QStringLiteral("invalid")) &&
+                backend.resetSection(settings::SettingsSectionReset::HistoryPolicy) &&
+                backend.selectValue(settings::SettingsSelectBinding::HistoryCompressionLevel) ==
+                    QStringLiteral("medium") &&
+                settings.compressionLevel() == QStringLiteral("high"),
+            "history display compression must validate, reset, and remain independent of output");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenshotOutput) &&
                 settings.pdfPageSize() == QStringLiteral("a4_portrait") &&
                 settings.compressionLevel() == QStringLiteral("low") &&

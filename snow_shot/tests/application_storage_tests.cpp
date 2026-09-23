@@ -165,6 +165,8 @@ void defaultsAndTypedRoundTrip() {
                 history.value(QStringLiteral("retention_days")).toInt() == 7 &&
                 history.value(QStringLiteral("max_entries")).toInt() == 100 &&
                 history.value(QStringLiteral("max_disk_mib")).toInt() == 1024 &&
+                history.value(QStringLiteral("compression_level")).toString() ==
+                    QStringLiteral("medium") &&
                 screenshotUi.value(QStringLiteral("toolbar_size")).toString() ==
                     QStringLiteral("normal") &&
                 screenshotUi.value(QStringLiteral("selection_transition_animation")).toBool() &&
@@ -201,6 +203,7 @@ void defaultsAndTypedRoundTrip() {
             {QStringLiteral("capture_history/retention_days"), 30},
             {QStringLiteral("capture_history/max_entries"), 250},
             {QStringLiteral("capture_history/max_disk_mib"), 2048},
+            {QStringLiteral("capture_history/compression_level"), QStringLiteral("high")},
             {QStringLiteral("screenshot_selection/smart_selection"), false},
             {QStringLiteral("screenshot_ui/selection_mask_color"), QStringLiteral(" #12ab34cd ")},
             {QStringLiteral("screenshot_ui/shortcut_hint_opacity"), 42},
@@ -215,6 +218,10 @@ void defaultsAndTypedRoundTrip() {
             reloaded.value(QStringLiteral("interface/language")).toString() ==
                 QStringLiteral("zh_CN") &&
             reloaded.value(QStringLiteral("capture_history/retention_days")).toInt() == 30 &&
+            reloaded.value(QStringLiteral("capture_history/compression_level")).toString() ==
+                QStringLiteral("high") &&
+            reloaded.value(QStringLiteral("screenshot/compression_level")).toString() ==
+                QStringLiteral("low") &&
             !reloaded.value(QStringLiteral("screenshot_selection/smart_selection")).toBool() &&
             reloaded.value(QStringLiteral("screenshot_ui/selection_mask_color")).toString() ==
                 QStringLiteral("#12AB34CD") &&
@@ -520,6 +527,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
           QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif"),
           QStringLiteral("pdf")}},
         {QStringLiteral("screenshot/compression_level"),
+         {QStringLiteral("low"), QStringLiteral("medium"), QStringLiteral("high")}},
+        {QStringLiteral("capture_history/compression_level"),
          {QStringLiteral("low"), QStringLiteral("medium"), QStringLiteral("high")}},
         {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
          {QStringLiteral("mouse_position"), QStringLiteral("top_left"), QStringLiteral("top_right"),
