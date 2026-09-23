@@ -1635,6 +1635,57 @@ void roundedSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow() {
     canvas.setCustomRenderer(nullptr);
 }
 
+void changingRoundedSelectionShadowRepaintsCornerPixels() {
+    SnowCanvasWidget canvas;
+    canvas.resize(160, 140);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "camera should update");
+
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage screenshot(160, 140, QImage::Format_RGBA8888);
+    screenshot.fill(QColor(0, 80, 240));
+    renderer.setImage(std::move(screenshot), QRectF(-80.0, -70.0, 160.0, 140.0));
+    renderer.setMaskVisible(true);
+    const QRectF selection(-40.0, -30.0, 80.0, 60.0);
+    renderer.setSelection(selection, false, 24, 0);
+    renderer.setSelectionToolbarHovered(true);
+    canvas.show();
+    QApplication::processEvents();
+
+    constexpr qreal devicePixelRatio = 1.5;
+    QImage previous = renderCanvas(canvas, devicePixelRatio);
+    const QColor initialShadowColor(0x33, 0x33, 0x33);
+    const std::array<std::pair<int, QColor>, 5> shadowStates = {{
+        {8, initialShadowColor},
+        {1, initialShadowColor},
+        {0, initialShadowColor},
+        {12, initialShadowColor},
+        {12, QColor(0x99, 0x22, 0x22)},
+    }};
+    for (const auto& [shadowWidth, shadowColor] : shadowStates) {
+        CanvasPaintRegionObserver observer;
+        canvas.installEventFilter(&observer);
+        observer.begin();
+        renderer.setSelection(selection, false, 24, shadowWidth, shadowColor);
+        QApplication::processEvents();
+        const QRegion dirty = observer.region();
+        canvas.removeEventFilter(&observer);
+
+        const QImage next = renderCanvas(canvas, devicePixelRatio);
+        if (shadowWidth == 8) {
+            require(previous.pixelColor(69, 69) != next.pixelColor(69, 69),
+                    "enabling shadow should change a rounded selection corner pixel");
+        }
+        requireChangedPixelsCoveredByDirtyRegion(
+            previous, next, dirty, "rounded shadow changes must repaint every changed pixel");
+        require(!dirty.contains(QPoint(80, 70)),
+                "shadow changes should preserve the stable selection center");
+        previous = next;
+    }
+    canvas.setCustomRenderer(nullptr);
+}
+
 void squareSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow() {
     SnowCanvasWidget canvas;
     canvas.resize(120, 120);
@@ -4179,6 +4230,7 @@ int main(int argc, char** argv) {
     bgraScreenshotImagesRenderWithCorrectColors();
     hoveredSelectionToolbarHidesBorderAndRendersShadowPreview();
     roundedSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow();
+    changingRoundedSelectionShadowRepaintsCornerPixels();
     squareSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow();
     hoveredSelectionToolbarInvalidatesOnlyPreviewRing();
     hiddenSelectionBorderRetainsSelectionAndMask();

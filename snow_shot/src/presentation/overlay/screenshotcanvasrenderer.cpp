@@ -375,8 +375,12 @@ QRegion planScreenshotSelectionDamage(const ScreenshotSelectionVisualState& prev
     QRegion dirtyRegion =
         selectionStateDecorationRegion(previous, viewportRect, canvasToViewTransform);
     dirtyRegion += selectionStateDecorationRegion(next, viewportRect, canvasToViewTransform);
+    // The shadow preview also paints inside the selection's rounded corner squares.
+    const bool shadowPreviewChanged =
+        previous.toolbarHovered &&
+        (previous.shadowWidth != next.shadowWidth || previous.shadowColor != next.shadowColor);
     if (previous.bounds != next.bounds || previous.cornerRadius != next.cornerRadius ||
-        previous.toolbarHovered != next.toolbarHovered) {
+        previous.toolbarHovered != next.toolbarHovered || shadowPreviewChanged) {
         dirtyRegion +=
             selectionStateRoundedCornerRegion(previous, viewportRect, canvasToViewTransform);
         dirtyRegion += selectionStateRoundedCornerRegion(next, viewportRect, canvasToViewTransform);
