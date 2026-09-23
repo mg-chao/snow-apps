@@ -138,10 +138,8 @@ ScreenshotSelectionToolbarWidget::ScreenshotSelectionToolbarWidget(
     : QWidget(parent), m_commands(commands) {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
-    setAttribute(Qt::WA_Hover, true);
     setFocusPolicy(Qt::NoFocus);
     setAutoFillBackground(false);
-    setMouseTracking(true);
 
     auto* rootLayout = new QHBoxLayout(this);
     rootLayout->setContentsMargins(toolbar_widgets::ShadowMargin, toolbar_widgets::ShadowMargin,
@@ -487,7 +485,7 @@ void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
     m_toolbarHovered = hovered;
     updateInputRegion();
     m_commands.setSelectionToolbarHovered(hovered);
-    refreshHoverVisuals();
+    update();
     if (hovered) {
         m_commands.hideColorPickersForScreenshotUi();
     }
@@ -504,15 +502,6 @@ void ScreenshotSelectionToolbarWidget::scheduleToolbarHoverSync() {
             }
         }
     });
-}
-
-void ScreenshotSelectionToolbarWidget::refreshHoverVisuals() {
-    update();
-    if (m_panel == nullptr) {
-        return;
-    }
-
-    m_panel->update();
 }
 
 bool ScreenshotSelectionToolbarWidget::fieldForObject(QObject* object, Field* outField) const {

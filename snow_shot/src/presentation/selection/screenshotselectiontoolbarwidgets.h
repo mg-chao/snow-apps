@@ -74,17 +74,13 @@ class SelectionToolbarValueLabel final : public QLabel {
     QSize minimumSizeHint() const override;
 
   protected:
-    void enterEvent(QEnterEvent* event) override;
-    void hideEvent(QHideEvent* event) override;
-    void leaveEvent(QEvent* event) override;
+    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
   private:
     QPixmap m_leadingIcon;
     bool m_iconOnly = false;
     bool m_lockAspectRatioControl = false;
-    bool m_pointerInteractionEnabled = true;
-    bool m_hovered = false;
 };
 
 class SelectionToolbarSeparator final : public QWidget {

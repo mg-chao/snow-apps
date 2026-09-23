@@ -166,10 +166,12 @@ void panelBoundaryExclusivelyOwnsToolbarHoverState() {
     require(!panel.pointerHovered(), "disabled panels must reject stale enter events");
 }
 
-void valueLabelPaintsFromItsOwnEnterLeaveState() {
+void valueLabelPaintsFromQtHoverState() {
     SelectionToolbarValueLabel label;
     label.setText(QStringLiteral("640"));
     label.setFixedSize(label.sizeHint());
+    require(label.testAttribute(Qt::WA_Hover) && !label.hasMouseTracking(),
+            "value labels should use Qt hover state without mouse move tracking");
 
     const QImage idleImage = renderWidget(&label);
     sendEnter(&label);
@@ -194,6 +196,18 @@ void valueLabelPaintsFromItsOwnEnterLeaveState() {
     sendLeave(&label);
     require(renderWidget(&label) == idleImage,
             "value-label leave events should restore the idle visual");
+
+    sendEnter(&label);
+    label.setEnabled(false);
+    SelectionToolbarValueLabel disabledReference;
+    disabledReference.setText(label.text());
+    disabledReference.setFixedSize(label.size());
+    disabledReference.setEnabled(false);
+    require(renderWidget(&label) == renderWidget(&disabledReference),
+            "disabling a hovered value label must clear its hover visual");
+    label.setEnabled(true);
+    require(renderWidget(&label) == idleImage,
+            "re-enabling a value label must wait for a fresh hover event");
 }
 
 void selectionToolbarInputSurfaceMatchesInteractivePanel() {
@@ -520,7 +534,7 @@ void selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection() {
 int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
     panelBoundaryExclusivelyOwnsToolbarHoverState();
-    valueLabelPaintsFromItsOwnEnterLeaveState();
+    valueLabelPaintsFromQtHoverState();
     selectionToolbarInputSurfaceMatchesInteractivePanel();
     selectionToolbarLabelsFollowApplicationFontFamily();
     selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection();
