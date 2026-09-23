@@ -426,7 +426,7 @@ void pdfDialogAndSettings(QWidget& owner, const QTemporaryDir& temp) {
             "history display compression must validate, reset, and remain independent of output");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenshotOutput) &&
                 settings.pdfPageSize() == QStringLiteral("a4_portrait") &&
-                settings.compressionLevel() == QStringLiteral("low") &&
+                settings.compressionLevel() == QStringLiteral("medium") &&
                 settings.imageQuality() == 100,
             "output reset must restore PDF, compression, and quality defaults");
     require(settings.setImageSaveDirectory(temp.path()) &&
@@ -601,7 +601,7 @@ void stateRules(const QTemporaryDir& temp) {
             "suggested filename must omit the image format extension");
     require(state.directory == remembered && state.output.size == QSize(160, 100) &&
                 state.output.format == Format::Png && state.output.quality == 100 &&
-                state.output.compressionLevel == ScreenshotCompressionLevel::Low &&
+                state.output.compressionLevel == ScreenshotCompressionLevel::Medium &&
                 state.lockAspectRatio,
             "opening controls must use defaults and remembered directory");
     require(settings.setLastManualSaveDirectory(temp.filePath("missing")),
@@ -1124,7 +1124,7 @@ void unchangedPreviewEdits(QWidget& owner) {
     require(content->property("previewGeneration").toULongLong() == generation,
             "equivalent edits must not complete redundant preview jobs");
     const qulonglong preparedIdentity = content->property("preparedPixelsIdentity").toULongLong();
-    compression->setCurrentValue(QStringLiteral("medium"));
+    compression->setCurrentValue(QStringLiteral("high"));
     require(!busy->isHidden(), "PNG compression changes must render a new encoded result");
     processUntil([&] { return content->property("previewGeneration").toULongLong() > generation; });
     require(content->property("preparedPixelsIdentity").toULongLong() == preparedIdentity,
@@ -1495,8 +1495,8 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
         modal->setContentWidget(content);
     }
     require(qualityRow->isHidden() && !compressionRow->isHidden() &&
-                compression->currentValue() == QStringLiteral("low"),
-            "PNG must hide Quality and show Compression level at Low");
+                compression->currentValue() == QStringLiteral("medium"),
+            "PNG must hide Quality and show Compression level at Medium");
     format->setCurrentValue(QStringLiteral("bmp"));
     require(format->currentValue() == QStringLiteral("bmp") && qualityRow->isHidden() &&
                 compressionRow->isHidden(),
@@ -1526,7 +1526,7 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
     require(quality->value() == 73 && compression->currentValue() == QStringLiteral("high"),
             "WebP must restore its independent quality and compression values");
     format->setCurrentValue(QStringLiteral("png"));
-    compression->setCurrentValue(QStringLiteral("medium"));
+    compression->setCurrentValue(QStringLiteral("low"));
     const quint64 generation = content->property("previewGeneration").toULongLong();
     child<AdLineEdit>(content, "saveFilenameInput")->setText(QString());
     child<AdInputNumber>(content, "saveWidthInput")->setValue(96);
@@ -1535,6 +1535,7 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
     require(child<AdInputNumber>(content, "saveHeightInput")->value() == 50 &&
                 !modal->acceptButton()->isEnabled(),
             "latest geometry must render despite invalid filename and Save must remain blocked");
+    compression->setCurrentValue(QStringLiteral("medium"));
     child<AdLineEdit>(content, "saveFilenameInput")->setText(QStringLiteral("result"));
     const QString blocking = temp.filePath("blocking-file");
     QFile file(blocking);

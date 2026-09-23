@@ -141,6 +141,8 @@ void outputsKeepRawPixelsAndProcessEveryRequest() {
     first.filenameFormat = QStringLiteral("first");
     f.workflow.enqueue(first);
     DirectCaptureRequest second;
+    require(second.encoding.compressionLevel == ScreenshotCompressionLevel::Medium,
+            "direct capture requests must default to medium file compression");
     second.monitorName = QStringLiteral("second-monitor");
     f.workflow.enqueue(second);
     require(f.requests.size() == 1 && f.requests.front().window == 1234,

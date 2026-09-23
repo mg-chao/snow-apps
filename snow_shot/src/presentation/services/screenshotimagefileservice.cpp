@@ -335,7 +335,9 @@ ScreenshotCompressionLevel ScreenshotImageFileService::compressionLevelForKey(co
         return ScreenshotCompressionLevel::Medium;
     if (normalized == QStringLiteral("high"))
         return ScreenshotCompressionLevel::High;
-    return ScreenshotCompressionLevel::Low;
+    if (normalized == QStringLiteral("low"))
+        return ScreenshotCompressionLevel::Low;
+    return ScreenshotCompressionLevel::Medium;
 }
 
 snow::image::EncodeOptions

@@ -984,7 +984,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"), QStringLiteral("webp"),
       QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("pdf")}},
     {QStringLiteral("screenshot/compression_level"),
-     QStringLiteral("low"),
+     QStringLiteral("medium"),
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("low"), QStringLiteral("medium"), QStringLiteral("high")}},

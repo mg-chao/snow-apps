@@ -221,7 +221,7 @@ void defaultsAndTypedRoundTrip() {
             reloaded.value(QStringLiteral("capture_history/compression_level")).toString() ==
                 QStringLiteral("high") &&
             reloaded.value(QStringLiteral("screenshot/compression_level")).toString() ==
-                QStringLiteral("low") &&
+                QStringLiteral("medium") &&
             !reloaded.value(QStringLiteral("screenshot_selection/smart_selection")).toBool() &&
             reloaded.value(QStringLiteral("screenshot_ui/selection_mask_color")).toString() ==
                 QStringLiteral("#12AB34CD") &&
@@ -276,7 +276,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                 systemSaveDirectory(QStandardPaths::PicturesLocation) &&
             defaultValue("screenshot/last_manual_save_directory").toString().isEmpty() &&
             defaultValue("screenshot/image_format").toString() == QStringLiteral("png") &&
-            defaultValue("screenshot/compression_level").toString() == QStringLiteral("low") &&
+            defaultValue("screenshot/compression_level").toString() == QStringLiteral("medium") &&
             defaultValue("screenshot/image_quality").toInt() == 100 &&
             defaultValue("screenshot/manual_save_format_options").toObject().isEmpty() &&
             defaultValue("screenshot/manual_save_filename_format").toString() ==
@@ -1237,7 +1237,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 !screenshot.captureCursor() && !screenshot.autoSaveAfterCopy() &&
                 !screenshot.copyImageFileToClipboard() &&
                 screenshot.imageFormat() == QStringLiteral("png") &&
-                screenshot.compressionLevel() == QStringLiteral("low") &&
+                screenshot.compressionLevel() == QStringLiteral("medium") &&
                 screenshot.imageQuality() == 100 &&
                 screenshot.manualSaveFormatOptions().isEmpty() &&
                 screenshot.manualSaveFilenameFormat() ==
