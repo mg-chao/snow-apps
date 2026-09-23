@@ -128,6 +128,7 @@ class ScreenshotExportArtifact final : public QObject {
     [[nodiscard]] bool requestAutomaticSave(QObject* receiver, QStringList directories,
                                             ScreenshotImageFileFormat format,
                                             QString filenameFormat,
+                                            ScreenshotImageEncodingOptions encoding,
                                             ScreenshotExportCoordinator::Completion callback,
                                             ScreenshotPdfOptions pdf = {},
                                             QDateTime requestedAt = {});

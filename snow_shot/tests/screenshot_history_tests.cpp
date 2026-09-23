@@ -137,7 +137,7 @@ void directImagesPersistWithoutTouchingTheEditor(
     DirectCaptureRequest request;
     request.target = target;
     request.requestedAt = QDateTime::currentDateTimeUtc();
-    request.compressionLevel = ScreenshotCompressionLevel::High;
+    request.encoding = {35, ScreenshotCompressionLevel::High};
     QImage image = solidImage(physicalBounds.size(), qRgb(24, 50, 70));
     image.setPixel(5, 5, qRgb(210, 90, 30));
     DirectCaptureFrame frame{image, physicalBounds, QStringLiteral("target:123"), 2, {}};

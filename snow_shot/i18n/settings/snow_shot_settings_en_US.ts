@@ -2446,8 +2446,8 @@
             <translation>Serial number</translation>
         </message>
         <message>
-            <source>Set image quality for saves made with the system file dialog</source>
-            <translation>Set image quality for saves made with the system file dialog</translation>
+            <source>Set image quality for screenshot files saved outside the Snow Shot dialog</source>
+            <translation>Set image quality for screenshot files saved outside the Snow Shot dialog</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>

@@ -46,10 +46,11 @@ directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptu
     }
     draft.resultImage = frame.image;
     draft.preparedResultImage = std::move(png);
-    draft.pngCompressionLevel = ScreenshotImageFileService::encodeOptions(
-                                    ScreenshotImageFileFormat::Png,
-                                    ScreenshotImageEncodingOptions{100, request.compressionLevel})
-                                    .compression_level;
+    draft.pngCompressionLevel =
+        ScreenshotImageFileService::encodeOptions(
+            ScreenshotImageFileFormat::Png,
+            ScreenshotImageEncodingOptions{100, request.encoding.compressionLevel})
+            .compression_level;
     draft.displayPngCompressionLevel =
         ScreenshotImageFileService::encodeOptions(
             ScreenshotImageFileFormat::Png,

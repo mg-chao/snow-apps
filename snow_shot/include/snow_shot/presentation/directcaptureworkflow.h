@@ -35,7 +35,7 @@ struct DirectCaptureRequest {
     bool historyEnabled = false;
     QStringList directories;
     QString imageFormat;
-    ScreenshotCompressionLevel compressionLevel = ScreenshotCompressionLevel::Low;
+    ScreenshotImageEncodingOptions encoding;
     ScreenshotCompressionLevel historyDisplayCompressionLevel = ScreenshotCompressionLevel::Medium;
     ScreenshotPdfOptions pdf;
     QString filenameFormat;

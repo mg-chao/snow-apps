@@ -2446,8 +2446,8 @@
             <translation>序號</translation>
         </message>
         <message>
-            <source>Set image quality for saves made with the system file dialog</source>
-            <translation>設定透過系統檔案對話框儲存時的影像品質</translation>
+            <source>Set image quality for screenshot files saved outside the Snow Shot dialog</source>
+            <translation>設定透過 Snow Shot 對話框以外的方式儲存截圖檔案時的影像品質</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/directcapturecontroller.h"
+#include "snow_shot/presentation/screenshotencodingsettings.h"
 
 #include "directcapturenative.h"
 #include "snow_shot/platform/screenshotnative.h"
@@ -48,7 +49,7 @@ class DirectCaptureController::Impl {
                           if (frame.isValid()) {
                               artifact = std::make_unique<ScreenshotExportArtifact>(
                                   ScreenshotExportSource::fromImage(frame.image),
-                                  request.compressionLevel);
+                                  request.encoding.compressionLevel);
                           }
                           done(std::move(frame));
                       });
@@ -58,7 +59,7 @@ class DirectCaptureController::Impl {
                          artifact->requestAutomaticSave(
                              &owner, request.directories,
                              ScreenshotImageFileService::formatForKey(request.imageFormat),
-                             request.filenameFormat,
+                             request.filenameFormat, request.encoding,
                              [done = std::move(done)](ScreenshotExportTaskResult result) {
                                  done(result.savedPath, result.error);
                              },
@@ -198,8 +199,7 @@ class DirectCaptureController::Impl {
         result.directories =
             ScreenshotImageFileService::automaticDirectories(settings.imageSaveDirectory());
         result.imageFormat = settings.imageFormat();
-        result.compressionLevel =
-            ScreenshotImageFileService::compressionLevelForKey(settings.compressionLevel());
+        result.encoding = screenshotEncodingOptions(settings);
         result.historyDisplayCompressionLevel = ScreenshotImageFileService::compressionLevelForKey(
             storage::ApplicationStorage::instance()
                 .configuration()

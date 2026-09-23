@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotencodingsettings.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
@@ -4757,9 +4758,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
     if (artifact == nullptr)
         return;
     const snow_shot::storage::ScreenshotSettings outputSettings;
-    const ScreenshotImageEncodingOptions encoding{
-        outputSettings.imageQuality(),
-        ScreenshotImageFileService::compressionLevelForKey(outputSettings.compressionLevel())};
+    const auto encoding = snow_shot::presentation::screenshotEncodingOptions(outputSettings);
     if (outputSettings.saveAsFileDialog() == QStringLiteral("snow_shot")) {
         setProperty("saveDialogOpen", true);
         if (!ScreenshotSaveAsFileDialog::open(

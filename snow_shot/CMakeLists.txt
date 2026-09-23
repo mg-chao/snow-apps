@@ -1002,6 +1002,7 @@ endif()
 
 set(PROJECT_HEADERS
     include/snow_shot/app/featureavailability.h
+    include/snow_shot/presentation/screenshotencodingsettings.h
     include/snow_shot/presentation/directcapturecontroller.h
     include/snow_shot/presentation/directcaptureworkflow.h
     include/snow_shot/presentation/directcapturehistory.h

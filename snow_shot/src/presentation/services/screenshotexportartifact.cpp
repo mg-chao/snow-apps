@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotencodingsettings.h"
 
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -831,7 +832,8 @@ bool ScreenshotExportArtifact::requestQuickSave(QObject* receiver,
     }
     return requestAutomaticSave(
         receiver, {directory}, ScreenshotImageFileService::formatForKey(settings.imageFormat()),
-        settings.autoSaveFilenameFormat(), std::move(callback),
+        settings.autoSaveFilenameFormat(),
+        snow_shot::presentation::screenshotEncodingOptions(settings), std::move(callback),
         ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())});
 }
 
@@ -947,13 +949,13 @@ bool ScreenshotExportArtifact::requestFileSource(ScreenshotImageFileFormat forma
 
 bool ScreenshotExportArtifact::requestAutomaticSave(
     QObject* receiver, QStringList directories, ScreenshotImageFileFormat format,
-    QString filenameFormat, ScreenshotExportCoordinator::Completion callback,
-    ScreenshotPdfOptions pdf, QDateTime requestedAt) {
+    QString filenameFormat, ScreenshotImageEncodingOptions encoding,
+    ScreenshotExportCoordinator::Completion callback, ScreenshotPdfOptions pdf,
+    QDateTime requestedAt) {
     if (receiver == nullptr || !callback || isCancelled())
         return false;
     const QPointer<ScreenshotExportArtifact> guarded(this);
     const QPointer<QObject> target(receiver);
-    const ScreenshotImageEncodingOptions encoding{100, m_impl->compressionLevel};
     if (!requestedAt.isValid())
         requestedAt = QDateTime::currentDateTime();
     auto schedule = [guarded, target, directories = std::move(directories), format, pdf, encoding,

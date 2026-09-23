@@ -27,6 +27,7 @@ struct Fixture {
     DirectCapturePorts::Completion copied;
     DirectCapturePorts::Completion recorded;
     QVector<DirectCaptureRequest> requests;
+    QVector<DirectCaptureRequest> saveRequests;
     QVector<DirectCaptureRequest> copyRequests;
     QStringList events;
     QImage output;
@@ -45,8 +46,9 @@ struct Fixture {
             acquired = std::move(done);
             return acceptAcquire;
         },
-        [this](const auto&, const auto& result, auto done) {
+        [this](const DirectCaptureRequest& request, const auto& result, auto done) {
             events << "save";
+            saveRequests.push_back(request);
             output = result.image;
             saved = std::move(done);
             return acceptSave;
@@ -134,6 +136,8 @@ void outputsKeepRawPixelsAndProcessEveryRequest() {
     first.window = 1234;
     first.autoSave = true;
     first.historyEnabled = true;
+    first.encoding.quality = 35;
+    first.encoding.compressionLevel = ScreenshotCompressionLevel::High;
     first.filenameFormat = QStringLiteral("first");
     f.workflow.enqueue(first);
     DirectCaptureRequest second;
@@ -147,6 +151,11 @@ void outputsKeepRawPixelsAndProcessEveryRequest() {
             "automatic saving delayed clipboard publication");
     require(f.copiedPath.isEmpty(), "auto save incorrectly selected file clipboard mode");
     f.copied({});
+    require(f.saveRequests.size() == 1 && !f.saveRequests.front().copyFile &&
+                f.saveRequests.front().encoding.quality == 35 &&
+                f.saveRequests.front().encoding.compressionLevel ==
+                    ScreenshotCompressionLevel::High,
+            "auto-save-only capture lost its image encoding settings");
     f.saved(QStringLiteral("saved.png"), {});
     require(f.workflow.pendingCount() == 2, "next capture began before history completion");
     f.recorded({});
@@ -312,7 +321,8 @@ void queuedRequestsRetainTargetsAndOutputSettings() {
     request.historyEnabled = true;
     request.directories = {QStringLiteral("original-directory")};
     request.imageFormat = QStringLiteral("pdf");
-    request.compressionLevel = ScreenshotCompressionLevel::High;
+    request.encoding.quality = 42;
+    request.encoding.compressionLevel = ScreenshotCompressionLevel::High;
     request.pdf.pageSize = ScreenshotPdfPageSize::LandscapeA4;
     request.filenameFormat = QStringLiteral("original-filename");
     f.workflow.enqueue({});
@@ -332,8 +342,8 @@ void queuedRequestsRetainTargetsAndOutputSettings() {
                     queued.copyFile && queued.historyEnabled &&
                     queued.requestedAt.toMSecsSinceEpoch() == 123456 &&
                     queued.directories == QStringList{QStringLiteral("original-directory")} &&
-                    queued.imageFormat == QStringLiteral("pdf") &&
-                    queued.compressionLevel == ScreenshotCompressionLevel::High &&
+                    queued.imageFormat == QStringLiteral("pdf") && queued.encoding.quality == 42 &&
+                    queued.encoding.compressionLevel == ScreenshotCompressionLevel::High &&
                     queued.pdf.pageSize == ScreenshotPdfPageSize::LandscapeA4 &&
                     queued.pdf.quality == 100 &&
                     queued.filenameFormat == QStringLiteral("original-filename"),

@@ -352,6 +352,52 @@ void manualPngSavesUseTheirRequestedCompression() {
     }
 }
 
+void automaticSavesUseRequestedEncoding() {
+    const QImage image = testImage();
+    QTemporaryDir directory;
+    require(directory.isValid(), "automatic save fixture unavailable");
+    QObject receiver;
+    const auto save = [&](ScreenshotImageFileFormat format, int quality,
+                          ScreenshotCompressionLevel compression) {
+        ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image),
+                                          ScreenshotCompressionLevel::Low);
+        std::optional<ScreenshotExportTaskResult> result;
+        require(artifact.requestAutomaticSave(
+                    &receiver, {directory.path()}, format, QStringLiteral("automatic-file"),
+                    {quality, compression},
+                    [&](ScreenshotExportTaskResult saved) { result = std::move(saved); }),
+                "automatic save was rejected");
+        processUntil([&] { return result.has_value(); });
+        require(result->succeeded(), "automatic save failed");
+        QFile file(result->savedPath);
+        require(file.open(QIODevice::ReadOnly), "automatic save output is unreadable");
+        return file.readAll();
+    };
+    for (auto compression : {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::High}) {
+        const int level =
+            ScreenshotImageFileService::encodeOptions(
+                ScreenshotImageFileFormat::Png, ScreenshotImageEncodingOptions{35, compression})
+                .compression_level;
+        require(save(ScreenshotImageFileFormat::Png, 35, compression) ==
+                    snow_shot::image_codec::encodePng(image, level),
+                "automatic save PNG ignored the configured compression level");
+    }
+    const QString referencePath = directory.filePath(QStringLiteral("jpeg-reference.jpg"));
+    require(ScreenshotImageFileService::write(
+                image, referencePath, ScreenshotImageFileFormat::Jpeg, {}, {},
+                ScreenshotImageEncodingOptions{35, ScreenshotCompressionLevel::High})
+                .succeeded(),
+            "automatic save JPEG reference failed");
+    QFile reference(referencePath);
+    require(reference.open(QIODevice::ReadOnly) &&
+                save(ScreenshotImageFileFormat::Jpeg, 35, ScreenshotCompressionLevel::High) ==
+                    reference.readAll(),
+            "automatic save JPEG ignored the configured quality");
+    require(save(ScreenshotImageFileFormat::Pdf, 35, ScreenshotCompressionLevel::High)
+                .contains("/DCTDecode"),
+            "automatic save PDF ignored the configured quality");
+}
+
 void clipboardUsesFastEncodingAndSavesShareCanonicalEncoding(
     ScreenshotCompressionLevel saveCompression, bool clipboardFirst) {
     const QImage image = testImage();
@@ -405,7 +451,7 @@ void clipboardUsesFastEncodingAndSavesShareCanonicalEncoding(
             requestCanonical();
         require(artifact.requestAutomaticSave(
                     &receiver, {directory.path()}, ScreenshotImageFileFormat::Png,
-                    QStringLiteral("shared"),
+                    QStringLiteral("shared"), {100, saveCompression},
                     [&](ScreenshotExportTaskResult result) {
                         require(result.succeeded(), "automatic PNG save failed");
                         path = result.savedPath;
@@ -493,7 +539,7 @@ void nonPngSaveReadsPixelsWithoutEncodingPng() {
         int callbacks = 0;
         require(artifact.requestAutomaticSave(
                     &receiver, {directory.path()}, ScreenshotImageFileFormat::Webp,
-                    QStringLiteral("pixels"),
+                    QStringLiteral("pixels"), {},
                     [&](ScreenshotExportTaskResult result) {
                         require(result.succeeded() && QFile::exists(result.savedPath),
                                 "non-PNG save failed");
@@ -505,7 +551,7 @@ void nonPngSaveReadsPixelsWithoutEncodingPng() {
                 "non-PNG save performed an extra encoding or materialization");
         require(artifact.requestAutomaticSave(
                     &receiver, {directory.path()}, ScreenshotImageFileFormat::Png,
-                    QStringLiteral("bad/name"),
+                    QStringLiteral("bad/name"), {},
                     [&](ScreenshotExportTaskResult result) {
                         require(!result.succeeded() && !result.error.isEmpty(),
                                 "invalid save filename did not report failure");
@@ -727,7 +773,7 @@ void fileOutputsStreamBeyondCacheBudget() {
                                            }) &&
                     artifact.requestAutomaticSave(
                         &receiver, {directory.path()}, ScreenshotImageFileFormat::Png,
-                        QStringLiteral("automatic"),
+                        QStringLiteral("automatic"), {100, compression},
                         [&](ScreenshotExportTaskResult result) {
                             require(result.succeeded(), "streaming automatic save failed");
                             automaticPath = result.savedPath;
@@ -923,7 +969,8 @@ void quickSaveUsesOnlyConfiguredOutput() {
           QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif"),
           QStringLiteral("pdf")}) {
         require(settings.setImageFormat(format), "quick save format setup failed");
-        ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image));
+        ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image),
+                                          ScreenshotCompressionLevel::Low);
         const auto first = save(artifact);
         require(first.succeeded() && QFileInfo(first.savedPath).absolutePath() == output &&
                     QFileInfo(first.savedPath).baseName() == QStringLiteral("Quick_output") &&
@@ -943,8 +990,8 @@ void quickSaveUsesOnlyConfiguredOutput() {
             const QByteArray pdf = file.readAll();
             require(pdf.startsWith("%PDF-1.7") &&
                         pdf.contains("/MediaBox [0 0 841.88976378 595.27559055]") &&
-                        !pdf.contains("/DCTDecode"),
-                    "quick save must honor the PDF setting and default to lossless");
+                        pdf.contains("/DCTDecode"),
+                    "quick save must honor the PDF page size and configured quality");
         }
         if (format == QStringLiteral("png")) {
             QFile file(first.savedPath);
@@ -953,23 +1000,85 @@ void quickSaveUsesOnlyConfiguredOutput() {
                         QImage(first.savedPath).convertToFormat(QImage::Format_RGBA8888) == image,
                     "quick save must preserve pixels and honor global PNG compression");
         }
-        if (format == QStringLiteral("jpeg")) {
-            const QString referencePath = directory.filePath(QStringLiteral("jpeg-reference.jpg"));
+        if (format == QStringLiteral("jpeg") || format == QStringLiteral("webp") ||
+            format == QStringLiteral("jxl") || format == QStringLiteral("avif")) {
+            const auto fileFormat = ScreenshotImageFileService::formatForKey(format);
+            const QString referencePath = directory.filePath(
+                QStringLiteral("reference.") + ScreenshotImageFileService::extension(fileFormat));
             require(ScreenshotImageFileService::write(
-                        image, referencePath, ScreenshotImageFileFormat::Jpeg, {}, {},
-                        ScreenshotImageEncodingOptions{100, ScreenshotCompressionLevel::High})
+                        image, referencePath, fileFormat, {}, {},
+                        ScreenshotImageEncodingOptions{0, ScreenshotCompressionLevel::High})
                         .succeeded(),
-                    "quick-save JPEG reference could not be encoded");
+                    "quick-save reference could not be encoded");
             QFile saved(first.savedPath);
             QFile reference(referencePath);
             require(saved.open(QIODevice::ReadOnly) && reference.open(QIODevice::ReadOnly) &&
                         saved.readAll() == reference.readAll(),
-                    "global image quality must not lower automatic or quick-save quality");
+                    "quick save must honor the configured image quality");
         }
     }
     require(settings.lastManualSaveDirectory() == directory.path() &&
                 settings.lastManualSaveFormat() == QStringLiteral("jpeg"),
             "quick save must not update manual-save settings");
+
+    // Hold source acquisition so both saves remain pending across a settings change.
+    {
+        std::function<void(QImage)> completeImage;
+        ScreenshotExportArtifact pending(ScreenshotExportSource::fromImageLoader(
+            [&](QObject*, std::function<void(QImage)> callback) {
+                completeImage = std::move(callback);
+                return true;
+            }));
+        std::optional<ScreenshotExportTaskResult> first;
+        std::optional<ScreenshotExportTaskResult> second;
+        require(settings.setImageFormat(QStringLiteral("jpeg")) && settings.setImageQuality(35) &&
+                    settings.setAutoSaveFilenameFormat(QStringLiteral("Pending_first")),
+                "pending quick-save settings setup failed");
+        require(
+            pending.requestQuickSave(
+                &receiver, [&](ScreenshotExportTaskResult result) { first = std::move(result); }),
+            "first pending quick save was rejected");
+        require(settings.setImageQuality(85) &&
+                    settings.setAutoSaveFilenameFormat(QStringLiteral("Pending_second")),
+                "pending quick-save settings change failed");
+        require(
+            pending.requestQuickSave(
+                &receiver, [&](ScreenshotExportTaskResult result) { second = std::move(result); }),
+            "second pending quick save was rejected");
+        processUntil([&] { return static_cast<bool>(completeImage); });
+        require(!first && !second, "pending quick saves completed without their source");
+        completeImage(image);
+        processUntil([&] { return first.has_value() && second.has_value(); });
+        require(first->succeeded() && second->succeeded(), "pending quick save failed");
+        QByteArray firstBytes;
+        for (bool isFirst : {true, false}) {
+            const auto& result = isFirst ? *first : *second;
+            const QString expectedName =
+                isFirst ? QStringLiteral("Pending_first") : QStringLiteral("Pending_second");
+            require(QFileInfo(result.savedPath).baseName() == expectedName,
+                    "pending quick save lost its filename settings");
+            const QString referencePath =
+                directory.filePath(QStringLiteral("pending-reference.jpg"));
+            require(ScreenshotImageFileService::write(
+                        image, referencePath, ScreenshotImageFileFormat::Jpeg, {}, {},
+                        {isFirst ? 35 : 85, ScreenshotCompressionLevel::High})
+                        .succeeded(),
+                    "pending quick-save reference failed");
+            QFile saved(result.savedPath);
+            QFile reference(referencePath);
+            require(saved.open(QIODevice::ReadOnly) && reference.open(QIODevice::ReadOnly),
+                    "pending quick-save files are unreadable");
+            const QByteArray bytes = saved.readAll();
+            require(bytes == reference.readAll(), "pending quick save lost its requested quality");
+            if (isFirst)
+                firstBytes = bytes;
+            else
+                require(bytes != firstBytes,
+                        "different requested qualities produced the same file");
+        }
+        require(settings.setAutoSaveFilenameFormat(QStringLiteral("Quick_output")),
+                "quick-save filename restore failed");
+    }
 
     require(settings.setImageFormat(QStringLiteral("png")), "streaming format setup failed");
     ScreenshotExportArtifact rows(
@@ -1101,6 +1210,7 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         quickSaveUsesOnlyConfiguredOutput();
+        automaticSavesUseRequestedEncoding();
         clipboardReusesFastEncodingWithoutChangingFileCompression();
         manualPngSavesUseTheirRequestedCompression();
         pendingHighCompressionDoesNotBecomeAClipboardDependency();
