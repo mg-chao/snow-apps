@@ -4,7 +4,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinnedclickthroughgeometry.h"
-#include "screenshotpinnedpointerpresence.h"
+#include "screenshotpinnedcontrolspresence.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
@@ -800,14 +800,15 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     setAttribute(Qt::WA_AlwaysShowToolTips, true);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
-    m_pointerPresence = std::make_unique<ScreenshotPinnedPointerPresence>(
-        this, [this]() -> std::optional<bool> { return m_platform->pointerInside(); },
-        [this](bool inside) {
-            if (!m_closing) {
-                m_pointerInside = inside;
-                updateControlsGeometry();
-            }
-        });
+    m_pointerPresence = std::make_unique<ScreenshotPinnedControlsPresence>(
+        this,
+        [this] {
+            // Every observation, including the hide deadline, must leave native
+            // tracking consistent even when the visible state does not change.
+            scheduleControlsPointerRefresh();
+            return m_platform->pointerInside();
+        },
+        [this] { updateControlsGeometry(); });
     m_persistenceTimer = new QTimer(this);
     m_persistenceTimer->setSingleShot(true);
     m_persistenceTimer->setInterval(250);
@@ -880,7 +881,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
                       if (m_canvas != nullptr) {
                           m_canvas->setFocus(Qt::OtherFocusReason);
                       }
-                      static_cast<void>(applyNativePointerPresence());
+                      refreshControlsPointerPresence();
                       updateControlsGeometry();
                   },
                   [this] {
@@ -1206,6 +1207,7 @@ bool ScreenshotPinnedWindow::prewarm(QScreen* screen) {
 }
 
 ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
+    m_pointerPresence->setActive(false);
     m_platform->environmentChanged = {};
     endControlledInteraction(true);
     shutdownClickThrough();
@@ -1443,26 +1445,17 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
         return QWidget::event(event);
     }
 
+    const bool pointerPresenceChanged =
+        event != nullptr && ScreenshotPinnedControlsPresence::isPointerEvent(event->type());
+    if (pointerPresenceChanged)
+        refreshControlsPointerPresence();
     if (m_platform && m_platform->usesControlledInteraction() && m_presented && !m_closing) {
         if (handlePinnedGesture(this, event) || handleControlledPointer(this, event))
             return true;
     }
-    const bool pointerPresenceChanged =
-        event != nullptr && (event->type() == QEvent::Enter || event->type() == QEvent::Leave);
-    if (pointerPresenceChanged) {
-        // Qt synthesizes Enter/Leave from USER32 client-area leave tracking and
-        // queues them, so a leave can arrive after the pointer crossed into the
-        // window's non-client image surface, and an enter can arrive after the
-        // pointer already left the window. Resolve presence from the live
-        // cursor and fall back to the event only when the native query is
-        // unavailable.
-        if (!applyNativePointerPresence()) {
-            schedulePointerPresence(event->type() == QEvent::Enter);
-        }
-    } else if (event != nullptr && event->type() == QEvent::Hide) {
+    if (event != nullptr && event->type() == QEvent::Hide) {
         setFileDragActive(false);
-        m_pointerPresence->reset();
-        m_pointerInside = false;
+        m_pointerPresence->setActive(false);
         if (m_clickThroughExitButton != nullptr) {
             m_clickThroughExitButton->hide();
             if (m_clickThroughMoveButton != nullptr) {
@@ -1494,9 +1487,6 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     if (m_hideToTop != nullptr && (pointerPresenceChanged || nativeGeometryMayHaveSettled)) {
         m_hideToTop->refreshPointer();
     }
-    if (pointerPresenceChanged) {
-        updateControlsGeometry();
-    }
     if (windowActivationChanged) {
         applyRuntimeBorderColor();
     }
@@ -1516,13 +1506,17 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
         }
 
         static_cast<void>(reconcilePassiveNativeGeometry());
-        // Keyboard move shortcuts and restore animations relocate the window
-        // under a stationary pointer, so no mouse message re-evaluates presence.
-        static_cast<void>(applyNativePointerPresence());
         if (m_clickThroughActive && isVisible() && !updateClickThroughExitButtonGeometry()) {
             static_cast<void>(setClickThroughMode(false));
         }
     }
+    // Geometry, activation and native-surface changes can alter presence with
+    // a stationary pointer. Paint/update requests are not pointer observations.
+    if (event != nullptr &&
+        (event->type() == QEvent::Move || event->type() == QEvent::Resize ||
+         event->type() == QEvent::WinIdChange || event->type() == QEvent::WindowStateChange ||
+         windowActivationChanged || scaleMayHaveChanged || assignedScreenMayHaveChanged))
+        refreshControlsPointerPresence();
     return handled;
 }
 
@@ -1959,6 +1953,9 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (event == nullptr || m_closing) {
         return QWidget::eventFilter(watched, event);
     }
+    if (ScreenshotPinnedControlsPresence::isPointerEvent(event->type())) {
+        refreshControlsPointerPresence();
+    }
     if (m_platform->usesControlledInteraction() &&
         (handlePinnedGesture(watched, event) || handleControlledPointer(watched, event)))
         return true;
@@ -2148,8 +2145,7 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_hideToTop->shutdown();
     shutdownClickThrough();
     m_closing = true;
-    m_pointerPresence->reset();
-    m_pointerInside = false;
+    m_pointerPresence->setActive(false);
     m_deferredInactiveGroupClose = false;
     m_firstContentFramePublished = false;
     m_firstFramePaintPending = false;
@@ -2251,6 +2247,8 @@ void ScreenshotPinnedWindow::moveEvent(QMoveEvent* event) {
 
 void ScreenshotPinnedWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    if (!m_closing)
+        m_pointerPresence->setActive(true);
     if (layout() != nullptr) {
         layout()->activate();
     }
@@ -2921,18 +2919,30 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
     updateRecognitionContentGeometry();
 }
 
-bool ScreenshotPinnedWindow::applyNativePointerPresence() {
-    const auto inside = m_platform->pointerInside();
-    if (!inside.has_value())
-        return false;
-    schedulePointerPresence(*inside);
-    return true;
+void ScreenshotPinnedWindow::refreshControlsPointerPresence() {
+    if (!m_closing && m_pointerPresence != nullptr) {
+        m_pointerPresence->refresh();
+    }
 }
 
-void ScreenshotPinnedWindow::schedulePointerPresence(bool inside) {
-    if (!m_closing && m_pointerPresence != nullptr) {
-        m_pointerPresence->update(inside);
-    }
+void ScreenshotPinnedWindow::scheduleControlsPointerRefresh() {
+    if (m_closing || m_controlsPointerRefreshPending)
+        return;
+    m_controlsPointerRefreshPending = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            if (!m_closing) {
+                // Qt also registers client-area tracking during native dispatch.
+                // Reconcile presence and tracking together after that dispatch,
+                // since the live cursor may have changed since the original event.
+                // Keep the pending flag set so this observation cannot queue itself.
+                m_pointerPresence->refresh();
+                m_platform->refreshPointerTracking();
+            }
+            m_controlsPointerRefreshPending = false;
+        },
+        Qt::QueuedConnection);
 }
 
 void ScreenshotPinnedWindow::updateControlsGeometry() {
@@ -2955,9 +2965,10 @@ void ScreenshotPinnedWindow::updateControlsGeometry() {
     m_controlsPanel->resize(panelSize);
     m_controlsPanel->move(std::max(0, width() - panelSize.width() - kControlsInset),
                           kControlsInset);
-    const bool controlsVisible = m_pointerInside && !m_thumbnailMode && !editing &&
-                                 !m_clickThroughActive && !tooSmallForControls;
+    const bool controlsVisible = isVisible() && m_pointerPresence->inside() && !m_thumbnailMode &&
+                                 !editing && !m_clickThroughActive && !tooSmallForControls;
     m_controlsPanel->setVisible(controlsVisible);
+    scheduleControlsPointerRefresh();
     if (!controlsVisible) {
         return;
     }
@@ -5515,7 +5526,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
         }
         setClickThroughScreen(nullptr);
         refreshContextMenu();
-        static_cast<void>(applyNativePointerPresence());
+        refreshControlsPointerPresence();
         updateControlsGeometry();
         updateWindowDragCursor(mapFromGlobal(QCursor::pos()));
         schedulePersistence();
@@ -5562,7 +5573,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
         }
         setClickThroughScreen(nullptr);
         refreshContextMenu();
-        static_cast<void>(applyNativePointerPresence());
+        refreshControlsPointerPresence();
         updateControlsGeometry();
     };
     if (!ensureClickThroughExitButton() || !updateClickThroughExitButtonGeometry()) {

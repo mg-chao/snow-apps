@@ -175,29 +175,16 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
         }
 
-        // The pinned image surface is exposed as HTCAPTION so a press can
-        // start physical window capture. That changes the normal client hover
-        // path into non-client mouse messages, and USER32's leave tracking,
-        // like Qt's synthesized Enter/Leave, follows the client area. Mouse
-        // messages only arm leave tracking; presence always re-resolves from
-        // the live cursor through window.applyNativePointerPresence().
+        // Client/non-client crossings and capture can suppress Qt Enter/Leave.
+        // Treat native notifications as invalidations, then reconcile tracking
+        // after Qt dispatch using the live hit-test region, not the message type.
         const UINT pointerMessage = nativeMessage->message;
-        const bool pointerMove = pointerMessage == WM_MOUSEMOVE || pointerMessage == WM_NCMOUSEMOVE;
-        const bool pointerLeave =
-            pointerMessage == WM_MOUSELEAVE || pointerMessage == WM_NCMOUSELEAVE;
-        if (pointerMove || pointerLeave) {
-            static_cast<void>(window.applyNativePointerPresence());
+        if (pointerMessage == WM_MOUSEMOVE || pointerMessage == WM_NCMOUSEMOVE ||
+            pointerMessage == WM_MOUSELEAVE || pointerMessage == WM_NCMOUSELEAVE ||
+            pointerMessage == WM_CAPTURECHANGED || pointerMessage == WM_CANCELMODE ||
+            pointerMessage == WM_LBUTTONUP || pointerMessage == WM_NCLBUTTONUP) {
+            window.refreshControlsPointerPresence();
             window.m_hideToTop->refreshPointer();
-            if (pointerMove) {
-                TRACKMOUSEEVENT tracking{};
-                tracking.cbSize = sizeof(tracking);
-                tracking.dwFlags = TME_LEAVE;
-                if (pointerMessage == WM_NCMOUSEMOVE) {
-                    tracking.dwFlags |= TME_NONCLIENT;
-                }
-                tracking.hwndTrack = pinnedHwnd;
-                TrackMouseEvent(&tracking);
-            }
         }
 
         // Qt and USER32 release capture while handing off a pending drag.
@@ -574,6 +561,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         if (nativeMessage->message == WM_WINDOWPOSCHANGED &&
             window.m_nativeGeometryController != nullptr && window.m_presented) {
             window.handleNativeGeometryObservation();
+        }
+        if (nativeMessage->message == WM_WINDOWPOSCHANGED ||
+            nativeMessage->message == WM_EXITSIZEMOVE) {
+            window.refreshControlsPointerPresence();
         }
     }
 

@@ -321,6 +321,11 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
                    ? screenshot_pinned_window_native::pointerInsideWindow(m_window->internalWinId())
                    : std::nullopt;
     }
+    void refreshPointerTracking() override {
+        if (m_window && m_window->internalWinId() &&
+            !screenshot_pinned_window_native::refreshPointerTracking(m_window->internalWinId()))
+            qWarning("Failed to update pinned window mouse leave tracking");
+    }
     bool setInputTransparent(bool transparent) override {
         if (!m_window || !screenshot_pinned_window_native::setInputTransparent(
                              m_window->internalWinId(), transparent))

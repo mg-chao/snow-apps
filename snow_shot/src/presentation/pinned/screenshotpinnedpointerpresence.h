@@ -7,7 +7,7 @@
 #include <optional>
 #include <utility>
 
-// Reveal immediately; delay hiding for both the pinned controls and the top handle.
+// Reveal immediately; delay hiding for the hide-to-top handle.
 class ScreenshotPinnedPointerPresence final : public QObject {
   public:
     ScreenshotPinnedPointerPresence(QObject* parent, std::function<std::optional<bool>()> resolve,

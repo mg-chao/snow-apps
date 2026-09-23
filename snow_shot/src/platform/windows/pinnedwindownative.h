@@ -45,9 +45,11 @@ applyClientGeometry(WId windowId, const QRect& geometry,
 // Reports whether the live cursor is inside the window's complete native
 // frame, which is wider than the client area on Windows because the pinned
 // surface re-applies WS_THICKFRAME. Returns std::nullopt when the cursor or
-// the window rect cannot be read so callers can fall back to event-derived
-// pointer presence.
+// the window rect cannot be read. An unavailable observation is not an exit.
 [[nodiscard]] std::optional<bool> pointerInsideWindow(WId windowId);
+// Track the live hit-test region, independent of stale mouse-message coordinates.
+// Cancels this window's leave tracking when it no longer owns pointer delivery.
+[[nodiscard]] bool refreshPointerTracking(WId windowId);
 [[nodiscard]] bool applySystemResizeStyle(WId windowId);
 // Toggles only the input pass-through/no-activation extended styles. The HWND
 // and all unrelated native styles are preserved.
