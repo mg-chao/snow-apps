@@ -42,6 +42,10 @@ class SelectionToolbarPanel final : public QFrame {
     explicit SelectionToolbarPanel(QWidget* parent = nullptr);
 
     void setPointerInteractionEnabled(bool enabled);
+    void synchronizePointerHover();
+    [[nodiscard]] bool pointerHovered() const {
+        return m_hovered;
+    }
 
   signals:
     void hoverChanged(bool hovered);
@@ -51,8 +55,10 @@ class SelectionToolbarPanel final : public QFrame {
     void hideEvent(QHideEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
   private:
+    void setPointerHovered(bool hovered);
     bool m_hovered = false;
 };
 

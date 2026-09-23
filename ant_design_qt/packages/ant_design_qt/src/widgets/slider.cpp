@@ -1,4 +1,5 @@
 #include "slider.h"
+#include "detail/pointer_region.h"
 
 #include "detail/overlay_accessibility.h"
 #include "slider_style.h"
@@ -745,7 +746,7 @@ void AdMultiSlider::setDisabled(bool value) {
     return;
   }
   setEnabled(!value);
-  hovered_ = false;
+
   setHoverHandleIndex(-1);
   dragMode_ = DragMode::None;
   dragging_ = false;
@@ -1183,7 +1184,7 @@ AdMultiSlider::SemanticStyles AdMultiSlider::resolvedSemanticStyles() const {
   ctx.reverse = invertedAppearance_;
   ctx.disabled = disabled();
   ctx.dragging = sliderDown_;
-  ctx.hovered = hovered_;
+  ctx.hovered = detail::widgetHovered(this);
   ctx.focused = hasFocus() && focusVisible_;
   ctx.values = handles_;
   const SemanticStyles resolved = semanticStyleResolver_(ctx);
@@ -1786,7 +1787,7 @@ void AdMultiSlider::initStyleOption(QStyleOptionSlider* option, int handleIndex)
   option->upsideDown = invertedAppearance_ ^
                        (orientation_ == Qt::Horizontal && layoutDirection() == Qt::RightToLeft);
   option->state.setFlag(QStyle::State_Sunken, sliderDown_);
-  option->state.setFlag(QStyle::State_MouseOver, hovered_);
+  option->state.setFlag(QStyle::State_MouseOver, detail::widgetHovered(this));
   option->state.setFlag(QStyle::State_HasFocus, hasFocus() && focusVisible_);
   option->subControls = QStyle::SC_SliderGroove | QStyle::SC_SliderHandle;
   option->activeSubControls = sliderDown_ ? QStyle::SC_SliderHandle : QStyle::SC_None;
@@ -1815,7 +1816,7 @@ AdMultiSlider::LayoutInfo AdMultiSlider::buildLayout() const {
     detail::SliderStyleInput input;
     input.mode = mode_;
     input.orientation = orientation_;
-    input.hovered = hovered_;
+    input.hovered = detail::widgetHovered(this);
     input.dragging = sliderDown_;
     input.focused = hasFocus() && focusVisible_;
     input.disabled = disabled();
@@ -2197,10 +2198,11 @@ void AdMultiSlider::paintEvent(QPaintEvent* event) {
 
   const bool isDisabled = disabled();
   const QColor railColor =
-      (!isDisabled && hovered_) ? layout.style.railHoverBg : layout.style.railBg;
+      (!isDisabled && detail::widgetHovered(this)) ? layout.style.railHoverBg : layout.style.railBg;
   const QColor trackColor =
       isDisabled ? layout.style.trackBgDisabled
-                 : ((hovered_ || sliderDown_) ? layout.style.trackHoverBg : layout.style.trackBg);
+                 : ((detail::widgetHovered(this) || sliderDown_) ? layout.style.trackHoverBg
+                                                                 : layout.style.trackBg);
 
   painter.setPen(Qt::NoPen);
   painter.setBrush(layout.style.useRailBrush ? layout.style.railBrush : QBrush(railColor));
@@ -2284,7 +2286,7 @@ void AdMultiSlider::paintEvent(QPaintEvent* event) {
       const bool active = isMarkActive(markValue);
 
       QColor dotBorder = active ? layout.style.dotActiveBorderColor : layout.style.dotBorderColor;
-      if (!active && hovered_ && !isDisabled) {
+      if (!active && detail::widgetHovered(this) && !isDisabled) {
         dotBorder = layout.style.dotHoverBorderColor;
       }
 
@@ -2347,7 +2349,7 @@ void AdMultiSlider::paintEvent(QPaintEvent* event) {
       borderColor = layout.style.handleColorDisabled;
     } else if (active) {
       borderColor = layout.style.handleActiveColor;
-    } else if (hovered_) {
+    } else if (detail::widgetHovered(this)) {
       borderColor = layout.style.handleHoverColor;
     }
     QColor outlineColor = isDisabled ? QColor(0, 0, 0, 0) : layout.style.handleActiveOutlineColor;
@@ -2402,8 +2404,12 @@ void AdMultiSlider::paintEvent(QPaintEvent* event) {
   }
 }
 
+bool AdMultiSlider::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  return QWidget::event(event);
+}
+
 void AdMultiSlider::enterEvent(QEnterEvent* event) {
-  hovered_ = true;
   invalidateLayoutCache();
   requestTooltipSync();
   update();
@@ -2411,7 +2417,6 @@ void AdMultiSlider::enterEvent(QEnterEvent* event) {
 }
 
 void AdMultiSlider::leaveEvent(QEvent* event) {
-  hovered_ = false;
   if (dragMode_ == DragMode::None) {
     setHoverHandleIndex(-1);
   }
@@ -2803,7 +2808,7 @@ void AdMultiSlider::changeEvent(QEvent* event) {
 
   if (event->type() == QEvent::EnabledChange) {
     const bool disabledNow = disabled();
-    hovered_ = false;
+
     setHoverHandleIndex(-1);
     dragMode_ = DragMode::None;
     dragging_ = false;
@@ -2841,6 +2846,7 @@ void AdMultiSlider::changeEvent(QEvent* event) {
 }
 
 void AdMultiSlider::resizeEvent(QResizeEvent* event) {
+  if (dragMode_ == DragMode::None) setHoverHandleIndex(-1);
   QWidget::resizeEvent(event);
   invalidateLayoutCache();
   requestTooltipSync();
@@ -2854,6 +2860,9 @@ void AdMultiSlider::showEvent(QShowEvent* event) {
 }
 
 void AdMultiSlider::hideEvent(QHideEvent* event) {
+  setHoverHandleIndex(-1);
+  invalidateLayoutCache();
+  requestTooltipSync();
   QWidget::hideEvent(event);
   detail::notifyAccessibilityEvent(this, QAccessible::ObjectHide);
 }

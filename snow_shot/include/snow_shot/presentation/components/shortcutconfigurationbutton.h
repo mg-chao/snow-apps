@@ -40,7 +40,6 @@ class ShortcutConfigurationButton final : public adqt::widgets::AdButton {
     int m_textMaxWidth = 200;
     InfoTooltipIcon* m_statusTooltipTrigger = nullptr;
     bool m_statusTooltipVisible = false;
-    bool m_hovered = false;
     snow_shot::presentation::GlobalShortcutStatus m_status =
         snow_shot::presentation::GlobalShortcutStatus::Unset;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;

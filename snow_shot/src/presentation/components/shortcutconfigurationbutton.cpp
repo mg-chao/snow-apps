@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/shortcutconfigurationbutton.h"
+#include "widgets/detail/pointer_region.h"
 
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -153,11 +154,6 @@ void ShortcutConfigurationButton::setTheme(
 
 bool ShortcutConfigurationButton::event(QEvent* event) {
     const bool handled = adqt::widgets::AdButton::event(event);
-    if (event->type() == QEvent::Enter) {
-        m_hovered = true;
-    } else if (event->type() == QEvent::Leave) {
-        m_hovered = false;
-    }
     if (event->type() == QEvent::Enter || event->type() == QEvent::Leave ||
         event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease) {
         syncStatusTooltipTrigger();
@@ -169,7 +165,7 @@ bool ShortcutConfigurationButton::event(QEvent* event) {
 void ShortcutConfigurationButton::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event)
     const auto style = resolveConfigurationButtonStyle(*this);
-    const auto& state = resolvedState(*this, style, m_hovered);
+    const auto& state = resolvedState(*this, style, adqt::widgets::detail::widgetHovered(this));
     const auto& metrics = style.metrics;
 
     QPainter painter(this);
@@ -218,7 +214,7 @@ void ShortcutConfigurationButton::paintEvent(QPaintEvent* event) {
     const int startX = contentRect.left() + std::max(0, (contentRect.width() - contentWidth) / 2);
 
     QColor iconColor = state.text;
-    if (!m_hovered && !isDown()) {
+    if (!adqt::widgets::detail::widgetHovered(this) && !isDown()) {
         iconColor.setAlpha(
             static_cast<int>(std::lround(static_cast<double>(iconColor.alpha()) * 0.42)));
     }
@@ -257,6 +253,8 @@ void ShortcutConfigurationButton::syncStatusTooltipTrigger() {
     m_statusTooltipTrigger->setVisible(m_statusTooltipVisible);
     if (m_statusTooltipVisible) {
         m_statusTooltipTrigger->setIconColor(
-            resolvedState(*this, resolveConfigurationButtonStyle(*this), m_hovered).text);
+            resolvedState(*this, resolveConfigurationButtonStyle(*this),
+                          adqt::widgets::detail::widgetHovered(this))
+                .text);
     }
 }

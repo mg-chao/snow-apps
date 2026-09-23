@@ -1,5 +1,8 @@
 #include "screenshotselectiontoolbarwidgets.h"
 
+#include "widgets/detail/pointer_region.h"
+#include <QCursor>
+
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 
 #include <QEnterEvent>
@@ -102,36 +105,46 @@ SelectionToolbarPanel::SelectionToolbarPanel(QWidget* parent) : QFrame(parent) {
     setAutoFillBackground(false);
 }
 
+void SelectionToolbarPanel::setPointerHovered(bool hovered) {
+    hovered = hovered && isEnabled() && !testAttribute(Qt::WA_TransparentForMouseEvents);
+    if (m_hovered == hovered)
+        return;
+    m_hovered = hovered;
+    emit hoverChanged(hovered);
+}
+
 void SelectionToolbarPanel::setPointerInteractionEnabled(bool enabled) {
     setAttribute(Qt::WA_TransparentForMouseEvents, !enabled);
-    if (!enabled && m_hovered) {
-        m_hovered = false;
-        emit hoverChanged(false);
-    }
+    if (!enabled)
+        setPointerHovered(false);
+}
+
+void SelectionToolbarPanel::synchronizePointerHover() {
+    const QPoint position = QCursor::pos();
+    setPointerHovered(
+        adqt::widgets::detail::pointerTargetEligible(QApplication::widgetAt(position), this) &&
+        adqt::widgets::detail::pointerRegionContains(this, rect(), position));
 }
 
 void SelectionToolbarPanel::enterEvent(QEnterEvent* event) {
-    if (!testAttribute(Qt::WA_TransparentForMouseEvents) && !m_hovered) {
-        m_hovered = true;
-        emit hoverChanged(true);
-    }
     QFrame::enterEvent(event);
+    setPointerHovered(true);
 }
 
 void SelectionToolbarPanel::hideEvent(QHideEvent* event) {
-    if (m_hovered) {
-        m_hovered = false;
-        emit hoverChanged(false);
-    }
     QFrame::hideEvent(event);
+    setPointerHovered(false);
 }
 
 void SelectionToolbarPanel::leaveEvent(QEvent* event) {
-    if (m_hovered) {
-        m_hovered = false;
-        emit hoverChanged(false);
-    }
     QFrame::leaveEvent(event);
+    setPointerHovered(false);
+}
+
+void SelectionToolbarPanel::changeEvent(QEvent* event) {
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::EnabledChange && !isEnabled())
+        setPointerHovered(false);
 }
 
 void SelectionToolbarPanel::paintEvent(QPaintEvent* event) {

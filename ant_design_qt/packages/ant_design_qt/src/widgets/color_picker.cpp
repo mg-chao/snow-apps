@@ -1,4 +1,5 @@
 #include "color_picker.h"
+#include "detail/pointer_region.h"
 
 #include "color_picker_style.h"
 #include "combo_box.h"
@@ -1610,14 +1611,17 @@ class PresetColorButton final : public QAbstractButton {
   }
 
  protected:
+  bool event(QEvent* event) override {
+    detail::resetWidgetHoverOnLifecycle(this, event);
+    return QAbstractButton::event(event);
+  }
+
   void enterEvent(QEnterEvent* event) override {
-    hovered_ = true;
     update();
     QAbstractButton::enterEvent(event);
   }
 
   void leaveEvent(QEvent* event) override {
-    hovered_ = false;
     update();
     QAbstractButton::leaveEvent(event);
   }
@@ -1677,7 +1681,7 @@ class PresetColorButton final : public QAbstractButton {
       painter.drawPath(roundedRectPath(borderRect, radius, radius, radius, radius));
     }
 
-    if (hovered_ && isEnabled()) {
+    if (detail::widgetHovered(this) && isEnabled()) {
       const qreal outlineWidth = std::max<qreal>(1.0, borderWidth_);
       const qreal outlineHalf = outlineWidth / 2.0;
       const QRectF rawOutlineRect = outerRect.adjusted(outlineHalf + 0.5, outlineHalf + 0.5,
@@ -1728,7 +1732,7 @@ class PresetColorButton final : public QAbstractButton {
   FillMode fillMode_ = FillMode::Solid;
   QColor solidFill_ = QColor("#1677ff");
   QVector<QPair<qreal, QColor>> gradientStops_;
-  bool hovered_ = false;
+
   bool checkedVisual_ = false;
   bool bright_ = false;
 };
@@ -1815,14 +1819,17 @@ class ColorPickerClearButton final : public QAbstractButton {
   }
 
  protected:
+  bool event(QEvent* event) override {
+    detail::resetWidgetHoverOnLifecycle(this, event);
+    return QAbstractButton::event(event);
+  }
+
   void enterEvent(QEnterEvent* event) override {
-    hovered_ = true;
     update();
     QAbstractButton::enterEvent(event);
   }
 
   void leaveEvent(QEvent* event) override {
-    hovered_ = false;
     update();
     QAbstractButton::leaveEvent(event);
   }
@@ -1834,7 +1841,8 @@ class ColorPickerClearButton final : public QAbstractButton {
     const qreal dpr = devicePixelRatioF();
     const bool cacheStale = cachedPixmap_.isNull() || cachedLogicalSize_ != logicalSize ||
                             !qFuzzyCompare(cachedDpr_ + 1.0, dpr + 1.0) ||
-                            cachedHovered_ != hovered_ || cachedEnabled_ != isEnabled();
+                            cachedHovered_ != detail::widgetHovered(this) ||
+                            cachedEnabled_ != isEnabled();
     if (cacheStale) {
       renderCache(logicalSize, dpr);
     }
@@ -1879,7 +1887,7 @@ class ColorPickerClearButton final : public QAbstractButton {
     const qreal radius = std::max<qreal>(0.0, radius_);
     const QPainterPath fillPath = roundedRectPath(borderRect, radius, radius, radius, radius);
 
-    QColor borderColor = hovered_ && isEnabled() ? borderHover_ : border_;
+    QColor borderColor = detail::widgetHovered(this) && isEnabled() ? borderHover_ : border_;
     QColor slashColor = slash_;
     if (!isEnabled()) {
       borderColor.setAlphaF(borderColor.alphaF() * 0.8F);
@@ -1905,7 +1913,7 @@ class ColorPickerClearButton final : public QAbstractButton {
     cachedPixmap_ = pixmap;
     cachedLogicalSize_ = logicalSize;
     cachedDpr_ = dpr;
-    cachedHovered_ = hovered_;
+    cachedHovered_ = detail::widgetHovered(this);
     cachedEnabled_ = isEnabled();
   }
 
@@ -1915,7 +1923,7 @@ class ColorPickerClearButton final : public QAbstractButton {
   QColor slash_ = QColor("#ff4d4f");
   qreal borderWidth_ = 1.0;
   int radius_ = 4;
-  bool hovered_ = false;
+
   QPixmap cachedPixmap_;
   QSize cachedLogicalSize_;
   qreal cachedDpr_ = 0.0;

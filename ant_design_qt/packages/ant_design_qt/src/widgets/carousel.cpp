@@ -1,4 +1,5 @@
 #include "carousel.h"
+#include "detail/pointer_region.h"
 
 #include "carousel_style.h"
 #include "theme/theme.h"
@@ -382,7 +383,6 @@ struct AdCarousel::Private {
   bool waitForAnimation = false;
   bool pauseOnHover = true;
   bool pauseOnFocus = true;
-  bool hovered = false;
   bool dragging = false;
   bool dragExceeded = false;
   QPointF dragOrigin;
@@ -781,7 +781,7 @@ struct AdCarousel::Private {
     QWidget* focusWidget = QApplication::focusWidget();
     const bool focusWithin = focusWidget && (focusWidget == q || q->isAncestorOf(focusWidget));
     if (!autoplay || slides.size() < 2 || !q->isVisible() || !q->isEnabled() || running ||
-        (pauseOnHover && hovered) || (pauseOnFocus && focusWithin)) {
+        (pauseOnHover && detail::widgetHovered(q)) || (pauseOnFocus && focusWithin)) {
       return false;
     }
     return infinite || canGoNext();
@@ -1354,11 +1354,10 @@ void AdCarousel::previous() {
 }
 
 bool AdCarousel::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
   if (event->type() == QEvent::Enter) {
-    d_->hovered = true;
     if (d_->pauseOnHover) d_->stopAutoplayCountdown();
   } else if (event->type() == QEvent::Leave) {
-    d_->hovered = false;
     d_->restartAutoplayCountdown();
   } else if (event->type() == QEvent::UngrabMouse || event->type() == QEvent::WindowDeactivate) {
     d_->cancelDrag();

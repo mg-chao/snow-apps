@@ -110,6 +110,7 @@ class QtToolPopupTest final : public QObject {
   void popoverReleasesAndRecreatesNativeResources();
   void popupTriggerTooltipsRequireOptIn();
   void popupOptionTooltipsRemainVisible();
+  void unrelatedLeaveDoesNotDismissTooltip();
   void popupTriggerTooltipsAvoidPopoverAtScreenEdges();
   void popupTriggerTooltipsRequireSpaceBelow();
   void warmTooltipSurvivesGroupPopoverOpening();
@@ -406,6 +407,30 @@ void QtToolPopupTest::popupHoverShapeTracksPaintedSurface() {
   QCoreApplication::processEvents();
   verifyShape();
 #endif
+}
+
+void QtToolPopupTest::unrelatedLeaveDoesNotDismissTooltip() {
+  AdTooltip::installApplicationTooltips();
+  QWidget host;
+  host.resize(400, 300);
+  QPushButton target(QStringLiteral("Target"), &host);
+  target.setGeometry(30, 30, 100, 30);
+  target.setToolTip(QStringLiteral("Target help"));
+  QWidget unrelated(&host);
+  unrelated.setGeometry(250, 200, 50, 50);
+  host.show();
+  host.activateWindow();
+  QCoreApplication::processEvents();
+  const QPoint local = target.rect().center();
+  QHelpEvent help(QEvent::ToolTip, local, target.mapToGlobal(local));
+  QApplication::sendEvent(&target, &help);
+  QTRY_VERIFY(findSurface(QStringLiteral("adtooltip-surface"), true));
+  QEvent leave(QEvent::Leave);
+  QApplication::sendEvent(&unrelated, &leave);
+  QTest::qWait(400);
+  QVERIFY(findSurface(QStringLiteral("adtooltip-surface"), true));
+  target.hide();
+  QTRY_VERIFY(!findSurface(QStringLiteral("adtooltip-surface"), true));
 }
 
 void QtToolPopupTest::popupOptionTooltipsRemainVisible() {

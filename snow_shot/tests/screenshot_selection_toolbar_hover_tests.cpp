@@ -157,6 +157,13 @@ void panelBoundaryExclusivelyOwnsToolbarHoverState() {
     panel.setPointerInteractionEnabled(false);
     require(hoverTransitions == std::vector<bool>({true, false, true, false, true, false}),
             "disabling a hovered panel must synchronously clear its hover state");
+    panel.setPointerInteractionEnabled(true);
+    sendEnter(&panel);
+    require(panel.pointerHovered(), "the panel must expose its authoritative hover state");
+    panel.setEnabled(false);
+    require(!panel.pointerHovered(), "QWidget disabling must synchronously end panel hover");
+    sendEnter(&panel);
+    require(!panel.pointerHovered(), "disabled panels must reject stale enter events");
 }
 
 void valueLabelPaintsFromItsOwnEnterLeaveState() {

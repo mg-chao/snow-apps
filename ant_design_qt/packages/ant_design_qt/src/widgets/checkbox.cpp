@@ -1,4 +1,5 @@
 #include "checkbox.h"
+#include "detail/pointer_region.h"
 
 #include "checkbox_group.h"
 #include "checkbox_style.h"
@@ -231,7 +232,7 @@ AdCheckbox::ComponentTokenContext AdCheckbox::currentComponentTokenContext() con
   context.checked = checkState() == Qt::Checked;
   context.indeterminate = isIndeterminate();
   context.disabled = !effectiveEnabled();
-  context.hovered = hovered_;
+  context.hovered = detail::widgetHovered(this);
   context.pressed = pressed_;
   context.focused = hasFocus() && focusVisible_;
   return context;
@@ -314,7 +315,8 @@ void AdCheckbox::paintEvent(QPaintEvent* event) {
   const detail::CheckboxStyleInput input = buildStyleInput();
   const detail::CheckboxVisualStyle style = detail::resolveCheckboxVisualStyle(input, resolved);
   const detail::CheckboxStateStyle state =
-      stateStyle(style, effectiveEnabled(), isChecked(), isIndeterminate(), hovered_, pressed_);
+      stateStyle(style, effectiveEnabled(), isChecked(), isIndeterminate(),
+                 detail::widgetHovered(this), pressed_);
   const QRectF indicator = indicatorRect(style.metrics.checkboxSize);
 
   QPainter painter(this);
@@ -401,6 +403,7 @@ void AdCheckbox::paintEvent(QPaintEvent* event) {
 }
 
 bool AdCheckbox::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
   const bool handled = QCheckBox::event(event);
   if (!event) {
     return handled;
@@ -444,13 +447,11 @@ bool AdCheckbox::hitButton(const QPoint& pos) const {
 }
 
 void AdCheckbox::enterEvent(QEnterEvent* event) {
-  hovered_ = true;
   QCheckBox::enterEvent(event);
   update();
 }
 
 void AdCheckbox::leaveEvent(QEvent* event) {
-  hovered_ = false;
   pressed_ = false;
   QCheckBox::leaveEvent(event);
   update();

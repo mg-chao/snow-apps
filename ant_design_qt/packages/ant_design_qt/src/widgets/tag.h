@@ -216,6 +216,7 @@ class AdTag final : public QAbstractButton {
 
  protected:
   void paintEvent(QPaintEvent* event) override;
+  bool event(QEvent* event) override;
   void enterEvent(QEnterEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
@@ -252,7 +253,6 @@ class AdTag final : public QAbstractButton {
   ComponentTokenResolver componentTokenResolver_;
   SemanticStyles semanticStyles_;
   SemanticStyleResolver semanticStyleResolver_;
-  bool hovered_ = false;
   bool pressed_ = false;
   bool closeHovered_ = false;
   bool closePressed_ = false;

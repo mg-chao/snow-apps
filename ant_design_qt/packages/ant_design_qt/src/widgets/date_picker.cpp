@@ -3047,6 +3047,13 @@ class DatePickerCalendarGrid final : public QWidget {
     paintUnitGrid(painter, style);
   }
 
+  bool event(QEvent* event) override {
+    if (event->type() == QEvent::Hide || event->type() == QEvent::Resize ||
+        event->type() == QEvent::EnabledChange)
+      clearHoverState();
+    return QWidget::event(event);
+  }
+
   void mouseMoveEvent(QMouseEvent* event) override { setHoverFromPosition(mouseEventPos(event)); }
 
   void leaveEvent(QEvent* event) override {
@@ -6617,6 +6624,7 @@ void AdDatePickerPanel::refreshPresetsStyle(const detail::DatePickerVisualStyle&
 }
 
 void AdDatePickerPanel::syncGridState() {
+  if (grid_) grid_->clearHoverState();
   refreshPanelBodyVisibility();
   refreshHeader();
   refreshFooter();

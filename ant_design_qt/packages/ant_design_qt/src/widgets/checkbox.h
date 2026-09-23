@@ -139,7 +139,6 @@ class AdCheckbox final : public QCheckBox {
 
   bool reportedIndeterminate_ = false;
   QVariant value_;
-  bool hovered_ = false;
   bool pressed_ = false;
   bool focusVisible_ = false;
   ComponentTokens componentTokens_;

@@ -1,4 +1,5 @@
 #include "input_text_edit.h"
+#include "detail/pointer_region.h"
 
 #include "detail/themed_scrollbar.h"
 #include "detail/timing_hub.h"
@@ -546,6 +547,10 @@ void AdTextEdit::focusEditor(FocusSelection selection, bool preventScroll) {
 void AdTextEdit::blurInput() { clearFocus(); }
 
 bool AdTextEdit::eventFilter(QObject* watched, QEvent* event) {
+  if (event) {
+    if (auto* widget = qobject_cast<QWidget*>(watched))
+      detail::resetWidgetHoverOnLifecycle(widget, event);
+  }
   if (!event) {
     return QTextEdit::eventFilter(watched, event);
   }
@@ -562,24 +567,19 @@ bool AdTextEdit::eventFilter(QObject* watched, QEvent* event) {
       syncOverlayScrollBar();
     }
   } else if (watched == overlayVerticalScrollBar_) {
-    if (event->type() == QEvent::Enter || event->type() == QEvent::HoverEnter) {
-      if (!verticalScrollBarHovered_) {
-        verticalScrollBarHovered_ = true;
-        applyScrollBarStyle();
-      }
-    } else if (event->type() == QEvent::Leave || event->type() == QEvent::HoverLeave ||
-               event->type() == QEvent::Hide) {
-      if (verticalScrollBarHovered_) {
-        verticalScrollBarHovered_ = false;
-        applyScrollBarStyle();
-      }
+    if (event->type() == QEvent::Enter || event->type() == QEvent::Leave ||
+        event->type() == QEvent::Hide || event->type() == QEvent::EnabledChange) {
+      applyScrollBarStyle();
     }
   }
 
   return QTextEdit::eventFilter(watched, event);
 }
 
-bool AdTextEdit::event(QEvent* event) { return QTextEdit::event(event); }
+bool AdTextEdit::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  return QTextEdit::event(event);
+}
 
 void AdTextEdit::paintEvent(QPaintEvent* event) { QTextEdit::paintEvent(event); }
 
@@ -651,13 +651,11 @@ void AdTextEdit::hideEvent(QHideEvent* event) {
 }
 
 void AdTextEdit::enterEvent(QEnterEvent* event) {
-  hovered_ = true;
   refreshVisualState(false);
   QTextEdit::enterEvent(event);
 }
 
 void AdTextEdit::leaveEvent(QEvent* event) {
-  hovered_ = false;
   refreshVisualState(false);
   QTextEdit::leaveEvent(event);
 }
@@ -821,7 +819,7 @@ void AdTextEdit::applyScrollBarStyle() {
   QScrollBar* styledVerticalBar =
       overlayVerticalScrollBar_ ? overlayVerticalScrollBar_ : verticalScrollBar();
   if (styledVerticalBar) {
-    const bool hovered = verticalScrollBarHovered_ || styledVerticalBar->underMouse();
+    const bool hovered = detail::widgetHovered(styledVerticalBar);
     const int extent = hovered ? hoverThickness : baseThickness;
     const int inset = hovered ? 0 : collapsedInset;
     const int visualWidth = std::max(1, extent - inset);
@@ -843,12 +841,8 @@ void AdTextEdit::syncOverlayScrollBar() {
 
   QScrollBar* source = verticalScrollBar();
   if (!source) {
-    const bool wasHovered = verticalScrollBarHovered_;
-    verticalScrollBarHovered_ = false;
-    if (wasHovered) {
-      applyScrollBarStyle();
-    }
     overlayVerticalScrollBar_->hide();
+    applyScrollBarStyle();
     return;
   }
 
@@ -861,11 +855,8 @@ void AdTextEdit::syncOverlayScrollBar() {
   }
 
   const bool visible = source->maximum() > source->minimum();
-  if (!visible && verticalScrollBarHovered_) {
-    verticalScrollBarHovered_ = false;
-    applyScrollBarStyle();
-  }
   overlayVerticalScrollBar_->setVisible(visible);
+  if (!visible) applyScrollBarStyle();
   updateOverlayScrollBarGeometry();
   if (visible) {
     overlayVerticalScrollBar_->raise();
@@ -878,7 +869,7 @@ void AdTextEdit::updateOverlayScrollBarGeometry() {
   }
 
   const int margin = 2;
-  const int overlayWidth = verticalScrollBarHovered_
+  const int overlayWidth = detail::widgetHovered(overlayVerticalScrollBar_)
                                ? detail::input_internal::textAreaScrollBarHoverThickness()
                                : detail::input_internal::kTextAreaScrollBarBaseThickness;
   const int height = std::max(0, viewport()->height() - margin * 2);
@@ -1025,8 +1016,8 @@ void AdTextEdit::refreshVisualState(bool geometryChanged) {
   applyEditorPalette();
   if (frameLayer_) {
     InputFramePaintStyle frameStyle;
-    frameStyle.background = resolvedBackgroundColor(style, focused_, hovered_);
-    frameStyle.border = resolvedBorderColor(style, focused_, hovered_);
+    frameStyle.background = resolvedBackgroundColor(style, focused_, detail::widgetHovered(this));
+    frameStyle.border = resolvedBorderColor(style, focused_, detail::widgetHovered(this));
     frameStyle.borderWidth = std::max<qreal>(0.0, style.metrics.borderWidth);
     frameStyle.underlined = style.underlined;
     const qreal radius = style.underlined ? 0.0 : std::max<qreal>(0.0, style.metrics.borderRadius);
@@ -1079,7 +1070,7 @@ InputVisualStyle AdTextEdit::resolvedStyle() const {
   input.status = effectiveStatus();
   input.disabled = !isEnabled();
   input.focused = focused_;
-  input.hovered = hovered_;
+  input.hovered = detail::widgetHovered(this);
   input.multiline = true;
   input.baseFont = font();
   return adqt::widgets::detail::resolveTextControlVisualStyle(

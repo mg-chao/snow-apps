@@ -1,4 +1,5 @@
 #include "button.h"
+#include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
 
@@ -457,7 +458,7 @@ struct AdButton::Private {
   int busyDelayMs = -1;
   BusyIndicatorPresentation busyIndicatorPresentation = BusyIndicatorPresentation::Inline;
   bool busyIndicatorVisible = false;
-  bool hovered = false;
+
   bool focusVisible = false;
   bool enterPressed = false;
   bool busyDefaultSuspended = false;
@@ -730,6 +731,7 @@ void AdButton::setBusyIconRef(const adqt::icons::IconRef& value) {
 }
 
 bool AdButton::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
   if (event) {
     if (interactionBlocked() && event->type() == QEvent::Shortcut) {
       event->accept();
@@ -943,9 +945,9 @@ void AdButton::paintEvent(QPaintEvent* event) {
       }
     } else if (iconState.hasFallbackIcon) {
       const QIcon::Mode iconMode =
-          !isEnabled()
-              ? QIcon::Disabled
-              : (isDown() ? QIcon::Selected : (d_->hovered ? QIcon::Active : QIcon::Normal));
+          !isEnabled() ? QIcon::Disabled
+                       : (isDown() ? QIcon::Selected
+                                   : (detail::widgetHovered(this) ? QIcon::Active : QIcon::Normal));
       const QIcon::State fallbackIconState = isChecked() ? QIcon::On : QIcon::Off;
       const QPixmap pixmap = QAbstractButton::icon().pixmap(layout.iconRect.size().toSize(),
                                                             iconMode, fallbackIconState);
@@ -1132,7 +1134,6 @@ void AdButton::changeEvent(QEvent* event) {
 
 void AdButton::enterEvent(QEnterEvent* event) {
   QPushButton::enterEvent(event);
-  d_->hovered = true;
   updateCursorForRole();
   bumpSegmentZOrder();
   update();
@@ -1140,7 +1141,6 @@ void AdButton::enterEvent(QEnterEvent* event) {
 
 void AdButton::leaveEvent(QEvent* event) {
   QPushButton::leaveEvent(event);
-  d_->hovered = false;
   update();
 }
 
@@ -1303,9 +1303,6 @@ void AdButton::showEvent(QShowEvent* event) {
 
 void AdButton::hideEvent(QHideEvent* event) {
   QPushButton::hideEvent(event);
-  // Retained popup children can be hidden without receiving a matching Leave.
-  // Hover belongs to the current visible interaction, not the next popup session.
-  d_->hovered = false;
   d_->enterPressed = false;
   setDown(false);
   updateSpinnerState();
@@ -1398,12 +1395,13 @@ detail::ButtonStateStyle AdButton::currentStateStyle(const detail::ButtonVisualS
     state = style.active;
   } else if (isChecked()) {
     state = style.checked;
-  } else if (d_->hovered) {
+  } else if (detail::widgetHovered(this)) {
     state = style.hover;
   } else {
     state = style.normal;
   }
-  if (!d_->interactionBackgroundVisible && (d_->hovered || isDown() || isChecked())) {
+  if (!d_->interactionBackgroundVisible &&
+      (detail::widgetHovered(this) || isDown() || isChecked())) {
     state.background = QColor(0, 0, 0, 0);
   }
   return state;

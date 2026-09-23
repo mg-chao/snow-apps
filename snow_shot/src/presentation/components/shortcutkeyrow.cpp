@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
+#include "widgets/detail/pointer_region.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
 #include "snow_shot/shortcuts/shortcutrecorder.h"
@@ -233,11 +234,6 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
     bool event(QEvent* event) override {
         const bool handled = adqt::widgets::AdButton::event(event);
         const QEvent::Type type = event->type();
-        if (type == QEvent::Enter) {
-            m_hovered = true;
-        } else if (type == QEvent::Leave) {
-            m_hovered = false;
-        }
         if (type == QEvent::Enter || type == QEvent::Leave || type == QEvent::MouseButtonPress ||
             type == QEvent::MouseButtonRelease || type == QEvent::EnabledChange) {
             syncInfoColor();
@@ -342,7 +338,7 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
         if (isChecked()) {
             return style.checked;
         }
-        return m_hovered ? style.hover : style.normal;
+        return adqt::widgets::detail::widgetHovered(this) ? style.hover : style.normal;
     }
 
     void syncInfoColor() {
@@ -385,7 +381,6 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
 
     int m_infoGap = 6;
     InfoTooltipIcon* m_info = nullptr;
-    bool m_hovered = false;
 };
 
 class ShortcutKeyConfigContent final : public QWidget {
@@ -987,8 +982,9 @@ bool ShortcutKeyRow::eventFilter(QObject* watched, QEvent* event) {
         if (type == QEvent::Wheel && adjustDelayFromWheel(event)) {
             return true;
         }
-        if (type == QEvent::Enter || type == QEvent::Leave) {
-            m_delayTitleHovered = type == QEvent::Enter;
+        adqt::widgets::detail::resetWidgetHoverOnLifecycle(m_titleLabel, event);
+        if (type == QEvent::Enter || type == QEvent::Leave || type == QEvent::Hide ||
+            type == QEvent::EnabledChange) {
             syncDelayUnderline();
         } else if (type == QEvent::Resize || type == QEvent::FontChange) {
             syncDelayUnderline();
@@ -1054,7 +1050,7 @@ void ShortcutKeyRow::syncDelayUnderline() {
     m_delayUnderline->setProperty("highlightColor", highlightColor);
     m_delayUnderline->setStyleSheet(
         QStringLiteral("background-color: %1;").arg(cssColor(highlightColor)));
-    m_delayUnderline->setVisible(m_delayTitleHovered);
+    m_delayUnderline->setVisible(adqt::widgets::detail::widgetHovered(m_titleLabel));
 }
 
 void ShortcutKeyRow::openShortcutConfigDialog() {

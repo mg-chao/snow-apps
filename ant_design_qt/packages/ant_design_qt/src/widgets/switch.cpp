@@ -1,4 +1,5 @@
 #include "switch.h"
+#include "detail/pointer_region.h"
 
 #include "detail/animated_scalar.h"
 #include "detail/overlay_accessibility.h"
@@ -480,7 +481,7 @@ struct AdSwitch::Private {
   adqt::icons::IconRef uncheckedIconRef;
   ComponentTokens componentTokens;
   ComponentTokenResolver componentTokenResolver;
-  bool hovered = false;
+
   bool pressed = false;
   bool focusVisible = false;
   bool enterPressed = false;
@@ -772,6 +773,11 @@ QSize AdSwitch::sizeHint() const { return d_->sizeHintFor(*this, resolvedAppeara
 QSize AdSwitch::minimumSizeHint() const { return sizeHint(); }
 
 bool AdSwitch::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  if (event->type() == QEvent::Hide || event->type() == QEvent::ParentAboutToChange) {
+    invalidateResolvedTokensCache();
+    invalidateAppearanceCache(false);
+  }
   if (event && interactionBlocked() && event->type() == QEvent::Shortcut) {
     event->accept();
     return true;
@@ -847,10 +853,10 @@ void AdSwitch::paintEvent(QPaintEvent* event) {
       detail::buildSwitchGeometry(layout.indicatorRect, direction, appearance, d_->controlSize,
                                   thumbPosition, activePressProgress, d_->pressDirection, dpr);
 
-  const QColor uncheckedTrackColor = d_->hovered && !interactionBlocked()
+  const QColor uncheckedTrackColor = detail::widgetHovered(this) && !interactionBlocked()
                                          ? appearance.uncheckedTrackHoverColor
                                          : appearance.uncheckedTrackColor;
-  const QColor checkedTrackColor = d_->hovered && !interactionBlocked()
+  const QColor checkedTrackColor = detail::widgetHovered(this) && !interactionBlocked()
                                        ? appearance.checkedTrackHoverColor
                                        : appearance.checkedTrackColor;
   const QColor trackColor = blendColor(uncheckedTrackColor, checkedTrackColor, thumbPosition);
@@ -983,7 +989,6 @@ void AdSwitch::nextCheckState() {
 }
 
 void AdSwitch::enterEvent(QEnterEvent* event) {
-  d_->hovered = true;
   invalidateResolvedTokensCache();
   invalidateAppearanceCache(false);
   refreshFocusOverlay();
@@ -992,7 +997,6 @@ void AdSwitch::enterEvent(QEnterEvent* event) {
 }
 
 void AdSwitch::leaveEvent(QEvent* event) {
-  d_->hovered = false;
   invalidateResolvedTokensCache();
   invalidateAppearanceCache(false);
   if (!d_->dragActive) {
@@ -1292,7 +1296,7 @@ detail::SwitchAppearanceInput AdSwitch::buildAppearanceInput() const {
   input.checked = isChecked();
   input.loading = d_->loading;
   input.disabled = !isEnabled();
-  input.hovered = d_->hovered;
+  input.hovered = detail::widgetHovered(this);
   input.pressed = d_->pressed;
   input.focused = hasFocus() && d_->focusVisible;
   input.componentTokens = resolvedComponentTokens();
@@ -1329,7 +1333,7 @@ AdSwitch::ComponentTokens AdSwitch::resolvedComponentTokens() const {
   ctx.checked = isChecked();
   ctx.loading = d_->loading;
   ctx.disabled = !isEnabled();
-  ctx.hovered = d_->hovered;
+  ctx.hovered = detail::widgetHovered(this);
   ctx.pressed = d_->pressed;
   ctx.focused = hasFocus() && d_->focusVisible;
 

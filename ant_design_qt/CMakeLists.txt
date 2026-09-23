@@ -367,6 +367,11 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-select-popup-lifetime-tests
         COMMAND adqt-qt-tool-popup-tests selectSurvivesPopupContainerDestructionOrder
                 -platform offscreen)
+    add_test(NAME adqt-tooltip-hover-lifecycle-tests
+        COMMAND adqt-qt-tool-popup-tests unrelatedLeaveDoesNotDismissTooltip
+                popupOptionTooltipsRemainVisible warmTooltipSurvivesGroupPopoverOpening
+                pendingTooltipSurvivesGroupRouteRegistration -platform offscreen)
+    set_tests_properties(adqt-tooltip-hover-lifecycle-tests PROPERTIES LABELS "unit")
     add_test(NAME adqt-popup-hover-recovery-tests
         COMMAND adqt-qt-tool-popup-tests siblingPopoversReopenAfterOverdueHoverTasks
                 siblingPopoversReopenAfterScopeRecreation -platform offscreen)
@@ -378,6 +383,14 @@ if(ADQT_BUILD_TESTS)
                 colorPickerPrewarmCanBeDisabled -platform offscreen)
     set_tests_properties(adqt-popover-content-lifecycle-tests PROPERTIES LABELS "unit")
     add_executable(adqt-popup-hover-geometry-tests tests/popup_hover_geometry_tests.cpp)
+    add_executable(adqt-pointer-hover-tests tests/pointer_hover_tests.cpp)
+    target_link_libraries(adqt-pointer-hover-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        target_link_libraries(adqt-pointer-hover-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-pointer-hover-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-pointer-hover-tests COMMAND adqt-pointer-hover-tests)
+    set_tests_properties(adqt-pointer-hover-tests PROPERTIES LABELS "unit")
     target_link_libraries(adqt-popup-hover-geometry-tests PRIVATE adqt::widgets Qt6::Test)
     if(TARGET Qt6::QOffscreenIntegrationPlugin AND adqt_qt_core_type STREQUAL "STATIC_LIBRARY")
         target_link_libraries(adqt-popup-hover-geometry-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)

@@ -313,6 +313,7 @@ class AdMultiSlider : public QWidget, public AdControlScaleParticipant {
   void setMode(Mode value);
 
   void paintEvent(QPaintEvent* event) override;
+  bool event(QEvent* event) override;
   void enterEvent(QEnterEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void mousePressEvent(QMouseEvent* event) override;
@@ -424,7 +425,6 @@ class AdMultiSlider : public QWidget, public AdControlScaleParticipant {
   SemanticStyles semanticStyles_;
   SemanticStyleResolver semanticStyleResolver_;
 
-  bool hovered_ = false;
   bool focusVisible_ = false;
   bool dragging_ = false;
   bool sliderDown_ = false;

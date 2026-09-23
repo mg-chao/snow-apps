@@ -442,6 +442,7 @@ class AdImage final : public QWidget {
  protected:
   void paintEvent(QPaintEvent* event) override;
   void changeEvent(QEvent* event) override;
+  bool event(QEvent* event) override;
   void enterEvent(QEnterEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void mouseReleaseEvent(QMouseEvent* event) override;
@@ -486,7 +487,6 @@ class AdImage final : public QWidget {
   QSize preferredImageSize_;
   bool loading_ = false;
   bool loadFailed_ = false;
-  bool hovered_ = false;
   int previewRow_ = -1;
   int mainLoadToken_ = 0;
   int placeholderLoadToken_ = 0;

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotencodingsettings.h"
+#include "widgets/detail/pointer_region.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
@@ -689,7 +690,7 @@ class PinnedControlButton final : public adqt::widgets::AdButton {
         if (isDown()) {
             background =
                 m_intent == Intent::Close ? theme.colorErrorActive : theme.colorPrimaryActive;
-        } else if (m_hovered) {
+        } else if (adqt::widgets::detail::widgetHovered(this)) {
             background = m_intent == Intent::Close ? theme.colorError : theme.colorPrimary;
         }
 
@@ -704,19 +705,8 @@ class PinnedControlButton final : public adqt::widgets::AdButton {
         adqt::widgets::AdButton::paintEvent(event);
     }
 
-    void enterEvent(QEnterEvent* event) override {
-        m_hovered = true;
-        adqt::widgets::AdButton::enterEvent(event);
-    }
-
-    void leaveEvent(QEvent* event) override {
-        m_hovered = false;
-        adqt::widgets::AdButton::leaveEvent(event);
-    }
-
   private:
     Intent m_intent;
-    bool m_hovered = false;
 };
 
 class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {

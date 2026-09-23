@@ -1,4 +1,5 @@
 #include "image.h"
+#include "detail/pointer_region.h"
 
 #include "image_style.h"
 #include "antd_icons.h"
@@ -788,14 +789,17 @@ class ImagePreviewDialog final : public QWidget {
     }
 
    protected:
+    bool event(QEvent* event) override {
+      detail::resetWidgetHoverOnLifecycle(this, event);
+      return QToolButton::event(event);
+    }
+
     void enterEvent(QEnterEvent* event) override {
-      hovered_ = true;
       update();
       QToolButton::enterEvent(event);
     }
 
     void leaveEvent(QEvent* event) override {
-      hovered_ = false;
       update();
       QToolButton::leaveEvent(event);
     }
@@ -816,7 +820,7 @@ class ImagePreviewDialog final : public QWidget {
       QColor background = isEnabled() ? normalBackground_ : disabledBackground_;
       if (isEnabled() && isDown()) {
         background = pressedBackground_.isValid() ? pressedBackground_ : hoverBackground_;
-      } else if (isEnabled() && hovered_) {
+      } else if (isEnabled() && detail::widgetHovered(this)) {
         background = hoverBackground_.isValid() ? hoverBackground_ : normalBackground_;
       }
 
@@ -831,9 +835,10 @@ class ImagePreviewDialog final : public QWidget {
 
       const QIcon currentIcon = icon();
       if (!currentIcon.isNull()) {
-        const QIcon::Mode mode = !isEnabled()
-                                     ? QIcon::Disabled
-                                     : ((hovered_ || isDown()) ? QIcon::Active : QIcon::Normal);
+        const QIcon::Mode mode =
+            !isEnabled()
+                ? QIcon::Disabled
+                : ((detail::widgetHovered(this) || isDown()) ? QIcon::Active : QIcon::Normal);
         const QSize logicalSize = iconSize().isValid() ? iconSize() : QSize(16, 16);
         const QPixmap pixmap = currentIcon.pixmap(logicalSize, mode, QIcon::Off);
         if (!pixmap.isNull()) {
@@ -846,7 +851,6 @@ class ImagePreviewDialog final : public QWidget {
     }
 
    private:
-    bool hovered_ = false;
     QColor normalBackground_ = QColor(Qt::transparent);
     QColor hoverBackground_ = QColor(Qt::transparent);
     QColor pressedBackground_ = QColor(Qt::transparent);
@@ -2996,7 +3000,7 @@ void AdImage::paintEvent(QPaintEvent* event) {
   requestMainImageIfNeeded();
 
   StyleContext context;
-  context.hovered = hovered_;
+  context.hovered = detail::widgetHovered(this);
   context.loading = loading_;
   context.failed = loadFailed_;
   context.previewEnabled = previewEnabled_;
@@ -3062,7 +3066,7 @@ void AdImage::paintEvent(QPaintEvent* event) {
     painter.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop, text);
   }
 
-  if (context.previewable && (hovered_ || context.previewVisible)) {
+  if (context.previewable && (detail::widgetHovered(this) || context.previewVisible)) {
     painter.fillRect(drawRect, visual.coverBackground);
     painter.setPen(visual.coverText);
 
@@ -3133,15 +3137,20 @@ void AdImage::changeEvent(QEvent* event) {
   }
 }
 
+bool AdImage::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  return QWidget::event(event);
+}
+
 void AdImage::enterEvent(QEnterEvent* event) {
   QWidget::enterEvent(event);
-  hovered_ = true;
+
   update();
 }
 
 void AdImage::leaveEvent(QEvent* event) {
   QWidget::leaveEvent(event);
-  hovered_ = false;
+
   update();
 }
 

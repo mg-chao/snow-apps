@@ -58,6 +58,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
 
  public:
   using CursorPositionProvider = std::function<QPoint()>;
+  using PointerTargetProvider = std::function<QWidget*(const QPoint&)>;
 
   enum class Trigger {
     Hover = 0x1,
@@ -74,7 +75,8 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
 
   explicit OverlayPopupController(OverlayPopupControllerDelegate* delegate,
                                   QObject* parent = nullptr,
-                                  CursorPositionProvider cursorPositionProvider = {});
+                                  CursorPositionProvider cursorPositionProvider = {},
+                                  PointerTargetProvider pointerTargetProvider = {});
   ~OverlayPopupController() override;
 
   static void resetSyncPopupGeometryCountersForTesting();
@@ -107,7 +109,6 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void refreshVisiblePopup();
   void invalidatePopupGeometry();
 
-  using WatchedObjectList = QVector<QPointer<QWidget>>;
 
  signals:
   void popupVisibleChanged(bool value);
@@ -140,14 +141,16 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   bool shouldBeOpen() const;
   QPoint cursorGlobalPos() const;
   bool triggerContainsGlobalPos(const QPoint& globalPos) const;
-  bool hoverRegionContainsGlobalPos(const QPoint& globalPos) const;
+  bool hoverRegionContainsGlobalPos(const QPoint& globalPos, const QWidget* target) const;
+  void handleHoverEvent(QObject* watched, QEvent* event);
+  void transitionHover(bool inside);
+  void scheduleHoverReconcile();
   void reconcileHoverFromCursor();
   void scheduleHoverOpen();
   void scheduleHoverClose();
-  void finishHoverOpen();
-  void finishHoverClose();
+  void finishHoverOpen(bool recheck = true);
+  void finishHoverClose(bool recheck = true);
   void resetHoverInteraction();
-  void refreshHoverMonitor();
 
   void noteGeometryActivity();
   void schedulePopupRelayout(bool extendFrameTail);
@@ -171,8 +174,6 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
 
   void refreshTriggerWatchers();
   void clearTriggerWatchers();
-  void refreshPopupWatchers();
-  void clearPopupWatchers();
   bool watchedByTrigger(QObject* watched) const;
   bool watchedByPopup(QObject* watched) const;
 
@@ -182,10 +183,6 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void handleTriggerKeyRelease(QEvent* event);
   void handleTriggerContextMenu(QEvent* event);
   void handleTriggerFocusOutDeferred();
-  void handleTriggerHoverEnter();
-  void handleTriggerHoverLeave();
-  void handlePopupHoverEnter();
-  void handlePopupHoverLeave();
   bool handlePopupShadowPointerEvent(QEvent* event);
 
   QObject* popupOwnerObject() const override;
@@ -207,15 +204,12 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   int mouseEnterDelayMs_ = 100;
   int mouseLeaveDelayMs_ = 100;
   CursorPositionProvider cursorPositionProvider_;
+  PointerTargetProvider pointerTargetProvider_;
 
-  QPointer<QObject> watchedTriggerRoot_;
-  WatchedObjectList watchedTriggerObjects_;
-  WatchedObjectList watchedPopupObjects_;
-
-  bool hoverRegionInside_ = false;
-  bool hoverSessionActive_ = false;
-  bool hoverTransitionPending_ = false;
-  bool hoverMonitorScheduled_ = false;
+  enum class HoverState { Outside, WaitingToOpen, Inside, WaitingToClose };
+  HoverState hoverState_ = HoverState::Outside;
+  quint64 hoverGeneration_ = 0;
+  bool hoverReconcileQueued_ = false;
   bool focusTriggerActive_ = false;
   bool focusPopupActive_ = false;
   bool openByHover_ = false;

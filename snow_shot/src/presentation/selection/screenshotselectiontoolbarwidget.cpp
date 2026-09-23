@@ -496,7 +496,12 @@ void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
 void ScreenshotSelectionToolbarWidget::scheduleToolbarHoverSync() {
     QTimer::singleShot(0, this, [this]() {
         if (isVisible()) {
-            setToolbarHovered(m_panel != nullptr && m_panel->underMouse());
+            if (auto* panel = qobject_cast<SelectionToolbarPanel*>(m_panel)) {
+                panel->synchronizePointerHover();
+                setToolbarHovered(panel->pointerHovered());
+            } else {
+                setToolbarHovered(false);
+            }
         }
     });
 }

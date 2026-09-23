@@ -1,4 +1,5 @@
 #include "message.h"
+#include "detail/pointer_region.h"
 
 #include "antd_icons.h"
 #include "detail/animated_scalar.h"
@@ -369,7 +370,7 @@ class MessageNoticeWidget final : public QWidget {
 
   void refreshAppearance(const AdMessage::Config& config, const detail::MessageVisualStyle& style,
                          int maximumFrameWidth) {
-    const bool previouslyPausedByHover = hovered_ && effectivePauseOnHover();
+    const bool previouslyPausedByHover = detail::widgetHovered(this) && effectivePauseOnHover();
     config_ = config;
     style_ = style;
     maximumFrameWidth_ = std::max(1, maximumFrameWidth);
@@ -380,7 +381,7 @@ class MessageNoticeWidget final : public QWidget {
     adjustSize();
     update();
 
-    const bool nowPausedByHover = hovered_ && effectivePauseOnHover();
+    const bool nowPausedByHover = detail::widgetHovered(this) && effectivePauseOnHover();
     if (!closing_ && previouslyPausedByHover != nowPausedByHover && remainingDurationMs_ > 0) {
       if (nowPausedByHover) {
         const qint64 now = detail::timingNowMs();
@@ -429,7 +430,7 @@ class MessageNoticeWidget final : public QWidget {
 
   qreal progress() const { return std::clamp(progress_.value(), 0.0, 1.0); }
   bool isClosing() const { return closing_; }
-  bool isHovered() const { return hovered_; }
+  bool isHovered() const { return detail::widgetHovered(this); }
   int noticePadding() const { return style_.metrics.noticePadding; }
   int zIndexPopup() const { return style_.metrics.zIndexPopup; }
 
@@ -478,9 +479,14 @@ class MessageNoticeWidget final : public QWidget {
     return QWidget::eventFilter(watched, event);
   }
 
+  bool event(QEvent* event) override {
+    detail::resetWidgetHoverOnLifecycle(this, event);
+    return QWidget::event(event);
+  }
+
   void enterEvent(QEnterEvent* event) override {
     QWidget::enterEvent(event);
-    hovered_ = true;
+
     refreshSemantics();
     if (effectivePauseOnHover() && !closing_ && remainingDurationMs_ > 0) {
       const qint64 now = detail::timingNowMs();
@@ -494,7 +500,7 @@ class MessageNoticeWidget final : public QWidget {
 
   void leaveEvent(QEvent* event) override {
     QWidget::leaveEvent(event);
-    hovered_ = false;
+
     refreshSemantics();
     if (effectivePauseOnHover() && !closing_ && remainingDurationMs_ > 0) {
       scheduleExpiry(remainingDurationMs_);
@@ -543,7 +549,7 @@ class MessageNoticeWidget final : public QWidget {
   void restartExpiry() {
     cancelExpiry();
     remainingDurationMs_ = std::max(0, effectiveDurationMs());
-    if (remainingDurationMs_ > 0 && !(hovered_ && effectivePauseOnHover())) {
+    if (remainingDurationMs_ > 0 && !(detail::widgetHovered(this) && effectivePauseOnHover())) {
       scheduleExpiry(remainingDurationMs_);
     }
   }
@@ -636,12 +642,14 @@ class MessageNoticeWidget final : public QWidget {
     AdMessage::SemanticStyles semantics = config_.semanticStyles;
     if (config_.semanticStyleResolver) {
       semantics = mergeSemanticStyles(
-          semantics, config_.semanticStyleResolver({request_.type, request_.key, hovered_}));
+          semantics, config_.semanticStyleResolver(
+                         {request_.type, request_.key, detail::widgetHovered(this)}));
     }
     semantics = mergeSemanticStyles(semantics, request_.semanticStyles);
     if (request_.semanticStyleResolver) {
       semantics = mergeSemanticStyles(
-          semantics, request_.semanticStyleResolver({request_.type, request_.key, hovered_}));
+          semantics, request_.semanticStyleResolver(
+                         {request_.type, request_.key, detail::widgetHovered(this)}));
     }
 
     resolvedContentBackground_ = semantics.root.backgroundColor.value_or(style_.contentBackground);
@@ -760,7 +768,7 @@ class MessageNoticeWidget final : public QWidget {
   int remainingDurationMs_ = 0;
   qint64 expiryStartedMs_ = 0;
   bool hasResolvedIcon_ = false;
-  bool hovered_ = false;
+
   bool closing_ = false;
   bool clickDispatchedThisTurn_ = false;
 };

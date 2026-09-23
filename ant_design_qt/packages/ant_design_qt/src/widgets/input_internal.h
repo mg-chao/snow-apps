@@ -54,6 +54,7 @@ class InputIconButton final : public QToolButton {
   QSize minimumSizeHint() const override;
 
  protected:
+  bool event(QEvent* event) override;
   void enterEvent(QEnterEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void changeEvent(QEvent* event) override;
@@ -64,7 +65,6 @@ class InputIconButton final : public QToolButton {
 
   Qt::Alignment contentAlignment_ = Qt::AlignCenter;
   QSize slotSize_;
-  bool hovered_ = false;
 };
 
 bool iconRefsEqual(const adqt::icons::IconRef& lhs, const adqt::icons::IconRef& rhs);

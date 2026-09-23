@@ -4125,6 +4125,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/selection"
     )
     target_link_libraries(snow-shot-screenshot-selection-toolbar-hover-tests PRIVATE
+        adqt::widgets
         adqt_icon_core
         ant_design_icons_qt
         Qt6::Widgets

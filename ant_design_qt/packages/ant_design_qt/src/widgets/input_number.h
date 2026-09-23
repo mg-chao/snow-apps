@@ -355,6 +355,7 @@ class AdInputNumber final : public QAbstractSpinBox {
   bool eventFilter(QObject* watched, QEvent* event) override;
   void focusInEvent(QFocusEvent* event) override;
   void focusOutEvent(QFocusEvent* event) override;
+  bool event(QEvent* event) override;
   void enterEvent(QEnterEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void paintEvent(QPaintEvent* event) override;
@@ -420,9 +421,6 @@ class AdInputNumber final : public QAbstractSpinBox {
   void updateReadOnlyState();
   void updateInteractiveCursor();
   void updateInputActionsGeometry(const ResolvedVisualState& state);
-  bool isHoverTrackedChild(const QObject* watched) const;
-  void setChildHovered(const QObject* watched, bool hovered);
-  void syncHoveredState();
   void focusFromMouseGlobalPos(const QPoint& globalPos, Qt::FocusReason reason);
   void bumpJoinedZOrder();
   void syncAccessibleState();
@@ -471,10 +469,7 @@ class AdInputNumber final : public QAbstractSpinBox {
   QToolButton* splitDownButton_ = nullptr;
   QToolButton* splitUpButton_ = nullptr;
 
-  bool hovered_ = false;
-  bool selfHovered_ = false;
   bool suffixSpinnerSubscribed_ = false;
-  QSet<const QObject*> hoveredChildren_;
   bool focused_ = false;
   bool userTyping_ = false;
   bool internalTextUpdate_ = false;

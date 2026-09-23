@@ -1,4 +1,5 @@
 #include "radio.h"
+#include "detail/pointer_region.h"
 
 #include "interaction_overlay_manager.h"
 #include "radio_button_group.h"
@@ -688,7 +689,7 @@ AdRadio::ComponentTokenContext AdRadio::currentComponentTokenContext() const {
   state.buttonStyle = effectiveButtonStyle();
   state.checked = isChecked();
   state.disabled = !isEnabled();
-  state.hovered = hovered_;
+  state.hovered = detail::widgetHovered(this);
   state.pressed = pressed_;
   state.focused = hasFocus() && focusVisible_;
   state.block = effectiveFill();
@@ -903,6 +904,7 @@ void AdRadio::commitControlScale(const AdControlScaleContext& context) {
 }
 
 bool AdRadio::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
   const bool handled = QRadioButton::event(event);
   if (!event) {
     return handled;
@@ -945,8 +947,8 @@ void AdRadio::paintButtonVariant(QPainter* painter) const {
   }
 
   const detail::RadioButtonVisualStyle& style = resolvedRadioButtonStyle();
-  const detail::RadioButtonStateStyle state =
-      resolveButtonStateStyle(style, isEnabled(), isChecked(), hovered_, pressed_);
+  const detail::RadioButtonStateStyle state = resolveButtonStateStyle(
+      style, isEnabled(), isChecked(), detail::widgetHovered(this), pressed_);
 
   painter->setFont(style.metrics.font);
 
@@ -1003,7 +1005,7 @@ void AdRadio::paintDefaultVariant(QPainter* painter) const {
 
   const detail::RadioVisualStyle& style = resolvedRadioStyle();
   const detail::RadioDotStateStyle dotState =
-      resolveDotStateStyle(style, isEnabled(), isChecked(), hovered_, pressed_);
+      resolveDotStateStyle(style, isEnabled(), isChecked(), detail::widgetHovered(this), pressed_);
 
   painter->setFont(style.metrics.font);
 
@@ -1057,14 +1059,12 @@ void AdRadio::paintDefaultVariant(QPainter* painter) const {
 }
 
 void AdRadio::enterEvent(QEnterEvent* event) {
-  hovered_ = true;
   bumpGroupZOrder();
   update();
   QRadioButton::enterEvent(event);
 }
 
 void AdRadio::leaveEvent(QEvent* event) {
-  hovered_ = false;
   pressed_ = false;
   update();
   QRadioButton::leaveEvent(event);

@@ -378,6 +378,15 @@ void handleBorderPainting() {
 } // namespace
 
 void runPinnedHideToTopControllerTests() {
+    int notifications = 0;
+    ScreenshotPinnedPointerPresence presence(
+        nullptr, [] { return std::optional<bool>(false); }, [&](bool) { ++notifications; });
+    presence.update(true);
+    presence.update(false);
+    presence.reset();
+    QMetaObject::invokeMethod(&presence.timer(), "timeout");
+    require(notifications == 1, "reset must invalidate an already queued presence deadline");
+
     placement();
     animationAndHover();
     debouncedHandlePresence();

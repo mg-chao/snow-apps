@@ -17,6 +17,8 @@ class ScreenshotPinnedPointerPresence final : public QObject {
         m_timer.setTimerType(Qt::PreciseTimer);
         m_timer.setInterval(100);
         connect(&m_timer, &QTimer::timeout, this, [this] {
+            if (!m_inside)
+                return; // Ignore a deadline invalidated by reset/shutdown.
             if (const auto current = m_resolve(); current && *current) {
                 update(*current);
                 return;

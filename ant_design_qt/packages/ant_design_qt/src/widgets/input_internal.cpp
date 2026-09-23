@@ -1,4 +1,5 @@
 #include "input_internal.h"
+#include "detail/pointer_region.h"
 
 #include <QEnterEvent>
 #include <QPainter>
@@ -48,14 +49,17 @@ QSize InputIconButton::sizeHint() const { return effectiveSlotSize(); }
 
 QSize InputIconButton::minimumSizeHint() const { return effectiveSlotSize(); }
 
+bool InputIconButton::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  return QToolButton::event(event);
+}
+
 void InputIconButton::enterEvent(QEnterEvent* event) {
-  hovered_ = true;
   update();
   QToolButton::enterEvent(event);
 }
 
 void InputIconButton::leaveEvent(QEvent* event) {
-  hovered_ = false;
   update();
   QToolButton::leaveEvent(event);
 }
@@ -77,7 +81,8 @@ void InputIconButton::paintEvent(QPaintEvent* event) {
 
   const QIcon::Mode mode =
       !isEnabled() ? QIcon::Disabled
-                   : (isDown() ? QIcon::Selected : (hovered_ ? QIcon::Active : QIcon::Normal));
+                   : (isDown() ? QIcon::Selected
+                               : (detail::widgetHovered(this) ? QIcon::Active : QIcon::Normal));
   const QSize logicalSize = iconSize().isValid() ? iconSize() : QSize(16, 16);
   const QPixmap pixmap = currentIcon.pixmap(logicalSize, mode, QIcon::Off);
   if (pixmap.isNull()) {

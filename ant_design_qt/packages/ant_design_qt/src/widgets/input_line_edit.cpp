@@ -1,4 +1,5 @@
 #include "input_line_edit.h"
+#include "detail/pointer_region.h"
 
 #include "antd_icons.h"
 #include "detail/timing_hub.h"
@@ -761,6 +762,7 @@ bool AdLineEdit::eventFilter(QObject* watched, QEvent* event) {
 }
 
 bool AdLineEdit::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
   const bool handled = QLineEdit::event(event);
   if (!event || event->type() != QEvent::DynamicPropertyChange) {
     return handled;
@@ -778,7 +780,7 @@ bool AdLineEdit::event(QEvent* event) {
 void AdLineEdit::paintEvent(QPaintEvent* event) {
   const InputVisualStyle style = resolvedStyle();
   InputFramePaintStyle frameStyle;
-  frameStyle.background = resolvedBackgroundColor(style, focused_, hovered_);
+  frameStyle.background = resolvedBackgroundColor(style, focused_, detail::widgetHovered(this));
   frameStyle.border = QColor(0, 0, 0, 0);
   frameStyle.borderWidth = std::max<qreal>(0.0, style.metrics.borderWidth);
   frameStyle.underlined = style.underlined;
@@ -798,7 +800,7 @@ void AdLineEdit::paintEvent(QPaintEvent* event) {
   QLineEdit::paintEvent(event);
 
   frameStyle.background = QColor(0, 0, 0, 0);
-  frameStyle.border = resolvedBorderColor(style, focused_, hovered_);
+  frameStyle.border = resolvedBorderColor(style, focused_, detail::widgetHovered(this));
   QPainter painter(this);
   detail::input_internal::paintInputFrame(&painter, rect(), frameStyle);
 }
@@ -843,14 +845,12 @@ void AdLineEdit::hideEvent(QHideEvent* event) {
 }
 
 void AdLineEdit::enterEvent(QEnterEvent* event) {
-  hovered_ = true;
   updateJoinedZOrder();
   refreshVisualState(false);
   QLineEdit::enterEvent(event);
 }
 
 void AdLineEdit::leaveEvent(QEvent* event) {
-  hovered_ = false;
   updateJoinedZOrder();
   refreshVisualState(false);
   QLineEdit::leaveEvent(event);
@@ -881,12 +881,7 @@ bool AdLineEdit::clearButtonWantsVisible() const {
   if (!clearOverlaysTrailingAction_) {
     return true;
   }
-  const bool childHovered = (clearButton_ && clearButton_->underMouse()) ||
-                            (suffixActionButton_ && suffixActionButton_->underMouse()) ||
-                            (suffixLabel_ && suffixLabel_->underMouse()) ||
-                            (suffixIconLabel_ && suffixIconLabel_->underMouse()) ||
-                            (feedbackIconLabel_ && feedbackIconLabel_->underMouse());
-  return hovered_ || childHovered;
+  return detail::widgetHovered(this);
 }
 
 bool AdLineEdit::clearButtonReservesWidth() const {
@@ -1237,7 +1232,7 @@ InputVisualStyle AdLineEdit::resolvedStyle() const {
   input.status = effectiveStatus();
   input.disabled = !isEnabled();
   input.focused = focused_;
-  input.hovered = hovered_;
+  input.hovered = detail::widgetHovered(this);
   input.baseFont = font();
   return applyDynamicOverrides(adqt::widgets::detail::resolveInputVisualStyle(
                                    input, adqt::theme::ThemeManager::instance().resolve(this)),
@@ -1285,7 +1280,7 @@ void AdLineEdit::updateJoinedZOrder() {
     return;
   }
 
-  if (focused_ || hovered_) {
+  if (focused_ || detail::widgetHovered(this)) {
     raise();
     return;
   }

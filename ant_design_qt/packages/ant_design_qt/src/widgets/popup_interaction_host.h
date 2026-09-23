@@ -34,5 +34,9 @@ class PopupInteractionOwner {
 };
 
 void setPopupInteractionHostOpen(PopupInteractionOwner* owner, bool open);
+// A suspended parent keeps its hover session while the pointer interacts with
+// an actual descendant in the host's popup ownership chain.
+bool popupDescendantContainsPointer(const PopupInteractionOwner* owner, const QWidget* target,
+                                    const QPoint& globalPosition);
 
 }  // namespace adqt::widgets::detail
