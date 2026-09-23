@@ -259,9 +259,9 @@ void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColor
         return;
     }
 
-    // Chrome around the menu (empty viewport, collapse trigger) uses the resolved inline
-    // submenu surface so it stays on the same token as nested items instead of the container.
-    const QColor background = m_menu->resolvedColorTokens().subMenuItemBackground;
+    // Keep the empty sidebar area and collapse trigger on the same surface as
+    // the top-level navigation items.
+    const QColor background = m_menu->resolvedColorTokens().itemBackground;
     applyWindowSurface(this, background, true);
     applyWindowSurface(m_menu, background);
     applyWindowSurface(m_collapseTrigger, background);
