@@ -64,7 +64,8 @@ void scrollingMetadataAndReportCadence() {
     fields.insert(QStringLiteral("backend"), 3);
     fields.insert(QStringLiteral("operation"), QStringLiteral("7"));
     fields.insert(QStringLiteral("window_title"), QStringLiteral("private title"));
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     DiagnosticsService service;
     require(service.initialize(optionsFor(directory.path())), "scrolling diagnostic logger");
     service.record(QtWarningMsg, QStringLiteral("snow_shot.scrolling"),
@@ -84,8 +85,37 @@ void scrollingMetadataAndReportCadence() {
     require(found, "scrolling progress event must be persisted");
 }
 
+void displayMetadata() {
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
+    DiagnosticsService service;
+    require(service.initialize(optionsFor(directory.path())), "display logger initializes");
+    const QJsonObject fields{
+        {QStringLiteral("width"), 1920}, {QStringLiteral("height"), 1080},
+        {QStringLiteral("x"), -1920},    {QStringLiteral("y"), 0},
+        {QStringLiteral("scale"), 2.0},  {QStringLiteral("refresh_rate"), 60.0},
+        {QStringLiteral("count"), 2}};
+    auto input = fields;
+    input.insert(QStringLiteral("display_serial"), QStringLiteral("private-serial"));
+    service.record(QtInfoMsg, QStringLiteral("snow_shot.platform"),
+                   QStringLiteral("display.configuration"), {}, input);
+    const auto exported = service.exportDay(QDate::currentDate()).get();
+    require(exported.success, "display metadata exports");
+    bool found = false;
+    for (const auto& line : read(exported.path).split('\n')) {
+        const auto record = QJsonDocument::fromJson(line).object();
+        if (record.value(QStringLiteral("event")) == QStringLiteral("display.configuration")) {
+            require(record.value(QStringLiteral("fields")).toObject() == fields,
+                    "display geometry and scaling survive while hardware identifiers are excluded");
+            found = true;
+        }
+    }
+    require(found, "display event persisted");
+}
+
 void concurrentRecordsAndSnapshots() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     DiagnosticsService service;
     require(service.initialize(optionsFor(directory.path())), "initialize logger");
     std::vector<std::thread> writers;
@@ -122,7 +152,8 @@ void concurrentRecordsAndSnapshots() {
     require(read(result.path) == snapshot, "published snapshots must be immutable");
 }
 void retentionAndRollover() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     std::atomic<qint64> time{
         QDateTime(QDate(2026, 9, 7), QTime(23, 59), QTimeZone::LocalTime).toMSecsSinceEpoch()};
     auto options = optionsFor(directory.path());
@@ -155,7 +186,8 @@ void retentionAndRollover() {
     require(service.exportDay(QDate(2026, 9, 8)).get().success, "export uses requested day");
 }
 void fallbackPrivacyAndFailures() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     const QString blocked = QDir(directory.path()).filePath(QStringLiteral("file"));
     put(blocked, "not a directory");
     auto options = optionsFor(QDir(directory.path()).filePath(QStringLiteral("fallback")));
@@ -188,7 +220,8 @@ void fallbackPrivacyAndFailures() {
     require(!service.flush(), "flush cannot report success after a failed write");
 }
 void boundedQueueAndRecord() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     DiagnosticsService service;
     auto options = optionsFor(directory.path());
     options.queueRecords = 1;
@@ -216,7 +249,8 @@ void boundedQueueAndRecord() {
     }
 }
 void liveSessionsAndDeletionFailures() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     const QString session = QStringLiteral("cccccccccccccccccccccccccccccccc");
     const QString old =
         QDir(directory.path())
@@ -243,7 +277,8 @@ void liveSessionsAndDeletionFailures() {
             "degraded cleanup limits discretionary snapshots");
 }
 void closedSegmentsAndEmergencyRollover() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     DiagnosticsService service;
     auto options = optionsFor(directory.path());
     std::atomic<qint64> time{QDateTime(QDate(2026, 12, 31), QTime(23, 59)).toMSecsSinceEpoch()};
@@ -281,7 +316,8 @@ void closedSegmentsAndEmergencyRollover() {
 }
 
 void reentrantClockAndFiltering() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     DiagnosticsService service;
     auto options = optionsFor(directory.path());
     options.clock = [&] {
@@ -323,8 +359,10 @@ class FixtureCollector final : public CrashCollector {
 };
 
 void oversizedDumpAndJunctionExclusion() {
-    QTemporaryDir directory;
-    QTemporaryDir external;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
+    QTemporaryDir external(QDir(QDir::tempPath()).canonicalPath() +
+                           QStringLiteral("/snow-diag-external-XXXXXX"));
     const QString protectedFile =
         QDir(external.path())
             .filePath(QStringLiteral("snow-shot-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-000001.log"));
@@ -361,7 +399,8 @@ void oversizedDumpAndJunctionExclusion() {
     require(read(protectedFile) == "unrelated evidence", "cleanup never follows junctions");
 }
 void simultaneousSessionsAndPersistentSnapshot() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     const auto options = optionsFor(directory.path());
     DiagnosticsService first;
     DiagnosticsService second;
@@ -383,7 +422,8 @@ void simultaneousSessionsAndPersistentSnapshot() {
     require(QFileInfo::exists(result.path), "clipboard attachment survives publisher shutdown");
 }
 void handlerLifecycleAndMissingCollector() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     auto options = optionsFor(directory.path());
     options.installMessageHandler = true;
     options.enableCrashCapture = true;
@@ -406,6 +446,7 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     try {
         scrollingMetadataAndReportCadence();
+        displayMetadata();
         concurrentRecordsAndSnapshots();
         retentionAndRollover();
         fallbackPrivacyAndFailures();

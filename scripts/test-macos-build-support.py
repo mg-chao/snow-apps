@@ -276,8 +276,21 @@ if name == 'openssl':
         build = next(i for i, c in enumerate(calls) if '--build' in c)
         pack = next(i for i, c in enumerate(calls) if c[0] == 'cpack')
         self.assertLess(build, pack)
+        symbols = next(i for i, c in enumerate(calls)
+                       if any(arg.endswith('GenerateSnowShotDiagnosticsSymbols-Release.cmake') for arg in c))
+        self.assertLess(build, symbols)
+        self.assertLess(symbols, pack)
         self.assertEqual(calls[pack], ['cpack', '--preset', 'package-snow-shot-macos-arm64-release'])
         self.assertFalse(stale.exists())
+
+    def test_skip_build_packages_existing_symbols_without_rebuilding(self):
+        # Provision the fixture's release cache, then package it without a build.
+        self.run_script("package-snow-shot.sh")
+        self.log.unlink()
+        calls = self.run_script("package-snow-shot.sh", "--skip-build")
+        self.assertFalse(any('--build' in call for call in calls))
+        self.assertTrue(any(any(arg.endswith('GenerateSnowShotDiagnosticsSymbols-Release.cmake')
+                                    for arg in call) for call in calls))
 
     def test_arm_assembler_objects_keep_the_macos_deployment_target(self):
         x264 = (ROOT / 'cmake/vcpkg-overlay-ports/x264/portfile.cmake').read_text()
@@ -544,6 +557,7 @@ class MacOSSigningDeployment(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 deploy = next(c for c in calls if c[0] == 'macdeployqt')
                 self.assertIn('-codesign=' + identity, deploy)
+                self.assertTrue(any(arg.endswith('/Contents/MacOS/crashpad_handler') for arg in deploy))
                 sign = next(c for c in calls if c[0] == 'codesign' and '--sign' in c)
                 self.assertEqual(sign[sign.index('--sign') + 1], identity)
                 finalize = next(i for i, c in enumerate(calls) if 'finalize' in c)
@@ -624,6 +638,7 @@ class MacOSBundle(unittest.TestCase):
                 f"-DQt6_DIR={qt}", "-DCMAKE_BUILD_TYPE=Release",
                 f"-DCMAKE_OSX_ARCHITECTURES={os.uname().machine}")
             run("cmake", "--build", str(out))
+            run(str(out / "snow_shot.app/Contents/MacOS/crashpad_handler"), "--version", cwd="/")
             stale_helper = stage / "snow_shot.app/Contents/MacOS/snow-shot-updater"
             stale_helper.parent.mkdir(parents=True, exist_ok=True)
             stale_helper.write_text("obsolete helper")
@@ -635,6 +650,9 @@ class MacOSBundle(unittest.TestCase):
             self.assertEqual(info, "snow-shot.icns")
             self.assertTrue((app / "Contents/Resources/snow-shot.icns").is_file())
             self.assertTrue((app / "Contents/PlugIns/platforms/libqoffscreen.dylib").is_file())
+            collector = app / "Contents/MacOS/crashpad_handler"
+            self.assertTrue(collector.is_file())
+            run(str(collector), "--version", cwd="/")
             for name in ("snow_shot", "snow-ocr-process"):
                 binary = app / "Contents/MacOS" / name
                 run(str(binary), cwd="/")

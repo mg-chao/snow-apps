@@ -1,0 +1,16 @@
+# Generated per configuration; can run without rebuilding for --skip-build packaging.
+set(_symbols "@CMAKE_BINARY_DIR@/symbols")
+file(MAKE_DIRECTORY "${_symbols}")
+execute_process(COMMAND "@SNOW_DSYMUTIL@" "$<TARGET_FILE:snow_shot>"
+    -o "${_symbols}/snow_shot.dSYM" COMMAND_ERROR_IS_FATAL ANY)
+# Cargo creates the worker dSYM while temporary native archive members still
+# exist. Running dsymutil later would silently lose those frames' debug info.
+set(_worker_symbols "$<TARGET_FILE:snow_ocr_process>.dSYM")
+if(NOT IS_DIRECTORY "${_worker_symbols}")
+    message(FATAL_ERROR "OCR worker symbols are missing; rebuild snow_ocr_process with packed debug info")
+endif()
+# Cargo exposes this as a symlink to the hashed dSYM under deps/. Copy its
+# contents so the archived symbols remain usable after cleaning the Cargo tree.
+file(REAL_PATH "${_worker_symbols}" _worker_symbols_source)
+file(REMOVE_RECURSE "${_symbols}/snow-ocr-process.dSYM")
+file(COPY "${_worker_symbols_source}/" DESTINATION "${_symbols}/snow-ocr-process.dSYM")

@@ -25,6 +25,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
     add_compile_options(/MP)
+elseif(APPLE)
+    # Preserve source/line information in optimized objects for release dSYMs.
+    # Debug already supplies -g through CMake's configuration flags.
+    add_compile_options("$<$<NOT:$<CONFIG:Debug>>:-g>")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

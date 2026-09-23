@@ -13,6 +13,9 @@
 #include "widgets/button.h"
 #include "widgets/popconfirm.h"
 #include "widgets/scroll_area.h"
+#include "snow_shot/diagnostics/diagnostics.h"
+#include <QFile>
+#include <QJsonDocument>
 #include <QApplication>
 #include <algorithm>
 #include <QLabel>
@@ -65,6 +68,46 @@ class FakePermissions final : public AppPermissionBackend {
                                   : canOpen;
     }
 };
+void permissionDiagnostics() {
+    using namespace snow_shot::diagnostics;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-permissions-XXXXXX"));
+    DiagnosticsOptions options;
+    options.directories = {directory.path()};
+    options.enableCrashCapture = false;
+    options.installMessageHandler = false;
+    options.mirrorToConsole = false;
+    auto& diagnostics = DiagnosticsService::instance();
+    require(diagnostics.initialize(options), "permission diagnostics initialize");
+    auto fake = std::make_unique<FakePermissions>();
+    auto* native = fake.get();
+    native->value.statuses.fill(S::Granted);
+    AppPermissionService service(std::move(fake));
+    service.refresh();
+    flush();
+    service.refresh();
+    flush();
+    native->value.statuses[0] = S::Denied;
+    service.refresh();
+    flush();
+    auto exported = diagnostics.exportDay(QDate::currentDate()).get();
+    require(exported.success, "permission diagnostics export");
+    QFile file(exported.path);
+    require(file.open(QIODevice::ReadOnly), "permission diagnostics readable");
+    int changes = 0;
+    bool denied = false;
+    for (const auto& line : file.readAll().split('\n')) {
+        const auto record = QJsonDocument::fromJson(line).object();
+        if (record.value(QStringLiteral("event")) != QStringLiteral("permission.changed"))
+            continue;
+        ++changes;
+        const auto fields = record.value(QStringLiteral("fields")).toObject();
+        denied |= fields.value(QStringLiteral("operation")) == QStringLiteral("screen-recording") &&
+                  fields.value(QStringLiteral("status")) == QStringLiteral("denied");
+    }
+    require(changes == 5 && denied, "only permission transitions are logged with stable IDs");
+    diagnostics.shutdown();
+}
 void snapshotsAndLifecycle() {
     auto fake = std::make_unique<FakePermissions>();
     auto* native = fake.get();
@@ -517,6 +560,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("app-permissions-tests"));
+    permissionDiagnostics();
     snapshotsAndLifecycle();
     routingPolicy();
     pageAndAlerts();

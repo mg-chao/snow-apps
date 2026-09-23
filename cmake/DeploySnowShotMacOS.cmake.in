@@ -33,6 +33,7 @@ if(NOT @SNOW_SHOT_QT_STATIC@)
     endif()
     execute_process(COMMAND "@SNOW_MACDEPLOYQT@" "${_app}"
         "-executable=${_app}/Contents/MacOS/snow-ocr-process"
+        "-executable=${_app}/Contents/MacOS/crashpad_handler"
         "-executable=${_app}/Contents/MacOS/libonnxruntime.dylib"
         "-executable=${_app}/Contents/PlugIns/platforms/libqoffscreen.dylib"
         "-libpath=${_snow_vcpkg_library_dir}"

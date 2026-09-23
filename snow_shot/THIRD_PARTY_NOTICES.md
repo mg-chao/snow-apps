@@ -40,7 +40,7 @@ Snow Shot downloads the matching mobile/server bundles from
 https://www.modelscope.cn/models/mgchao/SnowShotOCR and pins their sizes and
 SHA-256 hashes in `packaging/snow-shot-ocr-asset-manifest.json`.
 
-Local crash diagnostics use Crashpad (Apache-2.0), pinned by the vcpkg baseline
+Local crash diagnostics on Windows and macOS use Crashpad (Apache-2.0), pinned by the vcpkg baseline
 and the repository's Crashpad overlay. The client, helper, Chromium base code,
 and their bundled notices are included in the vcpkg license collection. The
 Qt-independent OCR bridge and shared Rust panic hook are Apache-2.0 code under

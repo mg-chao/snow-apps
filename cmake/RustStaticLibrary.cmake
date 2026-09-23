@@ -178,7 +178,8 @@ function(snow_add_rust_static_libraries batch_name)
             set(_snow_rust_deployment_target "${CMAKE_OSX_DEPLOYMENT_TARGET}")
         endif()
         list(APPEND _cargo_environment
-            "MACOSX_DEPLOYMENT_TARGET=${_snow_rust_deployment_target}")
+            "MACOSX_DEPLOYMENT_TARGET=${_snow_rust_deployment_target}"
+            "CARGO_PROFILE_RELEASE_DEBUG=2" "CARGO_PROFILE_RELEASE_FAST_DEBUG=2")
     endif()
     if(_libclang_dir)
         list(APPEND _cargo_environment "LIBCLANG_PATH=${_libclang_dir}")

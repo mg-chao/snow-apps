@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/apppermissionservice.h"
+#include "snow_shot/diagnostics/diagnostics.h"
 #include <QCoreApplication>
 #include <QPointer>
 #include <algorithm>
@@ -92,6 +93,40 @@ AppPermissionService::AppPermissionService(std::unique_ptr<AppPermissionBackend>
     connect(&m_refreshTimer, &QTimer::timeout, this, [this] {
         const auto next = m_backend->query();
         if (next != m_snapshot) {
+            for (const auto permission :
+                 {AppPermission::ScreenRecording, AppPermission::Accessibility,
+                  AppPermission::InputMonitoring, AppPermission::Microphone}) {
+                if (next.status(permission) != m_snapshot.status(permission)) {
+                    const char* status = "error";
+                    switch (next.status(permission)) {
+                    case AppPermissionStatus::Checking:
+                        status = "checking";
+                        break;
+                    case AppPermissionStatus::Granted:
+                        status = "granted";
+                        break;
+                    case AppPermissionStatus::Missing:
+                        status = "missing";
+                        break;
+                    case AppPermissionStatus::NotDetermined:
+                        status = "not-determined";
+                        break;
+                    case AppPermissionStatus::Denied:
+                        status = "denied";
+                        break;
+                    case AppPermissionStatus::Restricted:
+                        status = "restricted";
+                        break;
+                    case AppPermissionStatus::Error:
+                        break;
+                    }
+                    diagnostics::logEvent(
+                        QStringLiteral("snow_shot.permissions"),
+                        QStringLiteral("permission.changed"),
+                        {{QStringLiteral("operation"), appPermissionId(permission)},
+                         {QStringLiteral("status"), QString::fromLatin1(status)}});
+                }
+            }
             m_snapshot = next;
             emit changed();
         }

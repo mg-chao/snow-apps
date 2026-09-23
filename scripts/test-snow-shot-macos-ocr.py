@@ -166,6 +166,26 @@ class MacOSOcrAssets(unittest.TestCase):
         self.assertFalse((self.runtime / dependency.name).exists())
         self.assertTrue((self.runtime / 'libonnxruntime.dylib').is_file())
 
+    def test_worker_crashpad_dependency_is_staged_without_an_ort_dependency(self):
+        library = self.root / 'upstream/libonnxruntime.dylib'
+        library.parent.mkdir()
+        library.write_bytes(ocr.ARM64_HEADER + bytes(24))
+        dependency = library.parent / 'libz.dylib'
+        dependency.write_bytes(ocr.ARM64_HEADER + bytes(24))
+        worker = self.runtime / 'snow-ocr-process'
+        def inspect(*args):
+            path = Path(args[-1])
+            if '-D' in args:
+                return f'{path}:\n@rpath/{path.name}'
+            loads = '\n\t@rpath/libz.dylib (compatibility version 1.0.0)' if path == worker.resolve() else ''
+            return f'{path}:\n\t@rpath/{path.name} (compatibility version 1.0.0){loads}'
+        self.run.side_effect = inspect
+        ocr.stage_native_dependencies(library, self.runtime, worker)
+        self.assertEqual((self.runtime / dependency.name).read_bytes(), dependency.read_bytes())
+        ocr.remove_development_libraries(self.runtime)
+        self.assertFalse((self.runtime / dependency.name).exists())
+        self.assertTrue(worker.is_file())
+
     def test_native_closure_is_copied_and_rewritten_without_build_rpaths(self):
         app = self.root / 'Native App.app'
         worker = app / 'Contents/MacOS/snow_shot'

@@ -376,11 +376,16 @@ if(APPLE AND NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
     set(SNOW_SHOT_OCR_PROCESS_FEATURES dynamic-onnx-runtime)
 endif()
 
-if(WIN32)
+if(WIN32 OR APPLE)
     list(APPEND SNOW_SHOT_OCR_PROCESS_FEATURES crash-diagnostics)
     list(APPEND SNOW_SHOT_OCR_PROCESS_ENVIRONMENT
         "SNOW_CRASHPAD_LINK_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-crash-$<CONFIG>.rsp"
         "CARGO_PROFILE_RELEASE_DEBUG=2" "CARGO_PROFILE_RELEASE_FAST_DEBUG=2")
+endif()
+if(APPLE)
+    list(APPEND SNOW_SHOT_OCR_PROCESS_ENVIRONMENT
+        "CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=packed"
+        "CARGO_PROFILE_RELEASE_FAST_SPLIT_DEBUGINFO=packed")
 endif()
 snow_add_rust_executable(snow_ocr_process
     PACKAGE snow-ocr-process
@@ -393,7 +398,7 @@ snow_add_rust_executable(snow_ocr_process
     ENVIRONMENT ${SNOW_SHOT_OCR_PROCESS_ENVIRONMENT}
 )
 
-if(WIN32)
+if(WIN32 OR APPLE)
     add_dependencies(snow_ocr_process_build snow_ocr_diagnostics_bridge)
 endif()
 
@@ -916,7 +921,8 @@ add_library(snow_shot_permissions STATIC
     include/snow_shot/presentation/apppermissionservice.h
     src/presentation/services/apppermissionservice.cpp)
 target_include_directories(snow_shot_permissions PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_permissions PUBLIC Qt6::Widgets snow_shot_shortcuts)
+target_link_libraries(snow_shot_permissions PUBLIC Qt6::Widgets snow_shot_shortcuts
+    PRIVATE snow_shot_diagnostics)
 if(APPLE)
     target_sources(snow_shot_permissions PRIVATE src/platform/macos/apppermissionbackend.mm)
     target_link_libraries(snow_shot_permissions PRIVATE
@@ -1552,6 +1558,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(WIN32)
         set_tests_properties(snow-shot-diagnostics-tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>\;$ENV{PATH}")
+    endif()
+    if(WIN32 OR APPLE)
         add_executable(snow-shot-diagnostics-crash-tests tests/diagnostics_crash_tests.cpp)
         snow_add_rust_static_library(snow_diagnostics_test
             PACKAGE snow-diagnostics-test
@@ -1563,7 +1571,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_compile_definitions(snow-shot-diagnostics-crash-tests PRIVATE
             SNOW_TEST_CRASHPAD_HANDLER="${SNOW_CRASHPAD_HANDLER}")
         add_test(NAME snow-shot-diagnostics-crash-tests COMMAND snow-shot-diagnostics-crash-tests)
-        set_tests_properties(snow-shot-diagnostics-crash-tests PROPERTIES LABELS "unit;windows" TIMEOUT 180)
+        set_tests_properties(snow-shot-diagnostics-crash-tests PROPERTIES LABELS "unit;crash" TIMEOUT 180)
+        if(APPLE)
+            set_property(TEST snow-shot-diagnostics-crash-tests APPEND PROPERTY LABELS macos)
+        else()
+            set_property(TEST snow-shot-diagnostics-crash-tests APPEND PROPERTY LABELS windows)
+        endif()
     endif()
 
     snow_shot_offscreen_qpa_environment(_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT)

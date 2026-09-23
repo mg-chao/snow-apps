@@ -302,8 +302,10 @@ int main(int argc, char* argv[]) {
         if (!server.listen(pipe)) {
             return 6;
         }
-        const QString result = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                                   .filePath(pipe + QStringLiteral(".txt"));
+        const QString result =
+            QDir(QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                     .canonicalPath())
+                .filePath(pipe + QStringLiteral(".txt"));
         const QStringList args{
             QStringLiteral("--launch"), QStringLiteral("--recovery"),
             QStringLiteral("--target"), root,
@@ -357,10 +359,15 @@ int main(int argc, char* argv[]) {
         QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
             .filePath(QStringLiteral("logs")));
     diagnosticsOptions.directories.append(
-        QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+        QDir(QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).canonicalPath())
             .filePath(QStringLiteral("SnowShot/%1/logs").arg(applicationName)));
+#ifdef Q_OS_MACOS
+    diagnosticsOptions.handlerPath =
+        QDir(selectedStorage.executableDirectory).filePath(QStringLiteral("crashpad_handler"));
+#else
     diagnosticsOptions.handlerPath =
         QDir(selectedStorage.executableDirectory).filePath(QStringLiteral("crashpad_handler.exe"));
+#endif
     diagnosticsOptions.version = QStringLiteral(SNOW_DIAGNOSTICS_VERSION);
     diagnosticsOptions.revision = QStringLiteral(SNOW_DIAGNOSTICS_REVISION);
     diagnosticsOptions.buildConfiguration = QStringLiteral(SNOW_DIAGNOSTICS_BUILD);
@@ -387,6 +394,37 @@ int main(int argc, char* argv[]) {
                                      QStringLiteral("application.platform"),
                                      {{QStringLiteral("backend"), QGuiApplication::platformName()},
                                       {QStringLiteral("os"), QSysInfo::kernelVersion()}});
+#ifdef Q_OS_MACOS
+    const auto logDisplay = [](QScreen* screen) {
+        const QRect geometry = screen->geometry();
+        snow_shot::diagnostics::logEvent(
+            QStringLiteral("snow_shot.platform"), QStringLiteral("display.configuration"),
+            {{QStringLiteral("width"), geometry.width()},
+             {QStringLiteral("height"), geometry.height()},
+             {QStringLiteral("x"), geometry.x()},
+             {QStringLiteral("y"), geometry.y()},
+             {QStringLiteral("scale"), screen->devicePixelRatio()},
+             {QStringLiteral("refresh_rate"), screen->refreshRate()},
+             {QStringLiteral("count"), QGuiApplication::screens().size()}});
+    };
+    const auto observeDisplay = [&app, logDisplay](QScreen* screen) {
+        logDisplay(screen);
+        QObject::connect(screen, &QScreen::geometryChanged, &app,
+                         [screen, logDisplay] { logDisplay(screen); });
+        QObject::connect(screen, &QScreen::logicalDotsPerInchChanged, &app,
+                         [screen, logDisplay] { logDisplay(screen); });
+        QObject::connect(screen, &QScreen::refreshRateChanged, &app,
+                         [screen, logDisplay] { logDisplay(screen); });
+    };
+    for (auto* screen : QGuiApplication::screens())
+        observeDisplay(screen);
+    QObject::connect(&app, &QGuiApplication::screenAdded, &app, observeDisplay);
+    QObject::connect(&app, &QGuiApplication::screenRemoved, &app, [] {
+        snow_shot::diagnostics::logEvent(
+            QStringLiteral("snow_shot.platform"), QStringLiteral("display.removed"),
+            {{QStringLiteral("count"), QGuiApplication::screens().size()}});
+    });
+#endif
     static_cast<void>(snow_shot::presentation::capture::resolveAutoScreenshotApiMode());
 #if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION)
     snow_shot::presentation::pin_perf::configureTrace(

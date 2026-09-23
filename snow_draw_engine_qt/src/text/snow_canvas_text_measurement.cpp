@@ -39,7 +39,7 @@ NaturalTextLayoutCache::measure(const QString& text, const QFont& baseFont,
     }
     const auto measured = snow_canvas_text_layout::measureNaturalTextLayout(text, baseFont, item);
     ++m_measurementCount;
-    const qsizetype cost = key.size() + sizeof(measured);
+    const qsizetype cost = key.size() + static_cast<qsizetype>(sizeof(measured));
     if (cost <= m_layouts.maxCost()) {
         m_layouts.insert(key, new snow_canvas_text_layout::TextMeasuredLayout(measured), cost);
     }

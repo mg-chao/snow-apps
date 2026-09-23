@@ -108,6 +108,41 @@ if(NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
         COMPONENT SnowShot)
 endif()
 
+# Keep the crash collector inside the app, beside the main executable and worker.
+set(_snow_handler_zlib "")
+if(NOT SNOW_SHOT_RELEASE_STATIC)
+    set(_snow_handler_zlib "$<TARGET_FILE:ZLIB::ZLIB>")
+endif()
+add_custom_command(TARGET snow_shot POST_BUILD
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSNOW_HANDLER_SOURCE=${SNOW_CRASHPAD_HANDLER}"
+        "-DSNOW_HANDLER_DIRECTORY=$<TARGET_FILE_DIR:snow_shot>"
+        "-DSNOW_HANDLER_ZLIB=${_snow_handler_zlib}"
+        -P "${CMAKE_CURRENT_LIST_DIR}/StageSnowShotCrashHandler.cmake"
+    VERBATIM)
+install(PROGRAMS "${SNOW_CRASHPAD_HANDLER}"
+    DESTINATION "snow_shot.app/Contents/MacOS" COMPONENT SnowShot)
+
+# Archive UUID-matched symbols outside the app bundle for offline symbolication.
+find_program(SNOW_DSYMUTIL dsymutil REQUIRED)
+if(TARGET snow_ocr_process)
+    configure_file("${CMAKE_CURRENT_LIST_DIR}/GenerateSnowShotDiagnosticsSymbols.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/GenerateSnowShotDiagnosticsSymbols.cmake.in" @ONLY)
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/GenerateSnowShotDiagnosticsSymbols-$<CONFIG>.cmake"
+        INPUT "${CMAKE_CURRENT_BINARY_DIR}/GenerateSnowShotDiagnosticsSymbols.cmake.in")
+    add_custom_target(snow-shot-diagnostics-symbols
+        COMMAND "${CMAKE_COMMAND}" -P
+            "${CMAKE_CURRENT_BINARY_DIR}/GenerateSnowShotDiagnosticsSymbols-$<CONFIG>.cmake"
+        DEPENDS snow_shot snow_ocr_process
+        VERBATIM)
+endif()
+target_compile_options(snow_shot PRIVATE -g)
+foreach(_snow_diagnostics_target snow_shot_diagnostics snow_shot_crash_bridge snow_ocr_diagnostics_bridge)
+    if(TARGET ${_snow_diagnostics_target})
+        target_compile_options(${_snow_diagnostics_target} PRIVATE -g)
+    endif()
+endforeach()
+
 set(SNOW_MACOS_OCR_ASSETS_ENABLED OFF)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(SNOW_MACOS_OCR_TOOL "${CMAKE_CURRENT_LIST_DIR}/../scripts/snow-shot-macos-ocr.py")
