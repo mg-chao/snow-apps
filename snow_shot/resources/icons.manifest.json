@@ -791,6 +791,54 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ScreenshotRegionAdd",
+      "name": "screenshot-region-add",
+      "source": "../src/presentation/components/icons/resources/screenshot-region-add.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotRegionCurved",
+      "name": "screenshot-region-curved",
+      "source": "../src/presentation/components/icons/resources/screenshot-region-curved.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotRegionFreehand",
+      "name": "screenshot-region-freehand",
+      "source": "../src/presentation/components/icons/resources/screenshot-region-freehand.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotRegionPolyline",
+      "name": "screenshot-region-polyline",
+      "source": "../src/presentation/components/icons/resources/screenshot-region-polyline.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotRegionRectangle",
+      "name": "screenshot-region-rectangle",
+      "source": "../src/presentation/components/icons/resources/screenshot-region-rectangle.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotRegionReduce",
+      "name": "screenshot-region-reduce",
+      "source": "../src/presentation/components/icons/resources/screenshot-region-reduce.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ScrollingHorizontal",
       "name": "scrolling-horizontal",
       "source": "../src/presentation/components/icons/resources/scrolling-horizontal.svg",
