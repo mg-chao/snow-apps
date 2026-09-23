@@ -63,6 +63,7 @@ The limits are 8 MiB for metadata, 20,000 files and 4 GiB expanded payload per p
 | Interrupted transfer with a strong ETag | Resume with Range and If-Range; verify full signed size/hash |
 | Signature failure or changed same-version payload | Reject; do not apply or trust new state |
 | Lower SemVer than the newest observed feed | Reject replay/downgrade |
+| Check-only mode discovers a newer release | Show a system notification that opens About |
 | Verified payload ready | Notify in tray and About; never restart without explicit confirmation |
 | Capture/recording/export active or settings cannot flush | Refuse restart; check again at the final helper handoff |
 | User declines elevation or the ready/go handshake fails | Keep the current app running |
@@ -370,9 +371,9 @@ This website compatibility endpoint is unsigned; it only supplies version displa
 never supplies an executable, installation instructions, or a navigation URL. Publish the
 matching macOS installation packages before announcing a shared version on this endpoint.
 
-A newer version discovered automatically shows a nonmodal notice with **Download from website**
-and **Later**, once per version per session. The browser opens only on the user's download
-action, using the configured official website URL. About retains the available version and
-same website action. Background failures stay quiet; manual failures display a retry action.
+A newer version discovered automatically shows a system notification once per version per
+session. Clicking it opens About, where **Download from website** uses the configured official
+website URL. About retains the available version. Background failures stay quiet; manual
+failures display a retry action.
 macOS does not build or bundle the Windows updater helper and never downloads or installs an
 update in-app. The Windows signed-metadata and installation flow is unchanged.

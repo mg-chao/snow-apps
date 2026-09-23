@@ -469,25 +469,6 @@
         </message>
     </context>
     <context>
-        <name>UpdateNotice</name>
-        <message>
-            <source>Download from website</source>
-            <translation>前往官網下載</translation>
-        </message>
-        <message>
-            <source>Later</source>
-            <translation>稍後</translation>
-        </message>
-        <message>
-            <source>Snow Shot %1 is available. Download the installation package from the official website.</source>
-            <translation>Snow Shot %1 已發佈。請前往官方網站下載安裝套件。</translation>
-        </message>
-        <message>
-            <source>Update available</source>
-            <translation>發現新版本</translation>
-        </message>
-    </context>
-    <context>
         <name>UpdateService</name>
         <message>
             <source>Could not check for updates. Please try again.</source>

@@ -814,7 +814,6 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/settings/textrecognitionacceleration.h
     include/snow_shot/presentation/styles/thememanager.h
     src/presentation/components/aboutpagewidget.cpp
-    src/presentation/components/updatenotice.cpp
     src/presentation/components/infotooltipicon.cpp
     src/presentation/components/globalmouserow.cpp
     src/presentation/components/pathinput.cpp
