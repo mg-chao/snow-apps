@@ -37,7 +37,7 @@ enum class ScreenshotCompressionLevel {
 
 struct ScreenshotImageEncodingOptions {
     int quality = 100;
-    ScreenshotCompressionLevel compressionLevel = ScreenshotCompressionLevel::Low;
+    ScreenshotCompressionLevel compressionLevel = ScreenshotCompressionLevel::Medium;
 
     friend bool operator==(const ScreenshotImageEncodingOptions&,
                            const ScreenshotImageEncodingOptions&) = default;

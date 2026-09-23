@@ -369,6 +369,13 @@ void retriesNextDirectoryAndPublishesFileOnlyClipboardData() {
 }
 
 void codecCapabilitiesAndEncodingOptionsMatchTheOutputContract() {
+    require(ScreenshotImageEncodingOptions{}.compressionLevel ==
+                    ScreenshotCompressionLevel::Medium &&
+                ScreenshotImageFileService::compressionLevelForKey({}) ==
+                    ScreenshotCompressionLevel::Medium &&
+                ScreenshotImageFileService::compressionLevelForKey(QStringLiteral("low")) ==
+                    ScreenshotCompressionLevel::Low,
+            "compression must default to medium while preserving explicit low");
     for (const auto format : {ScreenshotImageFileFormat::Jpeg, ScreenshotImageFileFormat::Webp,
                               ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
                               ScreenshotImageFileFormat::Pdf}) {
