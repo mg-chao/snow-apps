@@ -499,6 +499,7 @@ fn display_arrow_to_document_arrow(
     .unwrap_or_else(|| ArrowData {
         linear_kind: LinearElementKind::Arrow,
         text_element_id: None,
+        text_path_fraction: None,
         x: 0.0,
         y: 0.0,
         width: 0.0,

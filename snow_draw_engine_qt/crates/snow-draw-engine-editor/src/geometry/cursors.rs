@@ -12,6 +12,7 @@ pub(crate) fn selection_edit_label(mode: SelectionEditMode) -> &'static str {
 pub(crate) fn arrow_edit_label(mode: ArrowEditMode) -> &'static str {
     match mode {
         ArrowEditMode::Move => "move arrow",
+        ArrowEditMode::Label => "move arrow text",
         ArrowEditMode::Endpoint(_) => "drag arrow endpoint",
         ArrowEditMode::Point(_) => "drag arrow point",
         ArrowEditMode::FocusPoint(_) => "drag arrow focus point",
@@ -45,7 +46,7 @@ pub(crate) fn active_cursor_for_selection_target(
 
 pub(crate) fn hover_cursor_for_arrow_target(target: ArrowHitTarget) -> CursorStyle {
     match target {
-        ArrowHitTarget::Move => CursorStyle::Move,
+        ArrowHitTarget::Move | ArrowHitTarget::Label => CursorStyle::Move,
         ArrowHitTarget::Endpoint(_) | ArrowHitTarget::Point(_) | ArrowHitTarget::FocusPoint(_) => {
             CursorStyle::Grab
         }
@@ -55,7 +56,7 @@ pub(crate) fn hover_cursor_for_arrow_target(target: ArrowHitTarget) -> CursorSty
 
 pub(crate) fn active_cursor_for_arrow_target(target: ArrowHitTarget) -> CursorStyle {
     match target {
-        ArrowHitTarget::Move => CursorStyle::Move,
+        ArrowHitTarget::Move | ArrowHitTarget::Label => CursorStyle::Move,
         ArrowHitTarget::Endpoint(_) | ArrowHitTarget::Point(_) | ArrowHitTarget::FocusPoint(_) => {
             CursorStyle::Crosshair
         }
@@ -65,7 +66,7 @@ pub(crate) fn active_cursor_for_arrow_target(target: ArrowHitTarget) -> CursorSt
 
 pub(crate) fn active_cursor_for_arrow_mode(mode: ArrowEditMode) -> CursorStyle {
     match mode {
-        ArrowEditMode::Move => CursorStyle::Move,
+        ArrowEditMode::Move | ArrowEditMode::Label => CursorStyle::Move,
         ArrowEditMode::Endpoint(_) | ArrowEditMode::Point(_) | ArrowEditMode::FocusPoint(_) => {
             CursorStyle::Crosshair
         }

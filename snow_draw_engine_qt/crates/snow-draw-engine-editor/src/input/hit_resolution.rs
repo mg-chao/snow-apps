@@ -13,9 +13,6 @@ impl Editor {
         include_selection_handles: bool,
     ) -> CanvasHit {
         let labels = self.arrow_text_previews(document);
-        let label_hit = labels
-            .iter()
-            .any(|(_, text)| text_hit_test(text, canvas_point, 0.0));
         let single_rect = self
             .selected_single_rectangle_snapshot(document)
             .map(|(_, rect)| rect);
@@ -50,7 +47,6 @@ impl Editor {
             && include_selection_handles
             && let Some((arrow_id, arrow)) = single_arrow.clone()
             && let Some(target) = self.arrow_hit_target(document, arrow_id, &arrow, canvas_point)
-            && !(label_hit && matches!(target, crate::state::ArrowHitTarget::Segment(_)))
         {
             return CanvasHit::ArrowHandle(target);
         }
@@ -74,7 +70,6 @@ impl Editor {
         if include_selection_handles
             && let Some((arrow_id, arrow)) = single_arrow
             && let Some(target) = self.arrow_hit_target(document, arrow_id, &arrow, canvas_point)
-            && !(label_hit && matches!(target, crate::state::ArrowHitTarget::Segment(_)))
         {
             return CanvasHit::ArrowHandle(target);
         }
@@ -275,6 +270,115 @@ mod tests {
             buttons: PointerButtons::default(),
             modifiers: Modifiers::default(),
         })
+    }
+
+    #[test]
+    fn selected_arrow_controls_win_over_an_overlapping_bound_label() {
+        let mut document = DocumentModel::new();
+        let arrow_id = document.allocate_element_id();
+        let text_id = document.allocate_element_id();
+        let mut arrow = test_arrow(&[
+            Point::new(-100.0, 0.0),
+            Point::new(0.0, 0.0),
+            Point::new(100.0, 0.0),
+        ]);
+        arrow.text_element_id = Some(text_id);
+        let mut transaction = Transaction::new("arrow with overlapping label");
+        transaction.insert_arrow(arrow_id, ElementMeta::default(), arrow);
+        transaction.insert_text(
+            text_id,
+            ElementMeta::default(),
+            TextData {
+                layout: snow_draw_engine_document::TextLayoutSize::new(300.0, 60.0),
+                ..test_text(Point::new(0.0, 0.0))
+            },
+        );
+        document.apply_transaction(transaction).unwrap();
+        let editor = selected_arrow_editor(&document, arrow_id);
+        for (point, expected) in [
+            (
+                Point::new(-100.0, 0.0),
+                ArrowHitTarget::Endpoint(ArrowEndpointEdge::Start),
+            ),
+            (Point::new(0.0, 0.0), ArrowHitTarget::Point(1)),
+            (Point::new(-75.0, 0.0), ArrowHitTarget::Label),
+        ] {
+            assert_eq!(
+                editor.resolve_canvas_hit(&document, editor.tool_policy(), point, true),
+                CanvasHit::ArrowHandle(expected),
+                "hit at {point:?}"
+            );
+        }
+        let mut editor = selected_arrow_editor(&document, arrow_id);
+        editor.set_surface_size(400, 300).unwrap();
+        editor
+            .process_input(&document, pointer_down_at(Point::new(100.0, 150.0)))
+            .unwrap();
+        assert!(matches!(
+            editor.state.interaction,
+            InteractionState::EditingArrow(EditArrowState {
+                mode: ArrowEditMode::Endpoint(ArrowEndpointEdge::Start),
+                ..
+            })
+        ));
+
+        let mut segment_document = DocumentModel::new();
+        let segment_arrow_id = segment_document.allocate_element_id();
+        let segment_text_id = segment_document.allocate_element_id();
+        let mut segment_arrow = test_arrow(&[Point::new(-100.0, 0.0), Point::new(100.0, 0.0)]);
+        segment_arrow.text_element_id = Some(segment_text_id);
+        let mut transaction = Transaction::new("two-point arrow with overlapping label");
+        transaction.insert_arrow(segment_arrow_id, ElementMeta::default(), segment_arrow);
+        transaction.insert_text(
+            segment_text_id,
+            ElementMeta::default(),
+            TextData {
+                layout: snow_draw_engine_document::TextLayoutSize::new(300.0, 60.0),
+                ..test_text(Point::new(0.0, 0.0))
+            },
+        );
+        segment_document.apply_transaction(transaction).unwrap();
+        let editor = selected_arrow_editor(&segment_document, segment_arrow_id);
+        assert_eq!(
+            editor.resolve_canvas_hit(
+                &segment_document,
+                editor.tool_policy(),
+                Point::new(0.0, 0.0),
+                true
+            ),
+            CanvasHit::ArrowHandle(ArrowHitTarget::Segment(1))
+        );
+        assert!(
+            editor
+                .arrow_handle_states(
+                    &segment_document,
+                    segment_arrow_id,
+                    segment_document.arrow(segment_arrow_id).unwrap()
+                )
+                .iter()
+                .any(|handle| handle.kind == ArrowHandleKind::Segment)
+        );
+        assert_eq!(
+            editor.resolve_canvas_hit(
+                &segment_document,
+                editor.tool_policy(),
+                Point::new(30.0, 0.0),
+                true
+            ),
+            CanvasHit::ArrowHandle(ArrowHitTarget::Label)
+        );
+        let mut editor = selected_arrow_editor(&segment_document, segment_arrow_id);
+        editor.set_surface_size(400, 300).unwrap();
+        editor
+            .process_input(&segment_document, pointer_down_at(Point::new(200.0, 150.0)))
+            .unwrap();
+        assert!(matches!(
+            editor.state.interaction,
+            InteractionState::EditingArrow(EditArrowState {
+                mode: ArrowEditMode::Segment(1),
+                ..
+            })
+        ));
     }
 
     #[test]

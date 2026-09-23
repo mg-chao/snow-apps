@@ -219,7 +219,7 @@ bool ScreenshotPinnedEditController::eventFilter(QObject* watched, QEvent* event
         }
     }
 
-    if (event->type() == QEvent::Wheel) {
+    if (event->type() == QEvent::Wheel && !m_canvas.hasActiveTextEditing()) {
         auto* wheelEvent = static_cast<QWheelEvent*>(event);
         const int deltaY = !wheelEvent->pixelDelta().isNull() ? wheelEvent->pixelDelta().y()
                                                               : wheelEvent->angleDelta().y();

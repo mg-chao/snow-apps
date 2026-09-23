@@ -662,19 +662,7 @@ impl Editor {
             });
         }
 
-        let labels = self.arrow_text_previews(document);
-        let label = arrow.text_element_id.and_then(|id| {
-            labels
-                .iter()
-                .find(|(text_id, _)| *text_id == id)
-                .map(|(_, text)| text)
-        });
         for (_, midpoint, fixed_segment) in self.visible_arrow_segment_midpoints(arrow) {
-            if label
-                .is_some_and(|text| snow_draw_engine_document::text_hit_test(text, midpoint, 0.0))
-            {
-                continue;
-            }
             handles.push(ArrowHandleState {
                 kind: ArrowHandleKind::Segment,
                 center: midpoint,
@@ -772,6 +760,11 @@ impl Editor {
             if point_distance(midpoint, canvas_point) <= addable_radius {
                 return Some(ArrowHitTarget::Segment(index));
             }
+        }
+
+        // Every visible control handle takes precedence over the bound label.
+        if self.arrow_label_hit(document, arrow_id, canvas_point) {
+            return Some(ArrowHitTarget::Label);
         }
 
         arrow_hit_test(

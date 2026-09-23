@@ -1,5 +1,6 @@
 use super::*;
 use snow_draw_engine_core::arrow::ArrowEndpointEdge;
+use snow_draw_engine_document::{arrow_text_anchor, arrow_text_path_fraction_at};
 
 impl Editor {
     pub(crate) fn update_arrow_edit_preview(
@@ -103,6 +104,21 @@ impl Editor {
                 next_mode: None,
                 suggested_binding: None,
             },
+            ArrowEditMode::Label => {
+                let mut arrow = state.original_arrow.clone();
+                let anchor = arrow_text_anchor(&arrow);
+                let target = Point::new(
+                    canvas_point.x + anchor.x - state.start_canvas_position.x,
+                    canvas_point.y + anchor.y - state.start_canvas_position.y,
+                );
+                arrow.text_path_fraction = arrow_text_path_fraction_at(&arrow, target);
+                ArrowEditPreview {
+                    arrow,
+                    reorder_targets: Vec::new(),
+                    next_mode: None,
+                    suggested_binding: None,
+                }
+            }
             ArrowEditMode::Endpoint(edge) => {
                 let mut drag_target = self.snap_linear_arrow_control_point(drag_target, modifiers);
                 if modifiers.shift && !state.original_arrow.is_elbow() {

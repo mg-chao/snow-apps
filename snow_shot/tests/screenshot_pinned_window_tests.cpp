@@ -1688,6 +1688,41 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
     controller.setEditMode(false);
 }
 
+void pinnedArrowLabelWheelReachesTextEditor() {
+    ScreenshotPinnedWindow window;
+    SnowCanvasWidget canvas;
+    snow_shot::presentation::WindowShortcutManager manager;
+    ScreenshotPinnedEditController controller(window, canvas, manager);
+    canvas.resize(300, 200);
+    canvas.show();
+    controller.setEditMode(true);
+    auto* palette = controller.toolbarWindow()->palette();
+    require(palette->activateDrawingShortcut(QStringLiteral("arrow")) &&
+                canvas.interactionEnabled(),
+            "activate pinned arrow drawing");
+
+    const auto mouse = [&canvas](QEvent::Type type, QPointF point, Qt::MouseButton button,
+                                 Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, canvas.mapToGlobal(point.toPoint()), button, buttons,
+                          Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
+    };
+    mouse(QEvent::MouseButtonPress, {40.0, 100.0}, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseMove, {260.0, 100.0}, Qt::NoButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, {260.0, 100.0}, Qt::LeftButton, Qt::NoButton);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select pinned arrow");
+    mouse(QEvent::MouseButtonDblClick, {150.0, 100.0}, Qt::LeftButton, Qt::LeftButton);
+    require(canvas.hasActiveTextEditing(), "open pinned arrow label editor");
+
+    const double initialFontSize = canvas.canvasStyleToolbarState().textStyle.fontSize;
+    const QPointF position(150.0, 100.0);
+    QWheelEvent wheel(position, canvas.mapToGlobal(position.toPoint()), QPoint(), QPoint(0, 120),
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&canvas, &wheel);
+    require(canvas.canvasStyleToolbarState().textStyle.fontSize == initialFontSize + 1.0,
+            "pinned editor passes arrow label wheel input to font-size stepping");
+}
+
 void pinnedEditingRemembersLastFilterToolAcrossSessions() {
     namespace storage = snow_shot::storage;
     using Tool = ScreenshotToolPalette::Tool;
@@ -10336,6 +10371,10 @@ int main(int argc, char* argv[]) {
         }
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+        if (app.arguments().contains(QStringLiteral("--arrow-label-wheel-only"))) {
+            pinnedArrowLabelWheelReachesTextEditor();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--resize-window-tool-only"))) {
             pinnedEditingRecognitionShortcutsUsePaletteCommands();
             pinnedEditingRemembersLastFilterToolAcrossSessions();
@@ -10640,6 +10679,7 @@ int main(int argc, char* argv[]) {
         pinnedDrawingToolsRemainUsableAfterRecognition();
         pinnedRecognitionShortcutTogglesResults();
         pinnedEditingRecognitionShortcutsUsePaletteCommands();
+        pinnedArrowLabelWheelReachesTextEditor();
         pinnedEditingRemembersLastFilterToolAcrossSessions();
         pinnedEditStartsWithRememberedDrawingTool();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();

@@ -105,6 +105,230 @@ fn arrow_text_curve_uses_arc_length_without_changing_handles() {
 }
 
 #[test]
+fn dragging_bound_text_moves_only_the_label_along_the_arrow_and_round_trips() {
+    use super::duplicate_drag_tests::pointer;
+    use snow_draw_engine_interaction::PointerEventType;
+
+    let (mut engine, viewport, owner) = setup();
+    let text_id = label(&mut engine, viewport, owner, "move me");
+    let original_arrow = engine.model.arrow(owner).unwrap().clone();
+    engine
+        .set_viewport_active_tool(viewport, ActiveTool::Select)
+        .unwrap();
+
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        430.0,
+        300.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        590.0,
+        350.0,
+        false,
+    );
+    assert_eq!(
+        engine.model.text(text_id).unwrap().center,
+        Point::new(0.0, 0.0)
+    );
+    let preview = engine.editor.presentation_state(
+        &engine.model,
+        &engine.viewports.get(&viewport).unwrap().view,
+    );
+    assert_eq!(
+        preview.arrow_text_previews[0].1.center,
+        Point::new(160.0, 0.0)
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        590.0,
+        350.0,
+        false,
+    );
+
+    assert_eq!(
+        engine.model.text(text_id).unwrap().center,
+        Point::new(160.0, 0.0)
+    );
+    let moved_arrow = engine.model.arrow(owner).unwrap();
+    assert_eq!(moved_arrow.global_points(), original_arrow.global_points());
+    assert_eq!(moved_arrow.text_path_fraction, Some(0.9));
+    let bytes = engine.serialize_document_session().unwrap();
+    let restored =
+        Engine::from_serialized_document_session_with_config(&bytes, EngineConfig::default())
+            .unwrap();
+    assert_eq!(
+        restored.model.text(text_id).unwrap().center,
+        Point::new(160.0, 0.0)
+    );
+    assert_eq!(
+        restored.model.arrow(owner).unwrap().text_path_fraction,
+        Some(0.9)
+    );
+
+    engine.undo().unwrap();
+    assert_eq!(
+        engine.model.text(text_id).unwrap().center,
+        Point::new(0.0, 0.0)
+    );
+    engine.redo().unwrap();
+    assert_eq!(
+        engine.model.text(text_id).unwrap().center,
+        Point::new(160.0, 0.0)
+    );
+    let mut translated = engine.model.arrow(owner).unwrap().clone();
+    translated.x += 20.0;
+    translated.y += 30.0;
+    let mut tx = Transaction::new("translate positioned arrow");
+    tx.update_arrow(owner, translated);
+    engine
+        .commit_transaction(
+            viewport,
+            ApplyTransactionCommand {
+                transaction: tx,
+                history_undo_snapshot: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        engine.model.text(text_id).unwrap().center,
+        Point::new(180.0, 30.0)
+    );
+}
+
+#[test]
+fn arrow_label_drag_projects_to_bent_path_and_clamps_at_ends() {
+    use super::duplicate_drag_tests::pointer;
+    use snow_draw_engine_interaction::PointerEventType;
+
+    for kind in [ArrowType::Straight, ArrowType::Curve, ArrowType::Elbow] {
+        let (mut engine, viewport, owner) = setup();
+        let text_id = label(&mut engine, viewport, owner, "bend");
+        let mut bent = arrow(
+            &[
+                [-150.0, -100.0],
+                [0.0, -100.0],
+                [0.0, 100.0],
+                [150.0, 100.0],
+            ],
+            kind,
+        );
+        bent.text_element_id = Some(text_id);
+        let mut tx = Transaction::new("bend arrow");
+        tx.update_arrow(owner, bent);
+        engine
+            .commit_transaction(
+                viewport,
+                ApplyTransactionCommand {
+                    transaction: tx,
+                    history_undo_snapshot: None,
+                },
+            )
+            .unwrap();
+        engine
+            .set_viewport_active_tool(viewport, ActiveTool::Select)
+            .unwrap();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Down,
+            700.0,
+            550.0,
+            false,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Up,
+            700.0,
+            550.0,
+            false,
+        );
+        let start = engine.model.text(text_id).unwrap().center;
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Down,
+            430.0 + start.x,
+            300.0 + start.y,
+            false,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            550.0 + start.x,
+            360.0 + start.y,
+            false,
+        );
+        let preview = engine.editor.presentation_state(
+            &engine.model,
+            &engine.viewports.get(&viewport).unwrap().view,
+        );
+        let center = preview.arrow_text_previews[0].1.center;
+        assert!(center.x.is_finite() && center.y.is_finite(), "{kind:?}");
+        assert_ne!(center, Point::new(start.x + 120.0, start.y + 60.0));
+        if kind == ArrowType::Straight {
+            assert_eq!(center, Point::new(120.0, 100.0));
+        }
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            730.0 + start.x,
+            300.0 + start.y,
+            false,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Up,
+            730.0 + start.x,
+            300.0 + start.y,
+            false,
+        );
+        let changed = engine.model.arrow(owner).unwrap();
+        assert_eq!(changed.text_path_fraction, Some(1.0), "{kind:?}");
+        assert_eq!(engine.model.text(text_id).unwrap().center, changed.end());
+        let end = changed.end();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Down,
+            430.0 + end.x,
+            300.0 + end.y,
+            false,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            100.0,
+            200.0,
+            false,
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Up,
+            100.0,
+            200.0,
+            false,
+        );
+        let changed = engine.model.arrow(owner).unwrap();
+        assert_eq!(changed.text_path_fraction, Some(0.0), "{kind:?}");
+        assert_eq!(engine.model.text(text_id).unwrap().center, changed.start());
+    }
+}
+
+#[test]
 fn arrow_text_creation_move_delete_and_history_are_atomic() {
     let (mut engine, viewport, owner) = setup();
     let text_id = label(&mut engine, viewport, owner, "连接 → result\nsecond line");
@@ -429,7 +653,12 @@ fn alt_drag_arrow_with_label_matches_duplicate_operation_and_preview() {
     use super::duplicate_drag_tests::pointer;
     use snow_draw_engine_display::SceneDisplayItem;
     use snow_draw_engine_interaction::PointerEventType;
-    for tool in [ActiveTool::Select, ActiveTool::Arrow, ActiveTool::Line] {
+    for (tool, press_x) in [
+        (ActiveTool::Select, 280.0),
+        (ActiveTool::Select, 430.0),
+        (ActiveTool::Arrow, 430.0),
+        (ActiveTool::Line, 430.0),
+    ] {
         let (mut engine, viewport, owner) = setup();
         let text_id = label(&mut engine, viewport, owner, "copy label");
         engine.set_viewport_active_tool(viewport, tool).unwrap();
@@ -441,7 +670,7 @@ fn alt_drag_arrow_with_label_matches_duplicate_operation_and_preview() {
             &mut engine,
             viewport,
             PointerEventType::Down,
-            280.0,
+            press_x,
             300.0,
             true,
         );
@@ -449,7 +678,7 @@ fn alt_drag_arrow_with_label_matches_duplicate_operation_and_preview() {
             &mut engine,
             viewport,
             PointerEventType::Move,
-            330.0,
+            press_x + 50.0,
             360.0,
             false,
         );
@@ -481,7 +710,7 @@ fn alt_drag_arrow_with_label_matches_duplicate_operation_and_preview() {
             &mut engine,
             viewport,
             PointerEventType::Up,
-            330.0,
+            press_x + 50.0,
             360.0,
             false,
         );

@@ -102,7 +102,11 @@ impl Editor {
                 arrow_id: state.arrow_id,
                 original_arrow: state.original_arrow.clone(),
                 preview_arrow: state.original_arrow,
-                mode: ArrowEditMode::Move,
+                mode: if state.label {
+                    ArrowEditMode::Label
+                } else {
+                    ArrowEditMode::Move
+                },
                 start_canvas_position: state.start_canvas_position,
                 drag_offset: Point::new(0.0, 0.0),
                 suggested_binding: None,

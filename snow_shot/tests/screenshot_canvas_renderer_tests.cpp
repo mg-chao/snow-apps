@@ -83,6 +83,8 @@ QImage testRenderOcrFilteredImage(const QImage& source, const QRectF& canvasRect
 class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
   public:
     ScreenshotOverlayRightClickResult rightClickResult = ScreenshotOverlayRightClickResult::Ignored;
+    bool consumeWheel = false;
+    int wheelCalls = 0;
     std::function<void()> cancel = [] {};
     void completeRightClickCancellation() override {
         cancel();
@@ -105,7 +107,8 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
 
     bool handleOverlayWheel(ScreenshotOverlayWindow*, const QPointF&, const QPoint&,
                             const QPoint&) override {
-        return false;
+        ++wheelCalls;
+        return consumeWheel;
     }
 
     bool shouldBlockUnhandledOverlayKeyInput() const override {
@@ -3668,6 +3671,39 @@ void canvasWheelZoomCanBeDisabled() {
             "a disabled canvas should ignore wheel zoom");
 }
 
+void overlayPassesTextDraftWheelToCanvas() {
+    NoopOverlayEventSink eventSink;
+    eventSink.consumeWheel = true;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    overlay.resize(300, 200);
+    overlay.show();
+    QApplication::processEvents();
+    canvas->setInteractionEnabled(true);
+    require(canvas->setCanvasTool(SnowCanvasTool::Text), "activate overlay text tool");
+
+    const QPointF position(150.0, 100.0);
+    const auto sendWheel = [&] {
+        QWheelEvent event(position, canvas->mapToGlobal(position.toPoint()), QPoint(),
+                          QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(canvas, &event);
+    };
+    const double initialFontSize = canvas->canvasStyleToolbarState().textStyle.fontSize;
+    sendWheel();
+    require(eventSink.wheelCalls == 1 &&
+                canvas->canvasStyleToolbarState().textStyle.fontSize == initialFontSize,
+            "overlay owns wheel input when no text draft is active");
+
+    QMouseEvent press(QEvent::MouseButtonPress, position, canvas->mapToGlobal(position.toPoint()),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &press);
+    require(canvas->hasActiveTextEditing(), "overlay starts a text draft");
+    sendWheel();
+    require(eventSink.wheelCalls == 1 &&
+                canvas->canvasStyleToolbarState().textStyle.fontSize == initialFontSize + 1.0,
+            "overlay passes an active text draft's wheel input to the canvas");
+}
+
 void disabledCanvasBlocksWidgetLevelToolInput() {
     WheelTestCanvas canvas;
     canvas.resize(200, 160);
@@ -4016,6 +4052,10 @@ void overlayRightClickClosesOnRelease(bool native = false) {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--text-wheel-only"))) {
+        overlayPassesTextDraftWheelToCanvas();
+        return 0;
+    }
 #ifdef Q_OS_WIN
     if (close_release_native_test::receiverRequested()) {
         return close_release_native_test::runReceiver();
@@ -4177,6 +4217,7 @@ int main(int argc, char** argv) {
     screenshotMessagesFollowSelectionAndRememberTheirOwner();
     screenshotMessagesFallBackWhenNoOverlayIsAvailable();
     canvasWheelZoomCanBeDisabled();
+    overlayPassesTextDraftWheelToCanvas();
     disabledCanvasBlocksWidgetLevelToolInput();
     overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled();
     overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();

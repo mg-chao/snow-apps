@@ -37,7 +37,7 @@ mod transaction;
 pub use arrow::{
     ArrowData, ArrowEndpointBinding, DEFAULT_ARROW_MAX_COORDINATE, LinearElementKind, arrow_bounds,
     arrow_hit_test, arrow_is_degenerate, arrow_length, arrow_segment_midpoints, arrow_text_anchor,
-    arrow_text_max_width, arrowhead_render_primitives, validate_arrow,
+    arrow_text_max_width, arrow_text_path_fraction_at, arrowhead_render_primitives, validate_arrow,
 };
 pub use arrow_operations::{
     ArrowEditResult, ArrowEndpointDragOptions, ArrowFocusDragOptions, ArrowSuggestedBinding,

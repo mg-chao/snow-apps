@@ -103,13 +103,16 @@ impl Editor {
             .map(|position| Point::new(position.x - canvas_point.x, position.y - canvas_point.y))
             .unwrap_or(Point::new(0.0, 0.0));
         self.state.interaction = match target {
-            ArrowHitTarget::Move => InteractionState::PendingArrowMove(PendingArrowMoveState {
-                pointer_id: event.pointer_id,
-                arrow_id,
-                original_arrow,
-                start_canvas_position: canvas_point,
-                start_view_position: event.position,
-            }),
+            ArrowHitTarget::Move | ArrowHitTarget::Label => {
+                InteractionState::PendingArrowMove(PendingArrowMoveState {
+                    pointer_id: event.pointer_id,
+                    arrow_id,
+                    original_arrow,
+                    label: target == ArrowHitTarget::Label,
+                    start_canvas_position: canvas_point,
+                    start_view_position: event.position,
+                })
+            }
             ArrowHitTarget::Endpoint(edge) => InteractionState::EditingArrow(EditArrowState {
                 pointer_id: event.pointer_id,
                 arrow_id,
@@ -252,7 +255,12 @@ impl Editor {
         let Some(arrow) = self.arrow_snapshot(document, id) else {
             return InteractionOutput::default();
         };
-        self.begin_arrow_interaction(event, id, arrow, ArrowHitTarget::Move, canvas_point)
+        let target = if self.arrow_label_hit(document, id, canvas_point) {
+            ArrowHitTarget::Label
+        } else {
+            ArrowHitTarget::Move
+        };
+        self.begin_arrow_interaction(event, id, arrow, target, canvas_point)
     }
 
     fn handle_empty_canvas_pointer_down(
@@ -431,6 +439,9 @@ impl Editor {
             }
             | PrimaryPointerIntent::BeginSelectedArrowInteraction {
                 target: ArrowHitTarget::Move,
+            }
+            | PrimaryPointerIntent::BeginSelectedArrowInteraction {
+                target: ArrowHitTarget::Label,
             } => {}
             PrimaryPointerIntent::BeginArrowElementInteraction { id }
             | PrimaryPointerIntent::BeginElementSelectionMove { id }

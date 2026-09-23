@@ -1231,7 +1231,15 @@ mod tests {
     #[test]
     fn arrow_resize_preview_matches_committed_selection_geometry() {
         let mut document = DocumentModel::new();
-        let arrow = ArrowData::from_global_points(
+        let text_id = insert_text(
+            &mut document,
+            TextData {
+                text: "label".to_owned(),
+                layout: TextLayoutSize::new(30.0, 20.0),
+                ..TextData::default()
+            },
+        );
+        let mut arrow = ArrowData::from_global_points(
             &[Point::new(0.0, 0.0), Point::new(100.0, 0.0)],
             ColorRgba8::default(),
             2.0,
@@ -1241,6 +1249,7 @@ mod tests {
             Some(Arrowhead::Arrow),
         )
         .unwrap();
+        arrow.text_element_id = Some(text_id);
         let arrow_id = insert_arrow(&mut document, arrow.clone());
         let original_arrows = [SelectionArrowState {
             id: arrow_id,
@@ -1279,6 +1288,7 @@ mod tests {
         }];
         let committed_bounds = selection_bounds_from_selection(&[], &committed).unwrap();
         assert_eq!(preview.bounds, committed_bounds);
+        assert_eq!(document.bound_text_id_for_arrow(arrow_id), Some(text_id));
     }
 
     #[test]

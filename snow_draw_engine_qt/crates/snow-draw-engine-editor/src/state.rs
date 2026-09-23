@@ -264,6 +264,7 @@ pub(crate) struct PendingArrowMoveState {
     pub(crate) pointer_id: u32,
     pub(crate) arrow_id: ElementId,
     pub(crate) original_arrow: ArrowData,
+    pub(crate) label: bool,
     pub(crate) start_canvas_position: Point<f64>,
     pub(crate) start_view_position: Point<f64>,
 }
@@ -271,6 +272,7 @@ pub(crate) struct PendingArrowMoveState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ArrowHitTarget {
     Move,
+    Label,
     Endpoint(ArrowEndpointEdge),
     Point(usize),
     FocusPoint(ArrowEndpointEdge),
@@ -280,6 +282,7 @@ pub(crate) enum ArrowHitTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ArrowEditMode {
     Move,
+    Label,
     Endpoint(ArrowEndpointEdge),
     Point(usize),
     FocusPoint(ArrowEndpointEdge),

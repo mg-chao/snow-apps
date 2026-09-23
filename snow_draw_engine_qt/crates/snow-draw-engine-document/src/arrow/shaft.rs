@@ -69,7 +69,7 @@ fn flatten_curve(out: &mut Vec<P>, a: P, b: P, c: P, d: P, depth: u32) {
     flatten_curve(out, a, ab, abc, mid, depth + 1);
     flatten_curve(out, mid, bcd, cd, d, depth + 1);
 }
-fn flatten(commands: Vec<PathCommand>) -> Vec<P> {
+pub(crate) fn flatten(commands: Vec<PathCommand>) -> Vec<P> {
     let mut out = Vec::new();
     let mut at = [0.0; 2];
     for cmd in commands {

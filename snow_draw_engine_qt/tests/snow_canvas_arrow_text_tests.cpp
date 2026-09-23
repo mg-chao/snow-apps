@@ -15,6 +15,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QWheelEvent>
 
 #include <cmath>
 #include <cstdlib>
@@ -566,6 +567,44 @@ void widgetLifecycle() {
             "restored text matches original");
 }
 
+void arrowLabelWheelChangesFontSizeWhileSelecting() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    createArrow(canvas, runtime);
+    openLabel(canvas);
+    key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("Label"));
+
+    const double initialFontSize = canvas.canvasStyleToolbarState().textStyle.fontSize;
+    const QTransform initialTransform = canvas.canvasToViewTransform();
+    const QPointF position(280.0, 180.0);
+    const auto wheel = [&](int delta) {
+        QWheelEvent event(position, canvas.mapToGlobal(position.toPoint()), QPoint(),
+                          QPoint(0, delta), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&canvas, &event);
+    };
+    wheel(120);
+    require(canvas.canvasStyleToolbarState().textStyle.fontSize == initialFontSize + 1.0,
+            "wheel increases an arrow label draft's font size with Select active");
+    require(canvas.canvasToViewTransform() == initialTransform,
+            "font-size wheel does not zoom while editing an arrow label");
+    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+    require(
+        payload(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() ==
+            initialFontSize + 1.0,
+        "wheel-adjusted arrow label font size commits");
+
+    require(canvas.editSelectedArrowText(), "reopen the committed arrow label");
+    wheel(-120);
+    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+    require(
+        payload(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() ==
+            initialFontSize,
+        "wheel decreases an existing arrow label's font size");
+}
+
 void wrappingAndFinalPointerPosition() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -665,7 +704,7 @@ void gapPreservesBackground() {
     }
 }
 
-void arrowTypesMoveAndEraseAsPair() {
+void arrowTypesDragLabelAlongPathAndEraseAsPair() {
     for (const auto type :
          {SnowCanvasArrowType::Straight, SnowCanvasArrowType::Curve, SnowCanvasArrowType::Elbow}) {
         SnowCanvasRuntime runtime;
@@ -681,6 +720,7 @@ void arrowTypesMoveAndEraseAsPair() {
         mouse(canvas, QEvent::MouseButtonRelease, {550.0, 310.0}, Qt::LeftButton, Qt::NoButton);
         require(!canvas.hasActiveTextEditing(), "outside click commits arrow label");
         const auto before = payload(runtime, QStringLiteral("Text"));
+        const auto beforeArrow = payload(runtime, QStringLiteral("Arrow"));
         const QString previewDirectory = qEnvironmentVariable("SNOW_ARROW_TEXT_PREVIEW_DIR");
         if (!previewDirectory.isEmpty()) {
             require(canvas.grab().save(
@@ -701,12 +741,26 @@ void arrowTypesMoveAndEraseAsPair() {
         const auto moved = after.value(QStringLiteral("center")).toObject();
         require(std::abs(moved.value(QStringLiteral("x")).toDouble() -
                          center.value(QStringLiteral("x")).toDouble() - 30.0) < 0.01,
-                "dragging label moves its owner");
+                "dragging label moves it along the arrow");
+        require(std::abs(moved.value(QStringLiteral("y")).toDouble() -
+                         center.value(QStringLiteral("y")).toDouble()) < 0.01,
+                "dragging off the path keeps the label on the arrow");
+        const auto afterArrow = payload(runtime, QStringLiteral("Arrow"));
+        require(afterArrow.value(QStringLiteral("x")) == beforeArrow.value(QStringLiteral("x")) &&
+                    afterArrow.value(QStringLiteral("y")) ==
+                        beforeArrow.value(QStringLiteral("y")) &&
+                    afterArrow.value(QStringLiteral("points")) ==
+                        beforeArrow.value(QStringLiteral("points")) &&
+                    afterArrow.contains(QStringLiteral("text_path_fraction")),
+                "dragging the label preserves arrow geometry and stores its path position");
         require(after.value(QStringLiteral("font_size")) ==
                     before.value(QStringLiteral("font_size")),
-                "arrow transforms preserve label font size");
+                "dragging the label preserves font size");
         require(canvas.setCanvasTool(SnowCanvasTool::Eraser), "activate eraser");
-        const QPointF erasePoint = point + QPointF(30.0, 40.0);
+        const QPointF erasePoint = canvas.canvasToViewTransform().map(
+                                       QPointF(moved.value(QStringLiteral("x")).toDouble(),
+                                               moved.value(QStringLiteral("y")).toDouble())) +
+                                   QPointF(0.0, 20.0);
         mouse(canvas, QEvent::MouseButtonPress, erasePoint, Qt::LeftButton, Qt::LeftButton);
         mouse(canvas, QEvent::MouseButtonRelease, erasePoint, Qt::LeftButton, Qt::NoButton);
         require(records(runtime, QStringLiteral("Arrow")).isEmpty() &&
@@ -854,9 +908,10 @@ int main(int argc, char** argv) {
     indentedTriangleStyleRoundTrips();
     deleteKeyRemovesEditedText();
     widgetLifecycle();
+    arrowLabelWheelChangesFontSizeWhileSelecting();
     wrappingAndFinalPointerPosition();
     gapPreservesBackground();
-    arrowTypesMoveAndEraseAsPair();
+    arrowTypesDragLabelAlongPathAndEraseAsPair();
     deleteAllElementsClearsDocumentAsOneUndoEntry();
     sharedViewsAndLongOffscreenText();
     boundShapeReroutesAndMeasuresLabel();

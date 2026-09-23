@@ -1,9 +1,10 @@
 use std::hash::{Hash, Hasher};
 
-use snow_draw_engine_core::ErrorCode;
+use snow_draw_engine_core::{ErrorCode, Point};
 use snow_draw_engine_document::{
     ArrowData, ElementData, ElementId, Operation, TextData, TextLayoutSize, Transaction,
-    arrow_text_anchor, arrow_text_max_width, text_with_measured_layout, validate_text_layout_size,
+    arrow_text_anchor, arrow_text_max_width, text_hit_test, text_with_measured_layout,
+    validate_text_layout_size,
 };
 use snow_draw_engine_model::DocumentModel;
 
@@ -51,6 +52,23 @@ fn request(
 }
 
 impl Editor {
+    pub(crate) fn arrow_label_hit(
+        &self,
+        document: &DocumentModel,
+        arrow_id: ElementId,
+        canvas_point: Point<f64>,
+    ) -> bool {
+        let Some(text_id) = document.bound_text_id_for_arrow(arrow_id) else {
+            return false;
+        };
+        self.arrow_text_previews(document)
+            .into_iter()
+            .find(|(id, _)| *id == text_id)
+            .is_some_and(|(_, text)| {
+                !text.text.trim().is_empty() && text_hit_test(&text, canvas_point, 0.0)
+            })
+    }
+
     pub(crate) fn arrow_text_selection_bounds(
         &self,
         document: &DocumentModel,
@@ -68,7 +86,13 @@ impl Editor {
             let Ok(text) = document.text(text_id) else {
                 continue;
             };
-            let text = self.measured_arrow_text(request(arrow.id, text_id, &arrow.arrow, text));
+            let mut text = self
+                .active_text_draft_text_for_id(text_id)
+                .unwrap_or_else(|| {
+                    self.measured_arrow_text(request(arrow.id, text_id, &arrow.arrow, text))
+                });
+            text.center = arrow_text_anchor(&arrow.arrow);
+            text.rotation = 0.0;
             let rect = snow_draw_engine_document::text_bounds(&text);
             for (x, y) in [
                 (rect.min_x, rect.min_y),
@@ -247,6 +271,80 @@ mod tests {
         arrow::{ArrowType, StrokeStyle},
     };
     use snow_draw_engine_document::{ElementMeta, RectangleData, text_bounds};
+
+    #[test]
+    fn selected_arrow_bounds_follow_live_label_draft_and_revert_on_cancel() {
+        let owner = ElementId {
+            index: 0,
+            generation: 1,
+        };
+        let text_id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let mut arrow = ArrowData::from_global_points(
+            &[Point::new(-40.0, 0.0), Point::new(40.0, 0.0)],
+            ColorRgba8::default(),
+            2.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            None,
+            None,
+        )
+        .unwrap();
+        arrow.text_element_id = Some(text_id);
+        let mut document = DocumentModel::new();
+        let mut transaction = Transaction::new("bound label");
+        transaction.insert_arrow(owner, ElementMeta::default(), arrow);
+        transaction.insert_text(
+            text_id,
+            ElementMeta::default(),
+            TextData {
+                text: "label".to_owned(),
+                layout: TextLayoutSize::new(30.0, 20.0),
+                ..TextData::default()
+            },
+        );
+        document.apply_transaction(transaction).unwrap();
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.select_element(&document, owner).unwrap();
+        let committed = editor
+            .presentation_state(&document)
+            .selection_bounds
+            .unwrap();
+
+        for (revision, width, height) in [(1, 240.0, 75.0), (2, 20.0, 12.0)] {
+            let mut text = document.text(text_id).unwrap().clone();
+            text.layout = TextLayoutSize::new(width, height);
+            editor
+                .set_active_text_draft_presentation(
+                    &document,
+                    crate::ActiveTextDraftPresentation {
+                        target: crate::ActiveTextDraftTarget::Existing(text_id),
+                        revision,
+                        text,
+                    },
+                )
+                .unwrap();
+            let bounds = editor
+                .presentation_state(&document)
+                .selection_bounds
+                .unwrap();
+            assert_eq!(editor.selection_bounds_snapshot(&document), Some(bounds));
+            if revision == 1 {
+                assert!(bounds.width > committed.width + 100.0);
+                assert!(bounds.height > committed.height + 40.0);
+            } else {
+                assert!((bounds.width - committed.width).abs() < 1e-9);
+                assert!(bounds.height < committed.height);
+            }
+        }
+        editor.clear_active_text_draft_presentation();
+        assert_eq!(
+            editor.presentation_state(&document).selection_bounds,
+            Some(committed)
+        );
+    }
 
     #[test]
     fn arrow_text_selection_encloses_horizontal_label_in_rotated_and_multiple_selection() {

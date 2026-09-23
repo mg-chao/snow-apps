@@ -2592,7 +2592,7 @@ bool SnowCanvasWidget::Impl::handleWheel(QWheelEvent* event) {
         snow_canvas_text_editor_input::planFontSizeWheel(
             snow_canvas_text_editor_input::FontSizeWheelRequest{
                 true,
-                canvasTool(),
+                textInteraction.isActive() ? SnowCanvasTool::Text : canvasTool(),
                 event->modifiers(),
                 event->pixelDelta().y(),
                 event->angleDelta().y(),

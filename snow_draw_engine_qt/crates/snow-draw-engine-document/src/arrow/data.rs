@@ -58,6 +58,10 @@ pub struct ArrowData {
     /// host renderer remains the authority for fonts and exact text layout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_element_id: Option<ElementId>,
+    /// Fraction of the rendered arrow path occupied by the label. Older arrows
+    /// retain the original middle-vertex placement until the label is dragged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_path_fraction: Option<f64>,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -114,6 +118,7 @@ impl ArrowData {
         Some(Self {
             linear_kind: LinearElementKind::Arrow,
             text_element_id: None,
+            text_path_fraction: None,
             x: normalized.x,
             y: normalized.y,
             width: normalized.width,
@@ -167,6 +172,8 @@ impl ArrowData {
 
     pub fn inherit_linear_metadata_from(&mut self, source: &Self) {
         self.linear_kind = source.linear_kind;
+        self.text_element_id = source.text_element_id;
+        self.text_path_fraction = source.text_path_fraction;
         self.arrow_shaft_type = source.arrow_shaft_type;
         self.arrow_ratio = snow_draw_engine_core::arrow::normalize_arrow_ratio(source.arrow_ratio);
         self.fill = source.fill;
@@ -289,6 +296,7 @@ impl ArrowData {
         Self {
             linear_kind: self.linear_kind,
             text_element_id: self.text_element_id,
+            text_path_fraction: self.text_path_fraction,
             x: patch.x.unwrap_or(self.x),
             y: patch.y.unwrap_or(self.y),
             width: patch.width.unwrap_or(self.width),
@@ -403,9 +411,14 @@ pub fn arrow_length(arrow: &ArrowData) -> f64 {
         .sum()
 }
 
-/// Excalidraw's label anchor is the middle vertex, or the middle segment's
-/// half-length point. It is deliberately independent of editing handle geometry.
+/// Unmoved labels use Excalidraw's middle vertex or middle segment. Dragged
+/// labels follow their stored fraction of the rendered path.
 pub fn arrow_text_anchor(arrow: &ArrowData) -> Point<f64> {
+    if let Some(fraction) = arrow.text_path_fraction
+        && let Some(point) = arrow_text_path_point(arrow, fraction)
+    {
+        return point;
+    }
     let points = arrow.global_points();
     if points.is_empty() {
         return Point::new(arrow.x, arrow.y);
@@ -446,6 +459,70 @@ pub fn arrow_text_anchor(arrow: &ArrowData) -> Point<f64> {
         f64::midpoint(points[middle - 1].x, points[middle].x),
         f64::midpoint(points[middle - 1].y, points[middle].y),
     )
+}
+
+fn arrow_text_path_points(arrow: &ArrowData) -> Vec<Point<f64>> {
+    crate::arrow_shaft::flatten(arrow.path_commands())
+        .into_iter()
+        .map(|point| Point::new(point[0], point[1]))
+        .collect()
+}
+
+fn arrow_text_path_point(arrow: &ArrowData, fraction: f64) -> Option<Point<f64>> {
+    let points = arrow_text_path_points(arrow);
+    let total: f64 = points
+        .windows(2)
+        .map(|segment| point_distance(segment[0], segment[1]))
+        .sum();
+    if total <= 1e-9 {
+        return points.first().copied();
+    }
+    let distance = fraction.clamp(0.0, 1.0) * total;
+    let mut passed = 0.0;
+    for segment in points.windows(2) {
+        let length = point_distance(segment[0], segment[1]);
+        if passed + length >= distance {
+            let t = ((distance - passed) / length).clamp(0.0, 1.0);
+            return Some(Point::new(
+                segment[0].x + (segment[1].x - segment[0].x) * t,
+                segment[0].y + (segment[1].y - segment[0].y) * t,
+            ));
+        }
+        passed += length;
+    }
+    points.last().copied()
+}
+
+/// Project a drag point onto the rendered centerline and return its path fraction.
+pub fn arrow_text_path_fraction_at(arrow: &ArrowData, point: Point<f64>) -> Option<f64> {
+    let points = arrow_text_path_points(arrow);
+    let total: f64 = points
+        .windows(2)
+        .map(|segment| point_distance(segment[0], segment[1]))
+        .sum();
+    if total <= 1e-9 {
+        return None;
+    }
+    let mut passed = 0.0;
+    let mut closest = (f64::INFINITY, 0.0);
+    for segment in points.windows(2) {
+        let dx = segment[1].x - segment[0].x;
+        let dy = segment[1].y - segment[0].y;
+        let squared_length = dx * dx + dy * dy;
+        if squared_length <= 1e-18 {
+            continue;
+        }
+        let length = squared_length.sqrt();
+        let t = (((point.x - segment[0].x) * dx + (point.y - segment[0].y) * dy) / squared_length)
+            .clamp(0.0, 1.0);
+        let distance =
+            (point.x - segment[0].x - t * dx).powi(2) + (point.y - segment[0].y - t * dy).powi(2);
+        if distance < closest.0 {
+            closest = (distance, (passed + length * t) / total);
+        }
+        passed += length;
+    }
+    Some(closest.1)
 }
 
 fn label_curve_length(points: &[Point<f64>; 4], end: f64) -> f64 {
@@ -527,6 +604,9 @@ pub fn validate_arrow(arrow: &ArrowData) -> Result<(), ErrorCode> {
     if arrow.stroke_width < 0.0
         || arrow.opacity < 0.0
         || arrow.opacity > 1.0
+        || arrow
+            .text_path_fraction
+            .is_some_and(|fraction| !fraction.is_finite() || !(0.0..=1.0).contains(&fraction))
         || arrow
             .points
             .iter()
