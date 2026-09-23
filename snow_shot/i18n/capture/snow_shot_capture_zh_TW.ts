@@ -87,27 +87,27 @@
         </message>
         <message>
             <source>The clipboard content could not be pinned</source>
-            <translation>無法釘選剪貼簿內容</translation>
+            <translation>無法將剪貼簿內容固定到螢幕</translation>
         </message>
         <message>
             <source>The clipboard content could not be pinned: %1</source>
-            <translation>無法釘選剪貼簿內容：%1</translation>
+            <translation>無法將剪貼簿內容固定到螢幕：%1</translation>
         </message>
         <message>
             <source>The clipboard does not contain content that can be pinned</source>
-            <translation>剪貼簿中沒有可釘選的內容</translation>
+            <translation>剪貼簿中沒有可固定到螢幕的內容</translation>
         </message>
         <message>
             <source>The clipboard pin could not be presented</source>
-            <translation>無法顯示已釘選的剪貼簿內容</translation>
+            <translation>無法顯示已固定到螢幕的剪貼簿內容</translation>
         </message>
         <message>
             <source>The clipboard pin queue is full</source>
-            <translation>剪貼簿內容釘選佇列已滿</translation>
+            <translation>將剪貼簿內容固定到螢幕的佇列已滿</translation>
         </message>
         <message>
             <source>The pinned window could not be restored</source>
-            <translation>無法還原貼圖視窗</translation>
+            <translation>無法還原固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>The screenshot clipboard operation could not be started</source>
@@ -119,7 +119,7 @@
         </message>
         <message>
             <source>The screenshot could not be pinned</source>
-            <translation>無法將截圖釘選到螢幕</translation>
+            <translation>無法將截圖固定到螢幕</translation>
         </message>
         <message>
             <source>The screenshot could not be prepared for saving</source>
@@ -139,7 +139,7 @@
         </message>
         <message>
             <source>The scrolling screenshot could not be pinned</source>
-            <translation>無法釘選滾動截圖</translation>
+            <translation>無法將滾動截圖固定到螢幕</translation>
         </message>
         <message>
             <source>The scrolling screenshot could not be prepared</source>
@@ -147,7 +147,7 @@
         </message>
         <message>
             <source>This screenshot cannot be pinned</source>
-            <translation>此截圖無法釘選到螢幕</translation>
+            <translation>此截圖無法固定到螢幕</translation>
         </message>
         <message>
             <source>Your current screenshot will be discarded.</source>

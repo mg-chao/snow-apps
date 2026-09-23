@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 
 #include "widgets/date_picker.h"
@@ -437,6 +438,29 @@ void emptyStateRemainsVisibleAfterFilteringEmptyHistory() {
         "an emptied repository must restore the unfiltered empty-state prompt");
 }
 
+void emptyStateIconsMatchPinnedWindowManagement() {
+    MutableHistoryDataSource dataSource;
+    ScreenshotHistoryPageWidget historyPage(&dataSource, nullptr);
+    PinnedWindowManagementPageWidget pinnedPage;
+    auto* historyIcon =
+        historyPage.findChild<QLabel*>(QStringLiteral("screenshotHistoryEmptyIcon"));
+    auto* pinnedIcon = pinnedPage.findChild<QLabel*>(QStringLiteral("pinnedManagementEmptyIcon"));
+    require(historyIcon != nullptr && pinnedIcon != nullptr,
+            "both management pages must expose their empty-state icons");
+
+    for (const auto appearance : {snow_shot::presentation::styles::ThemeAppearance::Light,
+                                  snow_shot::presentation::styles::ThemeAppearance::Dark}) {
+        snow_shot::presentation::styles::ThemeStyleConfig config;
+        config.appearance = appearance;
+        const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme(config);
+        historyPage.applyTheme(scheme);
+        pinnedPage.applyTheme(scheme);
+        require(!historyIcon->pixmap().isNull() &&
+                    historyIcon->pixmap().toImage() == pinnedIcon->pixmap().toImage(),
+                "the empty-state icon must use identical colors on both pages in each theme");
+    }
+}
+
 void moreMenuOffersPinAndDelete() {
     MutableHistoryDataSource dataSource;
     QVector<storage::CaptureHistoryRecord> records = historyRecords(2);
@@ -698,6 +722,7 @@ int main(int argc, char** argv) {
                 .success,
             "isolated application storage must initialize");
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
+    emptyStateIconsMatchPinnedWindowManagement();
     moreMenuOffersPinAndDelete();
     entriesUseBordersAndSupportCrossPageSelection();
     imageFailuresRespectCacheFallbackAndCancellation();

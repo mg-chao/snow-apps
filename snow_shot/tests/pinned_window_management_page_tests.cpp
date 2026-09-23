@@ -6,6 +6,7 @@
 #include "widgets/checkbox.h"
 #include "widgets/popconfirm.h"
 #include "widgets/pagination.h"
+#include "widgets/image.h"
 #include <QElapsedTimer>
 #include <QTimeZone>
 #include <QThread>
@@ -16,6 +17,10 @@
 #include <QLabel>
 #include <QFrame>
 #include <QEvent>
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QPointer>
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 using namespace snow_shot;
@@ -41,6 +46,11 @@ class Fixture final : public PinnedWindowManagementDataSource {
         QImage image(120, 60, QImage::Format_RGB32);
         image.fill(Qt::green);
         emit previewReady(id, generation, image);
+    }
+    void requestFullImage(const QString& id, quint64 requestId) override {
+        QImage image(120, 60, QImage::Format_RGB32);
+        image.fill(Qt::green);
+        emit fullImageReady(id, requestId, image);
     }
     void showRecord(const QString& id) override {
         shown = id;
@@ -148,6 +158,7 @@ int main(int argc, char** argv) {
     base.fill(Qt::cyan);
     const auto sourcePath = directory.filePath(QStringLiteral("original.png"));
     require(base.save(sourcePath), "write preview file source");
+    QString imageId;
     for (const auto kind : {storage::PinnedWindowSourceKind::ImageData,
                             storage::PinnedWindowSourceKind::ClipboardImageFile,
                             storage::PinnedWindowSourceKind::ClipboardText}) {
@@ -171,11 +182,19 @@ int main(int argc, char** argv) {
             record.image = {};
         }
         require(repository.upsert(record).success, "create production preview record");
+        if (kind == storage::PinnedWindowSourceKind::ImageData)
+            imageId = record.id;
     }
     require(repository.flush().success && QFile::remove(sourcePath),
             "previews must use persisted payloads after the original file is removed");
     {
         PinnedWindowManagementPageWidget page;
+        QObject::connect(&storage::ApplicationStorage::instance(),
+                         &storage::ApplicationStorage::pinnedWindowDeleteRequested, &page,
+                         [&repository](const QVector<QString>& ids) {
+                             for (const auto& id : ids)
+                                 require(repository.remove(id).success, "remove requested pin");
+                         });
         page.resize(980, 900);
         page.show();
         const auto ready = [&]() {
@@ -203,6 +222,92 @@ int main(int argc, char** argv) {
                 ++baseImages;
         }
         require(baseImages == 2, "image previews show base pixels without drawings or overlays");
+        QFrame* imageRow = nullptr;
+        for (auto* candidate :
+             page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord"))) {
+            if (candidate->property("recordId").toString() == imageId) {
+                imageRow = candidate;
+                break;
+            }
+        }
+        require(imageRow != nullptr, "saved image has a management row");
+        auto* imagePreview =
+            imageRow->findChild<QLabel*>(QStringLiteral("pinnedManagementPreview"));
+        auto* viewer = imageRow->findChild<adqt::widgets::AdImageViewer*>();
+        require(imagePreview != nullptr && viewer != nullptr && viewer->rowCount() == 1,
+                "saved image has a preview viewer");
+        QSize previewSize;
+        QObject::connect(viewer, &adqt::widgets::AdImageViewer::currentItemChanged, &page,
+                         [&previewSize](int, int, const adqt::widgets::AdImageItem&,
+                                        const QSize& size) { previewSize = size; });
+        const QPointF previewLocal = imagePreview->rect().center();
+        const QPointF previewGlobal = imagePreview->mapToGlobal(previewLocal.toPoint());
+        QMouseEvent previewPress(QEvent::MouseButtonPress, previewLocal, previewGlobal,
+                                 Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent previewRelease(QEvent::MouseButtonRelease, previewLocal, previewGlobal,
+                                   Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(imagePreview, &previewPress);
+        QApplication::sendEvent(imagePreview, &previewRelease);
+        timer.restart();
+        while (previewSize.isEmpty() && timer.elapsed() < 5000) {
+            application.processEvents();
+            QThread::msleep(1);
+        }
+        require(viewer->isVisible() && previewSize == base.size(),
+                "clicking the thumbnail opens the full-resolution saved image");
+        viewer->close();
+        imagePreview->setFocus();
+        QKeyEvent previewKey(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(imagePreview, &previewKey);
+        require(viewer->isVisible(), "keyboard activation opens the image preview");
+        viewer->close();
+        auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+        require(row != nullptr, "production page shows a deletable record");
+        const QString removedId = row->property("recordId").toString();
+        auto* remove =
+            row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryDelete"));
+        auto* confirmation = row->findChild<adqt::widgets::AdPopconfirm*>(
+            QStringLiteral("pinnedManagementEntryDeleteConfirm"));
+        require(remove != nullptr && confirmation != nullptr,
+                "record has a Delete action and confirmation");
+        QPointer<adqt::widgets::AdPopconfirm> confirmationGuard(confirmation);
+        const QPointF local = remove->rect().center();
+        const QPointF global = remove->mapToGlobal(local.toPoint());
+        QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
+                            Qt::NoModifier);
+        QApplication::sendEvent(remove, &press);
+        QApplication::sendEvent(remove, &release);
+        application.processEvents();
+        require(confirmation->isVisible(), "Delete opens its confirmation");
+        auto* accept = confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok);
+        require(accept != nullptr, "confirmation exposes its Delete button");
+        accept->click();
+        application.processEvents();
+        require(!repository.loadRecord(removedId), "confirmed Delete removes the record");
+        const auto remainingRows =
+            page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+        require(confirmationGuard.isNull() && remainingRows.size() == 2 &&
+                    std::none_of(remainingRows.cbegin(), remainingRows.cend(),
+                                 [&removedId](const QFrame* candidate) {
+                                     return candidate->property("recordId").toString() == removedId;
+                                 }),
+                "Delete closes its popup and refreshes the remaining rows");
+        const QString selectedId = remainingRows.front()->property("recordId").toString();
+        remainingRows.front()->findChild<adqt::widgets::AdCheckbox*>()->setChecked(true);
+        auto* selectedConfirmation = page.findChild<adqt::widgets::AdPopconfirm*>(
+            QStringLiteral("pinnedManagementDeleteSelectedConfirm"));
+        require(selectedConfirmation != nullptr, "selected Delete has a confirmation");
+        selectedConfirmation->show();
+        application.processEvents();
+        require(selectedConfirmation->isVisible(), "selected Delete opens its confirmation");
+        selectedConfirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok)->click();
+        application.processEvents();
+        require(!repository.loadRecord(selectedId) &&
+                    page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord")).size() ==
+                        1,
+                "selected Delete refreshes the page after removing its record");
     }
     storage::ApplicationStorage::instance().shutdown();
     return 0;

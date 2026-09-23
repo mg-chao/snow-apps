@@ -361,7 +361,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>%1 cannot be used as a pinned window shortcut, try another key</source>
-            <translation>%1 不能用作固定到屏幕窗口快捷键，请尝试其他快捷键</translation>
+            <translation>%1 不能用作固定到屏幕的窗口快捷键，请尝试其他快捷键</translation>
         </message>
         <message>
             <source>%1 cannot be used as a recording shortcut, try another key</source>
@@ -377,7 +377,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>%1 is already assigned to another pinned window action, try another key</source>
-            <translation>%1 已分配给其他固定到屏幕窗口操作，请尝试其他快捷键</translation>
+            <translation>%1 已分配给其他固定到屏幕的窗口操作，请尝试其他快捷键</translation>
         </message>
         <message>
             <source>%1 is already assigned to another recording action, try another key</source>
@@ -405,7 +405,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>Invalid pinned window shortcut</source>
-            <translation>无效的固定到屏幕窗口快捷键</translation>
+            <translation>无效的固定到屏幕的窗口快捷键</translation>
         </message>
         <message>
             <source>Invalid recording shortcut</source>
@@ -429,7 +429,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>This key cannot be used as a pinned window shortcut, try another key</source>
-            <translation>此快捷键不能用作固定到屏幕窗口快捷键，请尝试其他快捷键</translation>
+            <translation>此快捷键不能用作固定到屏幕的窗口快捷键，请尝试其他快捷键</translation>
         </message>
         <message>
             <source>This key cannot be used as a recording shortcut, try another key</source>
@@ -445,7 +445,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>This key is already assigned to another pinned window action, try another key</source>
-            <translation>此快捷键已分配给其他固定到屏幕窗口操作，请尝试其他快捷键</translation>
+            <translation>此快捷键已分配给其他固定到屏幕的窗口操作，请尝试其他快捷键</translation>
         </message>
         <message>
             <source>This key is already assigned to another recording action, try another key</source>

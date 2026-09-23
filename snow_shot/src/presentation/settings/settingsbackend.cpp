@@ -1687,8 +1687,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("drawing_mode"), QStringLiteral("resize_window"),
               QStringLiteral("thumbnail_mode"), QStringLiteral("hide_to_top"),
               QStringLiteral("toggle_click_through"), QStringLiteral("close_window"),
-              QStringLiteral("move_cursor_up"), QStringLiteral("move_cursor_down"),
-              QStringLiteral("move_cursor_left"), QStringLiteral("move_cursor_right")}) {
+              QStringLiteral("destroy_window"), QStringLiteral("move_cursor_up"),
+              QStringLiteral("move_cursor_down"), QStringLiteral("move_cursor_left"),
+              QStringLiteral("move_cursor_right")}) {
             defaults.insert(actionId, shortcutListDefault(
                                           QStringLiteral("pin_to_screen_shortcuts/") + actionId));
         }

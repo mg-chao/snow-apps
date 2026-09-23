@@ -3910,6 +3910,36 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     require(processUntilDeleted(guardedWindow, 2000), "shortcut test pin was not deleted");
 }
 
+void pinnedDestroyShortcutUsesNormalMenuColor() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    auto* pinnedWindow = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.screen = screen;
+    require(pinnedWindow->present(config), "Destroy shortcut test pin presentation failed");
+    auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
+    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* destroyAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
+    require(canvas != nullptr && menu != nullptr && destroyAction != nullptr &&
+                !menu->actionDanger(destroyAction),
+            "Destroy must use the normal pinned menu color");
+    require(destroyAction->text().endsWith(QStringLiteral("\tCtrl+Esc")),
+            "Destroy must show its default shortcut in the pinned menu");
+    sendShortcut(*canvas, Qt::Key_Escape, Qt::ControlModifier);
+    require(!guardedWindow.isNull(), "Destroy must activate on shortcut release");
+    QKeyEvent destroyRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ControlModifier);
+    QCoreApplication::sendEvent(canvas, &destroyRelease);
+    require(processUntilDeleted(guardedWindow, 2000), "Ctrl+Esc must destroy the pinned window");
+}
+
 void pinnedMovementShortcutsMoveIdleWindow() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -10803,6 +10833,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
             pinnedConfiguredShortcutUpdatesImmediately(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pinned-destroy-shortcut-only"))) {
+            pinnedDestroyShortcutUsesNormalMenuColor();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--movement-shortcut-only"))) {

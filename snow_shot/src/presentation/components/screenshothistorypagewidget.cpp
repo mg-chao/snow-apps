@@ -3,6 +3,7 @@
 #include "snowimageqtcodec.h"
 
 #include "snow_shot/presentation/components/actionpopupmenu.h"
+#include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/historyselectionbar.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
@@ -15,8 +16,6 @@
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include "antd_icons.h"
-#include "icon_renderer.h"
-#include "icons/widget_icons.h"
 #include "widgets/button.h"
 #include "widgets/carousel.h"
 #include "widgets/checkbox.h"
@@ -235,19 +234,6 @@ class ScreenshotHistoryTaskExecutor final {
 ScreenshotHistoryTaskExecutor& historyTaskExecutor() {
     static ScreenshotHistoryTaskExecutor executor;
     return executor;
-}
-
-QColor colorOnBackground(const QColor& foreground, const QColor& background) {
-    if (!foreground.isValid()) {
-        return background;
-    }
-    if (!background.isValid() || foreground.alpha() >= 255) {
-        return foreground;
-    }
-    const float alpha = foreground.alphaF();
-    return QColor::fromRgbF(foreground.redF() * alpha + background.redF() * (1.0F - alpha),
-                            foreground.greenF() * alpha + background.greenF() * (1.0F - alpha),
-                            foreground.blueF() * alpha + background.blueF() * (1.0F - alpha));
 }
 
 adqt::widgets::AdSelect::Option sourceOption(const QString& value, const QString& label) {
@@ -1904,14 +1890,8 @@ void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& sch
         m_emptyDescription->setPalette(mutedPalette);
     }
     if (m_emptyIcon != nullptr) {
-        const QColor background = scheme.map.colorBgContainer;
-        const QPixmap icon = adqt::icons::renderIconPixmap(
-            adqt::widgets::icons::twotone::EmptySimple(adqt::icons::IconColors::threeTone(
-                colorOnBackground(scheme.map.colorFill, background),
-                colorOnBackground(scheme.map.colorFillQuaternary, background),
-                colorOnBackground(scheme.map.colorFillTertiary, background))),
-            {m_emptyIcon->size(), m_emptyIcon->devicePixelRatioF()});
-        m_emptyIcon->setPixmap(icon);
+        m_emptyIcon->setPixmap(snow_shot::presentation::components::renderEmptyStateIcon(
+            scheme, m_emptyIcon->size(), m_emptyIcon->devicePixelRatioF()));
     }
     for (QWidget* child :
          m_entriesHost->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {

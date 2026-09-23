@@ -1093,6 +1093,18 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("close_window"),
                                     m_shortcutManager->addBinding(this, std::move(closeWindow)));
 
+    ShortcutManager::Binding destroyWindow;
+    destroyWindow.id = QStringLiteral("pinned.destroy");
+    destroyWindow.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
+    destroyWindow.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
+    destroyWindow.canActivate = localCommandsAllowed;
+    destroyWindow.activate = [this](const auto&) {
+        requestDestroy();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("destroy_window"),
+                                    m_shortcutManager->addBinding(this, std::move(destroyWindow)));
+
     const struct {
         const char* id;
         snow_shot::platform::PhysicalCursorDirection direction;
@@ -1190,6 +1202,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"hide_to_top", "screenshotPinnedHideToTopAction"},
         {"toggle_click_through", "screenshotPinnedClickThroughAction"},
         {"close_window", "screenshotPinnedCloseAction"},
+        {"destroy_window", "screenshotPinnedDestroyAction"},
         {"move_cursor_up", nullptr},
         {"move_cursor_down", nullptr},
         {"move_cursor_left", nullptr},
@@ -2697,7 +2710,6 @@ void ScreenshotPinnedWindow::createContextMenu() {
         m_contextMenu->addItem(tr("Destroy"), custom_outlined_icons::DestroyPinnedWindow());
     setActionTranslationSource(destroyAction, "Destroy");
     destroyAction->setObjectName(QStringLiteral("screenshotPinnedDestroyAction"));
-    m_contextMenu->setActionDanger(destroyAction);
     connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::requestDestroy);
 
     m_closeAction = m_contextMenu->addItem(tr("Close"), outlined_icons::Close());

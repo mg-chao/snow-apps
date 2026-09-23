@@ -109,7 +109,7 @@
         <message numerus="yes">
             <source>%n pinned window(s)</source>
             <translation>
-                <numerusform>%n 个贴图窗口</numerusform>
+                <numerusform>%n 个固定到屏幕的窗口</numerusform>
             </translation>
         </message>
         <message>
@@ -118,7 +118,7 @@
         </message>
         <message>
             <source>Bulk actions for selected pinned windows</source>
-            <translation>对选中的贴图窗口执行批量操作</translation>
+            <translation>对选中的固定到屏幕的窗口执行批量操作</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -126,7 +126,7 @@
         </message>
         <message>
             <source>Change the source or date range to see more pinned windows</source>
-            <translation>更改来源或日期范围以查看更多贴图窗口</translation>
+            <translation>更改来源或日期范围以查看更多固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Clipboard</source>
@@ -156,19 +156,19 @@
         </message>
         <message>
             <source>Delete all pinned windows</source>
-            <translation>删除所有贴图窗口</translation>
+            <translation>删除所有固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Delete all pinned windows?</source>
-            <translation>删除所有贴图窗口？</translation>
+            <translation>删除所有固定到屏幕的窗口？</translation>
         </message>
         <message>
             <source>Delete selected pinned windows</source>
-            <translation>删除选中的贴图窗口</translation>
+            <translation>删除选中的固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Delete this pinned window?</source>
-            <translation>删除此贴图窗口？</translation>
+            <translation>删除此固定到屏幕的窗口？</translation>
         </message>
         <message>
             <source>Deselect all</source>
@@ -176,7 +176,7 @@
         </message>
         <message>
             <source>Deselect all pinned windows</source>
-            <translation>取消选择所有贴图窗口</translation>
+            <translation>取消选择所有固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>End date</source>
@@ -192,11 +192,11 @@
         </message>
         <message>
             <source>No matching pinned windows</source>
-            <translation>没有符合条件的贴图窗口</translation>
+            <translation>没有符合条件的固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>No pinned windows</source>
-            <translation>暂无贴图窗口</translation>
+            <translation>暂无固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Other / legacy</source>
@@ -204,11 +204,15 @@
         </message>
         <message>
             <source>Pin to Screen Management</source>
-            <translation>贴图管理</translation>
+            <translation>固定到屏幕管理</translation>
         </message>
         <message>
             <source>Pinned images and text will appear here</source>
-            <translation>贴到屏幕的图片和文字将显示在这里</translation>
+            <translation>固定到屏幕的图片和文字将显示在这里</translation>
+        </message>
+        <message>
+            <source>Pinned window image</source>
+            <translation>固定到屏幕的窗口的图片</translation>
         </message>
         <message>
             <source>Preview unavailable</source>
@@ -216,7 +220,7 @@
         </message>
         <message>
             <source>Refresh pinned windows</source>
-            <translation>刷新贴图窗口</translation>
+            <translation>刷新固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Restore</source>
@@ -319,7 +323,7 @@
         </message>
         <message>
             <source>Copied and pinned screenshots will appear here</source>
-            <translation>复制或固定的截图会显示在这里</translation>
+            <translation>已复制或固定到屏幕的截图会显示在这里</translation>
         </message>
         <message>
             <source>Copy to clipboard</source>
@@ -602,19 +606,19 @@
         </message>
         <message>
             <source>The pinned image copy could not be started</source>
-            <translation>无法启动已固定图像的复制</translation>
+            <translation>无法启动已固定到屏幕的图像的复制</translation>
         </message>
         <message>
             <source>The pinned image could not be copied: %1</source>
-            <translation>无法复制已固定的图像：%1</translation>
+            <translation>无法复制已固定到屏幕的图像：%1</translation>
         </message>
         <message>
             <source>The pinned image could not be prepared</source>
-            <translation>无法准备已固定的图像</translation>
+            <translation>无法准备已固定到屏幕的图像</translation>
         </message>
         <message>
             <source>The pinned image save could not be started</source>
-            <translation>无法启动已固定图像的保存</translation>
+            <translation>无法启动已固定到屏幕的图像的保存</translation>
         </message>
         <message>
             <source>Thumbnail mode</source>

@@ -755,7 +755,7 @@
         </message>
         <message>
             <source>All closed pinned windows will be removed; retained windows are protected</source>
-            <translation>将移除所有已关闭的贴图窗口；保留中的窗口不受影响</translation>
+            <translation>将移除所有已关闭的固定到屏幕的窗口；保留中的窗口不受影响</translation>
         </message>
         <message>
             <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
@@ -899,7 +899,7 @@
         </message>
         <message>
             <source>Browse, restore, and delete pinned windows</source>
-            <translation>浏览、恢复和删除贴图窗口</translation>
+            <translation>浏览、恢复和删除固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Cached history thumbnails will be removed and rebuilt on demand</source>
@@ -983,7 +983,7 @@
         </message>
         <message>
             <source>Choose the action for double-clicking a draggable area of a pinned screenshot</source>
-            <translation>选择双击固定截图可拖动区域时执行的操作</translation>
+            <translation>选择双击固定到屏幕的截图可拖动区域时执行的操作</translation>
         </message>
         <message>
             <source>Choose the action for double-clicking while moving or drawing in a screenshot</source>
@@ -991,7 +991,7 @@
         </message>
         <message>
             <source>Choose the action for middle-clicking a draggable area of a pinned screenshot</source>
-            <translation>选择在固定截图可拖动区域单击鼠标中键时执行的操作</translation>
+            <translation>选择在固定到屏幕的截图可拖动区域单击鼠标中键时执行的操作</translation>
         </message>
         <message>
             <source>Choose the action for middle-clicking while moving or drawing in a screenshot</source>
@@ -1003,7 +1003,7 @@
         </message>
         <message>
             <source>Choose the compression effort used for display images saved in closed pinned windows</source>
-            <translation>选择保存贴图图像时使用的压缩级别</translation>
+            <translation>选择保存已关闭的固定到屏幕内容时使用的图像压缩级别</translation>
         </message>
         <message>
             <source>Choose the compression effort used for display images saved in screenshot history</source>
@@ -1019,7 +1019,7 @@
         </message>
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
-            <translation>选择缩放固定截图时使用的固定点</translation>
+            <translation>选择缩放固定到屏幕的截图时使用的固定点</translation>
         </message>
         <message>
             <source>Choose the format used for automatically saved screenshot files</source>
@@ -1063,7 +1063,7 @@
         </message>
         <message>
             <source>Choose when recognized text can be selected on pinned screenshots.</source>
-            <translation>选择何时可以在固定截图上选择识别出的文本。</translation>
+            <translation>选择何时可以在固定到屏幕的截图上选择识别出的文本。</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1354,6 +1354,10 @@
             <translation>删除屏幕录制临时文件？</translation>
         </message>
         <message>
+            <source>Destroy</source>
+            <translation>销毁</translation>
+        </message>
+        <message>
             <source>DirectML</source>
             <translation>DirectML</translation>
         </message>
@@ -1535,7 +1539,7 @@
         </message>
         <message>
             <source>Fixed screenshot</source>
-            <translation>固定截图</translation>
+            <translation>固定到屏幕的截图</translation>
         </message>
         <message>
             <source>Focused window</source>
@@ -1783,7 +1787,7 @@
         </message>
         <message>
             <source>Limit how much disk space closed pinned windows can use</source>
-            <translation>限制已关闭贴图窗口占用的磁盘空间</translation>
+            <translation>限制已关闭的固定到屏幕的窗口占用的磁盘空间</translation>
         </message>
         <message>
             <source>Limit how much disk space screenshot history can use</source>
@@ -2047,7 +2051,7 @@
         </message>
         <message>
             <source>Permanently remove closed pinned windows</source>
-            <translation>永久移除已关闭的贴图窗口</translation>
+            <translation>永久移除已关闭的固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Permission status and access</source>
@@ -2059,23 +2063,23 @@
         </message>
         <message>
             <source>Pin Selected Files to Screen</source>
-            <translation>固定选中文件到屏幕</translation>
+            <translation>将选中文件固定到屏幕</translation>
         </message>
         <message>
             <source>Pin clipboard</source>
-            <translation>固定剪贴板</translation>
+            <translation>将剪贴板内容固定到屏幕</translation>
         </message>
         <message>
             <source>Pin clipboard content to screen</source>
-            <translation>固定剪贴板内容到屏幕</translation>
+            <translation>将剪贴板内容固定到屏幕</translation>
         </message>
         <message>
             <source>Pin images, image files, formatted text, or HTML from the clipboard to the screen</source>
-            <translation>固定剪贴板中的图像、图像文件、格式化文本或 HTML 到屏幕</translation>
+            <translation>将剪贴板中的图像、图像文件、格式化文本或 HTML 固定到屏幕</translation>
         </message>
         <message>
             <source>Pin selected image files from File Explorer or the desktop to the screen</source>
-            <translation>固定文件资源管理器或桌面中选中的图像文件到屏幕</translation>
+            <translation>将文件资源管理器或桌面中选中的图像文件固定到屏幕</translation>
         </message>
         <message>
             <source>Pin selected image files from Finder or the desktop to the screen</source>
@@ -2083,11 +2087,11 @@
         </message>
         <message>
             <source>Pin selection</source>
-            <translation>固定选区</translation>
+            <translation>将选区固定到屏幕</translation>
         </message>
         <message>
             <source>Pin the confirmed screenshot selection to the screen</source>
-            <translation>固定确认的截图选区到屏幕</translation>
+            <translation>将确认的截图选区固定到屏幕</translation>
         </message>
         <message>
             <source>Pin to Screen</source>
@@ -2095,7 +2099,7 @@
         </message>
         <message>
             <source>Pin to Screen Management</source>
-            <translation>贴图管理</translation>
+            <translation>固定到屏幕管理</translation>
         </message>
         <message>
             <source>Pin to Screen toolbar settings</source>
@@ -2115,7 +2119,7 @@
         </message>
         <message>
             <source>Pinned screenshot window appearance settings</source>
-            <translation>固定到屏幕窗口外观设置</translation>
+            <translation>固定到屏幕的窗口外观设置</translation>
         </message>
         <message>
             <source>Pinned toolbar</source>
@@ -2123,11 +2127,11 @@
         </message>
         <message>
             <source>Pinned window active border</source>
-            <translation>固定到屏幕窗口激活边框</translation>
+            <translation>固定到屏幕的窗口激活边框</translation>
         </message>
         <message>
             <source>Pinned window border</source>
-            <translation>固定到屏幕窗口边框</translation>
+            <translation>固定到屏幕的窗口边框</translation>
         </message>
         <message>
             <source>Play a shutter sound when capturing the focused window or current display.</source>
@@ -2191,7 +2195,7 @@
         </message>
         <message>
             <source>Recognize text automatically when a pinned screenshot is created</source>
-            <translation>创建固定截图时自动识别文本</translation>
+            <translation>创建固定到屏幕的截图时自动识别文本</translation>
         </message>
         <message>
             <source>Recognize text in the confirmed screenshot selection</source>
@@ -2298,12 +2302,12 @@
             <translation>以管理员身份重启</translation>
         </message>
         <message>
-            <source>Restore application settings from a configuration archive</source>
-            <translation>从配置压缩包恢复应用设置</translation>
+            <source>Restore Last Closed Window</source>
+            <translation>恢复上次关闭的窗口</translation>
         </message>
         <message>
-            <source>Restore last closed windows</source>
-            <translation>恢复最近关闭的窗口</translation>
+            <source>Restore application settings from a configuration archive</source>
+            <translation>从配置压缩包恢复应用设置</translation>
         </message>
         <message>
             <source>Restore original screen colors</source>
@@ -2523,11 +2527,11 @@
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
-            <translation>设置固定截图的边框颜色</translation>
+            <translation>设置固定到屏幕的截图的边框颜色</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots while they have focus</source>
-            <translation>设置固定截图获得焦点时的边框颜色</translation>
+            <translation>设置固定到屏幕的截图获得焦点时的边框颜色</translation>
         </message>
         <message>
             <source>Set the border color of the screenshot selection</source>
@@ -2567,7 +2571,7 @@
         </message>
         <message>
             <source>Set up to two keys for this pinned window action</source>
-            <translation>为此固定到屏幕窗口操作设置最多两个快捷键</translation>
+            <translation>为此固定到屏幕的窗口操作设置最多两个快捷键</translation>
         </message>
         <message>
             <source>Set up to two keys for this recording action</source>
@@ -2599,7 +2603,7 @@
         </message>
         <message>
             <source>Shortcut keys for pinned-to-screen windows</source>
-            <translation>固定到屏幕窗口的快捷键</translation>
+            <translation>固定到屏幕的窗口的快捷键</translation>
         </message>
         <message>
             <source>Shortcut keys for recognition and screenshot actions</source>
@@ -3224,11 +3228,11 @@ Unavailable: %2</source>
         </message>
         <message>
             <source>Pinned windows</source>
-            <translation>固定到屏幕窗口</translation>
+            <translation>固定到屏幕的窗口</translation>
         </message>
         <message>
             <source>Pinned windows disk usage</source>
-            <translation>固定到屏幕窗口磁盘用量</translation>
+            <translation>固定到屏幕的窗口磁盘用量</translation>
         </message>
         <message>
             <source>Portable</source>

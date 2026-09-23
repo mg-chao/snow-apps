@@ -230,7 +230,7 @@ void builtInCatalogIsCompleteAndValid() {
                               "and Windows-only choices");
 #else
     require(sectionCount == 40, "catalog must contain forty sections");
-    require(itemCount == 180, "catalog must contain one hundred eighty items");
+    require(itemCount == 181, "catalog must contain one hundred eighty-one items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -969,7 +969,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 14 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 15 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -1001,6 +1001,11 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("Click-through") &&
             pinToScreenShortcuts->items.at(8).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/toggle_click_through") &&
+            pinToScreenShortcuts->items.at(10).id ==
+                QStringLiteral("pin-to-screen-shortcut.destroy_window") &&
+            pinToScreenShortcuts->items.at(10).title.translated() == QStringLiteral("Destroy") &&
+            pinToScreenShortcuts->items.at(10).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/destroy_window") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
                 pinToScreenShortcuts->items.at(8).payload)
                 .iconFactory &&
@@ -1197,6 +1202,9 @@ void globalMouseSettingsHaveStableContracts() {
                 globalMouse->iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::WheelMouse() &&
                 pinned != nullptr && pinned->pageId == QStringLiteral("pin-to-screen-management") &&
+                pinned->iconFactory &&
+                pinned->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::PinToScreenManagement() &&
                 translation != nullptr && translation->pageId == QStringLiteral("translation") &&
                 translation->iconFactory && history != nullptr &&
                 history->pageId == QStringLiteral("screenshot-history"),
@@ -1376,8 +1384,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(4).id == QStringLiteral("system") &&
                 trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 22 &&
                 trayOptionIds.at(8) == QStringLiteral("quick.pin-clipboard-content") &&
-                trayOptionIds.at(9) == QStringLiteral("quick.restore-last-closed-windows") &&
-                trayOptionIds.at(10) == QStringLiteral("quick.pin-selected-files") &&
+                trayOptionIds.at(9) == QStringLiteral("quick.pin-selected-files") &&
+                trayOptionIds.at(10) == QStringLiteral("quick.restore-last-closed-windows") &&
                 trayOptionIds.at(11) == QStringLiteral("quick.screen-record") &&
                 trayOptionIds.at(12) == QStringLiteral("quick.screen-record-copy") &&
                 trayOptionIds.at(13) == QStringLiteral("quick.open-screen-recording-folder") &&
@@ -1528,8 +1536,10 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 pinSection->reset == settings::SettingsSectionReset::GlobalPinToScreenShortcuts &&
                 pinSection->items.size() == 3 &&
                 pinSection->items.at(0).id == QStringLiteral("quick.pin-clipboard-content") &&
-                pinSection->items.at(1).id == QStringLiteral("quick.restore-last-closed-windows") &&
-                pinSection->items.at(2).id == QStringLiteral("quick.pin-selected-files"),
+                pinSection->items.at(1).id == QStringLiteral("quick.pin-selected-files") &&
+                pinSection->items.at(2).id == QStringLiteral("quick.restore-last-closed-windows") &&
+                pinSection->items.at(2).title.translated() ==
+                    QStringLiteral("Restore Last Closed Window"),
             "Pin to screen quick actions must form their own resettable category");
     const auto shortcutPayload = [](const settings::SettingsItemDefinition* item) {
         return item != nullptr

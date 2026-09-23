@@ -799,6 +799,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/pagecontainerwidget.h
     include/snow_shot/presentation/components/sectionheaderwidget.h
     include/snow_shot/presentation/components/screenshothistorypagewidget.h
+    include/snow_shot/presentation/components/emptystateicon.h
     include/snow_shot/presentation/components/customaimodelssettingswidget.h
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
@@ -3441,6 +3442,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-pinned-destroy-shortcut-tests
+        COMMAND snow-shot-pinned-window-tests --pinned-destroy-shortcut-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-destroy-shortcut-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-pinned-resize-window-tool-tests
         COMMAND snow-shot-pinned-window-tests --resize-window-tool-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-resize-window-tool-tests PROPERTIES

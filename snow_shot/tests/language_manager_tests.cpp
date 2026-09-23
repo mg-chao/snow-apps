@@ -65,6 +65,28 @@ int main(int argc, char** argv) {
             "Ant Design Qt should follow Simplified Chinese");
     require(settings.language() == QStringLiteral("zh_CN"),
             "a selected locale should persist immediately");
+    require(QCoreApplication::translate("PinnedWindowManagementPageWidget",
+                                        "Pin to Screen Management") ==
+                QString::fromUtf8("固定到屏幕管理"),
+            "Simplified Chinese should use Pin to Screen terminology in management");
+    require(QCoreApplication::translate("SettingsCatalog", "Pin to Screen Management") ==
+                QString::fromUtf8("固定到屏幕管理"),
+            "Simplified Chinese settings should use the same management title");
+    require(QCoreApplication::translate("PinnedWindowManagementPageWidget", "No pinned windows") ==
+                QString::fromUtf8("暂无固定到屏幕的窗口"),
+            "Simplified Chinese management should use the same window terminology");
+
+    require(manager.setLanguage(QStringLiteral("zh_TW")), "Traditional Chinese should load");
+    require(QCoreApplication::translate("PinnedWindowManagementPageWidget",
+                                        "Pin to Screen Management") ==
+                QString::fromUtf8("固定到螢幕管理"),
+            "Traditional Chinese should use Pin to Screen terminology in management");
+    require(QCoreApplication::translate("SettingsCatalog", "Pin to Screen Management") ==
+                QString::fromUtf8("固定到螢幕管理"),
+            "Traditional Chinese settings should use the same management title");
+    require(QCoreApplication::translate("PinnedWindowManagementPageWidget", "No pinned windows") ==
+                QString::fromUtf8("尚無固定到螢幕的視窗"),
+            "Traditional Chinese management should use the same window terminology");
 
     require(manager.setLanguage(QStringLiteral("system")),
             "Follow system should be a persistent preference");

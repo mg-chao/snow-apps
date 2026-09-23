@@ -213,6 +213,10 @@
             <translation>Pinned images and text will appear here</translation>
         </message>
         <message>
+            <source>Pinned window image</source>
+            <translation>Pinned window image</translation>
+        </message>
+        <message>
             <source>Preview unavailable</source>
             <translation>Preview unavailable</translation>
         </message>

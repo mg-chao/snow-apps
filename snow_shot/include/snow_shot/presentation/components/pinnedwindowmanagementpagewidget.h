@@ -29,6 +29,7 @@ class PinnedWindowManagementDataSource : public QObject {
     virtual QVector<snow_shot::storage::PinnedWindowSummary> records() const = 0;
     virtual QVector<snow_shot::storage::PinnedWindowGroup> groups() const = 0;
     virtual void requestPreview(const QString& id, quint64 generation) = 0;
+    virtual void requestFullImage(const QString& id, quint64 requestId) = 0;
     virtual void cancelPreviews() {}
     virtual void showRecord(const QString& id) = 0;
     virtual void removeRecords(const QVector<QString>& ids) = 0;
@@ -36,6 +37,7 @@ class PinnedWindowManagementDataSource : public QObject {
   signals:
     void changed();
     void previewReady(const QString& id, quint64 generation, const QImage& image);
+    void fullImageReady(const QString& id, quint64 requestId, const QImage& image);
 };
 
 class PinnedWindowManagementPageWidget final : public QWidget {

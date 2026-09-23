@@ -404,6 +404,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("hide_to_top"), QJsonArray{QStringLiteral("H")}},
         {QStringLiteral("toggle_click_through"), QJsonArray{QStringLiteral("Ctrl+M")}},
         {QStringLiteral("close_window"), QJsonArray{QStringLiteral("Esc")}},
+        {QStringLiteral("destroy_window"), QJsonArray{QStringLiteral("Ctrl+Esc")}},
         {QStringLiteral("move_cursor_up"), QJsonArray{QStringLiteral("W"), QStringLiteral("Up")}},
         {QStringLiteral("move_cursor_down"),
          QJsonArray{QStringLiteral("S"), QStringLiteral("Down")}},
@@ -1033,7 +1034,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcutSettings;
     const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
     require(
-        defaults.size() == 14 &&
+        defaults.size() == 15 &&
             portable(defaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             portable(defaults.value(QStringLiteral("copy_original_content"))) ==
@@ -1054,6 +1055,8 @@ void verifyPinToScreenShortcutSettings() {
                 QStringList{QStringLiteral("Ctrl+M")} &&
             portable(defaults.value(QStringLiteral("close_window"))) ==
                 QStringList{QStringLiteral("Esc")} &&
+            portable(defaults.value(QStringLiteral("destroy_window"))) ==
+                QStringList{QStringLiteral("Ctrl+Esc")} &&
             portable(defaults.value(QStringLiteral("move_cursor_up"))) ==
                 QStringList{QStringLiteral("W"), QStringLiteral("Up")} &&
             portable(defaults.value(QStringLiteral("move_cursor_right"))) ==
@@ -1063,7 +1066,7 @@ void verifyPinToScreenShortcutSettings() {
                                            {QStringLiteral("M")}) &&
             shortcutSettings.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !shortcutSettings.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "pinned-window shortcut adapter must expose fourteen stable actions and defaults");
+        "pinned-window shortcut adapter must expose fifteen stable actions and defaults");
     require(
         shortcutSettings.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Alt+E")}) &&
             portable(shortcutSettings.shortcuts(QStringLiteral("drawing_mode"))) ==

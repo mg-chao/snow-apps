@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 
 #include "snow_shot/presentation/components/historyselectionbar.h"
+#include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
@@ -8,11 +9,10 @@
 #include "snow_shot/storage/applicationstorage.h"
 
 #include "antd_icons.h"
-#include "icon_renderer.h"
-#include "icons/widget_icons.h"
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
 #include "widgets/date_picker.h"
+#include "widgets/image.h"
 #include "widgets/pagination.h"
 #include "widgets/popconfirm.h"
 #include "widgets/select.h"
@@ -21,15 +21,20 @@
 #include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLocale>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QThreadPool>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <atomic>
+#include <functional>
 
 using namespace snow_shot;
 
@@ -41,6 +46,24 @@ namespace storage = snow_shot::storage;
 constexpr int kPreviewWidth = 260;
 constexpr int kPreviewHeight = 156;
 constexpr int kWideEntryBreakpoint = 560;
+
+QImage loadPinnedImage(storage::PinnedWindowRepository* repository, const QString& id) {
+    const auto record = repository->loadRecord(id);
+    if (!record) {
+        return {};
+    }
+    if (record->sourceKind == storage::PinnedWindowSourceKind::ClipboardText) {
+        ScreenshotClipboardOriginalContent content;
+        content.html = record->originalHtml;
+        content.text = record->originalText;
+        const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
+            content, record->firstCreationTextDpi);
+        if (rendered) {
+            return rendered->image;
+        }
+    }
+    return record->image;
+}
 
 class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSource {
   public:
@@ -72,26 +95,22 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
     void requestPreview(const QString& id, quint64 generation) override {
         auto* repository = &storage::ApplicationStorage::instance().pinnedWindows();
         m_pool.start([this, repository, id, generation]() {
-            const auto record = repository->loadRecord(id);
-            QImage image;
-            if (record) {
-                image = record->image;
-                if (record->sourceKind == storage::PinnedWindowSourceKind::ClipboardText) {
-                    ScreenshotClipboardOriginalContent content;
-                    content.html = record->originalHtml;
-                    content.text = record->originalText;
-                    const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
-                        content, record->firstCreationTextDpi);
-                    if (rendered) {
-                        image = rendered->image;
-                    }
-                }
-                if (!image.isNull()) {
-                    image = image.scaled(640, 320, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                }
+            QImage image = loadPinnedImage(repository, id);
+            if (!image.isNull()) {
+                image = image.scaled(640, 320, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
             QMetaObject::invokeMethod(
                 this, [this, id, generation, image]() { emit previewReady(id, generation, image); },
+                Qt::QueuedConnection);
+        });
+    }
+
+    void requestFullImage(const QString& id, quint64 requestId) override {
+        auto* repository = &storage::ApplicationStorage::instance().pinnedWindows();
+        m_pool.start([this, repository, id, requestId]() {
+            const QImage image = loadPinnedImage(repository, id);
+            QMetaObject::invokeMethod(
+                this, [this, id, requestId, image]() { emit fullImageReady(id, requestId, image); },
                 Qt::QueuedConnection);
         });
     }
@@ -112,12 +131,38 @@ class PreviewLabel final : public QLabel {
   public:
     using QLabel::QLabel;
 
+    void setPreviewAction(std::function<void()> action) {
+        m_previewAction = std::move(action);
+    }
+
     void setImage(QImage image) {
         m_image = std::move(image);
+        setCursor(m_image.isNull() ? Qt::ArrowCursor : Qt::PointingHandCursor);
         updateImage();
     }
 
   protected:
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (event != nullptr && event->button() == Qt::LeftButton &&
+            rect().contains(event->pos()) && !m_image.isNull() && m_previewAction) {
+            m_previewAction();
+            event->accept();
+            return;
+        }
+        QLabel::mouseReleaseEvent(event);
+    }
+
+    void keyPressEvent(QKeyEvent* event) override {
+        if (event != nullptr && !m_image.isNull() && m_previewAction &&
+            (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter ||
+             event->key() == Qt::Key_Space)) {
+            m_previewAction();
+            event->accept();
+            return;
+        }
+        QLabel::keyPressEvent(event);
+    }
+
     void resizeEvent(QResizeEvent* event) override {
         QLabel::resizeEvent(event);
         updateImage();
@@ -132,6 +177,67 @@ class PreviewLabel final : public QLabel {
     }
 
     QImage m_image;
+    std::function<void()> m_previewAction;
+};
+
+class PinnedImageReply final : public adqt::widgets::AdImageReply {
+  public:
+    PinnedImageReply(PinnedWindowManagementDataSource* source, QString id, QObject* parent)
+        : AdImageReply(parent), m_source(source), m_id(std::move(id)),
+          m_requestId(++s_nextRequestId) {
+        connect(source, &PinnedWindowManagementDataSource::fullImageReady, this,
+                [this](const QString& id, quint64 requestId, const QImage& image) {
+                    if (isFinished() || id != m_id || requestId != m_requestId) {
+                        return;
+                    }
+                    if (image.isNull()) {
+                        fail(QStringLiteral("Pinned image is unavailable"));
+                    } else {
+                        succeed(image, image.size());
+                    }
+                });
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                if (!isFinished()) {
+                    if (m_source) {
+                        m_source->requestFullImage(m_id, m_requestId);
+                    } else {
+                        fail(QStringLiteral("Pinned image source is unavailable"));
+                    }
+                }
+            },
+            Qt::QueuedConnection);
+    }
+
+    void abort() override {
+        if (!isFinished()) {
+            fail(QStringLiteral("Pinned image load aborted"));
+        }
+    }
+
+  private:
+    static std::atomic<quint64> s_nextRequestId;
+    QPointer<PinnedWindowManagementDataSource> m_source;
+    QString m_id;
+    quint64 m_requestId;
+};
+
+std::atomic<quint64> PinnedImageReply::s_nextRequestId{0};
+
+class PinnedImageLoader final : public adqt::widgets::AdImageLoader {
+  public:
+    PinnedImageLoader(PinnedWindowManagementDataSource* source, QString id, QObject* parent)
+        : AdImageLoader(parent), m_source(source), m_id(std::move(id)) {}
+
+    adqt::widgets::AdImageReply* load(const QUrl&, const adqt::widgets::AdImageLoadOptions&,
+                                      QObject* parent) override {
+        return new PinnedImageReply(m_source, m_id, parent);
+    }
+
+  private:
+    QPointer<PinnedWindowManagementDataSource> m_source;
+    QString m_id;
 };
 
 } // namespace
@@ -430,7 +536,12 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         QWidget* widget = item->widget();
         if (widget == m_emptyIcon || widget == m_emptyTitle || widget == m_emptyDescription) {
             widget->hide();
-        } else {
+        } else if (widget != nullptr) {
+            // A repository change can arrive before a Delete popconfirm's queued hide.
+            // Close its tool window before destroying the row that owns it.
+            for (auto* confirmation : widget->findChildren<adqt::widgets::AdPopconfirm*>()) {
+                confirmation->hide();
+            }
             delete widget;
         }
         delete item;
@@ -508,8 +619,20 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         preview->setFixedSize(kPreviewWidth, kPreviewHeight);
         preview->setAlignment(Qt::AlignCenter);
         preview->setText(tr("Loading preview…"));
+        preview->setFocusPolicy(Qt::StrongFocus);
+        preview->setAccessibleName(tr("Pinned window image"));
         rowLayout->addWidget(preview, 0, Qt::AlignCenter);
         m_previews.insert(record.id, preview);
+        auto* viewer = new adqt::widgets::AdImageViewer(row);
+        viewer->setOwnerWindow(preview);
+        viewer->setImageLoader(new PinnedImageLoader(m_source, record.id, viewer));
+        auto* previewModel = new adqt::widgets::AdImageListModel(viewer);
+        QUrl imageSource;
+        imageSource.setScheme(QStringLiteral("pinned"));
+        imageSource.setPath(record.id);
+        previewModel->setItems({{imageSource, tr("Pinned window image")}});
+        viewer->setModel(previewModel);
+        preview->setPreviewAction([viewer]() { viewer->openAt(0); });
         auto* confirmation = new adqt::widgets::AdPopconfirm(row);
         confirmation->setObjectName(QStringLiteral("pinnedManagementEntryDeleteConfirm"));
         confirmation->setSourceWidget(remove);
@@ -713,10 +836,8 @@ void PinnedWindowManagementPageWidget::applyTheme(const styles::ThemeColorScheme
     emptyFont.setWeight(QFont::DemiBold);
     m_emptyTitle->setFont(emptyFont);
     static_cast<HistorySelectionBar*>(m_selectionPanel)->applyTheme(scheme);
-    m_emptyIcon->setPixmap(adqt::icons::renderIconPixmap(
-        adqt::widgets::icons::twotone::EmptySimple(adqt::icons::IconColors::threeTone(
-            scheme.map.colorFill, scheme.map.colorFillQuaternary, scheme.map.colorFillTertiary)),
-        {m_emptyIcon->size(), m_emptyIcon->devicePixelRatioF()}));
+    m_emptyIcon->setPixmap(snow_shot::presentation::components::renderEmptyStateIcon(
+        scheme, m_emptyIcon->size(), m_emptyIcon->devicePixelRatioF()));
     const QString cardStyle =
         QStringLiteral("QFrame#pinnedManagementRecord { background: %1; border: %2px solid %3; "
                        "border-radius: %4px; }")

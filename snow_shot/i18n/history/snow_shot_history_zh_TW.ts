@@ -65,11 +65,11 @@
         </message>
         <message>
             <source>Pin this screenshot to the screen</source>
-            <translation>將此截圖釘選到螢幕</translation>
+            <translation>將此截圖固定到螢幕</translation>
         </message>
         <message>
             <source>Pin to screen</source>
-            <translation>釘選到螢幕</translation>
+            <translation>固定到螢幕</translation>
         </message>
         <message>
             <source>Position %1, %2  ·  %3</source>
@@ -97,7 +97,7 @@
         </message>
         <message>
             <source>This screenshot cannot be pinned</source>
-            <translation>此截圖無法釘選到螢幕</translation>
+            <translation>此截圖無法固定到螢幕</translation>
         </message>
     </context>
     <context>
@@ -109,7 +109,7 @@
         <message numerus="yes">
             <source>%n pinned window(s)</source>
             <translation>
-                <numerusform>%n 個貼圖視窗</numerusform>
+                <numerusform>%n 個固定到螢幕的視窗</numerusform>
             </translation>
         </message>
         <message>
@@ -118,7 +118,7 @@
         </message>
         <message>
             <source>Bulk actions for selected pinned windows</source>
-            <translation>對選取的貼圖視窗執行批次操作</translation>
+            <translation>對選取的固定到螢幕的視窗執行批次操作</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -126,7 +126,7 @@
         </message>
         <message>
             <source>Change the source or date range to see more pinned windows</source>
-            <translation>變更來源或日期範圍以查看更多貼圖視窗</translation>
+            <translation>變更來源或日期範圍以查看更多固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>Clipboard</source>
@@ -156,19 +156,19 @@
         </message>
         <message>
             <source>Delete all pinned windows</source>
-            <translation>刪除所有貼圖視窗</translation>
+            <translation>刪除所有固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>Delete all pinned windows?</source>
-            <translation>刪除所有貼圖視窗？</translation>
+            <translation>刪除所有固定到螢幕的視窗？</translation>
         </message>
         <message>
             <source>Delete selected pinned windows</source>
-            <translation>刪除選取的貼圖視窗</translation>
+            <translation>刪除選取的固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>Delete this pinned window?</source>
-            <translation>刪除此貼圖視窗？</translation>
+            <translation>刪除此固定到螢幕的視窗？</translation>
         </message>
         <message>
             <source>Deselect all</source>
@@ -176,7 +176,7 @@
         </message>
         <message>
             <source>Deselect all pinned windows</source>
-            <translation>取消選取所有貼圖視窗</translation>
+            <translation>取消選取所有固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>End date</source>
@@ -192,11 +192,11 @@
         </message>
         <message>
             <source>No matching pinned windows</source>
-            <translation>沒有符合條件的貼圖視窗</translation>
+            <translation>沒有符合條件的固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>No pinned windows</source>
-            <translation>尚無貼圖視窗</translation>
+            <translation>尚無固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>Other / legacy</source>
@@ -204,11 +204,15 @@
         </message>
         <message>
             <source>Pin to Screen Management</source>
-            <translation>貼圖管理</translation>
+            <translation>固定到螢幕管理</translation>
         </message>
         <message>
             <source>Pinned images and text will appear here</source>
-            <translation>貼到螢幕的圖片與文字會顯示在這裡</translation>
+            <translation>固定到螢幕的圖片與文字會顯示在這裡</translation>
+        </message>
+        <message>
+            <source>Pinned window image</source>
+            <translation>固定到螢幕的視窗的圖片</translation>
         </message>
         <message>
             <source>Preview unavailable</source>
@@ -216,7 +220,7 @@
         </message>
         <message>
             <source>Refresh pinned windows</source>
-            <translation>重新整理貼圖視窗</translation>
+            <translation>重新整理固定到螢幕的視窗</translation>
         </message>
         <message>
             <source>Restore</source>
@@ -319,7 +323,7 @@
         </message>
         <message>
             <source>Copied and pinned screenshots will appear here</source>
-            <translation>已複製或釘選的截圖會顯示在這裡</translation>
+            <translation>已複製或固定到螢幕的截圖會顯示在這裡</translation>
         </message>
         <message>
             <source>Copy to clipboard</source>
@@ -381,7 +385,7 @@
         </message>
         <message>
             <source>Pin to screen</source>
-            <translation>釘選到螢幕</translation>
+            <translation>固定到螢幕</translation>
         </message>
         <message>
             <source>Refresh history</source>
@@ -602,19 +606,19 @@
         </message>
         <message>
             <source>The pinned image copy could not be started</source>
-            <translation>無法開始複製已釘選的影像</translation>
+            <translation>無法開始複製已固定到螢幕的影像</translation>
         </message>
         <message>
             <source>The pinned image could not be copied: %1</source>
-            <translation>無法複製已釘選的影像：%1</translation>
+            <translation>無法複製已固定到螢幕的影像：%1</translation>
         </message>
         <message>
             <source>The pinned image could not be prepared</source>
-            <translation>無法準備已釘選的影像</translation>
+            <translation>無法準備已固定到螢幕的影像</translation>
         </message>
         <message>
             <source>The pinned image save could not be started</source>
-            <translation>無法開始儲存已釘選的影像</translation>
+            <translation>無法開始儲存已固定到螢幕的影像</translation>
         </message>
         <message>
             <source>Thumbnail mode</source>

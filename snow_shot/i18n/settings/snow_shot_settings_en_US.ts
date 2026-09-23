@@ -1354,6 +1354,10 @@
             <translation>Delete temporary recording files?</translation>
         </message>
         <message>
+            <source>Destroy</source>
+            <translation>Destroy</translation>
+        </message>
+        <message>
             <source>DirectML</source>
             <translation>DirectML</translation>
         </message>
@@ -2298,12 +2302,12 @@
             <translation>Restart as administrator</translation>
         </message>
         <message>
-            <source>Restore application settings from a configuration archive</source>
-            <translation>Restore application settings from a configuration archive</translation>
+            <source>Restore Last Closed Window</source>
+            <translation>Restore Last Closed Window</translation>
         </message>
         <message>
-            <source>Restore last closed windows</source>
-            <translation>Restore last closed windows</translation>
+            <source>Restore application settings from a configuration archive</source>
+            <translation>Restore application settings from a configuration archive</translation>
         </message>
         <message>
             <source>Restore original screen colors</source>

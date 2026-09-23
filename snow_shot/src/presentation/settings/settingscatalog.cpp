@@ -672,7 +672,7 @@ SettingsItemDefinition pinClipboardContentItem() {
 SettingsItemDefinition restoreLastClosedWindowsItem() {
     return quickActionItem(
         QStringLiteral("quick.restore-last-closed-windows"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Restore last closed windows"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Restore Last Closed Window"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
                           "Restore the most recently closed window in the current group"),
         {}, GlobalShortcutAction::RestoreLastClosedWindows,
@@ -1660,6 +1660,9 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("close_window"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Close window"),
                           []() { return outlined_icons::Close(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("destroy_window"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Destroy"),
+                          []() { return custom_outlined_icons::DestroyPinnedWindow(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("move_cursor_up"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Move cursor up"),
                           []() { return outlined_icons::ArrowUp(); }),
@@ -1954,8 +1957,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::GlobalPinToScreenShortcuts,
                     {
                         pinClipboardContentItem(),
-                        restoreLastClosedWindowsItem(),
                         pinSelectedFilesItem(),
+                        restoreLastClosedWindowsItem(),
                     },
                 },
                 {
@@ -2739,7 +2742,7 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     SettingsNavigationPageDefinition pinned;
     pinned.id = QStringLiteral("nav.pin-to-screen-management");
     pinned.pageId = QString::fromLatin1(PINNED_PAGE_ID);
-    pinned.iconFactory = []() { return custom_outlined_icons::PinToScreen(); };
+    pinned.iconFactory = []() { return custom_outlined_icons::PinToScreenManagement(); };
     return {globalHotkeys, globalMouse, history, pinned, translation, settingsGroup, about};
 }
 
@@ -3095,14 +3098,14 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard content to screen"),
                 GlobalShortcutAction::PinClipboardContent,
                 []() { return custom_outlined_icons::PinClipboard(); }),
-          quick(QStringLiteral("quick.restore-last-closed-windows"),
-                QT_TRANSLATE_NOOP("SettingsCatalog", "Restore last closed windows"),
-                GlobalShortcutAction::RestoreLastClosedWindows,
-                []() { return outlined_icons::History(); }),
           quick(QStringLiteral("quick.pin-selected-files"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Selected Files to Screen"),
                 GlobalShortcutAction::PinSelectedFiles,
-                []() { return custom_outlined_icons::Select(); })}},
+                []() { return custom_outlined_icons::Select(); }),
+          quick(QStringLiteral("quick.restore-last-closed-windows"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Restore Last Closed Window"),
+                GlobalShortcutAction::RestoreLastClosedWindows,
+                []() { return outlined_icons::History(); })}},
         {QStringLiteral("screen-recording"),
          {quick(QStringLiteral("quick.screen-record"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording"),
