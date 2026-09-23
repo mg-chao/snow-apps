@@ -175,15 +175,41 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
         }
 
-        // Client/non-client crossings and capture can suppress Qt Enter/Leave.
-        // Treat native notifications as invalidations, then reconcile tracking
-        // after Qt dispatch using the live hit-test region, not the message type.
+        // The draggable image and resize frame are non-client regions, so Qt's
+        // widget Enter/Leave events alone do not cover them. Arm non-client
+        // leave tracking after Qt dispatch, which may replace the registration.
         const UINT pointerMessage = nativeMessage->message;
+        if (pointerMessage == WM_NCMOUSEMOVE) {
+            window.m_nonClientPointerInside = true;
+            window.setControlsPointerInside(true);
+            if (!window.m_nonClientTrackingPending) {
+                window.m_nonClientTrackingPending = true;
+                QMetaObject::invokeMethod(
+                    &window,
+                    [&window] {
+                        window.m_nonClientTrackingPending = false;
+                        if (window.m_nonClientPointerInside && !window.m_closing &&
+                            window.internalWinId() != 0 &&
+                            !native::trackNonClientLeave(window.internalWinId()))
+                            qWarning("Failed to track pinned window non-client mouse leave");
+                    },
+                    Qt::QueuedConnection);
+            }
+        } else if (pointerMessage == WM_MOUSEMOVE) {
+            window.m_nonClientPointerInside = false;
+            window.setControlsPointerInside(true);
+        } else if (pointerMessage == WM_NCMOUSELEAVE) {
+            if (window.m_nonClientPointerInside) {
+                window.m_nonClientPointerInside = false;
+                window.setControlsPointerInside(false);
+            }
+        } else if (pointerMessage == WM_MOUSELEAVE && !window.m_nonClientPointerInside) {
+            window.setControlsPointerInside(false);
+        }
         if (pointerMessage == WM_MOUSEMOVE || pointerMessage == WM_NCMOUSEMOVE ||
             pointerMessage == WM_MOUSELEAVE || pointerMessage == WM_NCMOUSELEAVE ||
             pointerMessage == WM_CAPTURECHANGED || pointerMessage == WM_CANCELMODE ||
             pointerMessage == WM_LBUTTONUP || pointerMessage == WM_NCLBUTTONUP) {
-            window.refreshControlsPointerPresence();
             window.m_hideToTop->refreshPointer();
         }
 
@@ -561,10 +587,6 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         if (nativeMessage->message == WM_WINDOWPOSCHANGED &&
             window.m_nativeGeometryController != nullptr && window.m_presented) {
             window.handleNativeGeometryObservation();
-        }
-        if (nativeMessage->message == WM_WINDOWPOSCHANGED ||
-            nativeMessage->message == WM_EXITSIZEMOVE) {
-            window.refreshControlsPointerPresence();
         }
     }
 

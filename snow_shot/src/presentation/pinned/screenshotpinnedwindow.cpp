@@ -288,7 +288,6 @@ constexpr int kControlsInset = 16;
 constexpr int kControlButtonSize = 32;
 constexpr int kControlIconSize = 16;
 constexpr int kControlButtonSpacing = 8;
-constexpr int kControlsMinimumNativeDimension = 383;
 constexpr int kThumbnailSize = 83;
 constexpr int kThumbnailAnimationDurationMs = 150;
 constexpr int kScaleReadoutDurationMs = 1000;
@@ -790,15 +789,17 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     setAttribute(Qt::WA_AlwaysShowToolTips, true);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
-    m_pointerPresence = std::make_unique<ScreenshotPinnedControlsPresence>(
-        this,
-        [this] {
-            // Every observation, including the hide deadline, must leave native
-            // tracking consistent even when the visible state does not change.
-            scheduleControlsPointerRefresh();
-            return m_platform->pointerInside();
-        },
-        [this] { updateControlsGeometry(); });
+    m_pointerPresence =
+        std::make_unique<ScreenshotPinnedControlsPresence>(this, [this](bool visible) {
+            if (m_controlsPanel == nullptr)
+                return;
+            m_controlsPanel->setVisible(visible);
+            if (visible) {
+                m_controlsPanel->raise();
+                if (m_scaleLabel != nullptr)
+                    m_scaleLabel->raise();
+            }
+        });
     m_persistenceTimer = new QTimer(this);
     m_persistenceTimer->setSingleShot(true);
     m_persistenceTimer->setInterval(250);
@@ -1436,15 +1437,20 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     }
 
     const bool pointerPresenceChanged =
-        event != nullptr && ScreenshotPinnedControlsPresence::isPointerEvent(event->type());
-    if (pointerPresenceChanged)
-        refreshControlsPointerPresence();
+        event != nullptr &&
+        (event->type() == QEvent::Enter || event->type() == QEvent::Leave ||
+         event->type() == QEvent::MouseMove || event->type() == QEvent::DragEnter ||
+         event->type() == QEvent::DragMove || event->type() == QEvent::DragLeave);
+    if (pointerPresenceChanged && !(event->type() == QEvent::Leave && m_nonClientPointerInside))
+        setControlsPointerInside(event->type() != QEvent::Leave &&
+                                 event->type() != QEvent::DragLeave);
     if (m_platform && m_platform->usesControlledInteraction() && m_presented && !m_closing) {
         if (handlePinnedGesture(this, event) || handleControlledPointer(this, event))
             return true;
     }
     if (event != nullptr && event->type() == QEvent::Hide) {
         setFileDragActive(false);
+        m_nonClientPointerInside = false;
         m_pointerPresence->setActive(false);
         if (m_clickThroughExitButton != nullptr) {
             m_clickThroughExitButton->hide();
@@ -1500,13 +1506,6 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
             static_cast<void>(setClickThroughMode(false));
         }
     }
-    // Geometry, activation and native-surface changes can alter presence with
-    // a stationary pointer. Paint/update requests are not pointer observations.
-    if (event != nullptr &&
-        (event->type() == QEvent::Move || event->type() == QEvent::Resize ||
-         event->type() == QEvent::WinIdChange || event->type() == QEvent::WindowStateChange ||
-         windowActivationChanged || scaleMayHaveChanged || assignedScreenMayHaveChanged))
-        refreshControlsPointerPresence();
     return handled;
 }
 
@@ -1943,9 +1942,9 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (event == nullptr || m_closing) {
         return QWidget::eventFilter(watched, event);
     }
-    if (ScreenshotPinnedControlsPresence::isPointerEvent(event->type())) {
-        refreshControlsPointerPresence();
-    }
+    if (event->type() == QEvent::Enter || event->type() == QEvent::MouseMove ||
+        event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)
+        setControlsPointerInside(true);
     if (m_platform->usesControlledInteraction() &&
         (handlePinnedGesture(watched, event) || handleControlledPointer(watched, event)))
         return true;
@@ -2135,6 +2134,7 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_hideToTop->shutdown();
     shutdownClickThrough();
     m_closing = true;
+    m_nonClientPointerInside = false;
     m_pointerPresence->setActive(false);
     m_deferredInactiveGroupClose = false;
     m_firstContentFramePublished = false;
@@ -2237,8 +2237,10 @@ void ScreenshotPinnedWindow::moveEvent(QMoveEvent* event) {
 
 void ScreenshotPinnedWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    if (!m_closing)
+    if (!m_closing) {
         m_pointerPresence->setActive(true);
+        refreshControlsPointerPresence();
+    }
     if (layout() != nullptr) {
         layout()->activate();
     }
@@ -2370,6 +2372,7 @@ void ScreenshotPinnedWindow::createUi() {
     m_scaleLabel->setObjectName(QStringLiteral("screenshotPinnedScaleLabel"));
 
     m_controlsPanel = new QFrame(this);
+    m_controlsPanel->hide();
     m_controlsPanel->setAttribute(Qt::WA_NativeWindow, false);
     m_controlsPanel->setObjectName(QStringLiteral("screenshotPinnedControlsPanel"));
     m_controlsPanel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -2910,29 +2913,25 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
 }
 
 void ScreenshotPinnedWindow::refreshControlsPointerPresence() {
-    if (!m_closing && m_pointerPresence != nullptr) {
-        m_pointerPresence->refresh();
-    }
+    if (!m_closing)
+        setControlsPointerInside(underMouse());
 }
 
-void ScreenshotPinnedWindow::scheduleControlsPointerRefresh() {
-    if (m_closing || m_controlsPointerRefreshPending)
+void ScreenshotPinnedWindow::setControlsPointerInside(bool inside) {
+    if (m_closing || m_pointerPresence == nullptr)
         return;
-    m_controlsPointerRefreshPending = true;
-    QMetaObject::invokeMethod(
-        this,
-        [this] {
-            if (!m_closing) {
-                // Qt also registers client-area tracking during native dispatch.
-                // Reconcile presence and tracking together after that dispatch,
-                // since the live cursor may have changed since the original event.
-                // Keep the pending flag set so this observation cannot queue itself.
-                m_pointerPresence->refresh();
-                m_platform->refreshPointerTracking();
-            }
-            m_controlsPointerRefreshPending = false;
-        },
-        Qt::QueuedConnection);
+    if (inside)
+        m_pointerPresence->enter();
+    else
+        m_pointerPresence->leave();
+}
+
+void ScreenshotPinnedWindow::updateControlsVisibility() {
+    if (m_closing)
+        return;
+    m_pointerPresence->setPresentation({isVisible(), m_thumbnailMode,
+                                        m_editController != nullptr && m_editController->editMode(),
+                                        m_clickThroughActive, currentNativeGeometry().size()});
 }
 
 void ScreenshotPinnedWindow::updateControlsGeometry() {
@@ -2945,26 +2944,16 @@ void ScreenshotPinnedWindow::updateControlsGeometry() {
     if (m_controlsPanel == nullptr) {
         return;
     }
-    const bool editing = m_editController != nullptr && m_editController->editMode();
-    const QSize nativeSize = currentNativeGeometry().size();
-    const bool tooSmallForControls = !nativeSize.isValid() || nativeSize.isEmpty() ||
-                                     nativeSize.width() < kControlsMinimumNativeDimension ||
-                                     nativeSize.height() < kControlsMinimumNativeDimension;
     m_controlsPanel->adjustSize();
     const QSize panelSize = m_controlsPanel->sizeHint();
     m_controlsPanel->resize(panelSize);
     m_controlsPanel->move(std::max(0, width() - panelSize.width() - kControlsInset),
                           kControlsInset);
-    const bool controlsVisible = isVisible() && m_pointerPresence->inside() && !m_thumbnailMode &&
-                                 !editing && !m_clickThroughActive && !tooSmallForControls;
-    m_controlsPanel->setVisible(controlsVisible);
-    scheduleControlsPointerRefresh();
-    if (!controlsVisible) {
-        return;
-    }
-    m_controlsPanel->raise();
-    if (m_scaleLabel != nullptr) {
-        m_scaleLabel->raise();
+    updateControlsVisibility();
+    if (m_controlsPanel->isVisible()) {
+        m_controlsPanel->raise();
+        if (m_scaleLabel != nullptr)
+            m_scaleLabel->raise();
     }
 }
 

@@ -248,68 +248,19 @@ QRect screenshot_pinned_window_native::currentWindowGeometry(WId windowId) {
 #endif
 }
 
-std::optional<bool> screenshot_pinned_window_native::pointerInsideWindow(WId windowId) {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    POINT pointer{};
-    if (GetCursorPos(&pointer) == FALSE) {
-        return std::nullopt;
-    }
-    const QRect nativeGeometry = currentWindowGeometry(windowId);
-    if (!nativeGeometry.isValid() || nativeGeometry.isEmpty()) {
-        return std::nullopt;
-    }
-    return nativeGeometry.contains(QPoint(pointer.x, pointer.y));
-#else
-    Q_UNUSED(windowId);
-    return std::nullopt;
-#endif
-}
-
-bool screenshot_pinned_window_native::refreshPointerTracking(WId windowId) {
+bool screenshot_pinned_window_native::trackNonClientLeave(WId windowId) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const HWND hwnd = toNativeHwnd(windowId);
     if (hwnd == nullptr || !IsWindow(hwnd))
-        return true;
-    POINT pointer{};
-    if (!GetCursorPos(&pointer))
-        return true; // No valid observation; preserve the current registration.
-
-    TRACKMOUSEEVENT current{};
-    current.cbSize = sizeof(current);
-    current.dwFlags = TME_QUERY;
-    current.hwndTrack = hwnd;
-    if (!TrackMouseEvent(&current))
-        return false;
-    const auto cancel = [&] {
-        if (current.hwndTrack != hwnd || !(current.dwFlags & TME_LEAVE))
-            return true;
-        current.dwFlags = TME_CANCEL | TME_LEAVE | (current.dwFlags & TME_NONCLIENT);
-        return TrackMouseEvent(&current) != FALSE;
-    };
-
-    // Arming tracking on an occluded or input-transparent pin would immediately
-    // post another leave, producing a self-sustaining event loop.
-    const HWND underPointer = WindowFromPoint(pointer);
-    const HWND capture = GetCapture();
-    if (!IsWindowVisible(hwnd) || GetAncestor(underPointer, GA_ROOT) != hwnd ||
-        (capture != nullptr && GetAncestor(capture, GA_ROOT) != hwnd))
-        return cancel();
-    const LRESULT hit = SendMessageW(hwnd, WM_NCHITTEST, 0, MAKELPARAM(pointer.x, pointer.y));
-    if (hit == HTTRANSPARENT || hit == HTNOWHERE || hit == HTERROR)
-        return cancel();
-    const DWORD flags = TME_LEAVE | (hit == HTCLIENT ? 0UL : TME_NONCLIENT);
-    if (current.hwndTrack == hwnd && (current.dwFlags & (TME_LEAVE | TME_NONCLIENT)) == flags)
-        return true;
-    if (!cancel())
         return false;
     TRACKMOUSEEVENT tracking{};
     tracking.cbSize = sizeof(tracking);
-    tracking.dwFlags = flags;
+    tracking.dwFlags = TME_LEAVE | TME_NONCLIENT;
     tracking.hwndTrack = hwnd;
     return TrackMouseEvent(&tracking) != FALSE;
 #else
     Q_UNUSED(windowId);
-    return true;
+    return false;
 #endif
 }
 

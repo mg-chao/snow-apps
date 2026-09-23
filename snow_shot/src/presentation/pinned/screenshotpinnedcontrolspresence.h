@@ -1,101 +1,96 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDCONTROLSPRESENCE_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDCONTROLSPRESENCE_H
 
-#include <QEvent>
+#include <QSize>
 #include <QTimer>
 
 #include <functional>
-#include <optional>
 #include <utility>
 
-// Event-driven presence for the entire pin, including its child controls.
-// Events invalidate the observation; only the live cursor query decides presence.
+// Owns the action-panel visibility policy. The window reports pointer entry and
+// exit from Qt and native non-client events; layout never determines hover.
 class ScreenshotPinnedControlsPresence final : public QObject {
   public:
-    ScreenshotPinnedControlsPresence(QObject* parent, std::function<std::optional<bool>()> resolve,
-                                     std::function<void()> changed)
-        : QObject(parent), m_resolve(std::move(resolve)), m_changed(std::move(changed)) {
+    struct Presentation {
+        bool windowVisible = false;
+        bool thumbnail = false;
+        bool editing = false;
+        bool clickThrough = false;
+        QSize nativeSize;
+
+        [[nodiscard]] bool allowsControls() const {
+            constexpr int minimumNativeDimension = 383;
+            return windowVisible && !thumbnail && !editing && !clickThrough &&
+                   nativeSize.width() >= minimumNativeDimension &&
+                   nativeSize.height() >= minimumNativeDimension;
+        }
+    };
+
+    ScreenshotPinnedControlsPresence(QObject* parent, std::function<void(bool)> visibilityChanged)
+        : QObject(parent), m_visibilityChanged(std::move(visibilityChanged)) {
         m_hideTimer.setSingleShot(true);
         m_hideTimer.setTimerType(Qt::PreciseTimer);
         m_hideTimer.setInterval(100);
         connect(&m_hideTimer, &QTimer::timeout, this, [this] {
-            if (!m_active || !std::exchange(m_hidePending, false))
-                return;
-            // Unknown is not evidence of an exit (e.g. a native surface is
-            // being recreated). A later valid observation starts a new delay.
-            const auto inside = m_resolve();
-            if (inside.has_value())
-                setInside(*inside);
+            if (m_active && m_exitPending) {
+                m_exitPending = false;
+                m_inside = false;
+                publishVisibility();
+            }
         });
     }
 
     void setActive(bool active) {
         m_active = active;
-        if (active) {
-            refresh();
-        } else {
-            cancelHide();
-            setInside(false);
+        if (!active) {
+            m_hideTimer.stop();
+            m_exitPending = false;
+            m_inside = false;
         }
+        publishVisibility();
     }
 
-    void refresh() {
+    void setPresentation(const Presentation& presentation) {
+        m_presentation = presentation;
+        publishVisibility();
+    }
+
+    void enter() {
         if (!m_active)
             return;
-        const auto inside = m_resolve();
-        if (!inside.has_value()) {
-            cancelHide();
-        } else if (*inside) {
-            cancelHide();
-            setInside(true);
-        } else if (m_inside && !m_hidePending) {
-            m_hidePending = true;
-            m_hideTimer.start();
-        }
+        m_hideTimer.stop();
+        m_exitPending = false;
+        m_inside = true;
+        publishVisibility();
+    }
+
+    void leave() {
+        if (!m_active || !m_inside || m_exitPending)
+            return;
+        m_exitPending = true;
+        m_hideTimer.start();
     }
 
     [[nodiscard]] bool inside() const {
-        return m_inside;
-    }
-
-    [[nodiscard]] static bool isPointerEvent(QEvent::Type type) {
-        switch (type) {
-        case QEvent::Enter:
-        case QEvent::Leave:
-        case QEvent::MouseMove:
-        case QEvent::MouseButtonRelease:
-        case QEvent::NonClientAreaMouseMove:
-        case QEvent::NonClientAreaMouseButtonRelease:
-        case QEvent::UngrabMouse:
-        case QEvent::DragEnter:
-        case QEvent::DragMove:
-        case QEvent::DragLeave:
-        case QEvent::Drop:
-            return true;
-        default:
-            return false;
-        }
+        return m_active && m_inside;
     }
 
   private:
     friend class ScreenshotPinnedWindowTestAccess;
 
-    void cancelHide() {
-        m_hidePending = false;
-        m_hideTimer.stop();
-    }
-
-    void setInside(bool inside) {
-        if (std::exchange(m_inside, inside) != inside)
-            m_changed();
+    void publishVisibility() {
+        const bool visible = inside() && m_presentation.allowsControls();
+        if (std::exchange(m_visible, visible) != visible)
+            m_visibilityChanged(visible);
     }
 
     QTimer m_hideTimer;
-    std::function<std::optional<bool>()> m_resolve;
-    std::function<void()> m_changed;
+    std::function<void(bool)> m_visibilityChanged;
+    Presentation m_presentation;
     bool m_active = false;
     bool m_inside = false;
-    bool m_hidePending = false;
+    bool m_exitPending = false;
+    bool m_visible = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDCONTROLSPRESENCE_H

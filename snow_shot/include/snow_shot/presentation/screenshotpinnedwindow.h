@@ -231,7 +231,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateCanvasViewport();
     void updateControlsGeometry();
     void refreshControlsPointerPresence();
-    void scheduleControlsPointerRefresh();
+    void setControlsPointerInside(bool inside);
+    void updateControlsVisibility();
     void destroyCanvas();
     using MaterializationCallback = std::function<void(bool)>;
     using PresentationCompletion = std::function<void(bool, QImage)>;
@@ -527,7 +528,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QMetaObject::Connection m_clickThroughScreenGeometryConnection;
     QMetaObject::Connection m_clickThroughScreenDpiConnection;
     std::unique_ptr<ScreenshotPinnedControlsPresence> m_pointerPresence;
-    bool m_controlsPointerRefreshPending = false;
+    bool m_nonClientPointerInside = false;
+    bool m_nonClientTrackingPending = false;
     bool m_windowActive = false;
     bool m_fileDragActive = false;
     bool m_passiveGeometryReconciliationActive = false;

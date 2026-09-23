@@ -130,16 +130,6 @@ bool PinnedWindowPlatform::eventFilter(QObject* watched, QEvent* event) {
 std::optional<QPointF> PinnedWindowPlatform::pointerPosition() const {
     return QPointF(QCursor::pos());
 }
-std::optional<bool> PinnedWindowPlatform::pointerInside() const {
-    if (!m_window || !m_window->internalWinId())
-        return std::nullopt;
-    const auto current = placement();
-    const auto pointer = pointerPosition();
-    if (!current || !pointer || !m_window->screen())
-        return std::nullopt;
-    return pinnedDesktopRect(*current, *pinnedDisplay(*current, m_window->screen()))
-        .contains(*pointer);
-}
 bool PinnedWindowPlatform::applyGeometry(const QRect& pixels, QScreen* screen,
                                          GeometryUpdate update) {
     if (!screen || !pixels.isValid())
@@ -315,16 +305,6 @@ class WindowsPinnedWindowPlatform final : public PinnedWindowPlatform {
         const QRect rect = windowGeometry();
         return rect.isValid() ? std::optional(pinnedPlacement(rect, *m_window->screen()))
                               : std::nullopt;
-    }
-    std::optional<bool> pointerInside() const override {
-        return m_window
-                   ? screenshot_pinned_window_native::pointerInsideWindow(m_window->internalWinId())
-                   : std::nullopt;
-    }
-    void refreshPointerTracking() override {
-        if (m_window && m_window->internalWinId() &&
-            !screenshot_pinned_window_native::refreshPointerTracking(m_window->internalWinId()))
-            qWarning("Failed to update pinned window mouse leave tracking");
     }
     bool setInputTransparent(bool transparent) override {
         if (!m_window || !screenshot_pinned_window_native::setInputTransparent(
