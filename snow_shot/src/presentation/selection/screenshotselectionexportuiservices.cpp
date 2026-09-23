@@ -58,7 +58,7 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
             auto& storage = snow_shot::storage::ApplicationStorage::instance();
             if (!storage.configurationDirectory().isEmpty()) {
                 static_cast<void>(sourceManaged ? storage.pinnedWindows().updateState(record)
-                                                : storage.pinnedWindows().upsert(record));
+                                                : storage.pinnedWindows().upsertExisting(record));
             }
         };
     config->persistenceRemover = [](const QString& recordId) {
@@ -78,7 +78,7 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
         [](const snow_shot::storage::PinnedWindowRecord& record) {
             auto& storage = snow_shot::storage::ApplicationStorage::instance();
             if (!storage.configurationDirectory().isEmpty()) {
-                static_cast<void>(storage.pinnedWindows().upsert(record));
+                static_cast<void>(storage.pinnedWindows().upsertExisting(record));
             }
         };
 }
@@ -395,7 +395,7 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         transaction.snapshot.updatedUtc = QDateTime::currentDateTimeUtc();
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
         if (storage.isInitialized()) {
-            const auto persisted = storage.pinnedWindows().create(transaction.snapshot);
+            const auto persisted = storage.pinnedWindows().createReserved(transaction.snapshot);
             if (!persisted.success) {
                 qWarning("Pinned source persistence failed: %s", qPrintable(persisted.error));
             }
@@ -417,8 +417,8 @@ class ScreenshotPendingPinCoordinator final : public QObject {
             }
             auto& storage = snow_shot::storage::ApplicationStorage::instance();
             if (storage.isInitialized()) {
-                const auto persisted =
-                    storage.pinnedWindows().create(transaction->snapshot, std::move(result.image));
+                const auto persisted = storage.pinnedWindows().createReserved(
+                    transaction->snapshot, std::move(result.image));
                 if (!persisted.success) {
                     qWarning("Pinned source persistence failed: %s", qPrintable(persisted.error));
                 }
@@ -443,6 +443,10 @@ class ScreenshotPendingPinCoordinator final : public QObject {
     }
 
     void finish(const QString& persistenceId) {
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (storage.isInitialized()) {
+            storage.pinnedWindows().cancelCreation(persistenceId);
+        }
         auto transaction = m_transactions.find(persistenceId);
         if (transaction == m_transactions.end()) {
             return;
@@ -952,6 +956,8 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized() || m_restoringIds.contains(id))
         return false;
+    if (m_groupManager && m_groupManager->hasWindow(id))
+        return m_groupManager->showWindow(id);
     const auto loaded = storage.pinnedWindows().loadRecord(id);
     if (!loaded)
         return false;
@@ -1103,9 +1109,9 @@ void ScreenshotSelectionExportUiServices::destroyRecords(const QVector<QString>&
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return;
+    if (!storage.pinnedWindows().removeMany(ids).success)
+        return;
     for (const auto& id : ids) {
-        if (!storage.pinnedWindows().remove(id).success)
-            continue;
         m_pendingPinCoordinator->cancel(id);
         m_restoringIds.remove(id);
         if (m_groupManager)

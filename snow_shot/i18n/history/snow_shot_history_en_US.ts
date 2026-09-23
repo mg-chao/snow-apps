@@ -109,9 +109,9 @@
         <message numerus="yes">
             <source>%n pinned window(s)</source>
             <translation>
-                <numerusform>%n pinned window</numerusform>
-                <numerusform>%n pinned windows</numerusform>
-            </translation>
+            <numerusform>%n pinned window</numerusform>
+            <numerusform>%n pinned windows</numerusform>
+        </translation>
         </message>
         <message>
             <source>All sources</source>
@@ -152,9 +152,9 @@
         <message numerus="yes">
             <source>Delete %n selected item(s)?</source>
             <translation>
-                <numerusform>Delete %n selected item?</numerusform>
-                <numerusform>Delete %n selected items?</numerusform>
-            </translation>
+            <numerusform>Delete %n selected item?</numerusform>
+            <numerusform>Delete %n selected items?</numerusform>
+        </translation>
         </message>
         <message>
             <source>Delete all pinned windows</source>
@@ -259,9 +259,9 @@
         <message numerus="yes">
             <source>Selected %n item(s)</source>
             <translation>
-                <numerusform>Selected %n item</numerusform>
-                <numerusform>Selected %n items</numerusform>
-            </translation>
+            <numerusform>Selected %n item</numerusform>
+            <numerusform>Selected %n items</numerusform>
+        </translation>
         </message>
         <message>
             <source>Selected files</source>
@@ -305,9 +305,9 @@
         <message numerus="yes">
             <source>%n screenshot(s)</source>
             <translation>
-                <numerusform>%n screenshot</numerusform>
-                <numerusform>%n screenshots</numerusform>
-            </translation>
+            <numerusform>%n screenshot</numerusform>
+            <numerusform>%n screenshots</numerusform>
+        </translation>
         </message>
         <message>
             <source>All sources</source>
@@ -344,9 +344,9 @@
         <message numerus="yes">
             <source>Delete %n selected item(s)?</source>
             <translation>
-                <numerusform>Delete %n selected item?</numerusform>
-                <numerusform>Delete %n selected items?</numerusform>
-            </translation>
+            <numerusform>Delete %n selected item?</numerusform>
+            <numerusform>Delete %n selected items?</numerusform>
+        </translation>
         </message>
         <message>
             <source>Delete all</source>
@@ -415,9 +415,9 @@
         <message numerus="yes">
             <source>Selected %n item(s)</source>
             <translation>
-                <numerusform>Selected %n item</numerusform>
-                <numerusform>Selected %n items</numerusform>
-            </translation>
+            <numerusform>Selected %n item</numerusform>
+            <numerusform>Selected %n items</numerusform>
+        </translation>
         </message>
         <message>
             <source>Start date</source>
@@ -441,6 +441,10 @@
         <message>
             <source>Always on Top</source>
             <translation>Always on Top</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
         </message>
         <message>
             <source>Click-through</source>
@@ -489,6 +493,14 @@
         <message>
             <source>Destroy</source>
             <translation>Destroy</translation>
+        </message>
+        <message>
+            <source>Destroy pinned window</source>
+            <translation>Destroy pinned window</translation>
+        </message>
+        <message>
+            <source>Destroy this pinned window? This action cannot be undone.</source>
+            <translation>Destroy this pinned window? This action cannot be undone.</translation>
         </message>
         <message>
             <source>Display text recognition results</source>
@@ -646,8 +658,40 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Clear Default group</source>
+            <translation>Clear Default group</translation>
+        </message>
+        <message>
+            <source>Clear group</source>
+            <translation>Clear group</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>Default</translation>
+        </message>
+        <message>
+            <source>Delete "%1" and all its pinned windows, including ignored windows? This action cannot be undone.</source>
+            <translation>Delete "%1" and all its pinned windows, including ignored windows? This action cannot be undone.</translation>
+        </message>
+        <message>
+            <source>Delete all pinned windows in "%1", including ignored windows? The Default group will remain. This action cannot be undone.</source>
+            <translation>Delete all pinned windows in "%1", including ignored windows? The Default group will remain. This action cannot be undone.</translation>
+        </message>
+        <message>
+            <source>Delete empty groups</source>
+            <translation>Delete empty groups</translation>
+        </message>
+        <message>
+            <source>Delete every group with no non-ignored pinned windows? Ignored pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
+            <translation>Delete every group with no non-ignored pinned windows? Ignored pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</translation>
+        </message>
+        <message>
+            <source>Delete group</source>
+            <translation>Delete group</translation>
+        </message>
+        <message>
+            <source>Delete groups</source>
+            <translation>Delete groups</translation>
         </message>
         <message>
             <source>Group %1</source>

@@ -310,6 +310,7 @@ struct StoredRecord final {
     QJsonObject payloads;
     PayloadSignature signature;
     std::optional<PreparedPngImage> preparedSource = std::nullopt;
+    quint64 previewSourceRevision = 1;
 };
 
 bool samePayload(const StoredRecord& stored, const PinnedWindowRecord& incoming,
@@ -318,6 +319,18 @@ bool samePayload(const StoredRecord& stored, const PinnedWindowRecord& incoming,
            stored.record.sourceKind == incoming.sourceKind &&
            stored.record.originalFilePath == incoming.originalFilePath &&
            stored.record.originalFileName == incoming.originalFileName;
+}
+
+bool samePreviewSource(const StoredRecord& stored, const PinnedWindowRecord& incoming,
+                       const PayloadSignature& incomingSignature) {
+    return stored.record.sourceKind == incoming.sourceKind &&
+           stored.record.originalFilePath == incoming.originalFilePath &&
+           stored.record.originalFileName == incoming.originalFileName &&
+           stored.record.firstCreationTextDpi == incoming.firstCreationTextDpi &&
+           stored.signature.imageCacheKey == incomingSignature.imageCacheKey &&
+           stored.signature.imageSize == incomingSignature.imageSize &&
+           stored.signature.originalHtmlHash == incomingSignature.originalHtmlHash &&
+           stored.signature.originalTextHash == incomingSignature.originalTextHash;
 }
 
 void preserveLifecycle(PinnedWindowRecord& target, const PinnedWindowRecord& source) {
@@ -692,8 +705,32 @@ bool validatePayloads(const QJsonObject& payloads, const QString& root, const QS
     return true;
 }
 
-bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindowRecord* record) {
-    if (record == nullptr || !validatePayloads(payloads, root, record->id, record->sourceKind)) {
+bool validatePreviewPayloads(const QJsonObject& payloads, const QString& root, const QString& id,
+                             PinnedWindowSourceKind sourceKind) {
+    if (payloads.value(QStringLiteral("directory")).toString() != id) {
+        return false;
+    }
+    const QString directory = payloadDirectory(root, id);
+    const auto validFile = [&payloads, &directory](const QString& key, bool required) {
+        const QJsonValue value = payloads.value(key);
+        if (value.isUndefined()) {
+            return !required;
+        }
+        const QString fileName = value.toString();
+        return value.isString() && safeFileName(fileName) &&
+               QFileInfo(QDir(directory).filePath(fileName)).isFile();
+    };
+    if (sourceKind == PinnedWindowSourceKind::ClipboardText) {
+        return validFile(QStringLiteral("html"), false) && validFile(QStringLiteral("text"), false);
+    }
+    return validFile(QStringLiteral("image"), true);
+}
+
+bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindowRecord* record,
+                  bool sourceOnly = false) {
+    if (record == nullptr ||
+        !(sourceOnly ? validatePreviewPayloads(payloads, root, record->id, record->sourceKind)
+                     : validatePayloads(payloads, root, record->id, record->sourceKind))) {
         return false;
     }
     const QString directory = payloadDirectory(root, record->id);
@@ -713,6 +750,9 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
             return false;
         }
     }
+    if (sourceOnly && record->sourceKind != PinnedWindowSourceKind::ClipboardText) {
+        return true;
+    }
     const auto readText = [&directory, &payloads](const QString& key, QString* target) {
         if (!payloads.contains(key) || target == nullptr) {
             return true;
@@ -731,6 +771,9 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
     if (!readText(QStringLiteral("html"), &record->originalHtml) ||
         !readText(QStringLiteral("text"), &record->originalText)) {
         return false;
+    }
+    if (sourceOnly) {
+        return true;
     }
     const std::pair<const char*, QByteArray*> blobs[] = {
         {"result_style", &record->resultStyle},
@@ -932,15 +975,12 @@ struct PinnedWindowRepository::Impl final {
     PinnedWindowPolicy policy;
     QString compressionLevel = QStringLiteral("medium");
     std::function<void()> changed;
-    QSet<QString> deletedIds;
     QSet<QString> restoringIds;
     QHash<QString, QPair<QDateTime, quint64>> pendingCloses;
     QHash<QString, QPair<QDateTime, quint64>> pendingCreations;
     quint64 nextActivitySequence = 0;
 
-    bool initializeLifecycleLocked(PinnedWindowRecord& record) {
-        if (deletedIds.contains(record.id))
-            return false;
+    void initializeLifecycleLocked(PinnedWindowRecord& record) {
         const auto creation = pendingCreations.take(record.id);
         if (creation.first.isValid()) {
             record.createdUtc = creation.first;
@@ -956,7 +996,6 @@ struct PinnedWindowRepository::Impl final {
             record.lastClosedUtc = closed.first;
             record.activitySequence = closed.second;
         }
-        return true;
     }
 
     bool writeAvailable = false;
@@ -977,6 +1016,7 @@ struct PinnedWindowRepository::Impl final {
     std::thread writer;
     QHash<QString, quint64> committedPayloadRevisions;
     quint64 nextPayloadRevision = 1;
+    quint64 nextPreviewSourceRevision = 1;
 
     Snapshot snapshotLocked() const {
         Snapshot snapshot;
@@ -1192,6 +1232,40 @@ std::optional<PinnedWindowRecord> PinnedWindowRepository::loadRecord(const QStri
     return std::move(stored.record);
 }
 
+std::optional<PinnedWindowPreviewSource>
+PinnedWindowRepository::loadPreviewSource(const QString& id) const {
+    if (m_impl == nullptr || !safeId(id)) {
+        return std::nullopt;
+    }
+    StoredRecord stored;
+    {
+        std::lock_guard locker(m_impl->mutex);
+        const auto found = m_impl->records.constFind(id);
+        if (found == m_impl->records.cend()) {
+            return std::nullopt;
+        }
+        stored = found.value();
+    }
+    if (!stored.payloads.isEmpty() &&
+        !loadPayloads(m_impl->root, stored.payloads, &stored.record, true)) {
+        return std::nullopt;
+    }
+    return PinnedWindowPreviewSource{stored.record.sourceKind, std::move(stored.record.image),
+                                     std::move(stored.record.originalHtml),
+                                     std::move(stored.record.originalText),
+                                     stored.record.firstCreationTextDpi};
+}
+
+std::optional<quint64> PinnedWindowRepository::previewSourceRevision(const QString& id) const {
+    if (m_impl == nullptr || !safeId(id)) {
+        return std::nullopt;
+    }
+    std::lock_guard locker(m_impl->mutex);
+    const auto found = m_impl->records.constFind(id);
+    return found == m_impl->records.cend() ? std::nullopt
+                                           : std::optional<quint64>(found->previewSourceRevision);
+}
+
 QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {
     QVector<PinnedWindowSummary> result;
     if (m_impl == nullptr) {
@@ -1324,6 +1398,28 @@ StorageResult PinnedWindowRepository::setRecordGroup(const QString& recordId,
     return StorageResult::ok();
 }
 
+StorageResult PinnedWindowRepository::removeEmptyGroup(const QString& groupId) {
+    if (m_impl == nullptr || !m_impl->writeAvailable)
+        return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
+    if (!safeGroupId(groupId) || groupId == QString::fromLatin1(kDefaultGroupId))
+        return StorageResult::failure(QStringLiteral("Pinned-window group cannot be removed"));
+
+    std::lock_guard locker(m_impl->mutex);
+    const auto group =
+        std::find_if(m_impl->groups.cbegin(), m_impl->groups.cend(),
+                     [&groupId](const auto& candidate) { return candidate.id == groupId; });
+    if (group == m_impl->groups.cend() ||
+        std::any_of(m_impl->records.cbegin(), m_impl->records.cend(),
+                    [&groupId](const auto& stored) { return stored.record.groupId == groupId; }))
+        return StorageResult::failure(QStringLiteral("Pinned-window group is not empty"));
+
+    m_impl->groups.erase(group);
+    if (m_impl->activeGroupId == groupId)
+        m_impl->activeGroupId = QString::fromLatin1(kDefaultGroupId);
+    m_impl->markDirtyLocked();
+    return StorageResult::ok();
+}
+
 StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& groupId) {
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1343,7 +1439,6 @@ StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& group
     bool changed = false;
     for (auto it = m_impl->records.begin(); it != m_impl->records.end();) {
         if (it->record.groupId == groupId) {
-            m_impl->deletedIds.insert(it.key());
             it = m_impl->records.erase(it);
             changed = true;
         } else {
@@ -1365,6 +1460,17 @@ StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& group
 
 StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
                                              PreparedPngImage sourceImage) {
+    return createImpl(std::move(record), std::move(sourceImage), false);
+}
+
+StorageResult PinnedWindowRepository::createReserved(PinnedWindowRecord record,
+                                                     PreparedPngImage sourceImage) {
+    return createImpl(std::move(record), std::move(sourceImage), true);
+}
+
+StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
+                                                 PreparedPngImage sourceImage,
+                                                 bool requireReservation) {
     normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1394,12 +1500,13 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
     }
 
     std::lock_guard locker(m_impl->mutex);
+    if (requireReservation && !m_impl->pendingCreations.contains(record.id)) {
+        return StorageResult::failure(QStringLiteral("Pinned-window creation was canceled"));
+    }
     if (m_impl->records.contains(record.id)) {
         return StorageResult::failure(QStringLiteral("Pinned-window record already exists"));
     }
-    if (!m_impl->initializeLifecycleLocked(record)) {
-        return StorageResult::failure(QStringLiteral("Pinned-window record was deleted"));
-    }
+    m_impl->initializeLifecycleLocked(record);
     if (!std::any_of(m_impl->groups.cbegin(), m_impl->groups.cend(),
                      [&record](const auto& group) { return group.id == record.groupId; })) {
         record.groupId = QString::fromLatin1(kDefaultGroupId);
@@ -1407,14 +1514,23 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
     const PayloadSignature signature = payloadSignature(record);
     const quint64 payloadRevision = ++m_impl->nextPayloadRevision;
     const QString id = record.id;
-    m_impl->records.insert(
-        id,
-        StoredRecord{std::move(record), payloadRevision, {}, signature, std::move(sourceImage)});
+    StoredRecord stored{std::move(record), payloadRevision, {}, signature, std::move(sourceImage)};
+    stored.previewSourceRevision = ++m_impl->nextPreviewSourceRevision;
+    m_impl->records.insert(id, std::move(stored));
     m_impl->markDirtyLocked();
     return StorageResult::ok();
 }
 
 StorageResult PinnedWindowRepository::create(PinnedWindowRecord record) {
+    return createImpl(std::move(record), false);
+}
+
+StorageResult PinnedWindowRepository::createReserved(PinnedWindowRecord record) {
+    return createImpl(std::move(record), true);
+}
+
+StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
+                                                 bool requireReservation) {
     normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1449,12 +1565,13 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record) {
     }
 
     std::lock_guard locker(m_impl->mutex);
+    if (requireReservation && !m_impl->pendingCreations.contains(record.id)) {
+        return StorageResult::failure(QStringLiteral("Pinned-window creation was canceled"));
+    }
     if (m_impl->records.contains(record.id)) {
         return StorageResult::failure(QStringLiteral("Pinned-window record already exists"));
     }
-    if (!m_impl->initializeLifecycleLocked(record)) {
-        return StorageResult::failure(QStringLiteral("Pinned-window record was deleted"));
-    }
+    m_impl->initializeLifecycleLocked(record);
     if (!std::any_of(m_impl->groups.cbegin(), m_impl->groups.cend(),
                      [&record](const auto& group) { return group.id == record.groupId; })) {
         record.groupId = QString::fromLatin1(kDefaultGroupId);
@@ -1462,7 +1579,9 @@ StorageResult PinnedWindowRepository::create(PinnedWindowRecord record) {
     const PayloadSignature signature = payloadSignature(record);
     const quint64 payloadRevision = ++m_impl->nextPayloadRevision;
     const QString id = record.id;
-    m_impl->records.insert(id, StoredRecord{std::move(record), payloadRevision, {}, signature, {}});
+    StoredRecord stored{std::move(record), payloadRevision, {}, signature, {}};
+    stored.previewSourceRevision = ++m_impl->nextPreviewSourceRevision;
+    m_impl->records.insert(id, std::move(stored));
     m_impl->markDirtyLocked();
     return StorageResult::ok();
 }
@@ -1509,11 +1628,14 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
         !existing->record.recognitionResults.isEmpty() ||
         existing->payloads.contains(QStringLiteral("recognition_results"));
     const bool incomingHasRecognitionResults = !record.recognitionResults.isEmpty();
+    const size_t canvasSessionHash = payloadHash(record.canvasSession);
+    const size_t recognitionResultsHash = payloadHash(record.recognitionResults);
     const bool statePayloadChanged =
         (existingHasCanvasSession != incomingHasCanvasSession) ||
         (existingHasRecognitionResults != incomingHasRecognitionResults) ||
-        existing->record.canvasSession != record.canvasSession ||
-        existing->record.recognitionResults != record.recognitionResults;
+        (incomingHasCanvasSession && existing->signature.canvasSessionHash != canvasSessionHash) ||
+        (incomingHasRecognitionResults &&
+         existing->signature.recognitionResultsHash != recognitionResultsHash);
     record.sourceKind = existing->record.sourceKind;
     record.image = existing->record.image;
     record.originalFilePath = existing->record.originalFilePath;
@@ -1545,7 +1667,10 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
                          std::move(payloads),
                          {},
                          existing->preparedSource};
-    updated.signature = payloadSignature(updated.record);
+    updated.previewSourceRevision = existing->previewSourceRevision;
+    updated.signature = existing->signature;
+    updated.signature.canvasSessionHash = canvasSessionHash;
+    updated.signature.recognitionResultsHash = recognitionResultsHash;
     if (!updated.payloads.isEmpty()) {
         clearResidentImmutableSource(&updated.record);
         if (!statePayloadChanged) {
@@ -1560,6 +1685,14 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
 }
 
 StorageResult PinnedWindowRepository::upsert(PinnedWindowRecord record) {
+    return upsertImpl(std::move(record), false);
+}
+
+StorageResult PinnedWindowRepository::upsertExisting(PinnedWindowRecord record) {
+    return upsertImpl(std::move(record), true);
+}
+
+StorageResult PinnedWindowRepository::upsertImpl(PinnedWindowRecord record, bool requireExisting) {
     normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1606,15 +1739,19 @@ StorageResult PinnedWindowRepository::upsert(PinnedWindowRecord record) {
     }
     auto existing = m_impl->records.find(record.id);
     const bool isNew = existing == m_impl->records.end();
+    if (requireExisting && isNew) {
+        return StorageResult::failure(QStringLiteral("Pinned-window record does not exist"));
+    }
     if (isNew) {
-        if (!m_impl->initializeLifecycleLocked(record)) {
-            return StorageResult::failure(QStringLiteral("Pinned-window record was deleted"));
-        }
+        m_impl->initializeLifecycleLocked(record);
     } else {
         preserveLifecycle(record, existing->record);
     }
     const PayloadSignature signature = payloadSignature(record);
     const bool payloadChanged = isNew || !samePayload(*existing, record, signature);
+    const quint64 previewSourceRevision = isNew || !samePreviewSource(*existing, record, signature)
+                                              ? ++m_impl->nextPreviewSourceRevision
+                                              : existing->previewSourceRevision;
     const quint64 payloadRevision =
         payloadChanged ? ++m_impl->nextPayloadRevision : existing->payloadRevision;
     const QString id = record.id;
@@ -1623,32 +1760,41 @@ StorageResult PinnedWindowRepository::upsert(PinnedWindowRecord record) {
         // payload, so the update keeps the lazy form instead of holding a
         // fresh resident copy until the writer runs.
         StoredRecord stored{std::move(record), payloadRevision, existing->payloads, signature};
+        stored.previewSourceRevision = previewSourceRevision;
         clearResidentPayload(&stored.record);
         m_impl->records.insert(id, std::move(stored));
     } else {
-        m_impl->records.insert(id,
-                               StoredRecord{std::move(record), payloadRevision, {}, signature, {}});
+        StoredRecord stored{std::move(record), payloadRevision, {}, signature, {}};
+        stored.previewSourceRevision = previewSourceRevision;
+        m_impl->records.insert(id, std::move(stored));
     }
     m_impl->markDirtyLocked();
     return StorageResult::ok();
 }
 
 StorageResult PinnedWindowRepository::remove(const QString& id) {
+    return removeMany({id});
+}
+
+StorageResult PinnedWindowRepository::removeMany(const QVector<QString>& ids) {
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
-    if (!safeId(id)) {
-        return StorageResult::failure(QStringLiteral("Pinned-window id is invalid"));
+    for (const auto& id : ids) {
+        if (!safeId(id)) {
+            return StorageResult::failure(QStringLiteral("Pinned-window id is invalid"));
+        }
     }
     {
         std::lock_guard locker(m_impl->mutex);
-        const bool existed = m_impl->records.contains(id);
-        m_impl->deletedIds.insert(id);
-        m_impl->pendingCloses.remove(id);
-        m_impl->pendingCreations.remove(id);
-        m_impl->restoringIds.remove(id);
-        m_impl->records.remove(id);
-        if (existed) {
+        bool changed = false;
+        for (const auto& id : ids) {
+            m_impl->pendingCloses.remove(id);
+            m_impl->pendingCreations.remove(id);
+            m_impl->restoringIds.remove(id);
+            changed |= m_impl->records.remove(id);
+        }
+        if (changed) {
             m_impl->markDirtyLocked();
         }
     }
@@ -1663,8 +1809,14 @@ void PinnedWindowRepository::setChangedCallback(std::function<void()> callback) 
 void PinnedWindowRepository::reserveCreation(const QString& id, QDateTime when) {
     std::lock_guard lock(m_impl->mutex);
     if (m_impl->writeAvailable && safeId(id) && when.isValid() && !m_impl->records.contains(id) &&
-        !m_impl->deletedIds.contains(id) && !m_impl->pendingCreations.contains(id))
+        !m_impl->pendingCreations.contains(id))
         m_impl->pendingCreations.insert(id, {when.toUTC(), ++m_impl->nextActivitySequence});
+}
+
+void PinnedWindowRepository::cancelCreation(const QString& id) {
+    std::lock_guard lock(m_impl->mutex);
+    m_impl->pendingCreations.remove(id);
+    m_impl->pendingCloses.remove(id);
 }
 
 StorageResult PinnedWindowRepository::markClosed(const QString& id, QDateTime when) {
@@ -1672,18 +1824,18 @@ StorageResult PinnedWindowRepository::markClosed(const QString& id, QDateTime wh
         return StorageResult::failure(QStringLiteral("Pinned-window close could not be saved"));
     {
         std::lock_guard lock(m_impl->mutex);
-        if (m_impl->deletedIds.contains(id))
+        if (!m_impl->records.contains(id) && !m_impl->pendingCreations.contains(id))
             return StorageResult::ok();
         if (!m_impl->policy.enabled) {
-            m_impl->deletedIds.insert(id);
             m_impl->pendingCloses.remove(id);
+            m_impl->pendingCreations.remove(id);
             m_impl->records.remove(id);
         } else {
             const quint64 sequence = ++m_impl->nextActivitySequence;
             auto it = m_impl->records.find(id);
-            if (it == m_impl->records.end()) {
+            if (it == m_impl->records.end() && m_impl->pendingCreations.contains(id)) {
                 m_impl->pendingCloses.insert(id, {when.toUTC(), sequence});
-            } else {
+            } else if (it != m_impl->records.end()) {
                 it->record.ignored = true;
                 it->record.lastClosedUtc = when.toUTC();
                 it->record.activitySequence = sequence;
@@ -1787,7 +1939,6 @@ StorageResult PinnedWindowRepository::enforcePolicy(QDateTime now) {
     qsizetype count = candidates.size();
     bool changed = false;
     const auto removeCandidate = [&](const Candidate& candidate) {
-        m_impl->deletedIds.insert(candidate.id);
         m_impl->records.remove(candidate.id);
         bytes -= candidate.bytes;
         --count;
@@ -1817,13 +1968,12 @@ StorageResult PinnedWindowRepository::clearClosed() {
     std::lock_guard lock(m_impl->mutex);
     for (auto it = m_impl->records.begin(); it != m_impl->records.end();) {
         if (it->record.ignored) {
-            m_impl->deletedIds.insert(it.key());
             it = m_impl->records.erase(it);
         } else
             ++it;
     }
     for (auto it = m_impl->pendingCloses.cbegin(); it != m_impl->pendingCloses.cend(); ++it)
-        m_impl->deletedIds.insert(it.key());
+        m_impl->pendingCreations.remove(it.key());
     m_impl->pendingCloses.clear();
     m_impl->markDirtyLocked();
     return StorageResult::ok();

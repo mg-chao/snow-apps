@@ -10,7 +10,9 @@
 
 #include <QObject>
 #include <QString>
+#include <QThreadPool>
 
+#include <atomic>
 #include <memory>
 #include <future>
 
@@ -80,6 +82,12 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] ConfigurationStore& configuration();
     [[nodiscard]] CaptureHistoryRepository& captureHistory();
     [[nodiscard]] PinnedWindowRepository& pinnedWindows();
+    [[nodiscard]] QThreadPool& pinnedPreviewPool() {
+        return m_pinnedPreviewPool;
+    }
+    [[nodiscard]] QThreadPool& pinnedFullImagePool() {
+        return m_pinnedFullImagePool;
+    }
     [[nodiscard]] StorageStatus status() const;
     [[nodiscard]] CaptureHistoryPolicy captureHistoryPolicy() const;
     [[nodiscard]] QString configurationDirectory() const;
@@ -136,7 +144,10 @@ class ApplicationStorage final : public QObject {
     std::unique_ptr<ConfigurationStore> m_configuration;
     std::unique_ptr<CaptureHistoryRepository> m_captureHistory;
     std::unique_ptr<PinnedWindowRepository> m_pinnedWindows;
+    QThreadPool m_pinnedPreviewPool;
+    QThreadPool m_pinnedFullImagePool;
     std::unique_ptr<StorageUsageTracker> m_usageTracker;
+    std::atomic_bool m_pinnedChangeQueued{false};
     bool m_initialized = false;
 };
 } // namespace snow_shot::storage

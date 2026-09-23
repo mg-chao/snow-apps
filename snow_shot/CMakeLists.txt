@@ -2355,7 +2355,9 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-pinned-window-group-tests
         tests/pinned_window_group_tests.cpp
+        include/snow_shot/presentation/languagemanager.h
         include/snow_shot/presentation/pinnedwindowgroupmanager.h
+        src/presentation/services/languagemanager.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
     )
     target_include_directories(snow-shot-pinned-window-group-tests PRIVATE
@@ -5815,6 +5817,24 @@ if(APPLE AND SNOW_SHOT_BUILD_BENCHMARKS)
 endif()
 
 if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-pinned-window-management-performance-benchmark
+        tests/pinned_window_management_performance_benchmark.cpp)
+    target_link_libraries(snow-shot-pinned-window-management-performance-benchmark PRIVATE
+        snow_shot_storage Qt6::Core Qt6::Gui)
+    if(MSVC)
+        # Text-source and bulk-removal cases do not call the image codec. Delay its
+        # loading so unrelated HEIF codec startup does not affect these measurements.
+        target_link_options(snow-shot-pinned-window-management-performance-benchmark PRIVATE
+            "/DELAYLOAD:snow_shot_image_codec_backend.dll")
+        target_link_libraries(snow-shot-pinned-window-management-performance-benchmark PRIVATE
+            delayimp)
+    endif()
+    add_test(NAME snow-shot-pinned-window-management-performance-benchmark
+        COMMAND snow-shot-pinned-window-management-performance-benchmark)
+    set_tests_properties(snow-shot-pinned-window-management-performance-benchmark PROPERTIES
+        LABELS "benchmark" TIMEOUT 180
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-ocr-background-performance-benchmark
         tests/screenshot_ocr_background_performance_benchmark.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp)

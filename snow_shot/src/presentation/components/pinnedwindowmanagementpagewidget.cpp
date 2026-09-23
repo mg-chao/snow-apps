@@ -18,6 +18,7 @@
 #include "widgets/select.h"
 
 #include <QBoxLayout>
+#include <QCache>
 #include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -27,14 +28,15 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
+#include <QSet>
 #include <QSignalBlocker>
-#include <QThreadPool>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <memory>
 
 using namespace snow_shot;
 
@@ -65,19 +67,50 @@ QImage loadPinnedImage(storage::PinnedWindowRepository* repository, const QStrin
     return record->image;
 }
 
+QImage loadPinnedPreview(storage::PinnedWindowRepository* repository, const QString& id) {
+    const auto source = repository->loadPreviewSource(id);
+    if (!source) {
+        return {};
+    }
+    if (source->sourceKind == storage::PinnedWindowSourceKind::ClipboardText) {
+        ScreenshotClipboardOriginalContent content;
+        content.html = source->originalHtml;
+        content.text = source->originalText;
+        const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
+            content, source->firstCreationTextDpi);
+        return rendered ? rendered->image : QImage{};
+    }
+    return source->image;
+}
+
 class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSource {
   public:
     explicit ApplicationPinnedDataSource(QObject* parent)
         : PinnedWindowManagementDataSource(parent) {
-        m_pool.setMaxThreadCount(2);
+        m_previewCache.setMaxCost(32 * 1024);
         connect(&storage::ApplicationStorage::instance(),
-                &storage::ApplicationStorage::pinnedWindowsChanged, this,
-                &PinnedWindowManagementDataSource::changed);
+                &storage::ApplicationStorage::pinnedWindowsChanged, this, [this]() {
+                    auto& applicationStorage = storage::ApplicationStorage::instance();
+                    if (applicationStorage.isInitialized()) {
+                        QSet<QString> retainedIds;
+                        for (const auto& summary : applicationStorage.pinnedWindows().summaries()) {
+                            retainedIds.insert(summary.id);
+                        }
+                        for (const QString& key : m_previewCache.keys()) {
+                            if (!retainedIds.contains(key.left(key.indexOf(u':')))) {
+                                m_previewCache.remove(key);
+                            }
+                        }
+                    } else {
+                        m_previewCache.clear();
+                    }
+                    emit changed();
+                });
     }
 
     ~ApplicationPinnedDataSource() override {
-        m_pool.clear();
-        m_pool.waitForDone();
+        m_alive->store(false);
+        cancelPreviews();
     }
 
     QVector<storage::PinnedWindowSummary> records() const override {
@@ -89,30 +122,88 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
     }
 
     void cancelPreviews() override {
-        m_pool.clear();
+        m_previewEpoch->fetch_add(1);
     }
 
     void requestPreview(const QString& id, quint64 generation) override {
-        auto* repository = &storage::ApplicationStorage::instance().pinnedWindows();
-        m_pool.start([this, repository, id, generation]() {
-            QImage image = loadPinnedImage(repository, id);
+        auto& applicationStorage = storage::ApplicationStorage::instance();
+        if (!applicationStorage.isInitialized()) {
+            emit previewReady(id, generation, {});
+            return;
+        }
+        auto* repository = &applicationStorage.pinnedWindows();
+        const auto revision = repository->previewSourceRevision(id);
+        if (!revision) {
+            emit previewReady(id, generation, {});
+            return;
+        }
+        const QString cacheKey = id + u':' + QString::number(*revision);
+        if (const QImage* cached = m_previewCache.object(cacheKey)) {
+            emit previewReady(id, generation, *cached);
+            return;
+        }
+        const auto alive = m_alive;
+        const auto previewEpoch = m_previewEpoch;
+        const quint64 requestedEpoch = previewEpoch->load();
+        auto* receiver = this;
+        applicationStorage.pinnedPreviewPool().start([alive, previewEpoch, requestedEpoch, receiver,
+                                                      repository, id, generation, cacheKey]() {
+            if (!alive->load() || previewEpoch->load() != requestedEpoch) {
+                return;
+            }
+            QImage image = loadPinnedPreview(repository, id);
+            if (!alive->load() || previewEpoch->load() != requestedEpoch) {
+                return;
+            }
             if (!image.isNull()) {
-                image = image.scaled(640, 320, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                image = image.scaled(kPreviewWidth, kPreviewHeight, Qt::KeepAspectRatio,
+                                     Qt::SmoothTransformation);
             }
             QMetaObject::invokeMethod(
-                this, [this, id, generation, image]() { emit previewReady(id, generation, image); },
+                &storage::ApplicationStorage::instance(),
+                [alive, previewEpoch, requestedEpoch, receiver, id, generation, cacheKey, image]() {
+                    if (!alive->load() || previewEpoch->load() != requestedEpoch) {
+                        return;
+                    }
+                    if (!image.isNull()) {
+                        const auto cost =
+                            std::max<qsizetype>(1, (image.sizeInBytes() + 1023) / 1024);
+                        receiver->m_previewCache.insert(cacheKey, new QImage(image),
+                                                        static_cast<int>(cost));
+                    }
+                    emit receiver->previewReady(id, generation, image);
+                },
                 Qt::QueuedConnection);
         });
     }
 
     void requestFullImage(const QString& id, quint64 requestId) override {
-        auto* repository = &storage::ApplicationStorage::instance().pinnedWindows();
-        m_pool.start([this, repository, id, requestId]() {
-            const QImage image = loadPinnedImage(repository, id);
-            QMetaObject::invokeMethod(
-                this, [this, id, requestId, image]() { emit fullImageReady(id, requestId, image); },
-                Qt::QueuedConnection);
-        });
+        auto& applicationStorage = storage::ApplicationStorage::instance();
+        if (!applicationStorage.isInitialized()) {
+            emit fullImageReady(id, requestId, {});
+            return;
+        }
+        auto* repository = &applicationStorage.pinnedWindows();
+        const auto alive = m_alive;
+        auto* receiver = this;
+        applicationStorage.pinnedFullImagePool().start(
+            [alive, receiver, repository, id, requestId]() {
+                if (!alive->load()) {
+                    return;
+                }
+                const QImage image = loadPinnedImage(repository, id);
+                if (!alive->load()) {
+                    return;
+                }
+                QMetaObject::invokeMethod(
+                    &storage::ApplicationStorage::instance(),
+                    [alive, receiver, id, requestId, image]() {
+                        if (alive->load()) {
+                            emit receiver->fullImageReady(id, requestId, image);
+                        }
+                    },
+                    Qt::QueuedConnection);
+            });
     }
 
     void showRecord(const QString& id) override {
@@ -124,7 +215,10 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
     }
 
   private:
-    QThreadPool m_pool;
+    std::shared_ptr<std::atomic_bool> m_alive = std::make_shared<std::atomic_bool>(true);
+    std::shared_ptr<std::atomic<quint64>> m_previewEpoch =
+        std::make_shared<std::atomic<quint64>>(0);
+    QCache<QString, QImage> m_previewCache;
 };
 
 class PreviewLabel final : public QLabel {

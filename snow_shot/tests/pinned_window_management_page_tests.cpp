@@ -310,5 +310,35 @@ int main(int argc, char** argv) {
                 "selected Delete refreshes the page after removing its record");
     }
     storage::ApplicationStorage::instance().shutdown();
+    QTemporaryDir burstDirectory;
+    require(storage::ApplicationStorage::instance()
+                .initialize({burstDirectory.path(), burstDirectory.path(), 30000})
+                .success,
+            "isolated storage for notification coalescing");
+    application.processEvents();
+    int changeSignals = 0;
+    QObject observer;
+    QObject::connect(&storage::ApplicationStorage::instance(),
+                     &storage::ApplicationStorage::pinnedWindowsChanged, &observer,
+                     [&changeSignals]() { ++changeSignals; });
+    for (int index = 0; index < 20; ++index) {
+        storage::PinnedWindowRecord record;
+        record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        record.image = base;
+        record.nativeGeometry = QRect(0, 0, 32, 16);
+        record.canvasSourceRect = QRectF(record.nativeGeometry);
+        record.contentCanvasRect = record.canvasSourceRect;
+        record.surfaceCanvasRect = record.canvasSourceRect;
+        record.initialWindowSize = base.size();
+        require(storage::ApplicationStorage::instance().pinnedWindows().upsert(record).success,
+                "create notification burst record");
+    }
+    application.processEvents();
+    require(changeSignals == 1, "a mutation burst produces one page change signal");
+    {
+        PinnedWindowManagementPageWidget fleetingPage;
+    }
+    application.processEvents();
+    storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

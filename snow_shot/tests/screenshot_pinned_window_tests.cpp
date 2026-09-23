@@ -914,6 +914,10 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     config.groupId = groupManager.activeGroupId();
     require(pinnedWindow->present(config),
             "a grouped pinned window should present for the group menu checks");
+    require(repository.upsert(pinnedWindow->persistenceSnapshot()).success &&
+                groupManager.windowCounts(QStringLiteral("default")).nonIgnored == 1 &&
+                groupManager.windowCounts(QStringLiteral("default")).total == 1,
+            "a live window with a saved record should count only once");
 
     auto* groupMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedGroupMenu"));
@@ -949,6 +953,18 @@ void groupMenuActionsExposeIconsAndCleanupState() {
                 contextActions.at(groupIndex + 1)->objectName() ==
                     QStringLiteral("screenshotPinnedThumbnailAction"),
             "the group submenu should sit directly above Thumbnail mode");
+    auto* closeAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    auto* destroyAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
+    require(closeAction != nullptr && destroyAction != nullptr &&
+                contextActions.indexOf(destroyAction) == contextActions.indexOf(closeAction) + 1 &&
+                !contextMenu->actionDanger(closeAction) && contextMenu->actionDanger(destroyAction),
+            "Destroy should sit below Close and own the danger color");
+    auto* defaultGroup =
+        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default"));
+    require(defaultGroup != nullptr && defaultGroup->text() == QStringLiteral("Default\t1/1"),
+            "a live pinned window should appear in both group counts");
 
     QAction* newGroup = groupMenuActionNamed(QStringLiteral("screenshotPinnedNewGroupAction"));
     require(newGroup != nullptr && !newGroup->icon().isNull() && newGroup->isEnabled(),
@@ -980,7 +996,7 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
     require(deleteSpecifiedMenu->actions().size() == 1 && deleteDefault != nullptr &&
                 deleteDefault->data().toString() == QStringLiteral("default") &&
-                deleteDefault->text() == QStringLiteral("Default\t1"),
+                deleteDefault->text() == QStringLiteral("Default\t1/1"),
             "Delete Specified Group should list Default with its live window count");
 
     const auto specifiedId = groupManager.createGroup(QStringLiteral("Specified"));
@@ -989,20 +1005,86 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     QAction* deleteSpecified = deleteSpecifiedActionNamed(
         QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*specifiedId));
     require(deleteSpecified != nullptr && deleteSpecified->data().toString() == *specifiedId &&
-                deleteSpecified->text() == QStringLiteral("Specified\t0"),
+                deleteSpecified->text() == QStringLiteral("Specified\t0/0"),
             "the specified-deletion submenu should list every custom group with its count");
     deleteSpecified->trigger();
     QCoreApplication::processEvents();
+    auto* specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal != nullptr && specifiedModal->ownerWindow() == pinnedWindow &&
+                specifiedModal->centered() &&
+                specifiedModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                specifiedModal->text().contains(QStringLiteral("Specified")) &&
+                groupManager.contains(*specifiedId),
+            "specified-group deletion should await confirmation");
+    specifiedModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(groupManager.contains(*specifiedId),
+            "canceling specified-group deletion should preserve the group");
+    deleteSpecified = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*specifiedId));
+    require(deleteSpecified != nullptr, "specified-group action should survive menu refresh");
+    deleteSpecified->trigger();
+    specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal != nullptr, "specified-group confirmation should reopen");
+    specifiedModal->accept();
     require(!groupManager.contains(*specifiedId),
-            "triggering a custom specified-group action should delete that group");
+            "accepting specified-group deletion should delete the group");
 
-    require(groupManager.createGroup(QStringLiteral("Cleanup")).has_value(),
-            "an empty custom group should be created for the cleanup state");
+    const auto cleanupId = groupManager.createGroup(QStringLiteral("Cleanup"));
+    require(cleanupId.has_value(), "an empty custom group should be created for the cleanup state");
+    auto ignored = pinnedWindow->persistenceSnapshot();
+    ignored.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    ignored.groupId = *cleanupId;
+    require(repository.upsert(ignored).success && repository.markClosed(ignored.id).success,
+            "an ignored pin should be saved in the cleanup group");
     deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     require(deleteEmpty != nullptr && deleteEmpty->isEnabled(),
-            "Delete Empty Groups should enable once an empty custom group exists");
+            "Delete Empty Groups should enable for an ignored-only group");
+    auto* cleanupGroup =
+        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-%1").arg(*cleanupId));
+    require(cleanupGroup != nullptr && cleanupGroup->text() == QStringLiteral("Cleanup\t0/1"),
+            "ignored pins should appear only in the total count");
+    QAction* deleteCleanup = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*cleanupId));
+    require(deleteCleanup != nullptr && deleteCleanup->text() == QStringLiteral("Cleanup\t0/1"),
+            "specified-deletion rows should use the same count format");
 
-    require(groupManager.deleteEmptyGroups(), "the empty custom group should be deleted");
+    deleteEmpty->trigger();
+    auto* emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr && emptyModal->centered() &&
+                emptyModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                emptyModal->text().contains(QStringLiteral("Ignored pinned windows saved")) &&
+                groupManager.contains(*cleanupId) && repository.loadRecord(ignored.id).has_value(),
+            "empty-group deletion should await confirmation without removing ignored pins");
+    emptyModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(groupManager.contains(*cleanupId),
+            "canceling empty-group deletion should preserve the group");
+    deleteEmpty = groupMenuActionNamed(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    require(deleteEmpty != nullptr, "empty-group action should survive menu refresh");
+    deleteEmpty->trigger();
+    emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr, "empty-group confirmation should reopen");
+    groupManager.registerPendingPin(QStringLiteral("pending-cleanup"), *cleanupId);
+    emptyModal->accept();
+    require(groupManager.contains(*cleanupId) && repository.loadRecord(ignored.id).has_value(),
+            "empty-group deletion should recheck the non-ignored count on confirmation");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    groupManager.completePendingPin(QStringLiteral("pending-cleanup"));
+    deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    require(deleteEmpty != nullptr && deleteEmpty->isEnabled(),
+            "ignored-only cleanup should remain available after the pending pin completes");
+    deleteEmpty->trigger();
+    emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr, "empty-group confirmation should reopen after rechecking");
+    emptyModal->accept();
+    require(!groupManager.contains(*cleanupId) && !repository.loadRecord(ignored.id).has_value(),
+            "confirming empty-group deletion should remove ignored pins");
     deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     require(deleteEmpty != nullptr && !deleteEmpty->isEnabled(),
             "Delete Empty Groups should disable again after the cleanup");
@@ -1011,8 +1093,27 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
     require(deleteDefault != nullptr, "Default should remain available for specified clearing");
     deleteDefault->trigger();
+    auto* defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(defaultModal != nullptr &&
+                defaultModal->text().contains(QStringLiteral("Default group will remain")) &&
+                guardedWindow != nullptr && groupManager.contains(QStringLiteral("default")),
+            "clearing Default should wait for confirmation and retain the group");
+    defaultModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(guardedWindow != nullptr, "canceling Default clearing should preserve its window");
+    deleteDefault = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
+    require(deleteDefault != nullptr, "Default action should survive menu refresh");
+    deleteDefault->trigger();
+    defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(defaultModal != nullptr, "Default clearing confirmation should reopen");
+    defaultModal->accept();
     require(processUntilDeleted(guardedWindow, 2000),
             "clearing Default should destructively close its matching live pinned window");
+    require(groupManager.contains(QStringLiteral("default")),
+            "clearing Default should preserve the built-in group");
 }
 
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
@@ -3931,13 +4032,19 @@ void pinnedDestroyShortcutUsesNormalMenuColor() {
     require(canvas != nullptr && menu != nullptr && destroyAction != nullptr &&
                 !menu->actionDanger(destroyAction),
             "Destroy must use the normal pinned menu color");
-    require(destroyAction->text().endsWith(QStringLiteral("\tCtrl+Esc")),
+    require(destroyAction->text().endsWith(QStringLiteral("\tShift+Esc")),
             "Destroy must show its default shortcut in the pinned menu");
     sendShortcut(*canvas, Qt::Key_Escape, Qt::ControlModifier);
+    QKeyEvent oldRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ControlModifier);
+    QCoreApplication::sendEvent(canvas, &oldRelease);
+    QCoreApplication::processEvents();
+    require(!guardedWindow.isNull() && pinnedWindow->isVisible(),
+            "Ctrl+Esc must no longer destroy the pinned window");
+    sendShortcut(*canvas, Qt::Key_Escape, Qt::ShiftModifier);
     require(!guardedWindow.isNull(), "Destroy must activate on shortcut release");
-    QKeyEvent destroyRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ControlModifier);
+    QKeyEvent destroyRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ShiftModifier);
     QCoreApplication::sendEvent(canvas, &destroyRelease);
-    require(processUntilDeleted(guardedWindow, 2000), "Ctrl+Esc must destroy the pinned window");
+    require(processUntilDeleted(guardedWindow, 2000), "Shift+Esc must destroy the pinned window");
 }
 
 void pinnedMovementShortcutsMoveIdleWindow() {
@@ -9461,8 +9568,8 @@ void pinnedContentReplacement() {
         const bool fallbackShown = menu->actions().contains(showMain);
         const qsizetype managementIndex = menu->actions().indexOf(management);
         const qsizetype closeIndex = menu->actions().indexOf(close);
-        require(managementIndex >= 0 && closeIndex == managementIndex + (fallbackShown ? 4 : 3) &&
-                    (!fallbackShown || menu->actions().indexOf(showMain) + 2 == closeIndex),
+        require(managementIndex >= 0 && closeIndex == managementIndex + (fallbackShown ? 3 : 2) &&
+                    (!fallbackShown || menu->actions().indexOf(showMain) + 1 == closeIndex),
                 "window management must stay above Close when the tray fallback changes");
     }
     ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
@@ -10539,11 +10646,47 @@ void pinnedManagementLifecycle() {
     QPointer<ScreenshotPinnedWindow> otherWindow(live(unrelated.id));
     require(otherWindow, "other group window exists");
     pinnedMenuActionNamed(*otherWindow, QStringLiteral("screenshotPinnedDestroyAction"))->trigger();
+    auto* destroyConfirmation = otherWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotPinnedDestroyConfirmation"));
+    require(destroyConfirmation != nullptr && destroyConfirmation->isOpen() &&
+                destroyConfirmation->windowModality() == Qt::WindowModal &&
+                repository.loadRecord(unrelated.id).has_value(),
+            "clicking Destroy must show a window-modal confirmation before removing the pin");
+    QPointer<adqt::widgets::AdModal> dismissedConfirmation(destroyConfirmation);
+    destroyConfirmation->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(otherWindow && !dismissedConfirmation &&
+                repository.loadRecord(unrelated.id).has_value(),
+            "canceling Destroy must keep the pinned window and its record");
+    pinnedMenuActionNamed(*otherWindow, QStringLiteral("screenshotPinnedDestroyAction"))->trigger();
+    destroyConfirmation = otherWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotPinnedDestroyConfirmation"));
+    require(destroyConfirmation != nullptr && destroyConfirmation->isOpen(),
+            "clicking Destroy again must reopen confirmation");
+    destroyConfirmation->accept();
     require(processUntilDeleted(otherWindow, 2000) && !repository.loadRecord(unrelated.id),
-            "Destroy removes record permanently");
+            "confirming Destroy removes the record permanently");
     service.destroyRecords({first, second});
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(repository.summaries().isEmpty(), "explicit deletion cleans retained inactive pins");
+
+    ScreenshotImageLoadCallback failed;
+    require(service.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                       [&failed](QObject*, ScreenshotImageLoadCallback callback) {
+                                           failed = std::move(callback);
+                                       }),
+            "create pin with a failing source");
+    wait([&]() { return static_cast<bool>(failed); }, "failed source loader starts");
+    QPointer<ScreenshotPinnedWindow> failedWindow(onlyVisiblePinnedWindow());
+    require(failedWindow, "failed pin shell exists");
+    auto failedRecord = failedWindow->persistenceSnapshot();
+    failedRecord.sourceKind = storage::PinnedWindowSourceKind::ClipboardText;
+    failedRecord.originalText = QStringLiteral("late source");
+    failed({});
+    require(processUntilDeleted(failedWindow, 2000) &&
+                !repository.createReserved(failedRecord).success &&
+                !repository.loadRecord(failedRecord.id),
+            "failed first publication releases its creation reservation");
 
     // A pin closed before its source arrives must still publish its final ignored record.
     ScreenshotImageLoadCallback delayed;

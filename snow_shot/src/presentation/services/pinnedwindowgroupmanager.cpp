@@ -1,17 +1,19 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
 #include "widgets/form.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/modal.h"
+#include "widgets/button.h"
 
 #include <QApplication>
-#include <QCoreApplication>
 #include <QCursor>
 #include <QPointer>
+#include <QScreen>
 #include <QSet>
 #include <QTimer>
 #include <QUuid>
@@ -28,6 +30,28 @@ constexpr auto kGroupManagerMutationProperty = "snowPinnedWindowGroupManagerMuta
 
 storage::PinnedWindowGroup defaultGroup() {
     return {QString::fromLatin1(kDefaultGroupId), QString::fromLatin1(kDefaultGroupName), true};
+}
+
+adqt::widgets::AdModal* createDeletionModal(QWidget* owner, QObject* lifetimeOwner,
+                                            const QString& objectName) {
+    auto* modal =
+        new adqt::widgets::AdModal(owner != nullptr ? static_cast<QObject*>(owner) : lifetimeOwner);
+    modal->setObjectName(objectName);
+    modal->setOwnerWindow(owner);
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    if (owner == nullptr) {
+        modal->setWindowModeDetached(true);
+        QScreen* screen = QApplication::screenAt(QCursor::pos());
+        modal->setWindowScreen(screen != nullptr ? screen : QApplication::primaryScreen());
+    }
+    modal->setWindowModality(owner != nullptr ? Qt::WindowModal : Qt::ApplicationModal);
+    modal->setCentered(true);
+    modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
+    modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    QObject::connect(modal, &adqt::widgets::AdModal::finished, modal, &QObject::deleteLater);
+    return modal;
 }
 } // namespace
 
@@ -102,38 +126,58 @@ bool PinnedWindowGroupManager::contains(const QString& groupId) const {
                        [&groupId](const auto& group) { return group.id == groupId; });
 }
 
-int PinnedWindowGroupManager::windowCount(const QString& groupId) const {
-    QSet<QString> persistedIds;
+GroupWindowCounts PinnedWindowGroupManager::windowCounts(const QString& groupId) const {
+    QSet<QString> nonIgnoredPersistedIds;
+    QSet<QString> allPersistedIds;
     if (m_repository != nullptr) {
         const quint64 repositoryRevision = m_repository->revision();
         if (repositoryRevision != m_countsRevision) {
             m_persistedCounts.clear();
+            m_persistedTotalCounts.clear();
             m_persistedIdsByGroup.clear();
+            m_allPersistedIdsByGroup.clear();
             const QVector<storage::PinnedWindowSummary> summaries = m_repository->summaries();
             for (const storage::PinnedWindowSummary& summary : summaries) {
-                if (summary.ignored)
-                    continue;
-                ++m_persistedCounts[summary.groupId];
-                m_persistedIdsByGroup[summary.groupId].insert(summary.id);
+                ++m_persistedTotalCounts[summary.groupId];
+                m_allPersistedIdsByGroup[summary.groupId].insert(summary.id);
+                if (!summary.ignored) {
+                    ++m_persistedCounts[summary.groupId];
+                    m_persistedIdsByGroup[summary.groupId].insert(summary.id);
+                }
             }
             m_countsRevision = repositoryRevision;
         }
-        persistedIds = m_persistedIdsByGroup.value(groupId);
+        nonIgnoredPersistedIds = m_persistedIdsByGroup.value(groupId);
+        allPersistedIds = m_allPersistedIdsByGroup.value(groupId);
     }
-    int count = m_persistedCounts.value(groupId, 0);
+    GroupWindowCounts counts{m_persistedCounts.value(groupId, 0),
+                             m_persistedTotalCounts.value(groupId, 0)};
     for (auto it = m_windows.cbegin(); it != m_windows.cend(); ++it) {
-        if (it.value() != nullptr && !m_inactiveClosing.contains(it.key()) &&
-            !persistedIds.contains(it.key()) && it.value()->groupId() == groupId) {
-            ++count;
+        if (it.value() != nullptr && it.value()->groupId() == groupId) {
+            if (!m_inactiveClosing.contains(it.key()) &&
+                !nonIgnoredPersistedIds.contains(it.key())) {
+                ++counts.nonIgnored;
+            }
+            if (!allPersistedIds.contains(it.key())) {
+                ++counts.total;
+            }
         }
     }
     for (auto it = m_pendingGroups.cbegin(); it != m_pendingGroups.cend(); ++it) {
-        if (it.value() == groupId && !persistedIds.contains(it.key()) &&
-            (m_windows.value(it.key()) == nullptr)) {
-            ++count;
+        if (it.value() == groupId && m_windows.value(it.key()) == nullptr) {
+            if (!nonIgnoredPersistedIds.contains(it.key())) {
+                ++counts.nonIgnored;
+            }
+            if (!allPersistedIds.contains(it.key())) {
+                ++counts.total;
+            }
         }
     }
-    return count;
+    return counts;
+}
+
+int PinnedWindowGroupManager::windowCount(const QString& groupId) const {
+    return windowCounts(groupId).nonIgnored;
 }
 
 bool PinnedWindowGroupManager::hasWindow(const QString& persistenceId) const {
@@ -271,6 +315,71 @@ bool PinnedWindowGroupManager::deleteSpecifiedGroup(const QString& groupId) {
         restoreActiveGroupWindows();
     }
     return true;
+}
+
+void PinnedWindowGroupManager::openDeleteEmptyGroupsConfirmation(QWidget* owner) {
+    const bool hasEmptyGroup =
+        std::any_of(m_groups.cbegin(), m_groups.cend(), [this](const auto& group) {
+            return !group.builtIn && windowCount(group.id) == 0;
+        });
+    if (!hasEmptyGroup) {
+        return;
+    }
+    auto* modal =
+        createDeletionModal(owner, this, QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    const auto updateText = [this, modal]() {
+        modal->setWindowTitle(tr("Delete empty groups"));
+        modal->setText(tr("Delete every group with no non-ignored pinned windows? Ignored pinned "
+                          "windows saved in those groups will also be permanently deleted. This "
+                          "action cannot be undone."));
+        modal->setAcceptText(tr("Delete groups"));
+        modal->setRejectText(tr("Cancel"));
+    };
+    updateText();
+    connect(&LanguageManager::instance(), &LanguageManager::languageChanged, modal,
+            [manager = QPointer<PinnedWindowGroupManager>(this), updateText](const QString&,
+                                                                             const QLocale&) {
+                if (manager != nullptr) {
+                    updateText();
+                }
+            });
+    connect(modal, &adqt::widgets::AdModal::accepted, this,
+            [this]() { static_cast<void>(deleteEmptyGroups()); });
+    modal->open();
+}
+
+void PinnedWindowGroupManager::openDeleteSpecifiedGroupConfirmation(const QString& groupId,
+                                                                    QWidget* owner) {
+    if (!contains(groupId)) {
+        return;
+    }
+    const bool isDefault = groupId == QString::fromLatin1(kDefaultGroupId);
+    auto* modal =
+        createDeletionModal(owner, this, QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    const auto updateText = [this, modal, groupId, isDefault]() {
+        modal->setWindowTitle(isDefault ? tr("Clear Default group") : tr("Delete group"));
+        modal->setText(
+            isDefault
+                ? tr("Delete all pinned windows in \"%1\", including ignored windows? The Default "
+                     "group will remain. This action cannot be undone.")
+                      .arg(displayName(groupId))
+                : tr("Delete \"%1\" and all its pinned windows, including ignored windows? This "
+                     "action cannot be undone.")
+                      .arg(displayName(groupId)));
+        modal->setAcceptText(isDefault ? tr("Clear group") : tr("Delete group"));
+        modal->setRejectText(tr("Cancel"));
+    };
+    updateText();
+    connect(&LanguageManager::instance(), &LanguageManager::languageChanged, modal,
+            [manager = QPointer<PinnedWindowGroupManager>(this), updateText](const QString&,
+                                                                             const QLocale&) {
+                if (manager != nullptr) {
+                    updateText();
+                }
+            });
+    connect(modal, &adqt::widgets::AdModal::accepted, this,
+            [this, groupId]() { static_cast<void>(deleteSpecifiedGroup(groupId)); });
+    modal->open();
 }
 
 bool PinnedWindowGroupManager::showWindow(const QString& id) {

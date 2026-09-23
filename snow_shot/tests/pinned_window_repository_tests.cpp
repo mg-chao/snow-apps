@@ -12,6 +12,7 @@
 #include <QTemporaryDir>
 #include <QUuid>
 
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
 
@@ -254,6 +255,16 @@ void metadataOnlyUpdatesDoNotRewriteCommittedPayloads() {
     require(repository.flush().success, "failed to flush the metadata update");
     require(payload.lastModified() == committedAt,
             "a metadata-only update re-wrote the committed payload");
+
+    const QString sessionPath =
+        QDir(directory.path())
+            .filePath(QStringLiteral("pinned_windows_v2/pins/%1/canvas_session.bin").arg(id));
+    const QFileInfo session(sessionPath);
+    const QDateTime sessionCommittedAt = session.lastModified();
+    record.opacityPercent = 87;
+    require(repository.updateState(record).success && repository.flush().success &&
+                session.lastModified() == sessionCommittedAt,
+            "a state-only update must not rewrite an unchanged drawing session");
 
     const auto updated = repository.loadRecord(id);
     require(updated.has_value() && updated->nativeGeometry == QRect(16, 12, 2, 2),
@@ -790,18 +801,20 @@ void managementLifecycleAndRetention() {
     require(!repository.loadRecord(first.id) && repository.loadRecord(second.id) &&
                 repository.loadRecord(protectedRecord.id),
             "prune oldest closed pin without affecting retained pins");
-    require(!repository.upsert(first).success, "late save must not recreate pruned record");
+    require(!repository.upsertExisting(first).success,
+            "late state save must not recreate pruned record");
     require(repository.markRestored(second.id).success &&
                 !repository.loadRecord(second.id)->ignored,
             "restore must unignore record");
     require(repository.clearClosed().success && repository.summaries().size() == 2,
             "clear closed must protect restored pins");
     auto pending = make();
+    repository.reserveCreation(pending.id);
     require(repository.markClosed(pending.id, now).success && repository.upsert(pending).success &&
                 repository.loadRecord(pending.id)->ignored,
             "close before first image publication must survive");
-    require(repository.remove(pending.id).success && !repository.upsert(pending).success,
-            "destroy blocks late publication");
+    require(repository.remove(pending.id).success && !repository.upsertExisting(pending).success,
+            "destroy blocks late state publication");
     require(repository.markClosed(second.id, now).success, "close before disabling history");
     policy.enabled = false;
     require(repository.setPolicy(policy).success, "disable closed history");
@@ -944,12 +957,122 @@ void managementHasNoTotalRecordCap() {
     require(reloaded.summaries().size() == 140, "loading must not truncate at 128 pins");
 }
 
+void previewsReadOnlySourcePayloadAndKeepStableRevision() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                               patternedImage({64, 32}, 7));
+    record.canvasSession = QByteArrayLiteral("first drawing");
+    record.recognitionResults = QByteArrayLiteral("first recognition");
+    require(repository.upsert(record).success && repository.flush().success,
+            "save preview source with unrelated payloads");
+
+    const auto revision = repository.previewSourceRevision(record.id);
+    const auto preview = repository.loadPreviewSource(record.id);
+    require(revision && preview && samePixels(preview->image, record.image) &&
+                preview->originalHtml.isEmpty() && preview->originalText.isEmpty(),
+            "preview reads the saved source image");
+
+    const QString extraPath =
+        QDir(directory.path())
+            .filePath(
+                QStringLiteral("pinned_windows_v2/pins/%1/canvas_session.bin").arg(record.id));
+    require(QFile::remove(extraPath), "remove unrelated drawing payload");
+    require(repository.loadPreviewSource(record.id).has_value() &&
+                !repository.loadRecord(record.id).has_value(),
+            "preview remains available when an unrelated payload is unavailable");
+
+    record.canvasSession = QByteArrayLiteral("second drawing");
+    require(repository.updateState(record).success &&
+                repository.previewSourceRevision(record.id) == revision,
+            "drawing updates do not invalidate the source preview");
+    require(repository.upsert(record).success &&
+                repository.previewSourceRevision(record.id) == revision,
+            "a subsequent state save keeps the immutable source revision");
+    record.image = patternedImage({64, 32}, 19);
+    require(repository.upsert(record).success &&
+                repository.previewSourceRevision(record.id) != revision,
+            "replacing image content invalidates the source preview");
+}
+
+void bulkRemovalIsAtomicAndNotifiesOnce() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    QVector<QString> ids;
+    for (int index = 0; index < 20; ++index) {
+        const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        ids.push_back(id);
+        require(repository.upsert(recordWithId(id, patternedImage({2, 2}, index))).success,
+                "create bulk-removal fixture");
+    }
+    require(repository.flush().success, "commit bulk-removal fixture");
+    std::atomic_int notifications{0};
+    repository.setChangedCallback([&notifications]() { ++notifications; });
+    require(!repository.removeMany({ids.front(), QStringLiteral("../invalid")}).success &&
+                repository.summaries().size() == ids.size() && notifications == 0,
+            "invalid bulk removal leaves every record untouched");
+    require(repository.removeMany(ids).success && repository.summaries().isEmpty() &&
+                notifications == 1,
+            "bulk removal updates all records with one change notification");
+    repository.setChangedCallback({});
+}
+
+void canceledCreationReleasesLifecycleState() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary storage directory is unavailable");
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    const QDateTime firstTime = QDateTime::currentDateTimeUtc().addSecs(-60);
+    const QDateTime secondTime = firstTime.addSecs(30);
+    auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                               patternedImage({8, 8}, 17));
+    const auto prepared =
+        storage::PreparedPngImage::fromBytes(record.image.size(), pngBytes(record.image, 6));
+    require(prepared.has_value(), "prepare reserved pin source");
+
+    repository.reserveCreation(record.id, firstTime);
+    require(repository.markClosed(record.id, firstTime).success,
+            "close can precede first publication");
+    repository.cancelCreation(record.id);
+    require(!repository.createReserved(record, *prepared).success,
+            "canceled asynchronous publication must not create a record");
+
+    repository.reserveCreation(record.id, secondTime);
+    require(repository.createReserved(record, *prepared).success,
+            "a new explicit reservation can create a record");
+    const auto created = repository.loadRecord(record.id);
+    require(created && !created->ignored && created->createdUtc == secondTime,
+            "cancellation must release both creation and close state");
+    require(repository.remove(record.id).success && !repository.upsertExisting(record).success,
+            "a late update must not recreate a removed record");
+
+    repository.reserveCreation(record.id, secondTime);
+    require(repository.createReserved(record, *prepared).success,
+            "removed IDs must not remain in a permanent tombstone set");
+    require(repository.remove(record.id).success, "remove explicitly recreated record");
+
+    const QString removedBeforeCreate = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    record.id = removedBeforeCreate;
+    repository.reserveCreation(record.id);
+    require(repository.remove(record.id).success &&
+                !repository.createReserved(record, *prepared).success,
+            "deletion must revoke an outstanding first save");
+
+    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repository.reserveCreation(record.id);
+    require(repository.markClosed(record.id).success && repository.clearClosed().success &&
+                !repository.createReserved(record, *prepared).success,
+            "clearing closed pins must revoke an outstanding first save");
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
     managementLifecycleAndRetention();
     managementHasNoTotalRecordCap();
+    previewsReadOnlySourcePayloadAndKeepStableRevision();
+    bulkRemovalIsAtomicAndNotifiesOnce();
+    canceledCreationReleasesLifecycleState();
     managementDiskQuotaAndRestorationProtection();
     managementLegacyMetadataDefaults();
     managementExpiresBeforeApplyingQuotas();

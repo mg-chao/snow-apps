@@ -120,6 +120,17 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
                 result.dirty = true;
             }
         }
+        bool migratedDestroyShortcut = false;
+        if (entry.key == QStringLiteral("pin_to_screen_shortcuts/destroy_window") &&
+            mutateDocument && schemaVersion < 3) {
+            const auto previousDefault =
+                ConfigurationSchema::normalize(entry.key, QJsonArray{QStringLiteral("Ctrl+Esc")});
+            const auto stored = ConfigurationSchema::normalize(entry.key, raw);
+            if (stored.valid && stored.value == previousDefault.value) {
+                raw = entry.defaultValue;
+                migratedDestroyShortcut = true;
+            }
+        }
         if (entry.key == kCustomModelsKey) {
             bool valid = false;
             const QJsonValue canonical = customAiModelsToJson(customAiModelsFromJson(raw, &valid));
@@ -145,9 +156,9 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
         }
 
         result.values.insert(entry.key, normalized.value);
-        if (mutateDocument && (replaceAll || normalized.changed)) {
+        if (mutateDocument && (replaceAll || normalized.changed || migratedDestroyShortcut)) {
             insertPath(&result.document, entry.key, normalized.value);
-            if (normalized.changed && !replaceAll) {
+            if ((normalized.changed || migratedDestroyShortcut) && !replaceAll) {
                 result.dirty = true;
             }
         }

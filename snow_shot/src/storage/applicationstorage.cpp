@@ -98,6 +98,8 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
 } // namespace
 
 ApplicationStorage::ApplicationStorage(QObject* parent) : QObject(parent) {
+    m_pinnedPreviewPool.setMaxThreadCount(2);
+    m_pinnedFullImagePool.setMaxThreadCount(1);
     qRegisterMetaType<CaptureHistoryUsage>();
     qRegisterMetaType<AppStorageUsage>();
     qRegisterMetaType<StorageStatus>();
@@ -186,6 +188,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_usageTracker.reset();
     m_captureHistory.reset();
     m_pinnedWindows.reset();
+    m_pinnedChangeQueued.store(false);
     m_configuration.reset();
     const auto selection = resolveDirectory(options);
     const QString effectiveDirectory = selection.effectiveDirectory;
@@ -239,9 +242,12 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_pinnedWindows = std::make_unique<PinnedWindowRepository>(
         effectiveDirectory, m_status.writeAvailable, options.debounceMilliseconds);
     m_pinnedWindows->setChangedCallback([this]() {
+        if (m_pinnedChangeQueued.exchange(true))
+            return;
         QMetaObject::invokeMethod(
             this,
             [this]() {
+                m_pinnedChangeQueued.store(false);
                 if (!m_initialized || !m_pinnedWindows)
                     return;
                 static_cast<void>(m_pinnedWindows->enforcePolicy());
@@ -355,6 +361,10 @@ void ApplicationStorage::shutdown() {
     if (!m_initialized) {
         return;
     }
+    m_pinnedPreviewPool.clear();
+    m_pinnedFullImagePool.clear();
+    m_pinnedPreviewPool.waitForDone();
+    m_pinnedFullImagePool.waitForDone();
     if (m_captureHistory != nullptr) {
         m_captureHistory->drain();
         m_status.lastHistoryError = m_captureHistory->lastError();

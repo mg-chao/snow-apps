@@ -34,6 +34,7 @@
 namespace adqt::widgets {
 class AdButton;
 class AdContextMenu;
+class AdModal;
 class AdSlider;
 } // namespace adqt::widgets
 namespace snow_shot::presentation {
@@ -226,6 +227,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void registerWindowShortcuts();
     void reloadPinnedWindowShortcuts();
     void createContextMenu();
+    void confirmDestroy();
     void rebuildGroupMenu();
     void refreshContextMenuForGroup(const QString& groupId);
     void deleteIfInGroup(const QString& groupId);
@@ -440,6 +442,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<QWidget> m_clickThroughOpacityEditor;
     adqt::widgets::AdSlider* m_clickThroughOpacitySlider = nullptr;
     adqt::widgets::AdContextMenu* m_contextMenu = nullptr;
+    QPointer<adqt::widgets::AdModal> m_destroyConfirmation;
     adqt::widgets::AdContextMenu* m_groupMenu = nullptr;
     adqt::widgets::AdContextMenu* m_deleteSpecifiedGroupMenu = nullptr;
     QAction* m_ocrAction = nullptr;

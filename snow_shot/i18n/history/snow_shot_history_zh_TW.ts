@@ -109,8 +109,8 @@
         <message numerus="yes">
             <source>%n pinned window(s)</source>
             <translation>
-                <numerusform>%n 個固定到螢幕的視窗</numerusform>
-            </translation>
+            <numerusform>%n 個固定到螢幕的視窗</numerusform>
+        </translation>
         </message>
         <message>
             <source>All sources</source>
@@ -151,8 +151,8 @@
         <message numerus="yes">
             <source>Delete %n selected item(s)?</source>
             <translation>
-                <numerusform>刪除選取的 %n 個項目？</numerusform>
-            </translation>
+            <numerusform>刪除選取的 %n 個項目？</numerusform>
+        </translation>
         </message>
         <message>
             <source>Delete all pinned windows</source>
@@ -257,8 +257,8 @@
         <message numerus="yes">
             <source>Selected %n item(s)</source>
             <translation>
-                <numerusform>已選取 %n 個項目</numerusform>
-            </translation>
+            <numerusform>已選取 %n 個項目</numerusform>
+        </translation>
         </message>
         <message>
             <source>Selected files</source>
@@ -302,8 +302,8 @@
         <message numerus="yes">
             <source>%n screenshot(s)</source>
             <translation>
-                <numerusform>%n 張截圖</numerusform>
-            </translation>
+            <numerusform>%n 張截圖</numerusform>
+        </translation>
         </message>
         <message>
             <source>All sources</source>
@@ -340,8 +340,8 @@
         <message numerus="yes">
             <source>Delete %n selected item(s)?</source>
             <translation>
-                <numerusform>刪除選取的 %n 個項目？</numerusform>
-            </translation>
+            <numerusform>刪除選取的 %n 個項目？</numerusform>
+        </translation>
         </message>
         <message>
             <source>Delete all</source>
@@ -410,8 +410,8 @@
         <message numerus="yes">
             <source>Selected %n item(s)</source>
             <translation>
-                <numerusform>已選取 %n 個項目</numerusform>
-            </translation>
+            <numerusform>已選取 %n 個項目</numerusform>
+        </translation>
         </message>
         <message>
             <source>Start date</source>
@@ -435,6 +435,10 @@
         <message>
             <source>Always on Top</source>
             <translation>永遠置於最上層</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
         </message>
         <message>
             <source>Click-through</source>
@@ -483,6 +487,14 @@
         <message>
             <source>Destroy</source>
             <translation>銷毀</translation>
+        </message>
+        <message>
+            <source>Destroy pinned window</source>
+            <translation>銷毀固定到螢幕的視窗</translation>
+        </message>
+        <message>
+            <source>Destroy this pinned window? This action cannot be undone.</source>
+            <translation>確定要銷毀此固定到螢幕的視窗嗎？此操作無法復原。</translation>
         </message>
         <message>
             <source>Display text recognition results</source>
@@ -640,8 +652,40 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Clear Default group</source>
+            <translation>清空預設群組</translation>
+        </message>
+        <message>
+            <source>Clear group</source>
+            <translation>清空群組</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>預設</translation>
+        </message>
+        <message>
+            <source>Delete "%1" and all its pinned windows, including ignored windows? This action cannot be undone.</source>
+            <translation>刪除「%1」及其中所有釘選視窗（包括已忽略的視窗）？此操作無法復原。</translation>
+        </message>
+        <message>
+            <source>Delete all pinned windows in "%1", including ignored windows? The Default group will remain. This action cannot be undone.</source>
+            <translation>刪除「%1」中的所有釘選視窗（包括已忽略的視窗）？預設群組將保留。此操作無法復原。</translation>
+        </message>
+        <message>
+            <source>Delete empty groups</source>
+            <translation>刪除空群組</translation>
+        </message>
+        <message>
+            <source>Delete every group with no non-ignored pinned windows? Ignored pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
+            <translation>刪除所有沒有未忽略釘選視窗的群組？儲存在這些群組中的已忽略釘選視窗也將被永久刪除。此操作無法復原。</translation>
+        </message>
+        <message>
+            <source>Delete group</source>
+            <translation>刪除群組</translation>
+        </message>
+        <message>
+            <source>Delete groups</source>
+            <translation>刪除群組</translation>
         </message>
         <message>
             <source>Group %1</source>

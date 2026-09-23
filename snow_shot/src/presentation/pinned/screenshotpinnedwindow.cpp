@@ -48,6 +48,7 @@
 #include "widgets/button.h"
 #include "widgets/context_menu.h"
 #include "widgets/message.h"
+#include "widgets/modal.h"
 #include "widgets/slider.h"
 #include "../tools/screenshottoolpalettebuttons.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
@@ -1590,6 +1591,13 @@ void ScreenshotPinnedWindow::changeEvent(QEvent* event) {
 }
 
 void ScreenshotPinnedWindow::retranslateUi() {
+    if (m_destroyConfirmation != nullptr) {
+        m_destroyConfirmation->setWindowTitle(tr("Destroy pinned window"));
+        m_destroyConfirmation->setText(
+            tr("Destroy this pinned window? This action cannot be undone."));
+        m_destroyConfirmation->setAcceptText(tr("Destroy"));
+        m_destroyConfirmation->setRejectText(tr("Cancel"));
+    }
     if (m_scaleLabel != nullptr && m_scaleLabel->isVisible()) {
         m_scaleLabel->setText(m_scaleReadoutShowsOpacity
                                   ? tr("Opacity: %1%").arg(m_opacityPercent)
@@ -2186,20 +2194,24 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    bool savedForClose = false;
     if (event->spontaneous() && !m_inactiveGroupClosing &&
         m_closeIntent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
         m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Close;
         if (m_groupManager)
             m_groupManager->markWindowClosing(this);
-        if (m_persistenceCloser)
+        if (m_persistenceCloser) {
             m_persistenceCloser(persistenceRecord());
+            savedForClose = true;
+        }
     }
     setFileDragActive(false);
     emit closingForPersistence(persistenceRecord(), m_closeIntent);
     if (m_persistenceRemovalRequested) {
         removePersistence();
     }
-    if (!m_persistenceRemovalRequested && m_presented && m_persistenceTimer != nullptr) {
+    if (!m_persistenceRemovalRequested && m_presented && m_persistenceTimer != nullptr &&
+        !savedForClose) {
         m_persistenceTimer->stop();
         persistNow();
     }
@@ -2706,17 +2718,16 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(m_showMainInterfaceAction, &QAction::triggered, this,
             &ScreenshotPinnedWindow::showMainWindowRequested);
 
+    m_closeAction = m_contextMenu->addItem(tr("Close"), outlined_icons::Close());
+    setActionTranslationSource(m_closeAction, "Close");
+    m_closeAction->setObjectName(QStringLiteral("screenshotPinnedCloseAction"));
+    connect(m_closeAction, &QAction::triggered, this, &ScreenshotPinnedWindow::requestUserClose);
     QAction* destroyAction =
         m_contextMenu->addItem(tr("Destroy"), custom_outlined_icons::DestroyPinnedWindow());
     setActionTranslationSource(destroyAction, "Destroy");
     destroyAction->setObjectName(QStringLiteral("screenshotPinnedDestroyAction"));
-    connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::requestDestroy);
-
-    m_closeAction = m_contextMenu->addItem(tr("Close"), outlined_icons::Close());
-    setActionTranslationSource(m_closeAction, "Close");
-    m_closeAction->setObjectName(QStringLiteral("screenshotPinnedCloseAction"));
-    m_contextMenu->setActionDanger(m_closeAction);
-    connect(m_closeAction, &QAction::triggered, this, &ScreenshotPinnedWindow::requestUserClose);
+    m_contextMenu->setActionDanger(destroyAction);
+    connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::confirmDestroy);
     updateShowMainInterfaceAction();
     connect(m_contextMenu, &QMenu::aboutToShow, this, [this] {
         exitHideToTop();
@@ -2742,9 +2753,7 @@ void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
     const bool containsAction = m_contextMenu->actions().contains(m_showMainInterfaceAction);
     const bool shouldShowFallback = !configuredTrayEnabled() || !trayMenuShowsMainInterface();
     if (shouldShowFallback && !containsAction) {
-        auto* destroyAction = findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
-        m_contextMenu->insertAction(destroyAction ? destroyAction : m_closeAction,
-                                    m_showMainInterfaceAction);
+        m_contextMenu->insertAction(m_closeAction, m_showMainInterfaceAction);
     } else if (!shouldShowFallback && containsAction) {
         m_contextMenu->removeAction(m_showMainInterfaceAction);
     }
@@ -2855,10 +2864,13 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     const QVector<snow_shot::storage::PinnedWindowGroup> groups = manager->groupsSortedForDisplay();
     bool hasDeletableEmptyGroups = false;
     for (const auto& group : groups) {
-        const int windowCount = manager->windowCount(group.id);
-        hasDeletableEmptyGroups = hasDeletableEmptyGroups || (!group.builtIn && windowCount == 0);
-        QAction* action = m_groupMenu->addItem(QStringLiteral("%1\t%2").arg(
-            manager->displayName(group.id), QString::number(windowCount)));
+        const auto counts = manager->windowCounts(group.id);
+        hasDeletableEmptyGroups =
+            hasDeletableEmptyGroups || (!group.builtIn && counts.nonIgnored == 0);
+        QAction* action = m_groupMenu->addItem(QStringLiteral("%1\t%2/%3")
+                                                   .arg(manager->displayName(group.id),
+                                                        QString::number(counts.nonIgnored),
+                                                        QString::number(counts.total)));
         action->setObjectName(QStringLiteral("screenshotPinnedGroupAction-%1").arg(group.id));
         action->setData(group.id);
         action->setCheckable(true);
@@ -2874,7 +2886,8 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     QAction* deleteEmpty = m_groupMenu->addItem(tr("Delete Empty Groups"), outlined_icons::Clear());
     deleteEmpty->setObjectName(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     deleteEmpty->setEnabled(hasDeletableEmptyGroups);
-    connect(deleteEmpty, &QAction::triggered, this, [manager]() { manager->deleteEmptyGroups(); });
+    connect(deleteEmpty, &QAction::triggered, this,
+            [this, manager]() { manager->openDeleteEmptyGroupsConfirmation(this); });
 
     const QString deleteSpecifiedText = tr("Delete Specified Group");
     if (m_deleteSpecifiedGroupMenu == nullptr) {
@@ -2892,13 +2905,17 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
                                    custom_outlined_icons::Delete());
     }
     for (const auto& group : groups) {
-        QAction* action = m_deleteSpecifiedGroupMenu->addItem(QStringLiteral("%1\t%2").arg(
-            manager->displayName(group.id), QString::number(manager->windowCount(group.id))));
+        const auto counts = manager->windowCounts(group.id);
+        QAction* action = m_deleteSpecifiedGroupMenu->addItem(
+            QStringLiteral("%1\t%2/%3")
+                .arg(manager->displayName(group.id), QString::number(counts.nonIgnored),
+                     QString::number(counts.total)));
         action->setObjectName(
             QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(group.id));
         action->setData(group.id);
-        connect(action, &QAction::triggered, this,
-                [manager, groupId = group.id]() { manager->deleteSpecifiedGroup(groupId); });
+        connect(action, &QAction::triggered, this, [this, manager, groupId = group.id]() {
+            manager->openDeleteSpecifiedGroupConfirmation(groupId, this);
+        });
     }
 }
 
@@ -6176,6 +6193,40 @@ void ScreenshotPinnedWindow::requestDestroy() {
     m_closing = true;
     stopRecognition();
     QTimer::singleShot(0, this, [this]() { close(); });
+}
+
+void ScreenshotPinnedWindow::confirmDestroy() {
+    if (m_closing) {
+        return;
+    }
+    if (m_destroyConfirmation != nullptr) {
+        m_destroyConfirmation->setOpen(true);
+        return;
+    }
+
+    auto* modal = new adqt::widgets::AdModal(this);
+    m_destroyConfirmation = modal;
+    modal->setObjectName(QStringLiteral("screenshotPinnedDestroyConfirmation"));
+    modal->setOwnerWindow(this);
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::WindowModal);
+    modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
+    modal->setWindowTitle(tr("Destroy pinned window"));
+    modal->setText(tr("Destroy this pinned window? This action cannot be undone."));
+    modal->setAcceptText(tr("Destroy"));
+    modal->setRejectText(tr("Cancel"));
+    modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    connect(modal, &adqt::widgets::AdModal::accepted, this,
+            &ScreenshotPinnedWindow::requestDestroy);
+    connect(modal, &adqt::widgets::AdModal::finished, this, [this, modal](auto) {
+        if (m_destroyConfirmation == modal) {
+            m_destroyConfirmation = nullptr;
+        }
+        modal->deleteLater();
+    });
+    modal->open();
 }
 
 std::optional<QPoint> ScreenshotPinnedWindow::physicalCursorPosition() const {

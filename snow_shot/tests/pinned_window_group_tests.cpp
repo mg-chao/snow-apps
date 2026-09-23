@@ -118,6 +118,14 @@ void managerValidationPersistenceAndCounts() {
     require(repository.upsert(record(secondId)).success, "failed to seed a default record");
     require(manager.windowCount(*alphaId) == 1 && manager.windowCount("default") == 1,
             "group counts should include persisted records");
+    require(manager.windowCounts(*alphaId).nonIgnored == 1 &&
+                manager.windowCounts(*alphaId).total == 1,
+            "persisted pins should contribute to both group counts");
+    manager.registerPendingPin(QStringLiteral("pending-alpha"), *alphaId);
+    require(manager.windowCounts(*alphaId).nonIgnored == 2 &&
+                manager.windowCounts(*alphaId).total == 2,
+            "pending pins should contribute to both group counts");
+    manager.completePendingPin(QStringLiteral("pending-alpha"));
 
     require(manager.setActiveGroup(*alphaId), "activating a user group should succeed");
     require(repository.activeGroupId() == *alphaId, "the active group should be persisted");
@@ -270,7 +278,7 @@ void groupCountLimitIsEnforced() {
                 restored.activeGroupId() == lastGroupId,
             "the last active group within the persisted limit should survive reload");
 }
-void ignoredRecordsDoNotBelongToActiveGroupCounts() {
+void ignoredRecordsCountTowardTotalAndDeleteWithEmptyGroups() {
     QTemporaryDir directory;
     storage::PinnedWindowRepository repository(directory.path(), true, 30000);
     presentation::PinnedWindowGroupManager manager(&repository);
@@ -280,16 +288,24 @@ void ignoredRecordsDoNotBelongToActiveGroupCounts() {
     item.groupId = *group;
     require(repository.upsert(item).success && manager.windowCount(*group) == 1,
             "retained pins count toward group membership");
-    require(repository.markClosed(item.id).success && manager.windowCount(*group) == 0,
-            "ignored pins are excluded from counts");
-    require(manager.deleteEmptyGroups() && !repository.loadRecord(item.id),
-            "deleting an ignored-only group destroys its records");
+    require(repository.markClosed(item.id).success && manager.windowCount(*group) == 0 &&
+                manager.windowCounts(*group).total == 1,
+            "ignored pins should remain in the total after closing");
+    manager.registerPendingPin(item.id, *group);
+    require(manager.windowCounts(*group).nonIgnored == 1 && manager.windowCounts(*group).total == 1,
+            "an ignored pin being restored should count once in the total");
+    manager.completePendingPin(item.id);
+    require(manager.windowCounts(*group).nonIgnored == 0 && manager.windowCounts(*group).total == 1,
+            "completing a pending pin should refresh the non-ignored count");
+    require(manager.deleteEmptyGroups() && !manager.contains(*group) &&
+                !repository.loadRecord(item.id).has_value(),
+            "empty-group cleanup should delete an ignored-only group and its saved pins");
 }
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
-    ignoredRecordsDoNotBelongToActiveGroupCounts();
+    ignoredRecordsCountTowardTotalAndDeleteWithEmptyGroups();
     defaultGroupAndFreshSchema();
     managerValidationPersistenceAndCounts();
     activeGroupFallbackAndEmptyDeletion();

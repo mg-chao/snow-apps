@@ -29,6 +29,14 @@ struct PinnedWindowSummary final {
     }
 };
 
+struct PinnedWindowPreviewSource final {
+    PinnedWindowSourceKind sourceKind = PinnedWindowSourceKind::ImageData;
+    QImage image;
+    QString originalHtml;
+    QString originalText;
+    double firstCreationTextDpi = 1.0;
+};
+
 class PinnedWindowRepository final {
   public:
     explicit PinnedWindowRepository(QString configurationDirectory, bool writeAvailable = true,
@@ -40,6 +48,9 @@ class PinnedWindowRepository final {
     }
 
     [[nodiscard]] std::optional<PinnedWindowRecord> loadRecord(const QString& id) const;
+    [[nodiscard]] std::optional<PinnedWindowPreviewSource>
+    loadPreviewSource(const QString& id) const;
+    [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
     [[nodiscard]] quint64 revision() const;
     [[nodiscard]] int allocateHideToTopAccent();
@@ -49,16 +60,26 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult setGroups(QVector<PinnedWindowGroup> groups,
                                           const QString& activeGroupId);
     [[nodiscard]] StorageResult setRecordGroup(const QString& recordId, const QString& groupId);
+    [[nodiscard]] StorageResult removeEmptyGroup(const QString& groupId);
     // The built-in Default group is cleared but never removed.
     [[nodiscard]] StorageResult removeGroupAndRecords(const QString& groupId);
     [[nodiscard]] StorageResult create(PinnedWindowRecord record, PreparedPngImage sourceImage);
     [[nodiscard]] StorageResult create(PinnedWindowRecord record);
+    // First saves from asynchronous pin creation require a live reservation.
+    [[nodiscard]] StorageResult createReserved(PinnedWindowRecord record,
+                                               PreparedPngImage sourceImage);
+    [[nodiscard]] StorageResult createReserved(PinnedWindowRecord record);
     [[nodiscard]] StorageResult updateState(PinnedWindowRecord record);
     [[nodiscard]] StorageResult upsert(PinnedWindowRecord record);
+    // A late state save must not recreate a record removed by the user or retention.
+    [[nodiscard]] StorageResult upsertExisting(PinnedWindowRecord record);
     [[nodiscard]] StorageResult remove(const QString& id);
+    [[nodiscard]] StorageResult removeMany(const QVector<QString>& ids);
     // Callbacks run under the repository lock; dispatch notifications without reentering it.
     void setChangedCallback(std::function<void()> callback);
     void reserveCreation(const QString& id, QDateTime when = QDateTime::currentDateTimeUtc());
+    // Releases a failed or canceled first save, including any close that preceded it.
+    void cancelCreation(const QString& id);
     [[nodiscard]] StorageResult markClosed(const QString& id,
                                            QDateTime when = QDateTime::currentDateTimeUtc());
     [[nodiscard]] StorageResult beginRestore(const QString& id);
@@ -73,6 +94,10 @@ class PinnedWindowRepository final {
     [[nodiscard]] QString lastError() const;
 
   private:
+    [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, PreparedPngImage sourceImage,
+                                           bool requireReservation);
+    [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, bool requireReservation);
+    [[nodiscard]] StorageResult upsertImpl(PinnedWindowRecord record, bool requireExisting);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };
