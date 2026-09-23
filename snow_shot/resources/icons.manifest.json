@@ -391,6 +391,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "DestroyPinnedWindow",
+      "name": "destroy-pinned-window",
+      "source": "../src/presentation/components/icons/resources/destroy-pinned-window.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Disabled",
       "name": "disabled",
       "source": "../src/presentation/components/icons/resources/disabled.svg",
@@ -626,6 +634,14 @@
       "symbol": "PinToScreen",
       "name": "pin-to-screen",
       "source": "../src/presentation/components/icons/resources/pin-to-screen.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "PinToScreenManagement",
+      "name": "pin-to-screen-management",
+      "source": "../src/presentation/components/icons/resources/pin-to-screen-management.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
