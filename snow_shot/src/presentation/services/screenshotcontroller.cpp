@@ -4418,7 +4418,7 @@ void ScreenshotController::Impl::beginCanvasColorSampling(adqt::widgets::AdColor
     m_canvasColorSamplingDestroyedConnection = QObject::connect(
         picker, &QObject::destroyed, &owner, [this]() { clearCanvasColorSampling(); });
     if (m_canvasColorSamplerWindow != nullptr) {
-        m_canvasColorSamplerWindow->beginSampling();
+        m_canvasColorSamplerWindow->beginSampling(picker);
     }
     m_canvasColorSampler.reset();
     setCanvasColorSamplingShortcutScope(true);

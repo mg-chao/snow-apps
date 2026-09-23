@@ -941,7 +941,7 @@ void ScreenshotPinnedEditController::beginCanvasColorSampling(
     m_canvasColorSamplingDestroyedConnection =
         connect(picker, &QObject::destroyed, this, [this]() { cancelCanvasColorSampling(); });
     if (m_canvasColorSamplerWindow != nullptr) {
-        m_canvasColorSamplerWindow->beginSampling();
+        m_canvasColorSamplerWindow->beginSampling(picker);
     }
     m_canvasColorSampler.reset();
     if (m_toolbarWindow != nullptr) {

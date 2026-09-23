@@ -4462,6 +4462,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     list(REMOVE_DUPLICATES _color_picker_lifecycle_sources)
     add_executable(snow-shot-color-picker-lifecycle-tests
         tests/screenshot_color_picker_lifecycle_tests.cpp
+        src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         src/presentation/services/screenshotcolorpickercontroller.cpp
         src/platform/physicalcursor.cpp
         ${_color_picker_lifecycle_sources}
@@ -4485,6 +4486,14 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/platform/macos/windowcaptureexclusion.mm)
         target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
             "-framework AppKit" "-framework CoreGraphics")
+    endif()
+    if(APPLE)
+        set_source_files_properties(tests/screenshot_color_picker_lifecycle_tests.cpp
+            PROPERTIES LANGUAGE OBJCXX)
+        add_test(NAME snow-shot-macos-canvas-sampler-stacking-native-tests
+            COMMAND snow-shot-color-picker-lifecycle-tests --canvas-sampler-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-canvas-sampler-stacking-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
     add_test(NAME snow-shot-color-picker-lifecycle-tests

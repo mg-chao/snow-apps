@@ -13,7 +13,7 @@ class ScreenshotCanvasColorSamplerWindow final : public QWidget {
   public:
     explicit ScreenshotCanvasColorSamplerWindow(QWidget* parent = nullptr);
 
-    void beginSampling();
+    void beginSampling(QWidget* owner);
     void updateSample(const QImage& previewImage, const QPoint& globalCursorPosition);
     void endSampling();
 
