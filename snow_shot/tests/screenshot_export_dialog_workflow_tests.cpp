@@ -1450,7 +1450,7 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
     auto* unit = child<AdSegmented>(dimensions, "saveSizeUnitSegmented");
     require(sizeLabel->text() == QStringLiteral("Size") && unit->count() == 2 &&
                 unit->currentValue() == QStringLiteral("pixels") &&
-                unit->optionLabel(0) == QStringLiteral("px") &&
+                unit->optionLabel(0) == QStringLiteral("pixel") &&
                 unit->optionLabel(1) == QStringLiteral("Percentage") &&
                 sizeLabel->geometry().right() < unit->geometry().left() &&
                 unit->geometry().right() == dimensions->rect().right(),
@@ -1777,7 +1777,7 @@ void sizeUnits(QWidget& owner, const QTemporaryDir& temp) {
     require(QApplication::installTranslator(&translator), "size translator unavailable");
     flush();
     require(child<QLabel>(content, "saveSizeLabel")->text() == QStringLiteral("Translated Size") &&
-                unit->optionLabel(0) == QStringLiteral("Translated px") &&
+                unit->optionLabel(0) == QStringLiteral("Translated pixel") &&
                 unit->optionLabel(1) == QStringLiteral("Translated Percentage") &&
                 unit->accessibleName() == QStringLiteral("Translated Size unit") &&
                 width->toolTip() == QStringLiteral("Translated Width") &&
@@ -1801,7 +1801,8 @@ void sizeUnits(QWidget& owner, const QTemporaryDir& temp) {
             flush();
             auto* dimensions = child<QWidget>(content, "saveDimensionsForm");
             auto* label = child<QLabel>(content, "saveSizeLabel");
-            require(label->geometry().right() < unit->geometry().left() &&
+            require(unit->optionLabel(0) == QStringLiteral("像素") &&
+                        label->geometry().right() < unit->geometry().left() &&
                         dimensions->rect().contains(unit->geometry()) &&
                         unit->width() >= unit->minimumSizeHint().width(),
                     "translated size header must fit without clipping");

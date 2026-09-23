@@ -352,8 +352,8 @@
             <translation>Width</translation>
         </message>
         <message>
-            <source>px</source>
-            <translation>px</translation>
+            <source>pixel</source>
+            <translation>Pixel</translation>
         </message>
     </context>
     <context>

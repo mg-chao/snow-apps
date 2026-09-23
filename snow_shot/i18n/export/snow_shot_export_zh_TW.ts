@@ -352,8 +352,8 @@
             <translation>寬度</translation>
         </message>
         <message>
-            <source>px</source>
-            <translation>px</translation>
+            <source>pixel</source>
+            <translation>像素</translation>
         </message>
     </context>
     <context>
