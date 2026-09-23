@@ -188,6 +188,9 @@ class ScreenshotOverlayInputHandler final {
     // This is also used by non-interactive quick actions that select a whole
     // monitor or a focused window after the capture frame arrives.
     void confirmSelection();
+    void beginRegionOperation(bool subtract);
+    bool cancelRegionOperation();
+    [[nodiscard]] bool regionOperationActive() const;
 
   private:
     [[nodiscard]] QPointF virtualPositionForOverlay(const ScreenshotOverlayWindow* overlay,

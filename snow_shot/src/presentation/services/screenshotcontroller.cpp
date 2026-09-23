@@ -341,6 +341,12 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void undoCanvasEdit() override;
     void redoCanvasEdit() override;
     void requestRecapture() override;
+    void addScreenshotRegion() override {
+        m_overlayInputHandler->beginRegionOperation(false);
+    }
+    void subtractScreenshotRegion() override {
+        m_overlayInputHandler->beginRegionOperation(true);
+    }
     void setSelectionToolbarHiddenForSession(bool hidden) override;
     void setMoveTool() override;
     void setSelectTool() override;
@@ -1679,7 +1685,8 @@ bool ScreenshotController::Impl::canRecapture() const {
         m_captureWorkflow->recaptureInProgress() ||
         m_captureState.sessionState != ScreenshotSessionState::Editing ||
         m_captureState.captureInProgress || !m_interaction.moveToolActive() ||
-        m_interaction.dragging() || m_interaction.scrollingCapture()) {
+        m_interaction.dragging() || m_interaction.scrollingCapture() ||
+        m_selection.regionOperationActive()) {
         return false;
     }
     if (snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(
@@ -2492,6 +2499,7 @@ void ScreenshotController::Impl::restoreToolUiAfterScrollingCapture(bool scrolli
 }
 
 void ScreenshotController::Impl::startScrollingScreenshot() {
+    m_selection.setSelectionRect(m_selection.normalizedSelection());
     deactivateRecognition();
     if (!ensureScrollingFeature() || m_scrollingCaptureController->active() ||
         !m_selection.hasPixelSelection()) {
@@ -2685,8 +2693,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         return;
     }
 
-    const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                      m_selection.shadowColor()};
+    const ScreenshotResultStyle style = m_selection.resultStyle();
     std::optional<ScreenshotPinnedSelectionRequest> request =
         m_exportService->preparePinnedSelection(m_selection.pixelSelection(), style);
     if (!request.has_value()) {
@@ -3341,8 +3348,7 @@ ScreenshotController::Impl::recognitionFileSaveArtifact() const {
         m_ocrController == nullptr ||
         (m_scrollingCaptureController && m_scrollingCaptureController->active()))
         return {};
-    const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                      m_selection.shadowColor()};
+    const ScreenshotResultStyle style = m_selection.resultStyle();
     auto snapshot = m_ocrController->imageSnapshot(style);
     return snapshot ? std::make_shared<ScreenshotExportArtifact>(
                           ScreenshotExportSource::fromRecognitionImage(std::move(*snapshot)))
@@ -3399,8 +3405,7 @@ void ScreenshotController::Impl::quickSaveSelection() {
                     ScreenshotExportSource::fromScrollingSnapshot(std::move(snapshot))));
             });
     } else {
-        const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                          m_selection.shadowColor()};
+        const ScreenshotResultStyle style = m_selection.resultStyle();
         scheduled = m_exportService->requestSelectionResult(
             m_selection.pixelSelection(), style, &owner, [save](QImage image) {
                 save(std::make_shared<ScreenshotExportArtifact>(
@@ -3510,8 +3515,7 @@ void ScreenshotController::Impl::saveSelectionToFile() {
                                                      historySource);
             });
     } else if (m_selection.hasPixelSelection() && m_exportService != nullptr) {
-        const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                          m_selection.shadowColor()};
+        const ScreenshotResultStyle style = m_selection.resultStyle();
         scheduled = m_exportService->requestSelectionResult(m_selection.pixelSelection(), style,
                                                             &owner, std::move(imageReady));
     }
@@ -3621,8 +3625,7 @@ void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
             finished(false);
     } else if (m_selection.hasPixelSelection()) {
         const QRect selection = m_selection.pixelSelection();
-        const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                          m_selection.shadowColor()};
+        const ScreenshotResultStyle style = m_selection.resultStyle();
         auto source = ScreenshotExportSource::fromImageLoader(
             [receiver, epoch, selection, style](QObject* target,
                                                 std::function<void(QImage)> completion) {
@@ -3865,8 +3868,7 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
     const bool materializeImage = autoSave || copyFileToClipboard;
     const QPointer<ScreenshotController> receiver(&owner);
     if (materializeImage) {
-        const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                          m_selection.shadowColor()};
+        const ScreenshotResultStyle style = m_selection.resultStyle();
         const bool scheduled = m_exportService->requestSelectionResult(
             m_selection.pixelSelection(), style, &owner,
             [receiver, generation = *exportGeneration, copyFileToClipboard, historyCandidate,
@@ -3893,8 +3895,7 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
         detachCaptureForExport();
         return;
     }
-    const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                      m_selection.shadowColor()};
+    const ScreenshotResultStyle style = m_selection.resultStyle();
     const bool scheduled = m_exportService->requestSelectionResult(
         m_selection.pixelSelection(), style, &owner,
         [receiver, generation = *exportGeneration, historyCandidate,
@@ -4158,6 +4159,7 @@ bool ScreenshotController::Impl::prepareHistoryCandidate(
 }
 
 void ScreenshotController::Impl::startScreenRecording() {
+    m_selection.setSelectionRect(m_selection.normalizedSelection());
     deactivateRecognition();
     snow_shot::presentation::recording::startScreenshotRecording(
         m_selection.pixelSelection(), m_geometry.canvasOrigin(),
@@ -4593,6 +4595,11 @@ bool ScreenshotController::Impl::selectPreviousSelection() {
     }
     const QRect bounds = ScreenshotHalfOpenRect::fromRectF(canvasBounds).toAlignedQRect();
     if (!m_selection.applyParams(m_selectionSettings->previousSelectionParams(), bounds)) {
+        if (!m_selection.hasPixelSelection()) {
+            m_interaction.returnToSelectionMode(false);
+            m_presentationServices->hideToolbar();
+            m_presentationServices->updateOverlayState();
+        }
         return false;
     }
     static_cast<void>(restoreSelectionAspectRatioLock());

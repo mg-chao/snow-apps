@@ -1005,8 +1005,26 @@ void clearCancelsQueuedPublicationsAndShutdownDrains() {
 }
 } // namespace
 
+void compoundSelectionSurvivesRepositoryRestart() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "compound history temporary directory");
+    auto draft = draftAt(QDateTime::currentDateTimeUtc());
+    draft.selection.region = QRegion(draft.canvasBounds).subtracted(QRect(8, 6, 10, 10));
+    {
+        auto repository = storage::makeCaptureHistoryRepository(directory.path());
+        const auto published = repository->publish(draft).get();
+        require(published.storage.success && published.record.selection == draft.selection,
+                "publishing history must preserve region geometry");
+    }
+    auto repository = storage::makeCaptureHistoryRepository(directory.path());
+    require(repository->records().size() == 1 &&
+                repository->records().first().selection == draft.selection,
+            "reopened screenshot history must retain holes");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    compoundSelectionSurvivesRepositoryRestart();
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();
     scrollingMarkerRoundTripsAndRejectsNonBooleanValues();

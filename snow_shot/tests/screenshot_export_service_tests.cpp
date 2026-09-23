@@ -419,8 +419,46 @@ void pointSelectionRetainsBackingPixelsAndScalesEffects() {
 }
 } // namespace
 
+void compoundExportsSnapshotTheirGeometry() {
+    for (bool points : {false, true}) {
+        ExportFixture fixture(points);
+        require(fixture.isValid(), "compound export fixture");
+        const QRect selection(0, 0, 40, 30);
+        ScreenshotResultStyle style;
+        const QRegion shape = QRegion(selection).subtracted(QRect(10, 10, 10, 10));
+        style.region = shape;
+        const auto result = waitForResult(
+            [&](QObject* receiver, auto callback) {
+                const bool scheduled = fixture.service().requestSelectionResult(
+                    selection, style, receiver, std::move(callback));
+                style.region = QRegion(selection);
+                return scheduled;
+            },
+            [](QImage image) { return image; });
+        const int scale = points ? 2 : 1;
+        require(result.size() == selection.size() * scale &&
+                    result.pixelColor(15 * scale, 15 * scale).alpha() == 0 &&
+                    result.pixelColor(5 * scale, 5 * scale).alpha() == 255,
+                "asynchronous export must retain its shape snapshot at backing scale");
+        style.region = shape;
+        const auto clipboard = waitForResult(
+            [&](QObject* receiver, auto callback) {
+                return fixture.service().requestSelectionClipboard(selection, style, receiver,
+                                                                   std::move(callback));
+            },
+            [](ScreenshotSelectionClipboardResult value) { return value.image; });
+        require(hasSamePixels(clipboard, result), "clipboard must use the same compound mask");
+        const auto request = fixture.service().preparePinnedSelection(selection, style);
+        require(request && request->resultStyle.region == style.region,
+                "pin request carries region snapshot");
+        require(hasSamePixels(waitForPinnedResult(fixture.service(), *request), result),
+                "pin output must use the same compound mask");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    compoundExportsSnapshotTheirGeometry();
     pointSelectionRetainsBackingPixelsAndScalesEffects();
     styledClipboardResultRetainsPngTransparency();
     selectionClipboardPreservesEffects();

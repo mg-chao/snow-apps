@@ -2938,6 +2938,78 @@ void startupInputWaitsForRevealAndIgnoresSyntheticEvents() {
     require(handler.acceptInput(), "external drags must continue receiving input before reveal");
 }
 
+void regionOperationsUseMarqueeAndRestoreOnCancel() {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("regions"), QStringLiteral("regions"),
+                                   QRect(0, 0, 300, 300), solidImage(QSize(300, 300), Qt::white)));
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRect(10, 10, 80, 60));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.confirmSelection();
+    ScreenshotOverlayInputActions actions;
+    int shown = 0, cancelled = 0;
+    actions.showToolbar = [&] { ++shown; };
+    actions.cancelCaptureViaShortcut = [&] {
+        ++cancelled;
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    const QRegion original = selection.selectionRegion();
+    handler.beginRegionOperation(false);
+    require(interaction.manualSelecting() && !interaction.selectionHandlesVisible(),
+            "add entry must force manual selection without handles");
+    handler.handleMousePress(nullptr, QPointF(20, 20));
+    require(interaction.dragMode() == ScreenshotSelectionDragMode::Marquee,
+            "press inside confirmed content must start a new marquee");
+    handler.handleMouseMove(nullptr, QPointF(160, 70));
+    require(selection.confirmedRegion() == original, "drag must preserve committed region");
+    const auto preview = selection.selectionRegion();
+    handler.handleMouseRelease(nullptr, QPointF(160, 70));
+    require(selection.selectionRegion() == preview && !selection.rectangular() && shown == 1,
+            "release must commit preview and return to editing");
+    require(handler.selectionResizeDragModeAtCanvasPosition(QPointF(10, 10)) ==
+                ScreenshotSelectionDragMode::None,
+            "complex shape has no resize hit target");
+    handler.beginRegionOperation(true);
+    handler.handleMousePress(nullptr, QPointF(30, 30));
+    handler.handleMouseMove(nullptr, QPointF(50, 50));
+    require(!selection.selectionRegion().contains(QPoint(40, 40)),
+            "subtraction must preview its hole");
+    require(handler.handleRightClick(nullptr, QPointF(40, 40)) ==
+                    ScreenshotOverlayRightClickResult::Handled &&
+                selection.selectionRegion() == preview,
+            "right click must cancel pending subtraction");
+    QWidget window;
+    window.show();
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction, intelligent,
+                                                  actions);
+    handler.beginRegionOperation(false);
+    require(dispatchShortcut(window, Qt::Key_Escape) &&
+                dispatchShortcutRelease(window, Qt::Key_Escape),
+            "Escape must handle a pending region operation");
+    require(!selection.regionOperationActive() && selection.selectionRegion() == preview &&
+                cancelled == 0,
+            "Escape must restore confirmed geometry without cancelling capture");
+    handler.beginRegionOperation(true);
+    handler.handleMousePress(nullptr, QPointF(0, 0));
+    handler.handleMouseMove(nullptr, QPointF(250, 250));
+    handler.handleMouseRelease(nullptr, QPointF(250, 250));
+    require(!selection.hasPixelSelection() && interaction.manualSelecting() &&
+                !selection.regionOperationActive(),
+            "empty result must enter ordinary manual selection");
+    handler.handleMousePress(nullptr, QPointF(100, 100));
+    handler.handleMouseRelease(nullptr, QPointF(150, 150));
+    require(selection.rectangular() && interaction.movingSelection(),
+            "manual recovery after total subtraction");
+}
+
 int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -2971,6 +3043,7 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    regionOperationsUseMarqueeAndRestoreOnCancel();
     if (QCoreApplication::arguments().contains(QStringLiteral("--completion-gestures-only"))) {
         completionGesturesRequireAConfirmedSelectionAndSupportedTool();
         storage::ApplicationStorage::instance().shutdown();

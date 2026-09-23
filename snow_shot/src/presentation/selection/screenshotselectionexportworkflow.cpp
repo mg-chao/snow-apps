@@ -8,8 +8,7 @@
 
 namespace {
 ScreenshotResultStyle resultStyle(const ScreenshotSelectionModel& selection) {
-    return ScreenshotResultStyle{selection.cornerRadius(), selection.shadowWidth(),
-                                 selection.shadowColor()};
+    return selection.resultStyle();
 }
 } // namespace
 
@@ -21,7 +20,8 @@ bool ScreenshotSelectionExportWorkflow::copySelectionToClipboard(ResultValidator
                                                                  CopyCompletion completion,
                                                                  quint64 publicationId) {
     const QRect selection = m_context.selection.pixelSelection();
-    if (selection.width() < 1 || selection.height() < 1) {
+    if (m_context.selection.regionOperationActive() || selection.width() < 1 ||
+        selection.height() < 1) {
         return false;
     }
     const ScreenshotSelectionParams savedSelectionParams = currentSelectionParams();
@@ -77,7 +77,8 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
                                                              Completion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("workflow.pin_selection");
     const QRect selection = m_context.selection.pixelSelection();
-    if (selection.width() < 1 || selection.height() < 1) {
+    if (m_context.selection.regionOperationActive() || selection.width() < 1 ||
+        selection.height() < 1) {
         return false;
     }
 

@@ -174,6 +174,14 @@ void ScreenshotOverlayWindow::setScreenshotSelection(const QRectF& selection, bo
     }
 }
 
+void ScreenshotOverlayWindow::setScreenshotSelectionRegion(const QRegion& region,
+                                                           const QRegion& confirmed,
+                                                           const QRectF& marquee, bool subtracting,
+                                                           const QColor& danger) {
+    if (m_screenshotRenderer)
+        m_screenshotRenderer->setSelectionRegion(region, confirmed, marquee, subtracting, danger);
+}
+
 void ScreenshotOverlayWindow::clearScreenshotSelection() {
     if (m_canvas != nullptr) {
         m_canvas->setDecorationRenderAreas(SnowCanvasDecorationRenderAreas{

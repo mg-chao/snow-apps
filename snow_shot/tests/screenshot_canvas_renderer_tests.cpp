@@ -4050,6 +4050,51 @@ void overlayRightClickClosesOnRelease(bool native = false) {
 
 } // namespace
 
+void compoundSelectionRendersUnifiedMaskAndOutline() {
+    SnowCanvasWidget canvas;
+    canvas.resize(120, 120);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(60, 60, 1), "compound camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage background(120, 120, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    renderer.setImage(background, QRectF(0, 0, 120, 120));
+    renderer.setMaskVisible(true);
+    renderer.setSelectionBorderColor(Qt::blue);
+    const QRegion region = QRegion(QRect(10, 10, 90, 90)).subtracted(QRect(40, 40, 30, 30));
+    renderer.setSelection(QRectF(region.boundingRect()), false);
+    renderer.setSelectionRegion(region, region, {}, false, Qt::red);
+    const QImage output = renderCanvas(canvas);
+    require(output.pixelColor(25, 40) == QColor(Qt::white),
+            "canonical scanline seam must not render");
+    require(output.pixelColor(55, 55).red() < output.pixelColor(25, 25).red(),
+            "hole must be dimmed");
+    require(output.pixelColor(110, 110).red() < 200, "outside must be dimmed");
+    require(!renderer.selectionHandlesVisible(), "compound region must have no handles");
+    const QRect marquee(15, 15, 60, 20);
+    renderer.setSelectionRegion(region.subtracted(marquee), region, marquee, true, Qt::red);
+    const QImage subtracting = renderCanvas(canvas);
+    require(subtracting.pixelColor(30, 25).green() < 200,
+            "subtraction preview dims removed pixels");
+    int dangerPixels = 0, gapPixels = 0;
+    for (int x = 18; x < 70; ++x) {
+        const auto color = subtracting.pixelColor(x, 15);
+        if (color.red() > color.green() + 50)
+            ++dangerPixels;
+        else
+            ++gapPixels;
+    }
+    require(dangerPixels > 0 && gapPixels > 0, "subtraction marquee must use dashed danger color");
+    const auto before = ScreenshotSelectionVisualState{QRectF(region.boundingRect()), true};
+    auto after = before;
+    after.region = region;
+    after.confirmedRegion = region;
+    require(planScreenshotSelectionDamage(before, after, canvas.rect(), QTransform(), true)
+                .contains(QPoint(55, 55)),
+            "hole changes must invalidate pixels inside unchanged bounds");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--text-wheel-only"))) {
@@ -4158,6 +4203,7 @@ int main(int argc, char** argv) {
     }
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();
+    compoundSelectionRendersUnifiedMaskAndOutline();
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
     selectionBorderAndHandlesFollowTheConfiguredColor();
     rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();

@@ -11,7 +11,9 @@ makeScreenshotToolbarPresentationState(const ScreenshotInteractionState& interac
     state.selectionPixels = selection.pixelSelection();
     state.selectionCanvas = selection.normalizedSelection();
     state.inactive = interaction.inactive();
-    state.selectionToolbarMode = interaction.selectionToolbarMode();
+    state.selectionToolbarMode =
+        interaction.selectionToolbarMode() && !selection.regionOperationActive();
+    state.selectionResizable = selection.rectangular() && interaction.canResizeSelection();
     state.intelligentSelecting = interaction.intelligentSelecting();
     state.editing = interaction.editing();
     const QRect selectionPixels = state.selectionPixels;

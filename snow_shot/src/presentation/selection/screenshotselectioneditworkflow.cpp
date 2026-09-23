@@ -63,6 +63,8 @@ void ScreenshotSelectionEditWorkflow::setSelectionShadowWidthFromToolbar(int sha
 }
 
 void ScreenshotSelectionEditWorkflow::toggleSelectionAspectRatioLockFromToolbar() {
+    if (!m_context.selection.rectangular())
+        return;
     m_context.selection.toggleAspectRatioLock(
         snow_shot::presentation::kScreenshotSelectionMinimumSize);
     m_context.persistSelectionAspectRatioLock(m_context.selection.aspectRatioLocked());
@@ -126,6 +128,11 @@ void ScreenshotSelectionEditWorkflow::applySelectionParams(
     const ScreenshotSelectionParams& params) {
     const QRect bounds = selectionBounds();
     if (!m_context.selection.applyParams(params, bounds)) {
+        if (!m_context.selection.hasPixelSelection()) {
+            m_context.interaction.returnToSelectionMode(false);
+            if (m_context.ui.updateOverlayState)
+                m_context.ui.updateOverlayState();
+        }
         return;
     }
 

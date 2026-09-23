@@ -12,6 +12,10 @@
             <translation>新增</translation>
         </message>
         <message>
+            <source>Add screenshot region</source>
+            <translation>新增截圖區域</translation>
+        </message>
+        <message>
             <source>Add template</source>
             <translation>新增範本</translation>
         </message>
@@ -914,6 +918,10 @@
         <message>
             <source>Stroke width %1</source>
             <translation>筆畫寬度 %1</translation>
+        </message>
+        <message>
+            <source>Subtract screenshot region</source>
+            <translation>減去截圖區域</translation>
         </message>
         <message>
             <source>Table recognition</source>

@@ -7261,6 +7261,59 @@ void pinnedAlwaysOnTopOffscreen() {
     }
 }
 
+void pinnedCompoundSelectionOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "compound selection needs a screen");
+    auto config = clickThroughTestConfig(*screen);
+    ScreenshotResultStyle style;
+    style.cornerRadius = 12;
+    style.region = QRegion(0, 0, 400, 400).subtracted(QRegion(120, 120, 160, 160));
+    const QImage composed =
+        ScreenshotResultCompositor::compose(config.imageSource.materializedImage, style);
+    config.imageSource = ScreenshotImageSource::fromImage(composed, config.canvasSourceRect);
+    config.borderAppearance = screenshotSelectionBorderAppearance(QSize(400, 400), style);
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config);
+    window.show();
+    waitForUi(20);
+    auto* border = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
+    require(border != nullptr, "compound selection border exists");
+    const auto outline = border->property("regionOutline").value<QPainterPath>();
+    require(outline.contains(QPointF(50, 50)) && !outline.contains(QPointF(200, 200)),
+            "pinned outline retains selected content and its cutout");
+    QImage exported;
+    auto artifact = Access::fileSave(window);
+    require(artifact && artifact->requestImage(&window,
+                                               [&](ScreenshotExportImageResult result) {
+                                                   exported = std::move(result.image);
+                                               }),
+            "compound pin export starts");
+    QElapsedTimer timer;
+    timer.start();
+    while (exported.isNull() && timer.elapsed() < 10000) {
+        waitForUi(5);
+    }
+    require(!exported.isNull() && exported.pixelColor(200, 200).alpha() == 0 &&
+                exported.pixelColor(50, 50).alpha() == 255,
+            "pinned exports retain transparent cutouts");
+    auto snapshot = window.persistenceSnapshot();
+    require(snapshot.borderAppearance == config.borderAppearance,
+            "pin snapshots retain compound geometry");
+    QTemporaryDir directory;
+    require(directory.isValid(), "compound pin storage directory");
+    {
+        snow_shot::storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(snapshot).success && repository.flush().success,
+                "persist compound pin");
+    }
+    snow_shot::storage::PinnedWindowRepository reopened(directory.path());
+    const auto restored = reopened.loadRecord(snapshot.id);
+    require(restored && restored->borderAppearance == snapshot.borderAppearance,
+            "reopened pins retain compound borders");
+    window.close();
+}
+
 void pinnedSelectionBorderOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -10541,6 +10594,7 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--show-border-only"))) {
             pinnedShowBorderOffscreen();
             pinnedSelectionBorderOffscreen();
+            pinnedCompoundSelectionOffscreen();
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)

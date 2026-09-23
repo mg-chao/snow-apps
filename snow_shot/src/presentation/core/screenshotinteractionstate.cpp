@@ -105,6 +105,8 @@ bool ScreenshotInteractionState::enterSelectionDrag(ScreenshotSelectionDragMode 
         return false;
     }
 
+    if (!m_dragging)
+        m_marqueeGesture = dragMode == ScreenshotSelectionDragMode::Marquee;
     // A selection is unconfirmed for the entire create/move/resize transaction.
     m_mode = ScreenshotCaptureMode::ManualSelecting;
     m_dragMode = dragMode;
@@ -193,5 +195,6 @@ bool ScreenshotInteractionState::canResizeSelection() const {
 }
 
 bool ScreenshotInteractionState::selectionHandlesVisible() const {
-    return !m_recognitionSelectionActive;
+    return !m_recognitionSelectionActive &&
+           (!manualSelecting() || (m_dragging && !m_marqueeGesture));
 }

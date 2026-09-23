@@ -3,6 +3,8 @@
 
 #include <QColor>
 #include <QRect>
+#include <QRegion>
+#include <optional>
 #include <QString>
 #include <QVector>
 
@@ -13,12 +15,14 @@ struct ScreenshotSelectionParams {
     QColor shadowColor = QColor(0x33, 0x33, 0x33);
     bool lockAspectRatio = false;
     bool lockDragAspectRatio = false;
+    // Absent for legacy rectangles and named presets; present geometry is authoritative.
+    std::optional<QRegion> region;
 
     bool operator==(const ScreenshotSelectionParams& other) const {
         return selection == other.selection && radius == other.radius &&
                shadowWidth == other.shadowWidth && shadowColor == other.shadowColor &&
                lockAspectRatio == other.lockAspectRatio &&
-               lockDragAspectRatio == other.lockDragAspectRatio;
+               lockDragAspectRatio == other.lockDragAspectRatio && region == other.region;
     }
 
     bool operator!=(const ScreenshotSelectionParams& other) const {

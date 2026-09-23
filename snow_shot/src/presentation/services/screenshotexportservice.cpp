@@ -71,6 +71,7 @@ QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.compose_result");
     SNOW_SHOT_PIN_PERF_SCOPE("export.compose_result");
     ScreenshotResultStyle outputStyle = style;
+    outputStyle.regionScale = style.regionScale * spec.scale;
     outputStyle.cornerRadius = qRound(style.cornerRadius * spec.scale);
     outputStyle.shadowWidth =
         screenshotSelectionRenderedShadowPixels(style.shadowWidth, spec.scale);

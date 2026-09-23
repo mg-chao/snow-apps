@@ -32,12 +32,20 @@ struct ScreenshotSelectionVisualState {
     int shadowWidth = 0;
     QColor shadowColor = QColor(0x33, 0x33, 0x33);
     bool toolbarHovered = false;
+    std::optional<QRegion> region;
+    QRegion confirmedRegion;
+    QRectF marquee;
+    bool subtracting = false;
+    QColor dangerColor;
 
     [[nodiscard]] bool operator==(const ScreenshotSelectionVisualState& other) const {
         return bounds == other.bounds && present == other.present &&
                handlesVisible == other.handlesVisible && borderVisible == other.borderVisible &&
                cornerRadius == other.cornerRadius && shadowWidth == other.shadowWidth &&
-               shadowColor == other.shadowColor && toolbarHovered == other.toolbarHovered;
+               shadowColor == other.shadowColor && toolbarHovered == other.toolbarHovered &&
+               region == other.region && confirmedRegion == other.confirmedRegion &&
+               marquee == other.marquee && subtracting == other.subtracting &&
+               dangerColor == other.dangerColor;
     }
 
     [[nodiscard]] bool operator!=(const ScreenshotSelectionVisualState& other) const {
@@ -95,6 +103,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setImageViewportPhysicalSize(const QSize& size);
     void setPinnedResultSurface(const QRectF& contentCanvasRect, const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
+    void setBakedSelectionPath(const QPainterPath& path);
     void setPinnedBackgroundColor(const QColor& color);
     void setMaskVisible(bool visible);
     void setSelectionBorderColor(const QColor& color);
@@ -104,6 +113,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void clearGuideLines();
     void setSelection(const QRectF& selection, bool handlesVisible = true, int cornerRadius = 0,
                       int shadowWidth = 0, const QColor& shadowColor = QColor(0x33, 0x33, 0x33));
+    void setSelectionRegion(const QRegion& region, const QRegion& confirmed, const QRectF& marquee,
+                            bool subtracting, const QColor& danger);
     void applySelectionState(const ScreenshotSelectionVisualState& state);
     void setSelectionToolbarHovered(bool hovered);
     void setSelectionBorderVisible(bool visible);
@@ -164,6 +175,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QRectF m_pinnedSurfaceCanvasRect;
     ScreenshotResultStyle m_pinnedResultStyle;
     QColor m_pinnedBackgroundColor;
+    QPainterPath m_bakedSelectionPath;
     ScreenshotSelectionVisualState m_selectionState;
     RenderMode m_renderMode = RenderMode::Standard;
     bool m_maskVisible = false;

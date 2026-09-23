@@ -6,6 +6,8 @@
 #include "widgets/button.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/modal.h"
+#include "widgets/select.h"
+#include "widgets/input_number.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -209,11 +211,44 @@ void presetCreateModalRetranslatesInPlace(ScreenshotSelectionResizeWorkflow& wor
 }
 } // namespace
 
+void compoundPreviousSelectionKeepsPresetsRectangular(ScreenshotSelectionSettingsStore& settings) {
+    ScreenshotSelectionParams previous;
+    previous.selection = QRect(10, 10, 100, 80);
+    previous.region = QRegion(previous.selection).subtracted(QRect(40, 30, 20, 20));
+    settings.setPreviousSelectionParams(previous);
+    require(settings.previousSelectionParams() == previous, "Previous selection preserves holes");
+    settings.setPresets({{QStringLiteral("Rectangle"), previous}});
+    require(settings.presets().size() == 1 && !settings.presets().first().params.region,
+            "named presets must store rectangular bounds");
+    ScreenshotSelectionResizeModalContent content(previous, QRect(0, 0, 300, 300), true, previous,
+                                                  settings.presets());
+    int disabled = 0;
+    for (auto* input : content.findChildren<adqt::widgets::AdInputNumber*>())
+        disabled += input->isEnabled() ? 0 : 1;
+    require(disabled == 4, "complex selection must disable numeric position and size controls");
+    auto* presets =
+        content.findChild<adqt::widgets::AdSelect*>(QStringLiteral("selectionPresetSelect"));
+    require(presets && presets->isEnabled(), "preset selection must remain usable");
+    presets->selected(QStringLiteral("preset:0"), QString());
+    ScreenshotSelectionParams selected;
+    require(content.commit(&selected, nullptr, nullptr) ==
+                    ScreenshotSelectionResizeModalContent::CommitResult::ApplySelection &&
+                !selected.region,
+            "choosing a preset must replace the compound region");
+    presets->selected(QStringLiteral("previous"), QString());
+    require(content.commit(&selected, nullptr, nullptr) ==
+                    ScreenshotSelectionResizeModalContent::CommitResult::ApplySelection &&
+                selected.region == previous.region,
+            "Previous selection restores full geometry through the same dialog");
+    settings.clear();
+}
+
 int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
     ScreenshotSelectionSettingsStore settingsStore;
     settingsStore.clear();
     ScreenshotSelectionResizeWorkflow workflow(settingsStore);
+    compoundPreviousSelectionKeepsPresetsRectangular(settingsStore);
 
     selectionResizeModalUsesApplicationModality(workflow);
     resizingDoesNotReplacePreviousScreenshotSelection(workflow, settingsStore);

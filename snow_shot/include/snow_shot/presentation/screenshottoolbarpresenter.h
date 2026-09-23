@@ -20,6 +20,7 @@ struct ScreenshotToolbarPresentationState {
     bool intelligentSelecting = false;
     bool editing = false;
     bool ocrAvailable = true;
+    bool selectionResizable = true;
     bool aspectRatioLocked = false;
     int cornerRadius = 0;
     int shadowWidth = 0;

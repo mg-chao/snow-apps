@@ -231,6 +231,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void showContextMenu(const QPoint& globalPosition);
     void updateCanvasViewport();
     void updateBorderOutline();
+    [[nodiscard]] QPainterPath bakedSelectionPath(const QSize& pixelSize) const;
     void updateControlsGeometry();
     // Single writer for hover presence: the live native cursor against the
     // complete window frame. Native mouse messages, queued Enter/Leave, and

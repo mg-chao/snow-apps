@@ -84,6 +84,7 @@ class ScreenshotInteractionState final {
     ScreenshotCaptureMode m_mode = ScreenshotCaptureMode::Inactive;
     ScreenshotSelectionDragMode m_dragMode = ScreenshotSelectionDragMode::None;
     bool m_dragging = false;
+    bool m_marqueeGesture = false;
     bool m_recognitionSelectionActive = false;
 };
 

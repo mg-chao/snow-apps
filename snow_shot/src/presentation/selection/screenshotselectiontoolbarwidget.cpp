@@ -530,7 +530,16 @@ bool ScreenshotSelectionToolbarWidget::fieldForObject(QObject* object, Field* ou
     return true;
 }
 
+void ScreenshotSelectionToolbarWidget::setSelectionResizable(bool enabled) {
+    m_selectionResizable = enabled;
+    for (auto* label : {m_widthLabel, m_heightLabel, m_lockIconLabel}) {
+        label->setCursor(enabled ? Qt::SizeHorCursor : Qt::ArrowCursor);
+    }
+}
+
 void ScreenshotSelectionToolbarWidget::handleFieldWheel(Field field, int deltaY) {
+    if (!m_selectionResizable && (field == Field::Width || field == Field::Height))
+        return;
     const int direction = deltaY > 0 ? 1 : -1;
     switch (field) {
     case Field::PositionX:

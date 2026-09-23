@@ -27,6 +27,7 @@ struct ScreenshotPinnedViewportExportSource final {
     ScreenshotResultStyle resultStyle;
     SnowCanvasSmartEraseSnapshot smartErase;
     qreal outputOpacity = 1.0;
+    QPainterPath bakedSelectionPath;
 };
 
 struct ScreenshotExportImageResult final {

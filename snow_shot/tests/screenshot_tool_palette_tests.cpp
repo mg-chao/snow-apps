@@ -11742,22 +11742,41 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRecaptureButton"));
     auto* hideSelectionToolbar = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotHideSelectionToolbarButton"));
+    auto* addRegion =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotAddRegionButton"));
+    auto* subtractRegion = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotSubtractRegionButton"));
+    auto* regionSeparator =
+        palette.findChild<QFrame*>(QStringLiteral("screenshotRegionActionsSeparator"));
     auto* layout = controls != nullptr ? qobject_cast<QBoxLayout*>(controls->layout()) : nullptr;
     require(controls != nullptr && cursor != nullptr && recapture != nullptr &&
-                hideSelectionToolbar != nullptr && layout != nullptr &&
+                hideSelectionToolbar != nullptr && addRegion != nullptr &&
+                subtractRegion != nullptr && regionSeparator != nullptr && layout != nullptr &&
                 palette.actionToolbarVisible() && !palette.styleToolbarVisible(),
             "Move must materialize and display its dedicated options row");
     require(
-        layout->indexOf(cursor) == 0 && layout->indexOf(recapture) == 2 &&
+        layout->indexOf(addRegion) == 0 && layout->indexOf(subtractRegion) == 2 &&
+            layout->indexOf(regionSeparator) == 4 && layout->indexOf(cursor) == 6 &&
+            layout->indexOf(recapture) == 8 &&
             layout->indexOf(hideSelectionToolbar) == layout->count() - 1 &&
-            qobject_cast<QFrame*>(layout->itemAt(1)->widget()) == nullptr &&
             layout->itemAt(layout->indexOf(hideSelectionToolbar) - 2) != nullptr &&
             qobject_cast<QFrame*>(
                 layout->itemAt(layout->indexOf(hideSelectionToolbar) - 2)->widget()) != nullptr,
-        "Move options must place Recapture beside Capture cursor, then a separator before hide");
+        "Move options must group region actions at the far left, before capture actions and hide");
     require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
             "Capture cursor must use the same state-driven action button as scrolling screenshot");
 
+    int additions = 0, subtractions = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::addScreenshotRegionRequested,
+                     [&] { ++additions; });
+    QObject::connect(&palette, &ScreenshotToolPalette::subtractScreenshotRegionRequested,
+                     [&] { ++subtractions; });
+    addRegion->click();
+    subtractRegion->click();
+    require(additions == 1 && subtractions == 1, "region buttons must dispatch distinct commands");
+    require(addRegion->toolTip() == QStringLiteral("Add screenshot region") &&
+                subtractRegion->toolTip() == QStringLiteral("Subtract screenshot region"),
+            "region button labels");
     int cursorChanges = 0;
     int recaptures = 0;
     int hideChanges = 0;
@@ -11873,7 +11892,8 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                 "Move must share scrolling screenshot panel height and padding at every scale");
         auto* scrollingLayout = scrollingControls->layout();
         const int hideSeparator = layout->indexOf(hideSelectionToolbar) - 2;
-        require(layout->itemAt(hideSeparator)->widget()->size() ==
+        require(regionSeparator->size() == layout->itemAt(hideSeparator)->widget()->size() &&
+                    layout->itemAt(hideSeparator)->widget()->size() ==
                         scrollingLayout->itemAt(2)->widget()->size() &&
                     layout->itemAt(hideSeparator - 1)->sizeHint() ==
                         scrollingLayout->itemAt(1)->sizeHint() &&

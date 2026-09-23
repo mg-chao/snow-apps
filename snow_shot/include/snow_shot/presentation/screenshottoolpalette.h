@@ -417,6 +417,8 @@ class ScreenshotToolPalette final : public QWidget,
     void moveRequested();
     void captureCursorToggled(bool enabled);
     void recaptureRequested();
+    void addScreenshotRegionRequested();
+    void subtractScreenshotRegionRequested();
     void selectionToolbarHiddenChanged(bool hidden);
     void selectRequested();
     void recordingExportSettingsVisibleChanged(bool visible);
@@ -781,6 +783,8 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_captureCursorButton = nullptr;
     adqt::widgets::AdButton* m_hideSelectionToolbarButton = nullptr;
     adqt::widgets::AdButton* m_recaptureButton = nullptr;
+    adqt::widgets::AdButton* m_addRegionButton = nullptr;
+    adqt::widgets::AdButton* m_subtractRegionButton = nullptr;
     adqt::widgets::AdButton* m_undoButton = nullptr;
     adqt::widgets::AdButton* m_redoButton = nullptr;
     adqt::widgets::AdButton* m_selectButton = nullptr;

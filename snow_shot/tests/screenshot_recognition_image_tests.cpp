@@ -67,6 +67,22 @@ void displayedBackgroundAndEffectsAreAppliedOnce() {
             "shadow padding is applied exactly once after recognition composition");
     require(image.pixelColor(8, 8).alpha() < 255, "rounded result corners preserve transparency");
 }
+void compoundSelectionClipsRecognizedText() {
+    auto snapshot = fixture();
+    snapshot.resultStyle.region = QRegion(0, 0, 320, 180).subtracted(QRegion(80, 0, 80, 100));
+    const auto frozen = snapshot;
+    snapshot.resultStyle.region = QRegion(0, 0, 320, 180);
+    const QImage rendered = renderScreenshotRecognitionImage(frozen);
+    require(rendered.pixelColor(100, 30).alpha() == 0 &&
+                rendered.pixelColor(20, 100).alpha() == 255,
+            "recognition exports clip source and recognized text with frozen geometry");
+    auto scaled = frozen;
+    scaled.image = scaled.image.scaled(640, 360);
+    const QImage large = renderScreenshotRecognitionImage(scaled);
+    require(large.pixelColor(200, 60).alpha() == 0 && large.pixelColor(40, 200).alpha() == 255,
+            "recognition shape follows image backing scale");
+}
+
 void layoutModesAndTransformsRenderOnWorkers() {
     for (bool vertical : {false, true}) {
         for (bool paragraph : {false, true}) {
@@ -163,6 +179,7 @@ int main(int argc, char** argv) {
     try {
         rendersNativeCoordinatesAndPreservesSource();
         displayedBackgroundAndEffectsAreAppliedOnce();
+        compoundSelectionClipsRecognizedText();
         layoutModesAndTransformsRenderOnWorkers();
         sourceRowsSurviveImageExportOnWorkers();
         cancellationAndInvalidInputNeverPublishPartialImages();

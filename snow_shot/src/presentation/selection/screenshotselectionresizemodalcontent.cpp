@@ -598,6 +598,13 @@ void ScreenshotSelectionResizeModalContent::applyParamsToFields(
     const ScreenshotSelectionParams& params) {
     const ScreenshotSelectionParams clamped =
         clampScreenshotSelectionParams(params, m_selectionBounds);
+    m_fieldRegion = clamped.region;
+    if (m_fieldRegion && m_fieldRegion->rectCount() == 1)
+        m_fieldRegion.reset();
+    const bool rectangular = !m_fieldRegion || m_fieldRegion->rectCount() == 1;
+    for (auto* input : {m_xInput, m_yInput, m_widthInput, m_heightInput})
+        input->setEnabled(rectangular);
+    m_lockAspectRatioButton->setEnabled(rectangular);
     const bool lockAspectRatio = clamped.lockAspectRatio || clamped.lockDragAspectRatio;
     m_syncing = true;
     if (m_normalForm != nullptr) {
@@ -638,6 +645,7 @@ ScreenshotSelectionParams ScreenshotSelectionResizeModalContent::paramsFromField
         m_lockAspectRatioButton != nullptr && m_lockAspectRatioButton->isChecked();
     params.lockAspectRatio = lockAspectRatio;
     params.lockDragAspectRatio = lockAspectRatio;
+    params.region = m_fieldRegion;
     return clampScreenshotSelectionParams(params, m_selectionBounds);
 }
 
@@ -646,6 +654,7 @@ ScreenshotSelectionResizeModalContent::presetFromFields(const QString& name) con
     ScreenshotSelectionPreset preset;
     preset.name = name;
     preset.params = paramsFromFields();
+    preset.params.region.reset();
     return preset;
 }
 

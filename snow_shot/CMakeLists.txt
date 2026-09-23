@@ -2790,6 +2790,27 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-smart-selection-transition-tests
     )
 
+    add_executable(snow-shot-multi-region-tests
+        tests/screenshot_multi_region_tests.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/platform/windows/monitorgeometry.cpp
+        src/presentation/core/screenshotinteractionstate.cpp
+        src/presentation/selection/screenshotselectiongeometry.cpp
+        src/presentation/selection/screenshotselectionmodel.cpp
+        src/presentation/selection/screenshotselectionparams.cpp
+        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
+        src/storage/persistedselectioncodec.cpp
+    )
+    target_include_directories(snow-shot-multi-region-tests PRIVATE include)
+    target_link_libraries(snow-shot-multi-region-tests PRIVATE Qt6::Gui)
+    if(WIN32)
+        target_link_libraries(snow-shot-multi-region-tests PRIVATE user32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-multi-region-tests)
+    add_test(NAME snow-shot-multi-region-tests COMMAND snow-shot-multi-region-tests)
+    set_tests_properties(snow-shot-multi-region-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}" LABELS "unit")
+
     add_executable(snow-shot-selection-geometry-tests
         tests/screenshot_selection_geometry_tests.cpp
         include/snow_shot/platform/windows/monitorgeometry.h
@@ -4028,6 +4049,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
     )
     snow_shot_add_translations(snow-shot-screenshot-tool-palette-tests)
+    add_test(NAME snow-shot-move-region-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --move-options-only -platform offscreen)
+    set_tests_properties(snow-shot-move-region-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests

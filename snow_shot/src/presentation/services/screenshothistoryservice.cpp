@@ -80,6 +80,7 @@ persistedSelection(const ScreenshotSelectionParams& selection) {
     return {
         selection.selection,   selection.radius,          selection.shadowWidth,
         selection.shadowColor, selection.lockAspectRatio, selection.lockDragAspectRatio,
+        selection.region,
     };
 }
 
@@ -87,6 +88,7 @@ ScreenshotSelectionParams
 presentationSelection(const snow_shot::storage::PersistedSelection& selection) {
     ScreenshotSelectionParams result;
     result.selection = selection.rectangle;
+    result.region = selection.region;
     result.radius = selection.cornerRadius;
     result.shadowWidth = selection.shadowWidth;
     result.shadowColor = selection.shadowColor;
@@ -605,8 +607,10 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
             imageCanvasOffset = bounds.topLeft();
         }
         selectionParams.selection.translate(imageCanvasOffset);
+        if (selectionParams.region)
+            selectionParams.region->translate(imageCanvasOffset);
     }
-    if (!restoredSelection.applyParams(selectionParams, bounds)) {
+    if (!restoredSelection.applyParams(selectionParams, bounds) && !selectionParams.region) {
         return false;
     }
 
@@ -701,7 +705,7 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
     m_context.selection = restoredSelection;
     m_context.interaction.cancelDrag();
     bool requestIntelligentSelection = false;
-    if (entry.persistent) {
+    if (entry.persistent || !m_context.selection.hasPixelSelection()) {
         m_context.intelligentSelection.clearTransientState();
         m_context.interaction.returnToSelectionMode(false);
     } else if (entry.intelligentSelectionMode) {

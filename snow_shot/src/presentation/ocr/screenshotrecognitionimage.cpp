@@ -42,7 +42,16 @@ QImage renderScreenshotRecognitionImage(const ScreenshotRecognitionImageSnapshot
         painter.restore();
     }
     painter.end();
-    return stopped() ? QImage{}
-                     : ScreenshotResultCompositor::compose(image, snapshot.resultStyle, 1.0,
-                                                           snapshot.outputOpacity);
+    ScreenshotResultCompositor::restoreBakedExterior(image, snapshot.image,
+                                                     snapshot.bakedSelectionPath);
+    auto style = snapshot.resultStyle;
+    if (style.region) {
+        const qreal scale = image.width() / rect.width();
+        style.regionScale *= scale;
+        style.cornerRadius = qRound(style.cornerRadius * scale);
+        style.shadowWidth = qRound(style.shadowWidth * scale);
+    }
+    return stopped()
+               ? QImage{}
+               : ScreenshotResultCompositor::compose(image, style, 1.0, snapshot.outputOpacity);
 }

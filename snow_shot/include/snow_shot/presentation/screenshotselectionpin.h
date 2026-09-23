@@ -12,7 +12,8 @@ screenshotSelectionBorderAppearance(const QSize& contentSize, const ScreenshotRe
     const auto normalized = ScreenshotResultCompositor::normalizedStyle(style);
     const auto layout = ScreenshotResultCompositor::layoutForContent(contentSize, normalized);
     return {layout.outputRect.size(), QRectF(layout.contentRect),
-            static_cast<qreal>(normalized.cornerRadius), normalized.shadowWidth > 0};
+            static_cast<qreal>(normalized.cornerRadius), normalized.shadowWidth > 0,
+            normalized.region};
 }
 
 // Window geometry for one composited selection. Live Pin to Screen and history pins both

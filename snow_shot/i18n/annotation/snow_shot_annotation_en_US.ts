@@ -12,6 +12,10 @@
             <translation>Add</translation>
         </message>
         <message>
+            <source>Add screenshot region</source>
+            <translation>Add screenshot region</translation>
+        </message>
+        <message>
             <source>Add template</source>
             <translation>Add template</translation>
         </message>
@@ -914,6 +918,10 @@
         <message>
             <source>Stroke width %1</source>
             <translation>Stroke width %1</translation>
+        </message>
+        <message>
+            <source>Subtract screenshot region</source>
+            <translation>Subtract screenshot region</translation>
         </message>
         <message>
             <source>Table recognition</source>

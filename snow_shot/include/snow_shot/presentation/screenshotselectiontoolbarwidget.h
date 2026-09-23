@@ -30,6 +30,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void resetForNewCapture();
     void prepareForDisplay();
     void prewarm();
+    void setSelectionResizable(bool enabled);
     void setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
                            int shadowWidth, DisplayMode displayMode = DisplayMode::Full,
                            bool canvasUsesPoints = false);
@@ -80,6 +81,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     QWidget* m_panel = nullptr;
     QLabel* m_xLabel = nullptr;
     QLabel* m_yLabel = nullptr;
+    bool m_selectionResizable = true;
     QLabel* m_widthLabel = nullptr;
     QLabel* m_sizeUnitLabel = nullptr;
     QList<QLabel*> m_canvasUnitLabels;

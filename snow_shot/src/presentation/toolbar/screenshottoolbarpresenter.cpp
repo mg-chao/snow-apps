@@ -103,6 +103,7 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
             canvasUsesPoints |= display.canvasUsesPoints;
         });
 #endif
+        toolbarWidget->setSelectionResizable(state.selectionResizable);
         toolbarWidget->setSelectionState(
             state.selectionPixels, state.aspectRatioLocked, state.cornerRadius, state.shadowWidth,
             state.intelligentSelecting ? ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly

@@ -2109,6 +2109,9 @@ bool ScreenshotToolPalette::selectionToolbarHidden() const {
 
 void ScreenshotToolPalette::setRecaptureBusy(bool busy) {
     m_recaptureBusy = busy;
+    for (auto* button : {m_addRegionButton, m_subtractRegionButton})
+        if (button)
+            button->setEnabled(!busy);
     if (m_recaptureButton != nullptr) {
         m_recaptureButton->setEnabled(!busy);
     }
@@ -2933,7 +2936,8 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         }
         for (adqt::widgets::AdButton* button :
              {m_scrollingVerticalButton, m_scrollingHorizontalButton,
-              m_scrollingMoveHorizontalButton, m_scrollingMoveVerticalButton}) {
+              m_scrollingMoveHorizontalButton, m_scrollingMoveVerticalButton, m_addRegionButton,
+              m_subtractRegionButton}) {
             configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
         }
         if (m_scrollingRecognitionControls != nullptr &&
@@ -6211,6 +6215,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_moveActionControls = nullptr;
     m_captureCursorButton = nullptr;
     m_recaptureButton = nullptr;
+    m_addRegionButton = nullptr;
+    m_subtractRegionButton = nullptr;
     m_lineStyleControlsWidget = nullptr;
     m_freeDrawStyleControlsWidget = nullptr;
     m_arrowStyleControlsWidget = nullptr;
@@ -6858,6 +6864,27 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     layout->setSpacing(0);
     m_styleControlLayouts.push_back(layout);
 
+    m_addRegionButton = createScreenshotToolPaletteStyleActionButton(
+        m_moveActionControls, QT_TR_NOOP("Add screenshot region"),
+        custom_outlined_icons::ScreenshotRegionAdd(), actionButtonMetrics(m_physicalScale));
+    m_addRegionButton->setObjectName(QStringLiteral("screenshotAddRegionButton"));
+    layout->addWidget(m_addRegionButton);
+    addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
+    m_subtractRegionButton = createScreenshotToolPaletteStyleActionButton(
+        m_moveActionControls, QT_TR_NOOP("Subtract screenshot region"),
+        custom_outlined_icons::ScreenshotRegionReduce(), actionButtonMetrics(m_physicalScale));
+    m_subtractRegionButton->setObjectName(QStringLiteral("screenshotSubtractRegionButton"));
+    layout->addWidget(m_subtractRegionButton);
+    connect(m_addRegionButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::addScreenshotRegionRequested);
+    connect(m_subtractRegionButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::subtractScreenshotRegionRequested);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    auto* regionActionsSeparator = createStyleToolbarSeparator(m_moveActionControls);
+    regionActionsSeparator->setObjectName(QStringLiteral("screenshotRegionActionsSeparator"));
+    layout->addWidget(regionActionsSeparator);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+
     m_captureCursorButton = createScreenshotToolPaletteStyleActionButton(
         m_moveActionControls, "Capture cursor", custom_outlined_icons::RecordingCursor(),
         actionButtonMetrics(m_physicalScale));
@@ -6894,8 +6921,8 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     });
     m_selectActionLayout->addWidget(m_moveActionControls);
     stampScreenshotToolbarReferenceWidth(
-        m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 3 + STYLE_ITEM_SPACING +
-                                  STYLE_GROUP_SPACING * 4 + TOOLBAR_SEPARATOR_WIDTH);
+        m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 5 + STYLE_ITEM_SPACING * 2 +
+                                  STYLE_GROUP_SPACING * 8 + TOOLBAR_SEPARATOR_WIDTH * 2);
     setCaptureCursorEnabled(m_captureCursorEnabled);
     setSelectionToolbarHidden(m_selectionToolbarHidden);
     setRecaptureBusy(m_recaptureBusy);

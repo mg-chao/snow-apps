@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
+#include "snow_shot/presentation/screenshotresultcompositor.h"
 
 #include <QColor>
 #include <QPointF>
@@ -12,7 +13,20 @@
 
 class ScreenshotSelectionModel final {
   public:
+    enum class RegionOperation { Replace, Add, Subtract };
     void reset();
+    [[nodiscard]] QRegion selectionRegion() const;
+    [[nodiscard]] QRegion confirmedRegion() const;
+    [[nodiscard]] bool rectangular() const;
+    [[nodiscard]] bool regionOperationActive() const;
+    [[nodiscard]] RegionOperation regionOperation() const;
+    [[nodiscard]] QRectF pendingMarquee() const;
+    void beginRegionOperation(RegionOperation operation);
+    void commitRegionOperation();
+    void cancelRegionOperation();
+    void setSelectionRegion(const QRegion& region);
+    void setDraggedSelectionRect(const QRectF& rect, ScreenshotSelectionDragMode mode);
+    [[nodiscard]] ScreenshotResultStyle resultStyle() const;
 
     [[nodiscard]] QRectF normalizedSelection() const;
     [[nodiscard]] QRect pixelSelection() const;
@@ -61,6 +75,10 @@ class ScreenshotSelectionModel final {
     [[nodiscard]] bool applyParams(const ScreenshotSelectionParams& params, const QRect& bounds);
 
   private:
+    std::optional<QRegion> m_region;
+    QRegion m_confirmedRegion;
+    QRegion m_moveOriginalRegion;
+    RegionOperation m_regionOperation = RegionOperation::Replace;
     QPointF m_start;
     QPointF m_end;
     QPointF m_moveStart;

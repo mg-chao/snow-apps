@@ -51,6 +51,9 @@ class ScreenshotOverlayWindow final : public QWidget {
                                 const QColor& shadowColor = QColor(0x33, 0x33, 0x33),
                                 bool selectionToolbarHovered = false);
     void clearScreenshotSelection();
+    void setScreenshotSelectionRegion(const QRegion& region, const QRegion& confirmed,
+                                      const QRectF& marquee, bool subtracting,
+                                      const QColor& danger);
     [[nodiscard]] bool hasScreenshotSelection() const;
     [[nodiscard]] bool screenshotSelectionHandlesVisible() const;
     void setScreenshotSelectionBorderVisible(bool visible);

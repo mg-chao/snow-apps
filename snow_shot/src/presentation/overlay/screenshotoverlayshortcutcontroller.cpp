@@ -188,6 +188,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                     actionId != QStringLiteral("cancel_screenshot")) {
                     return false;
                 }
+                if (actionId == QStringLiteral("copy_to_clipboard") &&
+                    inputHandler.regionOperationActive())
+                    return false;
                 if (actionId == QStringLiteral("cancel_screenshot") ||
                     actionId == QStringLiteral("copy_to_clipboard")) {
                     return actions.localShortcutInputAllowed();
@@ -298,7 +301,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return true;
                 }
                 if (actionId == QStringLiteral("cancel_screenshot")) {
-                    return actions.cancelCaptureViaShortcut();
+                    return inputHandler.cancelRegionOperation() ||
+                           actions.cancelCaptureViaShortcut();
                 }
                 return actions.activateScreenshotShortcut(actionId);
             };

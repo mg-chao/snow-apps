@@ -415,10 +415,17 @@ QJsonValue borderAppearanceToJson(const std::optional<PinnedBorderAppearance>& a
     if (!appearance) {
         return QJsonValue();
     }
-    return QJsonObject{{QStringLiteral("source_size"), sizeToJson(appearance->sourceSize)},
+    QJsonObject result{{QStringLiteral("source_size"), sizeToJson(appearance->sourceSize)},
                        {QStringLiteral("content_rect"), rectFToJson(appearance->contentRect)},
                        {QStringLiteral("corner_radius"), appearance->cornerRadius},
                        {QStringLiteral("has_shadow"), appearance->hasShadow}};
+    if (appearance->region) {
+        QJsonArray regions;
+        for (const QRect& rect : *appearance->region)
+            regions.push_back(rectToJson(rect));
+        result.insert(QStringLiteral("regions"), regions);
+    }
+    return result;
 }
 
 std::optional<PinnedBorderAppearance> borderAppearanceFromJson(const QJsonValue& value) {
@@ -430,6 +437,20 @@ std::optional<PinnedBorderAppearance> borderAppearanceFromJson(const QJsonValue&
         !finiteNumber(object.value(QStringLiteral("corner_radius")), 0, 1e9, &radius) ||
         !QRectF(QPointF(), QSizeF(appearance.sourceSize)).contains(appearance.contentRect)) {
         return {};
+    }
+    if (object.contains(QStringLiteral("regions"))) {
+        const auto regions = object.value(QStringLiteral("regions"));
+        if (!regions.isArray() || regions.toArray().isEmpty() || regions.toArray().size() > 65536)
+            return {};
+        QRegion region;
+        for (const auto& item : regions.toArray()) {
+            QRect rect;
+            if (!rectFromJson(item, &rect) || !rect.isValid() ||
+                !QRectF(QPointF(), appearance.contentRect.size()).contains(QRectF(rect)))
+                return {};
+            region += rect;
+        }
+        appearance.region = region;
     }
     appearance.cornerRadius = radius;
     appearance.hasShadow = object.value(QStringLiteral("has_shadow")).toBool(false);

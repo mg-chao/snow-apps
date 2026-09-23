@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotshortcuthints.h"
@@ -147,15 +148,33 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("overlay.canvas_state");
         m_context.overlayCoordinator.updateOverlayState(
-            m_context.displaySession, selection, m_context.selection.cornerRadius(),
-            m_context.selection.shadowWidth(), m_context.selection.shadowColor(),
-            m_selectionToolbarHovered,
+            m_context.displaySession,
+            m_context.selection.regionOperationActive()
+                ? QRectF(m_context.selection.confirmedRegion().boundingRect()).united(selection)
+                : selection,
+            m_context.selection.cornerRadius(), m_context.selection.shadowWidth(),
+            m_context.selection.shadowColor(), m_selectionToolbarHovered,
             !m_context.interaction.intelligentSelecting() &&
-                m_context.interaction.selectionHandlesVisible(),
+                m_context.interaction.selectionHandlesVisible() &&
+                m_context.selection.rectangular(),
             m_context.interaction.intelligentSelecting(), m_context.interaction.marqueeSelecting(),
             m_context.interaction.dragging());
     }
 
+    if (m_context.selection.regionOperationActive() ||
+        m_context.selection.selectionRegion().rectCount() > 1) {
+        const auto danger =
+            snow_shot::presentation::styles::generateThemeColorScheme().map.colorError;
+        m_context.displaySession.forEachOverlay([&](qsizetype, ScreenshotOverlayWindow* overlay) {
+            if (overlay)
+                overlay->setScreenshotSelectionRegion(
+                    m_context.selection.selectionRegion(), m_context.selection.confirmedRegion(),
+                    m_context.selection.pendingMarquee(),
+                    m_context.selection.regionOperation() ==
+                        ScreenshotSelectionModel::RegionOperation::Subtract,
+                    danger);
+        });
+    }
     m_context.overlayCoordinator.updateGuideLines(
         m_context.displaySession, cursorOwner,
         cursorOwner ? QPointF(cursorPosition - cursorOwner->geometry().topLeft()) : QPointF(),

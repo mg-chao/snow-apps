@@ -130,6 +130,10 @@ void ScreenshotToolbarWindow::initializePalette() {
                         snow_shot::storage::ScreenshotSettings().captureCursor());
                 }
             });
+    connect(toolPalette, &ScreenshotToolPalette::addScreenshotRegionRequested, this,
+            [this]() { m_commands.addScreenshotRegion(); });
+    connect(toolPalette, &ScreenshotToolPalette::subtractScreenshotRegionRequested, this,
+            [this]() { m_commands.subtractScreenshotRegion(); });
     connect(toolPalette, &ScreenshotToolPalette::recaptureRequested, this,
             [this]() { m_commands.requestRecapture(); });
     connect(toolPalette, &ScreenshotToolPalette::selectionToolbarHiddenChanged, this,

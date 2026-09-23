@@ -39,6 +39,8 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source) 
         CanvasExportSource{source.backgroundImage, source.backgroundCanvasRect}};
     QImage content =
         runtime->renderToImage(source.backgroundCanvasRect, source.contentPixelSize, sources);
+    ScreenshotResultCompositor::restoreBakedExterior(content, source.backgroundImage,
+                                                     source.bakedSelectionPath);
     return content.isNull() ? QImage{}
                             : ScreenshotResultCompositor::compose(content, source.resultStyle, 1.0,
                                                                   source.outputOpacity);

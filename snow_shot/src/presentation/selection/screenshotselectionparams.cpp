@@ -31,6 +31,10 @@ ScreenshotSelectionParams clampScreenshotSelectionParams(const ScreenshotSelecti
     if (!result.shadowColor.isValid()) {
         result.shadowColor = QColor(0x33, 0x33, 0x33);
     }
+    if (result.region) {
+        result.region = result.region->intersected(QRegion(actualBounds));
+        result.selection = result.region->boundingRect();
+    }
     return result;
 }
 
@@ -44,6 +48,7 @@ sanitizeScreenshotSelectionPresets(const QVector<ScreenshotSelectionPreset>& pre
         if (preset.name.isEmpty()) {
             continue;
         }
+        preset.params.region.reset();
         preset.params = clampScreenshotSelectionParams(preset.params, bounds);
         sanitized.push_back(preset);
     }

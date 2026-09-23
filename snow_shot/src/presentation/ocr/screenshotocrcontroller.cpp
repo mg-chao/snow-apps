@@ -1,4 +1,7 @@
 #include "snow_shot/presentation/screenshotocrcontroller.h"
+#include <QCryptographicHash>
+#include <QDataStream>
+#include <QIODevice>
 
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -289,14 +292,32 @@ void ScreenshotOcrController::openImageConversionSettings() {
     m_session->openImageConversionSettings();
 }
 
+namespace {
+QImage clipRecognitionSelection(QImage image, const ScreenshotSelectionModel& selection) {
+    if (image.isNull() || selection.rectangular())
+        return image;
+    auto style = selection.resultStyle();
+    const qreal scale = qreal(image.width()) / selection.pixelSelection().width();
+    style.regionScale = scale;
+    style.cornerRadius = qRound(style.cornerRadius * scale);
+    style.shadowWidth = 0;
+    return ScreenshotResultCompositor::compose(image, style);
+}
+} // namespace
+
 QString ScreenshotOcrController::currentCacheKey() const {
     const QRect selection = m_context.selection.pixelSelection();
-    return QStringLiteral("%1:%2,%3,%4,%5")
+    QByteArray geometry;
+    QDataStream stream(&geometry, QIODevice::WriteOnly);
+    stream << m_context.selection.selectionRegion();
+    return QStringLiteral("%1:%2,%3,%4,%5:%6")
         .arg(m_context.captureState.sessionId)
         .arg(selection.x())
         .arg(selection.y())
         .arg(selection.width())
-        .arg(selection.height());
+        .arg(selection.height())
+        .arg(QString::fromLatin1(
+            QCryptographicHash::hash(geometry, QCryptographicHash::Sha256).toHex()));
 }
 
 void ScreenshotOcrController::activateMode(Mode mode) {
@@ -331,6 +352,10 @@ void ScreenshotOcrController::activateMode(Mode mode) {
                 canvas->setCanvasContentVisible(false);
                 overlay->setScreenshotSelection(m_context.selection.normalizedSelection(), false,
                                                 m_context.selection.cornerRadius());
+                if (!m_context.selection.rectangular())
+                    overlay->setScreenshotSelectionRegion(m_context.selection.selectionRegion(),
+                                                          m_context.selection.selectionRegion(), {},
+                                                          false, {});
                 overlay->setScreenshotSelectionBorderVisible(false);
             });
         m_active = true;
@@ -373,6 +398,7 @@ void ScreenshotOcrController::activateMode(Mode mode) {
     QImage source = m_surfaceKey == key
                         ? m_surfaceImage
                         : composeScreenshotSourceSelection(m_context.displaySession, selection);
+    source = clipRecognitionSelection(std::move(source), m_context.selection);
     if (mode == Mode::Table) {
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.capture"),
                                          QStringLiteral("table.source_prepared"),
@@ -550,6 +576,10 @@ void ScreenshotOcrController::deactivateImpl(bool preserveRecognitionWindow) {
                 state.overlay->setScreenshotSelection(m_context.selection.normalizedSelection(),
                                                       state.selectionHandlesVisible,
                                                       m_context.selection.cornerRadius());
+                if (!m_context.selection.rectangular())
+                    state.overlay->setScreenshotSelectionRegion(
+                        m_context.selection.selectionRegion(),
+                        m_context.selection.selectionRegion(), {}, false, {});
             } else {
                 state.overlay->clearScreenshotSelection();
             }
@@ -683,7 +713,8 @@ bool ScreenshotOcrController::ensureRecognitionWindow() {
     }
 
     destroyRecognitionWindow();
-    QImage source = composeScreenshotSourceSelection(m_context.displaySession, selection);
+    QImage source = clipRecognitionSelection(
+        composeScreenshotSourceSelection(m_context.displaySession, selection), m_context.selection);
     if (source.isNull()) {
         showStatus(tr("Unable to read the selected screenshot"), true);
         return false;

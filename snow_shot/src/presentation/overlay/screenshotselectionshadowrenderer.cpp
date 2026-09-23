@@ -299,6 +299,194 @@ void ScreenshotSelectionShadowRenderer::renderResultShadow(QPainter& painter,
     renderShadow(painter, contentBounds, cornerRadius, shadowWidth, shadowColor, devicePixelRatio);
 }
 
+QPainterPath screenshotRegionPath(const QRegion& region, qreal radius) {
+    // The region's scanline rectangles are a storage decomposition, not contours.
+    // Simplify their union before rounding so shared edges never become visible.
+    struct Cache {
+        QRegion region;
+        qreal radius = -1;
+        QPainterPath path;
+    };
+    thread_local Cache cache;
+    if (cache.region == region && cache.radius == radius)
+        return cache.path;
+    QPainterPath joined;
+    joined.addRegion(region);
+    joined = joined.simplified();
+    if (radius <= 0 || region.isEmpty()) {
+        cache = {region, radius, joined};
+        return joined;
+    }
+    const auto polygons = joined.toSubpathPolygons();
+    QPainterPath rounded;
+    rounded.setFillRule(Qt::OddEvenFill);
+    for (auto polygon : polygons) {
+        if (polygon.size() > 1 && polygon.first() == polygon.last())
+            polygon.removeLast();
+        const qsizetype count = polygon.size();
+        if (count < 3)
+            continue;
+        for (qsizetype i = 0; i < count; ++i) {
+            const QPointF corner = polygon[i];
+            const QPointF previous = polygon[(i + count - 1) % count];
+            const QPointF next = polygon[(i + 1) % count];
+            const qreal before = QLineF(corner, previous).length();
+            const qreal after = QLineF(corner, next).length();
+            if (before <= 0 || after <= 0)
+                continue;
+            qreal r = std::min({radius, before / 2, after / 2});
+            // Bound curvature by all nonincident edges, including other contours.
+            // This keeps thin bridges and nearby hole boundaries from crossing.
+            for (const auto& contour : polygons) {
+                for (qsizetype j = 1; j < contour.size(); ++j) {
+                    const QPointF a = contour[j - 1], b = contour[j];
+                    if (a == corner || b == corner)
+                        continue;
+                    const QPointF ab = b - a;
+                    const qreal lengthSquared = QPointF::dotProduct(ab, ab);
+                    if (lengthSquared <= 0)
+                        continue;
+                    const qreal t = std::clamp(QPointF::dotProduct(corner - a, ab) / lengthSquared,
+                                               qreal(0), qreal(1));
+                    r = std::min(r, QLineF(corner, a + ab * t).length() / 2);
+                }
+            }
+            const QPointF entry = corner + (previous - corner) * (r / before);
+            const QPointF leave = corner + (next - corner) * (r / after);
+            if (i == 0)
+                rounded.moveTo(entry);
+            else
+                rounded.lineTo(entry);
+            constexpr qreal kCircle = 0.5522847498307936;
+            rounded.cubicTo(entry + (corner - entry) * kCircle, leave + (corner - leave) * kCircle,
+                            leave);
+        }
+        rounded.closeSubpath();
+    }
+    cache = {region, radius, rounded};
+    return rounded;
+}
+
+namespace {
+QImage regionMask(const QSize& size, const QPainterPath& path) {
+    QImage mask(size, QImage::Format_ARGB32_Premultiplied);
+    mask.fill(Qt::transparent);
+    QPainter painter(&mask);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillPath(path, Qt::white);
+    return mask;
+}
+
+QImage regionShadow(const QImage& mask, int width, const QColor& color) {
+    // Finite-support separable blur, O(pixel count) regardless of shadow width.
+    const int w = mask.width(), h = mask.height();
+    std::vector<float> alpha(static_cast<std::size_t>(w) * h);
+    std::vector<float> scratch(alpha.size());
+    for (int y = 0; y < h; ++y) {
+        const auto* row = reinterpret_cast<const QRgb*>(mask.constScanLine(y));
+        for (int x = 0; x < w; ++x)
+            alpha[static_cast<std::size_t>(y) * w + x] = static_cast<float>(qAlpha(row[x]));
+    }
+    for (int pass = 0; pass < 3; ++pass) {
+        const int radius = width / 3 + (pass < width % 3 ? 1 : 0);
+        if (radius == 0)
+            continue;
+        const float divisor = static_cast<float>(2 * radius + 1);
+        for (int y = 0; y < h; ++y) {
+            const auto offset = static_cast<std::size_t>(y) * w;
+            float sum = 0;
+            for (int x = 0; x <= radius && x < w; ++x)
+                sum += alpha[offset + x];
+            for (int x = 0; x < w; ++x) {
+                scratch[offset + x] = sum / divisor;
+                if (x - radius >= 0)
+                    sum -= alpha[offset + x - radius];
+                if (x + radius + 1 < w)
+                    sum += alpha[offset + x + radius + 1];
+            }
+        }
+        for (int x = 0; x < w; ++x) {
+            float sum = 0;
+            for (int y = 0; y <= radius && y < h; ++y)
+                sum += scratch[static_cast<std::size_t>(y) * w + x];
+            for (int y = 0; y < h; ++y) {
+                alpha[static_cast<std::size_t>(y) * w + x] = sum / divisor;
+                if (y - radius >= 0)
+                    sum -= scratch[static_cast<std::size_t>(y - radius) * w + x];
+                if (y + radius + 1 < h)
+                    sum += scratch[static_cast<std::size_t>(y + radius + 1) * w + x];
+            }
+        }
+    }
+    QImage shadow(mask.size(), QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < h; ++y) {
+        auto* row = reinterpret_cast<QRgb*>(shadow.scanLine(y));
+        const auto* maskRow = reinterpret_cast<const QRgb*>(mask.constScanLine(y));
+        for (int x = 0; x < w; ++x) {
+            const int a =
+                std::clamp(qRound(alpha[static_cast<std::size_t>(y) * w + x] * color.alphaF() *
+                                  kPeakAlphaScale * (255 - qAlpha(maskRow[x])) / 255.0),
+                           0, 255);
+            row[x] = qPremultiply(qRgba(color.red(), color.green(), color.blue(), a));
+        }
+    }
+    return shadow;
+}
+
+QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
+                     qreal devicePixelRatio, qreal opacity) {
+    const auto layout =
+        ScreenshotResultCompositor::layoutForContent(content.size(), style, devicePixelRatio);
+    const qreal scale = style.regionScale;
+    QTransform transform;
+    transform.translate(layout.contentRect.x(), layout.contentRect.y());
+    transform.scale(scale, scale);
+    const QPainterPath path = transform.map(
+        screenshotRegionPath(*style.region, style.cornerRadius * layout.devicePixelRatio / scale));
+    struct Cache {
+        QPainterPath path;
+        QSize size;
+        int width = -1;
+        QColor color;
+        QImage mask;
+        QImage shadow;
+    };
+    thread_local Cache cache;
+    QImage mask;
+    QImage shadow;
+    if (cache.path != path || cache.size != layout.outputRect.size() ||
+        cache.width != layout.effectInsets.left() || cache.color != style.shadowColor) {
+        cache.path = path;
+        cache.size = layout.outputRect.size();
+        cache.width = layout.effectInsets.left();
+        cache.color = style.shadowColor;
+        mask = regionMask(cache.size, path);
+        shadow = cache.width > 0 ? regionShadow(mask, cache.width, cache.color) : QImage();
+        if (mask.sizeInBytes() + shadow.sizeInBytes() <= qsizetype(kCacheByteLimit)) {
+            cache.mask = mask;
+            cache.shadow = shadow;
+        } else {
+            cache = {};
+        }
+    } else {
+        mask = cache.mask;
+        shadow = cache.shadow;
+    }
+    QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    output.fill(Qt::transparent);
+    QPainter painter(&output);
+    painter.drawImage(layout.contentRect.topLeft(), content);
+    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    painter.drawImage(QPoint(), mask);
+    if (!shadow.isNull()) {
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+        painter.drawImage(QPoint(), shadow);
+    }
+    painter.end();
+    return applyOutputOpacity(std::move(output), opacity);
+}
+} // namespace
+
 ScreenshotResultStyle
 ScreenshotResultCompositor::normalizedStyle(const ScreenshotResultStyle& style) {
     ScreenshotResultStyle normalized = style;
@@ -347,6 +535,9 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
         return {};
     }
     const ScreenshotResultStyle normalized = normalizedStyle(style);
+    if (normalized.region) {
+        return composeRegion(normalizedContent, normalized, devicePixelRatio, outputOpacity);
+    }
     if (normalized.cornerRadius == 0 && normalized.shadowWidth == 0) {
         return applyOutputOpacity(normalizedContent, outputOpacity);
     }
@@ -435,4 +626,25 @@ void ScreenshotSelectionShadowRenderer::resetDiagnosticsForCurrentThread() {
 
 void ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread() {
     g_cache = ShadowCache{};
+}
+
+void ScreenshotResultCompositor::restoreBakedExterior(QImage& image, const QImage& background,
+                                                      const QPainterPath& path) {
+    if (image.isNull() || background.isNull() || path.isEmpty())
+        return;
+    const QImage mask = regionMask(image.size(), path);
+    QImage outside = normalizeImage(
+        background.size() == image.size()
+            ? background
+            : background.scaled(image.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+    {
+        QPainter painter(&outside);
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+        painter.drawImage(QPoint(), mask);
+    }
+    QPainter painter(&image);
+    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    painter.drawImage(QPoint(), mask);
+    painter.setCompositionMode(QPainter::CompositionMode_Plus);
+    painter.drawImage(QPoint(), outside);
 }
