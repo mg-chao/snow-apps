@@ -752,7 +752,7 @@ SettingsItemDefinition screenshotCompressionLevelItem() {
         QT_TRANSLATE_NOOP("SettingsCatalog", "Compression level"),
         QT_TRANSLATE_NOOP(
             "SettingsCatalog",
-            "Choose the compression effort used for image output and screenshot history"),
+            "Choose the compression effort used for image output and history results"),
         QStringLiteral("screenshot/compression_level"),
         SettingsSelectBinding::ScreenshotCompressionLevel,
         {{QStringLiteral("low"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Low"))},
@@ -2233,6 +2233,20 @@ QVector<SettingsPageDefinition> builtInPages() {
                          {},
                          QStringLiteral("capture_history/keep_permanently"),
                          SettingsSwitchDefinition{SettingsSwitchBinding::HistoryKeepPermanently}},
+                        fixedSelectItem(
+                            QStringLiteral("history.compression-level"),
+                            QT_TRANSLATE_NOOP("SettingsCatalog", "Compression level"),
+                            QT_TRANSLATE_NOOP("SettingsCatalog",
+                                              "Choose the compression effort used for display "
+                                              "images saved in screenshot history"),
+                            QStringLiteral("capture_history/compression_level"),
+                            SettingsSelectBinding::HistoryCompressionLevel,
+                            {{QStringLiteral("low"),
+                              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Low"))},
+                             {QStringLiteral("medium"),
+                              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium"))},
+                             {QStringLiteral("high"),
+                              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "High"))}}),
                         historyIntegerItem(
                             QStringLiteral("history.retention-days"),
                             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Retention period")),
@@ -3220,6 +3234,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::ScreenshotCompressionLevel:
                         expectedKey = QStringLiteral("screenshot/compression_level");
+                        break;
+                    case SettingsSelectBinding::HistoryCompressionLevel:
+                        expectedKey = QStringLiteral("capture_history/compression_level");
                         break;
                     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
                         expectedKey = QStringLiteral("screenshot/save_as_file_dialog");

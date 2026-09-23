@@ -283,8 +283,14 @@ pub(crate) fn prepare_with(
 
 pub fn screenshot(options: &CaptureConfig) -> MacResult<NativeFrame> {
     let deadline = crate::deadline::Deadline::new(options.timeout)?;
-    let content =
-        crate::content::shareable_content_cancelable(deadline.remaining()?, &options.cancellation)?;
+    let content = crate::content::shareable_content_cancelable_filtered(
+        deadline.remaining()?,
+        &options.cancellation,
+        crate::content::snapshot_uses_visible_windows(
+            &options.excluded_windows,
+            &options.excluded_processes,
+        ),
+    )?;
     let mut options = options.clone();
     options.timeout = deadline.remaining()?;
     screenshot_with(&options, &content)

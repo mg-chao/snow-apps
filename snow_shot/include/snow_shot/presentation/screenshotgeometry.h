@@ -33,9 +33,6 @@ screenshotSelectionRenderSpec(const ScreenshotDisplaySession& displays, const QR
 [[nodiscard]] QSize screenshotSelectionRenderedPixelSize(const QSize& selection, qreal scale);
 // Shadow width export stores in a DPR-1 result: the scaled width clamped before compose.
 [[nodiscard]] int screenshotSelectionRenderedShadowPixels(int shadowWidth, qreal scale);
-// Result size of compose() for rendered content at DPR 1 with that shadow width.
-[[nodiscard]] QSize screenshotSelectionCompositedPixelSize(const QSize& selection, qreal scale,
-                                                           int shadowWidth);
 
 struct ScreenshotHalfOpenRect {
     double left = 0.0;

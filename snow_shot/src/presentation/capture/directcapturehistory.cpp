@@ -33,6 +33,8 @@ directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptu
     }
     // The editor uses captured coordinates relative to the complete desktop's top-left.
     const QPoint canvasOffset = -draft.canvasBounds.topLeft();
+    draft.desktopGeometry = storage::CaptureHistoryDesktopGeometry{
+        draft.canvasBounds.topLeft(), !frame.displays.front().logicalBounds.isEmpty()};
     draft.canvasBounds.translate(canvasOffset);
     draft.selection.rectangle =
         (frame.logicalBounds.isEmpty() ? frame.physicalBounds : frame.logicalBounds)
@@ -48,6 +50,11 @@ directCaptureHistoryDraft(const DirectCaptureRequest& request, const DirectCaptu
                                     ScreenshotImageFileFormat::Png,
                                     ScreenshotImageEncodingOptions{100, request.compressionLevel})
                                     .compression_level;
+    draft.displayPngCompressionLevel =
+        ScreenshotImageFileService::encodeOptions(
+            ScreenshotImageFileFormat::Png,
+            ScreenshotImageEncodingOptions{100, request.historyDisplayCompressionLevel})
+            .compression_level;
     draft.source = request.target == DirectCaptureTarget::FocusedWindow
                        ? storage::CaptureHistorySource::FocusedWindow
                        : storage::CaptureHistorySource::CurrentMonitor;

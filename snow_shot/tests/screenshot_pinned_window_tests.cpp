@@ -22,6 +22,7 @@
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
@@ -3418,6 +3419,51 @@ void pinnedDeferredPresentationSurvivesGroupSwitch(SnowCanvasRuntime&) {
     const auto inactiveRecord = repository.loadRecord(inactivePersistenceId);
     require(inactiveRecord.has_value() && !inactiveRecord->image.isNull(),
             "an inactive loading pinned window should persist after materialization");
+}
+
+void historySelectionPresentationPreservesCompositedCanvas() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    for (const int scale : {1, 2}) {
+        QImage content(QSize(100, 50) * scale, QImage::Format_ARGB32_Premultiplied);
+        content.fill(QColor(84, 168, 112));
+        const QImage image = ScreenshotResultCompositor::compose(
+            content, ScreenshotResultStyle{0, 8 * scale, QColor(0x33, 0x33, 0x33)});
+        ScreenshotPinnedSelectionRequest request;
+        request.selection = QRect(100, 80, 100, 50);
+        request.contentCanvasRect = request.selection;
+        request.surfaceCanvasRect = QRectF(92, 72, 116, 66);
+        request.initialWindowSize = QSize(116, 66);
+        request.geometry = ScreenshotGeometryMapper::pinnedImageGeometry(
+            physicalPinGeometry(*screen, QPoint(92, 72), request.initialWindowSize), image.size());
+        request.geometry.canvasSourceRect = request.surfaceCanvasRect;
+        request.resultStyle = ScreenshotResultStyle{0, 8, QColor(0x33, 0x33, 0x33)};
+        request.screen = screen;
+        ScreenshotSelectionExportUiServices services;
+        require(services.presentCompositedSelectionImage(image, request),
+                "history selection presentation failed");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        ScreenshotPinnedWindow* window = nullptr;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* candidate = qobject_cast<ScreenshotPinnedWindow*>(widget);
+            if (candidate != nullptr && candidate->isVisible()) {
+                window = candidate;
+                break;
+            }
+        }
+        require(window != nullptr, "history selection pin was not shown");
+        const auto snapshot = window->persistenceSnapshot();
+        require(snapshot.canvasSourceRect == request.surfaceCanvasRect &&
+                    snapshot.contentCanvasRect == request.surfaceCanvasRect &&
+                    snapshot.surfaceCanvasRect == request.surfaceCanvasRect &&
+                    snapshot.initialWindowSize == request.initialWindowSize &&
+                    snapshot.image == image,
+                "history presentation must preserve canvas mapping and must not composite shadow "
+                "twice");
+        QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+        window->close();
+        require(processUntilDeleted(guardedWindow, 2000), "history selection pin was not closed");
+    }
 }
 
 void deferredPinUserCloseCancelsLateMaterialization() {
@@ -10438,6 +10484,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--async-presentation-only"))) {
             pinnedAsyncPresentationDefersContent(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--history-selection-only"))) {
+            historySelectionPresentationPreservesCompositedCanvas();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--pooling-only"))) {

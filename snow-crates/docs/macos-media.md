@@ -289,6 +289,29 @@ September 16 continuation checks (Mac16,10, arm64, macOS 27.0):
 
 Short release measurements on the single display:
 
+To measure the application-facing desktop session (16 fresh sessions, first and
+warm snapshots) on macOS with Screen Recording permission, run:
+
+```sh
+CARGO_TARGET_DIR="$PWD/build/cargo" cargo run --locked --release \
+  --target aarch64-apple-darwin --manifest-path snow-crates/Cargo.toml \
+  -p snow-macos --example media_harness -- benchmark-desktop
+```
+
+Normal single-display session creation retains no shareable-content snapshot;
+the direct frame path does not construct a compositor. This adds no resident
+content cache. One-shot capture may enumerate visible windows only when it has
+no window or process exclusions; exclusions request the complete window list so
+hidden windows cannot escape the filter during acquisition.
+
+On an Apple M4 with one 1920×1080 display, separate 16-sample Release runs
+observed desktop-session setup p50 of 43.9 ms before lazy composition, 34.2 ms
+after it, and 26.3 ms after visible-window planning. A separate 30-snapshot run
+observed warm one-shot p50 of 66.2 ms before visible-window acquisition and
+56.0 ms after it. The four-to-five-second stream probes remained near 57–58 fps
+with no reported drops; these short, uncontrolled runs are diagnostic, not
+sustained throughput or cross-machine acceptance thresholds.
+
 | Capture operation | Result |
 | --- | --- |
 | 30 snapshots | Cold 132.7 ms; warm p50 59.5 ms, p95 61.6 ms, p99 62.6 ms |

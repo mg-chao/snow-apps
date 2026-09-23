@@ -188,8 +188,11 @@ fn region_plan(
 impl Plan {
     fn resolve(config: &DesktopConfig) -> MacResult<Self> {
         let deadline = crate::deadline::Deadline::new(config.timeout)?;
-        let content =
-            content::shareable_content_cancelable(deadline.remaining()?, &config.cancellation)?;
+        let content = content::shareable_content_cancelable_filtered(
+            deadline.remaining()?,
+            &config.cancellation,
+            true,
+        )?;
         Self::resolve_with(config, &content)
     }
     fn resolve_with(config: &DesktopConfig, content: &SCShareableContent) -> MacResult<Self> {
@@ -294,7 +297,7 @@ pub struct DesktopSession {
     plan: Plan,
     streams: Vec<VideoStream>,
     latest: Vec<Option<NativeFrame>>,
-    compositor: Compositor,
+    compositor: Option<Compositor>,
     previous: Option<DesktopFrame>,
     topology: u64,
     generation: u64,
@@ -322,7 +325,6 @@ impl DesktopSession {
         {
             config.target = DesktopTarget::Display(DisplayId(id));
         }
-        let compositor = Compositor::new(plan.transform.output, output_format(&config), 4)?;
         let window_probe = match config.target {
             DesktopTarget::Window(WindowId(id)) => content::probe_window(id),
             _ => None,
@@ -332,7 +334,7 @@ impl DesktopSession {
             config,
             plan,
             streams: Vec::new(),
-            compositor,
+            compositor: None,
             previous: None,
             topology,
             generation: 1,
@@ -407,8 +409,7 @@ impl DesktopSession {
         if current != self.topology || next != self.plan {
             self.streams.clear();
             self.latest = vec![None; next.sources.len()];
-            self.compositor =
-                Compositor::new(next.transform.output, output_format(&self.config), 4)?;
+            self.compositor = None;
             self.plan = next;
             self.previous = None;
             self.generation = self
@@ -521,9 +522,13 @@ impl DesktopSession {
         self.refresh()?;
         let content = match self.pending_content.take() {
             Some(content) => content,
-            None => SharedSnapshot::new(content::shareable_content_cancelable(
+            None => SharedSnapshot::new(content::shareable_content_cancelable_filtered(
                 deadline.remaining()?,
                 &self.config.cancellation,
+                content::snapshot_uses_visible_windows(
+                    &self.config.excluded_windows,
+                    &self.config.excluded_processes,
+                ),
             )?),
         };
         for i in 0..self.plan.sources.len() {
@@ -582,7 +587,17 @@ impl DesktopSession {
             ) {
             frames[0].image.clone()
         } else {
-            self.compositor.compose(&layers, self.config.opaque)?
+            if self.compositor.is_none() {
+                self.compositor = Some(Compositor::new(
+                    self.plan.transform.output,
+                    output_format(&self.config),
+                    4,
+                )?);
+            }
+            self.compositor
+                .as_mut()
+                .unwrap()
+                .compose(&layers, self.config.opaque)?
         };
         Ok(DesktopFrame {
             image,

@@ -65,12 +65,31 @@ pub(crate) fn shareable_content(timeout: Duration) -> MacResult<Retained<SCShare
 }
 struct ContentFlight {
     token: usize,
+    on_screen_windows_only: bool,
     slot: Mutex<Option<MacResult<SharedSnapshot>>>,
     done: Condvar,
+}
+impl ContentFlight {
+    fn matches(&self, token: usize, on_screen_windows_only: bool) -> bool {
+        self.token == token && self.on_screen_windows_only == on_screen_windows_only
+    }
+}
+pub(crate) fn snapshot_uses_visible_windows(
+    excluded_windows: &[u32],
+    excluded_processes: &[i32],
+) -> bool {
+    excluded_windows.is_empty() && excluded_processes.is_empty()
 }
 pub(crate) fn shareable_content_cancelable(
     timeout: Duration,
     cancellation: &crate::CancellationToken,
+) -> MacResult<Retained<SCShareableContent>> {
+    shareable_content_cancelable_filtered(timeout, cancellation, false)
+}
+pub(crate) fn shareable_content_cancelable_filtered(
+    timeout: Duration,
+    cancellation: &crate::CancellationToken,
+    on_screen_windows_only: bool,
 ) -> MacResult<Retained<SCShareableContent>> {
     if cancellation.is_canceled() {
         return Err(MacError::Canceled);
@@ -83,7 +102,7 @@ pub(crate) fn shareable_content_cancelable(
         let guard = FLIGHT.lock().unwrap_or_else(|error| error.into_inner());
         guard
             .as_ref()
-            .filter(|flight| flight.token == token)
+            .filter(|flight| flight.matches(token, on_screen_windows_only))
             .cloned()
     };
     if let Some(flight) = existing {
@@ -91,19 +110,23 @@ pub(crate) fn shareable_content_cancelable(
     }
     let flight = Arc::new(ContentFlight {
         token,
+        on_screen_windows_only,
         slot: Mutex::new(None),
         done: Condvar::new(),
     });
     {
         let mut guard = FLIGHT.lock().unwrap_or_else(|error| error.into_inner());
-        if let Some(current) = guard.as_ref().filter(|current| current.token == token) {
+        if let Some(current) = guard
+            .as_ref()
+            .filter(|current| current.matches(token, on_screen_windows_only))
+        {
             let current = current.clone();
             drop(guard);
             return wait_for_content(&current, timeout, cancellation);
         }
         *guard = Some(flight.clone());
     }
-    let result = fetch_shareable_content(timeout, cancellation, false, false);
+    let result = fetch_shareable_content(timeout, cancellation, false, on_screen_windows_only);
     {
         let mut slot = flight
             .slot
@@ -348,6 +371,26 @@ mod tests {
     use super::*;
     use objc2_core_foundation::{CGPoint, CGSize};
     use objc2_core_graphics::CGRectCreateDictionaryRepresentation;
+
+    #[test]
+    fn content_flights_do_not_mix_window_visibility_modes() {
+        let flight = ContentFlight {
+            token: 42,
+            on_screen_windows_only: true,
+            slot: Mutex::new(None),
+            done: Condvar::new(),
+        };
+        assert!(flight.matches(42, true));
+        assert!(!flight.matches(42, false));
+        assert!(!flight.matches(43, true));
+    }
+
+    #[test]
+    fn one_shot_queries_keep_offscreen_exclusions_available() {
+        assert!(snapshot_uses_visible_windows(&[], &[]));
+        assert!(!snapshot_uses_visible_windows(&[42], &[]));
+        assert!(!snapshot_uses_visible_windows(&[], &[7]));
+    }
 
     fn description(id: u32, on_screen: bool, x: f64) -> CFRetained<CFArray> {
         let bounds = CGRectCreateDictionaryRepresentation(CGRect {

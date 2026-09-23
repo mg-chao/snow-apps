@@ -108,6 +108,40 @@ fn main() {
             );
             return Ok(());
         }
+        if args[0] == "benchmark-desktop" {
+            if cfg!(debug_assertions) {
+                return Err(snow_macos::MacError::InvalidConfig(
+                    "benchmarks require --release".into(),
+                ));
+            }
+            use snow_macos::desktop::{DesktopConfig, DesktopSession, DesktopTarget};
+            let mut setup = Vec::new();
+            let mut first = Vec::new();
+            let mut warm = Vec::new();
+            for _ in 0..16 {
+                let mut config = DesktopConfig::new(DesktopTarget::PrimaryDisplay);
+                config.opaque = true;
+                let started = std::time::Instant::now();
+                let mut session = DesktopSession::new(config)?;
+                setup.push(started.elapsed().as_secs_f64() * 1000.0);
+                let started = std::time::Instant::now();
+                std::hint::black_box(session.snapshot()?);
+                first.push(started.elapsed().as_secs_f64() * 1000.0);
+                let started = std::time::Instant::now();
+                std::hint::black_box(session.snapshot()?);
+                warm.push(started.elapsed().as_secs_f64() * 1000.0);
+            }
+            for (label, mut samples) in [("setup", setup), ("first", first), ("warm", warm)] {
+                samples.sort_by(f64::total_cmp);
+                println!(
+                    "desktop_{label}_samples={} p50_ms={:.3} p95_ms={:.3}",
+                    samples.len(),
+                    samples[samples.len() / 2],
+                    samples[samples.len() * 95 / 100]
+                );
+            }
+            return Ok(());
+        }
         let displays = content::displays(Duration::from_secs(5))?;
         if args[0] == "list" {
             for display in displays {

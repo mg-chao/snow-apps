@@ -28,11 +28,10 @@ the queried display and the cached window; output edges round outward. The same
 display ID accompanies initial and refinement results through canvas mapping.
 A refresh is required after a display layout change.
 
-The read-only smart-selection toolbar shows the rendered physical pixel dimensions.
-Once editing starts, all toolbar measurements use canvas units (points on macOS),
-matching wheel increments, the resize dialog, and selection effects. Units switch
-on mode changes even if the selection has not moved. Unit descriptions retranslate
-on language changes; `px` and `pt` remain abbreviations in each catalog.
+The read-only smart-selection toolbar and manual-selection editing toolbar both
+show canvas units (points on macOS), matching wheel increments, the resize dialog,
+and selection effects. Unit descriptions retranslate on language changes; `px` and
+`pt` remain abbreviations in each catalog.
 
 Accessibility hit testing targets the selected window's application, then verifies
 the owning PID and AX window bounds before publishing any children. Ancestors are

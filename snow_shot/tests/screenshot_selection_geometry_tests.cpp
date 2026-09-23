@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <optional>
 
 namespace {
@@ -687,6 +688,7 @@ snow_shot::storage::CaptureHistoryRecord historyRecord(const QRect& selection, c
     record.selection.shadowColor = QColor(0x33, 0x33, 0x33);
     record.result = snow_shot::storage::CaptureHistoryResultRecord{image, 1};
     record.scrolling = false;
+    record.desktopGeometry = snow_shot::storage::CaptureHistoryDesktopGeometry{};
     return record;
 }
 
@@ -698,8 +700,11 @@ placeHistoryPin(ScreenshotDisplaySession& displays,
     geometry.rebuild(displays);
     const ScreenshotResultStyle style{record.selection.cornerRadius, record.selection.shadowWidth,
                                       record.selection.shadowColor};
+    auto captured = record;
+    captured.desktopGeometry = snow_shot::storage::CaptureHistoryDesktopGeometry{
+        geometry.canvasOrigin(), displays.displayAt(0).canvasUsesPoints};
     const auto actual =
-        snow_shot::presentation::historySelectionPinPlacement(record, displays, geometry);
+        snow_shot::presentation::historySelectionPinPlacement(captured, displays, geometry);
     const auto live = screenshotSelectionPinRequest(displays, geometry, selection, style);
     const auto layout = ScreenshotResultCompositor::layoutForContent(selection.size(), style);
     const auto expected = geometry.pinnedImagePlacement(
@@ -719,6 +724,73 @@ placeHistoryPin(ScreenshotDisplaySession& displays,
                 actual.surfaceCanvasRect.size() == QSizeF(actual.initialWindowSize),
             message);
     return actual;
+}
+
+void historyPinPreservesDesktopCoordinatesAcrossLayoutChanges() {
+    for (const bool points : {false, true}) {
+        ScreenshotDisplaySession displays;
+        for (const QRect bounds : {QRect(-1920, -1080, 1920, 1080), QRect(0, 0, 1920, 1080)}) {
+            CapturedDisplayModel display;
+            display.active = true;
+            display.physicalRect = bounds;
+            display.canvasUsesPoints = points;
+            if (points) {
+                display.capturedLogicalRect = bounds;
+                display.backingScale = 2.0;
+            }
+            displays.appendDisplay(std::move(display));
+        }
+        ScreenshotGeometryMapper geometry;
+        geometry.rebuild(displays);
+        auto record = historyRecord(QRect(100, 100, 200, 100), QSize(216, 116), 8);
+        record.desktopGeometry =
+            snow_shot::storage::CaptureHistoryDesktopGeometry{QPoint(), points};
+        auto request =
+            snow_shot::presentation::historySelectionPinPlacement(record, displays, geometry);
+        require(request.geometry.nativeGeometry == QRect(92, 92, 216, 116) &&
+                    request.selection == QRect(2020, 1180, 200, 100),
+                "adding displays left and above must not move a saved pin on the original monitor");
+
+        // A removed left/top display must not cause its coordinates to be interpreted on
+        // the remaining monitor. A capture on the remaining monitor still restores there.
+        ScreenshotDisplaySession remaining;
+        CapturedDisplayModel primary;
+        primary.active = true;
+        primary.physicalRect = QRect(0, 0, 1920, 1080);
+        primary.canvasUsesPoints = points;
+        primary.capturedLogicalRect = points ? primary.physicalRect : QRect();
+        remaining.appendDisplay(std::move(primary));
+        geometry.rebuild(remaining);
+        record.desktopGeometry->canvasOrigin = QPoint(-1920, -1080);
+        record.selection.rectangle = QRect(2020, 1180, 200, 100);
+        request =
+            snow_shot::presentation::historySelectionPinPlacement(record, remaining, geometry);
+        require(request.geometry.nativeGeometry == QRect(92, 92, 216, 116),
+                "removing other monitors must preserve a pin's absolute desktop position");
+        record.selection.rectangle = QRect(100, 100, 200, 100);
+        require(snow_shot::presentation::historySelectionPinPlacement(record, remaining, geometry)
+                    .geometry.nativeGeometry.isEmpty(),
+                "a selection on a removed monitor must use fallback placement");
+        record.desktopGeometry->canvasOrigin = QPoint();
+        record.selection.rectangle = QRect(-20, 100, 100, 50);
+        request =
+            snow_shot::presentation::historySelectionPinPlacement(record, remaining, geometry);
+        require(request.geometry.nativeGeometry == QRect(-28, 92, 116, 66),
+                "partly visible selections must retain their position and shadow padding");
+        record.desktopGeometry->canvasOrigin = QPoint(std::numeric_limits<int>::max(), 0);
+        record.selection.rectangle = QRect(100, 100, 200, 100);
+        require(snow_shot::presentation::historySelectionPinPlacement(record, remaining, geometry)
+                    .geometry.nativeGeometry.isEmpty(),
+                "persisted coordinates must not wrap when converting into the current canvas");
+        record.desktopGeometry->canvasOrigin = QPoint();
+        record.desktopGeometry->canvasUsesPoints = !points;
+        require(snow_shot::presentation::historySelectionPinPlacement(record, remaining, geometry)
+                    .geometry.nativeGeometry.isEmpty(),
+                "pixel and point coordinate spaces must not be mixed");
+        record.desktopGeometry.reset();
+        require(!snow_shot::presentation::historyRecordSupportsSelectionPin(record),
+                "records without capture-time desktop geometry must use fallback placement");
+    }
 }
 
 void historyPinMatchesScreenshotSelectionPlacement() {
@@ -785,7 +857,7 @@ void historyPinMatchesScreenshotSelectionPlacement() {
         display.backingScale = 1.5;
         displays.appendDisplay(std::move(display));
         const QRect selection(10, 20, 101, 50);
-        const QSize image = screenshotSelectionCompositedPixelSize(selection.size(), 1.5, 1);
+        const QSize image(156, 79);
         const auto placed =
             placeHistoryPin(displays, historyRecord(selection, image, 1), selection,
                             "a fractional-scale history selection must keep the canvas surface");
@@ -857,8 +929,10 @@ void historyPinDesktopUsesNativeMonitorRects() {
     ScreenshotGeometryMapper geometry;
     geometry.rebuild(displays);
     const QRect selection(4, 8, 64, 40);
-    const auto placed = snow_shot::presentation::historySelectionPinPlacement(
-        historyRecord(selection, selection.size(), 0), displays, geometry);
+    auto record = historyRecord(selection, selection.size(), 0);
+    record.desktopGeometry->canvasOrigin = geometry.canvasOrigin();
+    const auto placed =
+        snow_shot::presentation::historySelectionPinPlacement(record, displays, geometry);
     require(placed.isPrepared() &&
                 placed.geometry.nativeGeometry == selection.translated(geometry.canvasOrigin()),
             "history pin must return to the recorded selection on the native desktop");
@@ -888,17 +962,17 @@ void selectionResultPixelSizeMatchesExportLayout() {
     const int shadowWidth = 1;
     const QSize content = screenshotSelectionRenderedPixelSize(selection, scale);
     const int shadowPixels = screenshotSelectionRenderedShadowPixels(shadowWidth, scale);
-    const QSize composed = screenshotSelectionCompositedPixelSize(selection, scale, shadowWidth);
     const ScreenshotResultStyle style{0, shadowPixels, QColor(0x33, 0x33, 0x33)};
     const auto layout = ScreenshotResultCompositor::layoutForContent(content, style);
-    require(content == QSize(152, 75) && shadowPixels == 2 && composed == QSize(156, 79) &&
-                layout.isValid() && layout.outputRect.size() == composed,
+    require(content == QSize(152, 75) && shadowPixels == 2 && layout.isValid() &&
+                layout.outputRect.size() == QSize(156, 79),
             "export pixel size must use the render spec and compositor layout");
     require(screenshotSelectionRenderedPixelSize(QSize(1, 1), 1.1) == QSize(2, 2),
             "composited selections ceil partial pixels");
 }
 
 int main() {
+    historyPinPreservesDesktopCoordinatesAcrossLayoutChanges();
     selectionResultPixelSizeMatchesExportLayout();
     historyPinMatchesScreenshotSelectionPlacement();
     logicalPinSelectionUsesDesktopBounds();

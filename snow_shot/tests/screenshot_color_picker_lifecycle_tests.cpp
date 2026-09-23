@@ -1,3 +1,8 @@
+#include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
+#include "snow_shot/platform/screenshotnative.h"
+#ifdef Q_OS_MACOS
+#import <AppKit/AppKit.h>
+#endif
 #include "snow_shot/presentation/screenshotcolorpickerwindow.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -347,10 +352,64 @@ void startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor() {
     coordinator.releaseColorPicker();
 }
 
+void canvasSamplerFollowsSessionOwner() {
+    QWidget overlay(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint);
+    QWidget canvas(&overlay);
+    overlay.resize(320, 240);
+    overlay.show();
+#ifdef Q_OS_MACOS
+    snow_shot::platform::configureScreenshotOverlayWindow(&overlay);
+#endif
+    QWidget pinned(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint);
+    pinned.show();
+    ScreenshotCanvasColorSamplerWindow sampler;
+    QImage preview(7, 7, QImage::Format_RGB32);
+    preview.fill(Qt::red);
+    const bool cocoa = QGuiApplication::platformName() == QStringLiteral("cocoa");
+    for (QWidget* owner : {&overlay, &pinned, &overlay}) {
+        QWidget pickerControl(owner);
+        sampler.beginSampling(&pickerControl);
+        require(!sampler.isVisible(), "sampling must wait for a valid preview before showing");
+        sampler.updateSample(preview, owner->mapToGlobal(QPoint(20, 20)));
+        QCoreApplication::processEvents();
+        require(sampler.isVisible() &&
+                    sampler.windowHandle()->transientParent() == owner->windowHandle(),
+                "the sampling HUD must be visible and transient to the current session owner");
+        require(sampler.parentWidget() == nullptr && !canvas.testAttribute(Qt::WA_NativeWindow),
+                "sampling must preserve controller ownership and non-native canvas input");
+        owner->raise();
+        QCoreApplication::processEvents();
+#ifdef Q_OS_MACOS
+        if (cocoa) {
+            NSWindow* hud = reinterpret_cast<NSView*>(sampler.winId()).window;
+            NSWindow* nativeOwner = reinterpret_cast<NSView*>(owner->winId()).window;
+            require(hud.visible && hud.level >= nativeOwner.level,
+                    "the sampler must not be hidden below its owner's native level");
+            if (owner == &overlay)
+                require(hud.level > nativeOwner.level,
+                        "the sampler must join the elevated screenshot stacking hierarchy");
+            else
+                require(hud.level < CGWindowLevelForKey(kCGScreenSaverWindowLevelKey),
+                        "pinned sampling must not retain the screenshot's elevated level");
+            require(hud.ignoresMouseEvents, "the sampler must not intercept canvas input");
+        }
+#else
+        Q_UNUSED(cocoa);
+#endif
+        sampler.endSampling();
+        require(!sampler.isVisible() &&
+                    (!sampler.windowHandle() || !sampler.windowHandle()->transientParent()),
+                "ending sampling must hide the HUD and release its transient owner");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    canvasSamplerFollowsSessionOwner();
+    if (application.arguments().contains(QStringLiteral("--canvas-sampler-only")))
+        return 0;
     pickerLifetimeFollowsExplicitSessionOperations();
     invocationMonitorOwnsThePreparedSurface();
     startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor();

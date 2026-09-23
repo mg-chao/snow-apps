@@ -226,11 +226,11 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 40, "macOS adds one permissions section");
-    require(itemCount == 170, "macOS adds login settings and omits administrator controls "
+    require(itemCount == 171, "macOS adds login settings and omits administrator controls "
                               "and Windows-only choices");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
-    require(itemCount == 171, "catalog must contain one hundred seventy-one items");
+    require(itemCount == 172, "catalog must contain one hundred seventy-two items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -244,9 +244,10 @@ void builtInCatalogIsCompleteAndValid() {
             "Interface Settings must expose the pinned editor in Pin to Screen");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
-    require(history != nullptr && history->items.size() >= 2 &&
+    require(history != nullptr && history->items.size() >= 3 &&
                 history->items[0].id == QStringLiteral("history.enabled") &&
-                history->items[1].id == QStringLiteral("history.keep-permanently"),
+                history->items[1].id == QStringLiteral("history.keep-permanently") &&
+                history->items[2].id == QStringLiteral("history.compression-level"),
             "permanent history must follow persistent history in Storage and Privacy");
     const auto& permanent = history->items[1];
     require(permanent.title.translated() == QStringLiteral("Keep records permanently") &&
@@ -254,6 +255,21 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsSwitchBinding::HistoryKeepPermanently &&
                 storage::ConfigurationSchema::defaultValue(permanent.configurationKey) == false,
             "permanent history must be a default-off switch with the requested label");
+    const auto& historyCompression = history->items[2];
+    const auto& historyCompressionSelect =
+        std::get<settings::SettingsSelectDefinition>(historyCompression.payload);
+    require(historyCompression.title.translated() == QStringLiteral("Compression level") &&
+                historyCompression.configurationKey ==
+                    QStringLiteral("capture_history/compression_level") &&
+                historyCompressionSelect.binding ==
+                    settings::SettingsSelectBinding::HistoryCompressionLevel &&
+                historyCompressionSelect.options.size() == 3 &&
+                historyCompressionSelect.options[0].value == QStringLiteral("low") &&
+                historyCompressionSelect.options[1].value == QStringLiteral("medium") &&
+                historyCompressionSelect.options[2].value == QStringLiteral("high") &&
+                storage::ConfigurationSchema::defaultValue(historyCompression.configurationKey) ==
+                    QStringLiteral("medium"),
+            "history compression must follow permanent history with a medium default");
     const auto* fill = catalog.item({QStringLiteral("interface-settings"),
                                      QStringLiteral("interface-text-recognition"),
                                      QStringLiteral("interface.text-recognition.fill-style")});

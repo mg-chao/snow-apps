@@ -1,4 +1,5 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snowimageqtcodec.h"
 
 #include <QCoreApplication>
 #include <QBuffer>
@@ -263,6 +264,66 @@ void scrollingMarkerRoundTripsAndRejectsNonBooleanValues() {
     }
 }
 
+void desktopGeometryRoundTripsAndValidatesCoordinates() {
+    for (const bool points : {false, true}) {
+        QTemporaryDir temporary;
+        storage::CaptureHistoryRecord published;
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            auto draft = draftAt(QDateTime::currentDateTimeUtc());
+            draft.desktopGeometry =
+                storage::CaptureHistoryDesktopGeometry{QPoint(-1920, -1080), points};
+            const auto result = repository->publish(draft).get();
+            require(result.storage.success, "desktop geometry publication failed");
+            published = result.record;
+            require(published.desktopGeometry == draft.desktopGeometry,
+                    "publication lost the captured desktop geometry");
+        }
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->records().size() == 1 && repository->records().front() == published,
+                    "desktop geometry did not survive a repository restart");
+        }
+        const QJsonObject index = readObject(indexPath(temporary.path()));
+        auto record = index.value(QStringLiteral("records")).toArray().first().toObject();
+        const auto validGeometry = record.value(QStringLiteral("desktop_geometry")).toObject();
+        const auto writeRecord = [&] {
+            auto changed = index;
+            changed.insert(QStringLiteral("records"), QJsonArray{record});
+            writeBytes(indexPath(temporary.path()), QJsonDocument(changed).toJson());
+        };
+        record.remove(QStringLiteral("desktop_geometry"));
+        writeRecord();
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->records().size() == 1 &&
+                        !repository->records().front().desktopGeometry,
+                    "legacy records must load without inventing a desktop origin");
+        }
+        for (const QJsonValue invalid :
+             {QJsonValue(QJsonValue::Null), QJsonValue(0), QJsonValue(QStringLiteral("invalid"))}) {
+            record.insert(QStringLiteral("desktop_geometry"), invalid);
+            writeRecord();
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            require(repository->records().isEmpty(), "invalid desktop geometry was accepted");
+        }
+        for (const QString key :
+             {QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("space")}) {
+            for (const QJsonValue invalid :
+                 {QJsonValue(QJsonValue::Null), QJsonValue(0.5), QJsonValue(2147483648.0),
+                  QJsonValue(QStringLiteral("unknown"))}) {
+                auto geometry = validGeometry;
+                geometry.insert(key, invalid);
+                record.insert(QStringLiteral("desktop_geometry"), geometry);
+                writeRecord();
+                auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+                require(repository->records().isEmpty(),
+                        "invalid desktop coordinate or space was accepted");
+            }
+        }
+    }
+}
+
 void publicationAndRecovery() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create publication directory");
@@ -370,6 +431,47 @@ void preparedResultBytesAreCommittedWithoutReplacement() {
     const auto loadedPng = repository->loadResultPng(published.record);
     require(loadedPng.has_value() && loadedPng->bytes() == *sharedBytes,
             "history clipboard read must preserve the stored PNG bytes");
+}
+
+void displayCompressionIsIndependentOfResultCompression() {
+    QImage image(QSize(96, 64), QImage::Format_RGBA8888);
+    for (int row = 0; row < image.height(); ++row) {
+        for (int column = 0; column < image.width(); ++column) {
+            image.setPixel(column, row,
+                           qRgba((column / 4 + row * 5) % 256, (column + row / 3) % 256,
+                                 (column * 3 + row) % 256, 255));
+        }
+    }
+    QVector<QByteArray> displayEncodings;
+    for (const int compression : {0, 6, 9}) {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "failed to create compression fixture directory");
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        auto draft = draftAt(QDateTime::currentDateTimeUtc(), image.size());
+        draft.displays.front().image = image;
+        draft.resultImage = image;
+        draft.pngCompressionLevel = 0;
+        draft.displayPngCompressionLevel = compression;
+        const auto published = repository->publish(draft).get();
+        require(published.storage.success, "compressed history publication failed");
+        const QDir directory(onlyRecordDirectory(temporary.path()));
+        QFile displayFile(directory.filePath(QStringLiteral("display_0.png")));
+        QFile resultFile(directory.filePath(QStringLiteral("capture_result.png")));
+        require(displayFile.open(QIODevice::ReadOnly) && resultFile.open(QIODevice::ReadOnly),
+                "compressed history files are missing");
+        const QByteArray displayBytes = displayFile.readAll();
+        require(displayBytes == snow_shot::image_codec::encodePng(image, compression) &&
+                    resultFile.readAll() == snow_shot::image_codec::encodePng(image, 0),
+                "display compression must not change the result PNG encoding");
+        const auto payload = repository->load(published.record);
+        require(payload.has_value() && payload->displayImages.size() == 1 &&
+                    payload->displayImages.front().pixelColor(17, 12) == image.pixelColor(17, 12),
+                "display compression changed decoded pixels");
+        displayEncodings.push_back(displayBytes);
+    }
+    require(displayEncodings[0] != displayEncodings[1] &&
+                displayEncodings[1] != displayEncodings[2],
+            "low, medium, and high must produce distinct display encodings");
 }
 
 void quickCaptureSourcesRoundTrip() {
@@ -908,8 +1010,10 @@ int main(int argc, char** argv) {
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();
     scrollingMarkerRoundTripsAndRejectsNonBooleanValues();
+    desktopGeometryRoundTripsAndValidatesCoordinates();
     publicationAndRecovery();
     preparedResultBytesAreCommittedWithoutReplacement();
+    displayCompressionIsIndependentOfResultCompression();
     quickCaptureSourcesRoundTrip();
     trustedStartupAndExplicitClear();
     policyBoundariesAndDisabledPreservation();

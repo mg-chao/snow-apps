@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScreen>
+#include <QWindow>
 
 #include <algorithm>
 #include <array>
@@ -94,11 +95,24 @@ ScreenshotCanvasColorSamplerWindow::ScreenshotCanvasColorSamplerWindow(QWidget* 
     hide();
 }
 
-void ScreenshotCanvasColorSamplerWindow::beginSampling() {
+void ScreenshotCanvasColorSamplerWindow::beginSampling(QWidget* owner) {
+    endSampling();
+    if (owner == nullptr) {
+        return;
+    }
+
+    owner = owner->window();
+    if (owner->windowHandle() == nullptr) {
+        static_cast<void>(owner->winId());
+    }
+    setScreen(owner->screen());
+    // Keep controller ownership, but join the sampling window's transient hierarchy.
+    // On macOS this lets the screenshot stacking policy elevate the HUD above its
+    // owner; an unowned stays-on-top tool remains below the screenshot overlay.
+    // create() avoids forcing native surfaces onto the owner's canvas children.
+    create();
+    windowHandle()->setTransientParent(owner->windowHandle());
     m_sampling = true;
-    m_previewImage = QImage();
-    m_currentColor = QColor();
-    hide();
 }
 
 void ScreenshotCanvasColorSamplerWindow::updateSample(const QImage& previewImage,
@@ -126,6 +140,12 @@ void ScreenshotCanvasColorSamplerWindow::endSampling() {
     m_previewImage = QImage();
     m_currentColor = QColor();
     hide();
+    if (QWindow* handle = windowHandle()) {
+        handle->setTransientParent(nullptr);
+        // A native sampling surface belongs to one session. Cocoa can retain the
+        // previous owner's level after detaching; recreate it for the next owner.
+        destroy();
+    }
 }
 
 QCursor ScreenshotCanvasColorSamplerWindow::samplingCursor() {

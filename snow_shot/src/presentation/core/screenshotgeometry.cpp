@@ -58,19 +58,6 @@ int screenshotSelectionRenderedShadowPixels(int shadowWidth, qreal scale) {
                       snow_shot::presentation::kScreenshotSelectionShadowWidthMax);
 }
 
-QSize screenshotSelectionCompositedPixelSize(const QSize& selection, qreal scale, int shadowWidth) {
-    const QSize content = screenshotSelectionRenderedPixelSize(selection, scale);
-    if (content.isEmpty()) {
-        return {};
-    }
-    const int shadowPixels = screenshotSelectionRenderedShadowPixels(shadowWidth, scale);
-    if (content.width() > std::numeric_limits<int>::max() - shadowPixels * 2 ||
-        content.height() > std::numeric_limits<int>::max() - shadowPixels * 2) {
-        return {};
-    }
-    return QSize(content.width() + shadowPixels * 2, content.height() + shadowPixels * 2);
-}
-
 ScreenshotSelectionRenderSpec
 screenshotSelectionRenderSpec(const ScreenshotDisplaySession& displays, const QRect& selection) {
     ScreenshotSelectionRenderSpec spec;

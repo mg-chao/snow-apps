@@ -17,10 +17,6 @@ set(_snow_dmg_wordmark
 set(_snow_dmg_background_svg "${CMAKE_CURRENT_BINARY_DIR}/macos/dmg-background.svg")
 set(CPACK_DMG_BACKGROUND_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/macos/dmg-background.png")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/macos")
-# Regenerate the native PNG when the artwork changes.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${_snow_dmg_assets}/dmg-background.svg"
-    "${_snow_dmg_wordmark}")
 # Keep the installer heading identical to the in-app title bar without
 # maintaining a second copy of the wordmark paths. The DMG has a fixed light
 # background, so resolve the title bar's theme-controlled text color here.

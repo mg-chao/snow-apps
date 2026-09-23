@@ -148,10 +148,23 @@ void directImagesPersistWithoutTouchingTheEditor(
         auto repository = storage::makeCaptureHistoryRepository(root);
         auto draft = directCaptureHistoryDraft(
             request, frame, storage::PreparedPngImage::fromBytes(image.size(), png));
-        require(draft.pngCompressionLevel == 9 && draft.preparedResultImage.has_value() &&
+        require(draft.desktopGeometry &&
+                    draft.desktopGeometry->canvasOrigin == physicalBounds.topLeft() &&
+                    !draft.desktopGeometry->canvasUsesPoints,
+                "direct capture must retain its native desktop origin before canvas normalization");
+        require(draft.pngCompressionLevel == 9 && draft.displayPngCompressionLevel == 6 &&
+                    draft.preparedResultImage.has_value() &&
                     draft.preparedResultImage->bytes().constData() == png.constData(),
-                "direct capture history did not retain compression or reuse the configured PNG "
-                "encoding");
+                "direct capture history did not separate display compression from prepared "
+                "result encoding");
+        for (const auto [setting, expected] : {std::pair{ScreenshotCompressionLevel::Low, 0},
+                                               std::pair{ScreenshotCompressionLevel::Medium, 6},
+                                               std::pair{ScreenshotCompressionLevel::High, 9}}) {
+            request.historyDisplayCompressionLevel = setting;
+            require(directCaptureHistoryDraft(request, frame).displayPngCompressionLevel ==
+                        expected,
+                    "direct capture must map each history display compression setting");
+        }
         // Preserve coverage for image-only records written before desktop retention was restored.
         draft.contentKind = storage::CaptureHistoryContentKind::Image;
         draft.canvasBounds = physicalBounds;
@@ -245,6 +258,45 @@ void directImagesPersistWithoutTouchingTheEditor(
             "edited direct capture exported pixels from the wrong region");
 }
 
+void editorHistoryUsesConfiguredDisplayCompression(const QString& root) {
+    using namespace snow_shot::presentation;
+    auto repository = storage::makeCaptureHistoryRepository(root);
+    QImage image = solidImage(QSize(48, 36), qRgb(24, 50, 70));
+    image.setPixel(5, 5, qRgb(210, 90, 30));
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(
+        display(QStringLiteral("primary"), QStringLiteral("Primary"), image.rect(), image));
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(image.rect());
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(true);
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotHistoryService history({displays, runtime, selection, interaction, intelligent},
+                                     *repository);
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    for (const int level : {0, 6, 9}) {
+        const QString setting = level == 0   ? QStringLiteral("low")
+                                : level == 6 ? QStringLiteral("medium")
+                                             : QStringLiteral("high");
+        require(
+            configuration.setValue(QStringLiteral("capture_history/compression_level"), setting),
+            "failed to configure history display compression");
+        auto entry = takeSnapshot(history.snapshotCurrent(true), "history snapshot failed");
+        const QString id = entry.id;
+        history.commit(std::move(entry));
+        history.drainPendingWrites();
+        QFile displayFile(
+            QDir(historyDirectory(root).filePath(id)).filePath(QStringLiteral("display_0.png")));
+        require(displayFile.open(QIODevice::ReadOnly) &&
+                    displayFile.readAll() == snow_shot::image_codec::encodePng(image, level),
+                "editor history did not use the selected display compression level");
+    }
+    require(configuration.setValue(QStringLiteral("capture_history/compression_level"),
+                                   QStringLiteral("medium")),
+            "failed to restore history display compression default");
+}
+
 void pointHistorySurvivesDisplayRemoval() {
     QTemporaryDir temporary;
     SnowCanvasRuntime runtime;
@@ -305,6 +357,59 @@ void directCaptureHistoryPreservesSelectionRegions(const QString& root) {
     directImagesPersistWithoutTouchingTheEditor(QDir(root).filePath(QStringLiteral("legacy")),
                                                 DirectCaptureTarget::FocusedWindow,
                                                 QRect(-1500, -300, 137, 91), true);
+}
+
+void snapshotsRetainTheLiveDesktopGeometry() {
+    for (const bool points : {false, true}) {
+        QTemporaryDir directory;
+        auto repository = storage::makeCaptureHistoryRepository(directory.path());
+        ScreenshotDisplaySession displays;
+        auto source = display(QStringLiteral("A"), QStringLiteral("Display A"),
+                              QRect(0, 0, 200, 120), solidImage(QSize(200, 120), qRgb(10, 20, 30)));
+        source.physicalRect.translate(-1920, -1080);
+        source.canvasUsesPoints = points;
+        displays.appendDisplay(std::move(source));
+        SnowCanvasRuntime runtime;
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(20, 30, 80, 60));
+        ScreenshotInteractionState interaction;
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotHistoryService history({displays, runtime, selection, interaction, intelligent},
+                                         *repository);
+        auto entry = takeSnapshot(history.snapshotCurrent(true), "desktop snapshot failed");
+        const storage::CaptureHistoryDesktopGeometry expected{QPoint(-1920, -1080), points};
+        snow_shot::presentation::DirectCaptureRequest request;
+        request.requestedAt = QDateTime::currentDateTimeUtc();
+        snow_shot::presentation::DirectCaptureFrame frame;
+        frame.image = solidImage(QSize(200, 120), qRgb(10, 20, 30));
+        frame.physicalBounds = QRect(QPoint(-1920, -1080), frame.image.size());
+        frame.logicalBounds = points ? QRect(-1920, -1080, 100, 60) : QRect();
+        frame.displays.push_back({frame.image, frame.physicalBounds, QStringLiteral("A"),
+                                  QStringLiteral("Display A"), frame.logicalBounds});
+        const auto draft = snow_shot::presentation::directCaptureHistoryDraft(request, frame);
+        require(draft.desktopGeometry == expected && draft.selection.rectangle.topLeft().isNull() &&
+                    draft.selection.rectangle.size() == (points ? QSize(100, 60) : QSize(200, 120)),
+                "direct capture must record the desktop origin in the selection's units");
+        require(entry.desktopGeometry == expected,
+                "snapshot lost the active canvas desktop origin or units");
+        entry.resultImage = solidImage(QSize(80, 60), qRgb(10, 20, 30));
+        history.commit(std::move(entry));
+        history.drainPendingWrites();
+        require(repository->records().size() == 1 &&
+                    repository->records().front().desktopGeometry == expected,
+                "history publication lost snapshot desktop geometry");
+
+        // Navigating a saved item does not replace the editor's active display geometry.
+        displays.displayAt(0).physicalRect.translate(1920, 1080);
+        require(history.navigateToRecord(repository->records().front().id),
+                "history navigation failed");
+        waitForNavigation(history, "desktop snapshot navigation timed out");
+        const auto edited = takeSnapshot(history.snapshotCurrent(true), "restored snapshot failed");
+        require(edited.desktopGeometry && edited.desktopGeometry->canvasOrigin.isNull() &&
+                    edited.desktopGeometry->canvasUsesPoints == points,
+                "re-exporting history must capture the live canvas position, not stale desktop "
+                "metadata");
+    }
 }
 
 void explicitHistoryEditSeesExternalPublications(const QString& root) {
@@ -372,6 +477,10 @@ void directCaptureRetainsTheWholeDesktop(const QString& root) {
         {
             auto repository = storage::makeCaptureHistoryRepository(directory);
             auto draft = directCaptureHistoryDraft(request, frame);
+            require(draft.desktopGeometry &&
+                        draft.desktopGeometry->canvasOrigin == QPoint(-100, -20) &&
+                        !draft.desktopGeometry->canvasUsesPoints,
+                    "direct desktop capture lost its original native origin");
             require(draft.contentKind == storage::CaptureHistoryContentKind::ScreenshotSession &&
                         draft.canvasBounds == QRect(0, 0, 260, 120) &&
                         draft.selection.rectangle == frame.physicalBounds.translated(100, 20) &&
@@ -2904,6 +3013,9 @@ int main(int argc, char** argv) {
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    snapshotsRetainTheLiveDesktopGeometry();
+    editorHistoryUsesConfiguredDisplayCompression(
+        QDir(temporary.path()).filePath(QStringLiteral("compression")));
     pointHistorySurvivesDisplayRemoval();
     committedSelectionFollowsHistory(
         QDir(temporary.path()).filePath(QStringLiteral("committed-selection")));

@@ -1977,6 +1977,20 @@ void selectionDamagePlannerAvoidsFullCanvasFallback() {
     require(dirtyArea < static_cast<qint64>(viewport.width()) * viewport.height() / 2,
             "subpixel selection damage must remain bounded by the changed perimeter");
 
+    ScreenshotSelectionVisualState largeSquare;
+    largeSquare.bounds = QRectF(960.0, 540.0, 1920.0, 1080.0);
+    largeSquare.present = true;
+    ScreenshotSelectionVisualState shiftedSquare = largeSquare;
+    shiftedSquare.bounds.translate(1.0, 0.0);
+    const QRegion squareDamage = planScreenshotSelectionDamage(
+        largeSquare, shiftedSquare, QRect(0, 0, 3840, 2160), transform, true);
+    qint64 squareDamageArea = 0;
+    for (const QRect& rect : squareDamage) {
+        squareDamageArea += static_cast<qint64>(rect.width()) * rect.height();
+    }
+    require(squareDamageArea < 70'000,
+            "square selection damage should use the border width rather than a broad band");
+
     ScreenshotSelectionVisualState square = before;
     square.bounds = QRectF(100.0, 100.0, 200.0, 200.0);
     square.cornerRadius = 0;
@@ -2025,6 +2039,36 @@ void activeWatermarkAreaMovementUsesUnionDamage() {
     require(!dirty.isEmpty(), "moving an active watermark area should repaint");
     require(dirty.contains(overlapView),
             "an active watermark area move must invalidate the old/new union");
+}
+
+void unchangedActiveWatermarkAreaDoesNotRepaint() {
+    SnowCanvasWidget canvas;
+    canvas.resize(320, 240);
+    canvas.show();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "camera should update");
+
+    SnowCanvasWatermarkConfig config;
+    config.text = QStringLiteral("VISIBLE");
+    config.color = Qt::white;
+    config.fontSize = 18.0;
+    config.opacity = 1.0;
+    require(canvas.setCanvasWatermarkConfig(config), "the watermark should be visible");
+    const QRectF area(-120.0, -80.0, 160.0, 120.0);
+    canvas.setDecorationRenderAreas({std::optional<QRectF>(area), std::optional<QRectF>(QRectF())});
+    QApplication::processEvents();
+
+    CanvasPaintRegionObserver observer;
+    canvas.installEventFilter(&observer);
+    observer.begin();
+    canvas.setDecorationRenderAreas({std::optional<QRectF>(area), std::optional<QRectF>(QRectF())});
+    canvas.setDecorationRenderAreas({
+        std::optional<QRectF>(QRectF(area.bottomRight(), area.topLeft())),
+        std::optional<QRectF>(QRectF()),
+    });
+    QApplication::processEvents();
+    const QRegion dirty = observer.region();
+    canvas.removeEventFilter(&observer);
+    require(dirty.isEmpty(), "an unchanged active watermark area must not repaint");
 }
 
 void activeSpotlightAreaMovementUsesSymmetricDifferenceDamage() {
@@ -2128,6 +2172,23 @@ void selectionTransitionsCoverChangedPixelsAtFractionalDprs() {
         requireChangedPixelsCoveredByDirtyRegion(
             previous, preview, dirty,
             "fractional-DPR shadow changes must cover every changed pixel");
+
+        renderer.setSelectionToolbarHovered(false);
+        renderer.setSelection(QRectF(-80.25, -50.25, 160.5, 100.5), true, 0, 16,
+                              QColor(0x59, 0x59, 0x59));
+        QApplication::processEvents();
+        const QImage squareBefore = renderCanvas(canvas, devicePixelRatio);
+        CanvasPaintRegionObserver squareObserver;
+        canvas.installEventFilter(&squareObserver);
+        squareObserver.begin();
+        renderer.setSelection(QRectF(-79.75, -49.75, 160.5, 100.5), true, 0, 16,
+                              QColor(0x59, 0x59, 0x59));
+        QApplication::processEvents();
+        const QRegion squareDirty = squareObserver.region();
+        canvas.removeEventFilter(&squareObserver);
+        requireChangedPixelsCoveredByDirtyRegion(
+            squareBefore, renderCanvas(canvas, devicePixelRatio), squareDirty,
+            "fractional-DPR square selection damage must cover every changed pixel");
         canvas.setCustomRenderer(nullptr);
     }
 }
@@ -4088,6 +4149,7 @@ int main(int argc, char** argv) {
     overlaySelectionMoveDoesNotExpandForInactiveDecorations();
     selectionDamagePlannerAvoidsFullCanvasFallback();
     activeWatermarkAreaMovementUsesUnionDamage();
+    unchangedActiveWatermarkAreaDoesNotRepaint();
     activeSpotlightAreaMovementUsesSymmetricDifferenceDamage();
     selectionTransitionsCoverChangedPixelsAtFractionalDprs();
     sharedShadowPreviewMatchesExportAndCacheStaysBounded();

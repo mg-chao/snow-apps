@@ -4462,6 +4462,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     list(REMOVE_DUPLICATES _color_picker_lifecycle_sources)
     add_executable(snow-shot-color-picker-lifecycle-tests
         tests/screenshot_color_picker_lifecycle_tests.cpp
+        src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         src/presentation/services/screenshotcolorpickercontroller.cpp
         src/platform/physicalcursor.cpp
         ${_color_picker_lifecycle_sources}
@@ -4485,6 +4486,14 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/platform/macos/windowcaptureexclusion.mm)
         target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
             "-framework AppKit" "-framework CoreGraphics")
+    endif()
+    if(APPLE)
+        set_source_files_properties(tests/screenshot_color_picker_lifecycle_tests.cpp
+            PROPERTIES LANGUAGE OBJCXX)
+        add_test(NAME snow-shot-macos-canvas-sampler-stacking-native-tests
+            COMMAND snow-shot-color-picker-lifecycle-tests --canvas-sampler-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-canvas-sampler-stacking-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
     add_test(NAME snow-shot-color-picker-lifecycle-tests
@@ -5835,6 +5844,11 @@ if(SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-decoration-area-benchmark
+        tests/screenshot_decoration_area_benchmark.cpp)
+    target_link_libraries(snow-shot-decoration-area-benchmark PRIVATE
+        Qt6::Widgets snow_draw_engine_qt_canvas)
+
     # This executable deliberately is not registered with CTest. It creates a
     # native 4K widget and reports hardware-sensitive timing for explicit
     # Windows performance sessions.
@@ -5858,6 +5872,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
     target_link_libraries(snow-shot-selection-render-benchmark PRIVATE
         Qt6::Widgets
+        ant_design_qt
         snow_draw_engine_qt_canvas
         dwmapi
         user32
@@ -7139,6 +7154,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-physical-authority-tests
         COMMAND snow-shot-pinned-window-tests --physical-authority-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-physical-authority-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-history-selection-presentation-tests
+        COMMAND snow-shot-pinned-window-tests --history-selection-only -platform offscreen)
+    set_tests_properties(snow-shot-history-selection-presentation-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
 endif()

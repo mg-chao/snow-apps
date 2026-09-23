@@ -119,7 +119,18 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
             ScreenshotImageEncodingOptions{100, ScreenshotImageFileService::compressionLevelForKey(
                                                     settings.compressionLevel())})
             .compression_level;
+    draft.displayPngCompressionLevel =
+        ScreenshotImageFileService::encodeOptions(
+            ScreenshotImageFileFormat::Png,
+            ScreenshotImageEncodingOptions{
+                100, ScreenshotImageFileService::compressionLevelForKey(
+                         snow_shot::storage::ApplicationStorage::instance()
+                             .configuration()
+                             .value(QStringLiteral("capture_history/compression_level"))
+                             .toString())})
+            .compression_level;
     draft.scrolling = entry.scrolling;
+    draft.desktopGeometry = entry.desktopGeometry;
     return draft;
 }
 
@@ -133,6 +144,7 @@ placeholderRecord(const snow_shot::storage::CaptureHistoryDraft& draft) {
     record.selection = draft.selection;
     record.source = draft.source;
     record.scrolling = draft.scrolling;
+    record.desktopGeometry = draft.desktopGeometry;
     record.canvasBytes = draft.canvasHistory.size();
     if (draft.resultImage.has_value() || draft.preparedResultImage.has_value()) {
         const QSize resultSize = draft.preparedResultImage.has_value()
@@ -165,6 +177,7 @@ presentationEntry(const snow_shot::storage::CaptureHistoryRecord& record,
     entry.canvasHistory = payload.canvasHistory;
     entry.source = record.source;
     entry.scrolling = record.scrolling;
+    entry.desktopGeometry = record.desktopGeometry;
     entry.persistent = true;
     for (qsizetype index = 0; index < record.displays.size(); ++index) {
         entry.displays.push_back(
@@ -357,6 +370,17 @@ ScreenshotHistoryService::snapshotCurrent(bool persistent) const {
     entry.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     entry.createdUtc = m_clock().toUTC();
     entry.recordedCanvasBounds = bounds;
+    // Active displays define the editor canvas even when history supplies different image
+    // sources. Re-exporting a restored item must record its position in this live canvas.
+    m_context.displays.forEachActiveDisplay(
+        [&entry](qsizetype, const CapturedDisplayModel& display) {
+            if (!entry.desktopGeometry && !display.physicalRect.isEmpty() &&
+                !display.canvasRect.isEmpty()) {
+                entry.desktopGeometry = snow_shot::storage::CaptureHistoryDesktopGeometry{
+                    display.physicalRect.topLeft() - display.canvasRect.topLeft(),
+                    display.canvasUsesPoints};
+            }
+        });
     entry.selection = m_context.selection.params(bounds);
     entry.canvasHistory = m_context.runtime.serializeDocumentHistory();
     entry.intelligentSelectionMode = m_context.interaction.intelligentSelecting();

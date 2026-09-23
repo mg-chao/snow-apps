@@ -1317,17 +1317,24 @@ bool SnowCanvasWidget::Impl::spotlightEffectivelyVisible() const {
 
 void SnowCanvasWidget::Impl::setDecorationRenderAreas(
     const SnowCanvasDecorationRenderAreas& areas) {
+    const std::optional<QRectF> nextWatermarkArea =
+        areas.watermark.has_value() ? std::optional<QRectF>(areas.watermark->normalized())
+                                    : std::nullopt;
+    const std::optional<QRectF> nextSpotlightArea =
+        areas.spotlight.has_value() ? std::optional<QRectF>(areas.spotlight->normalized())
+                                    : std::nullopt;
+    if (configuredWatermarkRenderArea == nextWatermarkArea &&
+        configuredSpotlightRenderArea == nextSpotlightArea) {
+        return;
+    }
+
     const QRegion previousWatermark = watermarkViewRenderRegion();
     const QRegion previousSpotlight = spotlightViewRenderRegion();
     const bool watermarkWasVisible = watermarkEffectivelyVisible();
     const bool spotlightWasVisible = spotlightEffectivelyVisible();
 
-    configuredWatermarkRenderArea = areas.watermark.has_value()
-                                        ? std::optional<QRectF>(areas.watermark->normalized())
-                                        : std::nullopt;
-    configuredSpotlightRenderArea = areas.spotlight.has_value()
-                                        ? std::optional<QRectF>(areas.spotlight->normalized())
-                                        : std::nullopt;
+    configuredWatermarkRenderArea = nextWatermarkArea;
+    configuredSpotlightRenderArea = nextSpotlightArea;
 
     const QRegion nextWatermark = watermarkViewRenderRegion();
     const QRegion nextSpotlight = spotlightViewRenderRegion();

@@ -5,15 +5,20 @@
 #include <QGuiApplication>
 #include <QScreen>
 
+#include <limits>
+
 namespace snow_shot::presentation {
 namespace {
-bool selectionMeetsDesktop(const ScreenshotDisplaySession& displays, const QRect& selection) {
+bool selectionMeetsDesktop(const ScreenshotDisplaySession& displays, const QRect& selection,
+                           bool canvasUsesPoints) {
     const ScreenshotHalfOpenRect target = ScreenshotHalfOpenRect::fromRect(selection);
     bool meets = false;
+    bool compatible = true;
     displays.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& display) {
+        compatible = compatible && display.canvasUsesPoints == canvasUsesPoints;
         meets = meets || target.intersects(ScreenshotHalfOpenRect::fromRect(display.canvasRect));
     });
-    return meets;
+    return compatible && meets;
 }
 
 #if defined(Q_OS_WIN)
@@ -33,10 +38,9 @@ bool applyNativeMonitorRect(CapturedDisplayModel& display, const QScreen& screen
 } // namespace
 
 bool historyRecordSupportsSelectionPin(const snow_shot::storage::CaptureHistoryRecord& record) {
-    // The scrolling marker only exists on records persisted after it was introduced; records
-    // without it (scrolling or not) fall back to cursor-screen placement.
+    // Legacy canvas coordinates alone cannot recover an absolute desktop position.
     return record.contentKind == snow_shot::storage::CaptureHistoryContentKind::ScreenshotSession &&
-           record.result.has_value() && record.scrolling == false &&
+           record.result.has_value() && record.scrolling == false && record.desktopGeometry &&
            record.selection.rectangle.width() >= 1 && record.selection.rectangle.height() >= 1;
 }
 
@@ -44,14 +48,37 @@ ScreenshotPinnedSelectionRequest
 historySelectionPinPlacement(const snow_shot::storage::CaptureHistoryRecord& record,
                              const ScreenshotDisplaySession& displays,
                              const ScreenshotGeometryMapper& geometry) {
-    if (!historyRecordSupportsSelectionPin(record) ||
-        !selectionMeetsDesktop(displays, record.selection.rectangle)) {
+    if (!historyRecordSupportsSelectionPin(record)) {
         return {};
     }
-    const QRect selection = record.selection.rectangle;
+    const auto& desktop = *record.desktopGeometry;
+    const QRect saved = record.selection.rectangle;
+    // Translate via desktop coordinates, using wide arithmetic for untrusted persisted data.
+    const qint64 x = qint64(saved.x()) + desktop.canvasOrigin.x() - geometry.canvasOrigin().x();
+    const qint64 y = qint64(saved.y()) + desktop.canvasOrigin.y() - geometry.canvasOrigin().y();
+    if (x < std::numeric_limits<int>::min() || y < std::numeric_limits<int>::min() ||
+        x > qint64(std::numeric_limits<int>::max()) - saved.width() ||
+        y > qint64(std::numeric_limits<int>::max()) - saved.height()) {
+        return {};
+    }
+    const QRect selection(QPoint(static_cast<int>(x), static_cast<int>(y)), saved.size());
+    if (!selectionMeetsDesktop(displays, selection, desktop.canvasUsesPoints)) {
+        return {};
+    }
     const ScreenshotResultStyle style{record.selection.cornerRadius, record.selection.shadowWidth,
                                       record.selection.shadowColor};
     return screenshotSelectionPinRequest(displays, geometry, selection, style);
+}
+
+ScreenshotPinnedSelectionRequest
+historySelectionPinPlacement(const snow_shot::storage::CaptureHistoryRecord& record) {
+    if (!historyRecordSupportsSelectionPin(record)) {
+        return {};
+    }
+    auto displays = currentHistoryPinDisplaySession();
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    return historySelectionPinPlacement(record, displays, geometry);
 }
 
 ScreenshotDisplaySession
