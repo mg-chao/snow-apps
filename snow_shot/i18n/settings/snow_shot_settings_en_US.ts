@@ -994,8 +994,12 @@
             <translation>Choose the bundled icon used in the system tray</translation>
         </message>
         <message>
-            <source>Choose the compression effort used for image output and screenshot history</source>
-            <translation>Choose the compression effort used for image output and screenshot history</translation>
+            <source>Choose the compression effort used for display images saved in screenshot history</source>
+            <translation>Choose the compression effort used for display images saved in screenshot history</translation>
+        </message>
+        <message>
+            <source>Choose the compression effort used for image output and history results</source>
+            <translation>Choose the compression effort used for image output and history results</translation>
         </message>
         <message>
             <source>Choose the dialog used for manual screenshot saves</source>

@@ -480,7 +480,8 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
             return false;
         const QString name = QStringLiteral("display_%1.png").arg(i);
         const qint64 bytes = addImage(display.image.size(), name, [&]() {
-            return snow_shot::image_codec::encodePng(display.image, draft.pngCompressionLevel);
+            return snow_shot::image_codec::encodePng(display.image,
+                                                     draft.displayPngCompressionLevel);
         });
         if (bytes == 0)
             return false;

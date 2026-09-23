@@ -324,6 +324,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().imageFormat();
     case SettingsSelectBinding::ScreenshotCompressionLevel:
         return storage::ScreenshotSettings().compressionLevel();
+    case SettingsSelectBinding::HistoryCompressionLevel:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("capture_history/compression_level"))
+            .toString();
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
         return storage::ScreenshotSettings().saveAsFileDialog();
     case SettingsSelectBinding::TrayLeftClickAction:
@@ -439,6 +444,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setImageFormat(value.toString());
     case SettingsSelectBinding::ScreenshotCompressionLevel:
         return storage::ScreenshotSettings().setCompressionLevel(value.toString());
+    case SettingsSelectBinding::HistoryCompressionLevel:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("capture_history/compression_level"), value.toString());
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
         return storage::ScreenshotSettings().setSaveAsFileDialog(value.toString());
     case SettingsSelectBinding::TrayLeftClickAction:
@@ -1426,7 +1434,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     }
     case SettingsSectionReset::HistoryPolicy:
         return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(
-            defaultHistoryPolicy());
+                   defaultHistoryPolicy()) &&
+               storage::ApplicationStorage::instance().configuration().setValue(
+                   QStringLiteral("capture_history/compression_level"),
+                   storage::ConfigurationSchema::defaultValue(
+                       QStringLiteral("capture_history/compression_level")));
     case SettingsSectionReset::ScreenshotSettings:
         return storage::ApplicationStorage::instance().requestSmartSelection(
                    storage::ConfigurationSchema::defaultValue(

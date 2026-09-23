@@ -96,6 +96,7 @@ struct CaptureHistoryDraft {
     std::optional<QImage> resultImage;
     std::optional<PreparedPngImage> preparedResultImage;
     int pngCompressionLevel = 0;
+    int displayPngCompressionLevel = 6;
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
     // Absent on records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};

@@ -200,6 +200,11 @@ class DirectCaptureController::Impl {
         result.imageFormat = settings.imageFormat();
         result.compressionLevel =
             ScreenshotImageFileService::compressionLevelForKey(settings.compressionLevel());
+        result.historyDisplayCompressionLevel = ScreenshotImageFileService::compressionLevelForKey(
+            storage::ApplicationStorage::instance()
+                .configuration()
+                .value(QStringLiteral("capture_history/compression_level"))
+                .toString());
         result.pdf.pageSize = screenshot_pdf::pageSizeForKey(settings.pdfPageSize());
         result.filenameFormat = settings.autoSaveFilenameFormat();
         return result;

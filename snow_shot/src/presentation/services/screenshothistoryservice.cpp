@@ -119,6 +119,16 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
             ScreenshotImageEncodingOptions{100, ScreenshotImageFileService::compressionLevelForKey(
                                                     settings.compressionLevel())})
             .compression_level;
+    draft.displayPngCompressionLevel =
+        ScreenshotImageFileService::encodeOptions(
+            ScreenshotImageFileFormat::Png,
+            ScreenshotImageEncodingOptions{
+                100, ScreenshotImageFileService::compressionLevelForKey(
+                         snow_shot::storage::ApplicationStorage::instance()
+                             .configuration()
+                             .value(QStringLiteral("capture_history/compression_level"))
+                             .toString())})
+            .compression_level;
     draft.scrolling = entry.scrolling;
     draft.desktopGeometry = entry.desktopGeometry;
     return draft;

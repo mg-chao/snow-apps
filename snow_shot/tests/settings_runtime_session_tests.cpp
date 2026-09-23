@@ -1311,8 +1311,9 @@ void permanentHistoryDisablesOnlyLimitControls() {
     }
     require(session.state(QStringLiteral("history.enabled")).enabled &&
                 session.state(QStringLiteral("history.clear")).enabled &&
+                session.state(QStringLiteral("history.compression-level")).enabled &&
                 session.state(toggle).enabled,
-            "permanent history must leave saving, clearing, and its own toggle available");
+            "permanent history must leave saving, compression, clearing, and its toggle available");
     require(session.submitDraft(toggle, false), "disabling permanent history failed");
     flushEvents();
     for (const auto& id : limits)

@@ -994,8 +994,12 @@
             <translation>选择系统托盘使用的内置图标</translation>
         </message>
         <message>
-            <source>Choose the compression effort used for image output and screenshot history</source>
-            <translation>选择用于图像输出和截图历史记录的压缩力度</translation>
+            <source>Choose the compression effort used for display images saved in screenshot history</source>
+            <translation>选择截图历史记录中保存的显示器图像的压缩级别</translation>
+        </message>
+        <message>
+            <source>Choose the compression effort used for image output and history results</source>
+            <translation>选择图像输出和历史记录结果图像的压缩级别</translation>
         </message>
         <message>
             <source>Choose the dialog used for manual screenshot saves</source>

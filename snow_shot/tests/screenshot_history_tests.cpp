@@ -152,10 +152,19 @@ void directImagesPersistWithoutTouchingTheEditor(
                     draft.desktopGeometry->canvasOrigin == physicalBounds.topLeft() &&
                     !draft.desktopGeometry->canvasUsesPoints,
                 "direct capture must retain its native desktop origin before canvas normalization");
-        require(draft.pngCompressionLevel == 9 && draft.preparedResultImage.has_value() &&
+        require(draft.pngCompressionLevel == 9 && draft.displayPngCompressionLevel == 6 &&
+                    draft.preparedResultImage.has_value() &&
                     draft.preparedResultImage->bytes().constData() == png.constData(),
-                "direct capture history did not retain compression or reuse the configured PNG "
-                "encoding");
+                "direct capture history did not separate display compression from prepared "
+                "result encoding");
+        for (const auto [setting, expected] : {std::pair{ScreenshotCompressionLevel::Low, 0},
+                                               std::pair{ScreenshotCompressionLevel::Medium, 6},
+                                               std::pair{ScreenshotCompressionLevel::High, 9}}) {
+            request.historyDisplayCompressionLevel = setting;
+            require(directCaptureHistoryDraft(request, frame).displayPngCompressionLevel ==
+                        expected,
+                    "direct capture must map each history display compression setting");
+        }
         // Preserve coverage for image-only records written before desktop retention was restored.
         draft.contentKind = storage::CaptureHistoryContentKind::Image;
         draft.canvasBounds = physicalBounds;
@@ -247,6 +256,45 @@ void directImagesPersistWithoutTouchingTheEditor(
                 image.copy(QRect(QPoint(3, 3), editedSelection.size()))
                     .convertToFormat(QImage::Format_ARGB32),
             "edited direct capture exported pixels from the wrong region");
+}
+
+void editorHistoryUsesConfiguredDisplayCompression(const QString& root) {
+    using namespace snow_shot::presentation;
+    auto repository = storage::makeCaptureHistoryRepository(root);
+    QImage image = solidImage(QSize(48, 36), qRgb(24, 50, 70));
+    image.setPixel(5, 5, qRgb(210, 90, 30));
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(
+        display(QStringLiteral("primary"), QStringLiteral("Primary"), image.rect(), image));
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(image.rect());
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(true);
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotHistoryService history({displays, runtime, selection, interaction, intelligent},
+                                     *repository);
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    for (const int level : {0, 6, 9}) {
+        const QString setting = level == 0   ? QStringLiteral("low")
+                                : level == 6 ? QStringLiteral("medium")
+                                             : QStringLiteral("high");
+        require(
+            configuration.setValue(QStringLiteral("capture_history/compression_level"), setting),
+            "failed to configure history display compression");
+        auto entry = takeSnapshot(history.snapshotCurrent(true), "history snapshot failed");
+        const QString id = entry.id;
+        history.commit(std::move(entry));
+        history.drainPendingWrites();
+        QFile displayFile(
+            QDir(historyDirectory(root).filePath(id)).filePath(QStringLiteral("display_0.png")));
+        require(displayFile.open(QIODevice::ReadOnly) &&
+                    displayFile.readAll() == snow_shot::image_codec::encodePng(image, level),
+                "editor history did not use the selected display compression level");
+    }
+    require(configuration.setValue(QStringLiteral("capture_history/compression_level"),
+                                   QStringLiteral("medium")),
+            "failed to restore history display compression default");
 }
 
 void pointHistorySurvivesDisplayRemoval() {
@@ -2966,6 +3014,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     snapshotsRetainTheLiveDesktopGeometry();
+    editorHistoryUsesConfiguredDisplayCompression(
+        QDir(temporary.path()).filePath(QStringLiteral("compression")));
     pointHistorySurvivesDisplayRemoval();
     committedSelectionFollowsHistory(
         QDir(temporary.path()).filePath(QStringLiteral("committed-selection")));

@@ -994,8 +994,12 @@
             <translation>選擇系統匣使用的內建圖示</translation>
         </message>
         <message>
-            <source>Choose the compression effort used for image output and screenshot history</source>
-            <translation>選擇用於影像輸出和螢幕截圖歷史記錄的壓縮力度</translation>
+            <source>Choose the compression effort used for display images saved in screenshot history</source>
+            <translation>選擇螢幕截圖歷史記錄中儲存的顯示器影像壓縮等級</translation>
+        </message>
+        <message>
+            <source>Choose the compression effort used for image output and history results</source>
+            <translation>選擇影像輸出和歷史記錄結果影像的壓縮等級</translation>
         </message>
         <message>
             <source>Choose the dialog used for manual screenshot saves</source>
