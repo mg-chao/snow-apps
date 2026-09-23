@@ -3724,6 +3724,30 @@ void regionEventsRemainOwnedByOverlay() {
     }
     require(sink.presses == 1 && sink.releases == 2,
             "region switcher clicks must not add vertices to the canvas");
+    const QPointF outside = overlay.mapToGlobal(QPoint(0, overlay.height() - 1));
+    const QRectF controlGlobal(control->mapToGlobal(QPoint()), control->size());
+    overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Polyline, controlGlobal,
+                                        outside);
+    require(!control->isVisible(), "selection overlapping the area type hint hides it");
+    overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Polyline, {}, outside);
+    require(control->isVisible(), "area type hint returns when unobscured");
+    auto* hintLabel = control->findChild<QLabel*>();
+    require(hintLabel != nullptr, "floating area type control exposes its hint label");
+    const QPointF hintCenter(hintLabel->rect().center());
+    QMouseEvent hintMove(QEvent::MouseMove, hintCenter,
+                         hintLabel->mapToGlobal(hintCenter.toPoint()), Qt::NoButton, Qt::NoButton,
+                         Qt::NoModifier);
+    QApplication::sendEvent(hintLabel, &hintMove);
+    require(!control->isVisible(), "pointer movement over the area type hint hides it");
+    QMouseEvent awayMove(QEvent::MouseMove, QPointF(0, canvas->height() - 1), outside, Qt::NoButton,
+                         Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &awayMove);
+    require(control->isVisible(), "area type hint returns when the pointer moves away");
+    overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Polyline, {},
+                                        button->mapToGlobal(button->rect().center()));
+    require(control->isVisible(), "region buttons remain accessible on hover");
+    overlay.setRegionTypeControlVisible(false, ScreenshotRegionType::Polyline, {}, outside);
+    require(!control->isVisible(), "disabled area type hint remains hidden");
 }
 
 void overlayPassesTextDraftWheelToCanvas() {
@@ -4170,6 +4194,38 @@ void compoundSelectionRendersUnifiedMaskAndOutline() {
             "hole changes must invalidate pixels inside unchanged bounds");
 }
 
+void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
+    SnowCanvasWidget canvas;
+    canvas.resize(100, 100);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(50, 50, 1), "draft selection camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage background(100, 100, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    renderer.setImage(background, QRectF(0, 0, 100, 100));
+    renderer.setMaskVisible(true);
+
+    QPainterPath draft;
+    draft.moveTo(10, 10);
+    draft.lineTo(90, 10);
+    draft.lineTo(50, 90);
+    draft.closeSubpath();
+    const auto region = ScreenshotRegionGeometry::fromPath(draft, ScreenshotRegionType::Polyline);
+    renderer.setSelectionRegion(region, region, {}, false, Qt::red);
+    renderer.setSelectionBorderVisible(false);
+    renderer.setSelectionDraft(draft, {QPointF(10, 10), QPointF(90, 10), QPointF(50, 90)});
+
+    const QImage output = renderCanvas(canvas);
+    require(output.pixelColor(50, 40) == QColor(Qt::white),
+            "a non-rectangular draft must leave the selected image pixels unchanged");
+    const QColor outline = output.pixelColor(50, 10);
+    require(outline.blue() > outline.red() + 80,
+            "a non-rectangular draft must keep its visible blue outline");
+    require(output.pixelColor(10, 80).red() < 200,
+            "the screenshot mask must still dim pixels outside the draft");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--region-input-only"))) {
@@ -4283,6 +4339,7 @@ int main(int argc, char** argv) {
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();
     compoundSelectionRendersUnifiedMaskAndOutline();
+    nonRectangularSelectionDraftLeavesInteriorUnchanged();
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
     selectionBorderAndHandlesFollowTheConfiguredColor();
     rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();

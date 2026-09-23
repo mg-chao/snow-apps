@@ -52,7 +52,9 @@ class ScreenshotOverlayWindow final : public QWidget {
                                 int shadowWidth = 0,
                                 const QColor& shadowColor = QColor(0x33, 0x33, 0x33),
                                 bool selectionToolbarHovered = false);
-    void setRegionTypeControlVisible(bool visible, ScreenshotRegionType type);
+    void setRegionTypeControlVisible(bool visible, ScreenshotRegionType type,
+                                     const QRectF& selectionGlobal = {},
+                                     const QPointF& cursorGlobal = {});
     void setSelectionDraft(const QPainterPath& path, const QVector<QPointF>& vertices);
     void clearScreenshotSelection();
     void setScreenshotSelectionRegion(const ScreenshotRegionGeometry& region,

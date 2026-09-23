@@ -2338,6 +2338,10 @@
             <translation>截图 API</translation>
         </message>
         <message>
+            <source>Screenshot Area Type Hint</source>
+            <translation>截图区域类型提示</translation>
+        </message>
+        <message>
             <source>Screenshot count</source>
             <translation>截图数量</translation>
         </message>
@@ -2560,6 +2564,10 @@
         <message>
             <source>Show the application icon and menu in the system tray</source>
             <translation>在系统托盘中显示应用图标和菜单</translation>
+        </message>
+        <message>
+            <source>Show the area type hint at the top of the screenshot window</source>
+            <translation>在截图窗口顶部显示区域类型提示</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>

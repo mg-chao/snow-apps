@@ -81,6 +81,15 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsColorBinding::ThemePrimaryColor &&
                 !std::get<settings::SettingsColorDefinition>(primary->payload).alphaChannelEnabled,
             "general settings must expose an opaque theme primary color picker");
+    const auto* areaTypeHint =
+        catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
+                      QStringLiteral("interface.screenshot.area-type-hint")});
+    require(areaTypeHint != nullptr &&
+                areaTypeHint->configurationKey ==
+                    QStringLiteral("screenshot_ui/area_type_hint_enabled") &&
+                std::get<settings::SettingsSwitchDefinition>(areaTypeHint->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotAreaTypeHint,
+            "screenshot interface settings must expose the area type hint switch");
 #ifdef Q_OS_MACOS
     require(catalog.pages().size() == 13, "macOS includes App Permissions");
 #else
@@ -230,7 +239,7 @@ void builtInCatalogIsCompleteAndValid() {
                               "and Windows-only choices");
 #else
     require(sectionCount == 39, "catalog must contain thirty-nine sections");
-    require(itemCount == 172, "catalog must contain one hundred seventy-two items");
+    require(itemCount == 173, "catalog must contain one hundred seventy-three items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =

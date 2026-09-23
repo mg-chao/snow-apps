@@ -20,6 +20,7 @@ struct ScreenshotUiPreferences {
     QColor selectionBorderColor = QColor(0x40, 0x96, 0xff);
     QColor selectionMaskColor = QColor(0, 0, 0, 128);
     qreal shortcutHintOpacity = 1.0;
+    bool screenshotAreaTypeHintEnabled = true;
     QColor cursorGuideLineColor = QColor(0, 0, 0, 0);
     QColor monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     QColor colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);

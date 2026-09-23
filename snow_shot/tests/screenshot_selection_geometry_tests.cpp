@@ -302,7 +302,11 @@ void marqueeDragUsesTheSharedGeometryTransactionWithoutMinimumInflation() {
     require(screenshotSelectionDragModeForPoint(QRectF(10.0, 10.0, 20.0, 20.0), QPointF(50.0, 50.0),
                                                 false, 8.0, kMinimumSelectionSize) ==
                 ScreenshotSelectionDragMode::BottomRight,
-            "Move must classify a point outside the selection as a directional resize");
+            "Move must classify a distant outside point as a directional resize");
+    require(screenshotSelectionDragModeForPoint(QRectF(10.0, 10.0, 20.0, 20.0), QPointF(32.0, 32.0),
+                                                false, 8.0, kMinimumSelectionSize) ==
+                ScreenshotSelectionDragMode::BottomRight,
+            "a point near the border must keep its directional resize handle");
 }
 
 void marqueeDragSelectsSinglePixelStrips() {

@@ -40,6 +40,8 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
   Q_PROPERTY(SizeClass sizeClass READ sizeClass WRITE setSizeClass NOTIFY sizeClassChanged)
   Q_PROPERTY(bool interactionBackgroundVisible READ interactionBackgroundVisible WRITE
                  setInteractionBackgroundVisible NOTIFY interactionBackgroundVisibleChanged)
+  Q_PROPERTY(bool checkedUsesActiveStyle READ checkedUsesActiveStyle WRITE setCheckedUsesActiveStyle
+                 NOTIFY checkedUsesActiveStyleChanged)
   Q_PROPERTY(bool busy READ busy WRITE setBusy NOTIFY busyChanged)
   Q_PROPERTY(int busyDelayMs READ busyDelayMs WRITE setBusyDelayMs NOTIFY busyDelayMsChanged)
   Q_PROPERTY(BusyIndicatorPresentation busyIndicatorPresentation READ busyIndicatorPresentation
@@ -130,6 +132,9 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
   bool interactionBackgroundVisible() const;
   void setInteractionBackgroundVisible(bool value);
 
+  bool checkedUsesActiveStyle() const;
+  void setCheckedUsesActiveStyle(bool value);
+
   bool busy() const;
   void setBusy(bool value);
 
@@ -164,6 +169,7 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
   void shapeChanged(Shape value);
   void sizeClassChanged(SizeClass value);
   void interactionBackgroundVisibleChanged(bool value);
+  void checkedUsesActiveStyleChanged(bool value);
   void busyChanged(bool value);
   void busyDelayMsChanged(int value);
   void busyIndicatorPresentationChanged(BusyIndicatorPresentation value);

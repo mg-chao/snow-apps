@@ -2338,6 +2338,10 @@
             <translation>螢幕擷取 API</translation>
         </message>
         <message>
+            <source>Screenshot Area Type Hint</source>
+            <translation>截圖區域類型提示</translation>
+        </message>
+        <message>
             <source>Screenshot count</source>
             <translation>截圖數量</translation>
         </message>
@@ -2560,6 +2564,10 @@
         <message>
             <source>Show the application icon and menu in the system tray</source>
             <translation>在系統匣中顯示應用程式圖示與選單</translation>
+        </message>
+        <message>
+            <source>Show the area type hint at the top of the screenshot window</source>
+            <translation>在截圖視窗頂部顯示區域類型提示</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>

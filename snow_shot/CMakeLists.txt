@@ -2796,6 +2796,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-multi-region-tests
         tests/screenshot_multi_region_tests.cpp
+        src/presentation/core/screenshotsmartselectiontransition.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotinteractionstate.cpp
@@ -2937,6 +2938,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-history-tests
         tests/screenshot_history_tests.cpp
+        src/presentation/selector/screenshotselectorworkflow.cpp
         src/presentation/capture/directcapturehistory.cpp
         include/snow_shot/presentation/screenshothistoryservice.h
         include/snow_shot/presentation/screenshotdisplaysession.h
@@ -3132,6 +3134,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/overlay/screenshotoverlaypool.cpp
         src/presentation/overlay/screenshotoverlaywindow.cpp
         src/presentation/services/screenshotmessageservice.cpp
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
@@ -4061,6 +4066,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-move-region-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --move-options-only -platform offscreen)
     set_tests_properties(snow-shot-move-region-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-region-switcher-style-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --region-switcher-only -platform offscreen)
+    set_tests_properties(snow-shot-region-switcher-style-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests

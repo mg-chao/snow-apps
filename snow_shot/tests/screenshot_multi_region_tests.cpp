@@ -1,15 +1,18 @@
 #include "snow_shot/image/screenshotregionpoints.h"
 #include <QLineF>
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshotsmartselectiontransition.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
 
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include <QGuiApplication>
+#include <QEventLoop>
 #include <QJsonArray>
 #include <QPainterPathStroker>
 #include <QPainter>
+#include <QTimer>
 #include <cstdlib>
 #include <iostream>
 
@@ -74,6 +77,48 @@ void geometryAndTransactions() {
     apply(model, Operation::Subtract, QRect(30, 0, 10, 100));
     require(!model.rectangular() && !model.selectionRegion().contains(QPoint(35, 35)),
             "subtraction must split a region");
+}
+
+void animatedMarqueeUsesDisplayedGeometry() {
+    using Operation = ScreenshotSelectionModel::RegionOperation;
+    const auto check = [](Operation operation, const QRect& confirmed, const QRect& first,
+                          const QRect& target) {
+        ScreenshotSelectionModel model;
+        model.setSelectionRect(confirmed);
+        model.beginRegionOperation(operation);
+        require(model.selectionRegionForMarquee({}) == QRegion(confirmed),
+                "empty animated marquee must preserve the confirmed region");
+        model.setSelectionRect(first);
+        ScreenshotRegionGeometry displayed;
+        ScreenshotSmartSelectionTransition transition(
+            [&](const QRectF& frame) { displayed = model.selectionRegionForMarquee(frame); });
+
+        static_cast<void>(transition.update(QRectF(first), true));
+        const QRegion firstRegion = operation == Operation::Add
+                                        ? QRegion(confirmed).united(first)
+                                        : QRegion(confirmed).subtracted(first);
+        require(displayed == firstRegion, "first region preview must be immediate");
+
+        model.setSelectionRect(target);
+        static_cast<void>(transition.update(QRectF(target), true));
+        const QRegion targetRegion = operation == Operation::Add
+                                         ? QRegion(confirmed).united(target)
+                                         : QRegion(confirmed).subtracted(target);
+        require(transition.isRunning(), "changed region target must animate");
+        require(displayed == firstRegion, "region preview must start at the previous frame");
+        require(model.selectionRegion() == targetRegion,
+                "animated region preview must not change the capture target");
+
+        QEventLoop loop;
+        QTimer::singleShot(ScreenshotSmartSelectionTransition::kDurationMs + 100, &loop,
+                           &QEventLoop::quit);
+        loop.exec();
+        require(!transition.isRunning(), "region preview transition must finish");
+        require(displayed == targetRegion, "region preview must finish at the target shape");
+    };
+
+    check(Operation::Add, QRect(10, 10, 40, 40), QRect(60, 10, 20, 30), QRect(110, 10, 30, 30));
+    check(Operation::Subtract, QRect(0, 0, 100, 100), QRect(20, 0, 40, 100), QRect(60, 0, 40, 100));
 }
 void outlinesAndEffects() {
     const QRegion shape = QRegion(QRect(0, 0, 100, 80)).subtracted(QRect(30, 20, 40, 40));
@@ -318,6 +363,7 @@ int main(int argc, char** argv) {
     shapeCodecAndSamplingBoundaries();
     customGeometryTransactionsAndPersistence();
     geometryAndTransactions();
+    animatedMarqueeUsesDisplayedGeometry();
     outlinesAndEffects();
     persistenceAndHandlePolicy();
     std::cout << "Multi-region selection tests passed\n";

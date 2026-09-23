@@ -1613,9 +1613,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         if (m_selectionState.subtracting)
             pen.setStyle(Qt::DashLine);
         painter.setPen(pen);
-        QColor fill = color;
-        fill.setAlpha(24);
-        painter.setBrush(fill);
+        painter.setBrush(Qt::NoBrush);
         painter.drawPath(context.canvasToViewTransform.map(m_selectionState.draftPath));
         painter.setBrush(color);
         painter.setPen(QPen(Qt::white, 1));

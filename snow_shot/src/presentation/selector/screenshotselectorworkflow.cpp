@@ -142,7 +142,7 @@ void ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects, q
     if (!m_context.intelligentSelection.applyCanvasHitPath(
             canvasHitRects, m_context.geometry.canvasBounds(),
             snow_shot::presentation::kScreenshotSelectionMinimumSize)) {
-        m_context.selection.clearSelection();
+        m_context.selection.setSelectionRect({});
         return;
     }
 
@@ -160,9 +160,12 @@ bool ScreenshotSelectorWorkflow::returnToSelection(const QPoint& physicalPoint) 
     if (m_context.presentation.hideToolbar) {
         m_context.presentation.hideToolbar();
     }
-    clearSelection();
+    m_context.intelligentSelection.clearTransientState();
+    m_context.selection.setSelectionRect({});
 
-    const bool selectorReady = m_context.selectorService.ready();
+    const bool selectorReady =
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+        m_context.selectorService.ready();
     m_context.interaction.returnToSelectionMode(selectorReady);
     if (!selectorReady) {
         if (m_context.presentation.updateOverlayState) {

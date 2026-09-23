@@ -11767,9 +11767,29 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
             "Capture cursor must use the same state-driven action button as scrolling screenshot");
 
-    auto* regionTypes = palette.findChild<QWidget*>(QStringLiteral("screenshotRegionTypeControl"));
-    require(regionTypes && layout->indexOf(regionTypes) == layout->indexOf(subtractRegion) + 2,
+    auto* regionTypes =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotMoveRegionTypeButtonGroup"));
+    auto* regionGroup = regionTypes != nullptr
+                            ? regionTypes->findChild<adqt::widgets::AdRadioButtonGroup*>()
+                            : nullptr;
+    require(regionTypes && regionGroup &&
+                layout->indexOf(regionTypes) == layout->indexOf(subtractRegion) + 2,
             "shape group follows subtract region");
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto requireJoinedRegionButtons = [&] {
+        require(regionTypes->width() == regionTypes->sizeHint().width(),
+                "region group must not stretch and insert gaps between fixed-width buttons");
+        for (int index = 1; index < 4; ++index) {
+            const auto* previous = regionGroup->button(index - 1);
+            const auto* current = regionGroup->button(index);
+            require(current->x() == previous->x() + previous->width() - 2,
+                    "adjacent region buttons must retain the shared border overlap");
+        }
+    };
+    requireJoinedRegionButtons();
+    const QSize referenceRegionSize = regionGroup->button(0)->size();
+    const QSize referenceRegionIconSize = regionGroup->button(0)->iconSize();
     int selectedType = -1;
     QObject::connect(&palette, &ScreenshotToolPalette::screenshotRegionTypeRequested,
                      [&](int type) {
@@ -11778,19 +11798,35 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                      });
     for (const auto type : {ScreenshotRegionType::Rectangle, ScreenshotRegionType::Polyline,
                             ScreenshotRegionType::Curve, ScreenshotRegionType::Freehand}) {
-        auto* button = regionTypes->findChild<adqt::widgets::AdButton*>(
-            QStringLiteral("screenshotRegionType_") + screenshotRegionTypeId(type));
-        require(button && !button->accessibleName().isEmpty() &&
-                    button->size() == subtractRegion->size(),
-                "region controls share toolbar metrics and names");
+        auto* button = qobject_cast<adqt::widgets::AdRadio*>(regionGroup->button(int(type)));
+        require(button && !button->toolTip().isEmpty() && button->size() == referenceRegionSize &&
+                    button->iconSize() == referenceRegionIconSize &&
+                    button->height() == subtractRegion->height(),
+                "region controls share the action row height and proportional radio metrics");
         button->click();
         require(selectedType == int(type) && button->isChecked(),
                 "region button dispatches and reflects exclusive state");
         int checked = 0;
-        for (auto* option : regionTypes->findChildren<adqt::widgets::AdButton*>())
+        for (auto* option : regionGroup->buttons())
             checked += option->isChecked() ? 1 : 0;
         require(checked == 1, "exactly one region type is checked");
     }
+    require(palette.setPhysicalScale(1.5), "Move toolbar accepts a larger display scale");
+    QCoreApplication::processEvents();
+    require(regionGroup->button(0)->size() == QSize(qRound(referenceRegionSize.width() * 1.5),
+                                                    qRound(referenceRegionSize.height() * 1.5)) &&
+                regionGroup->button(0)->height() == subtractRegion->height() &&
+                regionGroup->button(0)->iconSize() ==
+                    QSize(qRound(referenceRegionIconSize.width() * 1.5),
+                          qRound(referenceRegionIconSize.height() * 1.5)),
+            "region button and icon scale with the Move toolbar");
+    requireJoinedRegionButtons();
+    require(palette.setPhysicalScale(1.0), "Move toolbar restores its original display scale");
+    QCoreApplication::processEvents();
+    requireJoinedRegionButtons();
+    require(regionGroup->button(0)->size() == referenceRegionSize &&
+                regionGroup->button(0)->iconSize() == referenceRegionIconSize,
+            "region button and icon return to their original sizes");
     setScreenshotRegionPreference(ScreenshotRegionType::Rectangle);
     int additions = 0, subtractions = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::addScreenshotRegionRequested,
@@ -11901,13 +11937,51 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     scrollingButton->click();
     require(cursorChanges == 101, "inbound capture state must not emit a user command");
     requireMatchingButtonState();
+    ScreenshotToolPalette shapePalette(options);
+    shapePalette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    shapePalette.show();
+    QCoreApplication::processEvents();
+    auto* shapeRectangle =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(shapePalette, "Rectangle"));
+    require(shapeRectangle != nullptr, "Shape toolbar exposes its reference button group");
+    const QSize shapeReferenceSize = shapeRectangle->size();
+    const QSize shapeReferenceIconSize = shapeRectangle->iconSize();
+    const qreal moveToShapeRatio =
+        qreal(referenceRegionSize.height()) / shapeReferenceSize.height();
+    require(referenceRegionSize.width() == qRound(shapeReferenceSize.width() * moveToShapeRatio) &&
+                referenceRegionIconSize.width() ==
+                    qRound(shapeReferenceIconSize.width() * moveToShapeRatio) &&
+                referenceRegionIconSize.height() ==
+                    qRound(shapeReferenceIconSize.height() * moveToShapeRatio),
+            "Move radio width and icon preserve the Shape button's proportions at action height");
+    const qreal shapeSideInset =
+        (shapeReferenceSize.width() - shapeReferenceIconSize.width()) / 2.0;
+    const qreal moveSideInset =
+        (referenceRegionSize.width() - referenceRegionIconSize.width()) / 2.0;
+    require(qAbs(moveSideInset - shapeSideInset * moveToShapeRatio) <= 0.5,
+            "Move radio keeps the Shape button's proportional padding on both sides of its icon");
     for (const qreal scale : {1.0, 0.75, 1.25, 1.5, 2.0, 1.0}) {
         requireMatchingButtonState();
         palette.setPhysicalScale(scale);
         scrollingPalette.setPhysicalScale(scale);
+        shapePalette.setPhysicalScale(scale);
         palette.prepareForDisplay();
         scrollingPalette.prepareForDisplay();
+        shapePalette.prepareForDisplay();
         QCoreApplication::processEvents();
+        requireJoinedRegionButtons();
+        require(regionGroup->button(0)->size() ==
+                        QSize(qRound(referenceRegionSize.width() * scale),
+                              qRound(referenceRegionSize.height() * scale)) &&
+                    shapeRectangle->size() == QSize(qRound(shapeReferenceSize.width() * scale),
+                                                    qRound(shapeReferenceSize.height() * scale)) &&
+                    regionGroup->button(0)->iconSize() ==
+                        QSize(qRound(referenceRegionIconSize.width() * scale),
+                              qRound(referenceRegionIconSize.height() * scale)) &&
+                    shapeRectangle->iconSize() ==
+                        QSize(qRound(shapeReferenceIconSize.width() * scale),
+                              qRound(shapeReferenceIconSize.height() * scale)),
+                "Move and Shape button groups retain their relative dimensions at every scale");
         require(cursor->size() == scrollingButton->size() &&
                     recapture->size() == scrollingButton->size() &&
                     cursor->iconSize() == scrollingButton->iconSize(),
@@ -11928,6 +12002,27 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                 "the hide-toolbar separator and group spacing must match scrolling screenshot "
                 "controls");
     }
+    ScreenshotToolPalette preScaledPalette(options);
+    require(preScaledPalette.setPhysicalScale(1.5),
+            "Move toolbar can receive its display scale before the options row is created");
+    preScaledPalette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+    preScaledPalette.show();
+    QCoreApplication::processEvents();
+    auto* preScaledRegionTypes =
+        preScaledPalette.findChild<QWidget*>(QStringLiteral("screenshotMoveRegionTypeButtonGroup"));
+    auto* preScaledRegionGroup =
+        preScaledRegionTypes != nullptr
+            ? preScaledRegionTypes->findChild<adqt::widgets::AdRadioButtonGroup*>()
+            : nullptr;
+    require(preScaledRegionGroup != nullptr &&
+                preScaledRegionGroup->button(0)->size() ==
+                    QSize(qRound(referenceRegionSize.width() * 1.5),
+                          qRound(referenceRegionSize.height() * 1.5)) &&
+                preScaledRegionGroup->button(0)->iconSize() ==
+                    QSize(qRound(referenceRegionIconSize.width() * 1.5),
+                          qRound(referenceRegionIconSize.height() * 1.5)) &&
+                preScaledRegionTypes->width() == preScaledRegionTypes->sizeHint().width(),
+            "Move group uses the same proportions when created after a display scale change");
     palette.setRecaptureBusy(true);
     for (const auto tool :
          {ScreenshotToolPalette::Tool::ScrollingScreenshot, ScreenshotToolPalette::Tool::Shape,
@@ -11986,6 +12081,7 @@ void regionSwitcherRetranslatesAndRenders() {
         appTheme.setThemeMode(dark ? snow_shot::presentation::styles::ThemeMode::Dark
                                    : snow_shot::presentation::styles::ThemeMode::Light);
         adqt::theme::ThemeManager::instance().applyTo(*qApp);
+        const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
         for (const auto& locale :
              {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
             require(language.setLanguage(locale), "region catalog loads");
@@ -11997,6 +12093,30 @@ void regionSwitcherRetranslatesAndRenders() {
                         curve->toolTip() == QCoreApplication::translate(
                                                 "ScreenshotRegionTypeControl", "Curve region"),
                     "floating control retranslates and synchronizes preference");
+            require(curve->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                        curve->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
+                        !curve->checkedUsesActiveStyle() && curve->iconRef().colors().isEmpty() &&
+                        adqt::icons::describeIcon(curve->iconRef()).colorModel ==
+                            adqt::icons::IconColorModel::Monochrome,
+                    "floating region button uses the drawing toolbar active style and inherits its "
+                    "icon color");
+            const QImage buttonImage = renderButton(*curve);
+            const auto containsColor = [&buttonImage](const QColor& color) {
+                for (int y = 0; y < buttonImage.height(); ++y) {
+                    for (int x = 0; x < buttonImage.width(); ++x) {
+                        if (buttonImage.pixelColor(x, y) == color)
+                            return true;
+                    }
+                }
+                return false;
+            };
+            require(buttonBackgroundSample(*curve) == scheme.map.colorPrimary &&
+                        containsColor(scheme.map.colorWhite),
+                    "floating checked button paints the drawing toolbar active background and "
+                    "toolbar icon color");
+            require(renderButton(floating).pixelColor(4, floating.height() / 2) ==
+                        scheme.map.colorBgContainer,
+                    "floating region surface uses the drawing toolbar container background");
             auto* hint = floating.findChild<QLabel*>();
             require(hint &&
                         hint->heightForWidth(hint->width()) <= hint->fontMetrics().lineSpacing(),
@@ -12105,6 +12225,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--move-options-only"))) {
         moveToolExposesCaptureCursorAndRecaptureOptions();
+        regionSwitcherRetranslatesAndRenders();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--region-switcher-only"))) {
         regionSwitcherRetranslatesAndRenders();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;

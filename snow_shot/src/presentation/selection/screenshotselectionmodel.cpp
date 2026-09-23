@@ -265,6 +265,17 @@ ScreenshotRegionGeometry ScreenshotSelectionModel::selectionRegion() const {
     return m_draftRegion.value_or(m_region.value_or(marquee));
 }
 
+ScreenshotRegionGeometry
+ScreenshotSelectionModel::selectionRegionForMarquee(const QRectF& marquee) const {
+    if (!regionOperationActive() || constructionActive())
+        return selectionRegion();
+    const ScreenshotRegionGeometry operand(screenshotPixelRectForSelection(marquee));
+    if (operand.isEmpty())
+        return m_confirmedRegion;
+    return m_regionOperation == RegionOperation::Add ? m_confirmedRegion.united(operand)
+                                                     : m_confirmedRegion.subtracted(operand);
+}
+
 bool ScreenshotSelectionModel::rectangular() const {
     return !constructionActive() && !regionOperationActive() && selectionRegion().rectCount() == 1;
 }

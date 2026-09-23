@@ -208,6 +208,7 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] ScreenshotSelectionDragMode
     dragModeForPosition(const ScreenshotOverlayWindow* overlay, const QPointF& localPosition,
                         bool borderOnly) const;
+    [[nodiscard]] bool outsideClickRecreatesSelection() const;
     [[nodiscard]] QRectF selectionRectForDrag(ScreenshotSelectionDragMode dragMode,
                                               const QPointF& position) const;
     void restoreToolAfterSelectionResize();

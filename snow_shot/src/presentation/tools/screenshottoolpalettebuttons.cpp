@@ -1466,6 +1466,11 @@ createScreenshotToolPaletteRadioEditor(QWidget* parent,
 
     editor.container = new QWidget(parent);
     editor.container->setObjectName(config.objectName);
+    if (config.useButtonMetrics) {
+        // Fixed-width radios need a content-sized container so QHBoxLayout cannot
+        // distribute surplus width between their shared borders.
+        editor.container->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    }
     auto* layout = new QHBoxLayout(editor.container);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -1674,17 +1679,24 @@ void configureScreenshotToolPaletteStyleRadioButtonGroup(
         applied = true;
 
         QSize baseSize = radio->property(STYLE_RADIO_BASE_SIZE_PROPERTY).toSize();
-        if (!baseSize.isValid()) {
-            baseSize = useButtonMetrics ? QSize(metrics.buttonSize, metrics.buttonSize)
-                                        : radio->sizeHint();
-            radio->setProperty(STYLE_RADIO_BASE_SIZE_PROPERTY, baseSize);
-        }
-
         QSize baseIconSize = radio->property(STYLE_RADIO_BASE_ICON_SIZE_PROPERTY).toSize();
-        if (!baseIconSize.isValid()) {
-            baseIconSize =
-                useButtonMetrics ? QSize(metrics.iconSize, metrics.iconSize) : radio->iconSize();
-            radio->setProperty(STYLE_RADIO_BASE_ICON_SIZE_PROPERTY, baseIconSize);
+        if (!baseSize.isValid() || !baseIconSize.isValid()) {
+            const QSize naturalSize = radio->sizeHint();
+            const QSize naturalIconSize = radio->iconSize();
+            // Match the action row height without changing the Shape radio's icon-to-button
+            // ratio or the horizontal padding around its icon.
+            const qreal sizeRatio =
+                useButtonMetrics ? qreal(metrics.buttonSize) / qMax(1, naturalSize.height()) : 1.0;
+            if (!baseSize.isValid()) {
+                baseSize = QSize(qMax(1, qRound(naturalSize.width() * sizeRatio)),
+                                 useButtonMetrics ? metrics.buttonSize : naturalSize.height());
+                radio->setProperty(STYLE_RADIO_BASE_SIZE_PROPERTY, baseSize);
+            }
+            if (!baseIconSize.isValid()) {
+                baseIconSize = QSize(qMax(1, qRound(naturalIconSize.width() * sizeRatio)),
+                                     qMax(1, qRound(naturalIconSize.height() * sizeRatio)));
+                radio->setProperty(STYLE_RADIO_BASE_ICON_SIZE_PROPERTY, baseIconSize);
+            }
         }
 
         radio->setReferenceIconSize(baseIconSize);

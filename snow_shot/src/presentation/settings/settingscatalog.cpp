@@ -336,6 +336,16 @@ SettingsItemDefinition shortcutHintOpacityItem() {
                                      settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}};
 }
 
+SettingsItemDefinition screenshotAreaTypeHintItem() {
+    return {QStringLiteral("interface.screenshot.area-type-hint"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot Area Type Hint")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog", "Show the area type hint at the top of the screenshot window")),
+            {},
+            QStringLiteral("screenshot_ui/area_type_hint_enabled"),
+            SettingsSwitchDefinition{SettingsSwitchBinding::ScreenshotAreaTypeHint}};
+}
+
 SettingsItemDefinition drawingToolbarEditorItem() {
     return {QStringLiteral("interface.toolbar.drawing-toolbar-editor"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing toolbar settings")),
@@ -2123,6 +2133,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                             QStringLiteral("screenshot_ui/selection_mask_color"),
                             SettingsColorBinding::SelectionMaskColor),
                         shortcutHintOpacityItem(),
+                        screenshotAreaTypeHintItem(),
                         screenshotColorItem(
                             QStringLiteral("interface.screenshot.cursor-guide-line-color"),
                             QT_TRANSLATE_NOOP("SettingsCatalog", "Cursor guide line color"),
@@ -3318,6 +3329,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::SelectionTransitionAnimation:
                         expectedKey =
                             QStringLiteral("screenshot_ui/selection_transition_animation");
+                        break;
+                    case SettingsSwitchBinding::ScreenshotAreaTypeHint:
+                        expectedKey = QStringLiteral("screenshot_ui/area_type_hint_enabled");
                         break;
                     case SettingsSwitchBinding::TrayEnabled:
                         expectedKey = QStringLiteral("tray/enabled");

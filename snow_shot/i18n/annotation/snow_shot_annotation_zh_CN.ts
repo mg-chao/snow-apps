@@ -208,6 +208,10 @@
             <translation>当前水印字体大小</translation>
         </message>
         <message>
+            <source>Curve region</source>
+            <translation>曲线区域</translation>
+        </message>
+        <message>
             <source>Curved arrow</source>
             <translation>曲线箭头</translation>
         </message>
@@ -394,6 +398,10 @@
         <message>
             <source>Formatting</source>
             <translation>格式</translation>
+        </message>
+        <message>
+            <source>Freehand region</source>
+            <translation>自由绘制区域</translation>
         </message>
         <message>
             <source>Full-width</source>
@@ -640,6 +648,10 @@
             <translation>请输入模板值</translation>
         </message>
         <message>
+            <source>Polyline region</source>
+            <translation>折线区域</translation>
+        </message>
+        <message>
             <source>Punctuation</source>
             <translation>标点符号</translation>
         </message>
@@ -686,6 +698,10 @@
         <message>
             <source>Rectangle highlight</source>
             <translation>矩形高亮</translation>
+        </message>
+        <message>
+            <source>Rectangle region</source>
+            <translation>矩形区域</translation>
         </message>
         <message>
             <source>Red</source>

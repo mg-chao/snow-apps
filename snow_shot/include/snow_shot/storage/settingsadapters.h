@@ -312,6 +312,8 @@ class ScreenshotUiSettings final {
     bool setSelectionMaskColor(const QColor& color) const;
     [[nodiscard]] int shortcutHintOpacity() const;
     bool setShortcutHintOpacity(int opacity) const;
+    [[nodiscard]] bool screenshotAreaTypeHintEnabled() const;
+    bool setScreenshotAreaTypeHintEnabled(bool enabled) const;
     [[nodiscard]] QColor cursorGuideLineColor() const;
     bool setCursorGuideLineColor(const QColor& color) const;
     [[nodiscard]] QColor monitorCenterGuideLineColor() const;

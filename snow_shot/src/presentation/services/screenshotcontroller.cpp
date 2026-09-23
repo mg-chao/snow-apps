@@ -701,6 +701,7 @@ void ScreenshotController::Impl::reloadUiPreferences() {
         preferences.selectionMaskColor = settings.selectionMaskColor();
         preferences.shortcutHintOpacity =
             static_cast<qreal>(settings.shortcutHintOpacity()) / 100.0;
+        preferences.screenshotAreaTypeHintEnabled = settings.screenshotAreaTypeHintEnabled();
         preferences.cursorGuideLineColor = settings.cursorGuideLineColor();
         preferences.monitorCenterGuideLineColor = settings.monitorCenterGuideLineColor();
         preferences.colorPickerCenterGuideLineColor = settings.colorPickerCenterGuideLineColor();

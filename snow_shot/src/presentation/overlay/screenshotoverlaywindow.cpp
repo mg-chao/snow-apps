@@ -834,7 +834,9 @@ bool ScreenshotOverlayWindow::dispatchHandledMouseEvent(QMouseEvent* event) {
     return false;
 }
 
-void ScreenshotOverlayWindow::setRegionTypeControlVisible(bool visible, ScreenshotRegionType type) {
+void ScreenshotOverlayWindow::setRegionTypeControlVisible(bool visible, ScreenshotRegionType type,
+                                                          const QRectF& selectionGlobal,
+                                                          const QPointF& cursorGlobal) {
     m_regionTypeControl->setType(type);
     if (visible) {
         m_regionTypeControl->setMaximumWidth(std::max(1, width() - 16));
@@ -844,7 +846,7 @@ void ScreenshotOverlayWindow::setRegionTypeControlVisible(bool visible, Screensh
             std::max(0, std::min(12, height() - m_regionTypeControl->height())));
         m_regionTypeControl->raise();
     }
-    m_regionTypeControl->setVisible(visible);
+    m_regionTypeControl->setPresentationVisible(visible, selectionGlobal, cursorGlobal);
 }
 
 void ScreenshotOverlayWindow::setSelectionDraft(const QPainterPath& path,

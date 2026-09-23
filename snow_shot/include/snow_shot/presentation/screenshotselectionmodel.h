@@ -38,6 +38,8 @@ class ScreenshotSelectionModel final {
     void clearDraftRegion();
     void commitDraftRegion(const QRect& canvasBounds = {});
     [[nodiscard]] ScreenshotRegionGeometry selectionRegion() const;
+    // Compose a displayed smart-selection frame without changing the capture operand.
+    [[nodiscard]] ScreenshotRegionGeometry selectionRegionForMarquee(const QRectF& marquee) const;
     [[nodiscard]] ScreenshotRegionGeometry confirmedRegion() const;
     [[nodiscard]] bool rectangular() const;
     [[nodiscard]] bool regionOperationActive() const;

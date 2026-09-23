@@ -1188,6 +1188,14 @@ bool ScreenshotUiSettings::setShortcutHintOpacity(int opacity) const {
     return cache().setValue(QStringLiteral("screenshot_ui/shortcut_hint_opacity"), opacity);
 }
 
+bool ScreenshotUiSettings::screenshotAreaTypeHintEnabled() const {
+    return cache().value(QStringLiteral("screenshot_ui/area_type_hint_enabled")).toBool();
+}
+
+bool ScreenshotUiSettings::setScreenshotAreaTypeHintEnabled(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/area_type_hint_enabled"), enabled);
+}
+
 QColor ScreenshotUiSettings::cursorGuideLineColor() const {
     return colorValue(QStringLiteral("screenshot_ui/cursor_guide_line_color"));
 }

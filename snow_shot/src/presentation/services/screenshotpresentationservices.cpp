@@ -161,25 +161,49 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
             m_context.interaction.dragging());
     }
 
+    ScreenshotOverlayWindow* selectionOwner = nullptr;
+    QRectF selectionGlobal;
+    if (selection.isValid() && !selection.isEmpty()) {
+        const CapturedDisplayModel* display =
+            m_context.geometry.displayForCanvasRect(m_context.displaySession, selection);
+        selectionOwner = m_context.displaySession.overlayForDisplay(display);
+        if (selectionOwner != nullptr && display != nullptr) {
+            const QRectF displayCanvasRect = ScreenshotGeometryMapper::displayCanvasRect(*display);
+            const QRectF selectionOnDisplay = selection.intersected(displayCanvasRect);
+            if (selectionOnDisplay.isValid() && !selectionOnDisplay.isEmpty()) {
+                selectionGlobal = QRectF(m_context.geometry.logicalPositionForCanvasPoint(
+                                             *display, selectionOnDisplay.topLeft()),
+                                         m_context.geometry.logicalPositionForCanvasPoint(
+                                             *display, selectionOnDisplay.bottomRight()))
+                                      .normalized();
+            }
+        }
+    }
     m_context.displaySession.forEachOverlay([&](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay)
             overlay->setSelectionDraft(m_context.selection.draftPath(),
                                        m_context.selection.draftVertices());
         if (overlay)
             overlay->setRegionTypeControlVisible(
-                overlay == cursorOwner &&
+                m_uiPreferences.screenshotAreaTypeHintEnabled && overlay == cursorOwner &&
                     (m_context.interaction.selecting() || m_context.selection.constructionActive()),
-                m_context.selection.regionType());
+                m_context.selection.regionType(), selectionGlobal, cursorPosition);
     });
     if (m_context.selection.regionOperationActive() ||
         m_context.selection.selectionRegion().rectCount() > 1) {
         const auto danger =
             snow_shot::presentation::styles::generateThemeColorScheme().map.colorError;
+        const bool animatedMarquee = m_context.interaction.intelligentSelecting() &&
+                                     m_context.selection.regionOperationActive() &&
+                                     !m_context.selection.constructionActive();
+        const ScreenshotRegionGeometry region =
+            animatedMarquee ? m_context.selection.selectionRegionForMarquee(selection)
+                            : m_context.selection.selectionRegion();
         m_context.displaySession.forEachOverlay([&](qsizetype, ScreenshotOverlayWindow* overlay) {
             if (overlay)
                 overlay->setScreenshotSelectionRegion(
-                    m_context.selection.selectionRegion(), m_context.selection.confirmedRegion(),
-                    m_context.selection.pendingMarquee(),
+                    region, m_context.selection.confirmedRegion(),
+                    animatedMarquee ? selection : m_context.selection.pendingMarquee(),
                     m_context.selection.regionOperation() ==
                         ScreenshotSelectionModel::RegionOperation::Subtract,
                     danger);
@@ -198,25 +222,8 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
     hintContext.smartSelectionEnabled = m_context.intelligentSelection.smartSelectionEnabled();
     const ScreenshotShortcutHintMode hintMode = screenshotShortcutHintModeForContext(hintContext);
     ScreenshotOverlayWindow* hintOwner = nullptr;
-    QRectF selectionGlobal;
     if (hintMode != ScreenshotShortcutHintMode::Hidden) {
-        if (selection.isValid() && !selection.isEmpty()) {
-            const CapturedDisplayModel* display =
-                m_context.geometry.displayForCanvasRect(m_context.displaySession, selection);
-            hintOwner = m_context.displaySession.overlayForDisplay(display);
-            if (hintOwner != nullptr && display != nullptr) {
-                const QRectF displayCanvasRect =
-                    ScreenshotGeometryMapper::displayCanvasRect(*display);
-                const QRectF selectionOnDisplay = selection.intersected(displayCanvasRect);
-                if (selectionOnDisplay.isValid() && !selectionOnDisplay.isEmpty()) {
-                    selectionGlobal = QRectF(m_context.geometry.logicalPositionForCanvasPoint(
-                                                 *display, selectionOnDisplay.topLeft()),
-                                             m_context.geometry.logicalPositionForCanvasPoint(
-                                                 *display, selectionOnDisplay.bottomRight()))
-                                          .normalized();
-                }
-            }
-        }
+        hintOwner = selectionOwner;
         if (hintOwner == nullptr)
             hintOwner = cursorOwner;
     }

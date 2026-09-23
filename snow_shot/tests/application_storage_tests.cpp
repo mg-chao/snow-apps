@@ -278,6 +278,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screenshot/image_format").toString() == QStringLiteral("png") &&
             defaultValue("screenshot/compression_level").toString() == QStringLiteral("medium") &&
             defaultValue("screenshot/image_quality").toInt() == 100 &&
+            defaultValue("screenshot_ui/area_type_hint_enabled").toBool() &&
             defaultValue("screenshot/manual_save_format_options").toObject().isEmpty() &&
             defaultValue("screenshot/manual_save_filename_format").toString() ==
                 QStringLiteral("SnowShot_{YYYY-MM-DD_HH-mm-ss}") &&
@@ -893,6 +894,10 @@ void screenshotUiAdaptersRoundTripTypedValues() {
     static_cast<void>(initialize(executable, temporary.path()));
 
     const storage::ScreenshotUiSettings screenshot;
+    require(screenshot.screenshotAreaTypeHintEnabled() &&
+                screenshot.setScreenshotAreaTypeHintEnabled(false) &&
+                !screenshot.screenshotAreaTypeHintEnabled(),
+            "screenshot area type hint defaults on and its adapter accepts the switch value");
     require(screenshot.setSelectionMaskColor(QColor(18, 52, 86, 120)) &&
                 screenshot.selectionMaskColor() == QColor(18, 52, 86, 120) &&
                 storage::colorToRgbaString(screenshot.selectionMaskColor()) ==

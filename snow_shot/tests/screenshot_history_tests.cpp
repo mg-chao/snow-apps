@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotselectorworkflow.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/presentation/directcapturehistory.h"
@@ -31,6 +32,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QPainterPath>
 #include <QShortcut>
 #include <QTemporaryDir>
 #include <QThread>
@@ -2939,6 +2941,136 @@ void startupInputWaitsForRevealAndIgnoresSyntheticEvents() {
     require(handler.acceptInput(), "external drags must continue receiving input before reveal");
 }
 
+void rectangularRegionOperationsUseSmartSelection() {
+    class Selector final : public ScreenshotSelectorServicePort {
+      public:
+        bool available = true;
+        int requests = 0;
+        bool ready() const override {
+            return available;
+        }
+        bool refreshInFlight() const override {
+            return false;
+        }
+        bool startRefresh(const QVector<std::uintptr_t>&) override {
+            return true;
+        }
+        bool requestHitTest(const QPoint&, ScreenshotSelectorHitTestMode) override {
+            ++requests;
+            return true;
+        }
+    } selector;
+    class Exclusions final : public ScreenshotOverlayExclusionPort {
+      public:
+        QVector<std::uintptr_t> excludedHwnds(const ScreenshotDisplaySession&) const override {
+            return {};
+        }
+    } exclusions;
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("smart-regions"), QStringLiteral("smart-regions"),
+                                   QRect(0, 0, 300, 300), solidImage(QSize(300, 300), Qt::white)));
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    intelligent.beginCaptureSession(true);
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectorWorkflow workflow({capture,
+                                         selector,
+                                         exclusions,
+                                         displays,
+                                         geometry,
+                                         interaction,
+                                         selection,
+                                         intelligent,
+                                         {}});
+    ScreenshotOverlayInputActions actions;
+    actions.returnToIntelligentSelection = [&](const QPoint& point) {
+        return workflow.returnToSelection(point);
+    };
+    actions.requestUiSelectorHitTest = [&](const QPoint& point) {
+        static_cast<void>(workflow.requestHitTest(point));
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    const QRect original(10, 10, 80, 60);
+    const QRect target(30, 30, 100, 100);
+    for (bool subtract : {false, true}) {
+        selection.setSelectionRegion(QRegion(original));
+        interaction.confirmSelection();
+        const int requests = selector.requests;
+        handler.beginRegionOperation(subtract);
+        require(selector.requests > requests && interaction.intelligentSelecting() &&
+                    selection.regionOperationActive() &&
+                    selection.confirmedRegion() == QRegion(original),
+                "rectangle operations must enter smart selection and preserve the base region");
+        workflow.applyHitPath({});
+        require(selection.regionOperationActive() &&
+                    selection.confirmedRegion() == QRegion(original),
+                "an empty hit path must preserve the pending operation");
+        workflow.applyHitPath({QRectF(target)});
+        const QRegion expected =
+            subtract ? QRegion(original).subtracted(target) : QRegion(original).united(target);
+        require(selection.selectionRegion() == expected,
+                "smart hover must preview the boolean region operation");
+        handler.handleMousePress(nullptr, QPointF(40, 40));
+        handler.handleMouseRelease(nullptr, QPointF(40, 40));
+        require(!selection.regionOperationActive() && selection.selectionRegion() == expected &&
+                    interaction.movingSelection(),
+                "smart click must commit the boolean region operation");
+    }
+    handler.handleMousePress(nullptr, QPointF(250, 250));
+    require(interaction.intelligentSelecting() && !selection.hasPixelSelection(),
+            "resetting a rectangle selection must resume smart selection");
+    for (const auto type : {ScreenshotRegionType::Polyline, ScreenshotRegionType::Curve,
+                            ScreenshotRegionType::Freehand}) {
+        handler.setRegionType(type);
+        const int requests = selector.requests;
+        require(interaction.manualSelecting(), "custom regions must remain in manual selection");
+        workflow.handleInitialResult(true, {QRectF(target)});
+        workflow.handleRefinement({QRectF(target)}, 0, true);
+        require(!workflow.requestHitTest(QPoint(40, 40)) && selector.requests == requests &&
+                    !selection.hasPixelSelection(),
+                "custom regions must neither query nor apply smart selection");
+    }
+    selection.setSelectionRegion(QRegion(original));
+    interaction.confirmSelection();
+    handler.beginRegionOperation(false);
+    handler.setRegionType(ScreenshotRegionType::Rectangle);
+    require(interaction.intelligentSelecting() && selection.regionOperationActive() &&
+                selection.confirmedRegion() == QRegion(original),
+            "switching a pending operation to rectangle must resume smart selection");
+    workflow.applyHitPath({QRectF(target)});
+    handler.handleMousePress(nullptr, QPointF(40, 40));
+    handler.handleMouseMove(nullptr, QPointF(180, 180));
+    require(interaction.dragging() && selection.confirmedRegion() == QRegion(original),
+            "smart operation must still allow a manual marquee drag");
+    require(handler.cancelRegionOperation() && selection.selectionRegion() == QRegion(original),
+            "cancelling smart operation must restore the base region");
+    selector.available = false;
+    handler.beginRegionOperation(true);
+    require(interaction.manualSelecting() && selection.regionOperationActive(),
+            "unavailable selector must preserve the operation in manual mode");
+    selector.available = true;
+    workflow.handleRefreshFinished(true);
+    require(interaction.intelligentSelecting() && selection.regionOperationActive(),
+            "selector refresh must resume smart selection for the pending operation");
+    workflow.applyHitPath({QRectF(0, 0, 300, 300)});
+    handler.handleMousePress(nullptr, QPointF(40, 40));
+    handler.handleMouseRelease(nullptr, QPointF(40, 40));
+    require(interaction.intelligentSelecting() && !selection.hasPixelSelection() &&
+                !selection.regionOperationActive(),
+            "subtracting the entire selection must resume smart selection");
+    selection.setSelectionRegion(QRegion(original));
+    interaction.confirmSelection();
+    require(handler.handleRightClick(nullptr, QPointF(40, 40)) ==
+                    ScreenshotOverlayRightClickResult::Handled &&
+                interaction.intelligentSelecting() && !selection.hasPixelSelection(),
+            "right-click reset must resume rectangle smart selection");
+    setScreenshotRegionPreference(ScreenshotRegionType::Rectangle);
+}
+
 void regionOperationsUseMarqueeAndRestoreOnCancel() {
     ScreenshotCaptureState capture;
     ScreenshotDisplaySession displays;
@@ -3009,6 +3141,238 @@ void regionOperationsUseMarqueeAndRestoreOnCancel() {
     handler.handleMouseRelease(nullptr, QPointF(150, 150));
     require(selection.rectangular() && interaction.movingSelection(),
             "manual recovery after total subtraction");
+}
+
+void complexRegionsMoveFromTheirBoundingRectangle() {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("region-move"), QStringLiteral("region-move"),
+                                   QRect(0, 0, 300, 300), solidImage(QSize(300, 300), Qt::white)));
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, {}});
+
+    const QRegion withHole = QRegion(QRect(20, 20, 160, 160)).subtracted(QRect(70, 70, 60, 60));
+    const QRegion disconnected = QRegion(QRect(20, 20, 40, 40)).united(QRect(140, 140, 40, 40));
+    QPainterPath triangle;
+    triangle.addPolygon(QPolygonF{{20, 20}, {180, 20}, {100, 180}});
+    triangle.closeSubpath();
+
+    const auto verifyMove = [&](const ScreenshotRegionGeometry& region, const QPointF& press) {
+        selection.setSelectionRegion(region);
+        interaction.confirmSelection();
+        const auto original = selection.selectionRegion();
+        require(!original.contains(press) && selection.pixelSelection().contains(press.toPoint()),
+                "move fixture must press inside the bounds but outside the painted region");
+        require(!handler.shouldHandleMouseEvent(nullptr, QPointF(190, 190), false),
+                "a point outside the bounding rectangle must not start a move");
+        require(handler.shouldHandleMouseEvent(nullptr, press, false),
+                "empty space inside a complex region's bounds must accept move input");
+        handler.handleMousePress(nullptr, press);
+        require(interaction.dragging() &&
+                    interaction.dragMode() == ScreenshotSelectionDragMode::All,
+                "pressing inside complex region bounds must start a move drag");
+        const QPointF release = press + QPointF(15, 25);
+        handler.handleMouseMove(nullptr, release);
+        handler.handleMouseRelease(nullptr, release);
+        require(selection.selectionRegion() == original.translated(15, 25) &&
+                    interaction.movingSelection() && !interaction.dragging(),
+                "moving from empty bounds must translate the complete region without reshaping it");
+    };
+
+    verifyMove(withHole, QPointF(100, 100));
+    verifyMove(disconnected, QPointF(100, 100));
+    for (const auto type : {ScreenshotRegionType::Polyline, ScreenshotRegionType::Curve,
+                            ScreenshotRegionType::Freehand}) {
+        verifyMove(ScreenshotRegionGeometry::fromPath(triangle, type), QPointF(30, 150));
+    }
+
+    selection.setRegionType(ScreenshotRegionType::Polyline);
+    selection.setSelectionRegion(
+        ScreenshotRegionGeometry::fromPath(triangle, ScreenshotRegionType::Polyline));
+    interaction.confirmSelection();
+    const QPointF outside(250, 250);
+    require(handler.shouldHandleMouseEvent(nullptr, outside, true),
+            "outside a custom region must accept a new selection press");
+    handler.handleMousePress(nullptr, outside);
+    require(interaction.manualSelecting() && !selection.constructionActive() &&
+                !selection.hasPixelSelection() && !selection.regionOperationActive(),
+            "an outside click must only clear the confirmed custom region");
+    handler.handleMouseRelease(nullptr, outside);
+    handler.handleMousePress(nullptr, QPointF(100, 100));
+    require(selection.constructionActive(),
+            "the next press inside the old bounds must start a new custom region");
+}
+
+void moveToolResizesSingleRectangleRegionFromOutsidePress() {
+    ScreenshotCaptureState captureState;
+    captureState.sessionState = ScreenshotSessionState::Editing;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    selection.setRegionType(ScreenshotRegionType::Rectangle);
+    selection.setSelectionRegion(QRegion(QRect(10, 10, 20, 40)));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.confirmSelection();
+
+    int overlayUpdates = 0;
+    int toolbarHides = 0;
+    ScreenshotSelectionDragMode cursor = ScreenshotSelectionDragMode::All;
+    ScreenshotOverlayInputActions actions;
+    actions.updateOverlayState = [&overlayUpdates]() { ++overlayUpdates; };
+    actions.hideMainToolbar = [&toolbarHides]() { ++toolbarHides; };
+    actions.setOverlayCursor = [&cursor](ScreenshotOverlayWindow*,
+                                         ScreenshotSelectionDragMode mode) { cursor = mode; };
+    ScreenshotOverlayInputHandler handler({captureState, interaction, selection, intelligent,
+                                           geometry, displays, std::move(actions)});
+
+    const QPointF outside(80, 80);
+    const QRectF original = selection.normalizedSelection();
+    require(selection.rectangular(), "a single rectangular region must expose resize handles");
+    handler.handleMouseMove(nullptr, outside);
+    require(cursor == ScreenshotSelectionDragMode::BottomRight,
+            "outside a single Rectangle region must show the diagonal resize cursor");
+    require(handler.shouldHandleMouseEvent(nullptr, outside, true),
+            "outside a single Rectangle region must route the press to Move");
+    handler.handleMousePress(nullptr, outside);
+    require(interaction.dragging() &&
+                interaction.dragMode() == ScreenshotSelectionDragMode::BottomRight &&
+                selection.normalizedSelection() == original,
+            "outside press must start resizing the existing rectangular region");
+    handler.handleMouseMove(nullptr, outside + QPointF(10, 10));
+    handler.handleMouseRelease(nullptr, outside + QPointF(10, 10));
+    require(selection.normalizedSelection() == QRectF(10, 10, 30, 50) &&
+                interaction.movingSelection() && !interaction.dragging() &&
+                captureState.sessionState == ScreenshotSessionState::Editing &&
+                overlayUpdates > 0 && toolbarHides == 1,
+            "outside drag must resize and confirm the single Rectangle region");
+
+    selection.setRegionType(ScreenshotRegionType::Polyline);
+    selection.setSelectionRegion(QRegion(QRect(10, 10, 20, 40)));
+    interaction.confirmSelection();
+    require(handler.shouldHandleMouseEvent(nullptr, outside, true),
+            "a different active screenshot type must receive an outside recreation press");
+    handler.handleMousePress(nullptr, outside);
+    require(!selection.hasPixelSelection() && interaction.manualSelecting() &&
+                !interaction.dragging(),
+            "an outside press with a custom screenshot type must clear the retained rectangle");
+}
+
+void moveToolClearsMultiRectangleForOutsideRecreation() {
+    ScreenshotCaptureState captureState;
+    captureState.sessionState = ScreenshotSessionState::Editing;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRegion(QRegion(QRect(10, 10, 20, 40)).united(QRect(50, 10, 20, 40)));
+    static_cast<void>(selection.setCornerRadius(6));
+    static_cast<void>(selection.setAspectRatioLockEnabled(true, 1.0));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.confirmSelection();
+
+    int overlayUpdates = 0;
+    int selectionConfirmedCount = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.updateOverlayState = [&overlayUpdates]() { ++overlayUpdates; };
+    actions.selectionConfirmed = [&selectionConfirmedCount]() { ++selectionConfirmedCount; };
+    ScreenshotOverlayInputHandler handler({captureState, interaction, selection, intelligent,
+                                           geometry, displays, std::move(actions)});
+
+    const QPointF outside(80, 80);
+    require(handler.shouldHandleMouseEvent(nullptr, outside, true),
+            "Move must receive an outside press to recreate the selection");
+    handler.handleMousePress(nullptr, outside);
+    require(interaction.manualSelecting() && !interaction.dragging() &&
+                !selection.hasPixelSelection() && selection.cornerRadius() == 6 &&
+                selection.aspectRatioLocked() && overlayUpdates == 1 &&
+                captureState.sessionState == ScreenshotSessionState::OverlayVisible,
+            "outside press must only clear the old selection and return to selection mode");
+    handler.handleMouseMove(nullptr, QPointF(100, 90));
+    handler.handleMouseRelease(nullptr, QPointF(100, 90));
+    require(!selection.hasPixelSelection() && !interaction.dragging() &&
+                selectionConfirmedCount == 0,
+            "moving and releasing after the clearing press must not confirm a selection");
+
+    const QPointF insideOldBounds(15, 20);
+    handler.handleMousePress(nullptr, insideOldBounds);
+    require(interaction.dragging() &&
+                interaction.dragMode() == ScreenshotSelectionDragMode::Marquee,
+            "the next press inside the old bounds must begin a new marquee");
+    handler.handleMouseMove(nullptr, QPointF(23, 28));
+    require(selection.normalizedSelection().size() == QSizeF(9, 9),
+            "the new marquee must use its own aspect ratio and origin");
+    handler.handleMouseRelease(nullptr, QPointF(23, 28));
+    require(interaction.movingSelection() && selectionConfirmedCount == 1,
+            "recreated selection must confirm on release");
+
+    handler.handleMousePress(nullptr, QPointF(140, 140));
+    require(interaction.dragging() &&
+                interaction.dragMode() == ScreenshotSelectionDragMode::BottomRight,
+            "a recreated single Rectangle region must regain outside resize handles");
+    handler.handleMouseRelease(nullptr, QPointF(140, 140));
+    require(selection.hasPixelSelection() && interaction.movingSelection() &&
+                !interaction.dragging() && selectionConfirmedCount == 2,
+            "outside resize must confirm the recreated single rectangle");
+}
+
+void customRegionsMoveDuringManualSelection() {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("manual-region-move"),
+                                   QStringLiteral("manual-region-move"), QRect(0, 0, 300, 300),
+                                   solidImage(QSize(300, 300), Qt::white)));
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionDragMode hoverMode = ScreenshotSelectionDragMode::None;
+    ScreenshotOverlayInputActions actions;
+    actions.setOverlayCursor = [&](ScreenshotOverlayWindow*, ScreenshotSelectionDragMode mode) {
+        hoverMode = mode;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+
+    QPainterPath triangle;
+    triangle.addPolygon(QPolygonF{{20, 20}, {180, 20}, {100, 180}});
+    triangle.closeSubpath();
+    for (const auto type : {ScreenshotRegionType::Polyline, ScreenshotRegionType::Curve,
+                            ScreenshotRegionType::Freehand}) {
+        selection.setRegionType(type);
+        selection.setSelectionRegion(ScreenshotRegionGeometry::fromPath(triangle, type));
+        interaction.returnToSelectionMode(false);
+        const auto original = selection.selectionRegion();
+        const QPointF press(100, 70);
+        require(original.contains(press), "manual region move fixture needs a selected point");
+
+        handler.handleMouseMove(nullptr, press);
+        require(hoverMode == ScreenshotSelectionDragMode::All,
+                "hovering a retained custom region must show the move cursor");
+        handler.handleMousePress(nullptr, press);
+        require(interaction.dragging() &&
+                    interaction.dragMode() == ScreenshotSelectionDragMode::All &&
+                    !selection.constructionActive() && selection.selectionRegion() == original,
+                "pressing a retained custom region must begin a move instead of construction");
+        handler.handleMouseMove(nullptr, press + QPointF(15, 25));
+        handler.handleMouseRelease(nullptr, press + QPointF(15, 25));
+        require(selection.selectionRegion() == original.translated(15, 25) &&
+                    interaction.movingSelection() && !interaction.dragging(),
+                "manual custom-region drag must move and confirm the complete region");
+
+        interaction.returnToSelectionMode(false);
+        handler.handleMousePress(nullptr, QPointF(250, 250));
+        require(selection.constructionActive() && !selection.hasPixelSelection() &&
+                    !interaction.dragging(),
+                "pressing outside a retained custom region must clear it and start a new outline");
+        selection.clearDraftRegion();
+    }
 }
 
 void customRegionInputTransactions() {
@@ -3135,6 +3499,8 @@ int main(int argc, char** argv) {
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--selection-input-only"))) {
         moveToolResizesSelectionFromOutsidePress();
+        moveToolResizesSingleRectangleRegionFromOutsidePress();
+        moveToolClearsMultiRectangleForOutsideRecreation();
         manualSelectionUsesSharedMarqueeTransaction();
         manualSelectionCanMoveExistingSelection();
         moveToolModificationLeavesConfirmedStageUntilRelease();
@@ -3153,8 +3519,11 @@ int main(int argc, char** argv) {
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
     if (QCoreApplication::arguments().contains(QStringLiteral("--region-shapes-only"))) {
+        rectangularRegionOperationsUseSmartSelection();
         customRegionInputTransactions();
         regionOperationsUseMarqueeAndRestoreOnCancel();
+        complexRegionsMoveFromTheirBoundingRectangle();
+        customRegionsMoveDuringManualSelection();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -3228,6 +3597,8 @@ int main(int argc, char** argv) {
         QDir(temporary.path()).filePath(QStringLiteral("multi-entry-navigation")));
     historyKeysOnlyWorkDuringSelectionStates();
     moveToolResizesSelectionFromOutsidePress();
+    moveToolResizesSingleRectangleRegionFromOutsidePress();
+    moveToolClearsMultiRectangleForOutsideRecreation();
     manualSelectionUsesSharedMarqueeTransaction();
     manualSelectionCanMoveExistingSelection();
     moveToolModificationLeavesConfirmedStageUntilRelease();

@@ -2338,6 +2338,10 @@
             <translation>Screenshot API</translation>
         </message>
         <message>
+            <source>Screenshot Area Type Hint</source>
+            <translation>Screenshot Area Type Hint</translation>
+        </message>
+        <message>
             <source>Screenshot count</source>
             <translation>Screenshot count</translation>
         </message>
@@ -2560,6 +2564,10 @@
         <message>
             <source>Show the application icon and menu in the system tray</source>
             <translation>Show the application icon and menu in the system tray</translation>
+        </message>
+        <message>
+            <source>Show the area type hint at the top of the screenshot window</source>
+            <translation>Show the area type hint at the top of the screenshot window</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>

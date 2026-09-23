@@ -816,6 +816,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String},
     {QStringLiteral("screenshot_ui/shortcut_hint_opacity"), 100, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{0, 100, 1}},
+    {QStringLiteral("screenshot_ui/area_type_hint_enabled"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#00000000"),
      ConfigurationValueKind::String},
     {QStringLiteral("screenshot_ui/monitor_center_guide_line_color"), QStringLiteral("#00000000"),

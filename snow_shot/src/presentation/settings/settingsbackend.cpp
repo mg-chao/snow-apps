@@ -483,6 +483,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
                    .toBool();
     case SettingsSwitchBinding::SelectionTransitionAnimation:
         return storage::ScreenshotUiSettings().selectionTransitionAnimationEnabled();
+    case SettingsSwitchBinding::ScreenshotAreaTypeHint:
+        return storage::ScreenshotUiSettings().screenshotAreaTypeHintEnabled();
     case SettingsSwitchBinding::TrayEnabled:
         return storage::TraySettings().enabled();
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
@@ -631,6 +633,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::SelectionTransitionAnimation) {
         return storage::ScreenshotUiSettings().setSelectionTransitionAnimationEnabled(value);
     }
+    if (binding == SettingsSwitchBinding::ScreenshotAreaTypeHint) {
+        return storage::ScreenshotUiSettings().setScreenshotAreaTypeHintEnabled(value);
+    }
     if (binding == SettingsSwitchBinding::TrayEnabled) {
         return storage::TraySettings().setEnabled(value);
     }
@@ -709,6 +714,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::DirectMlAcceleration:
         return false;
     case SettingsSwitchBinding::SelectionTransitionAnimation:
+    case SettingsSwitchBinding::ScreenshotAreaTypeHint:
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
