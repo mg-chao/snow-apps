@@ -5835,6 +5835,11 @@ if(SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-decoration-area-benchmark
+        tests/screenshot_decoration_area_benchmark.cpp)
+    target_link_libraries(snow-shot-decoration-area-benchmark PRIVATE
+        Qt6::Widgets snow_draw_engine_qt_canvas)
+
     # This executable deliberately is not registered with CTest. It creates a
     # native 4K widget and reports hardware-sensitive timing for explicit
     # Windows performance sessions.
@@ -5858,6 +5863,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
     target_link_libraries(snow-shot-selection-render-benchmark PRIVATE
         Qt6::Widgets
+        ant_design_qt
         snow_draw_engine_qt_canvas
         dwmapi
         user32

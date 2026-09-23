@@ -86,7 +86,6 @@ constexpr double kSelectionHandleRadius = 4.0;
 constexpr double kSelectionHandleStrokeWidth = 1.5;
 constexpr double kShowEndHandlesMinSize = 32.0;
 constexpr double kShowMidHandlesMinSize = 64.0;
-constexpr int kSelectionUpdatePadding = 10;
 constexpr int kSelectionBorderUpdatePadding = 3;
 constexpr int kSelectionHandleUpdatePadding = 6;
 constexpr int kGuideLineUpdatePadding = 1;
@@ -191,15 +190,15 @@ QRegion selectionStateDecorationRegion(const ScreenshotSelectionVisualState& sta
     }
     const qreal scale = viewScale(canvasToViewTransform);
     const qreal shadow = state.toolbarHovered ? std::max(0, state.shadowWidth) * scale : 0.0;
-    const qreal padding =
-        std::max<qreal>(kSelectionUpdatePadding, shadow + kSelectionBorderUpdatePadding);
+    const qreal padding = shadow + kSelectionBorderUpdatePadding;
     QRegion decoration(selectionBounds.adjusted(-padding, -padding, padding, padding)
                            .toAlignedRect()
                            .intersected(viewportRect));
-    const QRect stableInterior = selectionBounds
-                                     .adjusted(kSelectionUpdatePadding, kSelectionUpdatePadding,
-                                               -kSelectionUpdatePadding, -kSelectionUpdatePadding)
-                                     .toAlignedRect();
+    const QRect stableInterior =
+        selectionBounds
+            .adjusted(kSelectionBorderUpdatePadding, kSelectionBorderUpdatePadding,
+                      -kSelectionBorderUpdatePadding, -kSelectionBorderUpdatePadding)
+            .toAlignedRect();
     if (!stableInterior.isEmpty()) {
         decoration -= QRegion(stableInterior.intersected(viewportRect));
     }
