@@ -353,7 +353,7 @@
         </message>
         <message>
             <source>pixel</source>
-            <translation>Pixel</translation>
+            <translation>pixel</translation>
         </message>
     </context>
     <context>

@@ -16,6 +16,7 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
         return FeatureFamily::Screenshot;
     case Action::ScreenshotFixed:
     case Action::PinClipboardContent:
+    case Action::RestoreLastClosedWindows:
     case Action::PinSelectedFiles:
         return FeatureFamily::PinToScreen;
     case Action::ScreenRecord:

@@ -1343,6 +1343,8 @@ void ScreenshotPinnedWindow::removePersistence() {
 snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord() const {
     snow_shot::storage::PinnedWindowRecord record;
     record.id = m_persistenceId;
+    record.creationSource = m_creationSource;
+    record.createdUtc = m_createdUtc;
     record.groupId = m_groupId;
     record.sourceKind = !m_originalClipboardContent.localFilePath.isEmpty()
                             ? snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile
@@ -1667,6 +1669,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     invalidatePendingCopy();
     m_persistenceEnabled = true;
     m_persistenceRemovalRequested = false;
+    m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     m_deferredInactiveGroupClose = false;
     m_inactiveGroupClosing = false;
     applyRuntimeBorderColor();
@@ -1760,6 +1763,9 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_persistenceWriter = config.persistenceWriter;
     m_replacementPersistenceWriter = config.replacementPersistenceWriter;
     m_persistenceRemover = config.persistenceRemover;
+    m_persistenceCloser = config.persistenceCloser;
+    m_creationSource = config.creationSource;
+    m_createdUtc = QDateTime::currentDateTimeUtc();
     m_groupManager = config.groupManager;
     m_groupId = config.groupId.trimmed();
     if (m_groupId.isEmpty()) {
@@ -2167,13 +2173,20 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    if (event->spontaneous() && !m_inactiveGroupClosing &&
+        m_closeIntent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
+        m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Close;
+        if (m_groupManager)
+            m_groupManager->markWindowClosing(this);
+        if (m_persistenceCloser)
+            m_persistenceCloser(persistenceRecord());
+    }
     setFileDragActive(false);
-    emit closingForPersistence(persistenceRecord(), m_persistenceRemovalRequested);
+    emit closingForPersistence(persistenceRecord(), m_closeIntent);
     if (m_persistenceRemovalRequested) {
         removePersistence();
     }
-    if (!m_persistenceRemovalRequested && !m_inactiveGroupClosing && m_presented &&
-        m_persistenceTimer != nullptr) {
+    if (!m_persistenceRemovalRequested && m_presented && m_persistenceTimer != nullptr) {
         m_persistenceTimer->stop();
         persistNow();
     }
@@ -2680,6 +2693,13 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(m_showMainInterfaceAction, &QAction::triggered, this,
             &ScreenshotPinnedWindow::showMainWindowRequested);
 
+    QAction* destroyAction =
+        m_contextMenu->addItem(tr("Destroy"), custom_outlined_icons::DestroyPinnedWindow());
+    setActionTranslationSource(destroyAction, "Destroy");
+    destroyAction->setObjectName(QStringLiteral("screenshotPinnedDestroyAction"));
+    m_contextMenu->setActionDanger(destroyAction);
+    connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::requestDestroy);
+
     m_closeAction = m_contextMenu->addItem(tr("Close"), outlined_icons::Close());
     setActionTranslationSource(m_closeAction, "Close");
     m_closeAction->setObjectName(QStringLiteral("screenshotPinnedCloseAction"));
@@ -2710,7 +2730,9 @@ void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
     const bool containsAction = m_contextMenu->actions().contains(m_showMainInterfaceAction);
     const bool shouldShowFallback = !configuredTrayEnabled() || !trayMenuShowsMainInterface();
     if (shouldShowFallback && !containsAction) {
-        m_contextMenu->insertAction(m_closeAction, m_showMainInterfaceAction);
+        auto* destroyAction = findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
+        m_contextMenu->insertAction(destroyAction ? destroyAction : m_closeAction,
+                                    m_showMainInterfaceAction);
     } else if (!shouldShowFallback && containsAction) {
         m_contextMenu->removeAction(m_showMainInterfaceAction);
     }
@@ -2797,7 +2819,7 @@ void ScreenshotPinnedWindow::refreshContextMenuForGroup(const QString& groupId) 
 
 void ScreenshotPinnedWindow::deleteIfInGroup(const QString& groupId) {
     if (m_groupId == groupId) {
-        requestUserClose();
+        requestDestroy();
     }
 }
 
@@ -6106,7 +6128,39 @@ void ScreenshotPinnedWindow::requestUserClose() {
         return;
     }
     m_inactiveGroupClosing = false;
+    if (m_groupManager)
+        m_groupManager->markWindowClosing(this);
+    m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Close;
+    if (m_persistenceTimer)
+        m_persistenceTimer->stop();
+    if (m_persistenceCloser)
+        m_persistenceCloser(persistenceRecord());
+    m_closing = true;
+    stopRecognition();
+    QTimer::singleShot(0, this, [this]() { close(); });
+}
+
+void ScreenshotPinnedWindow::showFromManagement() {
+    if (m_closing)
+        return;
+    if (hideToTopActive())
+        m_hideToTop->setSuppressed(false);
+    else {
+        show();
+        raise();
+        activateWindow();
+    }
+}
+
+void ScreenshotPinnedWindow::requestDestroy() {
+    if (m_groupManager)
+        m_groupManager->markWindowClosing(this);
+    m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Destroy;
     m_persistenceRemovalRequested = true;
+    if (m_persistenceTimer)
+        m_persistenceTimer->stop();
+    removePersistence();
+    m_inactiveGroupClosing = false;
     m_closing = true;
     stopRecognition();
     QTimer::singleShot(0, this, [this]() { close(); });

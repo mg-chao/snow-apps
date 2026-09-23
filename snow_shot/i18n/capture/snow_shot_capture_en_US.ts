@@ -106,6 +106,10 @@
             <translation>The clipboard pin queue is full</translation>
         </message>
         <message>
+            <source>The pinned window could not be restored</source>
+            <translation>The pinned window could not be restored</translation>
+        </message>
+        <message>
             <source>The screenshot clipboard operation could not be started</source>
             <translation>The screenshot clipboard operation could not be started</translation>
         </message>

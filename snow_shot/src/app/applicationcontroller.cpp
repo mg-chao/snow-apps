@@ -121,6 +121,19 @@ class ApplicationController::Impl {
         QObject::connect(
             &systemTray, &presentation::SystemTrayController::quickActionRequested, &q,
             [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
+        auto& pinnedStorage = storage::ApplicationStorage::instance();
+        QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowShowRequested,
+                         &q, [this](const QString& id) {
+                             if (auto* controller = ensureScreenshotController())
+                                 controller->showPinnedRecord(id);
+                         });
+        QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowDeleteRequested,
+                         &q, [this](const QVector<QString>& ids) {
+                             if (auto* controller = ensureScreenshotController())
+                                 controller->destroyPinnedRecords(ids);
+                         });
+        QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowsChanged,
+                         &groupManager, &presentation::PinnedWindowGroupManager::groupsChanged);
         QObject::connect(
             &groupManager,
             &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,
@@ -681,6 +694,10 @@ class ApplicationController::Impl {
             }
             break;
         }
+        case presentation::GlobalShortcutAction::RestoreLastClosedWindows:
+            if (ScreenshotController* controller = ensureScreenshotController())
+                controller->restoreLastClosedPinnedWindow();
+            break;
         case presentation::GlobalShortcutAction::PinClipboardContent:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinClipboardContentToScreen();

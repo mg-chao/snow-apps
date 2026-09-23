@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 18;
+constexpr std::size_t ACTION_COUNT = 19;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -41,6 +41,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
     GlobalShortcutAction::PinSelectedFiles,
+    GlobalShortcutAction::RestoreLastClosedWindows,
     GlobalShortcutAction::ToggleGlobalHotkeys,
     GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
 };
@@ -152,6 +153,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.pinClipboardContent();
     case GlobalShortcutAction::PinSelectedFiles:
         return settings.pinSelectedFiles();
+    case GlobalShortcutAction::RestoreLastClosedWindows:
+        return settings.restoreLastClosedWindows();
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.translateSelectedText();
     case GlobalShortcutAction::ToggleGlobalHotkeys:
@@ -195,6 +198,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setPinClipboardContent(bindings);
     case GlobalShortcutAction::PinSelectedFiles:
         return settings.setPinSelectedFiles(bindings);
+    case GlobalShortcutAction::RestoreLastClosedWindows:
+        return settings.setRestoreLastClosedWindows(bindings);
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.setTranslateSelectedText(bindings);
     case GlobalShortcutAction::ToggleGlobalHotkeys:

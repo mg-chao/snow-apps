@@ -110,7 +110,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         if (binding == settings::SettingsSwitchBinding::TranslationPageEnabled) {
             return m_translationPageEnabled;
         }
-        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
+        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently ||
+            binding == settings::SettingsSwitchBinding::PinnedHistoryKeepPermanently) {
             return m_keepPermanently;
         }
         if (binding == settings::SettingsSwitchBinding::TrayEnabled) {
@@ -129,7 +130,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
                 QStringLiteral("extended-features.translation-page"), value,
                 [this](const QVariant& next) { m_translationPageEnabled = next.toBool(); });
         }
-        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
+        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently ||
+            binding == settings::SettingsSwitchBinding::PinnedHistoryKeepPermanently) {
             m_keepPermanently = value;
             emit synchronized();
             return true;
@@ -1321,6 +1323,34 @@ void permanentHistoryDisablesOnlyLimitControls() {
                 "disabling permanent history must restore limit controls");
 }
 
+void permanentPinnedHistoryDisablesOnlyLimitControls() {
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    const QString toggle = QStringLiteral("pinned-history.keep-permanently");
+    const QStringList limits{QStringLiteral("pinned-history.retention-days"),
+                             QStringLiteral("pinned-history.max-entries"),
+                             QStringLiteral("pinned-history.max-disk-mib")};
+    require(!session.state(toggle).acceptedValue.toBool() && session.state(toggle).enabled,
+            "permanent history toggle must default to off and be available");
+    for (const auto& id : limits)
+        require(session.state(id).enabled, "history limits must initially be enabled");
+    require(session.submitDraft(toggle, true), "permanent history toggle write failed");
+    flushEvents();
+    for (const auto& id : limits) {
+        require(!session.state(id).enabled, "permanent history must disable limit controls");
+    }
+    require(session.state(QStringLiteral("pinned-history.enabled")).enabled &&
+                session.state(QStringLiteral("pinned-history.clear")).enabled &&
+                session.state(QStringLiteral("pinned-history.compression-level")).enabled &&
+                session.state(toggle).enabled,
+            "permanent history must leave saving, compression, clearing, and its toggle available");
+    require(session.submitDraft(toggle, false), "disabling permanent history failed");
+    flushEvents();
+    for (const auto& id : limits)
+        require(session.state(id).enabled,
+                "disabling permanent history must restore limit controls");
+}
+
 void customModelsPreserveAcceptedStateOnRejectedWrites() {
     FakeSettingsBackend backend;
     const auto registry = settings::buildBuiltInSettingsRegistry();
@@ -1408,6 +1438,7 @@ int main(int argc, char** argv) {
     categoryResetFailuresRetainAcceptedValues();
     initialStateAndNoOp();
     permanentHistoryDisablesOnlyLimitControls();
+    permanentPinnedHistoryDisablesOnlyLimitControls();
     storageUsagePropagation();
     synchronousWriteAndFieldSignals();
     rejectedWriteRetainsDraftAndCanRetry();

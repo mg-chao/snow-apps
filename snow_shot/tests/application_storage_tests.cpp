@@ -323,6 +323,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                     QStringLiteral("quick.screenshot-fixed"),
                     QStringLiteral("quick.screenshot-ocr"), QStringLiteral("quick.screenshot-copy"),
                     QStringLiteral("quick.pin-clipboard-content"),
+                    QStringLiteral("quick.restore-last-closed-windows"),
                     QStringLiteral("quick.screen-record"),
                     QStringLiteral("quick.toggle-global-hotkeys"),
                     QStringLiteral("tray.window-grouping"), QStringLiteral("tray.show-main-window"),
@@ -1432,7 +1433,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             !tray.setLeftClickAction(QStringLiteral("unsupported")) &&
             !globalShortcuts.disableOnFocusedFullscreenWindow() &&
             globalShortcuts.setDisableOnFocusedFullscreenWindow(true) &&
-            globalShortcuts.disableOnFocusedFullscreenWindow() && tray.menuOptions().size() == 11 &&
+            globalShortcuts.disableOnFocusedFullscreenWindow() && tray.menuOptions().size() == 12 &&
             tray.menuOptions().contains(QStringLiteral("tray.show-main-window")) &&
             tray.menuOptions().contains(QStringLiteral("tray.window-grouping")) &&
             tray.setMenuOptions({QStringLiteral("tray.exit"), QStringLiteral("quick.screenshot"),
@@ -2108,6 +2109,53 @@ void watermarkTemplateSettingsRepairAndSurviveRestart() {
     applicationStorage.shutdown();
 }
 
+void pinnedManagementConfigurationAndTrayMigration() {
+    QTemporaryDir directory;
+    const auto defaults =
+        storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/menu_options")).toArray();
+    require(defaults.contains(QStringLiteral("quick.restore-last-closed-windows")),
+            "restore is visible in the default tray");
+    auto previous = defaults;
+    for (qsizetype i = previous.size(); i > 0; --i)
+        if (previous.at(i - 1).toString() == QStringLiteral("quick.restore-last-closed-windows"))
+            previous.removeAt(i - 1);
+    const auto write = [&](const QString& name, const QJsonArray& menu) {
+        QFile file(directory.filePath(name));
+        require(file.open(QIODevice::WriteOnly), "create tray migration fixture");
+        file.write(QJsonDocument(QJsonObject{{QStringLiteral("storage"),
+                                              QJsonObject{{QStringLiteral("schema_version"), 2}}},
+                                             {QStringLiteral("tray"),
+                                              QJsonObject{{QStringLiteral("menu_options"), menu}}}})
+                       .toJson());
+    };
+    write(QStringLiteral("default.json"), previous);
+    storage::ConfigurationStore migrated(directory.filePath(QStringLiteral("default.json")), true,
+                                         true, 30000);
+    require(migrated.value(QStringLiteral("tray/menu_options")).toArray() == defaults,
+            "previous default tray receives restore action");
+    auto customized = previous;
+    customized.removeAt(0);
+    write(QStringLiteral("custom.json"), customized);
+    storage::ConfigurationStore retained(directory.filePath(QStringLiteral("custom.json")), true,
+                                         true, 30000);
+    require(retained.value(QStringLiteral("tray/menu_options")).toArray() == customized,
+            "customized tray menu remains unchanged");
+    require(migrated.value(QStringLiteral("pinned_history/enabled")).toBool() &&
+                migrated.value(QStringLiteral("pinned_history/retention_days")).toInt() == 7 &&
+                migrated.value(QStringLiteral("pinned_history/max_entries")).toInt() == 100 &&
+                migrated.value(QStringLiteral("pinned_history/max_disk_mib")).toInt() == 1024,
+            "pin history defaults match screenshot history limits");
+    const auto shortcut =
+        migrated.value(QStringLiteral("global_shortcuts/restore_last_closed_windows")).toArray();
+#ifdef Q_OS_MACOS
+    require(shortcut == QJsonArray{shortcutObject(QStringLiteral("Meta+Shift+3"), 20)},
+            "macOS restores with physical Control Shift 3");
+#else
+    require(shortcut == QJsonArray{shortcutObject(QStringLiteral("Ctrl+F3"))},
+            "Windows restore defaults to Ctrl F3");
+#endif
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--global-mouse-only"))) {
@@ -2140,6 +2188,7 @@ int main(int argc, char** argv) {
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    pinnedManagementConfigurationAndTrayMigration();
     markerResolutionAndStatus();
     defaultsAndTypedRoundTrip();
     settingsSchemaDefaultsAndValidationAreComplete();

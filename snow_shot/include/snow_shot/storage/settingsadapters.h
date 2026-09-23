@@ -120,6 +120,8 @@ class ShortcutSettings final {
     bool setPinClipboardContent(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList pinSelectedFiles() const;
     bool setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList restoreLastClosedWindows() const;
+    bool setRestoreLastClosedWindows(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList translateSelectedText() const;
     bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;

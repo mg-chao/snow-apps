@@ -3,6 +3,7 @@
 #include "snowimageqtcodec.h"
 
 #include "snow_shot/presentation/components/actionpopupmenu.h"
+#include "snow_shot/presentation/components/historyselectionbar.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
@@ -705,31 +706,6 @@ void shutdownScreenshotHistoryTasks() {
 }
 
 namespace {
-
-class HistorySelectionBar final : public QWidget {
-  public:
-    using QWidget::QWidget;
-
-    void applyTheme(const styles::ThemeColorScheme& scheme) {
-        m_background = scheme.map.colorFillQuaternary;
-        m_radius = scheme.metricAlias.borderRadiusLG;
-        update();
-    }
-
-  protected:
-    void paintEvent(QPaintEvent* event) override {
-        Q_UNUSED(event)
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(m_background);
-        painter.drawRoundedRect(QRectF(rect()), m_radius, m_radius);
-    }
-
-  private:
-    QColor m_background;
-    qreal m_radius = 0.0;
-};
 
 class HistoryEntryWidget final : public QFrame {
     Q_DECLARE_TR_FUNCTIONS(HistoryEntryWidget)

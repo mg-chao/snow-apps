@@ -26,6 +26,7 @@ enum class GlobalShortcutAction {
     PinClipboardContent,
     TranslateSelectedText,
     PinSelectedFiles,
+    RestoreLastClosedWindows,
     ToggleGlobalHotkeys,
     ToggleDisableOnFocusedFullscreenWindow,
 };

@@ -96,7 +96,7 @@ void scanCategorizesAppOwnedLocations() {
     writeBytes(
         QDir(dirs.appData).filePath(QStringLiteral("capture_history/records/rec1/display.png")),
         60);
-    writeBytes(QDir(dirs.appData).filePath(QStringLiteral("pinned_windows/index.json")), 25);
+    writeBytes(QDir(dirs.appData).filePath(QStringLiteral("pinned_windows_v2/index.json")), 25);
     writeBytes(QDir(dirs.appData).filePath(QStringLiteral("assets/ocr/model.onnx")), 200);
     writeBytes(QDir(dirs.appData).filePath(QStringLiteral("config.json")), 10);
     writeBytes(QDir(dirs.appData).filePath(QStringLiteral("stray.log")), 5);

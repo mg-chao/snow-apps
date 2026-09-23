@@ -42,6 +42,9 @@ class PinnedWindowGroupManager final : public QObject {
     bool deleteSpecifiedGroup(const QString& groupId);
     bool moveWindow(::ScreenshotPinnedWindow* window, const QString& groupId);
     void restoreActiveGroupWindows();
+    bool showWindow(const QString& id);
+    void destroyWindow(const QString& id);
+    void markWindowClosing(::ScreenshotPinnedWindow* window);
 
     void registerWindow(::ScreenshotPinnedWindow* window, const QString& groupId);
     void unregisterWindow(::ScreenshotPinnedWindow* window);

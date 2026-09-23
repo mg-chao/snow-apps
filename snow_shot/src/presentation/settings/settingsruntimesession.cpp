@@ -59,6 +59,9 @@ bool sameStorageStatus(const storage::StorageStatus& first, const storage::Stora
            first.readAvailable == second.readAvailable &&
            first.writeAvailable == second.writeAvailable &&
            first.historyUsage == second.historyUsage && first.appUsage == second.appUsage &&
+           first.pinnedPolicyUpdating == second.pinnedPolicyUpdating &&
+           first.pinnedClearing == second.pinnedClearing &&
+           first.lastPinnedError == second.lastPinnedError &&
            first.historyPolicyUpdating == second.historyPolicyUpdating &&
            first.historyClearing == second.historyClearing &&
            first.cacheClearing == second.cacheClearing &&
@@ -416,6 +419,10 @@ QString SettingsRuntimeSession::backendError(const SettingsFieldDescriptor& desc
         return fieldFailure;
     }
     const storage::StorageStatus status = storageStatus();
+    if ((descriptor.reset == SettingsSectionReset::PinnedHistoryPolicy ||
+         descriptor.configurationKey.startsWith(QStringLiteral("pinned_history/"))) &&
+        !status.lastPinnedError.isEmpty())
+        return status.lastPinnedError;
     const bool historyField =
         descriptor.reset == SettingsSectionReset::HistoryPolicy ||
         descriptor.configurationKey.startsWith(QStringLiteral("capture_history/"));
@@ -725,6 +732,17 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
             next.enabled = next.enabled &&
                            m_backend.switchValue(SettingsSwitchBinding::OriginalImageTranslation);
         }
+        const bool pinnedField =
+            descriptor->reset == SettingsSectionReset::PinnedHistoryPolicy ||
+            descriptor->configurationKey.startsWith(QStringLiteral("pinned_history/"));
+        if (pinnedField) {
+            next.enabled = next.enabled && !currentStatus.pinnedPolicyUpdating &&
+                           !currentStatus.pinnedClearing;
+            if (std::holds_alternative<SettingsIntegerDefinition>(descriptor->definition->payload))
+                next.enabled =
+                    next.enabled &&
+                    !m_backend.switchValue(SettingsSwitchBinding::PinnedHistoryKeepPermanently);
+        }
         const bool historyField =
             descriptor->reset == SettingsSectionReset::HistoryPolicy ||
             descriptor->configurationKey.startsWith(QStringLiteral("capture_history/"));
@@ -1023,6 +1041,9 @@ bool SettingsRuntimeSession::isPending(const SettingsFieldDescriptor& descriptor
         return true;
     }
     const storage::StorageStatus status = storageStatus();
+    if (descriptor.reset == SettingsSectionReset::PinnedHistoryPolicy ||
+        descriptor.configurationKey.startsWith(QStringLiteral("pinned_history/")))
+        return status.pinnedPolicyUpdating || status.pinnedClearing;
     if (std::holds_alternative<SettingsIntegerDefinition>(descriptor.definition->payload)) {
         const auto& payload = std::get<SettingsIntegerDefinition>(descriptor.definition->payload);
         return status.historyPolicyUpdating &&

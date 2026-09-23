@@ -472,6 +472,15 @@ shortcuts::ShortcutBindingList ShortcutSettings::pinSelectedFiles() const {
 bool ShortcutSettings::setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/pin_selected_files"), bindings);
 }
+shortcuts::ShortcutBindingList ShortcutSettings::restoreLastClosedWindows() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/restore_last_closed_windows"));
+}
+
+bool ShortcutSettings::setRestoreLastClosedWindows(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/restore_last_closed_windows"),
+                            bindings);
+}
 
 bool ShortcutSettings::setPinClipboardContent(
     const shortcuts::ShortcutBindingList& bindings) const {

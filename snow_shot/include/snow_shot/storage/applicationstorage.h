@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_APPLICATIONSTORAGE_H
 
 #include "snow_shot/storage/appstorageusage.h"
+#include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/storageresult.h"
@@ -52,6 +53,9 @@ struct StorageStatus {
     CaptureHistoryUsage historyUsage;
     AppStorageUsage appUsage;
     bool historyPolicyUpdating = false;
+    bool pinnedPolicyUpdating = false;
+    bool pinnedClearing = false;
+    QString lastPinnedError;
     bool historyClearing = false;
     bool cacheClearing = false;
     QString lastConfigurationError;
@@ -86,6 +90,15 @@ class ApplicationStorage final : public QObject {
     requestCaptureHistoryPolicyAsync(const CaptureHistoryPolicy& policy);
     bool requestSmartSelection(bool enabled);
     [[nodiscard]] std::shared_future<StorageResult> requestSmartSelectionAsync(bool enabled);
+    [[nodiscard]] PinnedWindowPolicy pinnedWindowPolicy() const;
+    bool requestPinnedWindowPolicy(const PinnedWindowPolicy& policy);
+    bool requestPinnedWindowClear();
+    void requestPinnedWindowShow(const QString& id) {
+        emit pinnedWindowShowRequested(id);
+    }
+    void requestPinnedWindowDelete(const QVector<QString>& ids) {
+        emit pinnedWindowDeleteRequested(ids);
+    }
     bool requestCaptureHistoryClear();
     [[nodiscard]] std::shared_future<StorageResult> requestCaptureHistoryClearAsync();
 
@@ -101,6 +114,9 @@ class ApplicationStorage final : public QObject {
 
   signals:
     void captureHistoryChanged();
+    void pinnedWindowsChanged();
+    void pinnedWindowShowRequested(const QString& id);
+    void pinnedWindowDeleteRequested(const QVector<QString>& ids);
     void storageStatusChanged(const snow_shot::storage::StorageStatus& status);
     void smartSelectionChanged(bool enabled);
     void captureHistoryClearFinished(bool success, const QString& error);

@@ -4497,7 +4497,9 @@ void pinnedMiddleClickActions() {
     }
     bool removed = false;
     QObject::connect(window, &ScreenshotPinnedWindow::closingForPersistence,
-                     [&removed](const auto&, bool remove) { removed = remove; });
+                     [&removed](const auto&, snow_shot::storage::PinnedWindowCloseIntent intent) {
+                         removed = intent == snow_shot::storage::PinnedWindowCloseIntent::Close;
+                     });
     require(settings.setMiddleMouseButtonAction(QStringLiteral("close")), "configure Close");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!offscreen) {
@@ -4832,13 +4834,15 @@ void pinnedDoubleClickActions() {
     require(other->present(config), "second pin presentation failed");
     bool removed = false;
     QObject::connect(window, &ScreenshotPinnedWindow::closingForPersistence,
-                     [&removed](const auto&, bool remove) { removed = remove; });
+                     [&removed](const auto&, snow_shot::storage::PinnedWindowCloseIntent intent) {
+                         removed = intent == snow_shot::storage::PinnedWindowCloseIntent::Close;
+                     });
     require(settings.setDoubleClickAction(QStringLiteral("close")), "configure Close on thumbnail");
     send(canvas, canvas->rect().center());
     require(guarded && guarded->isVisible(), "close double-click must leave the thumbnail visible");
     releaseCloseGesture(*window, Qt::LeftButton);
     require(processUntilDeleted(guarded, 2000) && removed && otherGuard && other->isVisible(),
-            "Close must remove only the clicked thumbnail through the user-close lifecycle");
+            "Close must close only the clicked thumbnail through the user-close lifecycle");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (QGuiApplication::platformName() != QStringLiteral("offscreen")) {
         const QPoint center = other->currentNativeGeometry().center();
@@ -9427,8 +9431,8 @@ void pinnedContentReplacement() {
         const bool fallbackShown = menu->actions().contains(showMain);
         const qsizetype managementIndex = menu->actions().indexOf(management);
         const qsizetype closeIndex = menu->actions().indexOf(close);
-        require(managementIndex >= 0 && closeIndex == managementIndex + (fallbackShown ? 3 : 2) &&
-                    (!fallbackShown || menu->actions().indexOf(showMain) + 1 == closeIndex),
+        require(managementIndex >= 0 && closeIndex == managementIndex + (fallbackShown ? 4 : 3) &&
+                    (!fallbackShown || menu->actions().indexOf(showMain) + 2 == closeIndex),
                 "window management must stay above Close when the tray fallback changes");
     }
     ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
@@ -10424,6 +10428,169 @@ void pinnedControlledInteractionAndGestures() {
     window.close();
 }
 
+void pinnedManagementLifecycle() {
+    IsolatedPinnedStorage isolated;
+    using namespace snow_shot;
+    auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
+    require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
+            "disable automatic OCR for lifecycle fixture");
+    presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices service(nullptr, nullptr, nullptr, {}, {}, &groups);
+    QScreen* screen = QGuiApplication::primaryScreen();
+    QImage image(100, 60, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    const QRect geometry = physicalPinGeometry(*screen, {50, 50}, image.size());
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!predicate() && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            QThread::msleep(1);
+        }
+        require(predicate(), message);
+    };
+    const auto live = [](const QString& id) -> ScreenshotPinnedWindow* {
+        for (auto* widget : QApplication::topLevelWidgets())
+            if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                pin && pin->persistenceId() == id && pin->isVisible())
+                return pin;
+        return nullptr;
+    };
+    require(service.presentPinnedImage(image, screen, geometry, image.size(), {}, {}, 1.0, {}, {},
+                                       {}, {}, storage::PinnedWindowCreationSource::Clipboard),
+            "create first pin");
+    wait([&]() { return repository.summaries().size() == 1; }, "first pin must persist");
+    const QString first = repository.summaries().front().id;
+    QPointer<ScreenshotPinnedWindow> firstWindow(live(first));
+    require(firstWindow, "find first live pin");
+    pinnedMenuActionNamed(*firstWindow, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(firstWindow, 2000), "close first pin");
+    require(repository.loadRecord(first)->ignored &&
+                groups.windowCount(QStringLiteral("default")) == 0,
+            "closed pin is ignored, retained, and excluded from group count");
+    service.restorePersistedWindows();
+    QCoreApplication::processEvents();
+    require(!live(first), "automatic restore ignores closed pins");
+    require(service.presentPinnedImage(image, screen, geometry, image.size()), "create second pin");
+    wait([&]() { return repository.summaries().size() == 2; }, "second pin must persist");
+    QString second;
+    for (const auto& record : repository.summaries())
+        if (record.id != first)
+            second = record.id;
+    QPointer<ScreenshotPinnedWindow> secondWindow(live(second));
+    require(secondWindow, "find second pin");
+    pinnedMenuActionNamed(*secondWindow, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(secondWindow, 2000), "close second pin");
+    const auto other = groups.createGroup(QStringLiteral("Other"));
+    require(other.has_value(), "create another group");
+    auto unrelated = *repository.loadRecord(first);
+    unrelated.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    unrelated.groupId = *other;
+    require(repository.upsert(unrelated).success && repository.markClosed(unrelated.id).success,
+            "seed most recently closed record in other group");
+    service.restoreLastClosedWindow();
+    wait([&]() { return !repository.loadRecord(second)->ignored; },
+         "newest close in active group must restore first");
+    require(repository.loadRecord(first)->ignored && repository.loadRecord(unrelated.id)->ignored,
+            "shortcut must not restore older or other-group pins");
+    service.restoreLastClosedWindow();
+    wait([&]() { return !repository.loadRecord(first)->ignored; },
+         "next invocation restores next closed pin");
+    const auto firstActivity = repository.loadRecord(first)->activitySequence;
+    ScreenshotPinnedWindowTestAccess::setGeneralOpacity(*live(first), 65);
+    require(service.restoreRecord(unrelated.id), "page restore activates another group");
+    require(repository.loadRecord(first)->opacityPercent == 65 &&
+                !repository.loadRecord(first)->ignored &&
+                repository.loadRecord(first)->activitySequence == firstActivity,
+            "group switches save final state without marking closed or reordering");
+    wait([&]() { return !repository.loadRecord(unrelated.id)->ignored; },
+         "page restoration completes");
+    require(groups.activeGroupId() == *other, "page restore preserves group ownership");
+    QPointer<ScreenshotPinnedWindow> otherWindow(live(unrelated.id));
+    require(otherWindow, "other group window exists");
+    pinnedMenuActionNamed(*otherWindow, QStringLiteral("screenshotPinnedDestroyAction"))->trigger();
+    require(processUntilDeleted(otherWindow, 2000) && !repository.loadRecord(unrelated.id),
+            "Destroy removes record permanently");
+    service.destroyRecords({first, second});
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(repository.summaries().isEmpty(), "explicit deletion cleans retained inactive pins");
+
+    // A pin closed before its source arrives must still publish its final ignored record.
+    ScreenshotImageLoadCallback delayed;
+    require(service.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                       [&delayed](QObject*, ScreenshotImageLoadCallback callback) {
+                                           delayed = std::move(callback);
+                                       }),
+            "create delayed pin");
+    wait([&]() { return static_cast<bool>(delayed); }, "deferred source loader starts");
+    QPointer<ScreenshotPinnedWindow> pending(onlyVisiblePinnedWindow());
+    require(pending, "deferred pin shell exists");
+    const QString pendingId = pending->persistenceId();
+    pinnedMenuActionNamed(*pending, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(pending, 2000), "close pending shell");
+    delayed(image);
+    wait([&]() { return repository.loadRecord(pendingId).has_value(); },
+         "closed pending pin must not lose its record");
+    require(repository.loadRecord(pendingId)->ignored,
+            "delayed publication must retain closed intent");
+    service.destroyRecords({pendingId});
+
+    for (const bool deleteGroup : {false, true}) {
+        delayed = {};
+        require(
+            service.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                       [&delayed](QObject*, ScreenshotImageLoadCallback callback) {
+                                           delayed = std::move(callback);
+                                       }),
+            "create pin pending destruction");
+        wait([&]() { return static_cast<bool>(delayed); }, "pending destruction loader starts");
+        QPointer<ScreenshotPinnedWindow> doomed(onlyVisiblePinnedWindow());
+        require(doomed, "pending destruction shell exists");
+        const auto id = doomed->persistenceId();
+        if (deleteGroup)
+            require(groups.deleteSpecifiedGroup(groups.activeGroupId()), "delete pending group");
+        else
+            doomed->requestDestroy();
+        require(processUntilDeleted(doomed, 2000), "destroy pending shell");
+        delayed(image);
+        QCoreApplication::processEvents();
+        require(!repository.loadRecord(id), "late image cannot recreate destroyed records");
+    }
+
+    require(service.presentPinnedImage(image, screen, geometry, image.size()),
+            "create pin for preserved closure");
+    wait([&]() { return repository.summaries().size() == 1; }, "preserved pin persists");
+    const auto preservedId = repository.summaries().front().id;
+    QPointer<ScreenshotPinnedWindow> preserved(live(preservedId));
+    const auto before = *repository.loadRecord(preservedId);
+    require(preserved, "find preserved pin");
+    // QWidget::close is used for application shutdown; it must save without user-close activity.
+    preserved->close();
+    require(processUntilDeleted(preserved, 2000), "shutdown-style close releases window");
+    const auto after = repository.loadRecord(preservedId);
+    require(after && !after->ignored && after->activitySequence == before.activitySequence,
+            "shutdown preserves retained status and activity order");
+    service.restorePersistedWindows();
+    wait([&]() { return live(preservedId) != nullptr; }, "retained window restores automatically");
+    QPointer<ScreenshotPinnedWindow> restored(live(preservedId));
+    pinnedMenuActionNamed(*restored, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(restored, 2000) && repository.flush().success,
+            "persist closed record for restoration failure");
+    QFile payload(
+        QDir(storage::ApplicationStorage::instance().configurationDirectory())
+            .filePath(QStringLiteral("pinned_windows_v2/pins/%1/source.png").arg(preservedId)));
+    require(payload.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "corrupt restoration payload");
+    payload.write("invalid image");
+    payload.close();
+    int failures = 0;
+    service.setRestoreFailureHandler([&]() { ++failures; });
+    service.restoreLastClosedWindow();
+    require(failures == 1 && repository.summaries().front().ignored,
+            "failed restore reports failure and leaves record ignored");
+    service.destroyRecords({preservedId});
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -10445,6 +10612,10 @@ int main(int argc, char* argv[]) {
             require(
                 qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(), expectedDpr),
                 "pixel fixture must run at the registered DPR, independently of monitor settings");
+        if (app.arguments().contains(QStringLiteral("--management-only"))) {
+            pinnedManagementLifecycle();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--selection-content-alignment-only"))) {
             pinnedSelectionContentMatchesScreenshotSelection();
             return 0;

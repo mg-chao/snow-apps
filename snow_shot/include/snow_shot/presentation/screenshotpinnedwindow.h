@@ -148,6 +148,9 @@ class ScreenshotPinnedWindow final : public QWidget {
         std::function<void(const snow_shot::storage::PinnedWindowRecord&)>
             replacementPersistenceWriter;
         std::function<void(const QString&)> persistenceRemover;
+        std::function<void(const snow_shot::storage::PinnedWindowRecord&)> persistenceCloser;
+        snow_shot::storage::PinnedWindowCreationSource creationSource =
+            snow_shot::storage::PinnedWindowCreationSource::Other;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
         QString groupId = QStringLiteral("default");
     };
@@ -169,6 +172,8 @@ class ScreenshotPinnedWindow final : public QWidget {
   public slots:
     void setGroupId(const QString& id);
     void closeForInactiveGroup();
+    void requestDestroy();
+    void showFromManagement();
     void cancelDeferredInactiveGroupClose();
 
   public:
@@ -179,7 +184,7 @@ class ScreenshotPinnedWindow final : public QWidget {
   signals:
     void showMainWindowRequested();
     void closingForPersistence(const snow_shot::storage::PinnedWindowRecord& snapshot,
-                               bool removalRequested);
+                               snow_shot::storage::PinnedWindowCloseIntent intent);
 
   private:
     friend class ScreenshotPinnedEditController;
@@ -487,6 +492,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::function<void(const snow_shot::storage::PinnedWindowRecord&)>
         m_replacementPersistenceWriter;
     std::function<void(const QString&)> m_persistenceRemover;
+    std::function<void(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceCloser;
+    snow_shot::storage::PinnedWindowCreationSource m_creationSource =
+        snow_shot::storage::PinnedWindowCreationSource::Other;
+    QDateTime m_createdUtc;
+    snow_shot::storage::PinnedWindowCloseIntent m_closeIntent =
+        snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     QPointer<snow_shot::presentation::PinnedWindowGroupManager> m_groupManager;
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;

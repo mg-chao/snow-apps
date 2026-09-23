@@ -106,6 +106,10 @@
             <translation>剪贴板内容固定队列已满</translation>
         </message>
         <message>
+            <source>The pinned window could not be restored</source>
+            <translation>无法恢复贴图窗口</translation>
+        </message>
+        <message>
             <source>The screenshot clipboard operation could not be started</source>
             <translation>无法启动截图剪贴板操作</translation>
         </message>

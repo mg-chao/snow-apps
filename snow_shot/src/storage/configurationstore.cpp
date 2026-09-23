@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonParseError>
 #include <QMutexLocker>
 #include <QSaveFile>
@@ -103,7 +104,22 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
             continue;
         }
 
-        const QJsonValue raw = overlay.value(entry.key);
+        QJsonValue raw = overlay.value(entry.key);
+        // Upgrade only the untouched previous tray default. A customized list keeps its order.
+        if (entry.key == QStringLiteral("tray/menu_options") && mutateDocument &&
+            !overlay.contains(QStringLiteral("global_shortcuts/restore_last_closed_windows"))) {
+            QJsonArray previousDefault = entry.defaultValue.toArray();
+            for (qsizetype i = previousDefault.size(); i > 0; --i) {
+                if (previousDefault.at(i - 1).toString() ==
+                    QStringLiteral("quick.restore-last-closed-windows"))
+                    previousDefault.removeAt(i - 1);
+            }
+            if (raw.toArray() == previousDefault) {
+                raw = entry.defaultValue;
+                insertPath(&result.document, entry.key, raw);
+                result.dirty = true;
+            }
+        }
         if (entry.key == kCustomModelsKey) {
             bool valid = false;
             const QJsonValue canonical = customAiModelsToJson(customAiModelsFromJson(raw, &valid));

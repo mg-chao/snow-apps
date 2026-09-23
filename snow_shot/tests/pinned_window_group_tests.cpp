@@ -270,10 +270,26 @@ void groupCountLimitIsEnforced() {
                 restored.activeGroupId() == lastGroupId,
             "the last active group within the persisted limit should survive reload");
 }
+void ignoredRecordsDoNotBelongToActiveGroupCounts() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    presentation::PinnedWindowGroupManager manager(&repository);
+    const auto group = manager.createGroup(QStringLiteral("Closed only"));
+    require(group.has_value(), "create closed-only group");
+    auto item = record(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    item.groupId = *group;
+    require(repository.upsert(item).success && manager.windowCount(*group) == 1,
+            "retained pins count toward group membership");
+    require(repository.markClosed(item.id).success && manager.windowCount(*group) == 0,
+            "ignored pins are excluded from counts");
+    require(manager.deleteEmptyGroups() && !repository.loadRecord(item.id),
+            "deleting an ignored-only group destroys its records");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    ignoredRecordsDoNotBelongToActiveGroupCounts();
     defaultGroupAndFreshSchema();
     managerValidationPersistenceAndCounts();
     activeGroupFallbackAndEmptyDeletion();

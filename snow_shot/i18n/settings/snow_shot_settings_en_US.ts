@@ -754,6 +754,10 @@
             <translation>Age</translation>
         </message>
         <message>
+            <source>All closed pinned windows will be removed; retained windows are protected</source>
+            <translation>All closed pinned windows will be removed; retained windows are protected</translation>
+        </message>
+        <message>
             <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
             <translation>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</translation>
         </message>
@@ -894,6 +898,10 @@
             <translation>Browse</translation>
         </message>
         <message>
+            <source>Browse, restore, and delete pinned windows</source>
+            <translation>Browse, restore, and delete pinned windows</translation>
+        </message>
+        <message>
             <source>Cached history thumbnails will be removed and rebuilt on demand</source>
             <translation>Cached history thumbnails will be removed and rebuilt on demand</translation>
         </message>
@@ -994,6 +1002,10 @@
             <translation>Choose the bundled icon used in the system tray</translation>
         </message>
         <message>
+            <source>Choose the compression effort used for display images saved in closed pinned windows</source>
+            <translation>Choose the compression effort used for display images saved in closed pinned windows</translation>
+        </message>
+        <message>
             <source>Choose the compression effort used for display images saved in screenshot history</source>
             <translation>Choose the compression effort used for display images saved in screenshot history</translation>
         </message>
@@ -1074,6 +1086,14 @@
             <translation>Clear cache</translation>
         </message>
         <message>
+            <source>Clear closed records</source>
+            <translation>Clear closed records</translation>
+        </message>
+        <message>
+            <source>Clear closed records?</source>
+            <translation>Clear closed records?</translation>
+        </message>
+        <message>
             <source>Clear history</source>
             <translation>Clear history</translation>
         </message>
@@ -1112,6 +1132,10 @@
         <message>
             <source>Close window</source>
             <translation>Close window</translation>
+        </message>
+        <message>
+            <source>Closed window count</source>
+            <translation>Closed window count</translation>
         </message>
         <message>
             <source>Color mode</source>
@@ -1300,6 +1324,14 @@
         <message>
             <source>Delete</source>
             <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Delete closed windows</source>
+            <translation>Delete closed windows</translation>
+        </message>
+        <message>
+            <source>Delete closed windows after they reach this age</source>
+            <translation>Delete closed windows after they reach this age</translation>
         </message>
         <message>
             <source>Delete files</source>
@@ -1694,6 +1726,10 @@
             <translation>Jump to Translation Page</translation>
         </message>
         <message>
+            <source>Keep closed windows available for restoration; disabling does not delete existing records</source>
+            <translation>Keep closed windows available for restoration; disabling does not delete existing records</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>Keep records permanently</translation>
         </message>
@@ -1744,6 +1780,10 @@
         <message>
             <source>Light</source>
             <translation>Light</translation>
+        </message>
+        <message>
+            <source>Limit how much disk space closed pinned windows can use</source>
+            <translation>Limit how much disk space closed pinned windows can use</translation>
         </message>
         <message>
             <source>Limit how much disk space screenshot history can use</source>
@@ -2006,6 +2046,10 @@
             <translation>Permanently remove all saved screenshots</translation>
         </message>
         <message>
+            <source>Permanently remove closed pinned windows</source>
+            <translation>Permanently remove closed pinned windows</translation>
+        </message>
+        <message>
             <source>Permission status and access</source>
             <translation>Permission status and access</translation>
         </message>
@@ -2048,6 +2092,10 @@
         <message>
             <source>Pin to Screen</source>
             <translation>Pin to Screen</translation>
+        </message>
+        <message>
+            <source>Pin to Screen Management</source>
+            <translation>Pin to Screen Management</translation>
         </message>
         <message>
             <source>Pin to Screen toolbar settings</source>
@@ -2198,12 +2246,20 @@
             <translation>Remove cached screenshot-history thumbnails</translation>
         </message>
         <message>
+            <source>Remove closed windows</source>
+            <translation>Remove closed windows</translation>
+        </message>
+        <message>
             <source>Remove leftover recording working files that are no longer needed</source>
             <translation>Remove leftover recording working files that are no longer needed</translation>
         </message>
         <message>
             <source>Remove screenshots</source>
             <translation>Remove screenshots</translation>
+        </message>
+        <message>
+            <source>Remove the oldest closed windows when this limit is exceeded</source>
+            <translation>Remove the oldest closed windows when this limit is exceeded</translation>
         </message>
         <message>
             <source>Remove the oldest screenshots when this limit is exceeded</source>
@@ -2246,12 +2302,28 @@
             <translation>Restore application settings from a configuration archive</translation>
         </message>
         <message>
+            <source>Restore last closed windows</source>
+            <translation>Restore last closed windows</translation>
+        </message>
+        <message>
             <source>Restore original screen colors</source>
             <translation>Restore original screen colors</translation>
         </message>
         <message>
             <source>Restore settings</source>
             <translation>Restore settings</translation>
+        </message>
+        <message>
+            <source>Restore the most recently closed window in the current group</source>
+            <translation>Restore the most recently closed window in the current group</translation>
+        </message>
+        <message>
+            <source>Retain closed windows</source>
+            <translation>Retain closed windows</translation>
+        </message>
+        <message>
+            <source>Retention limits apply only to closed windows; retained windows are always protected</source>
+            <translation>Retention limits apply only to closed windows; retained windows are always protected</translation>
         </message>
         <message>
             <source>Retention period</source>

@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotselectionexportworkflowports.h"
 
 #include <atomic>
+#include <QSet>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -54,7 +55,9 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         const QString& formattedPlainText = {}, qreal formattedTextDevicePixelRatio = 1.0,
         ScreenshotClipboardOriginalContent originalContent = {},
         ScreenshotImageLoader imageLoader = {}, PinnedCompletion completion = {},
-        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {});
+        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
+        snow_shot::storage::PinnedWindowCreationSource source =
+            snow_shot::storage::PinnedWindowCreationSource::Other);
     // An already composited selection bitmap placed by screenshotSelectionPinRequest.
     [[nodiscard]] bool
     presentCompositedSelectionImage(const QImage& image,
@@ -71,6 +74,12 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                const QRect& nativeGeometry, const QSize& initialWindowSize,
                                PinnedCompletion completion = {});
     void restorePersistedWindows();
+    bool restoreRecord(const QString& id, bool activateGroup = true);
+    void restoreLastClosedWindow();
+    void setRestoreFailureHandler(std::function<void()> handler) {
+        m_restoreFailure = std::move(handler);
+    }
+    void destroyRecords(const QVector<QString>& ids);
 
   private:
     [[nodiscard]] bool presentPinnedImageOnCanvas(
@@ -79,8 +88,12 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::shared_ptr<QTextDocument> formattedTextDocument, const QString& formattedPlainText,
         qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
         ScreenshotImageLoader imageLoader, PinnedCompletion completion,
-        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {});
+        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
+        snow_shot::storage::PinnedWindowCreationSource source =
+            snow_shot::storage::PinnedWindowCreationSource::Other);
 
+    std::function<void()> m_restoreFailure;
+    QSet<QString> m_restoringIds;
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;
     SnowShotApiClient* m_tableRecognition = nullptr;

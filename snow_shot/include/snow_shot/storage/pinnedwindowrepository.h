@@ -10,6 +10,7 @@
 #include <QDateTime>
 
 #include <memory>
+#include <functional>
 #include <optional>
 
 namespace snow_shot::storage {
@@ -18,6 +19,14 @@ struct PinnedWindowSummary final {
     QString id;
     QString groupId = QStringLiteral("default");
     QDateTime updatedUtc;
+    PinnedWindowCreationSource creationSource = PinnedWindowCreationSource::Other;
+    QDateTime createdUtc;
+    QDateTime lastClosedUtc;
+    bool ignored = false;
+    quint64 activitySequence = 0;
+    [[nodiscard]] QDateTime activityUtc() const {
+        return lastClosedUtc.isValid() ? lastClosedUtc : createdUtc;
+    }
 };
 
 class PinnedWindowRepository final {
@@ -47,6 +56,19 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult updateState(PinnedWindowRecord record);
     [[nodiscard]] StorageResult upsert(PinnedWindowRecord record);
     [[nodiscard]] StorageResult remove(const QString& id);
+    // Callbacks run under the repository lock; dispatch notifications without reentering it.
+    void setChangedCallback(std::function<void()> callback);
+    void reserveCreation(const QString& id, QDateTime when = QDateTime::currentDateTimeUtc());
+    [[nodiscard]] StorageResult markClosed(const QString& id,
+                                           QDateTime when = QDateTime::currentDateTimeUtc());
+    [[nodiscard]] StorageResult beginRestore(const QString& id);
+    void cancelRestore(const QString& id);
+    [[nodiscard]] StorageResult markRestored(const QString& id);
+    [[nodiscard]] StorageResult setPolicy(PinnedWindowPolicy policy);
+    [[nodiscard]] PinnedWindowPolicy policy() const;
+    void setCompressionLevel(const QString& level);
+    [[nodiscard]] StorageResult enforcePolicy(QDateTime now = QDateTime::currentDateTimeUtc());
+    [[nodiscard]] StorageResult clearClosed();
     [[nodiscard]] StorageResult flush();
     [[nodiscard]] QString lastError() const;
 

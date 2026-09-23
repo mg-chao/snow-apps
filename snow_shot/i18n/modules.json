@@ -82,6 +82,7 @@
   "history": [
     "HistoryEntryWidget",
     "ScreenshotHistoryPageWidget",
+    "PinnedWindowManagementPageWidget",
     "ScreenshotPinnedWindow",
     "snow_shot::presentation::PinnedWindowGroupManager"
   ],

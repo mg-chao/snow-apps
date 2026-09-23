@@ -106,6 +106,10 @@
             <translation>剪貼簿內容釘選佇列已滿</translation>
         </message>
         <message>
+            <source>The pinned window could not be restored</source>
+            <translation>無法還原貼圖視窗</translation>
+        </message>
+        <message>
             <source>The screenshot clipboard operation could not be started</source>
             <translation>無法啟動截圖剪貼簿操作</translation>
         </message>

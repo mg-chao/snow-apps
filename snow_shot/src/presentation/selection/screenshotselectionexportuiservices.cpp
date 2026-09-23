@@ -51,6 +51,8 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
         return;
     }
     config->persistenceId = id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : id;
+    if (id.isEmpty())
+        storage.pinnedWindows().reserveCreation(config->persistenceId);
     config->persistenceWriter =
         [sourceManaged](const snow_shot::storage::PinnedWindowRecord& record) {
             auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -63,6 +65,13 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
         if (!storage.configurationDirectory().isEmpty()) {
             static_cast<void>(storage.pinnedWindows().remove(recordId));
+        }
+    };
+    config->persistenceCloser = [](const snow_shot::storage::PinnedWindowRecord& record) {
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (storage.isInitialized()) {
+            static_cast<void>(storage.pinnedWindows().updateState(record));
+            static_cast<void>(storage.pinnedWindows().markClosed(record.id));
         }
     };
     config->replacementPersistenceWriter =
@@ -244,17 +253,32 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         m_transactions.insert(persistenceId, transaction);
         if (groupManager != nullptr) {
             groupManager->registerPendingPin(persistenceId, groupId);
+            QObject::connect(
+                groupManager,
+                &snow_shot::presentation::PinnedWindowGroupManager::groupDeletionRequested, this,
+                [this, persistenceId](const QString& deletedGroup) {
+                    auto transaction = m_transactions.find(persistenceId);
+                    if (transaction == m_transactions.end())
+                        return;
+                    const QString group = transaction->window ? transaction->window->groupId()
+                                                              : transaction->snapshot.groupId;
+                    if (deletedGroup == group) {
+                        removePersistedRecord(persistenceId);
+                        finish(persistenceId);
+                    }
+                });
         }
         QObject::connect(
             window, &ScreenshotPinnedWindow::closingForPersistence, this,
             [this, persistenceId](const snow_shot::storage::PinnedWindowRecord& snapshot,
-                                  bool removalRequested) {
+                                  snow_shot::storage::PinnedWindowCloseIntent intent) {
                 auto transaction = m_transactions.find(persistenceId);
                 if (transaction == m_transactions.end()) {
                     return;
                 }
                 transaction->snapshot = snapshot;
-                if (removalRequested) {
+                transaction->intent = intent;
+                if (intent == snow_shot::storage::PinnedWindowCloseIntent::Destroy) {
                     transaction->removed = true;
                     removePersistedRecord(persistenceId);
                     finish(persistenceId);
@@ -305,12 +329,15 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         if (transaction == m_transactions.end()) {
             return;
         }
-        if (!success || transaction->removed || transaction->window.isNull() ||
-            transaction->artifact == nullptr) {
+        if ((!success &&
+             transaction->intent != snow_shot::storage::PinnedWindowCloseIntent::Close) ||
+            transaction->removed || transaction->artifact == nullptr) {
             finish(persistenceId);
             return;
         }
-        transaction->snapshot = transaction->window->persistenceSnapshot();
+        if (!transaction->window.isNull() &&
+            transaction->intent == snow_shot::storage::PinnedWindowCloseIntent::Preserve)
+            transaction->snapshot = transaction->window->persistenceSnapshot();
         if (transaction->snapshot.sourceKind !=
             snow_shot::storage::PinnedWindowSourceKind::ImageData) {
             persistNonImageSource(*transaction);
@@ -319,8 +346,13 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         }
         const QPointer<ScreenshotPendingPinCoordinator> receiver(this);
         const std::shared_ptr<ScreenshotExportArtifact> artifact = transaction->artifact;
-        if (!artifact->requestCanonicalPng(
-                this, [receiver, persistenceId](ScreenshotExportEncodingResult result) mutable {
+        const auto compression = snow_shot::storage::ApplicationStorage::instance()
+                                     .configuration()
+                                     .value(QStringLiteral("pinned_history/compression_level"))
+                                     .toString();
+        if (!artifact->requestPng(
+                this, ScreenshotImageFileService::compressionLevelForKey(compression),
+                [receiver, persistenceId](ScreenshotExportEncodingResult result) mutable {
                     if (!receiver.isNull()) {
                         receiver->completePreparedSource(persistenceId, std::move(result));
                     }
@@ -338,6 +370,8 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         std::shared_ptr<ScreenshotExportArtifact> artifact;
         QImage image;
         bool removed = false;
+        snow_shot::storage::PinnedWindowCloseIntent intent =
+            snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     };
 
     static void removePersistedRecord(const QString& persistenceId) {
@@ -351,7 +385,8 @@ class ScreenshotPendingPinCoordinator final : public QObject {
     }
 
     static void persistNonImageSource(Transaction& transaction) {
-        if (!transaction.window.isNull()) {
+        if (!transaction.window.isNull() &&
+            transaction.intent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
             transaction.snapshot = transaction.window->persistenceSnapshot();
         }
         if (transaction.snapshot.id.isEmpty()) {
@@ -373,8 +408,10 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         if (transaction == m_transactions.end()) {
             return;
         }
-        if (!transaction->removed && result.succeeded() && !transaction->window.isNull()) {
-            transaction->snapshot = transaction->window->persistenceSnapshot();
+        if (!transaction->removed && result.succeeded()) {
+            if (!transaction->window.isNull() &&
+                transaction->intent == snow_shot::storage::PinnedWindowCloseIntent::Preserve)
+                transaction->snapshot = transaction->window->persistenceSnapshot();
             if (transaction->snapshot.image.isNull() && !transaction->image.isNull()) {
                 transaction->snapshot.image = transaction->image;
             }
@@ -389,6 +426,9 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         } else if (!result.succeeded()) {
             qWarning("Pinned source PNG encoding failed: %s", qPrintable(result.error));
         }
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (storage.isInitialized())
+            static_cast<void>(storage.pinnedWindows().enforcePolicy());
         finish(persistenceId);
     }
 
@@ -475,6 +515,10 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
       m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>()) {}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (storage.isInitialized())
+        for (const auto& id : m_restoringIds)
+            storage.pinnedWindows().cancelRestore(id);
     cancelClipboardPublication();
 }
 
@@ -567,6 +611,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
 
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(request.screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
+    config.creationSource = snow_shot::storage::PinnedWindowCreationSource::Screenshot;
     config.nativeGeometry = request.geometry.nativeGeometry;
     config.canvasSourceRect = request.surfaceCanvasRect;
     config.contentCanvasRect = request.surfaceCanvasRect;
@@ -668,6 +713,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
 
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
+    config.creationSource = snow_shot::storage::PinnedWindowCreationSource::Screenshot;
     config.nativeGeometry = nativeGeometry;
     config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(initialWindowSize));
     config.contentCanvasRect = config.canvasSourceRect;
@@ -748,7 +794,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     const QString& formattedPlainText, qreal formattedTextDevicePixelRatio,
     ScreenshotClipboardOriginalContent originalContent, ScreenshotImageLoader imageLoader,
     PinnedCompletion completion,
-    std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance) {
+    std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
+    snow_shot::storage::PinnedWindowCreationSource source) {
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
@@ -759,7 +806,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
         image, screen, nativeGeometry, initialWindowSize,
         QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)), std::move(formattedTextDocument),
         formattedPlainText, formattedTextDevicePixelRatio, std::move(originalContent),
-        std::move(imageLoader), std::move(completion), std::move(borderAppearance));
+        std::move(imageLoader), std::move(completion), std::move(borderAppearance), source);
 }
 
 bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
@@ -773,7 +820,8 @@ bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
     return presentPinnedImageOnCanvas(
         image, request.screen.data(), request.geometry.nativeGeometry, request.initialWindowSize,
         request.surfaceCanvasRect, {}, {}, 1.0, {}, {}, std::move(completion),
-        screenshotSelectionBorderAppearance(request.selection.size(), request.resultStyle));
+        screenshotSelectionBorderAppearance(request.selection.size(), request.resultStyle),
+        snow_shot::storage::PinnedWindowCreationSource::ScreenshotHistory);
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
@@ -782,7 +830,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     std::shared_ptr<QTextDocument> formattedTextDocument, const QString& formattedPlainText,
     qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
     ScreenshotImageLoader imageLoader, PinnedCompletion completion,
-    std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance) {
+    std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
+    snow_shot::storage::PinnedWindowCreationSource source) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
@@ -813,6 +862,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
 
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
+    config.creationSource = source;
     config.nativeGeometry = nativeGeometry;
     config.canvasSourceRect = canvasRect;
     config.borderAppearance = std::move(borderAppearance);
@@ -885,110 +935,180 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
 }
 
 void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
-    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
-    const QVector<snow_shot::storage::PinnedWindowSummary> summaries =
-        applicationStorage.isInitialized() ? applicationStorage.pinnedWindows().summaries()
-                                           : QVector<snow_shot::storage::PinnedWindowSummary>{};
-    for (const auto& summary : summaries) {
-        if (m_groupManager != nullptr && summary.groupId != m_groupManager->activeGroupId()) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return;
+    for (const auto& summary : storage.pinnedWindows().summaries()) {
+        if (summary.ignored ||
+            (m_groupManager && summary.groupId != m_groupManager->activeGroupId()) ||
+            m_restoringIds.contains(summary.id) ||
+            (m_groupManager && m_groupManager->hasWindow(summary.id)))
             continue;
-        }
-        if (m_groupManager != nullptr && m_groupManager->hasWindow(summary.id)) {
-            continue;
-        }
-        const std::optional<snow_shot::storage::PinnedWindowRecord> loadedRecord =
-            applicationStorage.pinnedWindows().loadRecord(summary.id);
-        if (!loadedRecord.has_value()) {
-            continue;
-        }
-        const snow_shot::storage::PinnedWindowRecord& record = *loadedRecord;
-        QScreen* targetScreen = restoreScreen(record);
-        if (targetScreen == nullptr || record.nativeGeometry.isEmpty()) {
-            continue;
-        }
-        const screenshot_pinned_restore_geometry::RestoredState restored =
-            reconcileRestoreState(record, *targetScreen);
-        ScreenshotPinnedWindow::Config config;
-        config.nativeGeometry = restored.nativeGeometry;
-        config.placement =
-            snow_shot::presentation::recoverPinnedPlacement(record.placement, *targetScreen);
-        config.canvasSourceRect = record.canvasSourceRect;
-        // The persisted content/surface rects describe the post-transform
-        // frame. Presentation starts from the immutable source canvas and
-        // reapplies the transform below, so use the source rect for the
-        // containment contract during setup.
-        config.contentCanvasRect = record.canvasSourceRect;
-        config.surfaceCanvasRect = record.canvasSourceRect;
-        config.initialWindowSize = record.initialWindowSize;
-        config.screen = targetScreen;
-        config.enableEditing = true;
-        config.resultStyle = decodeResultStyle(record.resultStyle);
-        config.borderAppearance = record.borderAppearance;
-        config.persistenceId = record.id;
-        config.restorePersistentState = true;
-        config.persistedOpacityPercent = record.opacityPercent;
-        config.persistedClickThroughOpacityPercent = record.clickThroughOpacityPercent;
-        config.persistedImageTransform = record.imageTransform;
-        config.persistedQuarterTurns = record.quarterTurns;
-        config.persistedHideToTopMode = record.hideToTopMode;
-        config.persistedHideToTopHandleNativeGeometry = restored.hideToTopHandleNativeGeometry;
-        config.persistedHideToTopAccentIndex = record.hideToTopAccentIndex;
-        config.persistedThumbnailMode = record.thumbnailMode;
-        config.persistedClickThroughMode = record.clickThroughMode;
-        config.persistedAlwaysOnTop = record.alwaysOnTop;
-        config.persistedShowBorder = record.showBorder;
-        config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
-        if (record.preThumbnailPlacement.isValid()) {
-            config.persistedPreThumbnailPlacement = snow_shot::presentation::recoverPinnedPlacement(
-                record.preThumbnailPlacement, *targetScreen);
-        }
-        config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
-        config.persistedCanvasSession = record.canvasSession;
-        config.persistedRecognitionResults = record.recognitionResults;
-        config.persistedRecognitionVisible = record.recognitionVisible;
-        config.persistedTranslationVisible = record.translationVisible;
-        config.groupManager = m_groupManager;
-        config.groupId = record.groupId;
-        config.recognition = m_recognition;
-        config.qrRecognition = m_qrRecognition;
-        config.tableRecognition = m_tableRecognition;
-        config.recognitionProvider = m_recognitionProvider;
-        applyPersistence(&config, record.id);
+        static_cast<void>(restoreRecord(summary.id, false));
+    }
+}
 
-        std::shared_ptr<QTextDocument> formattedDocument;
-        if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardText) {
-            ScreenshotClipboardOriginalContent original;
-            original.html = record.originalHtml;
-            original.text = record.originalText;
-            const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
-                original, record.firstCreationTextDpi);
-            if (!rendered.has_value() || !rendered->isValid()) {
-                continue;
-            }
-            config.imageSource =
-                ScreenshotImageSource::fromImage(rendered->image, record.canvasSourceRect);
-            config.formattedTextDocument = rendered->formattedDocument;
-            config.formattedPlainText = rendered->plainText;
-            config.formattedTextDevicePixelRatio = record.firstCreationTextDpi;
-            config.originalClipboardContent = std::move(original);
-        } else {
-            if (record.image.isNull()) {
-                continue;
-            }
-            config.imageSource =
-                ScreenshotImageSource::fromImage(record.image, record.canvasSourceRect);
-            if (record.sourceKind ==
-                snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile) {
-                config.originalClipboardContent.localFilePath = record.originalFilePath;
-            }
+bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool activateGroup) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized() || m_restoringIds.contains(id))
+        return false;
+    const auto loaded = storage.pinnedWindows().loadRecord(id);
+    if (!loaded)
+        return false;
+    const auto& record = *loaded;
+    if (m_groupManager) {
+        if (activateGroup && !m_groupManager->setActiveGroup(record.groupId))
+            return false;
+        if (record.groupId != m_groupManager->activeGroupId())
+            return false;
+        if (m_groupManager->hasWindow(id))
+            return m_groupManager->showWindow(id);
+    }
+    QScreen* targetScreen = restoreScreen(record);
+    if (targetScreen == nullptr || record.nativeGeometry.isEmpty()) {
+        return false;
+    }
+    const screenshot_pinned_restore_geometry::RestoredState restored =
+        reconcileRestoreState(record, *targetScreen);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = restored.nativeGeometry;
+    config.placement =
+        snow_shot::presentation::recoverPinnedPlacement(record.placement, *targetScreen);
+    config.canvasSourceRect = record.canvasSourceRect;
+    // The persisted content/surface rects describe the post-transform
+    // frame. Presentation starts from the immutable source canvas and
+    // reapplies the transform below, so use the source rect for the
+    // containment contract during setup.
+    config.contentCanvasRect = record.canvasSourceRect;
+    config.surfaceCanvasRect = record.canvasSourceRect;
+    config.initialWindowSize = record.initialWindowSize;
+    config.screen = targetScreen;
+    config.enableEditing = true;
+    config.resultStyle = decodeResultStyle(record.resultStyle);
+    config.borderAppearance = record.borderAppearance;
+    config.persistenceId = record.id;
+    config.creationSource = record.creationSource;
+    config.restorePersistentState = true;
+    config.persistedOpacityPercent = record.opacityPercent;
+    config.persistedClickThroughOpacityPercent = record.clickThroughOpacityPercent;
+    config.persistedImageTransform = record.imageTransform;
+    config.persistedQuarterTurns = record.quarterTurns;
+    config.persistedHideToTopMode = record.hideToTopMode;
+    config.persistedHideToTopHandleNativeGeometry = restored.hideToTopHandleNativeGeometry;
+    config.persistedHideToTopAccentIndex = record.hideToTopAccentIndex;
+    config.persistedThumbnailMode = record.thumbnailMode;
+    config.persistedClickThroughMode = record.clickThroughMode;
+    config.persistedAlwaysOnTop = record.alwaysOnTop;
+    config.persistedShowBorder = record.showBorder;
+    config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
+    if (record.preThumbnailPlacement.isValid()) {
+        config.persistedPreThumbnailPlacement = snow_shot::presentation::recoverPinnedPlacement(
+            record.preThumbnailPlacement, *targetScreen);
+    }
+    config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
+    config.persistedCanvasSession = record.canvasSession;
+    config.persistedRecognitionResults = record.recognitionResults;
+    config.persistedRecognitionVisible = record.recognitionVisible;
+    config.persistedTranslationVisible = record.translationVisible;
+    config.groupManager = m_groupManager;
+    config.groupId = record.groupId;
+    config.recognition = m_recognition;
+    config.qrRecognition = m_qrRecognition;
+    config.tableRecognition = m_tableRecognition;
+    config.recognitionProvider = m_recognitionProvider;
+    applyPersistence(&config, record.id);
+
+    std::shared_ptr<QTextDocument> formattedDocument;
+    if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardText) {
+        ScreenshotClipboardOriginalContent original;
+        original.html = record.originalHtml;
+        original.text = record.originalText;
+        const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
+            original, record.firstCreationTextDpi);
+        if (!rendered.has_value() || !rendered->isValid()) {
+            return false;
         }
-        auto* window = m_windowPool != nullptr ? m_windowPool->acquire(targetScreen) : nullptr;
-        if (window == nullptr ||
-            !presentPinnedWindowAndSynchronize(m_windowPool.get(), window, config,
-                                               m_showMainWindowRequested)) {
-            if (window != nullptr) {
-                window->deleteLater();
-            }
+        config.imageSource =
+            ScreenshotImageSource::fromImage(rendered->image, record.canvasSourceRect);
+        config.formattedTextDocument = rendered->formattedDocument;
+        config.formattedPlainText = rendered->plainText;
+        config.formattedTextDevicePixelRatio = record.firstCreationTextDpi;
+        config.originalClipboardContent = std::move(original);
+    } else {
+        if (record.image.isNull()) {
+            return false;
         }
+        config.imageSource =
+            ScreenshotImageSource::fromImage(record.image, record.canvasSourceRect);
+        if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile) {
+            config.originalClipboardContent.localFilePath = record.originalFilePath;
+        }
+    }
+    auto* window = m_windowPool != nullptr ? m_windowPool->acquire(targetScreen) : nullptr;
+    if (!window)
+        return false;
+    if (!storage.pinnedWindows().beginRestore(record.id).success) {
+        window->deleteLater();
+        return false;
+    }
+    m_restoringIds.insert(record.id);
+    const QPointer<ScreenshotPendingPinCoordinator> lifetime(m_pendingPinCoordinator.get());
+    const QPointer<ScreenshotPinnedWindow> windowGuard(window);
+    const bool presented = presentPinnedWindowAndSynchronize(
+        m_windowPool.get(), window, config, m_showMainWindowRequested,
+        [this, lifetime, id, windowGuard](bool success, QImage) {
+            if (lifetime.isNull())
+                return;
+            m_restoringIds.remove(id);
+            auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+            if (applicationStorage.isInitialized()) {
+                if (success) {
+                    if (!applicationStorage.pinnedWindows().markRestored(id).success && windowGuard)
+                        windowGuard->requestDestroy();
+                } else {
+                    applicationStorage.pinnedWindows().cancelRestore(id);
+                    if (m_restoreFailure)
+                        m_restoreFailure();
+                }
+            }
+        });
+    if (!presented) {
+        m_restoringIds.remove(id);
+        storage.pinnedWindows().cancelRestore(id);
+    }
+    return presented;
+}
+
+void ScreenshotSelectionExportUiServices::restoreLastClosedWindow() {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return;
+    auto records = storage.pinnedWindows().summaries();
+    std::sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
+        if (a.activitySequence != b.activitySequence)
+            return a.activitySequence > b.activitySequence;
+        return a.lastClosedUtc != b.lastClosedUtc ? a.lastClosedUtc > b.lastClosedUtc : a.id < b.id;
+    });
+    for (const auto& record : records) {
+        if (!record.ignored || m_restoringIds.contains(record.id) ||
+            (m_groupManager && record.groupId != m_groupManager->activeGroupId()))
+            continue;
+        if (!restoreRecord(record.id, false) && m_restoreFailure)
+            m_restoreFailure();
+        return;
+    }
+}
+
+void ScreenshotSelectionExportUiServices::destroyRecords(const QVector<QString>& ids) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return;
+    for (const auto& id : ids) {
+        if (!storage.pinnedWindows().remove(id).success)
+            continue;
+        m_pendingPinCoordinator->cancel(id);
+        m_restoringIds.remove(id);
+        if (m_groupManager)
+            m_groupManager->destroyWindow(id);
     }
 }

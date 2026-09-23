@@ -373,11 +373,14 @@ int main(int argc, char* argv[]) {
     auto* exitMenuAction = actionForId(QStringLiteral("tray.exit"));
     auto* windowGroupMenuAction =
         actionForObjectName(QStringLiteral("systemTrayWindowGroupAction"));
+    auto* restoreClosedAction = actionForId(QStringLiteral("quick.restore-last-closed-windows"));
+    require(restoreClosedAction && restoreClosedAction->isVisible(),
+            "restore closed pins must appear in the default tray menu");
     const QStringList normalizedDefaultMenuOptions = controller.menuOptions();
     require(
         QSet<QString>(normalizedDefaultMenuOptions.cbegin(), normalizedDefaultMenuOptions.cend()) ==
                 QSet<QString>(defaultMenuOptions.cbegin(), defaultMenuOptions.cend()) &&
-            defaultVisibleActions.size() == 15 && screenshotMenuAction != nullptr &&
+            defaultVisibleActions.size() == 16 && screenshotMenuAction != nullptr &&
             screenshotMenuAction->isVisible() && delayedScreenshotMenuAction != nullptr &&
             delayedScreenshotMenuAction->isVisible() && recordingToggleMenuAction != nullptr &&
             !recordingToggleMenuAction->isVisible() && !screenshotMenuAction->icon().isNull() &&
@@ -394,7 +397,7 @@ int main(int argc, char* argv[]) {
             defaultVisibleActions.contains(showMainWindowMenuAction) &&
             defaultVisibleActions.indexOf(windowGroupMenuAction) ==
                 defaultVisibleActions.indexOf(showMainWindowMenuAction) - 1,
-        "the tray menu should expose the eleven default options in five catalog groups");
+        "the tray menu should expose the twelve default options in five catalog groups");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
 #ifdef Q_OS_MACOS

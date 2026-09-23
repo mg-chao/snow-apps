@@ -23,6 +23,7 @@ constexpr TranslatableText settingsText(const char* source) {
 
 constexpr auto GLOBAL_HOTKEYS_PAGE_ID = "global-hotkeys";
 constexpr auto GLOBAL_MOUSE_PAGE_ID = "global-mouse";
+constexpr auto PINNED_PAGE_ID = "pin-to-screen-management";
 constexpr auto HISTORY_PAGE_ID = "screenshot-history";
 constexpr auto FUNCTION_PAGE_ID = "function-settings";
 constexpr auto INTERFACE_PAGE_ID = "interface-settings";
@@ -575,6 +576,19 @@ SettingsItemDefinition historyEnabledItem() {
     };
 }
 
+SettingsItemDefinition pinnedHistoryEnabledItem() {
+    return {
+        QStringLiteral("pinned-history.enabled"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Retain closed windows")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Keep closed windows available for restoration; "
+                                       "disabling does not delete existing records")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Retain closed windows"))},
+        QStringLiteral("pinned_history/enabled"),
+        SettingsSwitchDefinition{SettingsSwitchBinding::PinnedHistoryEnabled},
+    };
+}
+
 SettingsItemDefinition smartSelectionItem() {
     return {
         QStringLiteral("screenshot.smart-selection"),
@@ -653,6 +667,17 @@ SettingsItemDefinition pinClipboardContentItem() {
         GlobalShortcutAction::PinClipboardContent,
         QStringLiteral("global_shortcuts/pin_clipboard_content"),
         []() { return custom_outlined_icons::PinClipboard(); });
+}
+
+SettingsItemDefinition restoreLastClosedWindowsItem() {
+    return quickActionItem(
+        QStringLiteral("quick.restore-last-closed-windows"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Restore last closed windows"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Restore the most recently closed window in the current group"),
+        {}, GlobalShortcutAction::RestoreLastClosedWindows,
+        QStringLiteral("global_shortcuts/restore_last_closed_windows"),
+        []() { return outlined_icons::History(); });
 }
 
 SettingsItemDefinition pinSelectedFilesItem() {
@@ -1756,6 +1781,32 @@ SettingsItemDefinition clearHistoryItem() {
     };
 }
 
+SettingsItemDefinition clearPinnedHistoryItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ClearPinnedHistory;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear"));
+    payload.accent = SettingsActionAccent::Danger;
+    payload.iconFactory = []() { return outlined_icons::Rest(); };
+    payload.confirmation = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear closed records?")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "All closed pinned windows will be removed; retained windows are protected")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear closed records")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
+    };
+    return {
+        QStringLiteral("pinned-history.clear"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear closed records")),
+        settingsText(
+            QT_TRANSLATE_NOOP("SettingsCatalog", "Permanently remove closed pinned windows")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Delete closed windows")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Remove closed windows"))},
+        {},
+        payload,
+    };
+}
+
 SettingsItemDefinition storageStatusItem() {
     return {
         QStringLiteral("storage.status"),
@@ -1903,6 +1954,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::GlobalPinToScreenShortcuts,
                     {
                         pinClipboardContentItem(),
+                        restoreLastClosedWindowsItem(),
                         pinSelectedFilesItem(),
                     },
                 },
@@ -1941,6 +1993,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                                            "Preview and manage saved screenshot history")),
             {},
             SettingsPageKind::ScreenshotHistory,
+        },
+        {
+            QString::fromLatin1(PINNED_PAGE_ID),
+            QStringLiteral("/pin-to-screen-management"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen Management")),
+            settingsText(
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Browse, restore, and delete pinned windows")),
+            {},
+            SettingsPageKind::PinnedWindowManagement,
         },
         {
             QString::fromLatin1(GLOBAL_MOUSE_PAGE_ID),
@@ -2282,6 +2343,72 @@ QVector<SettingsPageDefinition> builtInPages() {
                     },
                 },
                 {
+                    QStringLiteral("pinned-history"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen Management")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Retention limits apply only to closed windows; "
+                                                   "retained windows are always protected")),
+                    SettingsSectionReset::PinnedHistoryPolicy,
+                    {
+                        pinnedHistoryEnabledItem(),
+                        {QStringLiteral("pinned-history.keep-permanently"),
+                         settingsText(
+                             QT_TRANSLATE_NOOP("SettingsCatalog", "Keep records permanently")),
+                         settingsText(
+                             QT_TRANSLATE_NOOP("SettingsCatalog", "No automatic history cleanup")),
+                         {},
+                         QStringLiteral("pinned_history/keep_permanently"),
+                         SettingsSwitchDefinition{
+                             SettingsSwitchBinding::PinnedHistoryKeepPermanently}},
+                        fixedSelectItem(
+                            QStringLiteral("pinned-history.compression-level"),
+                            QT_TRANSLATE_NOOP("SettingsCatalog", "Compression level"),
+                            QT_TRANSLATE_NOOP("SettingsCatalog",
+                                              "Choose the compression effort used for display "
+                                              "images saved in closed pinned windows"),
+                            QStringLiteral("pinned_history/compression_level"),
+                            SettingsSelectBinding::PinnedHistoryCompressionLevel,
+                            {{QStringLiteral("low"),
+                              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Low"))},
+                             {QStringLiteral("medium"),
+                              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium"))},
+                             {QStringLiteral("high"),
+                              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "High"))}}),
+                        historyIntegerItem(
+                            QStringLiteral("pinned-history.retention-days"),
+                            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Retention period")),
+                            settingsText(QT_TRANSLATE_NOOP(
+                                "SettingsCatalog",
+                                "Delete closed windows after they reach this age")),
+                            QStringLiteral("pinned_history/retention_days"),
+                            SettingsIntegerBinding::PinnedHistoryRetentionDays,
+                            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", " days")),
+                            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Age"))}),
+                        historyIntegerItem(
+                            QStringLiteral("pinned-history.max-entries"),
+                            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Maximum entries")),
+                            settingsText(QT_TRANSLATE_NOOP(
+                                "SettingsCatalog",
+                                "Remove the oldest closed windows when this limit is exceeded")),
+                            QStringLiteral("pinned_history/max_entries"),
+                            SettingsIntegerBinding::PinnedHistoryMaxEntries, {},
+                            {settingsText(
+                                QT_TRANSLATE_NOOP("SettingsCatalog", "Closed window count"))}),
+                        historyIntegerItem(
+                            QStringLiteral("pinned-history.max-disk-mib"),
+                            settingsText(
+                                QT_TRANSLATE_NOOP("SettingsCatalog", "Maximum disk usage")),
+                            settingsText(QT_TRANSLATE_NOOP(
+                                "SettingsCatalog",
+                                "Limit how much disk space closed pinned windows can use")),
+                            QStringLiteral("pinned_history/max_disk_mib"),
+                            SettingsIntegerBinding::PinnedHistoryMaxDiskMiB,
+                            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", " MiB")),
+                            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disk limit"))}),
+                        clearPinnedHistoryItem(),
+                    },
+                },
+                {
                     QStringLiteral("configuration"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration")),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
@@ -2609,7 +2736,11 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     translation.pageId = QStringLiteral("translation");
     translation.iconFactory = []() { return outlined_icons::Translation(); };
 
-    return {globalHotkeys, globalMouse, history, translation, settingsGroup, about};
+    SettingsNavigationPageDefinition pinned;
+    pinned.id = QStringLiteral("nav.pin-to-screen-management");
+    pinned.pageId = QString::fromLatin1(PINNED_PAGE_ID);
+    pinned.iconFactory = []() { return custom_outlined_icons::PinToScreen(); };
+    return {globalHotkeys, globalMouse, history, pinned, translation, settingsGroup, about};
 }
 
 QString locationText(const SettingsLocation& location) {
@@ -2666,6 +2797,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/pin_clipboard_content");
     case GlobalShortcutAction::PinSelectedFiles:
         return QStringLiteral("global_shortcuts/pin_selected_files");
+    case GlobalShortcutAction::RestoreLastClosedWindows:
+        return QStringLiteral("global_shortcuts/restore_last_closed_windows");
     case GlobalShortcutAction::TranslateSelectedText:
         return QStringLiteral("global_shortcuts/translate_selected_text");
     case GlobalShortcutAction::ToggleGlobalHotkeys:
@@ -2962,6 +3095,10 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard content to screen"),
                 GlobalShortcutAction::PinClipboardContent,
                 []() { return custom_outlined_icons::PinClipboard(); }),
+          quick(QStringLiteral("quick.restore-last-closed-windows"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Restore last closed windows"),
+                GlobalShortcutAction::RestoreLastClosedWindows,
+                []() { return outlined_icons::History(); }),
           quick(QStringLiteral("quick.pin-selected-files"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Selected Files to Screen"),
                 GlobalShortcutAction::PinSelectedFiles,
@@ -3239,6 +3376,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::HistoryCompressionLevel:
                         expectedKey = QStringLiteral("capture_history/compression_level");
                         break;
+                    case SettingsSelectBinding::PinnedHistoryCompressionLevel:
+                        expectedKey = QStringLiteral("pinned_history/compression_level");
+                        break;
                     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
                         expectedKey = QStringLiteral("screenshot/save_as_file_dialog");
                         break;
@@ -3300,8 +3440,14 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::HistoryEnabled:
                         expectedKey = QStringLiteral("capture_history/enabled");
                         break;
+                    case SettingsSwitchBinding::PinnedHistoryEnabled:
+                        expectedKey = QStringLiteral("pinned_history/enabled");
+                        break;
                     case SettingsSwitchBinding::HistoryKeepPermanently:
                         expectedKey = QStringLiteral("capture_history/keep_permanently");
+                        break;
+                    case SettingsSwitchBinding::PinnedHistoryKeepPermanently:
+                        expectedKey = QStringLiteral("pinned_history/keep_permanently");
                         break;
                     case SettingsSwitchBinding::SmartSelection:
                         expectedKey = QStringLiteral("screenshot_selection/smart_selection");
@@ -3431,11 +3577,20 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsIntegerBinding::HistoryRetentionDays:
                         expectedKey = QStringLiteral("capture_history/retention_days");
                         break;
+                    case SettingsIntegerBinding::PinnedHistoryRetentionDays:
+                        expectedKey = QStringLiteral("pinned_history/retention_days");
+                        break;
                     case SettingsIntegerBinding::HistoryMaxEntries:
                         expectedKey = QStringLiteral("capture_history/max_entries");
                         break;
+                    case SettingsIntegerBinding::PinnedHistoryMaxEntries:
+                        expectedKey = QStringLiteral("pinned_history/max_entries");
+                        break;
                     case SettingsIntegerBinding::HistoryMaxDiskMiB:
                         expectedKey = QStringLiteral("capture_history/max_disk_mib");
+                        break;
+                    case SettingsIntegerBinding::PinnedHistoryMaxDiskMiB:
+                        expectedKey = QStringLiteral("pinned_history/max_disk_mib");
                         break;
                     case SettingsIntegerBinding::ScreenshotDelaySeconds:
                         expectedKey = QStringLiteral("screenshot/delay_seconds");

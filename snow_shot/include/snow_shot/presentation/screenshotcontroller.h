@@ -45,6 +45,9 @@ class ScreenshotController : public QObject {
   public slots:
     void prewarmResources();
     void restorePinnedWindows();
+    void restoreLastClosedPinnedWindow();
+    void showPinnedRecord(const QString& id);
+    void destroyPinnedRecords(const QVector<QString>& ids);
     void restoreActivePinnedGroupWindows();
     void startCapture();
     void startDelayedCapture(int delaySeconds);

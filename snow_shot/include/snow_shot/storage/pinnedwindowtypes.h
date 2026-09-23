@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_PINNEDWINDOWTYPES_H
 
 #include "pinnedwindowplacement.h"
+#include "capturehistorytypes.h"
 #include <QByteArray>
 #include <QDateTime>
 #include <QImage>
@@ -38,7 +39,24 @@ enum class PinnedWindowSourceKind {
     ClipboardImageFile,
 };
 
+enum class PinnedWindowCreationSource {
+    Other,
+    Screenshot,
+    ScreenshotHistory,
+    Clipboard,
+    SelectedFiles
+};
+enum class PinnedWindowCloseIntent { Preserve, Close, Destroy };
+
+// These limits govern ignored records only.
+using PinnedWindowPolicy = CaptureHistoryPolicy;
+
 struct PinnedWindowRecord final {
+    PinnedWindowCreationSource creationSource = PinnedWindowCreationSource::Other;
+    QDateTime createdUtc;
+    QDateTime lastClosedUtc;
+    bool ignored = false;
+    quint64 activitySequence = 0;
     QString id;
     QString groupId = QStringLiteral("default");
     PinnedWindowSourceKind sourceKind = PinnedWindowSourceKind::ImageData;

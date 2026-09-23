@@ -101,6 +101,183 @@
         </message>
     </context>
     <context>
+        <name>PinnedWindowManagementPageWidget</name>
+        <message>
+            <source>%1-%2 of %3</source>
+            <translation>%1-%2 / %3</translation>
+        </message>
+        <message numerus="yes">
+            <source>%n pinned window(s)</source>
+            <translation>
+                <numerusform>%n 個貼圖視窗</numerusform>
+            </translation>
+        </message>
+        <message>
+            <source>All sources</source>
+            <translation>所有來源</translation>
+        </message>
+        <message>
+            <source>Bulk actions for selected pinned windows</source>
+            <translation>對選取的貼圖視窗執行批次操作</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Change the source or date range to see more pinned windows</source>
+            <translation>變更來源或日期範圍以查看更多貼圖視窗</translation>
+        </message>
+        <message>
+            <source>Clipboard</source>
+            <translation>剪貼簿</translation>
+        </message>
+        <message>
+            <source>Closed</source>
+            <translation>已關閉</translation>
+        </message>
+        <message>
+            <source>Date</source>
+            <translation>日期</translation>
+        </message>
+        <message>
+            <source>Default</source>
+            <translation>預設</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>刪除</translation>
+        </message>
+        <message numerus="yes">
+            <source>Delete %n selected item(s)?</source>
+            <translation>
+                <numerusform>刪除選取的 %n 個項目？</numerusform>
+            </translation>
+        </message>
+        <message>
+            <source>Delete all pinned windows</source>
+            <translation>刪除所有貼圖視窗</translation>
+        </message>
+        <message>
+            <source>Delete all pinned windows?</source>
+            <translation>刪除所有貼圖視窗？</translation>
+        </message>
+        <message>
+            <source>Delete selected pinned windows</source>
+            <translation>刪除選取的貼圖視窗</translation>
+        </message>
+        <message>
+            <source>Delete this pinned window?</source>
+            <translation>刪除此貼圖視窗？</translation>
+        </message>
+        <message>
+            <source>Deselect all</source>
+            <translation>取消全選</translation>
+        </message>
+        <message>
+            <source>Deselect all pinned windows</source>
+            <translation>取消選取所有貼圖視窗</translation>
+        </message>
+        <message>
+            <source>End date</source>
+            <translation>結束日期</translation>
+        </message>
+        <message>
+            <source>Group: %1</source>
+            <translation>群組：%1</translation>
+        </message>
+        <message>
+            <source>Loading preview…</source>
+            <translation>正在載入預覽…</translation>
+        </message>
+        <message>
+            <source>No matching pinned windows</source>
+            <translation>沒有符合條件的貼圖視窗</translation>
+        </message>
+        <message>
+            <source>No pinned windows</source>
+            <translation>尚無貼圖視窗</translation>
+        </message>
+        <message>
+            <source>Other / legacy</source>
+            <translation>其他 / 舊記錄</translation>
+        </message>
+        <message>
+            <source>Pin to Screen Management</source>
+            <translation>貼圖管理</translation>
+        </message>
+        <message>
+            <source>Pinned images and text will appear here</source>
+            <translation>貼到螢幕的圖片與文字會顯示在這裡</translation>
+        </message>
+        <message>
+            <source>Preview unavailable</source>
+            <translation>無法預覽</translation>
+        </message>
+        <message>
+            <source>Refresh pinned windows</source>
+            <translation>重新整理貼圖視窗</translation>
+        </message>
+        <message>
+            <source>Restore</source>
+            <translation>還原</translation>
+        </message>
+        <message>
+            <source>Retained</source>
+            <translation>已保留</translation>
+        </message>
+        <message>
+            <source>Saved records and their open windows will be removed</source>
+            <translation>已儲存的記錄及其開啟的視窗將被移除</translation>
+        </message>
+        <message>
+            <source>Screenshot</source>
+            <translation>截圖</translation>
+        </message>
+        <message>
+            <source>Screenshot history</source>
+            <translation>截圖歷史</translation>
+        </message>
+        <message>
+            <source>Select all</source>
+            <translation>全選</translation>
+        </message>
+        <message>
+            <source>Select all entries on this page</source>
+            <translation>選取此頁的所有項目</translation>
+        </message>
+        <message>
+            <source>Select record</source>
+            <translation>選取記錄</translation>
+        </message>
+        <message numerus="yes">
+            <source>Selected %n item(s)</source>
+            <translation>
+                <numerusform>已選取 %n 個項目</numerusform>
+            </translation>
+        </message>
+        <message>
+            <source>Selected files</source>
+            <translation>所選檔案</translation>
+        </message>
+        <message>
+            <source>Show</source>
+            <translation>顯示</translation>
+        </message>
+        <message>
+            <source>Source</source>
+            <translation>來源</translation>
+        </message>
+        <message>
+            <source>Start date</source>
+            <translation>開始日期</translation>
+        </message>
+        <message>
+            <source>The saved record and its open window will be removed</source>
+            <translation>此記錄及其開啟的視窗將被移除</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotHistoryPageWidget</name>
         <message>
             <source>%1 B</source>
@@ -121,8 +298,8 @@
         <message numerus="yes">
             <source>%n screenshot(s)</source>
             <translation>
-            <numerusform>%n 張截圖</numerusform>
-        </translation>
+                <numerusform>%n 張截圖</numerusform>
+            </translation>
         </message>
         <message>
             <source>All sources</source>
@@ -159,8 +336,8 @@
         <message numerus="yes">
             <source>Delete %n selected item(s)?</source>
             <translation>
-            <numerusform>刪除選取的 %n 個項目？</numerusform>
-        </translation>
+                <numerusform>刪除選取的 %n 個項目？</numerusform>
+            </translation>
         </message>
         <message>
             <source>Delete all</source>
@@ -229,8 +406,8 @@
         <message numerus="yes">
             <source>Selected %n item(s)</source>
             <translation>
-            <numerusform>已選取 %n 個項目</numerusform>
-        </translation>
+                <numerusform>已選取 %n 個項目</numerusform>
+            </translation>
         </message>
         <message>
             <source>Start date</source>
@@ -298,6 +475,10 @@
         <message>
             <source>Delete Specified Group</source>
             <translation>刪除指定群組</translation>
+        </message>
+        <message>
+            <source>Destroy</source>
+            <translation>銷毀</translation>
         </message>
         <message>
             <source>Display text recognition results</source>

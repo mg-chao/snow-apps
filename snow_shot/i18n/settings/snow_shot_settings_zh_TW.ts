@@ -754,6 +754,10 @@
             <translation>期限</translation>
         </message>
         <message>
+            <source>All closed pinned windows will be removed; retained windows are protected</source>
+            <translation>將移除所有已關閉的貼圖視窗；保留中的視窗不受影響</translation>
+        </message>
+        <message>
             <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
             <translation>目前所有應用程式設定都將被壓縮檔中的值取代。部分變更將在應用程式重新啟動後生效。</translation>
         </message>
@@ -894,6 +898,10 @@
             <translation>瀏覽</translation>
         </message>
         <message>
+            <source>Browse, restore, and delete pinned windows</source>
+            <translation>瀏覽、還原和刪除貼圖視窗</translation>
+        </message>
+        <message>
             <source>Cached history thumbnails will be removed and rebuilt on demand</source>
             <translation>已快取的歷史縮圖將被刪除，並在需要時重新產生</translation>
         </message>
@@ -994,6 +1002,10 @@
             <translation>選擇系統匣使用的內建圖示</translation>
         </message>
         <message>
+            <source>Choose the compression effort used for display images saved in closed pinned windows</source>
+            <translation>選擇儲存貼圖影像時使用的壓縮等級</translation>
+        </message>
+        <message>
             <source>Choose the compression effort used for display images saved in screenshot history</source>
             <translation>選擇螢幕截圖歷史記錄中儲存的顯示器影像壓縮等級</translation>
         </message>
@@ -1074,6 +1086,14 @@
             <translation>清除快取</translation>
         </message>
         <message>
+            <source>Clear closed records</source>
+            <translation>清除已關閉記錄</translation>
+        </message>
+        <message>
+            <source>Clear closed records?</source>
+            <translation>清除已關閉記錄？</translation>
+        </message>
+        <message>
             <source>Clear history</source>
             <translation>清除歷史</translation>
         </message>
@@ -1112,6 +1132,10 @@
         <message>
             <source>Close window</source>
             <translation>關閉視窗</translation>
+        </message>
+        <message>
+            <source>Closed window count</source>
+            <translation>已關閉視窗數量</translation>
         </message>
         <message>
             <source>Color mode</source>
@@ -1300,6 +1324,14 @@
         <message>
             <source>Delete</source>
             <translation>刪除</translation>
+        </message>
+        <message>
+            <source>Delete closed windows</source>
+            <translation>刪除已關閉視窗</translation>
+        </message>
+        <message>
+            <source>Delete closed windows after they reach this age</source>
+            <translation>刪除關閉時間超過此期限的視窗</translation>
         </message>
         <message>
             <source>Delete files</source>
@@ -1694,6 +1726,10 @@
             <translation>跳轉至翻譯頁面</translation>
         </message>
         <message>
+            <source>Keep closed windows available for restoration; disabling does not delete existing records</source>
+            <translation>保留已關閉視窗以便還原；停用不會刪除現有記錄</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>永久保留記錄</translation>
         </message>
@@ -1744,6 +1780,10 @@
         <message>
             <source>Light</source>
             <translation>淺色</translation>
+        </message>
+        <message>
+            <source>Limit how much disk space closed pinned windows can use</source>
+            <translation>限制已關閉貼圖視窗佔用的磁碟空間</translation>
         </message>
         <message>
             <source>Limit how much disk space screenshot history can use</source>
@@ -2006,6 +2046,10 @@
             <translation>永久移除所有已儲存的截圖</translation>
         </message>
         <message>
+            <source>Permanently remove closed pinned windows</source>
+            <translation>永久移除已關閉的貼圖視窗</translation>
+        </message>
+        <message>
             <source>Permission status and access</source>
             <translation>權限狀態與授權</translation>
         </message>
@@ -2048,6 +2092,10 @@
         <message>
             <source>Pin to Screen</source>
             <translation>釘選到螢幕</translation>
+        </message>
+        <message>
+            <source>Pin to Screen Management</source>
+            <translation>貼圖管理</translation>
         </message>
         <message>
             <source>Pin to Screen toolbar settings</source>
@@ -2198,12 +2246,20 @@
             <translation>刪除已快取的截圖歷史縮圖</translation>
         </message>
         <message>
+            <source>Remove closed windows</source>
+            <translation>移除已關閉視窗</translation>
+        </message>
+        <message>
             <source>Remove leftover recording working files that are no longer needed</source>
             <translation>刪除不再需要的螢幕錄製遺留工作檔案</translation>
         </message>
         <message>
             <source>Remove screenshots</source>
             <translation>移除截圖</translation>
+        </message>
+        <message>
+            <source>Remove the oldest closed windows when this limit is exceeded</source>
+            <translation>超過限制時移除最早關閉的視窗</translation>
         </message>
         <message>
             <source>Remove the oldest screenshots when this limit is exceeded</source>
@@ -2246,12 +2302,28 @@
             <translation>從設定壓縮檔還原應用程式設定</translation>
         </message>
         <message>
+            <source>Restore last closed windows</source>
+            <translation>還原最近關閉的視窗</translation>
+        </message>
+        <message>
             <source>Restore original screen colors</source>
             <translation>還原螢幕原始色彩</translation>
         </message>
         <message>
             <source>Restore settings</source>
             <translation>還原設定</translation>
+        </message>
+        <message>
+            <source>Restore the most recently closed window in the current group</source>
+            <translation>還原目前群組中最近關閉的視窗</translation>
+        </message>
+        <message>
+            <source>Retain closed windows</source>
+            <translation>保留已關閉視窗</translation>
+        </message>
+        <message>
+            <source>Retention limits apply only to closed windows; retained windows are always protected</source>
+            <translation>儲存限制僅適用於已關閉視窗；保留中的視窗始終受到保護</translation>
         </message>
         <message>
             <source>Retention period</source>

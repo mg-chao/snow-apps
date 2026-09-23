@@ -1,4 +1,5 @@
 #include "snow_shot/storage/applicationstorage.h"
+#include <QTimer>
 
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
@@ -237,6 +238,41 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_captureHistory = makeCaptureHistoryRepository(effectiveDirectory, std::move(historyOptions));
     m_pinnedWindows = std::make_unique<PinnedWindowRepository>(
         effectiveDirectory, m_status.writeAvailable, options.debounceMilliseconds);
+    m_pinnedWindows->setChangedCallback([this]() {
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                if (!m_initialized || !m_pinnedWindows)
+                    return;
+                static_cast<void>(m_pinnedWindows->enforcePolicy());
+                const auto error = m_pinnedWindows->lastError();
+                if (m_status.lastPinnedError != error) {
+                    m_status.lastPinnedError = error;
+                    emitStatusChanged();
+                }
+                emit pinnedWindowsChanged();
+            },
+            Qt::QueuedConnection);
+    });
+    static_cast<void>(m_pinnedWindows->setPolicy(pinnedWindowPolicy()));
+    m_pinnedWindows->setCompressionLevel(
+        m_configuration->value(QStringLiteral("pinned_history/compression_level")).toString());
+    auto* pinnedCleanupTimer = new QTimer(m_configuration.get());
+    pinnedCleanupTimer->setInterval(60000);
+    connect(pinnedCleanupTimer, &QTimer::timeout, this, [this]() {
+        if (m_initialized && m_pinnedWindows)
+            static_cast<void>(m_pinnedWindows->enforcePolicy());
+    });
+    pinnedCleanupTimer->start();
+    connect(m_configuration.get(), &ConfigurationStore::valueChanged, this,
+            [this](const QString& key, const QJsonValue&) {
+                if (key.startsWith(QStringLiteral("pinned_history/")) && m_pinnedWindows) {
+                    static_cast<void>(m_pinnedWindows->setPolicy(pinnedWindowPolicy()));
+                    m_pinnedWindows->setCompressionLevel(
+                        m_configuration->value(QStringLiteral("pinned_history/compression_level"))
+                            .toString());
+                }
+            });
     m_status.historyUsage = m_captureHistory->usage();
     m_status.lastHistoryError = m_captureHistory->lastError();
 
@@ -434,6 +470,46 @@ std::shared_future<StorageResult> ApplicationStorage::requestSmartSelectionAsync
         return readyFuture(StorageResult::failure(m_configuration->lastError()));
     }
     return readyFuture(StorageResult::ok());
+}
+
+PinnedWindowPolicy ApplicationStorage::pinnedWindowPolicy() const {
+    if (!m_configuration)
+        return {};
+    return {
+        m_configuration->value(QStringLiteral("pinned_history/enabled")).toBool(true),
+        m_configuration->value(QStringLiteral("pinned_history/retention_days")).toInt(7),
+        m_configuration->value(QStringLiteral("pinned_history/max_entries")).toInt(100),
+        m_configuration->value(QStringLiteral("pinned_history/max_disk_mib")).toInt(1024),
+        m_configuration->value(QStringLiteral("pinned_history/keep_permanently")).toBool(false)};
+}
+
+bool ApplicationStorage::requestPinnedWindowPolicy(const PinnedWindowPolicy& policy) {
+    if (!m_initialized || !m_status.writeAvailable || !policy.isValid())
+        return false;
+    m_status.pinnedPolicyUpdating = true;
+    emitStatusChanged();
+    const auto result = m_configuration->setValues(
+        {{QStringLiteral("pinned_history/enabled"), policy.enabled},
+         {QStringLiteral("pinned_history/keep_permanently"), policy.keepPermanently},
+         {QStringLiteral("pinned_history/retention_days"), policy.retentionDays},
+         {QStringLiteral("pinned_history/max_entries"), policy.maxEntries},
+         {QStringLiteral("pinned_history/max_disk_mib"), policy.maxDiskMiB}});
+    m_status.pinnedPolicyUpdating = false;
+    m_status.lastPinnedError = result ? QString() : m_configuration->lastError();
+    emitStatusChanged();
+    return result;
+}
+
+bool ApplicationStorage::requestPinnedWindowClear() {
+    if (!m_initialized || !m_status.writeAvailable)
+        return false;
+    m_status.pinnedClearing = true;
+    emitStatusChanged();
+    const auto result = m_pinnedWindows->clearClosed();
+    m_status.pinnedClearing = false;
+    m_status.lastPinnedError = result.error;
+    emitStatusChanged();
+    return result.success;
 }
 
 bool ApplicationStorage::requestCaptureHistoryClear() {

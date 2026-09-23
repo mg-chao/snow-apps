@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/components/translationpagewidget.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
@@ -157,6 +158,9 @@ QWidget* ContentCardWidget::createPage(
                 &ContentCardWidget::screenshotHistoryPinRequested);
         page = historyPage;
     } else if (definition.kind ==
+               snow_shot::presentation::settings::SettingsPageKind::PinnedWindowManagement) {
+        page = new PinnedWindowManagementPageWidget(m_stack);
+    } else if (definition.kind ==
                snow_shot::presentation::settings::SettingsPageKind::Translation) {
         auto* translationPage = new TranslationPageWidget(m_stack, m_translationClient);
         connect(translationPage, &TranslationPageWidget::closeWindowRequested, this,
@@ -271,6 +275,10 @@ void ContentCardWidget::applyTheme(
     } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
                historyPage != nullptr) {
         historyPage->applyTheme(scheme);
+    } else if (auto* pinnedPage =
+                   dynamic_cast<PinnedWindowManagementPageWidget*>(m_activePage.data());
+               pinnedPage != nullptr) {
+        pinnedPage->applyTheme(scheme);
     }
     update();
 }
@@ -284,6 +292,10 @@ void ContentCardWidget::retranslateUi() {
     } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
                historyPage != nullptr) {
         historyPage->retranslateUi();
+    } else if (auto* pinnedPage =
+                   dynamic_cast<PinnedWindowManagementPageWidget*>(m_activePage.data());
+               pinnedPage != nullptr) {
+        pinnedPage->retranslateUi();
     }
     emit sectionListChanged();
 }
