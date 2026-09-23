@@ -14,6 +14,7 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDateTime>
 #include <QEvent>
 #include <QElapsedTimer>
@@ -23,6 +24,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QRegion>
+#include <QScopeGuard>
 #include <QCryptographicHash>
 #include <QUuid>
 #include <QLabel>
@@ -454,6 +456,8 @@ void moreMenuOffersPinAndDelete() {
     page.show();
     page.setActive(true);
     flushEvents();
+    const QPoint previousCursor = QCursor::pos();
+    const auto restoreCursor = qScopeGuard([previousCursor] { QCursor::setPos(previousCursor); });
 
     auto* pinnableEntry =
         page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-0"));
@@ -490,6 +494,7 @@ void moreMenuOffersPinAndDelete() {
     auto hover = [](QWidget* widget) {
         const QPoint local = widget->rect().center();
         const QPoint global = widget->mapToGlobal(local);
+        QCursor::setPos(global);
         QEnterEvent event(local, local, global);
         QApplication::sendEvent(widget, &event);
     };
@@ -497,6 +502,7 @@ void moreMenuOffersPinAndDelete() {
         const QRect geometry = menu->actionGeometry(action);
         const QPoint local = geometry.center();
         const QPoint global = menu->mapToGlobal(local);
+        QCursor::setPos(global);
         QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
                           Qt::NoModifier);
         QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
