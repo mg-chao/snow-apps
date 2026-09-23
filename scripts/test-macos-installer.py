@@ -77,6 +77,7 @@ elif name == 'openssl':
     if args[0] == 'req':
         pathlib.Path(args[args.index('-keyout')+1]).write_text('private fixture')
         pathlib.Path(args[args.index('-out')+1]).write_text('certificate fixture')
+    elif args[0] == 'rand': print('B'*64)
     elif args[0] == 'x509': print('SHA1 Fingerprint=' + ':'.join(['AA']*20))
     elif args[0] == 'pkcs12': pathlib.Path(args[args.index('-out')+1]).write_text('fixture p12')
 elif name == 'uuidgen': print('TEST-UUID')
@@ -330,6 +331,10 @@ class InstallerTests(unittest.TestCase):
         imported = next(c for c in security if c[1] == 'import')
         self.assertNotIn('-A', imported)
         self.assertEqual(imported[imported.index('-T')+1], '/usr/bin/codesign')
+        self.assertEqual(imported[imported.index('-P')+1], 'B'*64)
+        exported = next(c for c in self.calls('openssl') if c[1] == 'pkcs12')
+        self.assertEqual(exported[exported.index('-passout')+1],
+                         'env:SNOW_INSTALLER_P12_PASSWORD')
         self.assertFalse((self.work / 'private.pem').exists())
         self.assertFalse((self.work / 'identity.p12').exists())
 

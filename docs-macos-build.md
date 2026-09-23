@@ -125,7 +125,9 @@ The installer creates a dedicated ten-year self-signed code-signing certificate
 and private key in the user's login Keychain. Trust is scoped to the user's
 code-signing policy; private-key access is limited to `/usr/bin/codesign` and
 normal Keychain authorization. Temporary private-key files are removed after
-import or on failure. State is stored under
+import or on failure. macOS requires a nonempty PKCS#12 import passphrase; the
+installer generates a one-time random value, which the `security` CLI briefly
+exposes as a process argument during import. State is stored under
 `~/Library/Application Support/Snow Shot/Installer`; retain this directory and
 the original Keychain identity across reinstalls. The installer signs only the
 outer bundle/main executable, preserving embedded helper signatures and the OCR

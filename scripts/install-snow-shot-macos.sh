@@ -213,7 +213,7 @@ prepare_state() {
 }
 
 prepare_identity() {
-    local keychain="$HOME/Library/Keychains/login.keychain-db" fingerprint identities
+    local keychain="$HOME/Library/Keychains/login.keychain-db" fingerprint identities pkcs12_password
     [[ -f "$keychain" ]] || die identity
     if [[ -f "$state/identity" ]]; then
         fingerprint=$(tr '[:lower:]' '[:upper:]' < "$state/identity")
@@ -240,10 +240,13 @@ CERT
             -config "$work/certificate.cnf" -keyout "$work/private.pem" -out "$work/certificate.pem" || die identity
         fingerprint=$(openssl x509 -in "$work/certificate.pem" -noout -fingerprint -sha1 | sed 's/.*=//; s/://g')
         [[ "$fingerprint" =~ ^[[:xdigit:]]{40}$ ]] || die identity
-        # Temporary PKCS#12 is private (umask 077); no password or private key in argv.
-        run openssl pkcs12 -export -inkey "$work/private.pem" -in "$work/certificate.pem" \
-            -out "$work/identity.p12" -passout pass: || die identity
-        run security import "$work/identity.p12" -k "$keychain" -P '' -T /usr/bin/codesign || die identity
+        pkcs12_password=$(openssl rand -hex 32) || die identity
+        SNOW_INSTALLER_P12_PASSWORD="$pkcs12_password" run openssl pkcs12 -export \
+            -inkey "$work/private.pem" -in "$work/certificate.pem" \
+            -out "$work/identity.p12" -passout env:SNOW_INSTALLER_P12_PASSWORD || die identity
+        run security import "$work/identity.p12" -k "$keychain" -P "$pkcs12_password" \
+            -T /usr/bin/codesign || die identity
+        unset pkcs12_password
         # User trust domain only, scoped to code signing (no -d or -A).
         run security add-trusted-cert -r trustRoot -p codeSign -k "$keychain" "$work/certificate.pem" || die identity
         printf '%s\n' "$fingerprint" > "$state/identity.tmp"
