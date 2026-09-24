@@ -1,7 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M512 148c-150 0-272 122-272 272v184c0 150 122 272 272 272s272-122 272-272V420c0-150-122-272-272-272Z"/>
-    <path d="M240 472h544"/>
-    <rect x="476" y="232" width="72" height="144" rx="36" fill="currentColor" stroke="none"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linejoin="round" data-adqt-slot="primary">
+  <path d="M512 104.32c-168 0-304.64 136.64-304.64 304.64v206.08c0 168 136.64 304.64 304.64 304.64s304.64-136.64 304.64-304.64V408.96c0-168-136.64-304.64-304.64-304.64Z"/>
+  <path d="M207.36 467.2h609.28"/>
+  <rect x="471.68" y="198.4" width="80.64" height="161.28" rx="40.32" fill="currentColor" stroke="none"/>
 </svg>

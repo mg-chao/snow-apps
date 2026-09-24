@@ -1,5 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M696 314c-40-58-120-90-216-90-128 0-216 58-216 141 0 70 64 109 200 134l96 19c120 26 184 64 184 135 0 90-96 147-224 147-112 0-200-38-248-109"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <path d="M718.08 290.24c-44.8-64.96-134.4-100.8-241.92-100.8-143.36 0-241.92 64.96-241.92 157.92 0 78.4 71.68 122.08 224 150.08l107.52 21.28c134.4 29.12 206.08 71.68 206.08 151.2 0 100.8-107.52 164.64-250.88 164.64-125.44 0-224-42.56-277.76-122.08"/>
 </svg>

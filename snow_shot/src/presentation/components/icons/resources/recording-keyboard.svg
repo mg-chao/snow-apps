@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <rect x="120" y="248" width="784" height="528" rx="48"/>
-    <path d="M244 376h40m126 0h40m126 0h40m126 0h40M244 504h40m126 0h40m126 0h40m126 0h40M328 640h368"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <rect x="72.96" y="216.32" width="878.08" height="591.36" rx="53.76"/>
+  <path d="M211.84 359.68h44.8m141.12 0h44.8m141.12 0h44.8m141.12 0h44.8M211.84 503.04h44.8m141.12 0h44.8m141.12 0h44.8m141.12 0h44.8M305.92 655.36h412.16"/>
 </svg>

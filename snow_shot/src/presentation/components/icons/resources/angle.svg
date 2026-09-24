@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M184 176V824H840"/>
-    <path d="M184 488A336 336 0 0 1 520 824"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linejoin="round" data-adqt-slot="primary">
+  <path d="M144.64 135.68V861.44H879.36"/>
+  <path d="M144.64 485.12A376.32 376.32 0 0 1 520.96 861.44"/>
 </svg>

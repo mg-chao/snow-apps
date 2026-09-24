@@ -1,8 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M368 200h-80a56 56 0 0 0-56 56v584a56 56 0 0 0 56 56h448a56 56 0 0 0 56-56V256a56 56 0 0 0-56-56h-80"/>
-    <path d="M392 264v-80a40 40 0 0 1 40-40h160a40 40 0 0 1 40 40v80H392z"/>
-    <path d="M426 392h172v64l-32 48v96l72 72H386l72-72v-96l-32-48v-64z" fill="currentColor" stroke="none"/>
-    <path d="M512 672v104"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <path d="M350.72 162.56h-89.6a62.72 62.72 0 0 0-62.72 62.72v654.08a62.72 62.72 0 0 0 62.72 62.72h501.76a62.72 62.72 0 0 0 62.72-62.72V225.28a62.72 62.72 0 0 0-62.72-62.72h-89.6"/>
+  <path d="M377.6 234.24v-89.6a44.8 44.8 0 0 1 44.8-44.8h179.2a44.8 44.8 0 0 1 44.8 44.8v89.6H377.6z"/>
+  <path d="M415.68 377.6h192.64v71.68l-35.84 53.76v107.52l80.64 80.64H370.88l80.64-80.64v-107.52l-35.84-53.76v-71.68z" fill="currentColor" stroke="none"/>
+  <path d="M512 691.2v116.48"/>
 </svg>

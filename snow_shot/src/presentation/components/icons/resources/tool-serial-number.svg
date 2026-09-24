@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <circle cx="512" cy="512" r="364"/>
-    <path d="m396 396 132-76v384M392 704h272"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linejoin="round">
+  <circle cx="512" cy="512" r="407.68"/>
+  <path d="m381.92 381.92 147.84-85.12v430.08M377.6 727.04h304.64"/>
 </svg>

@@ -1,20 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <circle cx="416" cy="416" r="78"/>
-    <circle cx="608" cy="416" r="78"/>
-    <circle cx="416" cy="608" r="78"/>
-    <circle cx="608" cy="608" r="78"/>
-    <circle cx="224" cy="416" r="48"/>
-    <circle cx="224" cy="608" r="48"/>
-    <circle cx="800" cy="416" r="48"/>
-    <circle cx="800" cy="608" r="48"/>
-    <circle cx="416" cy="224" r="48"/>
-    <circle cx="608" cy="224" r="48"/>
-    <circle cx="416" cy="800" r="48"/>
-    <circle cx="608" cy="800" r="48"/>
-    <circle cx="224" cy="224" r="30"/>
-    <circle cx="800" cy="224" r="30"/>
-    <circle cx="224" cy="800" r="30"/>
-    <circle cx="800" cy="800" r="30"/>
-  </g>
+  <circle cx="404.48" cy="404.48" r="87.36"/>
+  <circle cx="619.52" cy="404.48" r="87.36"/>
+  <circle cx="404.48" cy="619.52" r="87.36"/>
+  <circle cx="619.52" cy="619.52" r="87.36"/>
+  <circle cx="189.44" cy="404.48" r="53.76"/>
+  <circle cx="189.44" cy="619.52" r="53.76"/>
+  <circle cx="834.56" cy="404.48" r="53.76"/>
+  <circle cx="834.56" cy="619.52" r="53.76"/>
+  <circle cx="404.48" cy="189.44" r="53.76"/>
+  <circle cx="619.52" cy="189.44" r="53.76"/>
+  <circle cx="404.48" cy="834.56" r="53.76"/>
+  <circle cx="619.52" cy="834.56" r="53.76"/>
+  <circle cx="189.44" cy="189.44" r="33.6"/>
+  <circle cx="834.56" cy="189.44" r="33.6"/>
+  <circle cx="189.44" cy="834.56" r="33.6"/>
+  <circle cx="834.56" cy="834.56" r="33.6"/>
 </svg>

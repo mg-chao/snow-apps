@@ -1,11 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <rect x="148" y="160" width="728" height="704" rx="48"/>
-    <path d="M148 352h728"/>
-    <g fill="currentColor" stroke="none">
-      <circle cx="244" cy="256" r="36"/>
-      <circle cx="336" cy="256" r="36"/>
-      <circle cx="428" cy="256" r="36"/>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linejoin="round" data-adqt-slot="primary">
+  <rect x="104.32" y="117.76" width="815.36" height="788.48" rx="53.76"/>
+  <path d="M104.32 332.8h815.36"/>
+  <g fill="currentColor" stroke="none">
+    <circle cx="211.84" cy="225.28" r="40.32"/>
+    <circle cx="314.88" cy="225.28" r="40.32"/>
+    <circle cx="417.92" cy="225.28" r="40.32"/>
   </g>
 </svg>

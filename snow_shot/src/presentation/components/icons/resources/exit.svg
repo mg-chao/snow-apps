@@ -1,7 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M624 160H200a48 48 0 0 0-48 48v608a48 48 0 0 0 48 48h424"/>
-    <path d="M376 512h496"/>
-    <path d="M720 360 872 512 720 664"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M637.44 117.76H162.56a53.76 53.76 0 0 0-53.76 53.76v680.96a53.76 53.76 0 0 0 53.76 53.76h474.88"/>
+  <path d="M359.68 512h555.52"/>
+  <path d="M744.96 341.76 915.2 512 744.96 682.24"/>
 </svg>

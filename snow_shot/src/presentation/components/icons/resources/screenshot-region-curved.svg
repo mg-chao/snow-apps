@@ -1,5 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M180 580C112 348 280 140 476 180C624 212 608 348 760 364C948 384 892 656 720 780C524 924 240 788 180 580Z"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linejoin="round">
+  <path d="M140.16 588.16C64 328.32 252.16 95.36 471.68 140.16C637.44 176 619.52 328.32 789.76 346.24C1000.32 368.64 937.6 673.28 744.96 812.16C525.44 973.44 207.36 821.12 140.16 588.16Z"/>
 </svg>

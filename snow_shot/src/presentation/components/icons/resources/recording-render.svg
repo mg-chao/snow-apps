@@ -1,7 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <rect x="136" y="176" width="608" height="240" rx="48"/>
-    <path d="M744 296h120v224a64 64 0 0 1-64 64H512a72 72 0 0 0-72 72v40"/>
-    <rect x="376" y="696" width="128" height="184" rx="24"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <rect x="90.88" y="135.68" width="680.96" height="268.8" rx="53.76"/>
+  <path d="M771.84 270.08h134.4v250.88a71.68 71.68 0 0 1-71.68 71.68H512a80.64 80.64 0 0 0-80.64 80.64v44.8"/>
+  <rect x="359.68" y="718.08" width="143.36" height="206.08" rx="26.88"/>
 </svg>

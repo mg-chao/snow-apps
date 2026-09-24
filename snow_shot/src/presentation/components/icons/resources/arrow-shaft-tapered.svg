@@ -1,5 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M148 512L876 376V648Z" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round"/>
-  </g>
+  <path d="M104.32 512L919.68 359.68V664.32Z" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linejoin="round"/>
 </svg>

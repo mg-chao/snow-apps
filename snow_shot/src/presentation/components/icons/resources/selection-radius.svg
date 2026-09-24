@@ -1,16 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
-  <g transform="translate(-61.44 -61.44) scale(1.12)">
-    <path d="M540 128H358c-127 0-230 103-230 230v182a8 8 0 0 0 8 8h56a8 8 0 0 0 8-8V358c0-87.3 70.7-158 158-158h182a8 8 0 0 0 8-8v-56a8 8 0 0 0-8-8Z"/>
-    <rect x="648" y="128" width="72" height="72" rx="8"/>
-    <rect x="824" y="128" width="72" height="72" rx="8"/>
-    <rect x="824" y="302" width="72" height="72" rx="8"/>
-    <rect x="824" y="476" width="72" height="72" rx="8"/>
-    <rect x="824" y="650" width="72" height="72" rx="8"/>
-    <rect x="824" y="824" width="72" height="72" rx="8"/>
-    <rect x="650" y="824" width="72" height="72" rx="8"/>
-    <rect x="476" y="824" width="72" height="72" rx="8"/>
-    <rect x="302" y="824" width="72" height="72" rx="8"/>
-    <rect x="128" y="824" width="72" height="72" rx="8"/>
-    <rect x="128" y="650" width="72" height="72" rx="8"/>
-  </g>
+  <path d="M543.36 81.92H339.52c-142.24 0-257.6 115.36-257.6 257.6v203.84a8.96 8.96 0 0 0 8.96 8.96h62.72a8.96 8.96 0 0 0 8.96-8.96V339.52c0-97.776 79.184-176.96 176.96-176.96h203.84a8.96 8.96 0 0 0 8.96-8.96v-62.72a8.96 8.96 0 0 0-8.96-8.96Z"/>
+  <rect x="664.32" y="81.92" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="861.44" y="81.92" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="861.44" y="276.8" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="861.44" y="471.68" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="861.44" y="666.56" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="861.44" y="861.44" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="666.56" y="861.44" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="471.68" y="861.44" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="276.8" y="861.44" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="81.92" y="861.44" width="80.64" height="80.64" rx="8.96"/>
+  <rect x="81.92" y="666.56" width="80.64" height="80.64" rx="8.96"/>
 </svg>
