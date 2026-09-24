@@ -182,6 +182,42 @@ qreal viewScale(const QTransform& canvasToViewTransform) {
                          std::hypot(canvasToViewTransform.m21(), canvasToViewTransform.m22())));
 }
 
+QRegion selectionStateHandleRegion(const ScreenshotSelectionVisualState& state,
+                                   const QRect& viewportRect,
+                                   const QTransform& canvasToViewTransform) {
+    if (!state.present || state.toolbarHovered || !state.handlesVisible) {
+        return {};
+    }
+    const QRectF selectionBounds = mappedSelectionBounds(state, canvasToViewTransform);
+    if (!selectionBounds.isValid() || selectionBounds.isEmpty()) {
+        return {};
+    }
+    const double minSide = std::min(selectionBounds.width(), selectionBounds.height());
+    std::array<QPointF, 8> handles{};
+    std::size_t handleCount = 0;
+    if (state.cornerRadius <= 0 && minSide > kShowEndHandlesMinSize) {
+        handles[handleCount++] = selectionBounds.topLeft();
+        handles[handleCount++] = selectionBounds.topRight();
+        handles[handleCount++] = selectionBounds.bottomRight();
+        handles[handleCount++] = selectionBounds.bottomLeft();
+    }
+    if (minSide > kShowMidHandlesMinSize) {
+        handles[handleCount++] = QPointF(selectionBounds.center().x(), selectionBounds.top());
+        handles[handleCount++] = QPointF(selectionBounds.right(), selectionBounds.center().y());
+        handles[handleCount++] = QPointF(selectionBounds.center().x(), selectionBounds.bottom());
+        handles[handleCount++] = QPointF(selectionBounds.left(), selectionBounds.center().y());
+    }
+    QRegion damage;
+    for (std::size_t index = 0; index < handleCount; ++index) {
+        damage += QRectF(handles[index].x() - kSelectionHandleUpdatePadding,
+                         handles[index].y() - kSelectionHandleUpdatePadding,
+                         kSelectionHandleUpdatePadding * 2, kSelectionHandleUpdatePadding * 2)
+                      .toAlignedRect()
+                      .intersected(viewportRect);
+    }
+    return damage;
+}
+
 QRegion selectionStateDecorationRegion(const ScreenshotSelectionVisualState& state,
                                        const QRect& viewportRect,
                                        const QTransform& canvasToViewTransform) {
@@ -204,32 +240,7 @@ QRegion selectionStateDecorationRegion(const ScreenshotSelectionVisualState& sta
         decoration -= QRegion(stableInterior.intersected(viewportRect));
     }
 
-    if (!state.toolbarHovered && state.handlesVisible) {
-        const double minSide = std::min(selectionBounds.width(), selectionBounds.height());
-        std::array<QPointF, 8> handles{};
-        std::size_t handleCount = 0;
-        if (state.cornerRadius <= 0 && minSide > kShowEndHandlesMinSize) {
-            handles[handleCount++] = selectionBounds.topLeft();
-            handles[handleCount++] = selectionBounds.topRight();
-            handles[handleCount++] = selectionBounds.bottomRight();
-            handles[handleCount++] = selectionBounds.bottomLeft();
-        }
-        if (minSide > kShowMidHandlesMinSize) {
-            handles[handleCount++] = QPointF(selectionBounds.center().x(), selectionBounds.top());
-            handles[handleCount++] = QPointF(selectionBounds.right(), selectionBounds.center().y());
-            handles[handleCount++] =
-                QPointF(selectionBounds.center().x(), selectionBounds.bottom());
-            handles[handleCount++] = QPointF(selectionBounds.left(), selectionBounds.center().y());
-        }
-        for (std::size_t index = 0; index < handleCount; ++index) {
-            decoration +=
-                QRegion(QRectF(handles[index].x() - kSelectionHandleUpdatePadding,
-                               handles[index].y() - kSelectionHandleUpdatePadding,
-                               kSelectionHandleUpdatePadding * 2, kSelectionHandleUpdatePadding * 2)
-                            .toAlignedRect()
-                            .intersected(viewportRect));
-        }
-    }
+    decoration += selectionStateHandleRegion(state, viewportRect, canvasToViewTransform);
     return decoration;
 }
 
@@ -511,6 +522,9 @@ QRegion planScreenshotSelectionDamage(const ScreenshotSelectionVisualState& prev
                     dirtyRegion += QRectF(view - QPointF(5, 5), QSizeF(10, 10)).toAlignedRect();
                 }
             }
+            dirtyRegion +=
+                selectionStateHandleRegion(previous, viewportRect, canvasToViewTransform);
+            dirtyRegion += selectionStateHandleRegion(next, viewportRect, canvasToViewTransform);
             return boundedSelectionDamage(dirtyRegion, viewportRect);
         }
         const QRectF affected = previous.bounds.united(next.bounds)
@@ -521,9 +535,13 @@ QRegion planScreenshotSelectionDamage(const ScreenshotSelectionVisualState& prev
                                     .united(QRectF(previous.confirmedRegion.boundingRect()))
                                     .united(QRectF(next.confirmedRegion.boundingRect()));
         const int padding = std::max(previous.shadowWidth, next.shadowWidth) + 3;
-        return QRegion(canvasToViewTransform.mapRect(affected).toAlignedRect().adjusted(
-                           -padding, -padding, padding, padding))
-            .intersected(viewportRect);
+        QRegion dirtyRegion =
+            QRegion(canvasToViewTransform.mapRect(affected).toAlignedRect().adjusted(
+                        -padding, -padding, padding, padding))
+                .intersected(viewportRect);
+        dirtyRegion += selectionStateHandleRegion(previous, viewportRect, canvasToViewTransform);
+        dirtyRegion += selectionStateHandleRegion(next, viewportRect, canvasToViewTransform);
+        return dirtyRegion;
     }
     if (!canvasToViewTransform.isInvertible()) {
         return QRegion(viewportRect);
@@ -1885,7 +1903,9 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                     if (!cacheHit) {
                         ScreenshotResultStyle style{visibleCornerRadius,
                                                     m_selectionState.shadowWidth,
-                                                    m_selectionState.shadowColor, {}, 1.0};
+                                                    m_selectionState.shadowColor,
+                                                    {},
+                                                    1.0};
                         style.region = localRegion;
                         QImage empty(bounds.size(), QImage::Format_ARGB32_Premultiplied);
                         empty.fill(Qt::transparent);

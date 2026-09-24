@@ -4434,13 +4434,55 @@ void compoundSelectionRendersUnifiedMaskAndOutline() {
                 require(preview.pixelColor(x, y).red() < 200,
                         "custom preview dims exported cutouts and exterior");
         }
-    const auto before = ScreenshotSelectionVisualState{QRectF(region.boundingRect()), true};
+    ScreenshotSelectionVisualState before;
+    before.bounds = region.boundingRect();
+    before.present = true;
     auto after = before;
     after.region = region;
     after.confirmedRegion = region;
     require(planScreenshotSelectionDamage(before, after, canvas.rect(), QTransform(), true)
                 .contains(QPoint(55, 55)),
             "hole changes must invalidate pixels inside unchanged bounds");
+}
+
+void addingShapedRegionRepaintsRectangleHandles() {
+    SnowCanvasWidget canvas;
+    canvas.resize(240, 240);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(120, 120, 1), "region transition camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage background(canvas.size(), QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    renderer.setImage(background, QRectF(0, 0, 240, 240));
+    renderer.setMaskVisible(true);
+
+    const QRect rectangle(50, 50, 140, 140);
+    ScreenshotSelectionVisualState before;
+    before.bounds = rectangle;
+    before.present = true;
+    before.handlesVisible = true;
+    renderer.applySelectionState(before);
+    const QImage rectangleFrame = renderCanvas(canvas);
+
+    QPainterPath curve;
+    curve.addEllipse(QRectF(160, 100, 50, 60));
+    ScreenshotSelectionVisualState adding = before;
+    adding.region = ScreenshotRegionGeometry(rectangle).united(
+        ScreenshotRegionGeometry::fromPath(curve, ScreenshotRegionType::Curve));
+    adding.confirmedRegion = rectangle;
+    adding.bounds = adding.region->boundingRect();
+    adding.handlesVisible = false;
+    renderer.applySelectionState(adding);
+    const QImage addingFrame = renderCanvas(canvas);
+    require(rectangleFrame.pixel(45, 50) != addingFrame.pixel(45, 50),
+            "adding a shaped region must remove the old rectangle handle");
+    requireChangedPixelsCoveredByDirtyRegion(
+        rectangleFrame, addingFrame,
+        planScreenshotSelectionDamage(before, adding, canvas.rect(), canvas.canvasToViewTransform(),
+                                      true),
+        "adding a shaped region must repaint every old rectangle handle pixel");
+    canvas.setCustomRenderer(nullptr);
 }
 
 void hoveredCompoundSelectionShowsCheckerboardInTransparentGaps() {
@@ -4784,6 +4826,7 @@ int main(int argc, char** argv) {
         sessionTeardownClearsThreadCachesWithoutOverlays();
         translatedRasterCachesMatchDirectPainting();
         compoundSelectionRendersUnifiedMaskAndOutline();
+        addingShapedRegionRepaintsRectangleHandles();
         hoveredCompoundSelectionShowsCheckerboardInTransparentGaps();
         compoundSelectionDamageCoversChangedPixels();
         nonRectangularSelectionDraftLeavesInteriorUnchanged();
@@ -4908,6 +4951,7 @@ int main(int argc, char** argv) {
     sessionTeardownClearsThreadCachesWithoutOverlays();
     translatedRasterCachesMatchDirectPainting();
     compoundSelectionRendersUnifiedMaskAndOutline();
+    addingShapedRegionRepaintsRectangleHandles();
     hoveredCompoundSelectionShowsCheckerboardInTransparentGaps();
     compoundSelectionDamageCoversChangedPixels();
     nonRectangularSelectionDraftLeavesInteriorUnchanged();
