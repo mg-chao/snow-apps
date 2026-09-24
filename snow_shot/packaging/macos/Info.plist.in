@@ -9,6 +9,7 @@
     <key>CFBundleIdentifier</key><string>com.snowshot.snow_shot</string>
     <key>CFBundleName</key><string>Snow Shot</string>
     <key>CFBundleDisplayName</key><string>Snow Shot</string>
+    <key>LSUIElement</key><true/>
     <key>CFBundleIconFile</key><string>${MACOSX_BUNDLE_ICON_FILE}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleDevelopmentRegion</key><string>en</string>

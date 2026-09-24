@@ -48,6 +48,7 @@ class MacOSBundleMetadata(unittest.TestCase):
         self.assertEqual(plist['CFBundleDisplayName'], 'Snow Shot')
         self.assertEqual(plist['CFBundleIdentifier'], 'com.snowshot.snow_shot')
         self.assertEqual(plist['LSApplicationCategoryType'], 'public.app-category.productivity')
+        self.assertIs(plist['LSUIElement'], True)
         self.assertEqual(plist['NSHumanReadableCopyright'], '${SNOW_SHOT_COPYRIGHT}')
         for language in plist['CFBundleLocalizations']:
             strings = (resources / (language + '.lproj') / 'InfoPlist.strings').read_text()
@@ -678,6 +679,7 @@ class MacOSBundle(unittest.TestCase):
                 self.assertTrue((mount / ".DS_Store").is_file())
                 metadata = plistlib.loads((packaged / "Contents/Info.plist").read_bytes())
                 self.assertEqual(metadata['CFBundleDisplayName'], 'Snow Shot')
+                self.assertIs(metadata['LSUIElement'], True)
                 self.assertEqual(metadata['NSHumanReadableCopyright'],
                                  'Copyright (C) 2025-2026 mg-chao')
                 for language in metadata['CFBundleLocalizations']:
