@@ -778,6 +778,13 @@ bool ScreenshotOverlayWindow::handleCanvasMouseEvent(QMouseEvent* event) {
         }
     }
 
+    // A drawing gesture owns the pointer until the canvas releases its grab. The
+    // selection border may cross that gesture, but cannot take over its moves or release.
+    if (m_canvas != nullptr && QWidget::mouseGrabber() == m_canvas &&
+        (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonRelease)) {
+        return false;
+    }
+
     if (event->type() == QEvent::MouseMove && !event->buttons().testFlag(Qt::LeftButton)) {
         m_eventSink.handleOverlayMouseMove(this, event->position());
     }

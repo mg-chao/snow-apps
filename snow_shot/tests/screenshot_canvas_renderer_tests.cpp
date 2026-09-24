@@ -3895,6 +3895,79 @@ void regionEventsRemainOwnedByOverlay() {
     require(!control->isVisible(), "disabled area type hint remains hidden");
 }
 
+void canvasDragKeepsMouseEventsAcrossSelectionBorder() {
+    class Canvas final : public SnowCanvasWidget {
+      public:
+        int moves = 0;
+        int releases = 0;
+
+      protected:
+        void mouseMoveEvent(QMouseEvent* event) override {
+            ++moves;
+            SnowCanvasWidget::mouseMoveEvent(event);
+        }
+        void mouseReleaseEvent(QMouseEvent* event) override {
+            ++releases;
+            SnowCanvasWidget::mouseReleaseEvent(event);
+        }
+    };
+    class Sink final : public NoopOverlayEventSink {
+      public:
+        int borderPresses = 0;
+        int borderMoves = 0;
+        int borderReleases = 0;
+
+        bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow*, const QPointF& point,
+                                           bool) const override {
+            return point.x() >= 195.0 && point.x() <= 205.0;
+        }
+        void handleOverlayMousePress(ScreenshotOverlayWindow*, const QPointF&) override {
+            ++borderPresses;
+        }
+        void handleOverlayMouseMove(ScreenshotOverlayWindow*, const QPointF&) override {
+            ++borderMoves;
+        }
+        void handleOverlayMouseRelease(ScreenshotOverlayWindow*, const QPointF&) override {
+            ++borderReleases;
+        }
+    } sink;
+    auto* canvas = new Canvas;
+    ScreenshotOverlayWindow overlay(sink, canvas);
+    overlay.resize(320, 240);
+    overlay.show();
+    QApplication::processEvents();
+    canvas->setInteractionEnabled(true);
+    require(canvas->setCanvasTool(SnowCanvasTool::Shape), "activate overlay shape tool");
+    overlay.setScreenshotSelection(QRectF(50, 40, 150, 160), true, 0);
+
+    const auto send = [canvas](QEvent::Type type, const QPointF& point, Qt::MouseButton button,
+                               Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, canvas->mapToGlobal(point.toPoint()), button, buttons,
+                          Qt::NoModifier);
+        QApplication::sendEvent(canvas, &event);
+    };
+    send(QEvent::MouseButtonPress, QPointF(120, 100), Qt::LeftButton, Qt::LeftButton);
+    require(QWidget::mouseGrabber() == canvas, "shape drag must grab the canvas pointer");
+    send(QEvent::MouseMove, QPointF(170, 110), Qt::NoButton, Qt::LeftButton);
+    send(QEvent::MouseMove, QPointF(198, 110), Qt::NoButton, Qt::LeftButton);
+    send(QEvent::MouseMove, QPointF(220, 110), Qt::NoButton, Qt::LeftButton);
+    send(QEvent::MouseMove, QPointF(200, 110), Qt::NoButton, Qt::LeftButton);
+    send(QEvent::MouseButtonRelease, QPointF(200, 110), Qt::LeftButton, Qt::NoButton);
+    require(canvas->moves == 4 && canvas->releases == 1 && sink.borderMoves == 0 &&
+                sink.borderReleases == 0,
+            "an active canvas drag must receive moves and release across the selection border");
+    require(canvas->canvasHistoryState().canUndo,
+            "releasing the shape drag on the border must commit the drawing");
+    require(QWidget::mouseGrabber() != canvas, "shape release must end canvas pointer capture");
+
+    send(QEvent::MouseMove, QPointF(200, 110), Qt::NoButton, Qt::NoButton);
+    send(QEvent::MouseButtonPress, QPointF(200, 110), Qt::LeftButton, Qt::LeftButton);
+    send(QEvent::MouseButtonRelease, QPointF(200, 110), Qt::LeftButton, Qt::NoButton);
+    require(sink.borderMoves == 1 && sink.borderPresses == 1 && sink.borderReleases == 1 &&
+                canvas->releases == 1,
+            "selection-border hover and resize input must resume after the canvas drag");
+}
+
 void overlayPassesTextDraftWheelToCanvas() {
     NoopOverlayEventSink eventSink;
     eventSink.consumeWheel = true;
@@ -4718,6 +4791,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--region-input-only"))) {
         regionEventsRemainOwnedByOverlay();
+        canvasDragKeepsMouseEventsAcrossSelectionBorder();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--fractional-dpi"))) {
