@@ -297,6 +297,7 @@ void ScreenshotPinnedWindow::endControlledInteraction(bool cancel) {
     if (!m_closing) {
         updateCanvasViewport();
         adoptSettledNativeScale();
+        refreshControlsPointerPresence();
         if (m_platformRecoveryPending)
             reconcilePlatformEnvironment();
         schedulePersistence();

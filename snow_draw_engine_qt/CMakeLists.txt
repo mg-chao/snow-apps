@@ -122,6 +122,10 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
 endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
+    add_executable(snow-canvas-arrow-text-benchmark tests/snow_canvas_arrow_text_benchmark.cpp)
+    target_link_libraries(snow-canvas-arrow-text-benchmark PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-arrow-text-benchmark)
+
     snow_add_rust_executable(snow-scene-order-benchmark
         PACKAGE snow-draw-engine-scene
         MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}"

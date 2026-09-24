@@ -396,11 +396,13 @@ class SystemTrayController::Impl {
         const auto currentGroups = groupManager->groupsSortedForDisplay();
         bool hasDeletableEmptyGroups = false;
         for (const auto& group : currentGroups) {
-            const int windowCount = groupManager->windowCount(group.id);
+            const auto counts = groupManager->windowCounts(group.id);
             hasDeletableEmptyGroups =
-                hasDeletableEmptyGroups || (!group.builtIn && windowCount == 0);
-            QAction* action = groupMenu->addItem(QStringLiteral("%1\t%2").arg(
-                groupManager->displayName(group.id), QString::number(windowCount)));
+                hasDeletableEmptyGroups || (!group.builtIn && counts.nonIgnored == 0);
+            QAction* action = groupMenu->addItem(QStringLiteral("%1\t%2/%3")
+                                                     .arg(groupManager->displayName(group.id),
+                                                          QString::number(counts.nonIgnored),
+                                                          QString::number(counts.total)));
             action->setObjectName(QStringLiteral("systemTrayGroupAction-%1").arg(group.id));
             action->setData(group.id);
             action->setCheckable(true);
@@ -421,7 +423,7 @@ class SystemTrayController::Impl {
         deleteEmpty->setObjectName(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
         deleteEmpty->setEnabled(hasDeletableEmptyGroups);
         QObject::connect(deleteEmpty, &QAction::triggered, &q,
-                         [this]() { groupManager->deleteEmptyGroups(); });
+                         [this]() { groupManager->openDeleteEmptyGroupsConfirmation(nullptr); });
 
         const QString deleteSpecifiedText =
             QCoreApplication::translate("SystemTrayController", "Delete Specified Group");
@@ -440,14 +442,17 @@ class SystemTrayController::Impl {
                                      custom_outlined_icons::Delete());
         }
         for (const auto& group : currentGroups) {
+            const auto counts = groupManager->windowCounts(group.id);
             QAction* action = deleteSpecifiedGroupMenu->addItem(
-                QStringLiteral("%1\t%2").arg(groupManager->displayName(group.id),
-                                             QString::number(groupManager->windowCount(group.id))));
+                QStringLiteral("%1\t%2/%3")
+                    .arg(groupManager->displayName(group.id), QString::number(counts.nonIgnored),
+                         QString::number(counts.total)));
             action->setObjectName(
                 QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(group.id));
             action->setData(group.id);
-            QObject::connect(action, &QAction::triggered, &q,
-                             [this, id = group.id]() { groupManager->deleteSpecifiedGroup(id); });
+            QObject::connect(action, &QAction::triggered, &q, [this, id = group.id]() {
+                groupManager->openDeleteSpecifiedGroupConfirmation(id, nullptr);
+            });
         }
     }
 

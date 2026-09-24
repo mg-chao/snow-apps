@@ -44,19 +44,25 @@ bool hasSamePixels(const QImage& actual, const QImage& expected) {
 
 class ExportFixture final {
   public:
-    explicit ExportFixture(bool points = false)
+    explicit ExportFixture(bool points = false, QSize pixels = QSize(80, 60), qreal dpr = 0.0)
         : m_runtime(
               SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
         CapturedDisplayModel display;
         display.stableId = QStringLiteral("display-history-source");
         display.name = QStringLiteral("Display history source");
-        display.physicalRect = QRect(0, 0, 80, 60);
+        display.physicalRect = QRect(QPoint(), pixels);
         display.canvasRect = display.physicalRect;
         display.imageSourceCanvasRect = display.canvasRect;
         display.logicalRect = display.physicalRect;
         display.image = patternedImage(display.physicalRect.size(), 3);
         display.screen = QGuiApplication::primaryScreen();
         display.active = true;
+        if (dpr > 0.0) {
+            display.logicalRect.setSize(
+                QSize(qRound(pixels.width() / dpr), qRound(pixels.height() / dpr)));
+            display.logicalToPhysicalScale = dpr;
+            display.geometryResolved = true;
+        }
         if (points) {
             display.canvasUsesPoints = true;
             display.capturedLogicalRect = QRect(0, 0, 40, 30);
@@ -217,6 +223,33 @@ void selectionClipboardPreservesEffects() {
                 require(hasSamePixels(image, fixture.displaySnapshot().copy(selection)),
                         "plain clipboard export changed capture pixels");
             }
+        }
+    }
+}
+
+void fractionalDpiExportsPreserveCapturePixels() {
+    for (const auto& [pixels, dpr] :
+         {std::pair{QSize(2560, 1440), 1.5}, std::pair{QSize(2560, 1600), 1.5},
+          std::pair{QSize(3840, 2160), 2.25}}) {
+        ExportFixture fixture(false, pixels, dpr);
+        require(fixture.isValid(), "fractional-DPI export fixture could not initialize");
+        // Check the complete capture and a crop touching the last physical row/column.
+        for (const QRect selection : {QRect(QPoint(), pixels),
+                                      QRect(pixels.width() - 101, pixels.height() - 79, 101, 79)}) {
+            const QImage expected = fixture.displaySnapshot().copy(selection);
+            const QImage result = waitForResult(
+                [&](QObject* receiver, auto callback) {
+                    return fixture.service().requestSelectionClipboard(selection, {}, receiver,
+                                                                       std::move(callback));
+                },
+                [&](ScreenshotSelectionClipboardResult value) {
+                    require(value.isValid(), "fractional-DPI clipboard export failed");
+                    require(hasSamePixels(QImage::fromData(value.payload.pngBytes()), expected),
+                            "fractional-DPI PNG must preserve every captured pixel and dimension");
+                    return std::move(value.image);
+                });
+            require(hasSamePixels(result, expected),
+                    "fractional-DPI export must not stretch or crop the captured image");
         }
     }
 }
@@ -490,6 +523,11 @@ void exportWorkerReleasesSharedDerivedContours() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--fractional-dpi"))) {
+        fractionalDpiExportsPreserveCapturePixels();
+        return EXIT_SUCCESS;
+    }
+    fractionalDpiExportsPreserveCapturePixels();
     exportWorkerReleasesSharedDerivedContours();
     compoundExportsSnapshotTheirGeometry();
     pointSelectionRetainsBackingPixelsAndScalesEffects();

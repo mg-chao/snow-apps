@@ -26,8 +26,10 @@ enum class GlobalShortcutAction {
     PinClipboardContent,
     TranslateSelectedText,
     PinSelectedFiles,
+    RestoreLastClosedWindows,
     ToggleGlobalHotkeys,
     ToggleDisableOnFocusedFullscreenWindow,
+    OpenPinToScreenManagement,
 };
 
 [[nodiscard]] constexpr bool controlsGlobalHotkeyGates(GlobalShortcutAction action) {

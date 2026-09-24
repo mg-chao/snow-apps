@@ -8,6 +8,7 @@
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include "widgets/context_menu.h"
+#include "widgets/modal.h"
 
 #include <QAction>
 #include <QApplication>
@@ -373,11 +374,14 @@ int main(int argc, char* argv[]) {
     auto* exitMenuAction = actionForId(QStringLiteral("tray.exit"));
     auto* windowGroupMenuAction =
         actionForObjectName(QStringLiteral("systemTrayWindowGroupAction"));
+    auto* restoreClosedAction = actionForId(QStringLiteral("quick.restore-last-closed-windows"));
+    require(restoreClosedAction && restoreClosedAction->isVisible(),
+            "restore closed pins must appear in the default tray menu");
     const QStringList normalizedDefaultMenuOptions = controller.menuOptions();
     require(
         QSet<QString>(normalizedDefaultMenuOptions.cbegin(), normalizedDefaultMenuOptions.cend()) ==
                 QSet<QString>(defaultMenuOptions.cbegin(), defaultMenuOptions.cend()) &&
-            defaultVisibleActions.size() == 15 && screenshotMenuAction != nullptr &&
+            defaultVisibleActions.size() == 16 && screenshotMenuAction != nullptr &&
             screenshotMenuAction->isVisible() && delayedScreenshotMenuAction != nullptr &&
             delayedScreenshotMenuAction->isVisible() && recordingToggleMenuAction != nullptr &&
             !recordingToggleMenuAction->isVisible() && !screenshotMenuAction->icon().isNull() &&
@@ -394,7 +398,7 @@ int main(int argc, char* argv[]) {
             defaultVisibleActions.contains(showMainWindowMenuAction) &&
             defaultVisibleActions.indexOf(windowGroupMenuAction) ==
                 defaultVisibleActions.indexOf(showMainWindowMenuAction) - 1,
-        "the tray menu should expose the eleven default options in five catalog groups");
+        "the tray menu should expose the twelve default options in five catalog groups");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
 #ifdef Q_OS_MACOS
@@ -479,8 +483,14 @@ int main(int argc, char* argv[]) {
         }
         return static_cast<QAction*>(nullptr);
     };
+    const auto deletionModalNamed = [&groupManager](const QString& name) {
+        return groupManager.findChild<adqt::widgets::AdModal*>(name);
+    };
     require(!windowGroupMenuAction->icon().isNull(),
             "the window group submenu header should carry an icon");
+    requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
+                      QStringLiteral("Default\t0/0"),
+                      "the tray group row should show non-ignored and total counts");
     QAction* trayNewGroup = groupActionNamed(QStringLiteral("systemTrayNewGroupAction"));
     require(trayNewGroup != nullptr && !trayNewGroup->icon().isNull() && trayNewGroup->isEnabled(),
             "tray New Group should expose an icon and stay actionable");
@@ -542,13 +552,33 @@ int main(int argc, char* argv[]) {
         }
         return static_cast<QAction*>(nullptr);
     };
+    const auto requireTrayModalCentered = [](adqt::widgets::AdModal* modal,
+                                            const char* message) {
+        QScreen* screen = QApplication::screenAt(QCursor::pos());
+        if (screen == nullptr) {
+            screen = QApplication::primaryScreen();
+        }
+        QWidget* surface = nullptr;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (widget->isVisible() &&
+                widget->objectName() == QStringLiteral("ad-modal-overlay")) {
+                surface = widget;
+                break;
+            }
+        }
+        require(screen != nullptr && modal != nullptr && modal->centered() &&
+                    surface != nullptr && surface->isVisible() &&
+                    (surface->geometry().center() - screen->availableGeometry().center())
+                            .manhattanLength() <= 2,
+                message);
+    };
     const QList<QAction*> initialGroupActions = windowGroupMenu->actions();
     require(initialGroupActions.indexOf(trayDeleteEmpty) + 1 ==
                 initialGroupActions.indexOf(trayDeleteSpecifiedMenu->menuAction()),
             "tray Delete Specified Group should sit directly below Delete Empty Groups");
     requireActionText(
         deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
-        QStringLiteral("Default\t0"),
+        QStringLiteral("Default\t0/0"),
         "tray Delete Specified Group should initially list only the empty Default group");
 
     const auto traySpecifiedId = groupManager.createGroup(QStringLiteral("Tray specified"));
@@ -559,21 +589,62 @@ int main(int argc, char* argv[]) {
         QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(*traySpecifiedId));
     require(trayDeleteSpecified != nullptr &&
                 trayDeleteSpecified->data().toString() == *traySpecifiedId &&
-                trayDeleteSpecified->text() == QStringLiteral("Tray specified\t0"),
+                trayDeleteSpecified->text() == QStringLiteral("Tray specified\t0/0"),
             "tray specified deletion should list every custom group with its count and id");
     trayDeleteSpecified->trigger();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    auto* specifiedModal =
+        deletionModalNamed(QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal != nullptr && specifiedModal->ownerWindow() == nullptr &&
+                specifiedModal->windowModeDetached() &&
+                specifiedModal->windowModality() == Qt::ApplicationModal &&
+                specifiedModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                specifiedModal->text().contains(QStringLiteral("Tray specified")) &&
+                specifiedModal->text().contains(QStringLiteral("including closed windows")) &&
+                groupManager.contains(*traySpecifiedId),
+            "tray specified deletion should open a detached application-modal confirmation");
+    requireTrayModalCentered(specifiedModal,
+                             "tray specified deletion should center on the cursor screen");
+    specifiedModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(groupManager.contains(*traySpecifiedId),
+            "canceling tray specified deletion should preserve the group");
+    trayDeleteSpecified->trigger();
+    specifiedModal = deletionModalNamed(QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal != nullptr, "tray specified confirmation should reopen");
+    specifiedModal->accept();
     require(!groupManager.contains(*traySpecifiedId),
-            "triggering the tray specified-group item should delete its custom group");
+            "accepting the tray specified-group item should delete its custom group");
 
-    require(groupManager.createGroup(QStringLiteral("Tray cleanup")).has_value(),
+    const auto trayCleanupId = groupManager.createGroup(QStringLiteral("Tray cleanup"));
+    require(trayCleanupId.has_value(),
             "an empty custom group should be created for the tray cleanup state");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     trayDeleteEmpty = groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
     require(trayDeleteEmpty != nullptr && trayDeleteEmpty->isEnabled(),
             "tray Delete Empty Groups should enable once an empty custom group exists");
 
-    require(groupManager.deleteEmptyGroups(), "the empty tray cleanup group should be deleted");
+    trayDeleteEmpty->trigger();
+    auto* emptyModal = deletionModalNamed(QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr &&
+                emptyModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                emptyModal->text().contains(
+                    QStringLiteral("no pinned windows other than closed ones")) &&
+                emptyModal->text().contains(QStringLiteral("Closed pinned windows saved")) &&
+                groupManager.contains(*trayCleanupId),
+            "tray empty-group deletion should await confirmation");
+    requireTrayModalCentered(emptyModal,
+                             "tray empty-group deletion should center on the cursor screen");
+    emptyModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(groupManager.contains(*trayCleanupId),
+            "canceling tray empty-group deletion should preserve the group");
+    trayDeleteEmpty->trigger();
+    emptyModal = deletionModalNamed(QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr, "tray empty-group confirmation should reopen");
+    emptyModal->accept();
+    require(!groupManager.contains(*trayCleanupId),
+            "confirming tray empty-group deletion should remove the group");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     trayDeleteEmpty = groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
     require(trayDeleteEmpty != nullptr && !trayDeleteEmpty->isEnabled(),
@@ -724,12 +795,12 @@ int main(int argc, char* argv[]) {
     const int screenshotRequestsBeforeMessageClicks = screenshotRequests;
     const int showMainWindowRequestsBeforeMessageClicks = showMainWindowRequests;
     const int functionSettingsRequestsBeforeMessageClicks = functionSettingsRequests;
-    controller.showUpdateMessage(QStringLiteral("An update is ready."));
+    controller.showUpdateMessage(QStringLiteral("Snow Shot 2.0.0 is available."));
     trayIcon->messageClicked();
     require(aboutRequests == 1 && screenshotRequests == screenshotRequestsBeforeMessageClicks &&
                 showMainWindowRequests == showMainWindowRequestsBeforeMessageClicks &&
                 functionSettingsRequests == functionSettingsRequestsBeforeMessageClicks,
-            "clicking an update balloon must request only the About page");
+            "clicking a new-version system notification must request only the About page");
     controller.showCaptureMessage(QStringLiteral("Capture failed"), false);
     controller.showWarningMessage(QStringLiteral("Feature unavailable"),
                                   QStringLiteral("Screenshot is unavailable"));
@@ -850,7 +921,7 @@ int main(int argc, char* argv[]) {
                       QStringLiteral("\u7a97\u53e3\u5206\u7ec4\uff1a\u9ed8\u8ba4"),
                       "the window group submenu title should translate to Simplified Chinese");
     requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("\u9ed8\u8ba4\t0"),
+                      QStringLiteral("\u9ed8\u8ba4\t0/0"),
                       "the default group entry should translate to Simplified Chinese");
     requireActionText(groupActionNamed(QStringLiteral("systemTrayNewGroupAction")),
                       QStringLiteral("\u65b0\u5efa\u5206\u7ec4"),
@@ -863,7 +934,7 @@ int main(int argc, char* argv[]) {
                       "tray Delete Specified Group should translate to Simplified Chinese");
     requireActionText(
         deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
-        QStringLiteral("\u9ed8\u8ba4\t0"),
+        QStringLiteral("\u9ed8\u8ba4\t0/0"),
         "tray specified deletion should translate its Default entry to Simplified Chinese");
     require(QString::fromLatin1(groupManager.metaObject()->className()) ==
                     QStringLiteral("snow_shot::presentation::PinnedWindowGroupManager") &&
@@ -872,8 +943,24 @@ int main(int argc, char* argv[]) {
                     QStringLiteral("\u5206\u7ec4\u540d\u79f0"),
             "the group manager translation context should resolve its catalog entries");
 
+    QAction* translatedDefaultDeletion =
+        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default"));
+    require(translatedDefaultDeletion != nullptr,
+            "the translated Default group should remain available for confirmation");
+    translatedDefaultDeletion->trigger();
+    auto* translatedModal =
+        deletionModalNamed(QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(translatedModal != nullptr &&
+                translatedModal->windowTitle() ==
+                    QStringLiteral("\u6e05\u7a7a\u9ed8\u8ba4\u5206\u7ec4"),
+            "the Default deletion modal should open in Simplified Chinese");
     require(languageManager.setLanguage(QStringLiteral("zh_TW")),
             "the Traditional Chinese translation should load");
+    require(translatedModal->windowTitle() ==
+                QStringLiteral("\u6e05\u7a7a\u9810\u8a2d\u7fa4\u7d44"),
+            "an open group deletion modal should retranslate to Traditional Chinese");
+    translatedModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     controller.showUpdateMessage(QStringLiteral("An update is ready."));
     requireBalloon(
         trayIcon, QStringLiteral("\u66f4\u65b0"), QStringLiteral("An update is ready."),
@@ -903,7 +990,7 @@ int main(int argc, char* argv[]) {
                       QStringLiteral("\u8996\u7a97\u7fa4\u7d44\uff1a\u9810\u8a2d"),
                       "the window group submenu title should translate to Traditional Chinese");
     requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("\u9810\u8a2d\t0"),
+                      QStringLiteral("\u9810\u8a2d\t0/0"),
                       "the default group entry should translate to Traditional Chinese");
     requireActionText(groupActionNamed(QStringLiteral("systemTrayNewGroupAction")),
                       QStringLiteral("\u65b0\u589e\u7fa4\u7d44"),
@@ -916,7 +1003,7 @@ int main(int argc, char* argv[]) {
                       "tray Delete Specified Group should translate to Traditional Chinese");
     requireActionText(
         deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
-        QStringLiteral("\u9810\u8a2d\t0"),
+        QStringLiteral("\u9810\u8a2d\t0/0"),
         "tray specified deletion should translate its Default entry to Traditional Chinese");
     controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot, {});
     requireActionText(screenshotMenuAction, QStringLiteral("\u622a\u5716"),

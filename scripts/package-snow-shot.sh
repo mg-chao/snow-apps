@@ -41,4 +41,5 @@ for entry in \
 done
 grep -Eq "^VCPKG_TARGET_TRIPLET:.*=$snow_vcpkg_triplet$" "$cache" || snow_die 'Release cache does not use the static macOS vcpkg triplet.'
 cd "$snow_repo_root"
+cmake -P "$snow_build_dir/snow_shot/GenerateSnowShotDiagnosticsSymbols-Release.cmake"
 cpack --preset "package-$snow_preset"

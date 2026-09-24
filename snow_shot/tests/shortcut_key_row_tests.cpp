@@ -17,6 +17,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QEnterEvent>
 #include <QFontMetricsF>
 #include <QHideEvent>
 #include <QKeyEvent>
@@ -1378,7 +1379,9 @@ void adjustableDelayUsesWheelAndClampsRange() {
                 changeSignals == 1,
             "scrolling over the delay title must persist and publish a one-second increment");
 
-    QEvent enterEvent(QEvent::Enter);
+    const QPoint titlePoint = delayTitleLabel->rect().center();
+    QEnterEvent enterEvent(QPointF(titlePoint), QPointF(delayTitleLabel->mapTo(&row, titlePoint)),
+                           QPointF(delayTitleLabel->mapToGlobal(titlePoint)));
     QCoreApplication::sendEvent(delayTitleLabel, &enterEvent);
     require(delayUnderline->isVisible() && delayUnderline->height() == 2 &&
                 delayUnderline->property("highlightColor").value<QColor>() ==

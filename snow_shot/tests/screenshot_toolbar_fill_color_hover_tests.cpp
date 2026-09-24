@@ -634,6 +634,10 @@ void hoveringFillColorTriggerShowsPicker() {
     }
     require(arrowLinePopover->isVisible(),
             "the drawing-tool popover should reopen after selecting an entry");
+    // Group content is recreated on every open; the first session's option was
+    // destroyed when the hover popup closed.
+    arrowOption = popoverButton(arrowLinePopover, QStringLiteral("Arrow"));
+    require(arrowOption != nullptr, "reopening must materialize the current Arrow option");
     const int arrowToolRequestsBeforeSelection = commands.arrowToolRequests;
     clickSystemMouseAt(arrowOption->mapToGlobal(arrowOption->rect().center()));
     waitFor(50);

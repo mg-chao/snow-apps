@@ -34,6 +34,7 @@
 namespace adqt::widgets {
 class AdButton;
 class AdContextMenu;
+class AdModal;
 class AdSlider;
 } // namespace adqt::widgets
 namespace snow_shot::presentation {
@@ -79,7 +80,7 @@ class ScreenshotPinnedEditController;
 class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotExportArtifact;
 class ScreenshotPinnedHideToTopController;
-class ScreenshotPinnedPointerPresence;
+class ScreenshotPinnedControlsPresence;
 class ScreenshotPinnedNativeGeometryController;
 class QTextDocument;
 
@@ -151,6 +152,9 @@ class ScreenshotPinnedWindow final : public QWidget {
         std::function<void(const snow_shot::storage::PinnedWindowRecord&)>
             replacementPersistenceWriter;
         std::function<void(const QString&)> persistenceRemover;
+        std::function<void(const snow_shot::storage::PinnedWindowRecord&)> persistenceCloser;
+        snow_shot::storage::PinnedWindowCreationSource creationSource =
+            snow_shot::storage::PinnedWindowCreationSource::Other;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
         QString groupId = QStringLiteral("default");
     };
@@ -172,6 +176,8 @@ class ScreenshotPinnedWindow final : public QWidget {
   public slots:
     void setGroupId(const QString& id);
     void closeForInactiveGroup();
+    void requestDestroy();
+    void showFromManagement();
     void cancelDeferredInactiveGroupClose();
 
   public:
@@ -182,7 +188,7 @@ class ScreenshotPinnedWindow final : public QWidget {
   signals:
     void showMainWindowRequested();
     void closingForPersistence(const snow_shot::storage::PinnedWindowRecord& snapshot,
-                               bool removalRequested);
+                               snow_shot::storage::PinnedWindowCloseIntent intent);
 
   private:
     friend class ScreenshotPinnedEditController;
@@ -224,7 +230,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void registerWindowShortcuts();
     void reloadPinnedWindowShortcuts();
     void createContextMenu();
+    void confirmDestroy();
     void rebuildGroupMenu();
+    void refreshContextMenuIfVisible();
     void refreshContextMenuForGroup(const QString& groupId);
     void deleteIfInGroup(const QString& groupId);
     void applyRuntimeBorderColor();
@@ -236,13 +244,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateBorderOutline();
     [[nodiscard]] QPainterPath bakedSelectionPath(const QSize& pixelSize) const;
     void updateControlsGeometry();
-    // Single writer for hover presence: the live native cursor against the
-    // complete window frame. Native mouse messages, queued Enter/Leave, and
-    // passive geometry settlement all resolve through this. Returns false when
-    // the native query is unavailable so the caller can fall back to
-    // event-derived presence.
-    bool applyNativePointerPresence();
-    void schedulePointerPresence(bool inside);
+    void refreshControlsPointerPresence();
+    void setControlsPointerInside(bool inside);
+    void updateControlsVisibility();
     void destroyCanvas();
     using MaterializationCallback = std::function<void(bool)>;
     using PresentationCompletion = std::function<void(bool, QImage)>;
@@ -439,6 +443,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<QWidget> m_clickThroughOpacityEditor;
     adqt::widgets::AdSlider* m_clickThroughOpacitySlider = nullptr;
     adqt::widgets::AdContextMenu* m_contextMenu = nullptr;
+    QPointer<adqt::widgets::AdModal> m_destroyConfirmation;
     adqt::widgets::AdContextMenu* m_groupMenu = nullptr;
     adqt::widgets::AdContextMenu* m_deleteSpecifiedGroupMenu = nullptr;
     QAction* m_ocrAction = nullptr;
@@ -492,6 +497,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::function<void(const snow_shot::storage::PinnedWindowRecord&)>
         m_replacementPersistenceWriter;
     std::function<void(const QString&)> m_persistenceRemover;
+    std::function<void(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceCloser;
+    snow_shot::storage::PinnedWindowCreationSource m_creationSource =
+        snow_shot::storage::PinnedWindowCreationSource::Other;
+    QDateTime m_createdUtc;
+    snow_shot::storage::PinnedWindowCloseIntent m_closeIntent =
+        snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     QPointer<snow_shot::presentation::PinnedWindowGroupManager> m_groupManager;
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;
@@ -536,11 +547,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_systemSizingActive = false;
     bool m_windowDragActive = false;
     bool m_windowDragCursorSet = false;
-    bool m_pointerInside = false;
     QPointer<QScreen> m_clickThroughScreen;
     QMetaObject::Connection m_clickThroughScreenGeometryConnection;
     QMetaObject::Connection m_clickThroughScreenDpiConnection;
-    std::unique_ptr<ScreenshotPinnedPointerPresence> m_pointerPresence;
+    std::unique_ptr<ScreenshotPinnedControlsPresence> m_pointerPresence;
+    bool m_nonClientPointerInside = false;
+    bool m_nonClientTrackingPending = false;
     bool m_windowActive = false;
     bool m_fileDragActive = false;
     bool m_passiveGeometryReconciliationActive = false;

@@ -5,7 +5,6 @@
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/applicationactivation.h"
 #include "snow_shot/presentation/permissionguidecontroller.h"
-#include "snow_shot/presentation/components/updatenotice.h"
 #endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/translation/translationservice.h"
@@ -122,6 +121,20 @@ class ApplicationController::Impl {
         QObject::connect(
             &systemTray, &presentation::SystemTrayController::quickActionRequested, &q,
             [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
+        auto& pinnedStorage = storage::ApplicationStorage::instance();
+        QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowShowRequested,
+                         &q, [this](const QString& id) {
+                             if (auto* controller = ensureScreenshotController())
+                                 controller->showPinnedRecord(id);
+                         });
+        QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowDeleteRequested,
+                         &q, [this](const QVector<QString>& ids) {
+                             if (auto* controller = ensureScreenshotController())
+                                 controller->destroyPinnedRecords(ids);
+                         });
+        QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowsChanged,
+                         &groupManager,
+                         &presentation::PinnedWindowGroupManager::onPinnedRecordsChanged);
         QObject::connect(
             &groupManager,
             &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,
@@ -238,18 +251,19 @@ class ApplicationController::Impl {
         updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
         updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
                                 u"system");
-#ifdef Q_OS_MACOS
         QObject::connect(updates, &update::UpdateService::automaticUpdateAvailable, &q,
                          [this](const QString& version) {
-                             auto* notice = new presentation::UpdateNotice(version, mainWindow);
-                             notice->setAttribute(Qt::WA_DeleteOnClose);
-                             notice->show();
+                             systemTray.showUpdateMessage(
+                                 ApplicationController::tr(
+                                     "Snow Shot %1 is available. Open About for update options.")
+                                     .arg(version));
                          });
-#endif
+#ifndef Q_OS_MACOS
         QObject::connect(updates, &update::UpdateService::updateReady, &q, [this] {
             systemTray.showUpdateMessage(ApplicationController::tr(
                 "An update is ready. Open About to restart and update Snow Shot."));
         });
+#endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
             if (platform::windows::administratorOperationPending())
@@ -666,6 +680,9 @@ class ApplicationController::Impl {
         case presentation::GlobalShortcutAction::OpenCaptureHistory:
             ensureMainWindow().showScreenshotHistory();
             break;
+        case presentation::GlobalShortcutAction::OpenPinToScreenManagement:
+            ensureMainWindow().showPinToScreenManagement();
+            break;
         case presentation::GlobalShortcutAction::OpenSettings:
             showInterfaceSettings();
             break;
@@ -681,6 +698,10 @@ class ApplicationController::Impl {
             }
             break;
         }
+        case presentation::GlobalShortcutAction::RestoreLastClosedWindows:
+            if (ScreenshotController* controller = ensureScreenshotController())
+                controller->restoreLastClosedPinnedWindow();
+            break;
         case presentation::GlobalShortcutAction::PinClipboardContent:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinClipboardContentToScreen();

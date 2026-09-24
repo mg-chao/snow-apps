@@ -1,4 +1,5 @@
 #include "segmented.h"
+#include "detail/pointer_region.h"
 
 #include "detail/text_metrics.h"
 
@@ -187,7 +188,7 @@ class SegmentButton final : public QRadioButton {
   }
 
   int index() const { return index_; }
-  bool hovered() const { return hovered_; }
+  bool hovered() const { return detail::widgetHovered(this); }
   bool pressed() const { return pressed_; }
   bool focusVisible() const { return focusVisible_; }
 
@@ -230,7 +231,7 @@ class SegmentButton final : public QRadioButton {
       foreground = appearance_.itemDisabledColor;
     } else if (selected) {
       foreground = appearance_.itemSelectedColor;
-    } else if (hovered_ || pressed_) {
+    } else if (detail::widgetHovered(this) || pressed_) {
       foreground = appearance_.itemHoverColor;
     }
     foreground = semanticStyles_.label.textColor.value_or(semanticStyles_.item.textColor.value_or(
@@ -240,7 +241,7 @@ class SegmentButton final : public QRadioButton {
     if (effectiveEnabled && !selected) {
       if (pressed_) {
         background = appearance_.itemActiveBackground;
-      } else if (hovered_) {
+      } else if (detail::widgetHovered(this)) {
         background = appearance_.itemHoverBackground;
       }
     }
@@ -272,7 +273,7 @@ class SegmentButton final : public QRadioButton {
       info.iconSize = appearance_.metrics.iconSize;
       info.iconGap = appearance_.metrics.iconGap;
       info.selected = selected;
-      info.hovered = hovered_;
+      info.hovered = detail::widgetHovered(this);
       info.pressed = pressed_;
       info.focused = hasFocus();
       info.enabled = effectiveEnabled;
@@ -293,8 +294,12 @@ class SegmentButton final : public QRadioButton {
     }
   }
 
+  bool event(QEvent* event) override {
+    detail::resetWidgetHoverOnLifecycle(this, event);
+    return QRadioButton::event(event);
+  }
+
   void enterEvent(QEnterEvent* event) override {
-    hovered_ = true;
     update();
     if (stateChanged) {
       stateChanged();
@@ -303,7 +308,6 @@ class SegmentButton final : public QRadioButton {
   }
 
   void leaveEvent(QEvent* event) override {
-    hovered_ = false;
     pressed_ = false;
     update();
     if (stateChanged) {
@@ -430,7 +434,7 @@ class SegmentButton final : public QRadioButton {
   AdSegmented::SemanticStyles semanticStyles_;
   AdSegmented::ItemPaintCallback paintCallback_;
   AdSegmented::ItemSizeHintCallback sizeHintCallback_;
-  bool hovered_ = false;
+
   bool pressed_ = false;
   bool focusVisible_ = false;
 };

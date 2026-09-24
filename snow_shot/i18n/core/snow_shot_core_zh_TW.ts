@@ -361,7 +361,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>%1 cannot be used as a pinned window shortcut, try another key</source>
-            <translation>%1 無法用作釘選視窗快速鍵，請嘗試其他快速鍵</translation>
+            <translation>%1 無法用作固定到螢幕視窗快速鍵，請嘗試其他快速鍵</translation>
         </message>
         <message>
             <source>%1 cannot be used as a recording shortcut, try another key</source>
@@ -377,7 +377,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>%1 is already assigned to another pinned window action, try another key</source>
-            <translation>%1 已指派給其他釘選視窗操作，請嘗試其他快速鍵</translation>
+            <translation>%1 已指派給其他固定到螢幕視窗操作，請嘗試其他快速鍵</translation>
         </message>
         <message>
             <source>%1 is already assigned to another recording action, try another key</source>
@@ -405,7 +405,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>Invalid pinned window shortcut</source>
-            <translation>無效的釘選視窗快速鍵</translation>
+            <translation>無效的固定到螢幕視窗快速鍵</translation>
         </message>
         <message>
             <source>Invalid recording shortcut</source>
@@ -429,7 +429,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>This key cannot be used as a pinned window shortcut, try another key</source>
-            <translation>此快速鍵無法用作釘選視窗快速鍵，請嘗試其他快速鍵</translation>
+            <translation>此快速鍵無法用作固定到螢幕視窗快速鍵，請嘗試其他快速鍵</translation>
         </message>
         <message>
             <source>This key cannot be used as a recording shortcut, try another key</source>
@@ -445,7 +445,7 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
         <message>
             <source>This key is already assigned to another pinned window action, try another key</source>
-            <translation>此快速鍵已指派給其他釘選視窗操作，請嘗試其他快速鍵</translation>
+            <translation>此快速鍵已指派給其他固定到螢幕視窗操作，請嘗試其他快速鍵</translation>
         </message>
         <message>
             <source>This key is already assigned to another recording action, try another key</source>
@@ -632,6 +632,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Restart failed</source>
             <translation>重新啟動失敗</translation>
+        </message>
+        <message>
+            <source>Snow Shot %1 is available. Open About for update options.</source>
+            <translation>Snow Shot %1 已推出。開啟「關於」查看更新選項。</translation>
         </message>
         <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>

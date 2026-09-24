@@ -261,7 +261,8 @@ void paintCheckerboardPerimeter(QPainter& painter, const QRectF& selectionBounds
 }
 
 void renderShadow(QPainter& painter, const QRectF& selectionBounds, qreal cornerRadius,
-                  qreal shadowWidth, const QColor& shadowColor, qreal dpr) {
+                  qreal shadowWidth, const QColor& shadowColor, qreal dpr,
+                  bool retainAsset = true) {
     if (selectionBounds.isEmpty() || shadowWidth <= 0.0) {
         return;
     }
@@ -271,7 +272,10 @@ void renderShadow(QPainter& painter, const QRectF& selectionBounds, qreal corner
     const int physicalShadowWidth = std::max(1, qRound(shadowWidth * effectiveDevicePixelRatio));
     const QColor color = shadowColor.isValid() ? shadowColor : QColor(0x33, 0x33, 0x33);
     const QImage asset =
-        shadowAsset(physicalRadius, physicalShadowWidth, color, effectiveDevicePixelRatio);
+        retainAsset
+            ? shadowAsset(physicalRadius, physicalShadowWidth, color, effectiveDevicePixelRatio)
+            : buildShadowAsset(ShadowKey{physicalRadius, physicalShadowWidth, color.rgba(),
+                                         quantizedDpr(effectiveDevicePixelRatio)});
     paintNineSlice(painter, selectionBounds, cornerRadius, shadowWidth, asset);
 }
 } // namespace
@@ -799,9 +803,9 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
     }
     if (normalized.shadowWidth > 0) {
         painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-        ScreenshotSelectionShadowRenderer::renderResultShadow(
-            painter, layout.contentRect, physicalRadius, layout.effectInsets.left(),
-            normalized.shadowColor, 1.0);
+        // Composition draws this shadow only once; retain assets for repainted live surfaces.
+        renderShadow(painter, layout.contentRect, physicalRadius, layout.effectInsets.left(),
+                     normalized.shadowColor, 1.0, false);
     }
     painter.end();
     return applyOutputOpacity(std::move(output), outputOpacity);

@@ -444,6 +444,7 @@ pub(crate) struct EditorState {
     pub(crate) pending_text_edit: Option<ElementId>,
     pub(crate) pending_new_text_draft: bool,
     pub(crate) arrow_text_measurements: Vec<crate::arrow_text::ArrowTextMeasurement>,
+    pub(crate) arrow_text_measurement_generation: u64,
     pub(crate) default_rectangle_shape_style: RectangleShapeStyle,
     pub(crate) default_arrow_style: ArrowStyle,
     pub(crate) default_line_style: ShapeStyle,
@@ -531,6 +532,7 @@ impl EditorState {
             pending_text_edit: None,
             pending_new_text_draft: false,
             arrow_text_measurements: Vec::new(),
+            arrow_text_measurement_generation: 0,
             default_rectangle_shape_style: default_styles.rectangle,
             default_arrow_style: ArrowStyle {
                 arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(

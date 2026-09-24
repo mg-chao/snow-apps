@@ -239,7 +239,6 @@ class AdLineEdit : public QLineEdit {
   QToolButton* suffixActionButton_ = nullptr;
   QLabel* countLabel_ = nullptr;
 
-  bool hovered_ = false;
   bool focused_ = false;
   bool feedbackSpinnerSubscribed_ = false;
   bool internalTextUpdate_ = false;

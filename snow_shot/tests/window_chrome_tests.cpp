@@ -272,6 +272,21 @@ void layeredWindowInputTransparencyPreservesNativeState() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    {
+        QWidget titleBar;
+        QToolButton maximize(&titleBar);
+        maximize.setProperty("snowWindowCaptionHit", HTMAXBUTTON);
+        for (const UINT type : {WM_ACTIVATE, WM_SHOWWINDOW, WM_ENABLE, WM_CANCELMODE, WM_DESTROY}) {
+            maximize.setProperty("snowNativeCaptionHover", true);
+            MSG message{};
+            message.message = type;
+            message.wParam = 0;
+            qintptr result = 0;
+            snow_shot::platform::windows::handleNativeWindowEvent(&titleBar, &message, &result);
+            require(!maximize.property("snowNativeCaptionHover").toBool(),
+                    "native lifecycle changes must clear caption hover without a mouse move");
+        }
+    }
     nativeCaptionControlHitsAreSuppressed();
     customMaximizePressUsesVisibleButtonGeometry();
     layeredWindowInputTransparencyPreservesNativeState();

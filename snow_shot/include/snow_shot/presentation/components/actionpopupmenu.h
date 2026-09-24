@@ -4,6 +4,7 @@
 #include "widgets/context_menu.h"
 
 #include <QAbstractButton>
+#include <QApplication>
 #include <QCursor>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -34,7 +35,7 @@ class ActionPopupMenu final : public QObject {
         m_closeTimer.setSingleShot(true);
         m_closeTimer.setInterval(150);
         connect(&m_closeTimer, &QTimer::timeout, this, [this] {
-            if (m_menu && !contains(QCursor::pos()))
+            if (m_menu && !pointerOverMenuOrTrigger(QCursor::pos()))
                 m_menu->dismissPopup();
         });
         trigger->installEventFilter(this);
@@ -90,7 +91,8 @@ class ActionPopupMenu final : public QObject {
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
-        if (!m_nativeMenu && watched == m_trigger && event->type() == QEvent::Enter) {
+        if (!m_nativeMenu && watched == m_trigger && event->type() == QEvent::Enter &&
+            pointerOverMenuOrTrigger(QCursor::pos())) {
             open();
         }
         if (watched == m_trigger && event->type() == QEvent::Hide && m_menu)
@@ -116,14 +118,15 @@ class ActionPopupMenu final : public QObject {
         }
         if (!m_nativeMenu && m_menu && m_menu->isPopupVisible()) {
             if (event->type() == QEvent::Enter) {
-                m_closeTimer.stop();
+                if (pointerOverMenuOrTrigger(QCursor::pos()))
+                    m_closeTimer.stop();
             } else if (event->type() == QEvent::Leave && !m_keyboard) {
                 m_closeTimer.start();
             } else if (event->type() == QEvent::MouseMove) {
                 m_keyboard = false;
                 const auto* mouse = static_cast<QMouseEvent*>(event);
                 // Native menus also grab mouse moves outside their popup window.
-                if (contains(mouse->globalPosition().toPoint()))
+                if (pointerOverMenuOrTrigger(mouse->globalPosition().toPoint()))
                     m_closeTimer.stop();
                 else if (!m_closeTimer.isActive())
                     m_closeTimer.start();
@@ -133,9 +136,11 @@ class ActionPopupMenu final : public QObject {
     }
 
   private:
-    bool contains(const QPoint& position) const {
-        return m_menu && (m_menu->rect().contains(m_menu->mapFromGlobal(position)) ||
-                          m_trigger->rect().contains(m_trigger->mapFromGlobal(position)));
+    bool pointerOverMenuOrTrigger(const QPoint& position) const {
+        // A popup can grab moves outside its bounds; rectangles also count covered widgets.
+        const QWidget* target = QApplication::widgetAt(position);
+        return target && (target == m_trigger || m_trigger->isAncestorOf(target) ||
+                          (m_menu && (target == m_menu || m_menu->isAncestorOf(target))));
     }
     QAbstractButton* m_trigger;
     QPointer<adqt::widgets::AdContextMenu> m_menu;

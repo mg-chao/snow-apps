@@ -42,6 +42,10 @@ class SelectionToolbarPanel final : public QFrame {
     explicit SelectionToolbarPanel(QWidget* parent = nullptr);
 
     void setPointerInteractionEnabled(bool enabled);
+    void synchronizePointerHover();
+    [[nodiscard]] bool pointerHovered() const {
+        return m_hovered;
+    }
 
   signals:
     void hoverChanged(bool hovered);
@@ -51,8 +55,10 @@ class SelectionToolbarPanel final : public QFrame {
     void hideEvent(QHideEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
   private:
+    void setPointerHovered(bool hovered);
     bool m_hovered = false;
 };
 
@@ -68,17 +74,13 @@ class SelectionToolbarValueLabel final : public QLabel {
     QSize minimumSizeHint() const override;
 
   protected:
-    void enterEvent(QEnterEvent* event) override;
-    void hideEvent(QHideEvent* event) override;
-    void leaveEvent(QEvent* event) override;
+    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
   private:
     QPixmap m_leadingIcon;
     bool m_iconOnly = false;
     bool m_lockAspectRatioControl = false;
-    bool m_pointerInteractionEnabled = true;
-    bool m_hovered = false;
 };
 
 class SelectionToolbarSeparator final : public QWidget {

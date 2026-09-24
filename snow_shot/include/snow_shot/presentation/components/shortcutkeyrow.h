@@ -100,7 +100,6 @@ class ShortcutKeyRow : public ActionRow {
         ShortcutKeyRowConfig::ValidationScope::GlobalShortcut;
     int m_maxShortcutCount = 2;
     bool m_adjustableDelay = false;
-    bool m_delayTitleHovered = false;
     int m_delaySeconds = 3;
     std::function<bool(int)> m_delaySetter;
     std::function<snow_shot::presentation::GlobalShortcutValidationResult(

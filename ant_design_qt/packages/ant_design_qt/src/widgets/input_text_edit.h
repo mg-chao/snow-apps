@@ -190,10 +190,8 @@ class AdTextEdit final : public QTextEdit {
   QLabel* feedbackIconLabel_ = nullptr;
   QLabel* countLabel_ = nullptr;
 
-  bool hovered_ = false;
   bool focused_ = false;
   bool feedbackSpinnerSubscribed_ = false;
-  bool verticalScrollBarHovered_ = false;
   bool internalTextUpdate_ = false;
   bool internalDocumentLayoutUpdate_ = false;
   bool userEditInProgress_ = false;

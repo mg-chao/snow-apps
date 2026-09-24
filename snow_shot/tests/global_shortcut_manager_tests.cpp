@@ -37,10 +37,12 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::ScreenRecordCopy,
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
+    GlobalShortcutAction::OpenPinToScreenManagement,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
     GlobalShortcutAction::PinSelectedFiles,
+    GlobalShortcutAction::RestoreLastClosedWindows,
     GlobalShortcutAction::ToggleGlobalHotkeys,
     GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
 };
@@ -99,6 +101,37 @@ void clearAll(GlobalShortcutManager& manager) {
     for (const GlobalShortcutAction action : ALL_ACTIONS) {
         require(manager.setShortcuts(action, {}), "clear global shortcut fixture");
     }
+}
+
+void pinnedManagementShortcutCanBeAssignedAndRestored() {
+    constexpr auto action = GlobalShortcutAction::OpenPinToScreenManagement;
+    const shortcuts::ShortcutBinding binding{QStringLiteral("Ctrl+F8")};
+    {
+        auto backend = std::make_unique<FakeBackend>();
+        auto* input = backend.get();
+        GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+        manager.initialize();
+        require(manager.state(action).status == GlobalShortcutStatus::Unset &&
+                    manager.state(action).shortcuts.isEmpty(),
+                "pinned management must have no default global hotkey");
+        clearAll(manager);
+        require(manager.setShortcuts(action, {binding}) &&
+                    manager.state(action).status == GlobalShortcutStatus::Registered &&
+                    input->registrations.size() == 1,
+                "pinned management must register an assigned global hotkey");
+        bool activated = false;
+        QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                         [&](GlobalShortcutAction received) { activated = received == action; });
+        input->handler(input->registrations.constBegin().key());
+        require(activated, "pinned management hotkey must dispatch its action");
+    }
+    auto backend = std::make_unique<FakeBackend>();
+    GlobalShortcutManager restored(std::move(backend), nullptr, [] { return false; });
+    restored.initialize();
+    require(restored.state(action).status == GlobalShortcutStatus::Registered &&
+                restored.state(action).shortcuts == shortcuts::ShortcutBindingList{binding},
+            "pinned management hotkey must survive manager recreation");
+    require(restored.setShortcuts(action, {}), "clear pinned management hotkey fixture");
 }
 
 void backendAvailabilityInvalidatesOwnershipAndRecovers() {
@@ -778,6 +811,7 @@ int main(int argc, char** argv) {
                 .success,
             "initialize shortcut test storage");
     validationCoversSupportedAndRejectedKeys();
+    pinnedManagementShortcutCanBeAssignedAndRestored();
     backendAvailabilityInvalidatesOwnershipAndRecovers();
 #ifdef Q_OS_MACOS
     disabledMacOSSystemReservationsRemainUsable();

@@ -13,6 +13,7 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QFrame>
+#include <QImage>
 #include <QPalette>
 #include <QSize>
 #include <QSizePolicy>
@@ -147,7 +148,7 @@ void navigationUsesAntDesignDefaultsAndCollapseTriggerStyle() {
             "sidebar collapse button should use the configured trigger style");
 }
 
-void sidebarBaseLayersUseSubmenuBackground() {
+void sidebarBaseLayersUseTopLevelMenuBackground() {
     snow_shot::storage::InterfaceSettings settings;
     settings.setSidebarCollapsed(false);
 
@@ -167,16 +168,16 @@ void sidebarBaseLayersUseSubmenuBackground() {
     require(menuColors.itemBackground == themeManager.themeColorScheme().map.colorBgContainer,
             "the light menu root should resolve to the container token");
     require(sidebar.autoFillBackground() &&
-                sidebar.palette().color(QPalette::Window) == menuColors.subMenuItemBackground &&
-                sidebar.palette().color(QPalette::Base) == menuColors.subMenuItemBackground,
-            "sidebar background should use the resolved submenu surface");
+                sidebar.palette().color(QPalette::Window) == menuColors.itemBackground &&
+                sidebar.palette().color(QPalette::Base) == menuColors.itemBackground,
+            "sidebar background should match top-level menu items");
 
     require(menu->geometry().top() == 0, "sidebar navigation should start at the top edge");
     require(menu->contentsMargins().top() == 0,
             "sidebar root geometry should not be inset to space its menu items");
     require(menu->autoFillBackground() &&
-                menu->palette().color(QPalette::Window) == menuColors.subMenuItemBackground,
-            "sidebar navigation background should use the resolved submenu surface");
+                menu->palette().color(QPalette::Window) == menuColors.itemBackground,
+            "sidebar navigation background should match top-level menu items");
     require(!menu->componentTokens().colors.shared.itemBackground.has_value(),
             "sidebar should keep the ant_design_qt menu root and submenu colors untouched");
 
@@ -197,23 +198,41 @@ void sidebarBaseLayersUseSubmenuBackground() {
     auto* trigger = sidebar.findChild<QFrame*>(QStringLiteral("sidebarCollapseTrigger"));
     require(trigger != nullptr, "sidebar should expose a collapse trigger background");
     require(trigger->autoFillBackground() &&
-                trigger->palette().color(QPalette::Window) == menuColors.subMenuItemBackground &&
+                trigger->palette().color(QPalette::Window) == menuColors.itemBackground &&
                 trigger->height() == COLLAPSE_TRIGGER_HEIGHT &&
                 trigger->geometry().bottom() == sidebar.contentsRect().bottom(),
-            "sidebar collapse trigger should use the resolved submenu surface and be flush with "
+            "sidebar collapse trigger should match top-level menu items and be flush with "
             "the bottom edge");
+
+    menu->collapseAll();
+    flushEvents();
+    const auto lightSidebarImage = sidebar.grab().toImage();
+    const int backgroundSampleX = 12;
+    const int emptyAreaSampleY = sidebar.height() - COLLAPSE_TRIGGER_HEIGHT - 12;
+    const int triggerSampleY = sidebar.height() - 12;
+    require(lightSidebarImage.pixelColor(backgroundSampleX, emptyAreaSampleY) ==
+                    menuColors.itemBackground &&
+                lightSidebarImage.pixelColor(backgroundSampleX, triggerSampleY) ==
+                    menuColors.itemBackground,
+            "rendered empty sidebar and collapse trigger should match top-level menu items");
 
     themeManager.setThemeAppearance(ThemeAppearance::Dark);
     flushEvents();
     const auto darkMenuColors = menu->resolvedColorTokens();
-    require(sidebar.palette().color(QPalette::Window) == darkMenuColors.subMenuItemBackground &&
-                sidebar.palette().color(QPalette::Base) == darkMenuColors.subMenuItemBackground &&
-                menu->palette().color(QPalette::Window) == darkMenuColors.subMenuItemBackground &&
+    require(sidebar.palette().color(QPalette::Window) == darkMenuColors.itemBackground &&
+                sidebar.palette().color(QPalette::Base) == darkMenuColors.itemBackground &&
+                menu->palette().color(QPalette::Window) == darkMenuColors.itemBackground &&
                 trigger->autoFillBackground() &&
-                trigger->palette().color(QPalette::Window) == darkMenuColors.subMenuItemBackground,
-            "sidebar base layers should follow the resolved dark submenu surface");
+                trigger->palette().color(QPalette::Window) == darkMenuColors.itemBackground,
+            "sidebar base layers should match dark top-level menu items");
     require(inlineView->palette().color(QPalette::Base) == darkMenuColors.itemBackground,
             "the dark menu root should keep the resolved ant_design_qt item background");
+    const auto darkSidebarImage = sidebar.grab().toImage();
+    require(darkSidebarImage.pixelColor(backgroundSampleX, emptyAreaSampleY) ==
+                    darkMenuColors.itemBackground &&
+                darkSidebarImage.pixelColor(backgroundSampleX, triggerSampleY) ==
+                    darkMenuColors.itemBackground,
+            "rendered dark sidebar base layers should match top-level menu items");
 
     sidebar.hide();
     themeManager.setThemeAppearance(ThemeAppearance::Light);
@@ -376,7 +395,7 @@ int main(int argc, char** argv) {
 
     navigationUsesAntDesignDefaultsAndCollapseTriggerStyle();
     overflowingNavigationRemainsScrollable();
-    sidebarBaseLayersUseSubmenuBackground();
+    sidebarBaseLayersUseTopLevelMenuBackground();
     collapseButtonSwitchesNavigationMode();
     collapsedSubmenuUsesNaturalPopupHeight();
     snow_shot::storage::ApplicationStorage::instance().shutdown();

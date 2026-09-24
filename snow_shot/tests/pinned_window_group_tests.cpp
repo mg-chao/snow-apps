@@ -118,6 +118,14 @@ void managerValidationPersistenceAndCounts() {
     require(repository.upsert(record(secondId)).success, "failed to seed a default record");
     require(manager.windowCount(*alphaId) == 1 && manager.windowCount("default") == 1,
             "group counts should include persisted records");
+    require(manager.windowCounts(*alphaId).nonIgnored == 1 &&
+                manager.windowCounts(*alphaId).total == 1,
+            "persisted pins should contribute to both group counts");
+    manager.registerPendingPin(QStringLiteral("pending-alpha"), *alphaId);
+    require(manager.windowCounts(*alphaId).nonIgnored == 2 &&
+                manager.windowCounts(*alphaId).total == 2,
+            "pending pins should contribute to both group counts");
+    manager.completePendingPin(QStringLiteral("pending-alpha"));
 
     require(manager.setActiveGroup(*alphaId), "activating a user group should succeed");
     require(repository.activeGroupId() == *alphaId, "the active group should be persisted");
@@ -270,10 +278,60 @@ void groupCountLimitIsEnforced() {
                 restored.activeGroupId() == lastGroupId,
             "the last active group within the persisted limit should survive reload");
 }
+void ignoredRecordsCountTowardTotalAndDeleteWithEmptyGroups() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    presentation::PinnedWindowGroupManager manager(&repository);
+    const auto group = manager.createGroup(QStringLiteral("Closed only"));
+    require(group.has_value(), "create closed-only group");
+    auto item = record(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    item.groupId = *group;
+    require(repository.upsert(item).success && manager.windowCount(*group) == 1,
+            "retained pins count toward group membership");
+    require(repository.markClosed(item.id).success && manager.windowCount(*group) == 0 &&
+                manager.windowCounts(*group).total == 1,
+            "ignored pins should remain in the total after closing");
+    manager.registerPendingPin(item.id, *group);
+    require(manager.windowCounts(*group).nonIgnored == 1 && manager.windowCounts(*group).total == 1,
+            "an ignored pin being restored should count once in the total");
+    manager.completePendingPin(item.id);
+    require(manager.windowCounts(*group).nonIgnored == 0 && manager.windowCounts(*group).total == 1,
+            "completing a pending pin should refresh the non-ignored count");
+    require(manager.deleteEmptyGroups() && !manager.contains(*group) &&
+                !repository.loadRecord(item.id).has_value(),
+            "empty-group cleanup should delete an ignored-only group and its saved pins");
+}
+
+void persistedMetadataDoesNotRefreshGroupMenus() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    presentation::PinnedWindowGroupManager manager(&repository);
+    auto item = record(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    require(repository.upsert(item).success && manager.windowCount(QStringLiteral("default")) == 1,
+            "prime persisted group counts");
+    int updates = 0;
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::groupsChanged, &manager,
+                     [&updates]() { ++updates; });
+    item.opacityPercent = 75;
+    require(repository.updateState(item).success, "update pin metadata without changing counts");
+    manager.onPinnedRecordsChanged();
+    QCoreApplication::processEvents();
+    require(updates == 0, "metadata-only changes do not rebuild group menus");
+    require(repository.markClosed(item.id).success, "close counted pin");
+    manager.onPinnedRecordsChanged();
+    QCoreApplication::processEvents();
+    require(updates == 1, "closing a pin refreshes group counts");
+    require(repository.markRestored(item.id).success, "restore counted pin");
+    manager.onPinnedRecordsChanged();
+    QCoreApplication::processEvents();
+    require(updates == 2, "restoring a pin refreshes group counts");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    ignoredRecordsCountTowardTotalAndDeleteWithEmptyGroups();
+    persistedMetadataDoesNotRefreshGroupMenus();
     defaultGroupAndFreshSchema();
     managerValidationPersistenceAndCounts();
     activeGroupFallbackAndEmptyDeletion();

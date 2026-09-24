@@ -20,6 +20,11 @@ class PinnedWindowRepository;
 }
 
 namespace snow_shot::presentation {
+struct GroupWindowCounts final {
+    int nonIgnored = 0;
+    int total = 0;
+};
+
 class PinnedWindowGroupManager final : public QObject {
     Q_OBJECT
 
@@ -32,8 +37,10 @@ class PinnedWindowGroupManager final : public QObject {
     [[nodiscard]] QString activeGroupId() const;
     [[nodiscard]] QString displayName(const QString& groupId) const;
     [[nodiscard]] bool contains(const QString& groupId) const;
+    [[nodiscard]] GroupWindowCounts windowCounts(const QString& groupId) const;
     [[nodiscard]] int windowCount(const QString& groupId) const;
     [[nodiscard]] bool hasWindow(const QString& persistenceId) const;
+    void onPinnedRecordsChanged();
 
     bool setActiveGroup(const QString& groupId);
     [[nodiscard]] std::optional<QString>
@@ -42,12 +49,17 @@ class PinnedWindowGroupManager final : public QObject {
     bool deleteSpecifiedGroup(const QString& groupId);
     bool moveWindow(::ScreenshotPinnedWindow* window, const QString& groupId);
     void restoreActiveGroupWindows();
+    bool showWindow(const QString& id);
+    void destroyWindow(const QString& id);
+    void markWindowClosing(::ScreenshotPinnedWindow* window);
 
     void registerWindow(::ScreenshotPinnedWindow* window, const QString& groupId);
     void unregisterWindow(::ScreenshotPinnedWindow* window);
     void registerPendingPin(const QString& persistenceId, const QString& groupId);
     void completePendingPin(const QString& persistenceId);
     void openCreateGroupModal(QWidget* owner, ::ScreenshotPinnedWindow* currentWindow = nullptr);
+    void openDeleteEmptyGroupsConfirmation(QWidget* owner);
+    void openDeleteSpecifiedGroupConfirmation(const QString& groupId, QWidget* owner);
 
   signals:
     void groupsChanged();
@@ -70,7 +82,9 @@ class PinnedWindowGroupManager final : public QObject {
     QHash<QString, QString> m_pendingGroups;
     mutable quint64 m_countsRevision = (std::numeric_limits<quint64>::max)();
     mutable QHash<QString, int> m_persistedCounts;
+    mutable QHash<QString, int> m_persistedTotalCounts;
     mutable QHash<QString, QSet<QString>> m_persistedIdsByGroup;
+    mutable QHash<QString, QSet<QString>> m_allPersistedIdsByGroup;
     bool m_groupsChangedScheduled = false;
 };
 } // namespace snow_shot::presentation

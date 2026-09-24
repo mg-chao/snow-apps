@@ -175,29 +175,42 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
         }
 
-        // The pinned image surface is exposed as HTCAPTION so a press can
-        // start physical window capture. That changes the normal client hover
-        // path into non-client mouse messages, and USER32's leave tracking,
-        // like Qt's synthesized Enter/Leave, follows the client area. Mouse
-        // messages only arm leave tracking; presence always re-resolves from
-        // the live cursor through window.applyNativePointerPresence().
+        // The draggable image and resize frame are non-client regions, so Qt's
+        // widget Enter/Leave events alone do not cover them. Arm non-client
+        // leave tracking after Qt dispatch, which may replace the registration.
         const UINT pointerMessage = nativeMessage->message;
-        const bool pointerMove = pointerMessage == WM_MOUSEMOVE || pointerMessage == WM_NCMOUSEMOVE;
-        const bool pointerLeave =
-            pointerMessage == WM_MOUSELEAVE || pointerMessage == WM_NCMOUSELEAVE;
-        if (pointerMove || pointerLeave) {
-            static_cast<void>(window.applyNativePointerPresence());
-            window.m_hideToTop->refreshPointer();
-            if (pointerMove) {
-                TRACKMOUSEEVENT tracking{};
-                tracking.cbSize = sizeof(tracking);
-                tracking.dwFlags = TME_LEAVE;
-                if (pointerMessage == WM_NCMOUSEMOVE) {
-                    tracking.dwFlags |= TME_NONCLIENT;
-                }
-                tracking.hwndTrack = pinnedHwnd;
-                TrackMouseEvent(&tracking);
+        if (pointerMessage == WM_NCMOUSEMOVE) {
+            window.m_nonClientPointerInside = true;
+            window.setControlsPointerInside(true);
+            if (!window.m_nonClientTrackingPending) {
+                window.m_nonClientTrackingPending = true;
+                QMetaObject::invokeMethod(
+                    &window,
+                    [&window] {
+                        window.m_nonClientTrackingPending = false;
+                        if (window.m_nonClientPointerInside && !window.m_closing &&
+                            window.internalWinId() != 0 &&
+                            !native::trackNonClientLeave(window.internalWinId()))
+                            qWarning("Failed to track pinned window non-client mouse leave");
+                    },
+                    Qt::QueuedConnection);
             }
+        } else if (pointerMessage == WM_MOUSEMOVE) {
+            window.m_nonClientPointerInside = false;
+            window.setControlsPointerInside(true);
+        } else if (pointerMessage == WM_NCMOUSELEAVE) {
+            if (window.m_nonClientPointerInside) {
+                window.m_nonClientPointerInside = false;
+                window.setControlsPointerInside(false);
+            }
+        } else if (pointerMessage == WM_MOUSELEAVE && !window.m_nonClientPointerInside) {
+            window.setControlsPointerInside(false);
+        }
+        if (pointerMessage == WM_MOUSEMOVE || pointerMessage == WM_NCMOUSEMOVE ||
+            pointerMessage == WM_MOUSELEAVE || pointerMessage == WM_NCMOUSELEAVE ||
+            pointerMessage == WM_CAPTURECHANGED || pointerMessage == WM_CANCELMODE ||
+            pointerMessage == WM_LBUTTONUP || pointerMessage == WM_NCLBUTTONUP) {
+            window.m_hideToTop->refreshPointer();
         }
 
         // Qt and USER32 release capture while handing off a pending drag.

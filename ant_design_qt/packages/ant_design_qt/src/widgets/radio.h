@@ -222,7 +222,6 @@ class AdRadio final : public QRadioButton, public AdControlScaleParticipant {
   std::optional<ControlSize> controlSizeOverride_;
   std::optional<Variant> variantOverride_;
   std::optional<ButtonStyle> buttonStyleOverride_;
-  bool hovered_ = false;
   bool pressed_ = false;
   bool focusVisible_ = false;
   GroupPosition groupPosition_ = GroupPosition::None;

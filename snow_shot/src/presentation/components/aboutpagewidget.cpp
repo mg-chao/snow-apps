@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/aboutpagewidget.h"
+#include "widgets/detail/pointer_region.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
@@ -258,18 +259,8 @@ class AboutResourceButton final : public AdButton {
     }
 
   protected:
-    void enterEvent(QEnterEvent* event) override {
-        m_hovered = true;
-        AdButton::enterEvent(event);
-    }
-
-    void leaveEvent(QEvent* event) override {
-        m_hovered = false;
-        AdButton::leaveEvent(event);
-    }
-
     void hideEvent(QHideEvent* event) override {
-        m_hovered = false;
+
         AdButton::hideEvent(event);
     }
 
@@ -283,10 +274,10 @@ class AboutResourceButton final : public AdButton {
         input.baseFont = font();
         const auto visual = adqt::widgets::detail::resolveButtonVisualStyle(
             input, adqt::theme::ThemeManager::instance().resolve(this));
-        const auto& state = !isEnabled() ? visual.disabled
-                            : isDown()   ? visual.active
-                            : m_hovered  ? visual.hover
-                                         : visual.normal;
+        const auto& state = !isEnabled()                                 ? visual.disabled
+                            : isDown()                                   ? visual.active
+                            : adqt::widgets::detail::widgetHovered(this) ? visual.hover
+                                                                         : visual.normal;
         if (m_contentColor != state.text || m_contentDpr != devicePixelRatioF()) {
             m_contentColor = state.text;
             m_contentDpr = devicePixelRatioF();
@@ -308,7 +299,6 @@ class AboutResourceButton final : public AdButton {
     styles::ThemeColorScheme m_scheme;
     QColor m_contentColor;
     qreal m_contentDpr = 0;
-    bool m_hovered = false;
 };
 
 QUrl aboutProjectUrl(const QString& suffix = {}) {

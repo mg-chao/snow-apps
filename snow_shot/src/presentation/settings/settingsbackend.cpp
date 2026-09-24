@@ -329,6 +329,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
             .configuration()
             .value(QStringLiteral("capture_history/compression_level"))
             .toString();
+    case SettingsSelectBinding::PinnedHistoryCompressionLevel:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("pinned_history/compression_level"))
+            .toString();
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
         return storage::ScreenshotSettings().saveAsFileDialog();
     case SettingsSelectBinding::TrayLeftClickAction:
@@ -447,6 +452,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     case SettingsSelectBinding::HistoryCompressionLevel:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("capture_history/compression_level"), value.toString());
+    case SettingsSelectBinding::PinnedHistoryCompressionLevel:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("pinned_history/compression_level"), value.toString());
     case SettingsSelectBinding::ScreenshotSaveAsFileDialog:
         return storage::ScreenshotSettings().setSaveAsFileDialog(value.toString());
     case SettingsSelectBinding::TrayLeftClickAction:
@@ -461,8 +469,12 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     switch (binding) {
     case SettingsSwitchBinding::HistoryEnabled:
         return storage::ApplicationStorage::instance().captureHistoryPolicy().enabled;
+    case SettingsSwitchBinding::PinnedHistoryEnabled:
+        return storage::ApplicationStorage::instance().pinnedWindowPolicy().enabled;
     case SettingsSwitchBinding::HistoryKeepPermanently:
         return storage::ApplicationStorage::instance().captureHistoryPolicy().keepPermanently;
+    case SettingsSwitchBinding::PinnedHistoryKeepPermanently:
+        return storage::ApplicationStorage::instance().pinnedWindowPolicy().keepPermanently;
     case SettingsSwitchBinding::SmartSelection:
         return storage::ApplicationStorage::instance().smartSelectionEnabled();
     case SettingsSwitchBinding::OcrResidentProcess:
@@ -704,9 +716,19 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::HistoryEnabled:
         policy.enabled = value;
         break;
+    case SettingsSwitchBinding::PinnedHistoryEnabled: {
+        auto pinnedPolicy = storage::ApplicationStorage::instance().pinnedWindowPolicy();
+        pinnedPolicy.enabled = value;
+        return storage::ApplicationStorage::instance().requestPinnedWindowPolicy(pinnedPolicy);
+    }
     case SettingsSwitchBinding::HistoryKeepPermanently:
         policy.keepPermanently = value;
         break;
+    case SettingsSwitchBinding::PinnedHistoryKeepPermanently: {
+        auto pinnedPolicy = storage::ApplicationStorage::instance().pinnedWindowPolicy();
+        pinnedPolicy.keepPermanently = value;
+        return storage::ApplicationStorage::instance().requestPinnedWindowPolicy(pinnedPolicy);
+    }
     case SettingsSwitchBinding::SmartSelection:
         return false;
     case SettingsSwitchBinding::OcrResidentProcess:
@@ -747,10 +769,16 @@ int BuiltInSettingsBackend::integerValue(SettingsIntegerBinding binding) const {
     switch (binding) {
     case SettingsIntegerBinding::HistoryRetentionDays:
         return policy.retentionDays;
+    case SettingsIntegerBinding::PinnedHistoryRetentionDays:
+        return storage::ApplicationStorage::instance().pinnedWindowPolicy().retentionDays;
     case SettingsIntegerBinding::HistoryMaxEntries:
         return policy.maxEntries;
+    case SettingsIntegerBinding::PinnedHistoryMaxEntries:
+        return storage::ApplicationStorage::instance().pinnedWindowPolicy().maxEntries;
     case SettingsIntegerBinding::HistoryMaxDiskMiB:
         return policy.maxDiskMiB;
+    case SettingsIntegerBinding::PinnedHistoryMaxDiskMiB:
+        return storage::ApplicationStorage::instance().pinnedWindowPolicy().maxDiskMiB;
     case SettingsIntegerBinding::ScreenshotDelaySeconds:
         return storage::ScreenshotSettings().delaySeconds();
     }
@@ -763,12 +791,27 @@ bool BuiltInSettingsBackend::applyIntegerValue(SettingsIntegerBinding binding, i
     case SettingsIntegerBinding::HistoryRetentionDays:
         policy.retentionDays = value;
         break;
+    case SettingsIntegerBinding::PinnedHistoryRetentionDays: {
+        auto pinnedPolicy = storage::ApplicationStorage::instance().pinnedWindowPolicy();
+        pinnedPolicy.retentionDays = value;
+        return storage::ApplicationStorage::instance().requestPinnedWindowPolicy(pinnedPolicy);
+    }
     case SettingsIntegerBinding::HistoryMaxEntries:
         policy.maxEntries = value;
         break;
+    case SettingsIntegerBinding::PinnedHistoryMaxEntries: {
+        auto pinnedPolicy = storage::ApplicationStorage::instance().pinnedWindowPolicy();
+        pinnedPolicy.maxEntries = value;
+        return storage::ApplicationStorage::instance().requestPinnedWindowPolicy(pinnedPolicy);
+    }
     case SettingsIntegerBinding::HistoryMaxDiskMiB:
         policy.maxDiskMiB = value;
         break;
+    case SettingsIntegerBinding::PinnedHistoryMaxDiskMiB: {
+        auto pinnedPolicy = storage::ApplicationStorage::instance().pinnedWindowPolicy();
+        pinnedPolicy.maxDiskMiB = value;
+        return storage::ApplicationStorage::instance().requestPinnedWindowPolicy(pinnedPolicy);
+    }
     case SettingsIntegerBinding::ScreenshotDelaySeconds: {
         const auto* schema =
             storage::ConfigurationSchema::entry(QStringLiteral("screenshot/delay_seconds"));
@@ -1136,6 +1179,8 @@ SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding bi
                 platform::windows::administratorOperationPending() && !state.elevated,
                 state.restartLabel, state.restartHint, state.elevated};
     }
+    case SettingsActionBinding::ClearPinnedHistory:
+        return {status.writeAvailable && !status.pinnedClearing, status.pinnedClearing};
     case SettingsActionBinding::ClearCaptureHistory:
         return {
             status.writeAvailable && !status.historyClearing,
@@ -1233,6 +1278,8 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
     }
     case SettingsActionBinding::ClearCaptureHistory:
         return storage::ApplicationStorage::instance().requestCaptureHistoryClear();
+    case SettingsActionBinding::ClearPinnedHistory:
+        return storage::ApplicationStorage::instance().requestPinnedWindowClear();
     case SettingsActionBinding::ClearThumbnailCache:
         return storage::ApplicationStorage::instance().requestThumbnailCacheClear();
     case SettingsActionBinding::ClearRecordingTemp:
@@ -1403,6 +1450,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         };
         resetShortcut(GlobalShortcutAction::OpenCaptureHistory,
                       QStringLiteral("global_shortcuts/open_capture_history"));
+        resetShortcut(GlobalShortcutAction::OpenPinToScreenManagement,
+                      QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
         resetShortcut(GlobalShortcutAction::TranslateSelectedText,
                       QStringLiteral("global_shortcuts/translate_selected_text"));
         resetShortcut(GlobalShortcutAction::ToggleGlobalHotkeys,
@@ -1420,6 +1469,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         };
         resetShortcut(GlobalShortcutAction::PinClipboardContent,
                       QStringLiteral("global_shortcuts/pin_clipboard_content"));
+        resetShortcut(GlobalShortcutAction::RestoreLastClosedWindows,
+                      QStringLiteral("global_shortcuts/restore_last_closed_windows"));
         resetShortcut(GlobalShortcutAction::PinSelectedFiles,
                       QStringLiteral("global_shortcuts/pin_selected_files"));
         return accepted;
@@ -1445,6 +1496,13 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    QStringLiteral("capture_history/compression_level"),
                    storage::ConfigurationSchema::defaultValue(
                        QStringLiteral("capture_history/compression_level")));
+    case SettingsSectionReset::PinnedHistoryPolicy:
+        return storage::ApplicationStorage::instance().requestPinnedWindowPolicy(
+                   storage::PinnedWindowPolicy{}) &&
+               storage::ApplicationStorage::instance().configuration().setValue(
+                   QStringLiteral("pinned_history/compression_level"),
+                   storage::ConfigurationSchema::defaultValue(
+                       QStringLiteral("pinned_history/compression_level")));
     case SettingsSectionReset::ScreenshotSettings:
         return storage::ApplicationStorage::instance().requestSmartSelection(
                    storage::ConfigurationSchema::defaultValue(
@@ -1637,8 +1695,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("drawing_mode"), QStringLiteral("resize_window"),
               QStringLiteral("thumbnail_mode"), QStringLiteral("hide_to_top"),
               QStringLiteral("toggle_click_through"), QStringLiteral("close_window"),
-              QStringLiteral("move_cursor_up"), QStringLiteral("move_cursor_down"),
-              QStringLiteral("move_cursor_left"), QStringLiteral("move_cursor_right")}) {
+              QStringLiteral("destroy_window"), QStringLiteral("move_cursor_up"),
+              QStringLiteral("move_cursor_down"), QStringLiteral("move_cursor_left"),
+              QStringLiteral("move_cursor_right")}) {
             defaults.insert(actionId, shortcutListDefault(
                                           QStringLiteral("pin_to_screen_shortcuts/") + actionId));
         }

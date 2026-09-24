@@ -63,7 +63,6 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     QWidget* addSeparator();
     void setToolbarHovered(bool hovered);
     void scheduleToolbarHoverSync();
-    void refreshHoverVisuals();
     bool fieldForObject(QObject* object, Field* outField) const;
     void handleFieldWheel(Field field, int deltaY);
     bool isPointInInteractiveContent(const QPoint& localPosition) const;

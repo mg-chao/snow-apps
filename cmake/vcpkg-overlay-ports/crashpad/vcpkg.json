@@ -1,11 +1,11 @@
 {
   "name": "crashpad",
   "version-date": "2024-04-11",
-  "port-version": 11,
-  "description": "Crashpad with GN escaping for the Snow MSVC toolchain.",
+  "port-version": 12,
+  "description": "Crashpad with Snow toolchain compatibility for MSVC and macOS.",
   "homepage": "https://chromium.googlesource.com/crashpad/crashpad/+/master/README.md",
   "license": "Apache-2.0",
-  "supports": "windows & !uwp",
+  "supports": "osx | (windows & !uwp)",
   "dependencies": [
     { "name": "vcpkg-cmake-get-vars", "host": true },
     { "name": "vcpkg-get-python-packages", "host": true },

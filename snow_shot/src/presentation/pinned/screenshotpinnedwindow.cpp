@@ -1,10 +1,11 @@
 #include "snow_shot/presentation/screenshotencodingsettings.h"
+#include "widgets/detail/pointer_region.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinnedclickthroughgeometry.h"
-#include "screenshotpinnedpointerpresence.h"
+#include "screenshotpinnedcontrolspresence.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
@@ -48,6 +49,7 @@
 #include "widgets/button.h"
 #include "widgets/context_menu.h"
 #include "widgets/message.h"
+#include "widgets/modal.h"
 #include "widgets/slider.h"
 #include "../tools/screenshottoolpalettebuttons.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
@@ -281,7 +283,6 @@ constexpr int kControlsInset = 16;
 constexpr int kControlButtonSize = 32;
 constexpr int kControlIconSize = 16;
 constexpr int kControlButtonSpacing = 8;
-constexpr int kControlsMinimumNativeDimension = 383;
 constexpr int kThumbnailSize = 83;
 constexpr int kThumbnailAnimationDurationMs = 150;
 constexpr int kScaleReadoutDurationMs = 1000;
@@ -702,7 +703,7 @@ class PinnedControlButton final : public adqt::widgets::AdButton {
         if (isDown()) {
             background =
                 m_intent == Intent::Close ? theme.colorErrorActive : theme.colorPrimaryActive;
-        } else if (m_hovered) {
+        } else if (adqt::widgets::detail::widgetHovered(this)) {
             background = m_intent == Intent::Close ? theme.colorError : theme.colorPrimary;
         }
 
@@ -717,19 +718,8 @@ class PinnedControlButton final : public adqt::widgets::AdButton {
         adqt::widgets::AdButton::paintEvent(event);
     }
 
-    void enterEvent(QEnterEvent* event) override {
-        m_hovered = true;
-        adqt::widgets::AdButton::enterEvent(event);
-    }
-
-    void leaveEvent(QEvent* event) override {
-        m_hovered = false;
-        adqt::widgets::AdButton::leaveEvent(event);
-    }
-
   private:
     Intent m_intent;
-    bool m_hovered = false;
 };
 
 class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
@@ -813,12 +803,15 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     setAttribute(Qt::WA_AlwaysShowToolTips, true);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
-    m_pointerPresence = std::make_unique<ScreenshotPinnedPointerPresence>(
-        this, [this]() -> std::optional<bool> { return m_platform->pointerInside(); },
-        [this](bool inside) {
-            if (!m_closing) {
-                m_pointerInside = inside;
-                updateControlsGeometry();
+    m_pointerPresence =
+        std::make_unique<ScreenshotPinnedControlsPresence>(this, [this](bool visible) {
+            if (m_controlsPanel == nullptr)
+                return;
+            m_controlsPanel->setVisible(visible);
+            if (visible) {
+                m_controlsPanel->raise();
+                if (m_scaleLabel != nullptr)
+                    m_scaleLabel->raise();
             }
         });
     m_persistenceTimer = new QTimer(this);
@@ -894,7 +887,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
                       if (m_canvas != nullptr) {
                           m_canvas->setFocus(Qt::OtherFocusReason);
                       }
-                      static_cast<void>(applyNativePointerPresence());
+                      refreshControlsPointerPresence();
                       updateControlsGeometry();
                   },
                   [this] {
@@ -1081,6 +1074,18 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("close_window"),
                                     m_shortcutManager->addBinding(this, std::move(closeWindow)));
 
+    ShortcutManager::Binding destroyWindow;
+    destroyWindow.id = QStringLiteral("pinned.destroy");
+    destroyWindow.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
+    destroyWindow.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
+    destroyWindow.canActivate = localCommandsAllowed;
+    destroyWindow.activate = [this](const auto&) {
+        requestDestroy();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("destroy_window"),
+                                    m_shortcutManager->addBinding(this, std::move(destroyWindow)));
+
     const struct {
         const char* id;
         snow_shot::platform::PhysicalCursorDirection direction;
@@ -1178,6 +1183,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"hide_to_top", "screenshotPinnedHideToTopAction"},
         {"toggle_click_through", "screenshotPinnedClickThroughAction"},
         {"close_window", "screenshotPinnedCloseAction"},
+        {"destroy_window", "screenshotPinnedDestroyAction"},
         {"move_cursor_up", nullptr},
         {"move_cursor_down", nullptr},
         {"move_cursor_left", nullptr},
@@ -1220,6 +1226,7 @@ bool ScreenshotPinnedWindow::prewarm(QScreen* screen) {
 }
 
 ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
+    m_pointerPresence->setActive(false);
     m_platform->environmentChanged = {};
     endControlledInteraction(true);
     shutdownClickThrough();
@@ -1331,6 +1338,8 @@ void ScreenshotPinnedWindow::removePersistence() {
 snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord() const {
     snow_shot::storage::PinnedWindowRecord record;
     record.id = m_persistenceId;
+    record.creationSource = m_creationSource;
+    record.createdUtc = m_createdUtc;
     record.groupId = m_groupId;
     record.sourceKind = !m_originalClipboardContent.localFilePath.isEmpty()
                             ? snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile
@@ -1474,26 +1483,22 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
         return QWidget::event(event);
     }
 
+    const bool pointerPresenceChanged =
+        event != nullptr &&
+        (event->type() == QEvent::Enter || event->type() == QEvent::Leave ||
+         event->type() == QEvent::MouseMove || event->type() == QEvent::DragEnter ||
+         event->type() == QEvent::DragMove || event->type() == QEvent::DragLeave);
+    if (pointerPresenceChanged && !(event->type() == QEvent::Leave && m_nonClientPointerInside))
+        setControlsPointerInside(event->type() != QEvent::Leave &&
+                                 event->type() != QEvent::DragLeave);
     if (m_platform && m_platform->usesControlledInteraction() && m_presented && !m_closing) {
         if (handlePinnedGesture(this, event) || handleControlledPointer(this, event))
             return true;
     }
-    const bool pointerPresenceChanged =
-        event != nullptr && (event->type() == QEvent::Enter || event->type() == QEvent::Leave);
-    if (pointerPresenceChanged) {
-        // Qt synthesizes Enter/Leave from USER32 client-area leave tracking and
-        // queues them, so a leave can arrive after the pointer crossed into the
-        // window's non-client image surface, and an enter can arrive after the
-        // pointer already left the window. Resolve presence from the live
-        // cursor and fall back to the event only when the native query is
-        // unavailable.
-        if (!applyNativePointerPresence()) {
-            schedulePointerPresence(event->type() == QEvent::Enter);
-        }
-    } else if (event != nullptr && event->type() == QEvent::Hide) {
+    if (event != nullptr && event->type() == QEvent::Hide) {
         setFileDragActive(false);
-        m_pointerPresence->reset();
-        m_pointerInside = false;
+        m_nonClientPointerInside = false;
+        m_pointerPresence->setActive(false);
         if (m_clickThroughExitButton != nullptr) {
             m_clickThroughExitButton->hide();
             if (m_clickThroughMoveButton != nullptr) {
@@ -1525,9 +1530,6 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     if (m_hideToTop != nullptr && (pointerPresenceChanged || nativeGeometryMayHaveSettled)) {
         m_hideToTop->refreshPointer();
     }
-    if (pointerPresenceChanged) {
-        updateControlsGeometry();
-    }
     if (windowActivationChanged) {
         applyRuntimeBorderColor();
     }
@@ -1544,9 +1546,6 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
         }
 
         static_cast<void>(reconcilePassiveNativeGeometry());
-        // Keyboard move shortcuts and restore animations relocate the window
-        // under a stationary pointer, so no mouse message re-evaluates presence.
-        static_cast<void>(applyNativePointerPresence());
         if (m_clickThroughActive && isVisible() && !updateClickThroughExitButtonGeometry()) {
             static_cast<void>(setClickThroughMode(false));
         }
@@ -1571,6 +1570,13 @@ void ScreenshotPinnedWindow::changeEvent(QEvent* event) {
 }
 
 void ScreenshotPinnedWindow::retranslateUi() {
+    if (m_destroyConfirmation != nullptr) {
+        m_destroyConfirmation->setWindowTitle(tr("Destroy pinned window"));
+        m_destroyConfirmation->setText(
+            tr("Destroy this pinned window? This action cannot be undone."));
+        m_destroyConfirmation->setAcceptText(tr("Destroy"));
+        m_destroyConfirmation->setRejectText(tr("Cancel"));
+    }
     if (m_scaleLabel != nullptr && m_scaleLabel->isVisible()) {
         m_scaleLabel->setText(m_scaleReadoutShowsOpacity
                                   ? tr("Opacity: %1%").arg(m_opacityPercent)
@@ -1663,6 +1669,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     invalidatePendingCopy();
     m_persistenceEnabled = true;
     m_persistenceRemovalRequested = false;
+    m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     m_deferredInactiveGroupClose = false;
     m_inactiveGroupClosing = false;
     applyRuntimeBorderColor();
@@ -1756,6 +1763,9 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_persistenceWriter = config.persistenceWriter;
     m_replacementPersistenceWriter = config.replacementPersistenceWriter;
     m_persistenceRemover = config.persistenceRemover;
+    m_persistenceCloser = config.persistenceCloser;
+    m_creationSource = config.creationSource;
+    m_createdUtc = QDateTime::currentDateTimeUtc();
     m_groupManager = config.groupManager;
     m_groupId = config.groupId.trimmed();
     if (m_groupId.isEmpty()) {
@@ -1773,7 +1783,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     if (m_groupManager != nullptr) {
         m_groupManager->registerWindow(this, m_groupId);
         connect(m_groupManager, &snow_shot::presentation::PinnedWindowGroupManager::groupsChanged,
-                this, &ScreenshotPinnedWindow::refreshContextMenu, Qt::UniqueConnection);
+                this, &ScreenshotPinnedWindow::refreshContextMenuIfVisible, Qt::UniqueConnection);
         connect(m_groupManager,
                 &snow_shot::presentation::PinnedWindowGroupManager::activeGroupChanged, this,
                 &ScreenshotPinnedWindow::refreshContextMenuForGroup, Qt::UniqueConnection);
@@ -1987,6 +1997,9 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (event == nullptr || m_closing) {
         return QWidget::eventFilter(watched, event);
     }
+    if (event->type() == QEvent::Enter || event->type() == QEvent::MouseMove ||
+        event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)
+        setControlsPointerInside(true);
     if (m_platform->usesControlledInteraction() &&
         (handlePinnedGesture(watched, event) || handleControlledPointer(watched, event)))
         return true;
@@ -2163,21 +2176,32 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    bool savedForClose = false;
+    if (event->spontaneous() && !m_inactiveGroupClosing &&
+        m_closeIntent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
+        m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Close;
+        if (m_groupManager)
+            m_groupManager->markWindowClosing(this);
+        if (m_persistenceCloser) {
+            m_persistenceCloser(persistenceRecord());
+            savedForClose = true;
+        }
+    }
     setFileDragActive(false);
-    emit closingForPersistence(persistenceRecord(), m_persistenceRemovalRequested);
+    emit closingForPersistence(persistenceRecord(), m_closeIntent);
     if (m_persistenceRemovalRequested) {
         removePersistence();
     }
-    if (!m_persistenceRemovalRequested && !m_inactiveGroupClosing && m_presented &&
-        m_persistenceTimer != nullptr) {
+    if (!m_persistenceRemovalRequested && m_presented && m_persistenceTimer != nullptr &&
+        !savedForClose) {
         m_persistenceTimer->stop();
         persistNow();
     }
     m_hideToTop->shutdown();
     shutdownClickThrough();
     m_closing = true;
-    m_pointerPresence->reset();
-    m_pointerInside = false;
+    m_nonClientPointerInside = false;
+    m_pointerPresence->setActive(false);
     m_deferredInactiveGroupClose = false;
     m_firstContentFramePublished = false;
     m_firstFramePaintPending = false;
@@ -2280,6 +2304,10 @@ void ScreenshotPinnedWindow::moveEvent(QMoveEvent* event) {
 
 void ScreenshotPinnedWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    if (!m_closing) {
+        m_pointerPresence->setActive(true);
+        refreshControlsPointerPresence();
+    }
     if (layout() != nullptr) {
         layout()->activate();
     }
@@ -2411,6 +2439,7 @@ void ScreenshotPinnedWindow::createUi() {
     m_scaleLabel->setObjectName(QStringLiteral("screenshotPinnedScaleLabel"));
 
     m_controlsPanel = new QFrame(this);
+    m_controlsPanel->hide();
     m_controlsPanel->setAttribute(Qt::WA_NativeWindow, false);
     m_controlsPanel->setObjectName(QStringLiteral("screenshotPinnedControlsPanel"));
     m_controlsPanel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -2680,8 +2709,13 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_closeAction = m_contextMenu->addItem(tr("Close"), outlined_icons::Close());
     setActionTranslationSource(m_closeAction, "Close");
     m_closeAction->setObjectName(QStringLiteral("screenshotPinnedCloseAction"));
-    m_contextMenu->setActionDanger(m_closeAction);
     connect(m_closeAction, &QAction::triggered, this, &ScreenshotPinnedWindow::requestUserClose);
+    QAction* destroyAction =
+        m_contextMenu->addItem(tr("Destroy"), custom_outlined_icons::DestroyPinnedWindow());
+    setActionTranslationSource(destroyAction, "Destroy");
+    destroyAction->setObjectName(QStringLiteral("screenshotPinnedDestroyAction"));
+    m_contextMenu->setActionDanger(destroyAction);
+    connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::confirmDestroy);
     updateShowMainInterfaceAction();
     connect(m_contextMenu, &QMenu::aboutToShow, this, [this] {
         exitHideToTop();
@@ -2788,12 +2822,17 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
 
 void ScreenshotPinnedWindow::refreshContextMenuForGroup(const QString& groupId) {
     Q_UNUSED(groupId);
-    refreshContextMenu();
+    refreshContextMenuIfVisible();
+}
+
+void ScreenshotPinnedWindow::refreshContextMenuIfVisible() {
+    if (m_contextMenu != nullptr && m_contextMenu->isVisible())
+        refreshContextMenu();
 }
 
 void ScreenshotPinnedWindow::deleteIfInGroup(const QString& groupId) {
     if (m_groupId == groupId) {
-        requestUserClose();
+        requestDestroy();
     }
 }
 
@@ -2817,10 +2856,13 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     const QVector<snow_shot::storage::PinnedWindowGroup> groups = manager->groupsSortedForDisplay();
     bool hasDeletableEmptyGroups = false;
     for (const auto& group : groups) {
-        const int windowCount = manager->windowCount(group.id);
-        hasDeletableEmptyGroups = hasDeletableEmptyGroups || (!group.builtIn && windowCount == 0);
-        QAction* action = m_groupMenu->addItem(QStringLiteral("%1\t%2").arg(
-            manager->displayName(group.id), QString::number(windowCount)));
+        const auto counts = manager->windowCounts(group.id);
+        hasDeletableEmptyGroups =
+            hasDeletableEmptyGroups || (!group.builtIn && counts.nonIgnored == 0);
+        QAction* action = m_groupMenu->addItem(QStringLiteral("%1\t%2/%3")
+                                                   .arg(manager->displayName(group.id),
+                                                        QString::number(counts.nonIgnored),
+                                                        QString::number(counts.total)));
         action->setObjectName(QStringLiteral("screenshotPinnedGroupAction-%1").arg(group.id));
         action->setData(group.id);
         action->setCheckable(true);
@@ -2836,7 +2878,8 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     QAction* deleteEmpty = m_groupMenu->addItem(tr("Delete Empty Groups"), outlined_icons::Clear());
     deleteEmpty->setObjectName(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     deleteEmpty->setEnabled(hasDeletableEmptyGroups);
-    connect(deleteEmpty, &QAction::triggered, this, [manager]() { manager->deleteEmptyGroups(); });
+    connect(deleteEmpty, &QAction::triggered, this,
+            [this, manager]() { manager->openDeleteEmptyGroupsConfirmation(this); });
 
     const QString deleteSpecifiedText = tr("Delete Specified Group");
     if (m_deleteSpecifiedGroupMenu == nullptr) {
@@ -2854,13 +2897,17 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
                                    custom_outlined_icons::Delete());
     }
     for (const auto& group : groups) {
-        QAction* action = m_deleteSpecifiedGroupMenu->addItem(QStringLiteral("%1\t%2").arg(
-            manager->displayName(group.id), QString::number(manager->windowCount(group.id))));
+        const auto counts = manager->windowCounts(group.id);
+        QAction* action = m_deleteSpecifiedGroupMenu->addItem(
+            QStringLiteral("%1\t%2/%3")
+                .arg(manager->displayName(group.id), QString::number(counts.nonIgnored),
+                     QString::number(counts.total)));
         action->setObjectName(
             QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(group.id));
         action->setData(group.id);
-        connect(action, &QAction::triggered, this,
-                [manager, groupId = group.id]() { manager->deleteSpecifiedGroup(groupId); });
+        connect(action, &QAction::triggered, this, [this, manager, groupId = group.id]() {
+            manager->openDeleteSpecifiedGroupConfirmation(groupId, this);
+        });
     }
 }
 
@@ -3016,18 +3063,26 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
     updateRecognitionContentGeometry();
 }
 
-bool ScreenshotPinnedWindow::applyNativePointerPresence() {
-    const auto inside = m_platform->pointerInside();
-    if (!inside.has_value())
-        return false;
-    schedulePointerPresence(*inside);
-    return true;
+void ScreenshotPinnedWindow::refreshControlsPointerPresence() {
+    if (!m_closing)
+        setControlsPointerInside(underMouse());
 }
 
-void ScreenshotPinnedWindow::schedulePointerPresence(bool inside) {
-    if (!m_closing && m_pointerPresence != nullptr) {
-        m_pointerPresence->update(inside);
-    }
+void ScreenshotPinnedWindow::setControlsPointerInside(bool inside) {
+    if (m_closing || m_pointerPresence == nullptr)
+        return;
+    if (inside)
+        m_pointerPresence->enter();
+    else
+        m_pointerPresence->leave();
+}
+
+void ScreenshotPinnedWindow::updateControlsVisibility() {
+    if (m_closing)
+        return;
+    m_pointerPresence->setPresentation({isVisible(), m_thumbnailMode,
+                                        m_editController != nullptr && m_editController->editMode(),
+                                        m_clickThroughActive, currentNativeGeometry().size()});
 }
 
 void ScreenshotPinnedWindow::updateControlsGeometry() {
@@ -3040,25 +3095,16 @@ void ScreenshotPinnedWindow::updateControlsGeometry() {
     if (m_controlsPanel == nullptr) {
         return;
     }
-    const bool editing = m_editController != nullptr && m_editController->editMode();
-    const QSize nativeSize = currentNativeGeometry().size();
-    const bool tooSmallForControls = !nativeSize.isValid() || nativeSize.isEmpty() ||
-                                     nativeSize.width() < kControlsMinimumNativeDimension ||
-                                     nativeSize.height() < kControlsMinimumNativeDimension;
     m_controlsPanel->adjustSize();
     const QSize panelSize = m_controlsPanel->sizeHint();
     m_controlsPanel->resize(panelSize);
     m_controlsPanel->move(std::max(0, width() - panelSize.width() - kControlsInset),
                           kControlsInset);
-    const bool controlsVisible = m_pointerInside && !m_thumbnailMode && !editing &&
-                                 !m_clickThroughActive && !tooSmallForControls;
-    m_controlsPanel->setVisible(controlsVisible);
-    if (!controlsVisible) {
-        return;
-    }
-    m_controlsPanel->raise();
-    if (m_scaleLabel != nullptr) {
-        m_scaleLabel->raise();
+    updateControlsVisibility();
+    if (m_controlsPanel->isVisible()) {
+        m_controlsPanel->raise();
+        if (m_scaleLabel != nullptr)
+            m_scaleLabel->raise();
     }
 }
 
@@ -5615,7 +5661,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
         }
         setClickThroughScreen(nullptr);
         refreshContextMenu();
-        static_cast<void>(applyNativePointerPresence());
+        refreshControlsPointerPresence();
         updateControlsGeometry();
         updateWindowDragCursor(mapFromGlobal(QCursor::pos()));
         schedulePersistence();
@@ -5662,7 +5708,7 @@ bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
         }
         setClickThroughScreen(nullptr);
         refreshContextMenu();
-        static_cast<void>(applyNativePointerPresence());
+        refreshControlsPointerPresence();
         updateControlsGeometry();
     };
     if (!ensureClickThroughExitButton() || !updateClickThroughExitButtonGeometry()) {
@@ -6136,10 +6182,76 @@ void ScreenshotPinnedWindow::requestUserClose() {
         return;
     }
     m_inactiveGroupClosing = false;
-    m_persistenceRemovalRequested = true;
+    if (m_groupManager)
+        m_groupManager->markWindowClosing(this);
+    m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Close;
+    if (m_persistenceTimer)
+        m_persistenceTimer->stop();
+    if (m_persistenceCloser)
+        m_persistenceCloser(persistenceRecord());
     m_closing = true;
     stopRecognition();
     QTimer::singleShot(0, this, [this]() { close(); });
+}
+
+void ScreenshotPinnedWindow::showFromManagement() {
+    if (m_closing)
+        return;
+    if (hideToTopActive())
+        m_hideToTop->setSuppressed(false);
+    else {
+        show();
+        raise();
+        activateWindow();
+    }
+}
+
+void ScreenshotPinnedWindow::requestDestroy() {
+    if (m_groupManager)
+        m_groupManager->markWindowClosing(this);
+    m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Destroy;
+    m_persistenceRemovalRequested = true;
+    if (m_persistenceTimer)
+        m_persistenceTimer->stop();
+    removePersistence();
+    m_inactiveGroupClosing = false;
+    m_closing = true;
+    stopRecognition();
+    QTimer::singleShot(0, this, [this]() { close(); });
+}
+
+void ScreenshotPinnedWindow::confirmDestroy() {
+    if (m_closing) {
+        return;
+    }
+    if (m_destroyConfirmation != nullptr) {
+        m_destroyConfirmation->setOpen(true);
+        return;
+    }
+
+    auto* modal = new adqt::widgets::AdModal(this);
+    m_destroyConfirmation = modal;
+    modal->setObjectName(QStringLiteral("screenshotPinnedDestroyConfirmation"));
+    modal->setOwnerWindow(this);
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::WindowModal);
+    modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
+    modal->setWindowTitle(tr("Destroy pinned window"));
+    modal->setText(tr("Destroy this pinned window? This action cannot be undone."));
+    modal->setAcceptText(tr("Destroy"));
+    modal->setRejectText(tr("Cancel"));
+    modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    connect(modal, &adqt::widgets::AdModal::accepted, this,
+            &ScreenshotPinnedWindow::requestDestroy);
+    connect(modal, &adqt::widgets::AdModal::finished, this, [this, modal](auto) {
+        if (m_destroyConfirmation == modal) {
+            m_destroyConfirmation = nullptr;
+        }
+        modal->deleteLater();
+    });
+    modal->open();
 }
 
 std::optional<QPoint> ScreenshotPinnedWindow::physicalCursorPosition() const {

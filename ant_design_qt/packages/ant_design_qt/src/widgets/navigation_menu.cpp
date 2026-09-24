@@ -1,4 +1,5 @@
 #include "navigation_menu.h"
+#include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
 
@@ -2578,7 +2579,8 @@ void AdNavigationMenu::Private::activateSourceIndex(const QModelIndex& sourceInd
 }
 
 void AdNavigationMenu::Private::applyPendingHoverOpen() {
-  if (!pendingHoverIndex.isValid() || !isSubmenuIndex(pendingHoverIndex)) {
+  if (!pendingHoverIndex.isValid() || pendingHoverIndex != hoveredIndex || !q->isVisible() ||
+      !q->isEnabled() || !isSubmenuIndex(pendingHoverIndex)) {
     return;
   }
   setExpandedInternal(pendingHoverIndex, true, true);
@@ -2630,11 +2632,13 @@ void AdNavigationMenu::Private::cancelHoverClose() { hoverCloseTimer.stop(); }
 
 void AdNavigationMenu::Private::closeDanglingPopups() {
   const QPoint cursorPos = QCursor::pos();
-  if (detail::widgetContainsGlobalPos(q, cursorPos)) {
+  QWidget* target = QApplication::widgetAt(cursorPos);
+  if (detail::pointerTargetEligible(target, q) && detail::widgetContainsGlobalPos(q, cursorPos)) {
     return;
   }
   for (const auto& level : popupLevels) {
     if (level && level->shell && level->shell->isVisible() &&
+        detail::pointerTargetEligible(target, level->shell) &&
         detail::widgetContainsGlobalPos(level->shell, cursorPos)) {
       return;
     }
@@ -2682,6 +2686,8 @@ void AdNavigationMenu::Private::handleHoveredIndex(const QModelIndex& sourceInde
 }
 
 void AdNavigationMenu::Private::handleLeave() {
+  pendingHoverIndex = QModelIndex();
+  hoverOpenTimer.stop();
   hoveredIndex = QModelIndex();
   hideTooltip();
   scheduleHoverClose();
@@ -3128,7 +3134,10 @@ void AdNavigationMenu::Private::syncPopupVisibility() {
           return false;
         }
         const QPoint popupCursor = level->shell->mapFromGlobal(QCursor::pos());
-        return level->shell->rect().contains(popupCursor);
+        return detail::pointerTargetEligible(QApplication::widgetAt(QCursor::pos()),
+                                             level->shell) &&
+               detail::widgetContainsGlobalPos(level->shell,
+                                               level->shell->mapToGlobal(popupCursor));
       });
     };
     if (!popupChainAnchoredByInteraction()) {

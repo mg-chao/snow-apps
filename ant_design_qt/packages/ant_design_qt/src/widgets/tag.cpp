@@ -1,4 +1,5 @@
 #include "tag.h"
+#include "detail/pointer_region.h"
 
 #include "antd_icons.h"
 #include "tag_style.h"
@@ -350,7 +351,7 @@ QSize AdTag::sizeHint() const {
   input.checked = isChecked();
   input.closable = closeButtonVisible();
   input.disabled = !isEnabled();
-  input.hovered = hovered_;
+  input.hovered = detail::widgetHovered(this);
   input.pressed = pressed_;
   input.closeHovered = closeHovered_;
   input.baseFont = font();
@@ -408,7 +409,7 @@ void AdTag::paintEvent(QPaintEvent* event) {
   input.checked = isChecked();
   input.closable = closeButtonVisible();
   input.disabled = !isEnabled();
-  input.hovered = hovered_;
+  input.hovered = detail::widgetHovered(this);
   input.pressed = pressed_;
   input.closeHovered = closeHovered_;
   input.baseFont = font();
@@ -541,14 +542,17 @@ void AdTag::paintEvent(QPaintEvent* event) {
   }
 }
 
+bool AdTag::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  return QAbstractButton::event(event);
+}
+
 void AdTag::enterEvent(QEnterEvent* event) {
-  hovered_ = true;
   update();
   QAbstractButton::enterEvent(event);
 }
 
 void AdTag::leaveEvent(QEvent* event) {
-  hovered_ = false;
   pressed_ = false;
   closeHovered_ = false;
   closePressed_ = false;
@@ -659,7 +663,7 @@ void AdTag::hideEvent(QHideEvent* event) {
   closePressed_ = false;
   closeHovered_ = false;
   pressed_ = false;
-  hovered_ = false;
+
   QAbstractButton::hideEvent(event);
   if (emitClosedSignal) {
     emit closed();
@@ -731,7 +735,7 @@ AdTag::ComponentTokenContext AdTag::currentComponentTokenContext() const {
   context.checked = isChecked();
   context.closable = closable_;
   context.disabled = !isEnabled();
-  context.hovered = hovered_;
+  context.hovered = detail::widgetHovered(this);
   context.pressed = pressed_;
   context.closeHovered = closeHovered_;
   return context;
@@ -747,7 +751,7 @@ AdTag::StyleContext AdTag::currentStyleContext() const {
   context.checked = isChecked();
   context.closable = closable_;
   context.disabled = !isEnabled();
-  context.hovered = hovered_;
+  context.hovered = detail::widgetHovered(this);
   context.pressed = pressed_;
   context.closeHovered = closeHovered_;
   return context;
@@ -769,7 +773,7 @@ QRect AdTag::closeButtonRect() const {
   input.checked = isChecked();
   input.closable = true;
   input.disabled = !isEnabled();
-  input.hovered = hovered_;
+  input.hovered = detail::widgetHovered(this);
   input.pressed = pressed_;
   input.closeHovered = closeHovered_;
   input.baseFont = font();

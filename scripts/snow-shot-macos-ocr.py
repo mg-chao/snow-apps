@@ -83,13 +83,15 @@ def copy_changed(source, destination):
         shutil.copy2(source, destination)
 
 
-def stage_native_dependencies(library, runtime):
-    """Supply @rpath dependencies beside ORT for build-tree execution.
+def stage_native_dependencies(library, runtime, worker=None):
+    """Supply the worker and ORT dependency closure for build-tree execution.
 
     macdeployqt moves the used closure to Frameworks during installation; these
     development copies are removed before the final bundle is sealed.
     """
     pending = [library.resolve()]
+    if worker is not None:
+        pending.append(worker.resolve())
     visited = set()
     names = set()
     while pending:
@@ -353,7 +355,7 @@ def main():
         copy_changed(args.worker, runtime / RUNTIME_FILES[0])
         if not args.static_runtime:
             copy_changed(args.library, runtime / RUNTIME_FILES[1])
-            stage_native_dependencies(args.library, runtime)
+            stage_native_dependencies(args.library, runtime, args.worker)
         else:
             (runtime / RUNTIME_FILES[1]).unlink(missing_ok=True)
         stage_models(source, args.cache, runtime / 'assets/ocr/models')

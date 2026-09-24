@@ -1,4 +1,5 @@
 #include "snow_shot/storage/applicationstorage.h"
+#include <QTimer>
 
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
@@ -97,6 +98,9 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
 } // namespace
 
 ApplicationStorage::ApplicationStorage(QObject* parent) : QObject(parent) {
+    m_pinnedPreviewPool.setMaxThreadCount(2);
+    m_pinnedFullImagePool.setMaxThreadCount(1);
+    m_pinnedMaintenancePool.setMaxThreadCount(1);
     qRegisterMetaType<CaptureHistoryUsage>();
     qRegisterMetaType<AppStorageUsage>();
     qRegisterMetaType<StorageStatus>();
@@ -185,6 +189,13 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_usageTracker.reset();
     m_captureHistory.reset();
     m_pinnedWindows.reset();
+    m_pinnedChangeQueued.store(false);
+    {
+        std::lock_guard lock(m_pinnedMaintenanceMutex);
+        m_pinnedMaintenancePending = false;
+        m_pinnedMaintenanceRunning = false;
+    }
+    m_lastPinnedNotifiedRevision = 0;
     m_configuration.reset();
     const auto selection = resolveDirectory(options);
     const QString effectiveDirectory = selection.effectiveDirectory;
@@ -237,6 +248,54 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_captureHistory = makeCaptureHistoryRepository(effectiveDirectory, std::move(historyOptions));
     m_pinnedWindows = std::make_unique<PinnedWindowRepository>(
         effectiveDirectory, m_status.writeAvailable, options.debounceMilliseconds);
+    m_pinnedWindows->setChangedCallback([this]() {
+        if (m_pinnedChangeQueued.exchange(true))
+            return;
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                m_pinnedChangeQueued.store(false);
+                if (!m_initialized || !m_pinnedWindows)
+                    return;
+                const bool recordsChanged =
+                    m_pinnedWindows->revision() != m_lastPinnedNotifiedRevision;
+                const auto error = m_pinnedWindows->lastError();
+                if (m_status.lastPinnedError != error) {
+                    m_status.lastPinnedError = error;
+                    emitStatusChanged();
+                }
+                if (recordsChanged) {
+                    m_lastPinnedNotifiedRevision = m_pinnedWindows->revision();
+                    emit pinnedWindowsChanged();
+                }
+            },
+            Qt::QueuedConnection);
+    });
+    static_cast<void>(m_pinnedWindows->setPolicy(pinnedWindowPolicy(), false));
+    m_pinnedWindows->setCompressionLevel(
+        m_configuration->value(QStringLiteral("pinned_history/compression_level")).toString());
+    auto* pinnedCleanupTimer = new QTimer(m_configuration.get());
+    pinnedCleanupTimer->setInterval(60000);
+    connect(pinnedCleanupTimer, &QTimer::timeout, this,
+            &ApplicationStorage::requestPinnedWindowRetentionCleanup);
+    pinnedCleanupTimer->start();
+    connect(
+        m_configuration.get(), &ConfigurationStore::valueChanged, this,
+        [this](const QString& key, const QJsonValue&) {
+            if (key.startsWith(QStringLiteral("pinned_history/")) && m_pinnedWindows) {
+                if (key == QStringLiteral("pinned_history/compression_level")) {
+                    m_pinnedWindows->setCompressionLevel(
+                        m_configuration->value(QStringLiteral("pinned_history/compression_level"))
+                            .toString());
+                    return;
+                }
+                const auto requestedPolicy = pinnedWindowPolicy();
+                if (m_pinnedWindows->policy() != requestedPolicy) {
+                    static_cast<void>(m_pinnedWindows->setPolicy(requestedPolicy, false));
+                    requestPinnedWindowRetentionCleanup();
+                }
+            }
+        });
     m_status.historyUsage = m_captureHistory->usage();
     m_status.lastHistoryError = m_captureHistory->lastError();
 
@@ -284,6 +343,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     qCInfo(storageLog) << "Storage initialized at" << effectiveDirectory
                        << "write available:" << m_status.writeAvailable;
     emitStatusChanged();
+    requestPinnedWindowRetentionCleanup();
     if (effectiveDirectory.isEmpty()) {
         return StorageResult::failure(m_status.fallbackReason);
     }
@@ -318,6 +378,16 @@ StorageResult ApplicationStorage::flushNow() {
 void ApplicationStorage::shutdown() {
     if (!m_initialized) {
         return;
+    }
+    m_pinnedPreviewPool.clear();
+    m_pinnedFullImagePool.clear();
+    m_pinnedPreviewPool.waitForDone();
+    m_pinnedFullImagePool.waitForDone();
+    m_pinnedMaintenancePool.waitForDone();
+    {
+        std::lock_guard lock(m_pinnedMaintenanceMutex);
+        m_pinnedMaintenancePending = false;
+        m_pinnedMaintenanceRunning = false;
     }
     if (m_captureHistory != nullptr) {
         m_captureHistory->drain();
@@ -434,6 +504,73 @@ std::shared_future<StorageResult> ApplicationStorage::requestSmartSelectionAsync
         return readyFuture(StorageResult::failure(m_configuration->lastError()));
     }
     return readyFuture(StorageResult::ok());
+}
+
+PinnedWindowPolicy ApplicationStorage::pinnedWindowPolicy() const {
+    if (!m_configuration)
+        return {};
+    return {
+        m_configuration->value(QStringLiteral("pinned_history/enabled")).toBool(true),
+        m_configuration->value(QStringLiteral("pinned_history/retention_days")).toInt(7),
+        m_configuration->value(QStringLiteral("pinned_history/max_entries")).toInt(100),
+        m_configuration->value(QStringLiteral("pinned_history/max_disk_mib")).toInt(1024),
+        m_configuration->value(QStringLiteral("pinned_history/keep_permanently")).toBool(false)};
+}
+
+bool ApplicationStorage::requestPinnedWindowPolicy(const PinnedWindowPolicy& policy) {
+    if (!m_initialized || !m_status.writeAvailable || !policy.isValid())
+        return false;
+    m_status.pinnedPolicyUpdating = true;
+    emitStatusChanged();
+    const auto result = m_configuration->setValues(
+        {{QStringLiteral("pinned_history/enabled"), policy.enabled},
+         {QStringLiteral("pinned_history/keep_permanently"), policy.keepPermanently},
+         {QStringLiteral("pinned_history/retention_days"), policy.retentionDays},
+         {QStringLiteral("pinned_history/max_entries"), policy.maxEntries},
+         {QStringLiteral("pinned_history/max_disk_mib"), policy.maxDiskMiB}});
+    m_status.pinnedPolicyUpdating = false;
+    m_status.lastPinnedError = result ? QString() : m_configuration->lastError();
+    emitStatusChanged();
+    return result;
+}
+
+bool ApplicationStorage::requestPinnedWindowClear() {
+    if (!m_initialized || !m_status.writeAvailable)
+        return false;
+    m_status.pinnedClearing = true;
+    emitStatusChanged();
+    const auto result = m_pinnedWindows->clearClosed();
+    m_status.pinnedClearing = false;
+    m_status.lastPinnedError = result.error;
+    emitStatusChanged();
+    return result.success;
+}
+
+void ApplicationStorage::requestPinnedWindowRetentionCleanup() {
+    if (!m_initialized || !m_pinnedWindows)
+        return;
+    // Preserve requests that arrive during a sweep, including late source commits.
+    {
+        std::lock_guard lock(m_pinnedMaintenanceMutex);
+        m_pinnedMaintenancePending = true;
+        if (m_pinnedMaintenanceRunning)
+            return;
+        m_pinnedMaintenanceRunning = true;
+    }
+    auto* repository = m_pinnedWindows.get();
+    m_pinnedMaintenancePool.start([this, repository]() {
+        for (;;) {
+            {
+                std::lock_guard lock(m_pinnedMaintenanceMutex);
+                if (!m_pinnedMaintenancePending) {
+                    m_pinnedMaintenanceRunning = false;
+                    return;
+                }
+                m_pinnedMaintenancePending = false;
+            }
+            static_cast<void>(repository->enforcePolicy());
+        }
+    });
 }
 
 bool ApplicationStorage::requestCaptureHistoryClear() {

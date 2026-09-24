@@ -329,6 +329,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     quint64 autoFilterGeneration = 0;
     void refreshStateFromEngine(bool emitSignals) override;
     void syncChangedViewports(SnowChangedViewportList changedViewports);
+    void refreshArrowTextMetrics();
     bool setSurfaceSizeAndSync(const QSize& size, bool emitSignals);
     bool setCameraAndSync(double centerX, double centerY, double zoom);
     void shutdown();
@@ -563,7 +564,9 @@ bool SnowCanvasWidget::Impl::applyActiveTextResizeMeasurementIfNeeded() {
     if (!result.success) {
         return false;
     }
-    syncChangedViewports(result.changedViewports.get());
+    if (result.active) {
+        syncChangedViewports(result.changedViewports.get());
+    }
     return true;
 }
 
@@ -635,6 +638,8 @@ bool SnowCanvasWidget::Impl::processInput(const SnowInputEvent& input) {
 }
 
 void SnowCanvasWidget::Impl::initializeWidget() {
+    QObject::connect(qGuiApp, &QGuiApplication::fontDatabaseChanged, &widget,
+                     [this]() { refreshArrowTextMetrics(); });
     widget.setAttribute(Qt::WA_OpaquePaintEvent);
     widget.setAttribute(Qt::WA_InputMethodEnabled, false);
     widget.setMouseTracking(true);
@@ -1978,6 +1983,13 @@ void SnowCanvasWidget::Impl::syncChangedViewports(SnowChangedViewportList change
     runtimeBinding.syncChangedViewports(changedViewports);
 }
 
+void SnowCanvasWidget::Impl::refreshArrowTextMetrics() {
+    textInteraction.invalidateArrowTextMetrics();
+    if (hasViewport()) {
+        syncChangedViewports(nullptr);
+    }
+}
+
 bool SnowCanvasWidget::Impl::applyMutationResult(
     const snow_canvas_commands::MutationResult& result) {
     if (!result.success) {
@@ -2221,6 +2233,12 @@ bool SnowCanvasWidget::event(QEvent* event) {
     const bool handled = QWidget::event(event);
     if (m_impl && event->type() == QEvent::DevicePixelRatioChange) {
         m_impl->refreshCursorDevicePixelRatio();
+    }
+    if (m_impl && m_impl->hasViewport() &&
+        (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
+         event->type() == QEvent::DevicePixelRatioChange ||
+         event->type() == QEvent::ScreenChangeInternal)) {
+        m_impl->refreshArrowTextMetrics();
     }
     return handled;
 }

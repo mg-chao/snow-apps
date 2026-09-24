@@ -1,6 +1,7 @@
 #include "overlay_popup_controller.h"
 
 #include "overlay_popup_surface.h"
+#include "pointer_region.h"
 #include "qt_tooltip_bridge.h"
 #include "timing_hub.h"
 #include "top_level_popup_window.h"
@@ -29,8 +30,7 @@ namespace adqt::widgets::detail {
 namespace {
 
 constexpr char kHoverTransitionTaskKey[] = "OverlayPopup.HoverTransition";
-constexpr char kHoverMonitorTaskKey[] = "OverlayPopup.HoverMonitor";
-constexpr int kHoverMonitorIntervalMs = 25;
+constexpr char kHoverReconcileTaskKey[] = "OverlayPopup.HoverReconcile";
 constexpr char kFocusRecheckTaskKey[] = "OverlayPopup.FocusRecheck";
 constexpr char kPopupRelayoutTaskKey[] = "OverlayPopup.Relayout";
 constexpr char kScopePopupRelayoutTaskKey[] = "OverlayPopup.ScopeRelayout";
@@ -209,41 +209,6 @@ void applyPopupVisibility(QWidget* popup, bool shouldShow, bool raiseWhenShowing
   }
 }
 
-bool watchedObjectListContains(const OverlayPopupController::WatchedObjectList& objects,
-                               const QWidget* target) {
-  if (!target) {
-    return false;
-  }
-  return std::any_of(objects.cbegin(), objects.cend(),
-                     [target](const QPointer<QWidget>& object) { return object.data() == target; });
-}
-
-void pruneDeadWatchedObjects(OverlayPopupController::WatchedObjectList* objects) {
-  if (!objects) {
-    return;
-  }
-
-  objects->erase(std::remove_if(objects->begin(), objects->end(),
-                                [](const QPointer<QWidget>& object) { return object.isNull(); }),
-                 objects->end());
-}
-
-void installPopupWatcher(OverlayPopupController::WatchedObjectList* objects, QObject* filter,
-                         QObject* object) {
-  auto* widget = qobject_cast<QWidget*>(object);
-  if (!objects || !filter || !widget) {
-    return;
-  }
-
-  pruneDeadWatchedObjects(objects);
-  if (watchedObjectListContains(*objects, widget)) {
-    return;
-  }
-
-  widget->installEventFilter(filter);
-  objects->append(widget);
-}
-
 template <typename Callback>
 void traverseObjectTree(QObject* root, Callback&& callback) {
   if (!root) {
@@ -310,16 +275,22 @@ QPoint popupFrameTopLeftForVisualTopLeft(const QPoint& visualTopLeft, const QMar
 
 OverlayPopupController::OverlayPopupController(OverlayPopupControllerDelegate* delegate,
                                                QObject* parent,
-                                               CursorPositionProvider cursorPositionProvider)
+                                               CursorPositionProvider cursorPositionProvider,
+                                               PointerTargetProvider pointerTargetProvider)
     : QObject(parent),
       delegate_(delegate),
-      cursorPositionProvider_(std::move(cursorPositionProvider)) {
+      cursorPositionProvider_(std::move(cursorPositionProvider)),
+      pointerTargetProvider_(std::move(pointerTargetProvider)) {
   if (!cursorPositionProvider_) {
     cursorPositionProvider_ = []() { return QCursor::pos(); };
+  }
+  if (!pointerTargetProvider_) {
+    pointerTargetProvider_ = [](const QPoint& pos) { return QApplication::widgetAt(pos); };
   }
 }
 
 OverlayPopupController::~OverlayPopupController() {
+  if (qApp) qApp->removeEventFilter(this);
   syncTopLevelPopupTooltipRoute(this, nullptr, nullptr, false);
   resetHoverInteraction();
   cancelPopupRelayout();
@@ -328,7 +299,6 @@ OverlayPopupController::~OverlayPopupController() {
   delegate_ = nullptr;
   setPopupInteractionHostOpen(this, false);
   clearTriggerWatchers();
-  clearPopupWatchers();
 }
 
 void OverlayPopupController::resetSyncPopupGeometryCountersForTesting() {
@@ -405,10 +375,9 @@ void OverlayPopupController::tracePopup(const char* event, int detail) const {
                     << PopupWidgetRect::whole(scope).rect << "requested" << popupVisible_
                     << "actual" << (surface && surface->isVisible()) << "disabled" << disabled_
                     << "has_content" << delegate_->popupHasContent() << "hover_inside"
-                    << hoverRegionInside_ << "hover_open" << openByHover_ << "hover_pending"
-                    << hoverTransitionPending_ << "hover_monitor" << hoverMonitorScheduled_
-                    << "cursor" << QCursor::pos() << "buttons" << QApplication::mouseButtons()
-                    << "grabber" << QWidget::mouseGrabber() << "active_popup"
+                    << static_cast<int>(hoverState_) << "hover_open" << openByHover_ << "cursor"
+                    << QCursor::pos() << "buttons" << QApplication::mouseButtons() << "grabber"
+                    << QWidget::mouseGrabber() << "active_popup"
                     << QApplication::activePopupWidget() << "modal"
                     << QApplication::activeModalWidget();
 }
@@ -460,6 +429,7 @@ void OverlayPopupController::setMouseLeaveDelayMs(int value) {
 }
 
 void OverlayPopupController::anchorWidgetChanged() {
+  resetHoverInteraction();
   clearTriggerWatchers();
   markAnchorScrollWatchersDirty();
   refreshTriggerWatchers();
@@ -467,10 +437,10 @@ void OverlayPopupController::anchorWidgetChanged() {
     schedulePopupRelayout(true);
   }
   syncPopupTooltipRoute();
+  updatePopupVisibility(true, VisibilityUpdateSource::InternalState);
 }
 
 void OverlayPopupController::popupSurfaceChanged() {
-  refreshPopupWatchers();
   invalidatePopupGeometry();
   setPopupInteractionHostOpen(this, popupVisible_);
   if (!delegate_ || !delegate_->popupSurfaceWidget()) {
@@ -503,23 +473,55 @@ bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
   if (!watched || !event) {
     return QObject::eventFilter(watched, event);
   }
+  // Application observation is for input and lifecycle transitions only. Avoid
+  // walking widget ancestry for paints, timers, animation ticks and meta calls.
+  switch (event->type()) {
+    case QEvent::Enter:
+    case QEvent::Leave:
+    case QEvent::HoverEnter:
+    case QEvent::HoverLeave:
+    case QEvent::HoverMove:
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+    case QEvent::MouseButtonDblClick:
+    // The shadow handler forwards wheel input to widgets behind embedded popups.
+    case QEvent::Wheel:
+    case QEvent::FocusIn:
+    case QEvent::FocusOut:
+    case QEvent::KeyPress:
+    case QEvent::KeyRelease:
+    case QEvent::ContextMenu:
+    case QEvent::Show:
+    case QEvent::Hide:
+    case QEvent::Destroy:
+    case QEvent::EnabledChange:
+    case QEvent::Move:
+    case QEvent::Resize:
+    case QEvent::ParentChange:
+    case QEvent::ParentAboutToChange:
+    case QEvent::ZOrderChange:
+    case QEvent::LayoutRequest:
+    case QEvent::UngrabMouse:
+    case QEvent::WindowActivate:
+    case QEvent::ApplicationDeactivate:
+    case QEvent::ApplicationStateChange:
+      break;
+    default:
+      return false;
+  }
 
+  const QPointer<OverlayPopupController> lifetime(this);
+  const QPointer<QObject> receiver(watched);
+  handleHoverEvent(watched, event);
+  // A hover exit may release factory content while Qt is dispatching to it.
+  // Consuming that event is required before Qt resumes delivery to its receiver.
+  if (!receiver) return true;
+  if (!lifetime) return false;
   const QEvent::Type eventType = event->type();
   if (watchedByTrigger(watched)) {
     const bool watchedIsAnchor = watched == popupAnchorWidget();
     switch (eventType) {
-      case QEvent::Enter:
-      case QEvent::HoverEnter:
-        handleTriggerHoverEnter();
-        break;
-      case QEvent::Leave:
-      case QEvent::HoverLeave:
-        handleTriggerHoverLeave();
-        break;
-      case QEvent::MouseMove:
-      case QEvent::HoverMove:
-        reconcileHoverFromCursor();
-        break;
       case QEvent::FocusIn:
         focusTriggerActive_ = true;
         if (hasTrigger(Trigger::Focus)) {
@@ -575,15 +577,6 @@ bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
           }
         }
         break;
-      case QEvent::ChildAdded: {
-        auto* childEvent = static_cast<QChildEvent*>(event);
-        if (childEvent->child()) {
-          traverseObjectTree(childEvent->child(), [this](QObject* object) {
-            installPopupWatcher(&watchedTriggerObjects_, this, object);
-          });
-        }
-        break;
-      }
       default:
         break;
     }
@@ -610,18 +603,6 @@ bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
           }
         }
         break;
-      case QEvent::Enter:
-      case QEvent::HoverEnter:
-        handlePopupHoverEnter();
-        break;
-      case QEvent::Leave:
-      case QEvent::HoverLeave:
-        handlePopupHoverLeave();
-        break;
-      case QEvent::MouseMove:
-      case QEvent::HoverMove:
-        reconcileHoverFromCursor();
-        break;
       case QEvent::FocusIn:
         focusPopupActive_ = true;
         if (hasTrigger(Trigger::Focus)) {
@@ -634,7 +615,8 @@ bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
         break;
       case QEvent::KeyPress: {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->key() == Qt::Key_Escape && popupVisible_) {
+        if (keyEvent->key() == Qt::Key_Escape &&
+            (popupVisible_ || hoverState_ != HoverState::Outside)) {
           clearAllOpenReasons();
           updatePopupVisibility(true, VisibilityUpdateSource::UserInteraction);
           keyEvent->accept();
@@ -647,21 +629,12 @@ bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
           setPopupVisibleInternal(false, true);
         }
         break;
-      case QEvent::ChildAdded: {
-        auto* childEvent = static_cast<QChildEvent*>(event);
-        if (childEvent->child()) {
-          traverseObjectTree(childEvent->child(), [this](QObject* object) {
-            installPopupWatcher(&watchedPopupObjects_, this, object);
-          });
-        }
-        break;
-      }
       default:
         break;
     }
   }
 
-  return QObject::eventFilter(watched, event);
+  return !receiver;
 }
 
 void OverlayPopupController::setReasonOpen(InternalOpenReason reason, bool enabled) {
@@ -704,7 +677,7 @@ bool OverlayPopupController::reasonOpen(InternalOpenReason reason) const {
 }
 
 void OverlayPopupController::clearAllOpenReasons() {
-  openByHover_ = false;
+  resetHoverInteraction();
   openByFocus_ = false;
   openByClick_ = false;
   openByContextMenu_ = false;
@@ -773,137 +746,189 @@ bool OverlayPopupController::triggerContainsGlobalPos(const QPoint& globalPos) c
       .containsGlobalPos(globalPos);
 }
 
-bool OverlayPopupController::hoverRegionContainsGlobalPos(const QPoint& globalPos) const {
-  return triggerContainsGlobalPos(globalPos) ||
-         popupInteractiveContainsGlobalPos(delegate_ ? delegate_->popupSurfaceWidget() : nullptr,
-                                           globalPos);
+bool OverlayPopupController::hoverRegionContainsGlobalPos(const QPoint& globalPos,
+                                                          const QWidget* target) const {
+  QWidget* trigger = popupTriggerWidget();
+  QWidget* popup = delegate_ ? delegate_->popupSurfaceWidget() : nullptr;
+  const bool inPopup = pointerTargetEligible(target, popup);
+  const bool inPopupBody = popupInteractiveContainsGlobalPos(popup, globalPos);
+  const bool inTrigger = trigger && trigger->isEnabled() && triggerContainsGlobalPos(globalPos);
+  if (inTrigger && inPopup && !inPopupBody) {
+    // widgetAt() sees the rectangular popup window, not its native transparent
+    // shadow hit test. Resolve the underlying scope child just as shadow clicks
+    // do: opening our own surface must not invalidate hover on the trigger.
+    // Exclude an embedded surface too, while retaining sibling occlusion checks.
+    // childAt already excludes tool windows; do not change their native flags.
+    const bool excludeEmbeddedSurface = !popup->isWindow();
+    if (excludeEmbeddedSurface) popup->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    target = pointerTargetWithin(trigger->window(), globalPos);
+    if (excludeEmbeddedSurface) popup->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+  }
+  return (inTrigger && pointerTargetEligible(target, trigger)) || (inPopup && inPopupBody) ||
+         popupDescendantContainsPointer(this, target, globalPos);
+}
+
+void OverlayPopupController::handleHoverEvent(QObject* watched, QEvent* event) {
+  if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) return;
+  auto* widget = qobject_cast<QWidget*>(watched);
+  QWidget* trigger = popupTriggerWidget();
+  QWidget* popup = delegate_->popupSurfaceWidget();
+  const bool active = hoverState_ != HoverState::Outside;
+  if (event->type() == QEvent::ApplicationDeactivate ||
+      (event->type() == QEvent::ApplicationStateChange &&
+       QGuiApplication::applicationState() != Qt::ApplicationActive)) {
+    resetHoverInteraction();
+    updatePopupVisibility(true, VisibilityUpdateSource::UserInteraction);
+    return;
+  }
+  if (!widget || !trigger) return;
+  const bool inTrigger = pointerInWidgetTree(widget, trigger);
+  const bool inPopup = pointerInWidgetTree(widget, popup);
+  switch (event->type()) {
+    case QEvent::Enter:
+    case QEvent::HoverEnter:
+    case QEvent::MouseMove:
+    case QEvent::HoverMove:
+      if (active || inTrigger || inPopup) {
+        if (const auto position = pointerEventGlobalPosition(widget, event)) {
+          const QWidget* target = QWidget::mouseGrabber() ? pointerTargetProvider_(*position)
+                                                          : pointerTargetWithin(widget, *position);
+          transitionHover(hoverRegionContainsGlobalPos(*position, target));
+        }
+      }
+      break;
+    case QEvent::Leave:
+    case QEvent::HoverLeave:
+      // Child boundaries do not end a trigger or popup hover session.
+      if (widget == trigger || widget == popup) scheduleHoverReconcile();
+      break;
+    case QEvent::Hide:
+    case QEvent::EnabledChange:
+    case QEvent::Destroy:
+      if (widget == trigger &&
+          (!trigger->isVisible() || !trigger->isEnabled() || event->type() == QEvent::Destroy)) {
+        resetHoverInteraction();
+        updatePopupVisibility(true, VisibilityUpdateSource::UserInteraction);
+        break;
+      }
+      [[fallthrough]];
+    case QEvent::Move:
+    case QEvent::Resize:
+    case QEvent::Show:
+    case QEvent::ParentChange:
+    case QEvent::ZOrderChange:
+    case QEvent::UngrabMouse:
+    case QEvent::WindowActivate:
+      if (inTrigger || inPopup || pointerInWidgetTree(trigger, widget) ||
+          (active && widget->window() == trigger->window()))
+        scheduleHoverReconcile();
+      break;
+    default:
+      break;
+  }
+}
+
+void OverlayPopupController::scheduleHoverReconcile() {
+  // Keep the first queued check. Relayout can raise the popup while an earlier
+  // timing-hub batch is dispatching; replacing this task would starve it.
+  if (hoverReconcileQueued_) return;
+  hoverReconcileQueued_ = true;
+  deferTimingTask(this, QString::fromLatin1(kHoverReconcileTaskKey), [this]() {
+    hoverReconcileQueued_ = false;
+    reconcileHoverFromCursor();
+  });
 }
 
 void OverlayPopupController::reconcileHoverFromCursor() {
-  if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) {
-    return;
-  }
+  if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) return;
+  const QPoint position = cursorGlobalPos();
+  transitionHover(hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position)));
+}
 
-  const bool inside = hoverRegionContainsGlobalPos(cursorGlobalPos());
-  if (hoverRegionInside_ == inside) {
-    return;
-  }
-
-  hoverRegionInside_ = inside;
+void OverlayPopupController::transitionHover(bool inside) {
   if (inside) {
-    hoverSessionActive_ = true;
-    scheduleHoverOpen();
-  } else {
+    if (hoverState_ == HoverState::Inside || hoverState_ == HoverState::WaitingToOpen) return;
+    if (openByHover_) {
+      cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
+      ++hoverGeneration_;
+      hoverState_ = HoverState::Inside;
+    } else {
+      scheduleHoverOpen();
+    }
+  } else if (hoverState_ != HoverState::Outside && hoverState_ != HoverState::WaitingToClose) {
     scheduleHoverClose();
   }
 }
 
 void OverlayPopupController::scheduleHoverOpen() {
-  tracePopup("hover.open_deadline", mouseEnterDelayMs_);
   cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
-  hoverTransitionPending_ = true;
-  refreshHoverMonitor();
-  const int delay = std::max(0, mouseEnterDelayMs_);
-  if (delay == 0) {
-    finishHoverOpen();
-    return;
+  hoverState_ = HoverState::WaitingToOpen;
+  const quint64 generation = ++hoverGeneration_;
+  if (mouseEnterDelayMs_ == 0) {
+    finishHoverOpen(false);
+  } else {
+    scheduleTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey), mouseEnterDelayMs_,
+                       [this, generation]() {
+                         if (generation == hoverGeneration_) finishHoverOpen();
+                       });
   }
-
-  scheduleTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey), delay,
-                     [this]() { finishHoverOpen(); });
 }
 
 void OverlayPopupController::scheduleHoverClose() {
-  tracePopup("hover.close_deadline", mouseLeaveDelayMs_);
   cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
-  hoverTransitionPending_ = true;
-  refreshHoverMonitor();
-  const int delay = std::max(0, mouseLeaveDelayMs_);
-  if (delay == 0) {
-    finishHoverClose();
-    return;
+  hoverState_ = HoverState::WaitingToClose;
+  const quint64 generation = ++hoverGeneration_;
+  if (mouseLeaveDelayMs_ == 0) {
+    finishHoverClose(false);
+  } else {
+    scheduleTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey), mouseLeaveDelayMs_,
+                       [this, generation]() {
+                         if (generation == hoverGeneration_) finishHoverClose();
+                       });
   }
-
-  scheduleTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey), delay,
-                     [this]() { finishHoverClose(); });
 }
 
-void OverlayPopupController::finishHoverOpen() {
-  tracePopup("hover.open_fired");
-  hoverTransitionPending_ = false;
+void OverlayPopupController::finishHoverOpen(bool recheck) {
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) {
     resetHoverInteraction();
     return;
   }
-
-  const bool inside = hoverRegionContainsGlobalPos(cursorGlobalPos());
-  hoverRegionInside_ = inside;
-  if (!inside) {
-    scheduleHoverClose();
-    return;
+  if (recheck) {
+    const QPoint position = cursorGlobalPos();
+    if (!hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position))) {
+      hoverState_ = HoverState::Outside;
+      return;
+    }
   }
-
-  hoverSessionActive_ = true;
+  hoverState_ = HoverState::Inside;
   setReasonOpen(InternalOpenReason::Hover, true);
   updatePopupVisibility(true, VisibilityUpdateSource::UserInteraction);
-  refreshHoverMonitor();
 }
 
-void OverlayPopupController::finishHoverClose() {
-  tracePopup("hover.close_fired");
-  hoverTransitionPending_ = false;
+void OverlayPopupController::finishHoverClose(bool recheck) {
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) {
     resetHoverInteraction();
     return;
   }
-
-  const bool inside = hoverRegionContainsGlobalPos(cursorGlobalPos());
-  hoverRegionInside_ = inside;
-  if (inside) {
-    hoverSessionActive_ = true;
-    scheduleHoverOpen();
-    return;
+  if (recheck) {
+    const QPoint position = cursorGlobalPos();
+    if (hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position))) {
+      transitionHover(true);
+      return;
+    }
   }
-
-  const bool hadHoverSession = hoverSessionActive_ || reasonOpen(InternalOpenReason::Hover);
-  hoverSessionActive_ = false;
+  hoverState_ = HoverState::Outside;
   setReasonOpen(InternalOpenReason::Hover, false);
-  if (hadHoverSession) {
-    updatePopupVisibility(true, VisibilityUpdateSource::UserInteraction);
-  }
-  refreshHoverMonitor();
+  updatePopupVisibility(true, VisibilityUpdateSource::UserInteraction);
 }
 
 void OverlayPopupController::resetHoverInteraction() {
+  ++hoverGeneration_;
+  hoverReconcileQueued_ = false;
   cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
-  hoverTransitionPending_ = false;
-  hoverRegionInside_ = false;
-  hoverSessionActive_ = false;
+  cancelTimingTask(this, QString::fromLatin1(kHoverReconcileTaskKey));
+  hoverState_ = HoverState::Outside;
   setReasonOpen(InternalOpenReason::Hover, false);
-  cancelTimingTask(this, QString::fromLatin1(kHoverMonitorTaskKey));
-  hoverMonitorScheduled_ = false;
-}
-
-void OverlayPopupController::refreshHoverMonitor() {
-  const bool shouldMonitor =
-      hasTrigger(Trigger::Hover) && !disabled_ &&
-      (hoverTransitionPending_ || hoverSessionActive_ || reasonOpen(InternalOpenReason::Hover));
-  if (!shouldMonitor) {
-    cancelTimingTask(this, QString::fromLatin1(kHoverMonitorTaskKey));
-    hoverMonitorScheduled_ = false;
-    return;
-  }
-  if (hoverMonitorScheduled_) {
-    return;
-  }
-
-  hoverMonitorScheduled_ = true;
-  scheduleTimingTask(this, QString::fromLatin1(kHoverMonitorTaskKey), kHoverMonitorIntervalMs,
-                     [this]() {
-                       hoverMonitorScheduled_ = false;
-                       reconcileHoverFromCursor();
-                       refreshHoverMonitor();
-                     });
 }
 
 void OverlayPopupController::noteGeometryActivity() {
@@ -1341,7 +1366,6 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
     const bool wasVisible = popup->isVisible();
     popup->setParent(nullptr, popup->windowFlags());
     popupParent = nullptr;
-    refreshPopupWatchers();
     setPopupInteractionHostOpen(this, true);
     applyPopupVisibility(popup, wasVisible, true);
   }
@@ -1349,7 +1373,6 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
     const bool wasVisible = popup->isVisible();
     popup->setParent(expectedPopupParent, popup->windowFlags());
     popupParent = expectedPopupParent;
-    refreshPopupWatchers();
     setPopupInteractionHostOpen(this, true);
     applyPopupVisibility(popup, wasVisible, true);
   }
@@ -1481,56 +1504,21 @@ void OverlayPopupController::syncPopupTooltipRoute() {
 
 void OverlayPopupController::refreshTriggerWatchers() {
   clearTriggerWatchers();
-  QWidget* trigger = popupTriggerWidget();
-  if (!trigger) {
-    return;
-  }
-
-  watchedTriggerRoot_ = trigger;
-  traverseObjectTree(trigger, [this](QObject* object) {
-    installPopupWatcher(&watchedTriggerObjects_, this, object);
-  });
+  if (popupTriggerWidget()) qApp->installEventFilter(this);
 }
 
 void OverlayPopupController::clearTriggerWatchers() {
-  const WatchedObjectList watchedObjects = watchedTriggerObjects_;
-  watchedTriggerObjects_.clear();
-  for (const QPointer<QWidget>& object : watchedObjects) {
-    if (object) {
-      object->removeEventFilter(this);
-    }
-  }
-  watchedTriggerRoot_.clear();
-}
-
-void OverlayPopupController::refreshPopupWatchers() {
-  clearPopupWatchers();
-  QWidget* popup = delegate_ ? delegate_->popupSurfaceWidget() : nullptr;
-  if (!popup) {
-    return;
-  }
-  traverseObjectTree(
-      popup, [this](QObject* object) { installPopupWatcher(&watchedPopupObjects_, this, object); });
-}
-
-void OverlayPopupController::clearPopupWatchers() {
-  const WatchedObjectList watchedObjects = watchedPopupObjects_;
-  watchedPopupObjects_.clear();
-  for (const QPointer<QWidget>& object : watchedObjects) {
-    if (object) {
-      object->removeEventFilter(this);
-    }
-  }
+  if (qApp) qApp->removeEventFilter(this);
 }
 
 bool OverlayPopupController::watchedByTrigger(QObject* watched) const {
   auto* widget = qobject_cast<QWidget*>(watched);
-  return widget && watchedObjectListContains(watchedTriggerObjects_, widget);
+  return pointerInWidgetTree(widget, popupTriggerWidget());
 }
 
 bool OverlayPopupController::watchedByPopup(QObject* watched) const {
   auto* widget = qobject_cast<QWidget*>(watched);
-  return widget && watchedObjectListContains(watchedPopupObjects_, widget);
+  return pointerInWidgetTree(widget, delegate_ ? delegate_->popupSurfaceWidget() : nullptr);
 }
 
 void OverlayPopupController::handleTriggerPress(QObject* watched, QEvent* event) {
@@ -1593,7 +1581,7 @@ void OverlayPopupController::handleTriggerKeyPress(QEvent* event) {
   }
 
   auto* keyEvent = static_cast<QKeyEvent*>(event);
-  if (keyEvent->key() == Qt::Key_Escape && popupVisible_) {
+  if (keyEvent->key() == Qt::Key_Escape && (popupVisible_ || hoverState_ != HoverState::Outside)) {
     clearAllOpenReasons();
     updatePopupVisibility(true, VisibilityUpdateSource::UserInteraction);
     keyEvent->accept();
@@ -1682,17 +1670,6 @@ void OverlayPopupController::handleTriggerFocusOutDeferred() {
   });
 }
 
-void OverlayPopupController::handleTriggerHoverEnter() {
-  tracePopup("trigger.enter");
-  reconcileHoverFromCursor();
-}
-
-void OverlayPopupController::handleTriggerHoverLeave() { reconcileHoverFromCursor(); }
-
-void OverlayPopupController::handlePopupHoverEnter() { reconcileHoverFromCursor(); }
-
-void OverlayPopupController::handlePopupHoverLeave() { reconcileHoverFromCursor(); }
-
 bool OverlayPopupController::handlePopupShadowPointerEvent(QEvent* event) {
   if (!event) {
     return false;
@@ -1750,12 +1727,19 @@ bool OverlayPopupController::handlePopupShadowPointerEvent(QEvent* event) {
     target = QApplication::widgetAt(globalPos);
     surface->setAttribute(Qt::WA_TransparentForMouseEvents, wasTransparent);
   }
-  if (!widgetInTree(target, popupTriggerWidget())) {
+  // Closing can synchronously release a recreate-on-open surface and its
+  // children. Resolve ownership before closing and keep only a guarded target
+  // for the forwarded event.
+  const bool targetOutsideSurface = target && !widgetInTree(target, surface);
+  const bool targetOnTrigger = widgetInTree(target, popupTriggerWidget());
+  const QPointer<QWidget> forwardTarget(target);
+  if (!targetOnTrigger) {
     popupCloseFromHost(PopupCloseReason::OutsidePressInScope);
   }
-  if (!target || widgetInTree(target, surface)) {
+  if (!targetOutsideSurface || !forwardTarget) {
     return true;
   }
+  target = forwardTarget.data();
 
   const QPointF localPos = target->mapFromGlobal(globalPos);
   if (eventType == QEvent::Wheel) {

@@ -101,6 +101,182 @@
         </message>
     </context>
     <context>
+        <name>PinnedWindowManagementPageWidget</name>
+        <message>
+            <source>%1-%2 of %3</source>
+            <translation>%1-%2 of %3</translation>
+        </message>
+        <message numerus="yes">
+            <source>%n pinned window(s)</source>
+            <translation>
+            <numerusform>%n pinned window</numerusform>
+            <numerusform>%n pinned windows</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>All sources</source>
+            <translation>All sources</translation>
+        </message>
+        <message>
+            <source>Bulk actions for selected pinned windows</source>
+            <translation>Bulk actions for selected pinned windows</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Change the source or date range to see more pinned windows</source>
+            <translation>Change the source or date range to see more pinned windows</translation>
+        </message>
+        <message>
+            <source>Clipboard</source>
+            <translation>Clipboard</translation>
+        </message>
+        <message>
+            <source>Closed</source>
+            <translation>Closed</translation>
+        </message>
+        <message>
+            <source>Date</source>
+            <translation>Date</translation>
+        </message>
+        <message>
+            <source>Default</source>
+            <translation>Default</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message numerus="yes">
+            <source>Delete %n selected item(s)?</source>
+            <translation>
+            <numerusform>Delete %n selected item?</numerusform>
+            <numerusform>Delete %n selected items?</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Delete all pinned windows</source>
+            <translation>Delete all pinned windows</translation>
+        </message>
+        <message>
+            <source>Delete all pinned windows?</source>
+            <translation>Delete all pinned windows?</translation>
+        </message>
+        <message>
+            <source>Delete selected pinned windows</source>
+            <translation>Delete selected pinned windows</translation>
+        </message>
+        <message>
+            <source>Delete this pinned window?</source>
+            <translation>Delete this pinned window?</translation>
+        </message>
+        <message>
+            <source>Deselect all</source>
+            <translation>Deselect all</translation>
+        </message>
+        <message>
+            <source>Deselect all pinned windows</source>
+            <translation>Deselect all pinned windows</translation>
+        </message>
+        <message>
+            <source>End date</source>
+            <translation>End date</translation>
+        </message>
+        <message>
+            <source>Group: %1</source>
+            <translation>Group: %1</translation>
+        </message>
+        <message>
+            <source>No matching pinned windows</source>
+            <translation>No matching pinned windows</translation>
+        </message>
+        <message>
+            <source>No pinned windows</source>
+            <translation>No pinned windows</translation>
+        </message>
+        <message>
+            <source>Other / legacy</source>
+            <translation>Other / legacy</translation>
+        </message>
+        <message>
+            <source>Pin to Screen Management</source>
+            <translation>Pin to Screen Management</translation>
+        </message>
+        <message>
+            <source>Pinned images and text will appear here</source>
+            <translation>Pinned images and text will appear here</translation>
+        </message>
+        <message>
+            <source>Pinned window image</source>
+            <translation>Pinned window image</translation>
+        </message>
+        <message>
+            <source>Refresh pinned windows</source>
+            <translation>Refresh pinned windows</translation>
+        </message>
+        <message>
+            <source>Restore</source>
+            <translation>Restore</translation>
+        </message>
+        <message>
+            <source>Retained</source>
+            <translation>Retained</translation>
+        </message>
+        <message>
+            <source>Saved records and their open windows will be removed</source>
+            <translation>Saved records and their open windows will be removed</translation>
+        </message>
+        <message>
+            <source>Screenshot</source>
+            <translation>Screenshot</translation>
+        </message>
+        <message>
+            <source>Screenshot history</source>
+            <translation>Screenshot history</translation>
+        </message>
+        <message>
+            <source>Select all</source>
+            <translation>Select all</translation>
+        </message>
+        <message>
+            <source>Select all entries on this page</source>
+            <translation>Select all entries on this page</translation>
+        </message>
+        <message>
+            <source>Select record</source>
+            <translation>Select record</translation>
+        </message>
+        <message numerus="yes">
+            <source>Selected %n item(s)</source>
+            <translation>
+            <numerusform>Selected %n item</numerusform>
+            <numerusform>Selected %n items</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Selected files</source>
+            <translation>Selected files</translation>
+        </message>
+        <message>
+            <source>Show</source>
+            <translation>Show</translation>
+        </message>
+        <message>
+            <source>Source</source>
+            <translation>Source</translation>
+        </message>
+        <message>
+            <source>Start date</source>
+            <translation>Start date</translation>
+        </message>
+        <message>
+            <source>The saved record and its open window will be removed</source>
+            <translation>The saved record and its open window will be removed</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotHistoryPageWidget</name>
         <message>
             <source>%1 B</source>
@@ -259,6 +435,10 @@
             <translation>Always on Top</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
             <source>Click-through</source>
             <translation>Click-through</translation>
         </message>
@@ -301,6 +481,18 @@
         <message>
             <source>Delete Specified Group</source>
             <translation>Delete Specified Group</translation>
+        </message>
+        <message>
+            <source>Destroy</source>
+            <translation>Destroy</translation>
+        </message>
+        <message>
+            <source>Destroy pinned window</source>
+            <translation>Destroy pinned window</translation>
+        </message>
+        <message>
+            <source>Destroy this pinned window? This action cannot be undone.</source>
+            <translation>Destroy this pinned window? This action cannot be undone.</translation>
         </message>
         <message>
             <source>Display text recognition results</source>
@@ -458,8 +650,40 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Clear Default group</source>
+            <translation>Clear Default group</translation>
+        </message>
+        <message>
+            <source>Clear group</source>
+            <translation>Clear group</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>Default</translation>
+        </message>
+        <message>
+            <source>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone.</source>
+            <translation>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone.</translation>
+        </message>
+        <message>
+            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone.</source>
+            <translation>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone.</translation>
+        </message>
+        <message>
+            <source>Delete empty groups</source>
+            <translation>Delete empty groups</translation>
+        </message>
+        <message>
+            <source>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
+            <translation>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</translation>
+        </message>
+        <message>
+            <source>Delete group</source>
+            <translation>Delete group</translation>
+        </message>
+        <message>
+            <source>Delete groups</source>
+            <translation>Delete groups</translation>
         </message>
         <message>
             <source>Group %1</source>

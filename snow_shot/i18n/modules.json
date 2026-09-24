@@ -83,12 +83,12 @@
   "history": [
     "HistoryEntryWidget",
     "ScreenshotHistoryPageWidget",
+    "PinnedWindowManagementPageWidget",
     "ScreenshotPinnedWindow",
     "snow_shot::presentation::PinnedWindowGroupManager"
   ],
   "updates": [
     "UpdateErrors",
-    "UpdateNotice",
     "UpdateService",
     "snow_shot::update::UpdateService"
   ]

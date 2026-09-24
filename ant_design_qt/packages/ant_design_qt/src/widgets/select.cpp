@@ -1,4 +1,5 @@
 #include "select.h"
+#include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
 
@@ -1944,7 +1945,6 @@ void AdSelect::setDisabled(bool value) {
   }
   QWidget::setDisabled(value);
   if (value) {
-    clearHovered_ = false;
     closePopup();
   }
   updateInputMode();
@@ -2983,6 +2983,10 @@ void AdSelect::commitControlScale(const AdControlScaleContext& context) {
 }
 
 bool AdSelect::eventFilter(QObject* watched, QEvent* event) {
+  if (event) {
+    if (auto* widget = qobject_cast<QWidget*>(watched))
+      detail::resetWidgetHoverOnLifecycle(widget, event);
+  }
   if (!watched || !event) {
     return QWidget::eventFilter(watched, event);
   }
@@ -3016,27 +3020,7 @@ bool AdSelect::eventFilter(QObject* watched, QEvent* event) {
           openPopup();
         }
       }
-    } else if (event->type() == QEvent::Enter || event->type() == QEvent::HoverEnter) {
-      if (!disabled()) {
-        hovered_ = true;
-        updateClearButton();
-        update();
-      }
-    } else if (event->type() == QEvent::Leave || event->type() == QEvent::HoverLeave) {
-      if (!underMouse() && !(clearButton_ && clearButton_->underMouse())) {
-        hovered_ = false;
-      }
-      if (!clearButton_ || !clearButton_->underMouse()) {
-        clearHovered_ = false;
-      }
-      updateClearButton();
-      update();
     } else if (event->type() == QEvent::MouseMove) {
-      if (!disabled() && !hovered_) {
-        hovered_ = true;
-        updateClearButton();
-        update();
-      }
       if (lineEdit_->isReadOnly()) {
         return true;
       }
@@ -3171,10 +3155,8 @@ bool AdSelect::eventFilter(QObject* watched, QEvent* event) {
     }
   } else if (watched == clearButton_) {
     if (event->type() == QEvent::Enter) {
-      clearHovered_ = true;
       updateClearButton();
     } else if (event->type() == QEvent::Leave) {
-      clearHovered_ = false;
       updateClearButton();
     }
   } else if (watched == popup_) {
@@ -3249,7 +3231,7 @@ QColor AdSelect::resolveSelectorBgColor() const {
   if (hasFocusWithin_ || open_) {
     return visualStyle_->selectorActiveBg;
   }
-  if (hovered_) {
+  if (detail::widgetHovered(this)) {
     return visualStyle_->selectorHoverBg;
   }
   return visualStyle_->selectorBg;
@@ -3266,7 +3248,7 @@ QColor AdSelect::resolveSelectorBorderColor() const {
   if (hasFocusWithin_ || open_) {
     return visualStyle_->selectorActiveBorderColor;
   }
-  if (hovered_) {
+  if (detail::widgetHovered(this)) {
     return visualStyle_->selectorHoverBorderColor;
   }
   return visualStyle_->selectorBorderColor;
@@ -3328,9 +3310,37 @@ void AdSelect::paintSelectorShell(QPainter& painter) const {
   painter.restore();
 }
 
+bool AdSelect::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  const bool handled = QWidget::event(event);
+  if (event->type() == QEvent::Hide) {
+    detail::cancelTimingTask(this, QString::fromLatin1(kShowLayoutRefreshKey));
+
+    updateClearButton();
+    stopInteractionFocusForOwner(this);
+    return handled;
+  }
+  if (event->type() == QEvent::Show) {
+    updateClearButton();
+    updateInteractionFocusOverlay();
+    if (mode_ != Mode::Single || responsiveMaxTagCount_) {
+      detail::deferTimingTask(this, QString::fromLatin1(kShowLayoutRefreshKey), [this]() {
+        if (!isVisible()) {
+          return;
+        }
+        updateDisplay();
+        updateClearButton();
+        updateAccessoryGeometry();
+      });
+    }
+    return handled;
+  }
+  return handled;
+}
+
 void AdSelect::enterEvent(QEnterEvent* event) {
   QWidget::enterEvent(event);
-  hovered_ = true;
+
   bumpJoinedZOrder();
   updateClearButton();
   update();
@@ -3338,10 +3348,7 @@ void AdSelect::enterEvent(QEnterEvent* event) {
 
 void AdSelect::leaveEvent(QEvent* event) {
   QWidget::leaveEvent(event);
-  hovered_ = false;
-  if (!clearButton_ || !clearButton_->underMouse()) {
-    clearHovered_ = false;
-  }
+
   updateClearButton();
   update();
 }
@@ -3416,28 +3423,6 @@ void AdSelect::changeEvent(QEvent* event) {
   if (!event) {
     return;
   }
-  if (event->type() == QEvent::Hide) {
-    detail::cancelTimingTask(this, QString::fromLatin1(kShowLayoutRefreshKey));
-    hovered_ = false;
-    clearHovered_ = false;
-    updateClearButton();
-    stopInteractionFocusForOwner(this);
-    return;
-  }
-  if (event->type() == QEvent::Show) {
-    updateInteractionFocusOverlay();
-    if (mode_ != Mode::Single || responsiveMaxTagCount_) {
-      detail::deferTimingTask(this, QString::fromLatin1(kShowLayoutRefreshKey), [this]() {
-        if (!isVisible()) {
-          return;
-        }
-        updateDisplay();
-        updateClearButton();
-        updateAccessoryGeometry();
-      });
-    }
-    return;
-  }
   if (event->type() == QEvent::LanguageChange) {
     updateInputMode();
     refreshRows();
@@ -3450,9 +3435,6 @@ void AdSelect::changeEvent(QEvent* event) {
              event->type() == QEvent::FontChange ||
              event->type() == QEvent::ApplicationFontChange ||
              event->type() == QEvent::StyleChange) {
-    if (event->type() == QEvent::EnabledChange && disabled()) {
-      hovered_ = false;
-    }
     updateInputMode();
     applyVisualStyle();
     updateDisplay();
@@ -4462,13 +4444,7 @@ void AdSelect::updateClearButton() {
   const bool hasValue =
       mode_ == Mode::Single ? !currentValueKey_.isEmpty() : !currentValueKeys_.isEmpty();
   const bool canShow = allowClear_ && hasValue && !disabled();
-  if (!canShow) {
-    clearHovered_ = false;
-  }
-  const bool hovered = hovered_ || clearHovered_ || underMouse() ||
-                       (lineEdit_ && lineEdit_->underMouse()) ||
-                       (clearButton_ && clearButton_->underMouse()) ||
-                       (suffixButton_ && suffixButton_->underMouse());
+  const bool hovered = detail::widgetHovered(this);
   const bool shouldShow = canShow && hovered;
   if (clearButton_->isVisible() != shouldShow) {
     clearButton_->setVisible(shouldShow);
@@ -4485,7 +4461,7 @@ void AdSelect::updateClearVisual() {
   const int iconSize = std::max(1, visualStyle_->metrics.iconSize);
   clearButton_->setText(QString());
   QColor iconColor = visualStyle_->clearColor;
-  if (clearButton_->isVisible() && clearHovered_ && !disabled()) {
+  if (clearButton_->isVisible() && detail::widgetHovered(clearButton_) && !disabled()) {
     iconColor = visualStyle_->clearHoverColor;
   } else if (disabled()) {
     iconColor = visualStyle_->disabledTextColor;
@@ -4867,8 +4843,9 @@ void AdSelect::applyVisualStyle() {
   };
   const bool suffixPaletteChanged =
       applyToolButtonPalette(suffixButton_, visualStyle_->suffixColor);
-  const QColor clearPaletteColor =
-      clearHovered_ ? visualStyle_->clearHoverColor : visualStyle_->clearColor;
+  const QColor clearPaletteColor = detail::widgetHovered(clearButton_)
+                                       ? visualStyle_->clearHoverColor
+                                       : visualStyle_->clearColor;
   const bool clearPaletteChanged = applyToolButtonPalette(clearButton_, clearPaletteColor);
 
   bool popupStyleChanged = false;
@@ -5801,7 +5778,7 @@ void AdSelect::bumpJoinedZOrder() {
   if (!(joinedLeft_ || joinedRight_)) {
     return;
   }
-  if (!(hovered_ || hasFocusWithin_ || open_)) {
+  if (!(detail::widgetHovered(this) || hasFocusWithin_ || open_)) {
     return;
   }
   raise();

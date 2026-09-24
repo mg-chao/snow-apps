@@ -15,7 +15,7 @@
 #include "../src/platform/windows/pinnedwindownative.h"
 #include "../src/presentation/pinned/screenshotpinnedclickthroughgeometry.h"
 #include "../src/presentation/pinned/screenshotpinnedhidetotopcontroller.h"
-#include "../src/presentation/pinned/screenshotpinnedpointerpresence.h"
+#include "../src/presentation/pinned/screenshotpinnedcontrolspresence.h"
 #include "../src/presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -106,6 +106,7 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <exception>
 #include <functional>
 #include <initializer_list>
 #include <iostream>
@@ -454,10 +455,19 @@ class ScreenshotPinnedWindowTestAccess {
     }
 #endif
     static bool pointerInside(const ScreenshotPinnedWindow& window) {
-        return window.m_pointerInside;
+        return window.m_pointerPresence->inside();
+    }
+    static QPoint nativePoint(const ScreenshotPinnedWindow& window, const QPoint& local) {
+        return window.nativePositionForWindowPosition(local).toPoint();
     }
     static QTimer& pointerPresenceTimer(ScreenshotPinnedWindow& window) {
-        return window.m_pointerPresence->timer();
+        return window.m_pointerPresence->m_hideTimer;
+    }
+    static QTimer& pointerPresenceTimer(ScreenshotPinnedControlsPresence& presence) {
+        return presence.m_hideTimer;
+    }
+    static void observePointerOffscreen(ScreenshotPinnedWindow& window, bool inside) {
+        window.setControlsPointerInside(inside);
     }
     static bool moveWindow(ScreenshotPinnedWindow& window, const QRect& nativeGeometry) {
         return window.applyWindowGeometry(nativeGeometry,
@@ -921,6 +931,10 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     config.groupId = groupManager.activeGroupId();
     require(pinnedWindow->present(config),
             "a grouped pinned window should present for the group menu checks");
+    require(repository.upsert(pinnedWindow->persistenceSnapshot()).success &&
+                groupManager.windowCounts(QStringLiteral("default")).nonIgnored == 1 &&
+                groupManager.windowCounts(QStringLiteral("default")).total == 1,
+            "a live window with a saved record should count only once");
 
     auto* groupMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedGroupMenu"));
@@ -956,6 +970,18 @@ void groupMenuActionsExposeIconsAndCleanupState() {
                 contextActions.at(groupIndex + 1)->objectName() ==
                     QStringLiteral("screenshotPinnedThumbnailAction"),
             "the group submenu should sit directly above Thumbnail mode");
+    auto* closeAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    auto* destroyAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
+    require(closeAction != nullptr && destroyAction != nullptr &&
+                contextActions.indexOf(destroyAction) == contextActions.indexOf(closeAction) + 1 &&
+                !contextMenu->actionDanger(closeAction) && contextMenu->actionDanger(destroyAction),
+            "Destroy should sit below Close and own the danger color");
+    auto* defaultGroup =
+        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default"));
+    require(defaultGroup != nullptr && defaultGroup->text() == QStringLiteral("Default\t1/1"),
+            "a live pinned window should appear in both group counts");
 
     QAction* newGroup = groupMenuActionNamed(QStringLiteral("screenshotPinnedNewGroupAction"));
     require(newGroup != nullptr && !newGroup->icon().isNull() && newGroup->isEnabled(),
@@ -987,7 +1013,7 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
     require(deleteSpecifiedMenu->actions().size() == 1 && deleteDefault != nullptr &&
                 deleteDefault->data().toString() == QStringLiteral("default") &&
-                deleteDefault->text() == QStringLiteral("Default\t1"),
+                deleteDefault->text() == QStringLiteral("Default\t1/1"),
             "Delete Specified Group should list Default with its live window count");
 
     const auto specifiedId = groupManager.createGroup(QStringLiteral("Specified"));
@@ -996,20 +1022,98 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     QAction* deleteSpecified = deleteSpecifiedActionNamed(
         QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*specifiedId));
     require(deleteSpecified != nullptr && deleteSpecified->data().toString() == *specifiedId &&
-                deleteSpecified->text() == QStringLiteral("Specified\t0"),
+                deleteSpecified->text() == QStringLiteral("Specified\t0/0"),
             "the specified-deletion submenu should list every custom group with its count");
     deleteSpecified->trigger();
     QCoreApplication::processEvents();
+    auto* specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal != nullptr && specifiedModal->ownerWindow() == pinnedWindow &&
+                specifiedModal->centered() &&
+                specifiedModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                specifiedModal->text().contains(QStringLiteral("Specified")) &&
+                specifiedModal->text().contains(QStringLiteral("including closed windows")) &&
+                groupManager.contains(*specifiedId),
+            "specified-group deletion should await confirmation");
+    specifiedModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(groupManager.contains(*specifiedId),
+            "canceling specified-group deletion should preserve the group");
+    deleteSpecified = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*specifiedId));
+    require(deleteSpecified != nullptr, "specified-group action should survive menu refresh");
+    deleteSpecified->trigger();
+    specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal != nullptr, "specified-group confirmation should reopen");
+    specifiedModal->accept();
     require(!groupManager.contains(*specifiedId),
-            "triggering a custom specified-group action should delete that group");
+            "accepting specified-group deletion should delete the group");
 
-    require(groupManager.createGroup(QStringLiteral("Cleanup")).has_value(),
-            "an empty custom group should be created for the cleanup state");
+    QPointer<QAction> hiddenDefaultGroup(
+        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default")));
+    require(hiddenDefaultGroup && !groupMenu->isVisible(),
+            "the group menu should be closed before a background group update");
+    const auto cleanupId = groupManager.createGroup(QStringLiteral("Cleanup"));
+    require(cleanupId.has_value(), "an empty custom group should be created for the cleanup state");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(hiddenDefaultGroup &&
+                groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default")) ==
+                    hiddenDefaultGroup.data(),
+            "a closed pinned group menu should defer rebuilding until it is opened");
+    auto ignored = pinnedWindow->persistenceSnapshot();
+    ignored.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    ignored.groupId = *cleanupId;
+    require(repository.upsert(ignored).success && repository.markClosed(ignored.id).success,
+            "an ignored pin should be saved in the cleanup group");
     deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     require(deleteEmpty != nullptr && deleteEmpty->isEnabled(),
-            "Delete Empty Groups should enable once an empty custom group exists");
+            "Delete Empty Groups should enable for an ignored-only group");
+    auto* cleanupGroup =
+        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-%1").arg(*cleanupId));
+    require(cleanupGroup != nullptr && cleanupGroup->text() == QStringLiteral("Cleanup\t0/1"),
+            "ignored pins should appear only in the total count");
+    QAction* deleteCleanup = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*cleanupId));
+    require(deleteCleanup != nullptr && deleteCleanup->text() == QStringLiteral("Cleanup\t0/1"),
+            "specified-deletion rows should use the same count format");
 
-    require(groupManager.deleteEmptyGroups(), "the empty custom group should be deleted");
+    deleteEmpty->trigger();
+    auto* emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr && emptyModal->centered() &&
+                emptyModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                emptyModal->text().contains(
+                    QStringLiteral("no pinned windows other than closed ones")) &&
+                emptyModal->text().contains(QStringLiteral("Closed pinned windows saved")) &&
+                groupManager.contains(*cleanupId) && repository.loadRecord(ignored.id).has_value(),
+            "empty-group deletion should await confirmation without removing ignored pins");
+    emptyModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(groupManager.contains(*cleanupId),
+            "canceling empty-group deletion should preserve the group");
+    deleteEmpty = groupMenuActionNamed(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    require(deleteEmpty != nullptr, "empty-group action should survive menu refresh");
+    deleteEmpty->trigger();
+    emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr, "empty-group confirmation should reopen");
+    groupManager.registerPendingPin(QStringLiteral("pending-cleanup"), *cleanupId);
+    emptyModal->accept();
+    require(groupManager.contains(*cleanupId) && repository.loadRecord(ignored.id).has_value(),
+            "empty-group deletion should recheck the non-ignored count on confirmation");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    groupManager.completePendingPin(QStringLiteral("pending-cleanup"));
+    deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    require(deleteEmpty != nullptr && deleteEmpty->isEnabled(),
+            "ignored-only cleanup should remain available after the pending pin completes");
+    deleteEmpty->trigger();
+    emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
+    require(emptyModal != nullptr, "empty-group confirmation should reopen after rechecking");
+    emptyModal->accept();
+    require(!groupManager.contains(*cleanupId) && !repository.loadRecord(ignored.id).has_value(),
+            "confirming empty-group deletion should remove ignored pins");
     deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     require(deleteEmpty != nullptr && !deleteEmpty->isEnabled(),
             "Delete Empty Groups should disable again after the cleanup");
@@ -1018,8 +1122,28 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
     require(deleteDefault != nullptr, "Default should remain available for specified clearing");
     deleteDefault->trigger();
+    auto* defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(defaultModal != nullptr &&
+                defaultModal->text().contains(QStringLiteral("Default group will remain")) &&
+                defaultModal->text().contains(QStringLiteral("including closed windows")) &&
+                guardedWindow != nullptr && groupManager.contains(QStringLiteral("default")),
+            "clearing Default should wait for confirmation and retain the group");
+    defaultModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(guardedWindow != nullptr, "canceling Default clearing should preserve its window");
+    deleteDefault = deleteSpecifiedActionNamed(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
+    require(deleteDefault != nullptr, "Default action should survive menu refresh");
+    deleteDefault->trigger();
+    defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(defaultModal != nullptr, "Default clearing confirmation should reopen");
+    defaultModal->accept();
     require(processUntilDeleted(guardedWindow, 2000),
             "clearing Default should destructively close its matching live pinned window");
+    require(groupManager.contains(QStringLiteral("default")),
+            "clearing Default should preserve the built-in group");
 }
 
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
@@ -1253,13 +1377,22 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
 
                 services = std::make_unique<ScreenshotSelectionExportUiServices>(&recognition);
                 services->restorePersistedWindows();
-                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-                window = onlyVisiblePinnedWindow();
+                QElapsedTimer restoreSettle;
+                restoreSettle.start();
+                while ((window = onlyVisiblePinnedWindow()) == nullptr &&
+                       restoreSettle.elapsed() < 5000) {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+                    QThread::msleep(1);
+                }
                 require(window != nullptr, "the saved OCR pin should be recreated after restart");
                 action =
                     pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedOcrAction"));
                 require(action != nullptr && action->isEnabled(),
                         "the restored pin should offer text recognition results");
+                while (!action->isChecked() && restoreSettle.elapsed() < 5000) {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+                    QThread::msleep(1);
+                }
                 require(action->isChecked(), "restored OCR must already be visible");
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
 
@@ -2653,48 +2786,31 @@ QImage waitForClipboardImage(const std::function<bool(const QImage&)>& predicate
 }
 
 void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
-    const auto settlePresence = qScopeGuard([]() { waitForUi(120); });
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    // Presence resolves from the live cursor, so the native backend places the
-    // system pointer and then delivers the production NC mouse move. Message
-    // coordinates are not a second source of truth. The offscreen backend has
-    // no native window and keeps the event-driven simulation.
     if (QGuiApplication::platformName() == QStringLiteral("windows") &&
         window.internalWinId() != 0) {
-        const HWND hwnd = toNativeHwnd(window.internalWinId());
-        const QRect nativeGeometry = window.currentNativeGeometry();
-        require(nativeGeometry.isValid() && !nativeGeometry.isEmpty(),
-                "hover simulation requires a presented pinned window");
-        QPoint position = nativeGeometry.center();
+        const QRect frame = window.currentNativeGeometry();
+        require(frame.isValid(), "hover simulation needs a presented pinned window");
+        QPoint position = frame.center();
         if (!hovered) {
-            QScreen* screen = window.screen();
-            if (screen == nullptr) {
-                screen = QGuiApplication::primaryScreen();
-            }
-            require(screen != nullptr, "hover simulation requires a screen");
+            QScreen* screen = window.screen() ? window.screen() : QGuiApplication::primaryScreen();
+            require(screen != nullptr, "hover simulation needs a screen");
             position = ScreenshotGeometryMapper::physicalRectForScreen(*screen).bottomRight() -
                        QPoint(8, 8);
-            if (nativeGeometry.contains(position)) {
-                position = nativeGeometry.topLeft() - QPoint(64, 64);
-            }
-            require(!nativeGeometry.contains(position),
-                    "hover-leave simulation needs a point outside the window");
+            if (frame.contains(position))
+                position = frame.topLeft() - QPoint(64, 64);
         }
         setSystemCursorPosition(position);
-        SendMessageW(
-            hwnd, WM_NCMOUSEMOVE, HTCAPTION,
-            MAKELPARAM(static_cast<short>(position.x()), static_cast<short>(position.y())));
-        return;
     }
 #endif
     if (hovered) {
-        const QPointF center(window.rect().center());
-        QEnterEvent enter(center, center, QPointF(window.mapToGlobal(center.toPoint())));
+        QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
         QCoreApplication::sendEvent(&window, &enter);
-        return;
+    } else {
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(&window, &leave);
+        waitForUi(120);
     }
-    QEvent leave(QEvent::Leave);
-    QCoreApplication::sendEvent(&window, &leave);
 }
 
 void setPinnedWindowActive(ScreenshotPinnedWindow& window, bool active) {
@@ -3954,6 +4070,45 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     require(processUntilDeleted(guardedWindow, 2000), "shortcut test pin was not deleted");
 }
 
+void pinnedDestroyShortcutUsesDestructiveMenuColor() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    auto* pinnedWindow = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.screen = screen;
+    require(pinnedWindow->present(config), "Destroy shortcut test pin presentation failed");
+    auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
+    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* closeAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    auto* destroyAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
+    require(canvas != nullptr && menu != nullptr && closeAction != nullptr &&
+                destroyAction != nullptr && !menu->actionDanger(closeAction) &&
+                menu->actionDanger(destroyAction),
+            "recoverable Close should use normal styling and permanent Destroy should be danger");
+    require(destroyAction->text().endsWith(QStringLiteral("\tShift+Esc")),
+            "Destroy must show its default shortcut in the pinned menu");
+    sendShortcut(*canvas, Qt::Key_Escape, Qt::ControlModifier);
+    QKeyEvent oldRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ControlModifier);
+    QCoreApplication::sendEvent(canvas, &oldRelease);
+    QCoreApplication::processEvents();
+    require(!guardedWindow.isNull() && pinnedWindow->isVisible(),
+            "Ctrl+Esc must no longer destroy the pinned window");
+    sendShortcut(*canvas, Qt::Key_Escape, Qt::ShiftModifier);
+    require(!guardedWindow.isNull(), "Destroy must activate on shortcut release");
+    QKeyEvent destroyRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ShiftModifier);
+    QCoreApplication::sendEvent(canvas, &destroyRelease);
+    require(processUntilDeleted(guardedWindow, 2000), "Shift+Esc must destroy the pinned window");
+}
+
 void pinnedMovementShortcutsMoveIdleWindow() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -4541,7 +4696,9 @@ void pinnedMiddleClickActions() {
     }
     bool removed = false;
     QObject::connect(window, &ScreenshotPinnedWindow::closingForPersistence,
-                     [&removed](const auto&, bool remove) { removed = remove; });
+                     [&removed](const auto&, snow_shot::storage::PinnedWindowCloseIntent intent) {
+                         removed = intent == snow_shot::storage::PinnedWindowCloseIntent::Close;
+                     });
     require(settings.setMiddleMouseButtonAction(QStringLiteral("close")), "configure Close");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!offscreen) {
@@ -4876,13 +5033,15 @@ void pinnedDoubleClickActions() {
     require(other->present(config), "second pin presentation failed");
     bool removed = false;
     QObject::connect(window, &ScreenshotPinnedWindow::closingForPersistence,
-                     [&removed](const auto&, bool remove) { removed = remove; });
+                     [&removed](const auto&, snow_shot::storage::PinnedWindowCloseIntent intent) {
+                         removed = intent == snow_shot::storage::PinnedWindowCloseIntent::Close;
+                     });
     require(settings.setDoubleClickAction(QStringLiteral("close")), "configure Close on thumbnail");
     send(canvas, canvas->rect().center());
     require(guarded && guarded->isVisible(), "close double-click must leave the thumbnail visible");
     releaseCloseGesture(*window, Qt::LeftButton);
     require(processUntilDeleted(guarded, 2000) && removed && otherGuard && other->isVisible(),
-            "Close must remove only the clicked thumbnail through the user-close lifecycle");
+            "Close must close only the clicked thumbnail through the user-close lifecycle");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (QGuiApplication::platformName() != QStringLiteral("offscreen")) {
         const QPoint center = other->currentNativeGeometry().center();
@@ -5070,8 +5229,8 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     QCoreApplication::sendEvent(&window, &enter);
     require(window.internalWinId() == 0,
             "hover delivery must not create an unpresented native window");
-    require(ScreenshotPinnedWindowTestAccess::pointerInside(window),
-            "hover delivery without a native window must apply event-derived presence immediately");
+    require(!ScreenshotPinnedWindowTestAccess::pointerInside(window),
+            "an unpresented window must ignore hover delivery");
 
     window.show();
     window.close();
@@ -5117,70 +5276,176 @@ void pinnedGeometryQueriesDoNotCreateNativeWindows() {
     presentedWindow.close();
 }
 
+void pinnedControlsVisibilityPolicy() {
+    using Presence = ScreenshotPinnedControlsPresence;
+    QObject owner;
+    QList<bool> visibility;
+    Presence presence(&owner, [&](bool visible) { visibility.append(visible); });
+    Presence::Presentation normal{true, false, false, false, QSize(383, 383)};
+    presence.setPresentation(normal);
+    presence.enter();
+    require(visibility.isEmpty(), "an inactive pin must ignore pointer entry");
+    presence.setActive(true);
+    require(visibility.isEmpty(), "activation alone must not invent hover");
+    presence.enter();
+    require(visibility == QList<bool>{true}, "entry must reveal eligible controls");
+
+    const auto verifySuppression = [&](const Presence::Presentation& suppressed) {
+        presence.setPresentation(suppressed);
+        require(!visibility.last(), "each presentation restriction must suppress controls");
+        require(presence.inside(), "presentation restrictions must preserve hover");
+        presence.setPresentation(normal);
+        require(visibility.last(), "lifting a restriction must restore hover");
+    };
+    auto suppressed = normal;
+    suppressed.windowVisible = false;
+    verifySuppression(suppressed);
+    suppressed = normal;
+    suppressed.thumbnail = true;
+    verifySuppression(suppressed);
+    suppressed = normal;
+    suppressed.editing = true;
+    verifySuppression(suppressed);
+    suppressed = normal;
+    suppressed.clickThrough = true;
+    verifySuppression(suppressed);
+    for (const QSize size : {QSize(), QSize(382, 383), QSize(383, 382)}) {
+        suppressed = normal;
+        suppressed.nativeSize = size;
+        verifySuppression(suppressed);
+    }
+    const auto notifications = visibility.size();
+    presence.setPresentation(normal);
+    require(visibility.size() == notifications, "unchanged visibility must not touch the panel");
+
+    presence.leave();
+    auto& timer = ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(presence);
+    require(presence.inside() && timer.isActive(),
+            "exit must allow a brief client and non-client crossing");
+    presence.enter();
+    require(presence.inside() && !timer.isActive(), "re-entry must cancel pending exit");
+    presence.leave();
+    require(QMetaObject::invokeMethod(&timer, "timeout"), "deliver the exit deadline");
+    require(!presence.inside() && !visibility.last(), "confirmed exit must hide controls");
+    presence.setActive(false);
+    presence.enter();
+    require(!presence.inside(), "inactive pins must ignore late entry");
+}
+
+void pinnedPointerPresenceFollowsEvents() {
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto* platform = ScreenshotPinnedWindowTestAccess::installObservedPlatform(window);
+    platform->observed = QRect(40, 40, 600, 400);
+    window.resize(platform->observed.size());
+    window.show();
+    auto* panel = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(panel && canvas, "the hover fixture needs controls and a canvas");
+
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(50, 50));
+    QEvent leave(QEvent::Leave);
+    QCoreApplication::sendEvent(&window, &enter);
+    require(panel->isVisible(), "top-level entry must reveal controls");
+    QCoreApplication::sendEvent(&window, &leave);
+    require(ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window).isActive(),
+            "top-level exit must schedule hiding");
+    QCoreApplication::sendEvent(canvas, &enter);
+    require(panel->isVisible() &&
+                !ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window).isActive(),
+            "entry into a child must preserve hover across the transition");
+    QCoreApplication::sendEvent(canvas, &leave);
+    require(panel->isVisible(), "leaving a child must not imply leaving the window");
+
+    QCoreApplication::sendEvent(&window, &leave);
+    auto& timer = ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window);
+    timer.stop();
+    require(QMetaObject::invokeMethod(&timer, "timeout"), "deliver the exit deadline");
+    require(!panel->isVisible(), "leaving the top-level window must hide controls");
+
+    QMouseEvent move(QEvent::MouseMove, QPointF(10, 10), QPointF(50, 50), Qt::NoButton,
+                     Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &move);
+    require(panel->isVisible(), "mouse movement must recover a missing Enter event");
+    window.close();
+}
+
 void pinnedPointerPresenceIsDebounced() {
     ScreenshotPinnedWindow window;
     window.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto* platform = ScreenshotPinnedWindowTestAccess::installObservedPlatform(window);
+    platform->observed = QRect(40, 40, 600, 400);
+    window.resize(platform->observed.size());
+    auto* panel = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* edit =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedEditButton"));
+    auto* close =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedCloseButton"));
+    require(panel && edit && close, "the controls fixture needs both buttons");
     auto& timer = ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window);
     const auto inside = [&]() { return ScreenshotPinnedWindowTestAccess::pointerInside(window); };
-    const auto expire = [&]() {
-        timer.stop();
-        require(QMetaObject::invokeMethod(&timer, "timeout"), "deliver presence timeout");
-    };
-    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(50, 50));
     QEvent leave(QEvent::Leave);
     require(timer.interval() == 100 && timer.isSingleShot() &&
                 timer.timerType() == Qt::PreciseTimer,
             "hiding must wait at least 100 ms");
     QCoreApplication::sendEvent(&window, &enter);
-    require(inside() && !timer.isActive(), "enter must reveal controls immediately");
+    require(!inside(), "unshown windows must not track the pointer");
+    window.show();
     QCoreApplication::sendEvent(&window, &enter);
-    require(inside() && !timer.isActive(), "repeated entry must not schedule hiding");
+    require(inside() && edit->isVisible() && close->isVisible(), "entry must reveal both controls");
     QCoreApplication::sendEvent(&window, &leave);
-    require(inside() && timer.isActive(), "leave must not change presence immediately");
+    require(inside() && timer.isActive(), "exit must start the delay");
     const auto timerId = timer.id();
     QCoreApplication::sendEvent(&window, &leave);
-    require(timer.id() == timerId, "repeated leave must not restart the delay");
-    QCoreApplication::sendEvent(&window, &enter);
-    require(inside() && !timer.isActive(), "brief exit must cancel without hiding controls");
+    require(timer.id() == timerId, "repeated leaves must not restart the delay");
+    QCoreApplication::sendEvent(edit, &enter);
+    require(inside() && !timer.isActive(), "entry onto a child must cancel pending hiding");
     QCoreApplication::sendEvent(&window, &leave);
-    expire();
-    require(!inside(), "stable exit must commit on timeout");
+    timer.stop();
+    require(QMetaObject::invokeMethod(&timer, "timeout"), "deliver presence timeout");
+    require(!inside() && !panel->isVisible() && !edit->isVisible() && !close->isVisible(),
+            "stable exit must hide both buttons together");
+
     QCoreApplication::sendEvent(&window, &enter);
-    QCoreApplication::sendEvent(&window, &leave);
-    QEvent hide(QEvent::Hide);
-    QCoreApplication::sendEvent(&window, &hide);
+    require(inside() && panel->isVisible(), "re-entry must reveal without pointer sampling");
+    platform->observed.setSize(QSize(382, 400));
+    window.resize(platform->observed.size());
+    require(inside() && !panel->isVisible(), "small pins must suppress the controls");
+    platform->observed.setSize(QSize(600, 400));
+    window.resize(platform->observed.size());
+    require(panel->isVisible(), "restoring size must restore controls without pointer motion");
+
+    window.hide();
     require(!inside() && !timer.isActive(), "hiding must cancel pending presence");
     QCoreApplication::sendEvent(&window, &enter);
-    QCoreApplication::sendEvent(&window, &leave);
+    require(!inside(), "hidden pins must ignore late entry");
+    window.show();
+    QCoreApplication::sendEvent(&window, &enter);
+    require(panel->isVisible(), "reshowing must accept a fresh entry");
     window.close();
-    require(!inside() && !timer.isActive(), "closing must cancel pending presence");
+    QCoreApplication::sendEvent(&window, &enter);
+    require(!inside() && !timer.isActive(), "closed pins must ignore late callbacks");
 }
 
 void pinnedControlsPresenceFollowsLiveCursor() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    // Regression for the unstable hover reveal: USER32's leave tracking and
-    // Qt's synthesized Enter/Leave both follow the client area and are queued,
-    // while the pinned image surface is non-client. Presence must therefore be
-    // resolved from the live cursor against the complete window frame instead
-    // of the stale event semantics.
-    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
-        return; // The regression needs a real HWND and the system cursor.
-    }
+    if (QGuiApplication::platformName() != QStringLiteral("windows"))
+        return;
     const auto settleInto = [](const std::function<bool()>& condition, const char* what) {
         QElapsedTimer elapsed;
         elapsed.start();
         while (elapsed.elapsed() < 2000) {
             QApplication::processEvents(QEventLoop::AllEvents, 20);
-            if (condition()) {
+            if (condition())
                 return;
-            }
             QThread::msleep(1);
         }
         require(condition(), what);
     };
     const CursorPositionRestorer cursorRestorer;
     QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "the pointer presence fixture needs a screen");
+    require(screen != nullptr, "the hover fixture needs a screen");
     QImage background(600, 400, QImage::Format_ARGB32_Premultiplied);
     background.fill(Qt::white);
     ScreenshotPinnedWindow window;
@@ -5191,76 +5456,61 @@ void pinnedControlsPresenceFollowsLiveCursor() {
     config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
     config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
     config.automaticTextRecognition = false;
-    require(window.present(config), "the pointer presence fixture must present");
+    require(window.present(config), "the hover fixture must present");
     waitForUi(200);
+    auto* panel = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* edit =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedEditButton"));
+    require(panel && edit, "the hover fixture needs the controls");
 
-    auto* controlsPanel =
-        window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
-    require(controlsPanel != nullptr, "the pointer presence fixture needs a controls panel");
-
-    const QRect nativeGeometry = window.currentNativeGeometry();
-    const QPoint outsidePoint =
+    const QRect frame = window.currentNativeGeometry();
+    const QPoint outside =
         ScreenshotGeometryMapper::physicalRectForScreen(*screen).bottomRight() - QPoint(8, 8);
-    require(!nativeGeometry.contains(outsidePoint),
-            "the pointer presence fixture window must not cover the screen corner");
+    require(!frame.contains(outside), "the fixture must leave space outside the pin");
+    setSystemCursorPosition(outside);
+    settleInto([&] { return !panel->isVisible(); }, "outside must hide controls");
 
-    setSystemCursorPosition(outsidePoint);
-    settleInto([&] { return !controlsPanel->isVisible(); },
-               "controls must stay hidden while the cursor is outside the window");
-
-    setSystemCursorPosition(nativeGeometry.center());
-    settleInto([&] { return controlsPanel->isVisible(); },
-               "hovering inside the window must reveal the controls");
-
+    setSystemCursorPosition(frame.center());
+    settleInto([&] { return panel->isVisible(); },
+               "entering the non-client image must reveal controls");
     const HWND hwnd = toNativeHwnd(window.internalWinId());
-    require(hwnd != nullptr, "the pointer presence fixture needs a native window");
-    SendMessageW(
-        hwnd, WM_NCMOUSEMOVE, HTCAPTION,
-        MAKELPARAM(static_cast<short>(outsidePoint.x()), static_cast<short>(outsidePoint.y())));
-    require(controlsPanel->isVisible(),
-            "stale mouse-message coordinates must not hide controls while the cursor is inside");
+    const auto nonClientTracked = [hwnd] {
+        TRACKMOUSEEVENT tracking{};
+        tracking.cbSize = sizeof(tracking);
+        tracking.dwFlags = TME_QUERY;
+        tracking.hwndTrack = hwnd;
+        return TrackMouseEvent(&tracking) && tracking.hwndTrack == hwnd &&
+               (tracking.dwFlags & (TME_LEAVE | TME_NONCLIENT)) == (TME_LEAVE | TME_NONCLIENT);
+    };
+    settleInto(nonClientTracked, "non-client entry must arm leave tracking");
 
-    // A queued leave delivered while the cursor still rests inside the window
-    // (the observed instability) must not hide the controls.
-    QEvent leave(QEvent::Leave);
-    QCoreApplication::sendEvent(&window, &leave);
-    require(controlsPanel->isVisible(),
-            "a queued leave while the cursor is inside must keep the controls visible");
+    const QPoint button = ScreenshotPinnedWindowTestAccess::nativePoint(
+        window, edit->mapTo(&window, edit->rect().center()));
+    setSystemCursorPosition(button);
+    settleInto([&] { return panel->isVisible(); },
+               "crossing into a child control must preserve hover");
+    SendMessageW(hwnd, WM_NCMOUSELEAVE, 0, 0);
+    waitForUi(150);
+    require(panel->isVisible(), "a late non-client leave must not hide a hovered child");
+    setSystemCursorPosition(frame.topLeft() + QPoint(1, 1));
+    settleInto([&] { return panel->isVisible(); },
+               "crossing onto the resize frame must preserve hover");
+    SendMessageW(hwnd, WM_MOUSELEAVE, 0, 0);
+    waitForUi(150);
+    require(panel->isVisible(), "a late client leave must not hide the resize frame");
+    setSystemCursorPosition(outside);
+    settleInto([&] { return !panel->isVisible(); },
+               "leaving the non-client frame must hide controls");
 
-    // Leaving across the resize frame and the non-client image must hide them.
-    setSystemCursorPosition(outsidePoint);
-    settleInto([&] { return !controlsPanel->isVisible(); },
-               "leaving the window must hide the controls");
-
-    SendMessageW(hwnd, WM_NCMOUSEMOVE, HTCAPTION,
-                 MAKELPARAM(static_cast<short>(nativeGeometry.center().x()),
-                            static_cast<short>(nativeGeometry.center().y())));
-    require(!controlsPanel->isVisible(),
-            "stale mouse-message coordinates must not reveal controls while the cursor is outside");
-
-    // A queued enter delivered after the pointer already left must not show them.
-    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
-    QCoreApplication::sendEvent(&window, &enter);
-    require(!controlsPanel->isVisible(),
-            "a queued enter while the cursor is outside must keep the controls hidden");
-
-    // Relocating geometry under a stationary pointer (thumbnail transition,
-    // keyboard move, restore animation) produces no mouse message; presence
-    // must be re-evaluated as the geometry settles.
-    setSystemCursorPosition(nativeGeometry.center());
-    settleInto([&] { return controlsPanel->isVisible(); },
-               "hovering inside the window must reveal the controls");
-    auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
-    require(thumbnail != nullptr, "the pointer presence fixture needs the thumbnail action");
-    thumbnail->setChecked(true);
-    waitForUi(300);
-    thumbnail->setChecked(false);
-    settleInto(
-        [&] {
-            return window.currentNativeGeometry() == nativeGeometry && controlsPanel->isVisible();
-        },
-        "controls must reappear once geometry settles back under the stationary cursor");
-
+    setSystemCursorPosition(frame.center());
+    settleInto([&] { return panel->isVisible(); }, "re-entry must reveal controls");
+    QWidget cover(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    cover.setGeometry(window.geometry());
+    cover.show();
+    cover.raise();
+    settleInto([&] { return !panel->isVisible(); },
+               "covering the pin must end its hover without moving the cursor");
+    cover.hide();
     window.close();
 #endif
 }
@@ -6480,6 +6730,39 @@ void closeRestoredPinnedWindow(ScreenshotPinnedWindow* window, const QString& re
     QPointer<ScreenshotPinnedWindow> guardedWindow(window);
     window->close();
     require(processUntilDeleted(guardedWindow, 2000), "restored pinned window was not deleted");
+}
+
+void restoredSelectionPreservesShapeAndCreationSource() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "selection restore requires a screen");
+    for (int scenario = 0; scenario < 3; ++scenario) {
+        IsolatedPinnedStorage storage;
+        auto record = savedPinnedRecord(*screen, 1.0, QSize(160, 100), 100.0, QPoint(40, 40));
+        ScreenshotResultStyle style;
+        style.cornerRadius = 8;
+        if (scenario != 0) {
+            style.region = QRegion(0, 0, 160, 100).subtracted(QRect(40, 30, 40, 30));
+        }
+        record.resultStyle = encodeScreenshotResultStyle(style);
+        record.borderAppearance = screenshotSelectionBorderAppearance(QSize(160, 100), style);
+        record.checkerboardEnabled =
+            scenario == 2 ? std::optional<bool>{} : std::optional<bool>{scenario != 0};
+        record.creationSource = snow_shot::storage::PinnedWindowCreationSource::ScreenshotHistory;
+        ScreenshotSelectionExportUiServices services;
+        auto* restored = restoreSeededPinnedWindow(services, record);
+        const auto snapshot = restored->persistenceSnapshot();
+        const auto restoredStyle = decodeScreenshotResultStyle(snapshot.resultStyle);
+        require(restoredStyle && restoredStyle->region == style.region &&
+                    restoredStyle->cornerRadius == style.cornerRadius,
+                "asynchronous restore must preserve custom selection geometry and rounding");
+        require(snapshot.checkerboardEnabled == std::optional<bool>{scenario != 0} &&
+                    ScreenshotPinnedWindowTestAccess::checkerboardEnabled(*restored) ==
+                        (scenario != 0),
+                "restore must retain explicit transparency decisions and infer legacy shapes");
+        require(snapshot.creationSource == record.creationSource,
+                "selection restore must retain the pin management creation source");
+        closeRestoredPinnedWindow(restored, record.id);
+    }
 }
 
 void restoredPinnedWindowIgnoresMonitorDpiChange(SnowCanvasRuntime&) {
@@ -9519,7 +9802,8 @@ void pinnedFileDrop() {
     QImage replacement(original.size(), original.format());
     replacement.fill(QColor(80, 100, 120));
     const QString first = files.filePath(QStringLiteral("first.png"));
-    const QString second = files.filePath(QStringLiteral("new image # % 中文.PNG"));
+    const QString second =
+        files.filePath(QStringLiteral("new image # % ÃƒÂ¤Ã‚Â¸Ã‚Â­ÃƒÂ¦Ã¢â‚¬â€œÃ¢â‚¬Â¡.PNG"));
     const QString corrupt = files.filePath(QStringLiteral("corrupt.png"));
     require(original.save(first) && replacement.save(second, "PNG"), "save drop fixtures");
     QFile invalid(corrupt);
@@ -10960,6 +11244,224 @@ void pinnedControlledInteractionAndGestures() {
     window.close();
 }
 
+void pinnedManagementLifecycle() {
+    IsolatedPinnedStorage isolated;
+    using namespace snow_shot;
+    auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
+    require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
+            "disable automatic OCR for lifecycle fixture");
+    presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices service(nullptr, nullptr, nullptr, {}, {}, &groups);
+    QScreen* screen = QGuiApplication::primaryScreen();
+    QImage image(100, 60, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    const QRect geometry = physicalPinGeometry(*screen, {50, 50}, image.size());
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!predicate() && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            QThread::msleep(1);
+        }
+        require(predicate(), message);
+    };
+    const auto live = [](const QString& id) -> ScreenshotPinnedWindow* {
+        for (auto* widget : QApplication::topLevelWidgets())
+            if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                pin && pin->persistenceId() == id && pin->isVisible())
+                return pin;
+        return nullptr;
+    };
+    require(service.presentPinnedImage(image, screen, geometry, image.size(), {}, {}, 1.0, {}, {},
+                                       {}, {}, {}, storage::PinnedWindowCreationSource::Clipboard),
+            "create first pin");
+    wait([&]() { return repository.summaries().size() == 1; }, "first pin must persist");
+    const QString first = repository.summaries().front().id;
+    QPointer<ScreenshotPinnedWindow> firstWindow(live(first));
+    require(firstWindow, "find first live pin");
+    pinnedMenuActionNamed(*firstWindow, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(firstWindow, 2000), "close first pin");
+    require(repository.loadRecord(first)->ignored &&
+                groups.windowCount(QStringLiteral("default")) == 0,
+            "closed pin is ignored, retained, and excluded from group count");
+    service.restorePersistedWindows();
+    QCoreApplication::processEvents();
+    require(!live(first), "automatic restore ignores closed pins");
+    require(service.presentPinnedImage(image, screen, geometry, image.size()), "create second pin");
+    wait([&]() { return repository.summaries().size() == 2; }, "second pin must persist");
+    QString second;
+    for (const auto& record : repository.summaries())
+        if (record.id != first)
+            second = record.id;
+    QPointer<ScreenshotPinnedWindow> secondWindow(live(second));
+    require(secondWindow, "find second pin");
+    pinnedMenuActionNamed(*secondWindow, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(secondWindow, 2000), "close second pin");
+    const auto other = groups.createGroup(QStringLiteral("Other"));
+    require(other.has_value(), "create another group");
+    auto unrelated = *repository.loadRecord(first);
+    unrelated.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    unrelated.groupId = *other;
+    require(repository.upsert(unrelated).success && repository.markClosed(unrelated.id).success,
+            "seed most recently closed record in other group");
+    service.restoreLastClosedWindow();
+    wait([&]() { return !repository.loadRecord(second)->ignored; },
+         "newest close in active group must restore first");
+    require(repository.loadRecord(first)->ignored && repository.loadRecord(unrelated.id)->ignored,
+            "shortcut must not restore older or other-group pins");
+    service.restoreLastClosedWindow();
+    wait([&]() { return !repository.loadRecord(first)->ignored; },
+         "next invocation restores next closed pin");
+    const auto firstActivity = repository.loadRecord(first)->activitySequence;
+    ScreenshotPinnedWindowTestAccess::setGeneralOpacity(*live(first), 65);
+    require(service.restoreRecord(unrelated.id), "page restore activates another group");
+    require(!live(unrelated.id) && repository.loadRecord(unrelated.id)->ignored &&
+                !service.restoreRecord(unrelated.id),
+            "restore queues payload loading without blocking the UI or duplicating the request");
+    require(repository.loadRecord(first)->opacityPercent == 65 &&
+                !repository.loadRecord(first)->ignored &&
+                repository.loadRecord(first)->activitySequence == firstActivity,
+            "group switches save final state without marking closed or reordering");
+    wait([&]() { return !repository.loadRecord(unrelated.id)->ignored; },
+         "page restoration completes");
+    require(groups.activeGroupId() == *other, "page restore preserves group ownership");
+    QPointer<ScreenshotPinnedWindow> otherWindow(live(unrelated.id));
+    require(otherWindow, "other group window exists");
+    pinnedMenuActionNamed(*otherWindow, QStringLiteral("screenshotPinnedDestroyAction"))->trigger();
+    auto* destroyConfirmation = otherWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotPinnedDestroyConfirmation"));
+    require(destroyConfirmation != nullptr && destroyConfirmation->isOpen() &&
+                destroyConfirmation->windowModality() == Qt::WindowModal &&
+                repository.loadRecord(unrelated.id).has_value(),
+            "clicking Destroy must show a window-modal confirmation before removing the pin");
+    QPointer<adqt::widgets::AdModal> dismissedConfirmation(destroyConfirmation);
+    destroyConfirmation->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(otherWindow && !dismissedConfirmation &&
+                repository.loadRecord(unrelated.id).has_value(),
+            "canceling Destroy must keep the pinned window and its record");
+    pinnedMenuActionNamed(*otherWindow, QStringLiteral("screenshotPinnedDestroyAction"))->trigger();
+    destroyConfirmation = otherWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotPinnedDestroyConfirmation"));
+    require(destroyConfirmation != nullptr && destroyConfirmation->isOpen(),
+            "clicking Destroy again must reopen confirmation");
+    destroyConfirmation->accept();
+    require(processUntilDeleted(otherWindow, 2000) && !repository.loadRecord(unrelated.id),
+            "confirming Destroy removes the record permanently");
+    auto cancelledRestore = *repository.loadRecord(first);
+    cancelledRestore.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    cancelledRestore.groupId = *other;
+    require(repository.upsert(cancelledRestore).success &&
+                repository.markClosed(cancelledRestore.id).success,
+            "seed a record for pending restore cancellation");
+    int cancellationFailures = 0;
+    service.setRestoreFailureHandler([&]() { ++cancellationFailures; });
+    require(service.restoreRecord(cancelledRestore.id, false), "queue the cancellable restore");
+    service.destroyRecords({cancelledRestore.id});
+    storage::ApplicationStorage::instance().pinnedFullImagePool().waitForDone();
+    QCoreApplication::processEvents();
+    require(!repository.loadRecord(cancelledRestore.id) && !live(cancelledRestore.id) &&
+                cancellationFailures == 0,
+            "deleting a pending restore prevents a late window without reporting a failure");
+    service.destroyRecords({first, second});
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(repository.summaries().isEmpty(), "explicit deletion cleans retained inactive pins");
+
+    ScreenshotImageLoadCallback failed;
+    require(service.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                       [&failed](QObject*, ScreenshotImageLoadCallback callback) {
+                                           failed = std::move(callback);
+                                       }),
+            "create pin with a failing source");
+    wait([&]() { return static_cast<bool>(failed); }, "failed source loader starts");
+    QPointer<ScreenshotPinnedWindow> failedWindow(onlyVisiblePinnedWindow());
+    require(failedWindow, "failed pin shell exists");
+    auto failedRecord = failedWindow->persistenceSnapshot();
+    failedRecord.sourceKind = storage::PinnedWindowSourceKind::ClipboardText;
+    failedRecord.originalText = QStringLiteral("late source");
+    failed({});
+    require(processUntilDeleted(failedWindow, 2000) &&
+                !repository.createReserved(failedRecord).success &&
+                !repository.loadRecord(failedRecord.id),
+            "failed first publication releases its creation reservation");
+
+    // A pin closed before its source arrives must still publish its final ignored record.
+    ScreenshotImageLoadCallback delayed;
+    require(service.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                       [&delayed](QObject*, ScreenshotImageLoadCallback callback) {
+                                           delayed = std::move(callback);
+                                       }),
+            "create delayed pin");
+    wait([&]() { return static_cast<bool>(delayed); }, "deferred source loader starts");
+    QPointer<ScreenshotPinnedWindow> pending(onlyVisiblePinnedWindow());
+    require(pending, "deferred pin shell exists");
+    const QString pendingId = pending->persistenceId();
+    pinnedMenuActionNamed(*pending, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(pending, 2000), "close pending shell");
+    delayed(image);
+    wait([&]() { return repository.loadRecord(pendingId).has_value(); },
+         "closed pending pin must not lose its record");
+    require(repository.loadRecord(pendingId)->ignored,
+            "delayed publication must retain closed intent");
+    service.destroyRecords({pendingId});
+
+    for (const bool deleteGroup : {false, true}) {
+        delayed = {};
+        require(
+            service.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                       [&delayed](QObject*, ScreenshotImageLoadCallback callback) {
+                                           delayed = std::move(callback);
+                                       }),
+            "create pin pending destruction");
+        wait([&]() { return static_cast<bool>(delayed); }, "pending destruction loader starts");
+        QPointer<ScreenshotPinnedWindow> doomed(onlyVisiblePinnedWindow());
+        require(doomed, "pending destruction shell exists");
+        const auto id = doomed->persistenceId();
+        if (deleteGroup)
+            require(groups.deleteSpecifiedGroup(groups.activeGroupId()), "delete pending group");
+        else
+            doomed->requestDestroy();
+        require(processUntilDeleted(doomed, 2000), "destroy pending shell");
+        delayed(image);
+        QCoreApplication::processEvents();
+        require(!repository.loadRecord(id), "late image cannot recreate destroyed records");
+    }
+
+    require(service.presentPinnedImage(image, screen, geometry, image.size()),
+            "create pin for preserved closure");
+    wait([&]() { return repository.summaries().size() == 1; }, "preserved pin persists");
+    const auto preservedId = repository.summaries().front().id;
+    QPointer<ScreenshotPinnedWindow> preserved(live(preservedId));
+    const auto before = *repository.loadRecord(preservedId);
+    require(preserved, "find preserved pin");
+    // QWidget::close is used for application shutdown; it must save without user-close activity.
+    preserved->close();
+    require(processUntilDeleted(preserved, 2000), "shutdown-style close releases window");
+    const auto after = repository.loadRecord(preservedId);
+    require(after && !after->ignored && after->activitySequence == before.activitySequence,
+            "shutdown preserves retained status and activity order");
+    service.restorePersistedWindows();
+    wait([&]() { return live(preservedId) != nullptr; }, "retained window restores automatically");
+    QPointer<ScreenshotPinnedWindow> restored(live(preservedId));
+    pinnedMenuActionNamed(*restored, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(restored, 2000) && repository.flush().success,
+            "persist closed record for restoration failure");
+    QFile payload(
+        QDir(storage::ApplicationStorage::instance().configurationDirectory())
+            .filePath(QStringLiteral("pinned_windows_v2/pins/%1/source.png").arg(preservedId)));
+    require(payload.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "corrupt restoration payload");
+    payload.write("invalid image");
+    payload.close();
+    int failures = 0;
+    service.setRestoreFailureHandler([&]() { ++failures; });
+    service.restoreLastClosedWindow();
+    wait([&]() { return failures == 1; }, "failed restore reports failure");
+    require(repository.summaries().front().ignored,
+            "failed restore reports failure and leaves record ignored");
+    service.destroyRecords({preservedId});
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -10981,6 +11483,10 @@ int main(int argc, char* argv[]) {
             require(
                 qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(), expectedDpr),
                 "pixel fixture must run at the registered DPR, independently of monitor settings");
+        if (app.arguments().contains(QStringLiteral("--management-only"))) {
+            pinnedManagementLifecycle();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--selection-content-alignment-only"))) {
             pinnedSelectionContentMatchesScreenshotSelection();
             return 0;
@@ -11113,6 +11619,8 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--pointer-presence-only"))) {
+            pinnedControlsVisibilityPolicy();
+            pinnedPointerPresenceFollowsEvents();
             pinnedPointerPresenceIsDebounced();
             pinnedControlsPresenceFollowsLiveCursor();
             return 0;
@@ -11185,6 +11693,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
             pinnedConfiguredShortcutUpdatesImmediately(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pinned-destroy-shortcut-only"))) {
+            pinnedDestroyShortcutUsesDestructiveMenuColor();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--movement-shortcut-only"))) {
@@ -11286,6 +11798,10 @@ int main(int argc, char* argv[]) {
             deferredPinUserCloseCancelsLateMaterialization();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--selection-restore-only"))) {
+            restoredSelectionPreservesShapeAndCreationSource();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--restore-wiring-only"))) {
             restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
@@ -11348,6 +11864,7 @@ int main(int argc, char* argv[]) {
         pinnedSettledWheelScalingAdvancesPastRoundedLevel(sourceRuntime);
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);
         pinnedFollowsPerMonitorDpiScaling(sourceRuntime);
+        restoredSelectionPreservesShapeAndCreationSource();
         restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
         restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
         restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);

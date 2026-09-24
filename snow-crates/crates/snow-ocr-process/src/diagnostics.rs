@@ -1,4 +1,4 @@
-#[cfg(all(windows, feature = "crash-diagnostics"))]
+#[cfg(all(any(windows, target_os = "macos"), feature = "crash-diagnostics"))]
 unsafe extern "C" {
     fn snow_diag_attach(
         pipe: *const std::ffi::c_char,
@@ -10,23 +10,23 @@ unsafe extern "C" {
 }
 
 pub fn operation_started(id: u64) {
-    #[cfg(all(windows, feature = "crash-diagnostics"))]
+    #[cfg(all(any(windows, target_os = "macos"), feature = "crash-diagnostics"))]
     {
         let record = format!("ocr.operation_started id={id}\n");
         unsafe { snow_diag_breadcrumb(record.as_ptr().cast(), record.len()) };
     }
-    #[cfg(not(all(windows, feature = "crash-diagnostics")))]
+    #[cfg(not(all(any(windows, target_os = "macos"), feature = "crash-diagnostics")))]
     let _ = id;
 }
 
-#[cfg(all(windows, feature = "crash-diagnostics"))]
+#[cfg(all(any(windows, target_os = "macos"), feature = "crash-diagnostics"))]
 extern "C" fn panic_callback(location: *const u8, length: usize) {
     // The installed hook lends a bounded buffer for this synchronous call.
     unsafe { snow_diag_panic(location, length) };
 }
 
 pub fn initialize() {
-    #[cfg(all(windows, feature = "crash-diagnostics"))]
+    #[cfg(all(any(windows, target_os = "macos"), feature = "crash-diagnostics"))]
     {
         use std::ffi::CString;
         let Ok(pipe) = std::env::var("SNOW_SHOT_CRASHPAD_PIPE") else {

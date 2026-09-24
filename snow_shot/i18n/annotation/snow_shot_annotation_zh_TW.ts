@@ -633,7 +633,7 @@
         </message>
         <message>
             <source>Pin to screen</source>
-            <translation>釘選到螢幕</translation>
+            <translation>固定到螢幕</translation>
         </message>
         <message>
             <source>Plain shaft</source>

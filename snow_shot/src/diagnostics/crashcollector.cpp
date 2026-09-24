@@ -6,58 +6,83 @@
 #include <QFile>
 #include <QTimeZone>
 
-#ifdef Q_OS_WIN
-#include <Windows.h>
-#include <DbgHelp.h>
+#include <QtEndian>
+
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
 #include "client/crash_report_database.h"
 #include "client/settings.h"
+#endif
+#ifdef Q_OS_WIN
+#include <Windows.h>
 #endif
 
 namespace snow_shot::diagnostics {
 namespace {
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+base::FilePath nativePath(const QString& path) {
 #ifdef Q_OS_WIN
+    return base::FilePath(path.toStdWString());
+#else
+    return base::FilePath(QFile::encodeName(path).toStdString());
+#endif
+}
+QString qtPath(const base::FilePath& path) {
+#ifdef Q_OS_WIN
+    return QString::fromStdWString(path.value());
+#else
+    return QFile::decodeName(path.value().c_str());
+#endif
+}
+
+// Minidumps use the same little-endian wire format on Windows and macOS.
+// Read bounded fields rather than host SDK structs (whose layout is platform-specific).
 QJsonObject exceptionContext(const QString& path) {
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly) || file.size() < sizeof(MINIDUMP_HEADER))
+    if (!file.open(QIODevice::ReadOnly))
         return {};
-    MINIDUMP_HEADER header{};
-    if (file.read(reinterpret_cast<char*>(&header), sizeof(header)) != sizeof(header) ||
-        header.Signature != MINIDUMP_SIGNATURE || header.NumberOfStreams > 1024 ||
-        static_cast<quint64>(header.StreamDirectoryRva) +
-                header.NumberOfStreams * sizeof(MINIDUMP_DIRECTORY) >
-            static_cast<quint64>(file.size()))
+    const QByteArray header = file.read(32);
+    if (header.size() != 32 || !header.startsWith("MDMP"))
         return {};
-    QJsonObject result;
-    for (ULONG index = 0; index < header.NumberOfStreams; ++index) {
-        MINIDUMP_DIRECTORY directory{};
-        if (!file.seek(header.StreamDirectoryRva + index * sizeof(directory)) ||
-            file.read(reinterpret_cast<char*>(&directory), sizeof(directory)) != sizeof(directory))
+    const auto* bytes = reinterpret_cast<const uchar*>(header.constData());
+    const quint32 count = qFromLittleEndian<quint32>(bytes + 8);
+    const quint32 offset = qFromLittleEndian<quint32>(bytes + 12);
+    if (count > 1024 ||
+        static_cast<quint64>(offset) + count * 12ULL > static_cast<quint64>(file.size()))
+        return {};
+    for (quint32 index = 0; index < count; ++index) {
+        if (!file.seek(static_cast<qint64>(offset) + index * 12LL))
             return {};
-        if (directory.StreamType != ExceptionStream)
+        const QByteArray directory = file.read(12);
+        if (directory.size() != 12)
+            return {};
+        bytes = reinterpret_cast<const uchar*>(directory.constData());
+        if (qFromLittleEndian<quint32>(bytes) != 6) // ExceptionStream
             continue;
-        MINIDUMP_EXCEPTION_STREAM exception{};
-        if (directory.Location.DataSize < sizeof(exception) || !file.seek(directory.Location.Rva) ||
-            file.read(reinterpret_cast<char*>(&exception), sizeof(exception)) != sizeof(exception))
+        const quint32 size = qFromLittleEndian<quint32>(bytes + 4);
+        const quint32 rva = qFromLittleEndian<quint32>(bytes + 8);
+        if (size < 168 || static_cast<quint64>(rva) + size > static_cast<quint64>(file.size()) ||
+            !file.seek(rva))
             return {};
-        result.insert(
-            QStringLiteral("exception_code"),
-            QStringLiteral("0x%1").arg(exception.ExceptionRecord.ExceptionCode, 8, 16, u'0'));
-        result.insert(
-            QStringLiteral("exception_address"),
-            QStringLiteral("0x%1").arg(exception.ExceptionRecord.ExceptionAddress, 0, 16));
-        result.insert(QStringLiteral("thread_id"), static_cast<qint64>(exception.ThreadId));
-        break;
+        const QByteArray exception = file.read(32);
+        if (exception.size() != 32)
+            return {};
+        bytes = reinterpret_cast<const uchar*>(exception.constData());
+        return {
+            {QStringLiteral("exception_code"),
+             QStringLiteral("0x%1").arg(qFromLittleEndian<quint32>(bytes + 8), 8, 16, u'0')},
+            {QStringLiteral("exception_address"),
+             QStringLiteral("0x%1").arg(qFromLittleEndian<quint64>(bytes + 24), 0, 16)},
+            {QStringLiteral("thread_id"), static_cast<qint64>(qFromLittleEndian<quint32>(bytes))}};
     }
-    return result;
+    return {};
 }
 #endif
 class LocalCrashCollector final : public CrashCollector {
   public:
     bool initialize(const QString& directory, const QString& handler, const QString& session,
                     QString* error) override {
-#ifdef Q_OS_WIN
-        m_database =
-            crashpad::CrashReportDatabase::Initialize(base::FilePath(directory.toStdWString()));
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        m_database = crashpad::CrashReportDatabase::Initialize(nativePath(directory));
         if (!m_database || !m_database->GetSettings()->SetUploadsEnabled(false)) {
             *error = QString::fromUtf8(QT_TRANSLATE_NOOP(
                 "DiagnosticsService", "The local crash database could not be initialized."));
@@ -87,7 +112,7 @@ class LocalCrashCollector final : public CrashCollector {
     }
     QVector<CrashReport> reports() override {
         QVector<CrashReport> result;
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
         if (!m_database)
             return result;
         std::vector<crashpad::CrashReportDatabase::Report> reports;
@@ -97,16 +122,16 @@ class LocalCrashCollector final : public CrashCollector {
         reports.insert(reports.end(), completed.begin(), completed.end());
         for (const auto& report : reports) {
             result.push_back({QString::fromStdString(report.uuid.ToString()),
-                              QString::fromStdWString(report.file_path.value()),
+                              qtPath(report.file_path),
                               QDateTime::fromSecsSinceEpoch(report.creation_time, QTimeZone::UTC),
                               static_cast<qint64>(report.total_size),
-                              exceptionContext(QString::fromStdWString(report.file_path.value()))});
+                              exceptionContext(qtPath(report.file_path))});
         }
 #endif
         return result;
     }
     bool removeReport(const QString& id) override {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
         crashpad::UUID uuid;
         return m_database && uuid.InitializeFromString(id.toStdString()) &&
                m_database->DeleteReport(uuid) == crashpad::CrashReportDatabase::kNoError;
@@ -126,6 +151,8 @@ class LocalCrashCollector final : public CrashCollector {
             return true;
         const DWORD error = GetLastError();
         return error == ERROR_SEM_TIMEOUT || error == ERROR_PIPE_BUSY;
+#elif defined(Q_OS_MACOS)
+        return !m_pipe.isEmpty() && snow_diag_healthy();
 #else
         return false;
 #endif
@@ -133,7 +160,7 @@ class LocalCrashCollector final : public CrashCollector {
 
   private:
     QString m_pipe;
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     std::unique_ptr<crashpad::CrashReportDatabase> m_database;
 #endif
 };

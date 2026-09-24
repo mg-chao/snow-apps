@@ -446,6 +446,22 @@ bool handleNativeWindowEvent(QWidget* titleBar, void* message, qintptr* result) 
 
     const auto* msg = static_cast<const MSG*>(message);
 
+    // Non-client hover belongs to USER32, so Qt's leave event cannot clear it
+    // when the window is disabled, hidden, deactivated or loses its modal loop.
+    const bool resetCaptionHover =
+        (msg->message == WM_ACTIVATE && LOWORD(msg->wParam) == WA_INACTIVE) ||
+        (msg->message == WM_SHOWWINDOW && !msg->wParam) ||
+        (msg->message == WM_ENABLE && !msg->wParam) || msg->message == WM_CANCELMODE ||
+        msg->message == WM_DESTROY;
+    if (resetCaptionHover && titleBar) {
+        for (auto* button : titleBar->findChildren<QAbstractButton*>()) {
+            if (button->property("snowNativeCaptionHover").toBool()) {
+                button->setProperty("snowNativeCaptionHover", false);
+                button->update();
+            }
+        }
+    }
+
     switch (msg->message) {
 
     case WM_NCCALCSIZE:

@@ -73,7 +73,6 @@ class PinnedWindowPlatform : public QObject {
     [[nodiscard]] virtual bool usesControlledInteraction() const {
         return false;
     }
-    [[nodiscard]] virtual std::optional<bool> pointerInside() const;
     // Retain the requested window extent and desktop top-left. Only physical
     // geometry needs reconciliation when a backing display changes.
     [[nodiscard]] bool

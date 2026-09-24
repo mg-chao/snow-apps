@@ -1280,6 +1280,35 @@ void shortcutPopupInteraction(QWidget& owner, const QTemporaryDir& temp) {
     leave(menu);
     settle();
     require(!menu->isVisible(), "leaving the popup must hide it without a click");
+
+    flush();
+    trigger->click();
+    flush();
+    menu = child<AdContextMenu>(content, "savePathMenu");
+    require(menu && menu->isVisible(), "covered-trigger setup must reopen the shortcut menu");
+    QWidget blocker(content);
+    blocker.setGeometry(QRect(trigger->mapTo(content, QPoint()), trigger->size()));
+    blocker.show();
+    blocker.raise();
+    require(menu && menu->isVisible(), "covering the trigger must leave the menu open initially");
+    const QPoint coveredTrigger = trigger->mapToGlobal(trigger->rect().center());
+    QCursor::setPos(coveredTrigger);
+    require(QApplication::widgetAt(coveredTrigger) == &blocker,
+            "hover occlusion fixture must cover the shortcut trigger");
+    QMouseEvent coveredMove(QEvent::MouseMove, menu->mapFromGlobal(coveredTrigger), coveredTrigger,
+                            Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(menu, &coveredMove);
+    settle();
+    require(!menu->isVisible(),
+            "a covered trigger must not keep the hover popup open after pointer movement");
+    const QPoint triggerCenter = trigger->rect().center();
+    QEnterEvent coveredEnter(triggerCenter, triggerCenter, coveredTrigger);
+    QApplication::sendEvent(trigger, &coveredEnter);
+    const auto menus = content->findChildren<AdContextMenu*>(QStringLiteral("savePathMenu"));
+    require(
+        std::none_of(menus.begin(), menus.end(),
+                     [](const AdContextMenu* candidate) { return candidate->isPopupVisible(); }),
+        "entering a covered trigger must not reopen its hover popup");
     require(settings.setSavePathShortcuts({}), "hover shortcut cleanup failed");
 }
 

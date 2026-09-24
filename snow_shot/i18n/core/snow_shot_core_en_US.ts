@@ -634,6 +634,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Restart failed</translation>
         </message>
         <message>
+            <source>Snow Shot %1 is available. Open About for update options.</source>
+            <translation>Snow Shot %1 is available. Open About for update options.</translation>
+        </message>
+        <message>
             <source>Snow Shot will close and restart to install the update. Continue?</source>
             <translation>Snow Shot will close and restart to install the update. Continue?</translation>
         </message>

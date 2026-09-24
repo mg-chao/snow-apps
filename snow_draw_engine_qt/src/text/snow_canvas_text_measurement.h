@@ -1,13 +1,32 @@
 #pragma once
 
 #include "snow_draw_engine.h"
+#include "snow_canvas_text_layout.h"
 
 #include <QFont>
+#include <QByteArray>
+#include <QCache>
 
 #include <cstdint>
 #include <vector>
 
 namespace snow_canvas_text_measurement {
+
+// Natural metrics depend on typography, not on the arrow's current wrap width.
+// Costs include the key's text/font bytes so very large labels cannot grow the
+// cache without bound. Wrapped layouts remain measured at the exact live width.
+class NaturalTextLayoutCache {
+  public:
+    explicit NaturalTextLayoutCache(int maximumBytes = 1024 * 1024);
+    snow_canvas_text_layout::TextMeasuredLayout measure(const QString& text, const QFont& baseFont,
+                                                        const SnowSceneDisplayItem& item);
+    void clear();
+    std::uint64_t measurementCount() const;
+
+  private:
+    QCache<QByteArray, snow_canvas_text_layout::TextMeasuredLayout> m_layouts;
+    std::uint64_t m_measurementCount = 0;
+};
 
 struct TextLayoutOverrideMeasurement {
     bool success = true;

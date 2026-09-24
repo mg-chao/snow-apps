@@ -486,7 +486,12 @@ fn arrow_text_measurements_are_keyed_and_join_the_next_geometry_transaction() {
     engine
         .apply_arrow_text_measurements(
             viewport,
-            &[(text_id, request.key + 1, TextLayoutSize::new(80.0, 90.0))],
+            &[(
+                text_id,
+                request.key + 1,
+                TextLayoutSize::new(80.0, 90.0),
+                0.0,
+            )],
         )
         .unwrap();
     assert_eq!(
@@ -500,6 +505,7 @@ fn arrow_text_measurements_are_keyed_and_join_the_next_geometry_transaction() {
                 text_id,
                 request.key,
                 TextLayoutSize::with_content(80.0, 90.0, 72.0, 90.0),
+                0.0,
             )],
         )
         .unwrap();

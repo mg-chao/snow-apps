@@ -1,4 +1,5 @@
 #include "popup_geometry.h"
+#include "pointer_region.h"
 
 #include "../popup_placement.h"
 
@@ -32,7 +33,7 @@ PopupWidgetRect PopupWidgetRect::visible() const {
 }
 
 bool PopupWidgetRect::containsGlobalPos(const QPoint& point) const {
-  return widget && rect.isValid() && rect.contains(widget->mapFromGlobal(point));
+  return pointerRegionContains(widget, rect, point);
 }
 
 QRect PopupWidgetRect::mappedTo(const QWidget* target) const {

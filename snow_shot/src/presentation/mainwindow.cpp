@@ -331,6 +331,13 @@ void MainWindow::showScreenshotHistory() {
     }
 }
 
+void MainWindow::showPinToScreenManagement() {
+    showAndActivate();
+    if (m_contentCard != nullptr) {
+        m_contentCard->navigateTo({QStringLiteral("pin-to-screen-management"), {}, {}});
+    }
+}
+
 void MainWindow::showAndActivate() {
     if (isMinimized()) {
         showNormal();

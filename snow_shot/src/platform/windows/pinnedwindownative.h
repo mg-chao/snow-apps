@@ -8,7 +8,6 @@
 #include <Qt>
 
 #include <memory>
-#include <optional>
 
 namespace screenshot_pinned_window_native {
 class SystemMoveKeyboard final {
@@ -42,12 +41,8 @@ applyClientGeometry(WId windowId, const QRect& geometry,
 // Windows because the pinned surface re-applies WS_THICKFRAME. Falls back to
 // the client geometry when the window rect cannot be read.
 [[nodiscard]] QRect currentWindowGeometry(WId windowId);
-// Reports whether the live cursor is inside the window's complete native
-// frame, which is wider than the client area on Windows because the pinned
-// surface re-applies WS_THICKFRAME. Returns std::nullopt when the cursor or
-// the window rect cannot be read so callers can fall back to event-derived
-// pointer presence.
-[[nodiscard]] std::optional<bool> pointerInsideWindow(WId windowId);
+// Request a leave notification for the draggable non-client region.
+[[nodiscard]] bool trackNonClientLeave(WId windowId);
 [[nodiscard]] bool applySystemResizeStyle(WId windowId);
 // Toggles only the input pass-through/no-activation extended styles. The HWND
 // and all unrelated native styles are preserved.

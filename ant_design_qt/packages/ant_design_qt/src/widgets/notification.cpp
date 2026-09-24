@@ -1,4 +1,5 @@
 #include "notification.h"
+#include "detail/pointer_region.h"
 
 #include "antd_icons.h"
 #include "detail/animated_scalar.h"
@@ -546,7 +547,7 @@ class NotificationNoticeWidget final : public QWidget {
 
   void refreshAppearance(const AdNotification::Config& config,
                          const detail::NotificationVisualStyle& style, int maximumFrameWidth) {
-    const bool wasPaused = hovered_ && effectivePauseOnHover();
+    const bool wasPaused = detail::widgetHovered(this) && effectivePauseOnHover();
     config_ = config;
     style_ = style;
     maximumFrameWidth_ = std::max(1, maximumFrameWidth);
@@ -554,7 +555,7 @@ class NotificationNoticeWidget final : public QWidget {
     syncCloseWidget();
     refreshSemantics();
     refreshLayoutMetrics();
-    const bool isPaused = hovered_ && effectivePauseOnHover();
+    const bool isPaused = detail::widgetHovered(this) && effectivePauseOnHover();
     if (!closing_ && wasPaused != isPaused && remainingDurationMs_ > 0) {
       if (isPaused) {
         captureRemainingDuration();
@@ -594,7 +595,7 @@ class NotificationNoticeWidget final : public QWidget {
 
   qreal progress() const { return std::clamp(motionProgress_.value(), 0.0, 1.0); }
   bool isClosing() const { return closing_; }
-  bool isHovered() const { return hovered_; }
+  bool isHovered() const { return detail::widgetHovered(this); }
   int zIndexPopup() const { return style_.metrics.zIndexPopup; }
   int marginBottom() const { return style_.metrics.marginBottom; }
   int edgeMargin() const { return style_.metrics.edgeMargin; }
@@ -650,9 +651,14 @@ class NotificationNoticeWidget final : public QWidget {
     return QWidget::eventFilter(watched, event);
   }
 
+  bool event(QEvent* event) override {
+    detail::resetWidgetHoverOnLifecycle(this, event);
+    return QWidget::event(event);
+  }
+
   void enterEvent(QEnterEvent* event) override {
     QWidget::enterEvent(event);
-    hovered_ = true;
+
     refreshSemantics();
     if (effectivePauseOnHover() && !closing_ && remainingDurationMs_ > 0) {
       captureRemainingDuration();
@@ -665,7 +671,7 @@ class NotificationNoticeWidget final : public QWidget {
 
   void leaveEvent(QEvent* event) override {
     QWidget::leaveEvent(event);
-    hovered_ = false;
+
     refreshSemantics();
     if (effectivePauseOnHover() && !closing_ && remainingDurationMs_ > 0) {
       scheduleExpiry(remainingDurationMs_);
@@ -754,7 +760,7 @@ class NotificationNoticeWidget final : public QWidget {
     cancelExpiry();
     totalDurationMs_ = std::max(0, effectiveDurationMs());
     remainingDurationMs_ = totalDurationMs_;
-    if (remainingDurationMs_ > 0 && !(hovered_ && effectivePauseOnHover())) {
+    if (remainingDurationMs_ > 0 && !(detail::widgetHovered(this) && effectivePauseOnHover())) {
       scheduleExpiry(remainingDurationMs_);
     }
   }
@@ -880,14 +886,14 @@ class NotificationNoticeWidget final : public QWidget {
     AdNotification::SemanticStyles semantics = config_.semanticStyles;
     if (config_.semanticStyleResolver) {
       semantics = mergeSemanticStyles(
-          semantics, config_.semanticStyleResolver(
-                         {request_.type, resolvedPlacement, request_.key, hovered_}));
+          semantics, config_.semanticStyleResolver({request_.type, resolvedPlacement, request_.key,
+                                                    detail::widgetHovered(this)}));
     }
     semantics = mergeSemanticStyles(semantics, request_.semanticStyles);
     if (request_.semanticStyleResolver) {
       semantics = mergeSemanticStyles(
-          semantics, request_.semanticStyleResolver(
-                         {request_.type, resolvedPlacement, request_.key, hovered_}));
+          semantics, request_.semanticStyleResolver({request_.type, resolvedPlacement, request_.key,
+                                                     detail::widgetHovered(this)}));
     }
     resolvedBackgroundColor_ = semantics.root.backgroundColor.value_or(style_.backgroundColor);
     resolvedBorderColor_ = semantics.root.borderColor.value_or(style_.borderColor);
@@ -1028,7 +1034,7 @@ class NotificationNoticeWidget final : public QWidget {
   int totalDurationMs_ = 0;
   int remainingDurationMs_ = 0;
   qint64 expiryStartedMs_ = 0;
-  bool hovered_ = false;
+
   bool closing_ = false;
   bool clickDispatchedThisTurn_ = false;
 };

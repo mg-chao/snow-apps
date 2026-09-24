@@ -1,4 +1,5 @@
 #include "modal.h"
+#include "detail/pointer_region.h"
 
 #include "antd_icons.h"
 #include "theme/theme.h"
@@ -593,14 +594,17 @@ class ModalIconButton final : public QToolButton {
   }
 
  protected:
+  bool event(QEvent* event) override {
+    detail::resetWidgetHoverOnLifecycle(this, event);
+    return QToolButton::event(event);
+  }
+
   void enterEvent(QEnterEvent* event) override {
-    hovered_ = true;
     update();
     QToolButton::enterEvent(event);
   }
 
   void leaveEvent(QEvent* event) override {
-    hovered_ = false;
     update();
     QToolButton::leaveEvent(event);
   }
@@ -620,7 +624,7 @@ class ModalIconButton final : public QToolButton {
     QColor background = isEnabled() ? normalBackground_ : disabledBackground_;
     if (isEnabled() && isDown()) {
       background = pressedBackground_.isValid() ? pressedBackground_ : hoverBackground_;
-    } else if (isEnabled() && hovered_) {
+    } else if (isEnabled() && detail::widgetHovered(this)) {
       background = hoverBackground_.isValid() ? hoverBackground_ : normalBackground_;
     }
 
@@ -641,7 +645,9 @@ class ModalIconButton final : public QToolButton {
     const QIcon currentIcon = icon();
     if (!currentIcon.isNull()) {
       const QIcon::Mode mode =
-          !isEnabled() ? QIcon::Disabled : ((hovered_ || isDown()) ? QIcon::Active : QIcon::Normal);
+          !isEnabled()
+              ? QIcon::Disabled
+              : ((detail::widgetHovered(this) || isDown()) ? QIcon::Active : QIcon::Normal);
       const QSize logicalSize = iconSize().isValid() ? iconSize() : QSize(16, 16);
       const QPixmap pixmap = currentIcon.pixmap(logicalSize, mode, QIcon::Off);
       if (!pixmap.isNull()) {
@@ -654,7 +660,6 @@ class ModalIconButton final : public QToolButton {
   }
 
  private:
-  bool hovered_ = false;
   QColor normalBackground_ = QColor(Qt::transparent);
   QColor hoverBackground_ = QColor(Qt::transparent);
   QColor pressedBackground_ = QColor(Qt::transparent);

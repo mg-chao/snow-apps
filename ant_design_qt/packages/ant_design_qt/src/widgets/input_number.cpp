@@ -1,4 +1,5 @@
 #include "input_number.h"
+#include "detail/pointer_region.h"
 
 #include "detail/timing_hub.h"
 #include "detail/overlay_accessibility.h"
@@ -550,14 +551,17 @@ class StepControlButton final : public QToolButton {
   }
 
  protected:
+  bool event(QEvent* event) override {
+    detail::resetWidgetHoverOnLifecycle(this, event);
+    return QToolButton::event(event);
+  }
+
   void enterEvent(QEnterEvent* event) override {
-    hovered_ = true;
     update();
     QToolButton::enterEvent(event);
   }
 
   void leaveEvent(QEvent* event) override {
-    hovered_ = false;
     update();
     QToolButton::leaveEvent(event);
   }
@@ -579,7 +583,7 @@ class StepControlButton final : public QToolButton {
     if (isEnabled() && isDown()) {
       background = paintStyle_.pressedBackground.isValid() ? paintStyle_.pressedBackground
                                                            : paintStyle_.hoverBackground;
-    } else if (isEnabled() && hovered_) {
+    } else if (isEnabled() && detail::widgetHovered(this)) {
       background = paintStyle_.hoverBackground.isValid() ? paintStyle_.hoverBackground
                                                          : paintStyle_.normalBackground;
     }
@@ -647,7 +651,9 @@ class StepControlButton final : public QToolButton {
     const QIcon currentIcon = icon();
     if (!currentIcon.isNull()) {
       const QIcon::Mode mode =
-          !isEnabled() ? QIcon::Disabled : ((hovered_ || isDown()) ? QIcon::Active : QIcon::Normal);
+          !isEnabled()
+              ? QIcon::Disabled
+              : ((detail::widgetHovered(this) || isDown()) ? QIcon::Active : QIcon::Normal);
       const QSize logicalSize = iconSize().isValid() ? iconSize() : QSize(12, 12);
       const QPixmap pixmap = currentIcon.pixmap(logicalSize, mode, QIcon::Off);
       if (!pixmap.isNull()) {
@@ -660,7 +666,6 @@ class StepControlButton final : public QToolButton {
   }
 
  private:
-  bool hovered_ = false;
   StepButtonPaintStyle paintStyle_;
 };
 
@@ -1459,7 +1464,7 @@ AdInputNumber::StyleContext AdInputNumber::buildStyleContext(bool interactiveCon
   context.readOnly = readOnly_;
   const bool effectiveFocused = focused_ || hasFocus() || (editor_ && editor_->hasFocus());
   context.focused = effectiveFocused;
-  context.hovered = hovered_;
+  context.hovered = detail::widgetHovered(this);
   context.stepButtonsVisible = interactiveControls;
   context.outOfRange = valueModel_ ? valueModel_->isOutOfRange(visualValue) : false;
   return context;
@@ -1480,7 +1485,7 @@ AdInputNumber::ResolvedVisualState AdInputNumber::resolvedVisualState() const {
   styleInput.disabled = !isEnabled();
   styleInput.readOnly = readOnly_;
   styleInput.focused = state.context.focused;
-  styleInput.hovered = hovered_;
+  styleInput.hovered = detail::widgetHovered(this);
   styleInput.stepButtonsVisible = state.interactiveControls;
   styleInput.outOfRange = state.context.outOfRange;
   styleInput.baseFont = font();
@@ -1496,7 +1501,7 @@ AdInputNumber::ResolvedVisualState AdInputNumber::resolvedVisualState() const {
     if (state.context.focused) {
       state.background = state.style.selectorActiveBg;
       state.border = state.style.selectorActiveBorderColor;
-    } else if (hovered_) {
+    } else if (detail::widgetHovered(this)) {
       state.background = state.style.selectorHoverBg;
       state.border = state.style.selectorHoverBorderColor;
     }
@@ -2376,37 +2381,6 @@ void AdInputNumber::updateInputActionsGeometry(const ResolvedVisualState& state)
   }
 }
 
-bool AdInputNumber::isHoverTrackedChild(const QObject* watched) const {
-  return watched == editor_ || watched == prefixLabel_ || watched == suffixLabel_ ||
-         watched == prefixIconLabel_ || watched == suffixIconLabel_ ||
-         watched == inputActionsWidget_ || watched == inputUpButton_ ||
-         watched == inputDownButton_ || watched == splitUpButton_ || watched == splitDownButton_;
-}
-
-void AdInputNumber::setChildHovered(const QObject* watched, bool hovered) {
-  if (!watched || !isHoverTrackedChild(watched)) {
-    return;
-  }
-  if (hovered) {
-    hoveredChildren_.insert(watched);
-  } else {
-    hoveredChildren_.remove(watched);
-  }
-  syncHoveredState();
-}
-
-void AdInputNumber::syncHoveredState() {
-  const bool effectiveHovered = selfHovered_ || !hoveredChildren_.isEmpty();
-  if (hovered_ == effectiveHovered) {
-    return;
-  }
-  hovered_ = effectiveHovered;
-  if (hovered_) {
-    bumpJoinedZOrder();
-  }
-  refreshVisualState(false);
-}
-
 void AdInputNumber::focusFromMouseGlobalPos(const QPoint& globalPos, Qt::FocusReason reason) {
   if (!isEnabled() || !editor_) {
     return;
@@ -2430,7 +2404,7 @@ void AdInputNumber::bumpJoinedZOrder() {
     return;
   }
   const bool effectiveFocused = focused_ || hasFocus() || (editor_ && editor_->hasFocus());
-  if (!(effectiveFocused || hovered_)) {
+  if (!(effectiveFocused || detail::widgetHovered(this))) {
     return;
   }
   raise();
@@ -2475,14 +2449,6 @@ void AdInputNumber::notifyAccessibleFocusChange() const {
 bool AdInputNumber::eventFilter(QObject* watched, QEvent* event) {
   if (!event) {
     return QAbstractSpinBox::eventFilter(watched, event);
-  }
-
-  if (isHoverTrackedChild(watched)) {
-    if (event->type() == QEvent::Enter) {
-      setChildHovered(watched, true);
-    } else if (event->type() == QEvent::Leave || event->type() == QEvent::Hide) {
-      setChildHovered(watched, false);
-    }
   }
 
   if (watched == editor_) {
@@ -2583,15 +2549,20 @@ void AdInputNumber::focusOutEvent(QFocusEvent* event) {
   notifyAccessibleFocusChange();
 }
 
+bool AdInputNumber::event(QEvent* event) {
+  detail::resetWidgetHoverOnLifecycle(this, event);
+  return QAbstractSpinBox::event(event);
+}
+
 void AdInputNumber::enterEvent(QEnterEvent* event) {
-  selfHovered_ = true;
-  syncHoveredState();
+  bumpJoinedZOrder();
+  refreshVisualState(false);
   QAbstractSpinBox::enterEvent(event);
 }
 
 void AdInputNumber::leaveEvent(QEvent* event) {
-  selfHovered_ = false;
-  syncHoveredState();
+  bumpJoinedZOrder();
+  refreshVisualState(false);
   QAbstractSpinBox::leaveEvent(event);
 }
 
@@ -2660,9 +2631,6 @@ void AdInputNumber::changeEvent(QEvent* event) {
   }
 
   if (event->type() == QEvent::Hide) {
-    selfHovered_ = false;
-    hoveredChildren_.clear();
-    hovered_ = false;
     stopInteractionFocusForOwner(this);
     return;
   }

@@ -138,10 +138,8 @@ ScreenshotSelectionToolbarWidget::ScreenshotSelectionToolbarWidget(
     : QWidget(parent), m_commands(commands) {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
-    setAttribute(Qt::WA_Hover, true);
     setFocusPolicy(Qt::NoFocus);
     setAutoFillBackground(false);
-    setMouseTracking(true);
 
     auto* rootLayout = new QHBoxLayout(this);
     rootLayout->setContentsMargins(toolbar_widgets::ShadowMargin, toolbar_widgets::ShadowMargin,
@@ -488,7 +486,7 @@ void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
     m_toolbarHovered = hovered;
     updateInputRegion();
     m_commands.setSelectionToolbarHovered(hovered);
-    refreshHoverVisuals();
+    update();
     if (hovered) {
         m_commands.hideColorPickersForScreenshotUi();
     }
@@ -497,18 +495,14 @@ void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
 void ScreenshotSelectionToolbarWidget::scheduleToolbarHoverSync() {
     QTimer::singleShot(0, this, [this]() {
         if (isVisible()) {
-            setToolbarHovered(m_panel != nullptr && m_panel->underMouse());
+            if (auto* panel = qobject_cast<SelectionToolbarPanel*>(m_panel)) {
+                panel->synchronizePointerHover();
+                setToolbarHovered(panel->pointerHovered());
+            } else {
+                setToolbarHovered(false);
+            }
         }
     });
-}
-
-void ScreenshotSelectionToolbarWidget::refreshHoverVisuals() {
-    update();
-    if (m_panel == nullptr) {
-        return;
-    }
-
-    m_panel->update();
 }
 
 bool ScreenshotSelectionToolbarWidget::fieldForObject(QObject* object, Field* outField) const {

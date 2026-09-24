@@ -450,6 +450,11 @@ int main(int argc, char** argv) {
         const QString download =
             QDir(cache).filePath(QStringLiteral("download-policyChange-count"));
         UpdateService service(std::move(policyOptions));
+        QStringList announced;
+        int readyCount = 0;
+        QObject::connect(&service, &UpdateService::automaticUpdateAvailable, &app,
+                         [&](const QString& version) { announced.append(version); });
+        QObject::connect(&service, &UpdateService::updateReady, &app, [&] { ++readyCount; });
         service.start();
         require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
                 "download-policy probe");
@@ -461,6 +466,44 @@ int main(int argc, char** argv) {
                            service.status().state == UpdateState::Ready;
                 }),
                 "adapter schedules a distinct download from current policy");
+        require(announced.isEmpty() && readyCount == 1,
+                "automatic download keeps its update-ready notification without an early notice");
+    }
+
+    {
+        auto checkOptions = options(QStringLiteral("adapter-download-policy"));
+        const QString cache = checkOptions.cacheDirectory;
+        checkOptions.startupCheckDelay = std::chrono::hours(1);
+        checkOptions.automaticCheckInterval = std::chrono::hours(1);
+        const QString automaticChecks =
+            QDir(cache).filePath(QStringLiteral("check-periodic-complete"));
+        const QString manualChecks = QDir(cache).filePath(QStringLiteral("check-user-complete"));
+        const QString downloads =
+            QDir(cache).filePath(QStringLiteral("download-policyChange-count"));
+        UpdateService service(std::move(checkOptions));
+        service.setMode(QStringLiteral("check"));
+        QStringList announced;
+        QObject::connect(&service, &UpdateService::automaticUpdateAvailable, &app,
+                         [&](const QString& version) { announced.append(version); });
+        service.start();
+        require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
+                "notification-only probe completes");
+        service.check(false);
+        require(waitUntil([&] {
+                    return counterValue(automaticChecks) == 1 &&
+                           service.status().state == UpdateState::Available;
+                }),
+                "notification-only check finds an update");
+        require(announced == QStringList{QStringLiteral("2.0.0")} && counterValue(downloads) == 0,
+                "check mode announces the available version without downloading");
+        service.check(false);
+        require(waitUntil([&] { return counterValue(automaticChecks) == 2; }),
+                "repeat automatic check completes");
+        service.check(true);
+        require(waitUntil([&] { return counterValue(manualChecks) == 1; }),
+                "manual check completes");
+        require(announced.size() == 1,
+                "repeat and manual checks do not duplicate the system notification");
     }
 
     {
@@ -530,15 +573,23 @@ int main(int argc, char** argv) {
             QDir(availableOptions.cacheDirectory).filePath(QStringLiteral("launch-count"));
         UpdateService service(std::move(availableOptions));
         service.setMode(QStringLiteral("manual"));
+        QStringList announced;
+        int readyCount = 0;
+        QObject::connect(&service, &UpdateService::automaticUpdateAvailable, &app,
+                         [&](const QString& version) { announced.append(version); });
+        QObject::connect(&service, &UpdateService::updateReady, &app, [&] { ++readyCount; });
         service.start();
         require(waitUntil([&] { return service.status().state == UpdateState::Available; }),
                 "probe restores an available update");
+        require(announced.isEmpty(), "manual mode keeps cached discovery in About");
         service.setMode(QStringLiteral("download"));
         require(waitUntil([&] {
                     return counterValue(launches) >= 2 &&
                            service.status().state == UpdateState::Ready;
                 }),
                 "enabling automatic download launches an immediate short-lived download");
+        require(announced.isEmpty() && readyCount == 1,
+                "switching to automatic download preserves the ready notification");
     }
 
     {

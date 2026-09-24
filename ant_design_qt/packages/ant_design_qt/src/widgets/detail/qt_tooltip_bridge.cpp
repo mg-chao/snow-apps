@@ -1,4 +1,5 @@
 #include "qt_tooltip_bridge.h"
+#include "pointer_region.h"
 
 #include "popup_geometry.h"
 
@@ -227,8 +228,11 @@ class QtTooltipBridge final : public QObject {
       if (mouseEvent->buttons() == Qt::NoButton &&
           (!widget->window() ||
            widget->window()->objectName() != QStringLiteral("adtooltip-surface"))) {
-        QWidget* hoverWidget = QApplication::widgetAt(mouseEvent->globalPosition().toPoint());
-        trackHoverCandidate(hoverWidget ? hoverWidget : widget, mouseEvent);
+        QWidget* hoverWidget =
+            QWidget::mouseGrabber()
+                ? QApplication::widgetAt(mouseEvent->globalPosition().toPoint())
+                : pointerTargetWithin(widget, mouseEvent->globalPosition().toPoint());
+        if (hoverWidget) trackHoverCandidate(hoverWidget, mouseEvent);
       }
     }
     if (event->type() == QEvent::ToolTip && widget) {
@@ -281,12 +285,20 @@ class QtTooltipBridge final : public QObject {
       }
 #endif
       case QEvent::Leave:
-        // QApplication stops its single tooltip wake-up timer for every
-        // leave event. QTipLabel separately starts its 300 ms hide timer for
-        // an already visible tooltip.
-        clearPendingTooltip();
-        clearHoverCandidate();
-        scheduleHide();
+        if (pointerInWidgetTree(pendingRequest_.target, widget)) clearPendingTooltip();
+        if (pointerInWidgetTree(hoverTarget_, widget)) clearHoverCandidate();
+        if (pointerInWidgetTree(activeTarget_, widget)) scheduleHide();
+        break;
+      case QEvent::Hide:
+      case QEvent::Destroy:
+      case QEvent::ParentAboutToChange:
+        if (pointerInWidgetTree(activeTarget_, widget) ||
+            pointerInWidgetTree(pendingRequest_.target, widget) ||
+            pointerInWidgetTree(hoverTarget_, widget))
+          hideImmediately();
+        break;
+      case QEvent::ApplicationDeactivate:
+        hideImmediately();
         break;
       case QEvent::Enter:
         // Neither QApplication's tooltip wake-up timer nor QTipLabel's

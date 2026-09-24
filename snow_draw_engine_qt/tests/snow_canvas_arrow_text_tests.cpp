@@ -4,6 +4,9 @@
 #include "snow_canvas_runtime_access.h"
 #include "snow_canvas_text_editor_session.h"
 #include "snow_canvas_text.h"
+#include "snow_canvas_text_measurement.h"
+#include "snow_canvas_viewport.h"
+#include "snow_canvas_ffi_handles.h"
 #include "snow_canvas_type_conversions.h"
 
 #include <QApplication>
@@ -28,6 +31,40 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+void naturalLayoutCacheTracksTypographyAndHasABoundedBudget() {
+    snow_canvas_text_measurement::NaturalTextLayoutCache cache;
+    SnowTextElementInfo info{};
+    info.font_size = 24.0;
+    auto item = snow_canvas_text::defaultPreviewItem(info);
+    const QString text = QStringLiteral("Natural width\nwith multiple lines");
+    const QFont font;
+    const auto first = cache.measure(text, font, item);
+    for (double width : {200.0, 400.0, 1600.0}) {
+        item.width = width;
+        item.center_x = width;
+        const auto reused = cache.measure(text, font, item);
+        require(reused.layout == first.layout && reused.content == first.content,
+                "arrow geometry must not invalidate natural text metrics");
+    }
+    require(cache.measurementCount() == 1, "unchanged typography is shaped only once");
+    item.font_size = 40.0;
+    const auto larger = cache.measure(text, font, item);
+    require(larger.layout != first.layout && cache.measurementCount() == 2,
+            "font size must invalidate natural text metrics");
+    QFont bold = font;
+    bold.setBold(true);
+    cache.measure(text, bold, item);
+    cache.measure(text + QStringLiteral("!"), bold, item);
+    require(cache.measurementCount() == 4, "base font and contents are part of the cache key");
+    cache.clear();
+    cache.measure(text, bold, item);
+    require(cache.measurementCount() == 5, "font database invalidation clears cached metrics");
+    snow_canvas_text_measurement::NaturalTextLayoutCache tiny(1);
+    tiny.measure(text, font, item);
+    tiny.measure(text, font, item);
+    require(tiny.measurementCount() == 2, "entries larger than the budget are not retained");
 }
 
 void mouse(SnowCanvasWidget& canvas, QEvent::Type type, QPointF point, Qt::MouseButton button,
@@ -84,6 +121,51 @@ void openLabel(SnowCanvasWidget& canvas) {
     require(canvas.hasActiveTextEditing(), "double-click opens an attached text editor");
     require(canvas.canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedText,
             "arrow draft exposes text style controls");
+}
+
+void arrowLabelRemeasuresAfterHostFontChange() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    createArrow(canvas, runtime);
+    openLabel(canvas);
+    key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("Label"));
+    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+    const double originalWidth =
+        payload(runtime, QStringLiteral("Text")).value(QStringLiteral("width")).toDouble();
+    QFont font = canvas.font();
+    font.setLetterSpacing(QFont::AbsoluteSpacing, 5.0);
+    canvas.setFont(font);
+    QApplication::processEvents();
+    mouse(canvas, QEvent::MouseButtonPress, {490, 180}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseMove, {520, 190}, Qt::NoButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {520, 190}, Qt::LeftButton, Qt::NoButton);
+    require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("width")).toDouble() >
+                originalWidth + 10.0,
+            "host font changes invalidate cached natural metrics before the next geometry commit");
+    const SnowRuntime engine = snow_canvas_runtime::Access::handle(runtime);
+    SnowCanvasViewport inspection;
+    require(inspection.create(engine, snow_canvas_viewport::defaultEngineConfig()),
+            "create legacy measurement inspection viewport");
+    require(snow_viewport_invalidate_arrow_text_layouts(engine, inspection.get()) == SNOW_OK,
+            "invalidate before testing legacy host measurements");
+    SnowArrowTextLayoutRequest request{};
+    std::uint32_t count = 0;
+    require(snow_viewport_get_arrow_text_layout_requests(engine, inspection.get(), &request, 1,
+                                                         &count) == SNOW_OK &&
+                count == 1,
+            "one pending measurement after invalidation");
+    const SnowArrowTextLayoutResult legacy{request.info.id, request.key, {100, 25, 95, 25}};
+    ScopedChangedViewportList changed;
+    require(snow_viewport_apply_arrow_text_layouts_ex(engine, inspection.get(), &legacy, 1,
+                                                      changed.outParam()) == SNOW_OK,
+            "the original result structure and C entry point remain supported");
+    require(snow_viewport_get_arrow_text_layout_requests(engine, inspection.get(), nullptr, 0,
+                                                         &count) == SNOW_OK &&
+                count == 0,
+            "legacy measurements satisfy the exact constraint");
 }
 
 void arrowRatioEditsRenderAndRoundTrip() {
@@ -901,6 +983,8 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    naturalLayoutCacheTracksTypographyAndHasABoundedBudget();
+    arrowLabelRemeasuresAfterHostFontChange();
     arrowRatioEditsRenderAndRoundTrip();
     taperedShaftsRenderAndRoundTrip();
     if (app.arguments().contains(QStringLiteral("--shafts-only")))

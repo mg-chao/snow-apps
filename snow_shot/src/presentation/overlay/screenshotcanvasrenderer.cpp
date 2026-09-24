@@ -531,6 +531,7 @@ QRegion planScreenshotSelectionDamage(const ScreenshotSelectionVisualState& prev
     QRegion dirtyRegion =
         selectionStateDecorationRegion(previous, viewportRect, canvasToViewTransform);
     dirtyRegion += selectionStateDecorationRegion(next, viewportRect, canvasToViewTransform);
+    // Shadow changes also repaint the transparent rounded corner squares.
     const bool hoveredShadowChanged =
         (previous.toolbarHovered || next.toolbarHovered) &&
         (previous.shadowWidth != next.shadowWidth || previous.shadowColor != next.shadowColor);

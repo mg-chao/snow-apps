@@ -272,6 +272,14 @@ struct UpdateService::Impl {
     }
 
     void completeOperation(const QString& outcome) {
+        if (outcome == u"success" && mode == u"check" &&
+            (activeOperation == Operation::Probe ||
+             (activeOperation == Operation::Check && activeTrigger != Trigger::User)) &&
+            status.state == UpdateState::Available && !status.version.isEmpty() &&
+            announcedVersion != status.version) {
+            announcedVersion = status.version;
+            emit q.automaticUpdateAvailable(status.version);
+        }
         if (activeOperation == Operation::Probe && status.state == UpdateState::Unavailable) {
             scheduleTimer.stop();
             automaticCheckDue = false;
@@ -575,6 +583,7 @@ struct UpdateService::Impl {
     QByteArray errorSource;
     QString mode = QStringLiteral("download");
     QString notifiedVersion;
+    QString announcedVersion;
     quint64 nextRequestId = 1;
     Operation activeOperation = Operation::None;
     Trigger activeTrigger = Trigger::Startup;

@@ -18,6 +18,15 @@ pub struct SnowArrowTextLayoutResult {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnowArrowTextLayoutMetrics {
+    pub text_id: SnowElementId,
+    pub key: u64,
+    pub size: SnowTextLayoutSize,
+    pub natural_width: f64,
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnowSerialLabelLayoutRequest {
     pub text_id: SnowElementId,

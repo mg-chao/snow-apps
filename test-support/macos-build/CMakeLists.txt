@@ -30,6 +30,14 @@ install(TARGETS snow_shot BUNDLE DESTINATION .)
 install(TARGETS snow_shot_image_codec_backend
     LIBRARY DESTINATION snow_shot.app/Contents/Frameworks)
 install(TARGETS snow-ocr-process RUNTIME DESTINATION snow_shot.app/Contents/MacOS)
+find_program(SNOW_CRASHPAD_HANDLER NAMES crashpad_handler
+    PATHS "${SNOW_FFMPEG_ROOT}/tools/crashpad" "${SNOW_FFMPEG_ROOT}/tools"
+    NO_DEFAULT_PATH REQUIRED)
+find_library(SNOW_FIXTURE_ZLIB NAMES z PATHS "${SNOW_FFMPEG_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+if(NOT TARGET ZLIB::ZLIB)
+    add_library(ZLIB::ZLIB UNKNOWN IMPORTED)
+    set_target_properties(ZLIB::ZLIB PROPERTIES IMPORTED_LOCATION "${SNOW_FIXTURE_ZLIB}")
+endif()
 include(SnowShotMacOS)
 target_link_libraries(onnxruntime PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
 target_link_libraries(snow_shot_image_codec_backend PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)

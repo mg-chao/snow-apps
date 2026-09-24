@@ -10,8 +10,6 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/update/updateservice.h"
-#include "snow_shot/presentation/components/updatenotice.h"
-#include <QPushButton>
 
 #include "widgets/button.h"
 #include "widgets/button_style.h"
@@ -348,43 +346,6 @@ void updatePolicyAndUnavailableCopy() {
     action->click();
     require(opened == QList<QUrl>{QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
             "About opens configured website");
-    opened.clear();
-    {
-        snow_shot::presentation::UpdateNotice notice(QStringLiteral("2.0.0"), nullptr,
-                                                     [&](const QUrl& url) {
-                                                         opened.append(url);
-                                                         return true;
-                                                     });
-        notice.show();
-        require(!notice.isModal() && opened.isEmpty(),
-                "automatic notice is nonmodal and does not open browser");
-        child<QPushButton>(notice, "updateLater")->click();
-        require(opened.isEmpty() && status.state == snow_shot::update::UpdateState::Available,
-                "dismissing notice retains update without navigating");
-    }
-    snow_shot::presentation::UpdateNotice notice(QStringLiteral("2.0.0"), nullptr,
-                                                 [&](const QUrl& url) {
-                                                     opened.append(url);
-                                                     return true;
-                                                 });
-    for (const QString& locale :
-         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
-        QTranslator translator;
-        require(translator.load(QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR) +
-                                QStringLiteral("/snow_shot_%1.qm").arg(locale)),
-                "load notice translation");
-        QCoreApplication::installTranslator(&translator);
-        QEvent languageChange(QEvent::LanguageChange);
-        QCoreApplication::sendEvent(&notice, &languageChange);
-        require(child<QPushButton>(notice, "downloadFromWebsite")->text() ==
-                        translator.translate("UpdateNotice", "Download from website") &&
-                    notice.text().contains(QStringLiteral("2.0.0")),
-                "notice retranslates and preserves version");
-        QCoreApplication::removeTranslator(&translator);
-    }
-    child<QPushButton>(notice, "downloadFromWebsite")->click();
-    require(opened == QList<QUrl>{QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
-            "notice opens website only on action");
 #else
     require(backend.selectValue(binding).toString() == QStringLiteral("download"),
             "automatic download is the default update policy");
@@ -653,6 +614,13 @@ void traySettingsAndFunctionNavigation() {
                 card->currentLocation().sectionId.isEmpty() &&
                 sidebar->currentRoute() == QStringLiteral("/about"),
             "about navigation must show a hidden window and leave the settings pages");
+    window.hide();
+    window.showPinToScreenManagement();
+    flushEvents();
+    require(window.isVisible() &&
+                card->currentLocation().pageId == QStringLiteral("pin-to-screen-management") &&
+                sidebar->currentRoute() == QStringLiteral("/pin-to-screen-management"),
+            "pinned management hotkey route must show its page from a hidden window");
     window.hide();
 }
 

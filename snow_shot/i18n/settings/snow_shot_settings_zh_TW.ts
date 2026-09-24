@@ -534,7 +534,7 @@
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
             <source>Drag tools here to hide them from the pinned toolbar.</source>
-            <translation>將工具拖曳到此處，即可在釘選工具列中隱藏。</translation>
+            <translation>將工具拖曳到此處，即可在固定到螢幕工具列中隱藏。</translation>
         </message>
         <message>
             <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
@@ -542,7 +542,7 @@
         </message>
         <message>
             <source>Hidden pinned toolbar tools</source>
-            <translation>隱藏的釘選工具列工具</translation>
+            <translation>隱藏的固定到螢幕工具列工具</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -554,7 +554,7 @@
         </message>
         <message>
             <source>Pin to Screen toolbar preview</source>
-            <translation>釘選工具列預覽</translation>
+            <translation>固定到螢幕工具列預覽</translation>
         </message>
     </context>
     <context>
@@ -593,7 +593,7 @@
         </message>
         <message>
             <source>Pin to screen</source>
-            <translation>釘選到螢幕</translation>
+            <translation>固定到螢幕</translation>
         </message>
         <message>
             <source>Quick save</source>
@@ -754,6 +754,10 @@
             <translation>期限</translation>
         </message>
         <message>
+            <source>All closed pinned windows will be removed; retained windows are protected</source>
+            <translation>將移除所有已關閉的固定到螢幕視窗；保留中的視窗不受影響</translation>
+        </message>
+        <message>
             <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
             <translation>目前所有應用程式設定都將被壓縮檔中的值取代。部分變更將在應用程式重新啟動後生效。</translation>
         </message>
@@ -894,6 +898,10 @@
             <translation>瀏覽</translation>
         </message>
         <message>
+            <source>Browse, restore, and delete pinned windows</source>
+            <translation>瀏覽、還原和刪除固定到螢幕視窗</translation>
+        </message>
+        <message>
             <source>Cached history thumbnails will be removed and rebuilt on demand</source>
             <translation>已快取的歷史縮圖將被刪除，並在需要時重新產生</translation>
         </message>
@@ -975,7 +983,7 @@
         </message>
         <message>
             <source>Choose the action for double-clicking a draggable area of a pinned screenshot</source>
-            <translation>選擇按兩下釘選截圖可拖曳區域時執行的操作</translation>
+            <translation>選擇按兩下固定到螢幕的截圖可拖曳區域時執行的操作</translation>
         </message>
         <message>
             <source>Choose the action for double-clicking while moving or drawing in a screenshot</source>
@@ -983,7 +991,7 @@
         </message>
         <message>
             <source>Choose the action for middle-clicking a draggable area of a pinned screenshot</source>
-            <translation>選擇在釘選截圖可拖曳區域按一下滑鼠中鍵時執行的操作</translation>
+            <translation>選擇在固定到螢幕的截圖可拖曳區域按一下滑鼠中鍵時執行的操作</translation>
         </message>
         <message>
             <source>Choose the action for middle-clicking while moving or drawing in a screenshot</source>
@@ -992,6 +1000,10 @@
         <message>
             <source>Choose the bundled icon used in the system tray</source>
             <translation>選擇系統匣使用的內建圖示</translation>
+        </message>
+        <message>
+            <source>Choose the compression effort used for display images saved in closed pinned windows</source>
+            <translation>選擇儲存已關閉的固定到螢幕內容時使用的影像壓縮等級</translation>
         </message>
         <message>
             <source>Choose the compression effort used for display images saved in screenshot history</source>
@@ -1007,7 +1019,7 @@
         </message>
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
-            <translation>選擇縮放釘選截圖時使用的固定點</translation>
+            <translation>選擇縮放固定到螢幕的截圖時使用的固定點</translation>
         </message>
         <message>
             <source>Choose the format used for automatically saved screenshot files</source>
@@ -1031,7 +1043,7 @@
         </message>
         <message>
             <source>Choose the size of the screenshot, pinned, and recording toolbars</source>
-            <translation>選擇截圖、釘選與螢幕錄製工具列大小</translation>
+            <translation>選擇截圖、固定到螢幕與螢幕錄製工具列大小</translation>
         </message>
         <message>
             <source>Choose the video encoder</source>
@@ -1051,7 +1063,7 @@
         </message>
         <message>
             <source>Choose when recognized text can be selected on pinned screenshots.</source>
-            <translation>選擇何時可以在釘選截圖上選取辨識出的文字。</translation>
+            <translation>選擇何時可以在固定到螢幕的截圖上選取辨識出的文字。</translation>
         </message>
         <message>
             <source>Choose where images are written for automatic save and copy-file actions</source>
@@ -1072,6 +1084,14 @@
         <message>
             <source>Clear cache</source>
             <translation>清除快取</translation>
+        </message>
+        <message>
+            <source>Clear closed records</source>
+            <translation>清除已關閉記錄</translation>
+        </message>
+        <message>
+            <source>Clear closed records?</source>
+            <translation>清除已關閉記錄？</translation>
         </message>
         <message>
             <source>Clear history</source>
@@ -1112,6 +1132,10 @@
         <message>
             <source>Close window</source>
             <translation>關閉視窗</translation>
+        </message>
+        <message>
+            <source>Closed window count</source>
+            <translation>已關閉視窗數量</translation>
         </message>
         <message>
             <source>Color mode</source>
@@ -1175,7 +1199,7 @@
         </message>
         <message>
             <source>Configure the screenshot, pinned, and recording toolbars</source>
-            <translation>設定截圖、釘選與螢幕錄製工具列</translation>
+            <translation>設定截圖、固定到螢幕與螢幕錄製工具列</translation>
         </message>
         <message>
             <source>Confirm before exiting screenshot via shortcut</source>
@@ -1267,7 +1291,7 @@
         </message>
         <message>
             <source>Custom pinned toolbar</source>
-            <translation>自訂釘選工具列</translation>
+            <translation>自訂固定到螢幕工具列</translation>
         </message>
         <message>
             <source>Custom screenshot toolbar</source>
@@ -1302,6 +1326,14 @@
             <translation>刪除</translation>
         </message>
         <message>
+            <source>Delete closed windows</source>
+            <translation>刪除已關閉視窗</translation>
+        </message>
+        <message>
+            <source>Delete closed windows after they reach this age</source>
+            <translation>刪除關閉時間超過此期限的視窗</translation>
+        </message>
+        <message>
             <source>Delete files</source>
             <translation>刪除檔案</translation>
         </message>
@@ -1320,6 +1352,10 @@
         <message>
             <source>Delete temporary recording files?</source>
             <translation>刪除螢幕錄製暫存檔案？</translation>
+        </message>
+        <message>
+            <source>Destroy</source>
+            <translation>銷毀</translation>
         </message>
         <message>
             <source>DirectML</source>
@@ -1375,7 +1411,7 @@
         </message>
         <message>
             <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
-            <translation>拖曳釘選工具列中的工具以調整順序，或將其堆疊在同一工具列位置。</translation>
+            <translation>拖曳固定到螢幕工具列中的工具以調整順序，或將其堆疊在同一工具列位置。</translation>
         </message>
         <message>
             <source>Drag screenshot tools to reorder them or stack them in the same toolbar position.</source>
@@ -1503,7 +1539,7 @@
         </message>
         <message>
             <source>Fixed screenshot</source>
-            <translation>固定截圖</translation>
+            <translation>固定到螢幕的截圖</translation>
         </message>
         <message>
             <source>Focused window</source>
@@ -1694,6 +1730,10 @@
             <translation>跳轉至翻譯頁面</translation>
         </message>
         <message>
+            <source>Keep closed windows available for restoration; disabling does not delete existing records</source>
+            <translation>保留已關閉視窗以便還原；停用不會刪除現有記錄</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>永久保留記錄</translation>
         </message>
@@ -1744,6 +1784,10 @@
         <message>
             <source>Light</source>
             <translation>淺色</translation>
+        </message>
+        <message>
+            <source>Limit how much disk space closed pinned windows can use</source>
+            <translation>限制已關閉的固定到螢幕視窗佔用的磁碟空間</translation>
         </message>
         <message>
             <source>Limit how much disk space screenshot history can use</source>
@@ -1942,6 +1986,10 @@
             <translation>在獨立視窗中翻譯選取的文字。</translation>
         </message>
         <message>
+            <source>Open the Pin to Screen Management page in the main window</source>
+            <translation>在主視窗開啟固定到螢幕管理頁面</translation>
+        </message>
+        <message>
             <source>Open the folder where recorded videos are saved</source>
             <translation>開啟儲存錄製影片的資料夾</translation>
         </message>
@@ -2006,6 +2054,10 @@
             <translation>永久移除所有已儲存的截圖</translation>
         </message>
         <message>
+            <source>Permanently remove closed pinned windows</source>
+            <translation>永久移除已關閉的固定到螢幕視窗</translation>
+        </message>
+        <message>
             <source>Permission status and access</source>
             <translation>權限狀態與授權</translation>
         </message>
@@ -2015,23 +2067,23 @@
         </message>
         <message>
             <source>Pin Selected Files to Screen</source>
-            <translation>釘選選取的檔案到螢幕</translation>
+            <translation>將選取的檔案固定到螢幕</translation>
         </message>
         <message>
             <source>Pin clipboard</source>
-            <translation>釘選剪貼簿</translation>
+            <translation>將剪貼簿內容固定到螢幕</translation>
         </message>
         <message>
             <source>Pin clipboard content to screen</source>
-            <translation>固定剪貼簿內容到螢幕</translation>
+            <translation>將剪貼簿內容固定到螢幕</translation>
         </message>
         <message>
             <source>Pin images, image files, formatted text, or HTML from the clipboard to the screen</source>
-            <translation>釘選剪貼簿中的影像、影像檔案、格式化文字或 HTML 到螢幕</translation>
+            <translation>將剪貼簿中的影像、影像檔案、格式化文字或 HTML 固定到螢幕</translation>
         </message>
         <message>
             <source>Pin selected image files from File Explorer or the desktop to the screen</source>
-            <translation>釘選檔案總管或桌面中選取的影像檔案到螢幕</translation>
+            <translation>將檔案總管或桌面中選取的影像檔案固定到螢幕</translation>
         </message>
         <message>
             <source>Pin selected image files from Finder or the desktop to the screen</source>
@@ -2039,47 +2091,51 @@
         </message>
         <message>
             <source>Pin selection</source>
-            <translation>釘選選取範圍</translation>
+            <translation>將選取範圍固定到螢幕</translation>
         </message>
         <message>
             <source>Pin the confirmed screenshot selection to the screen</source>
-            <translation>釘選確認的截圖選取範圍到螢幕</translation>
+            <translation>將確認的截圖選取範圍固定到螢幕</translation>
         </message>
         <message>
             <source>Pin to Screen</source>
-            <translation>釘選到螢幕</translation>
+            <translation>固定到螢幕</translation>
+        </message>
+        <message>
+            <source>Pin to Screen Management</source>
+            <translation>固定到螢幕管理</translation>
         </message>
         <message>
             <source>Pin to Screen toolbar settings</source>
-            <translation>釘選工具列設定</translation>
+            <translation>固定到螢幕工具列設定</translation>
         </message>
         <message>
             <source>Pin to screen</source>
-            <translation>釘選到螢幕</translation>
+            <translation>固定到螢幕</translation>
         </message>
         <message>
             <source>Pin to screen shortcut</source>
-            <translation>釘選到螢幕快速鍵</translation>
+            <translation>固定到螢幕快速鍵</translation>
         </message>
         <message>
             <source>Pin to screen shortcuts and actions</source>
-            <translation>釘選到螢幕快速鍵和操作</translation>
+            <translation>固定到螢幕快速鍵和操作</translation>
         </message>
         <message>
             <source>Pinned screenshot window appearance settings</source>
-            <translation>釘選截圖視窗外觀設定</translation>
+            <translation>固定到螢幕的截圖視窗外觀設定</translation>
         </message>
         <message>
             <source>Pinned toolbar</source>
-            <translation>釘選工具列</translation>
+            <translation>固定到螢幕工具列</translation>
         </message>
         <message>
             <source>Pinned window active border</source>
-            <translation>釘選視窗作用中邊框</translation>
+            <translation>固定到螢幕視窗作用中邊框</translation>
         </message>
         <message>
             <source>Pinned window border</source>
-            <translation>釘選視窗邊框</translation>
+            <translation>固定到螢幕視窗邊框</translation>
         </message>
         <message>
             <source>Play a shutter sound when capturing the focused window or current display.</source>
@@ -2143,7 +2199,7 @@
         </message>
         <message>
             <source>Recognize text automatically when a pinned screenshot is created</source>
-            <translation>建立釘選截圖時自動辨識文字</translation>
+            <translation>建立固定到螢幕的截圖時自動辨識文字</translation>
         </message>
         <message>
             <source>Recognize text in the confirmed screenshot selection</source>
@@ -2198,12 +2254,20 @@
             <translation>刪除已快取的截圖歷史縮圖</translation>
         </message>
         <message>
+            <source>Remove closed windows</source>
+            <translation>移除已關閉視窗</translation>
+        </message>
+        <message>
             <source>Remove leftover recording working files that are no longer needed</source>
             <translation>刪除不再需要的螢幕錄製遺留工作檔案</translation>
         </message>
         <message>
             <source>Remove screenshots</source>
             <translation>移除截圖</translation>
+        </message>
+        <message>
+            <source>Remove the oldest closed windows when this limit is exceeded</source>
+            <translation>超過限制時移除最早關閉的視窗</translation>
         </message>
         <message>
             <source>Remove the oldest screenshots when this limit is exceeded</source>
@@ -2242,6 +2306,10 @@
             <translation>以系統管理員身分重新啟動</translation>
         </message>
         <message>
+            <source>Restore Last Closed Window</source>
+            <translation>還原上次關閉的視窗</translation>
+        </message>
+        <message>
             <source>Restore application settings from a configuration archive</source>
             <translation>從設定壓縮檔還原應用程式設定</translation>
         </message>
@@ -2252,6 +2320,18 @@
         <message>
             <source>Restore settings</source>
             <translation>還原設定</translation>
+        </message>
+        <message>
+            <source>Restore the most recently closed window in the current group</source>
+            <translation>還原目前群組中最近關閉的視窗</translation>
+        </message>
+        <message>
+            <source>Retain closed windows</source>
+            <translation>保留已關閉視窗</translation>
+        </message>
+        <message>
+            <source>Retention limits apply only to closed windows; retained windows are always protected</source>
+            <translation>儲存限制僅適用於已關閉視窗；保留中的視窗始終受到保護</translation>
         </message>
         <message>
             <source>Retention period</source>
@@ -2455,11 +2535,11 @@
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
-            <translation>設定釘選截圖的邊框色彩</translation>
+            <translation>設定已固定到螢幕的截圖邊框色彩</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots while they have focus</source>
-            <translation>設定釘選截圖取得焦點時的邊框色彩</translation>
+            <translation>設定固定到螢幕的截圖取得焦點時的邊框色彩</translation>
         </message>
         <message>
             <source>Set the border color of the screenshot selection</source>
@@ -2499,7 +2579,7 @@
         </message>
         <message>
             <source>Set up to two keys for this pinned window action</source>
-            <translation>為此釘選視窗操作設定最多兩個快速鍵</translation>
+            <translation>為此固定到螢幕視窗操作設定最多兩個快速鍵</translation>
         </message>
         <message>
             <source>Set up to two keys for this recording action</source>
@@ -2531,7 +2611,7 @@
         </message>
         <message>
             <source>Shortcut keys for pinned-to-screen windows</source>
-            <translation>釘選視窗的快速鍵</translation>
+            <translation>固定到螢幕視窗的快速鍵</translation>
         </message>
         <message>
             <source>Shortcut keys for recognition and screenshot actions</source>
@@ -3160,11 +3240,11 @@ Unavailable: %2</source>
         </message>
         <message>
             <source>Pinned windows</source>
-            <translation>釘選視窗</translation>
+            <translation>固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Pinned windows disk usage</source>
-            <translation>釘選視窗磁碟用量</translation>
+            <translation>固定到螢幕視窗磁碟用量</translation>
         </message>
         <message>
             <source>Portable</source>

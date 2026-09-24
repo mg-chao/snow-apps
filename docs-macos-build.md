@@ -353,7 +353,28 @@ Apple Silicon OCR uses native CPU inference with all seven existing V4/V5/V6
 models. The ARM64 app bundles its worker, ONNX Runtime, and Small V6 model;
 other models download on demand into application storage. No OCR runtime code
 is downloaded on macOS. Intel OCR qualification is outside this delivery.
-The Windows updater/installer, DirectML, and Crashpad packaging remain Windows-only.
+The Windows updater/installer and DirectML remain Windows-only.
+
+macOS diagnostics use the shared rotating JSON log service and a bundled Crashpad
+handler. The handler captures native faults, stack overflow, fatal Qt errors,
+C++ termination, and Rust panics. The OCR worker inherits the Mach exception
+handler and adds its own role, session, and operation breadcrumbs. Reports stay
+local; automatic uploads are disabled. Daily log export includes crash summaries,
+while binary dumps remain in the `crashes` database under the selected log directory.
+Permission transitions and display geometry/scaling changes are recorded without
+hardware serial numbers or captured content.
+Fatal/terminate/panic paths also write bounded emergency evidence independently
+of the asynchronous log queue. Forced termination and power loss may leave only
+the prior logs and an unexpected-session-termination marker.
+
+Packaging builds `snow-shot-diagnostics-symbols`, placing UUID-matched application
+and OCR worker dSYMs under `build/<preset>/symbols/`. Archive these beside each
+release; they are deliberately outside the shipped app. The same target can be
+built manually for development builds. The handler is deployed and signed with
+the other nested executables before the outer bundle is sealed.
+Run the focused diagnostics checks with
+`ctest --test-dir build/<debug-preset> -R '^snow-shot-diagnostics(-crash)?-tests$' --output-on-failure`.
+The crash fixtures use temporary storage and intentionally crash isolated children.
 The standalone `bootstrap-macos-media.sh` and `build-macos-media.sh` workflows
 remain available for media harness development.
 

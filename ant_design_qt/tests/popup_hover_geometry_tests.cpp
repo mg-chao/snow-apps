@@ -88,6 +88,14 @@ void verifyGeometryAndOwnership(QScreen* screen) {
   }
   require(!visible.containsGlobalPos(trigger.mapToGlobal(QPoint(150, 20))),
           "a point outside the trigger must stay outside");
+  trigger.setMask(QRegion(QRect(0, 0, 30, 40)));
+  require(!widgetContainsGlobalPos(&trigger, trigger.mapToGlobal(QPoint(60, 20))),
+          "masked-out trigger pixels must not accept hover");
+  trigger.clearMask();
+  panel.setMask(QRegion(QRect(0, 0, 50, 100)));
+  require(!widgetContainsGlobalPos(&trigger, trigger.mapToGlobal(QPoint(60, 20))),
+          "masked-out ancestor pixels must not accept hover");
+  panel.clearMask();
   const auto placement = visible.onScreen();
   require(placement.screen, "placement must retain its selected screen");
   // A real window on the selected screen must see the same physical anchor size.
@@ -119,6 +127,11 @@ void verifyGeometryAndOwnership(QScreen* screen) {
   setPopupInteractionHostOpen(&parent, true);
   setPopupInteractionHostOpen(&child, true);
   require(parent.open && child.open, "opening a nested popup must preserve its parent owner");
+  require(popupDescendantContainsPointer(&parent, &nestedAnchor,
+                                         nestedAnchor.mapToGlobal(QPoint(5, 5))),
+          "a parent hover session must include an interactive nested popup owner");
+  require(!popupDescendantContainsPointer(&child, &trigger, trigger.mapToGlobal(QPoint(5, 5))),
+          "a child's hover region must not include its parent's trigger");
   const QPoint pressLocal(500, 50);
   QMouseEvent press(QEvent::MouseButtonPress, pressLocal, window.mapToGlobal(pressLocal),
                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
@@ -280,6 +293,16 @@ int main(int argc, char** argv) {
           "fixture must reproduce disjoint global rectangles across different display scales");
 
   for (auto* popup : {&mainPopup, &subPopup, &mainPopup}) {
+    // Travel around the previously opened surface before returning to a trigger.
+    // A popup above the sub-panel can cover the main trigger: delivering Enter
+    // directly to that covered button would not represent Qt pointer dispatch.
+    const QPoint outside(20, 120);
+    QCursor::setPos(window.mapToGlobal(outside));
+    QMouseEvent move(QEvent::MouseMove, outside, window.mapToGlobal(outside), Qt::NoButton,
+                     Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&window, &move);
+    require(QTest::qWaitFor([&] { return !mainPopup.isVisible() && !subPopup.isVisible(); }, 1000),
+            "leaving both popup trees must close the previous hover session");
     auto* trigger = popup->sourceWidget();
     const QPoint center = trigger->rect().center();
     const QPoint global = trigger->mapToGlobal(center);

@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 18;
+constexpr std::size_t ACTION_COUNT = 20;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -37,10 +37,12 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::ScreenRecordCopy,
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
+    GlobalShortcutAction::OpenPinToScreenManagement,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
     GlobalShortcutAction::PinSelectedFiles,
+    GlobalShortcutAction::RestoreLastClosedWindows,
     GlobalShortcutAction::ToggleGlobalHotkeys,
     GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
 };
@@ -146,12 +148,16 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.openScreenRecordingFolder();
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.openCaptureHistory();
+    case GlobalShortcutAction::OpenPinToScreenManagement:
+        return settings.openPinToScreenManagement();
     case GlobalShortcutAction::OpenSettings:
         return settings.openSettings();
     case GlobalShortcutAction::PinClipboardContent:
         return settings.pinClipboardContent();
     case GlobalShortcutAction::PinSelectedFiles:
         return settings.pinSelectedFiles();
+    case GlobalShortcutAction::RestoreLastClosedWindows:
+        return settings.restoreLastClosedWindows();
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.translateSelectedText();
     case GlobalShortcutAction::ToggleGlobalHotkeys:
@@ -189,12 +195,16 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setOpenScreenRecordingFolder(bindings);
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.setOpenCaptureHistory(bindings);
+    case GlobalShortcutAction::OpenPinToScreenManagement:
+        return settings.setOpenPinToScreenManagement(bindings);
     case GlobalShortcutAction::OpenSettings:
         return settings.setOpenSettings(bindings);
     case GlobalShortcutAction::PinClipboardContent:
         return settings.setPinClipboardContent(bindings);
     case GlobalShortcutAction::PinSelectedFiles:
         return settings.setPinSelectedFiles(bindings);
+    case GlobalShortcutAction::RestoreLastClosedWindows:
+        return settings.setRestoreLastClosedWindows(bindings);
     case GlobalShortcutAction::TranslateSelectedText:
         return settings.setTranslateSelectedText(bindings);
     case GlobalShortcutAction::ToggleGlobalHotkeys:
