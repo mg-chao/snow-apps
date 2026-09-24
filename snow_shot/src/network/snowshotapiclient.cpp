@@ -491,7 +491,7 @@ QString SnowShotApiClient::modelFingerprint(const QString& id) const {
 void SnowShotApiClient::rebuildAvailableModels() {
     m_availableModels = m_cachedChatModels;
     for (const auto& model : m_customModels) {
-        m_availableModels.push_back({model.selectionId(), model.name, false,
+        m_availableModels.push_back({model.selectionId(), model.name, model.supportsReasoning,
                                      QStringLiteral("default"), model.supportsVision,
                                      SnowShotModelOrigin::Custom});
     }
@@ -528,7 +528,8 @@ void SnowShotApiClient::setCustomModels(const snow_shot::CustomAiModels& models)
         const QString id = old.selectionId();
         const auto* current = customModel(id);
         const bool changed = current == nullptr || old.baseUrl != current->baseUrl ||
-                             old.apiKey != current->apiKey || old.model != current->model;
+                             old.apiKey != current->apiKey || old.model != current->model ||
+                             old.supportsReasoning != current->supportsReasoning;
         const bool vision = changed || (old.supportsVision && !current->supportsVision);
         if (!changed && !vision) {
             continue;
@@ -681,7 +682,7 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     if (custom != nullptr) {
         body.remove(QStringLiteral("temperature"));
         body.remove(QStringLiteral("max_tokens"));
-        body.remove(QStringLiteral("enable_thinking"));
+        body.insert(QStringLiteral("enable_thinking"), custom->supportsReasoning);
         body.insert(QStringLiteral("stream"), true);
     }
     const RequestToken token = ++m_nextToken;
@@ -747,13 +748,14 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
         effectiveInput.model = custom->model;
     }
     QThreadPool::globalInstance()->start(
-        [guard, token, effectiveInput, isCustom = custom != nullptr]() {
+        [guard, token, effectiveInput, isCustom = custom != nullptr,
+         supportsReasoning = custom != nullptr && custom->supportsReasoning]() {
             QByteArray body = imageConversionBody(effectiveInput);
             if (isCustom && !body.isEmpty()) {
                 auto object = QJsonDocument::fromJson(body).object();
                 object.remove(QStringLiteral("temperature"));
                 object.remove(QStringLiteral("max_tokens"));
-                object.remove(QStringLiteral("enable_thinking"));
+                object.insert(QStringLiteral("enable_thinking"), supportsReasoning);
                 body = QJsonDocument(object).toJson(QJsonDocument::Compact);
             }
             QMetaObject::invokeMethod(

@@ -222,6 +222,10 @@
             <translation>Enter the base URL without /chat/completions.</translation>
         </message>
         <message>
+            <source>Explicitly enable or disable reasoning in model requests.</source>
+            <translation>Explicitly enable or disable reasoning in model requests.</translation>
+        </message>
+        <message>
             <source>Model Name</source>
             <translation>Model Name</translation>
         </message>
@@ -236,6 +240,10 @@
         <message>
             <source>Optional for servers that do not require authentication.</source>
             <translation>Optional for servers that do not require authentication.</translation>
+        </message>
+        <message>
+            <source>Reasoning Support</source>
+            <translation>Reasoning Support</translation>
         </message>
         <message>
             <source>Save</source>

@@ -96,6 +96,15 @@ void storageContracts() {
     QTemporaryDir directory;
     const auto path = directory.filePath(QStringLiteral("config.json"));
     auto model = example();
+    require(!model.supportsReasoning, "custom models disable reasoning by default");
+    auto legacy = customAiModelsToJson({model}).first().toObject();
+    legacy.remove(QStringLiteral("supports_reasoning"));
+    bool valid = false;
+    require(customAiModelsFromJson(QJsonArray{legacy}, &valid) == CustomAiModels{model} && valid,
+            "existing models without a reasoning setting default to disabled");
+    legacy.insert(QStringLiteral("supports_reasoning"), QStringLiteral("yes"));
+    require(!storage::ConfigurationSchema::normalize(key, QJsonArray{legacy}).valid,
+            "reasoning setting requires a boolean");
     {
         storage::ConfigurationStore store(path, true, true, 8000);
         require(store.value(key).toArray().isEmpty(), "custom models default to empty");
@@ -118,6 +127,14 @@ void storageContracts() {
         storage::ConfigurationStore store(path, true, true, 8000);
         require(customAiModelsFromJson(store.value(key)) == CustomAiModels{model},
                 "models survive reopening");
+        model.supportsReasoning = true;
+        require(store.setValue(key, customAiModelsToJson({model})) && store.flushNow().success,
+                "reasoning support saves");
+    }
+    {
+        storage::ConfigurationStore store(path, true, true, 8000);
+        require(customAiModelsFromJson(store.value(key)) == CustomAiModels{model},
+                "reasoning support survives reopening");
     }
     {
         storage::ConfigurationStore store(path, true, false, 8000);
@@ -231,7 +248,11 @@ void widgetContracts(QApplication& application) {
                     position(key).y() > position(name).y(),
                 "editor arranges fields in two columns in reading order");
         const auto fields = modal->contentWidget()->findChildren<AdFormItem*>();
-        require(fields.size() == 5, "editor has five labeled fields");
+        require(fields.size() == 6, "editor has six labeled fields");
+        auto* reasoning =
+            modal->contentWidget()->findChild<AdSwitch*>(QStringLiteral("reasoningSupport"));
+        require(reasoning != nullptr && !reasoning->isChecked(),
+                "reasoning support starts disabled");
         for (auto* field : fields) {
             auto* tooltip = field->findChild<QLabel*>(QStringLiteral("ad-form-item-label-tooltip"));
             require(!field->tooltipText().isEmpty() && field->extraText().isEmpty() &&
@@ -363,6 +384,7 @@ void widgetContracts(QApplication& application) {
         modal->contentWidget()
             ->findChild<AdSwitch*>(QStringLiteral("visionSupport"))
             ->setChecked(true);
+        reasoning->setChecked(true);
         modal->acceptButton()->click();
         flush();
         require(session.customAiModels().size() == 1, "create persists one model");
@@ -397,15 +419,15 @@ void widgetContracts(QApplication& application) {
                     "model actions are small labeled accessible icon buttons");
         }
         require(original.apiKey == QStringLiteral("portable-secret") && original.supportsVision &&
-                    original.model == QStringLiteral("local-id"),
-                "key and vision persist");
+                    original.supportsReasoning && original.model == QStringLiteral("local-id"),
+                "key, vision, and reasoning persist");
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
         flush();
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
         flush();
         const auto copied = session.customAiModels();
         require(copied.size() == 3 && copied[1].id != original.id &&
-                    copied[1].apiKey == original.apiKey &&
+                    copied[1].apiKey == original.apiKey && copied[1].supportsReasoning &&
                     copied[1].name == QStringLiteral("Personal model (Copy)") &&
                     copied[2].name == QStringLiteral("Personal model (Copy 2)"),
                 "copy duplicates immediately with independent identity and name");
@@ -438,10 +460,16 @@ void widgetContracts(QApplication& application) {
         modal->contentWidget()
             ->findChild<AdSwitch*>(QStringLiteral("visionSupport"))
             ->setChecked(false);
+        reasoning =
+            modal->contentWidget()->findChild<AdSwitch*>(QStringLiteral("reasoningSupport"));
+        require(reasoning != nullptr && reasoning->isChecked(),
+                "editor restores reasoning support");
+        reasoning->setChecked(false);
         modal->acceptButton()->click();
         flush();
         require(session.customAiModels().first().id == original.id &&
-                    session.customAiModels().first().name == QStringLiteral("Renamed model"),
+                    session.customAiModels().first().name == QStringLiteral("Renamed model") &&
+                    !session.customAiModels().first().supportsReasoning,
                 "rename preserves identity");
         require(widget->findChild<QWidget*>(QStringLiteral("customAiModelRow:") + original.id)
                         ->findChild<AdTag*>() == nullptr,

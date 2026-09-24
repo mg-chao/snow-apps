@@ -20,6 +20,7 @@ struct CustomAiModelConfiguration {
     QString apiKey;
     QString model;
     bool supportsVision = false;
+    bool supportsReasoning = false;
 
     [[nodiscard]] QString selectionId() const {
         return QStringLiteral("custom:") + id;
@@ -71,14 +72,15 @@ inline QJsonArray customAiModelsToJson(const CustomAiModels& models) {
                                   {QStringLiteral("base_url"), model.baseUrl},
                                   {QStringLiteral("api_key"), model.apiKey},
                                   {QStringLiteral("model"), model.model},
-                                  {QStringLiteral("supports_vision"), model.supportsVision}});
+                                  {QStringLiteral("supports_vision"), model.supportsVision},
+                                  {QStringLiteral("supports_reasoning"), model.supportsReasoning}});
     }
     return result;
 }
 
 inline QString customAiModelFingerprint(const CustomAiModelConfiguration& model) {
-    const QJsonArray connection{model.id, model.baseUrl, model.apiKey, model.model,
-                                model.supportsVision};
+    const QJsonArray connection{model.id,    model.baseUrl,        model.apiKey,
+                                model.model, model.supportsVision, model.supportsReasoning};
     return QString::fromLatin1(
         QCryptographicHash::hash(QJsonDocument(connection).toJson(QJsonDocument::Compact),
                                  QCryptographicHash::Sha256)
@@ -98,13 +100,15 @@ inline CustomAiModels customAiModelsFromJson(const QJsonValue& value, bool* vali
             typesValid = typesValid && object.value(QLatin1StringView(key)).isString();
         }
         typesValid = typesValid && object.value(QStringLiteral("supports_vision")).isBool();
-        auto model =
-            normalizeCustomAiModel({object.value(QStringLiteral("id")).toString(),
-                                    object.value(QStringLiteral("name")).toString(),
-                                    object.value(QStringLiteral("base_url")).toString(),
-                                    object.value(QStringLiteral("api_key")).toString(),
-                                    object.value(QStringLiteral("model")).toString(),
-                                    object.value(QStringLiteral("supports_vision")).toBool()});
+        const auto reasoning = object.value(QStringLiteral("supports_reasoning"));
+        typesValid = typesValid && (reasoning.isUndefined() || reasoning.isBool());
+        auto model = normalizeCustomAiModel(
+            {object.value(QStringLiteral("id")).toString(),
+             object.value(QStringLiteral("name")).toString(),
+             object.value(QStringLiteral("base_url")).toString(),
+             object.value(QStringLiteral("api_key")).toString(),
+             object.value(QStringLiteral("model")).toString(),
+             object.value(QStringLiteral("supports_vision")).toBool(), reasoning.toBool(false)});
         if (!typesValid || !validCustomAiModel(model) || ids.contains(model.id) ||
             names.contains(model.name.toCaseFolded())) {
             allValid = false;

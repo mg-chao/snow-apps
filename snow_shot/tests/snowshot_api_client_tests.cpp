@@ -726,14 +726,15 @@ void customModelsUseIndependentOpenAiConnections() {
     client.setCustomModels({model});
     require(client.cachedChatModels().size() == 1 &&
                 client.cachedChatModels().first().supportsTranslation() &&
-                client.cachedChatModels().first().supportsVision,
+                client.cachedChatModels().first().supportsVision &&
+                !client.cachedChatModels().first().supportsReasoning,
             "custom vision models support both workflows");
     require(!client.hasBuiltInModels(QStringLiteral("en_US")),
             "custom models do not populate builtin cache");
     require(client.fallbackModel(false) == model.selectionId() &&
                 client.fallbackModel(true) == model.selectionId(),
             "custom fallback works without builtin catalog");
-    for (int variant = 0; variant < 3; ++variant) {
+    for (int variant = 0; variant < 5; ++variant) {
         bool done = false;
         QString text;
         SnowShotTranslationResult result;
@@ -743,12 +744,13 @@ void customModelsUseIndependentOpenAiConnections() {
             done = true;
             completion.quit();
         };
-        if (variant == 2) {
-            model.apiKey.clear();
-            client.setCustomModels({model});
-        }
+        model.apiKey = variant == 2 ? QString() : QStringLiteral("test-secret");
+        model.supportsReasoning = variant >= 3;
+        client.setCustomModels({model});
+        require(client.cachedChatModels().first().supportsReasoning == model.supportsReasoning,
+                "custom model catalog reflects reasoning support");
         SnowShotApiClient::RequestToken token = 0;
-        if (variant == 1) {
+        if (variant == 1 || variant == 4) {
             QImage image(16, 16, QImage::Format_RGBA8888);
             image.fill(Qt::white);
             token = client.streamImageConversion(
@@ -782,14 +784,16 @@ void customModelsUseIndependentOpenAiConnections() {
         require(json.value(QStringLiteral("model")) == model.model &&
                     json.value(QStringLiteral("stream")).toBool(),
                 "wire request uses provider model ID and streaming");
-        require(!json.contains(QStringLiteral("enable_thinking")) &&
+        require(json.value(QStringLiteral("enable_thinking")).isBool() &&
+                    json.value(QStringLiteral("enable_thinking")).toBool() ==
+                        model.supportsReasoning &&
                     !json.contains(QStringLiteral("temperature")) &&
                     !json.contains(QStringLiteral("max_tokens")),
-                "custom requests omit provider-specific optional parameters");
+                "custom requests explicitly set reasoning and omit optional limits");
         require(!request.contains(model.selectionId().toUtf8()) &&
                     !request.contains("Display Name"),
                 "local identity is not sent to provider");
-        require(variant != 1 || request.contains("data:image/webp;base64,"),
+        require((variant != 1 && variant != 4) || request.contains("data:image/webp;base64,"),
                 "vision request includes image content");
         QObject::disconnect(&server, nullptr, nullptr, nullptr);
     }
@@ -905,6 +909,12 @@ void customModelsUseIndependentOpenAiConnections() {
     client.setCustomModels({model});
     require(invalidations == 1 && client.modelFingerprint(model.selectionId()) != fingerprint,
             "key changes invalidate cached identity");
+    const auto reasoningFingerprint = client.modelFingerprint(model.selectionId());
+    model.supportsReasoning = false;
+    client.setCustomModels({model});
+    require(invalidations == 2 &&
+                client.modelFingerprint(model.selectionId()) != reasoningFingerprint,
+            "reasoning changes invalidate cached results");
     model.supportsVision = false;
     client.setCustomModels({model});
     QImage image(4, 4, QImage::Format_RGBA8888);

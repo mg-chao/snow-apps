@@ -222,6 +222,10 @@
             <translation>請輸入不含 /chat/completions 的基底 URL。</translation>
         </message>
         <message>
+            <source>Explicitly enable or disable reasoning in model requests.</source>
+            <translation>在模型請求中明確啟用或停用推理。</translation>
+        </message>
+        <message>
             <source>Model Name</source>
             <translation>模型名稱</translation>
         </message>
@@ -236,6 +240,10 @@
         <message>
             <source>Optional for servers that do not require authentication.</source>
             <translation>不需要身分驗證的伺服器可留空。</translation>
+        </message>
+        <message>
+            <source>Reasoning Support</source>
+            <translation>推理支援</translation>
         </message>
         <message>
             <source>Save</source>
