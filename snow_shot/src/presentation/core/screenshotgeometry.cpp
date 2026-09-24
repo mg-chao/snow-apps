@@ -1,13 +1,11 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 
+#include "snow_shot/platform/windows/monitorgeometry.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
 
 #include <QGuiApplication>
 #include <QScreen>
-#ifdef Q_OS_WIN
-#include <qt_windows.h>
-#endif
 #ifdef Q_OS_MACOS
 #include <QtGui/qscreen_platform.h>
 #import <AppKit/AppKit.h>
@@ -855,13 +853,11 @@ CapturedDisplayModel ScreenshotGeometryMapper::preCaptureDisplayModel(QScreen& s
 
 QRect ScreenshotGeometryMapper::physicalRectForScreen(const QScreen& screen) {
 #ifdef Q_OS_WIN
-    DEVMODEW mode{};
-    mode.dmSize = sizeof(mode);
-    if (QGuiApplication::platformName() == QStringLiteral("windows") &&
-        EnumDisplaySettingsW(reinterpret_cast<LPCWSTR>(screen.name().utf16()),
-                             ENUM_CURRENT_SETTINGS, &mode)) {
-        return QRect(mode.dmPosition.x, mode.dmPosition.y, static_cast<int>(mode.dmPelsWidth),
-                     static_cast<int>(mode.dmPelsHeight));
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        // QScreen::name() can be a friendly monitor name, not a GDI device name.
+        // Use the capture backend's native coordinate space; rounded logical
+        // extents cannot reconstruct physical pixels at fractional DPI.
+        return snow_shot::platform::windows::nativeMonitorRect(screen);
     }
 #endif
     const QRect logicalGeometry = screen.geometry();

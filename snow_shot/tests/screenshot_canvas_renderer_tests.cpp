@@ -400,7 +400,7 @@ void physicalViewportRenderingPreservesEveryPixelAtFractionalDprs() {
     renderer.setImage(source, QRectF(QPointF(), QSizeF(physicalSize)));
     renderer.setImageViewportPhysicalSize(physicalSize);
 
-    constexpr std::array<qreal, 3> devicePixelRatios{1.25, 1.5, 1.75};
+    constexpr std::array<qreal, 4> devicePixelRatios{1.25, 1.5, 1.75, 2.25};
     for (const qreal devicePixelRatio : devicePixelRatios) {
         QImage output(physicalSize, QImage::Format_RGBA8888);
         output.setDevicePixelRatio(devicePixelRatio);
@@ -434,8 +434,9 @@ void overlayCameraPreservesDesktopPixels() {
     SnowCanvasWidget canvas;
     ScreenshotCanvasRenderer renderer(canvas);
     ScreenshotGeometryMapper mapper;
-    for (const QSize size : {QSize(2240, 1440), QSize(2560, 1600), QSize(321, 181)}) {
-        for (const qreal dpr : {1.5, 1.25, 1.75, 2.0}) {
+    for (const QSize size : {QSize(2240, 1440), QSize(2560, 1600), QSize(2560, 1440),
+                             QSize(3840, 2160), QSize(321, 181)}) {
+        for (const qreal dpr : {1.5, 1.25, 1.75, 2.0, 2.25}) {
             CapturedDisplayModel display;
             display.physicalRect = QRect(QPoint(-2560, -1600), size);
             display.canvasRect = QRect(QPoint(317, 211), size);
@@ -4103,6 +4104,11 @@ void overlayRightClickClosesOnRelease(bool native = false) {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--fractional-dpi"))) {
+        overlayCameraPreservesDesktopPixels();
+        physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--text-wheel-only"))) {
         overlayPassesTextDraftWheelToCanvas();
         return 0;

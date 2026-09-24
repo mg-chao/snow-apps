@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshotstartupcontext.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "../src/presentation/toolbar/screenshottoolbarplacement.h"
 #include "../src/presentation/capture/scrollingselectionmovement.h"
@@ -946,11 +947,20 @@ void historyPinDesktopUsesNativeMonitorRects() {
     if (QGuiApplication::platformName() == QStringLiteral("windows")) {
         for (QScreen* screen : screens) {
             const QRect native = snow_shot::platform::windows::nativeMonitorRect(*screen);
-            const QRect logical = screen->geometry();
-            const qreal ratio = screen->devicePixelRatio();
-            require(!native.isEmpty() && native.size() == QSize(qRound(logical.width() * ratio),
-                                                                qRound(logical.height() * ratio)),
-                    "the native monitor rectangle must report physical pixels");
+            require(!native.isEmpty(), "the native monitor rectangle must be available");
+            const auto qt = ScreenshotGeometryMapper::preCaptureDisplayModel(*screen);
+            require(qt.physicalRect == native,
+                    "capture startup must use native bounds even when logical extents round");
+            require(qt.logicalRect == screen->geometry() &&
+                        qt.logicalToPhysicalScale == screen->devicePixelRatio(),
+                    "native bounds must preserve Qt's independent logical geometry and DPI");
+            CapturedDisplayModel frame;
+            frame.name = QStringLiteral("native-device");
+            frame.stableId = QStringLiteral("native-display");
+            frame.physicalRect = native;
+            require(matchStartupDisplays({qt}, {0}, {frame}, [](const auto&) { return true; })
+                        .has_value(),
+                    "friendly Qt names must bind to native capture bounds at fractional DPI");
         }
     }
 #endif
