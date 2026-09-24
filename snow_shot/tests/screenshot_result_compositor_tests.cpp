@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
 #include <QCoreApplication>
 #include <QImage>
@@ -50,6 +51,43 @@ void roundedAndShadowedResultHasRealTransparency() {
             "content center became transparent");
     const int shadowAlpha = result.pixelColor(11, 12 + 24).alpha();
     require(shadowAlpha > 0 && shadowAlpha < 255, "shadow edge is not semitransparent");
+}
+
+void previewAssetsAreReleasedAfterCapture() {
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+    const QImage exported = ScreenshotResultCompositor::compose(
+        solidContent(), ScreenshotResultStyle{16, 12, QColor(20, 30, 40, 220)});
+    require(!exported.isNull(), "the shadowed export must render");
+    const auto afterExport = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
+    require(afterExport.retainedEntries == 0 && afterExport.checkerboardRetainedBytes == 0,
+            "one-off export composition must not retain preview assets");
+
+    QImage preview(QSize(104, 72), QImage::Format_ARGB32_Premultiplied);
+    preview.fill(Qt::transparent);
+    {
+        QPainter painter(&preview);
+        ScreenshotSelectionShadowRenderer::renderPreview(painter, QRectF(12, 12, 80, 48), 16, 12,
+                                                         QColor(20, 30, 40, 220), 1.0);
+    }
+    const auto retained = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
+    require(retained.retainedEntries == 1 && retained.checkerboardRetainedBytes > 0,
+            "an active preview must retain its shadow asset and checkerboard tile");
+
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+    const auto released = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
+    require(released.retainedEntries == 0 && released.retainedBytes == 0 &&
+                released.checkerboardRetainedBytes == 0,
+            "capture cleanup must release both preview caches");
+
+    {
+        QPainter painter(&preview);
+        ScreenshotSelectionShadowRenderer::renderPreview(painter, QRectF(12, 12, 80, 48), 16, 12,
+                                                         QColor(20, 30, 40, 220), 1.0);
+    }
+    const auto rebuilt = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
+    require(rebuilt.retainedEntries == 1 && rebuilt.checkerboardRetainedBytes > 0,
+            "the next capture must be able to rebuild both preview assets");
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
 }
 
 void layoutScalesOnlyEffectsForFractionalDpr() {
@@ -193,6 +231,7 @@ int main(int argc, char** argv) {
     try {
         squareResultPreservesPhysicalPixels();
         roundedAndShadowedResultHasRealTransparency();
+        previewAssetsAreReleasedAfterCapture();
         layoutScalesOnlyEffectsForFractionalDpr();
         noEffectResultSharesNormalizedStorage();
         outputOpacityScalesTheCompleteComposition();

@@ -233,6 +233,7 @@ void ScreenshotCaptureWorkflow::finishCaptureSession(bool deferExportCleanup) {
             SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_overlays");
             m_context.runtime.hideOverlayWindows(m_context.displaySession);
         }
+        m_context.runtime.releaseSelectionPreviewCache();
         if (m_context.presentation.hideToolbar) {
             SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_toolbar");
             m_context.presentation.hideToolbar();
@@ -274,6 +275,7 @@ void ScreenshotCaptureWorkflow::completeDeferredExportCleanup() {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.reset_runtime");
         m_context.runtime.resetForNewCapture(m_context.displaySession);
     }
+    m_context.runtime.releaseSelectionPreviewCache();
     if (!m_canvasRuntimeClean) {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.reset_canvas_runtime");
         resetCanvasRuntimeState();
@@ -314,6 +316,7 @@ void ScreenshotCaptureWorkflow::cleanupActiveSessionForRestart() {
     resetCaptureModels();
     m_context.runtime.releaseColorPicker();
     m_context.runtime.hideOverlayWindows(m_context.displaySession);
+    m_context.runtime.releaseSelectionPreviewCache();
     if (m_context.presentation.hideToolbar) {
         m_context.presentation.hideToolbar();
     }

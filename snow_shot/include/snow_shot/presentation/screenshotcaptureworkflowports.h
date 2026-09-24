@@ -55,6 +55,7 @@ class ScreenshotCaptureRuntimePort {
                                     ScreenshotOverlayShowMode mode) = 0;
     virtual void hideOverlayWindowsImmediately(const ScreenshotDisplaySession& displaySession) = 0;
     virtual void hideOverlayWindows(const ScreenshotDisplaySession& displaySession) = 0;
+    virtual void releaseSelectionPreviewCache() = 0;
     virtual void prewarmToolbarSurface(const ScreenshotDisplaySession& displaySession) = 0;
 
     [[nodiscard]] virtual bool clearDocumentPreservingViewports() = 0;

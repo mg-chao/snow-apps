@@ -158,6 +158,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void hideOverlayWindows(const ScreenshotDisplaySession&) override {
         ++hideOverlayCalls;
     }
+    void releaseSelectionPreviewCache() override {
+        ++releaseSelectionPreviewCacheCalls;
+    }
     void prewarmToolbarSurface(const ScreenshotDisplaySession&) override {
         ++prewarmToolbarSurfaceCalls;
         prewarmToolbarSawDispatchedCapture = captureAllAsyncCalls > 0;
@@ -210,6 +213,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int preparePreCaptureOverlayCalls = 0;
     int hideOverlayCalls = 0;
     int hideOverlayImmediatelyCalls = 0;
+    int releaseSelectionPreviewCacheCalls = 0;
     int prewarmToolbarSurfaceCalls = 0;
     bool prewarmToolbarSawDispatchedCapture = false;
     int resetForNewCaptureCalls = 0;
@@ -375,6 +379,8 @@ void endingScreenshotReprewarmsOverlaySurfaces() {
             "canceling a capture must still release its visible display session");
     require(runtime.releaseSelectorCacheCalls == 1,
             "canceling a capture must immediately release the selector cache");
+    require(runtime.releaseSelectionPreviewCacheCalls == 1,
+            "canceling a capture must release its shadow and checkerboard preview cache");
     require(runtime.cancelActiveCaptureCalls == 1,
             "canceling a capture must signal the native cancellation token");
     require(runtime.prepareAsyncCalls == 0,
@@ -446,6 +452,8 @@ void exportCancellationDefersExpensiveCleanup() {
             "export cancellation must defer the expensive capture reset");
     require(runtime.prewarmDisplayPoolCalls == 0,
             "export cancellation must defer overlay surface prewarming with cleanup");
+    require(runtime.releaseSelectionPreviewCacheCalls == 0,
+            "export cancellation must preserve preview assets until deferred cleanup");
     require(state.sessionState == ScreenshotSessionState::IdlePrepared && !state.captureInProgress,
             "export cancellation must leave the workflow ready for presentation");
 
@@ -454,9 +462,13 @@ void exportCancellationDefersExpensiveCleanup() {
             "deferred export cleanup must perform the capture reset later");
     require(runtime.prewarmDisplayPoolCalls == 1 && runtime.prewarmDisplayPoolSawRuntimeReset,
             "deferred export cleanup must re-prewarm overlay surfaces after runtime cleanup");
+    require(runtime.releaseSelectionPreviewCacheCalls == 1,
+            "deferred export cleanup must release shadow and checkerboard preview assets");
     workflow.completeDeferredExportCleanup();
     require(runtime.resetForNewCaptureCalls == 1 && runtime.prewarmDisplayPoolCalls == 1,
             "deferred export cleanup must be idempotent");
+    require(runtime.releaseSelectionPreviewCacheCalls == 1,
+            "deferred export cleanup must release preview assets only once");
 }
 
 void captureOverlapsSelectorInitialization() {
@@ -544,6 +556,8 @@ void restartingCaptureReleasesPreviousSelectorCache() {
 
     require(runtime.releaseSelectorCacheCalls == 1,
             "starting a new capture must release the previous selector cache");
+    require(runtime.releaseSelectionPreviewCacheCalls == 1,
+            "starting a new capture must release the previous preview assets");
     require(runtime.startWorkflowRefreshCalls == 1,
             "the restarted capture must initialize a fresh selector snapshot");
     require(captureTerminatedCalls == 1,

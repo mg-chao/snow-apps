@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <list>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -64,6 +65,7 @@ struct ShadowCache {
 };
 
 thread_local ShadowCache g_cache;
+thread_local QImage g_checkerboard;
 thread_local ScreenshotSelectionShadowDiagnostics g_diagnostics;
 
 int quantizedDpr(qreal dpr) {
@@ -71,7 +73,7 @@ int quantizedDpr(qreal dpr) {
 }
 
 QImage checkerboard() {
-    static const QImage image = [] {
+    if (g_checkerboard.isNull()) {
         QImage result(QSize(kCheckerTileSize * 2, kCheckerTileSize * 2),
                       QImage::Format_ARGB32_Premultiplied);
         result.fill(QColor(QStringLiteral("#ffffff")));
@@ -81,9 +83,10 @@ QImage checkerboard() {
         painter.fillRect(
             QRect(kCheckerTileSize, kCheckerTileSize, kCheckerTileSize, kCheckerTileSize),
             QColor(QStringLiteral("#f0f0f0")));
-        return result;
-    }();
-    return image;
+        painter.end();
+        g_checkerboard = std::move(result);
+    }
+    return g_checkerboard;
 }
 
 qreal roundedRectangleDistance(qreal x, qreal y, qreal halfWidth, qreal halfHeight, qreal radius) {
@@ -258,7 +261,8 @@ void paintCheckerboardPerimeter(QPainter& painter, const QRectF& selectionBounds
 }
 
 void renderShadow(QPainter& painter, const QRectF& selectionBounds, qreal cornerRadius,
-                  qreal shadowWidth, const QColor& shadowColor, qreal dpr) {
+                  qreal shadowWidth, const QColor& shadowColor, qreal dpr,
+                  bool retainAsset = true) {
     if (selectionBounds.isEmpty() || shadowWidth <= 0.0) {
         return;
     }
@@ -268,7 +272,10 @@ void renderShadow(QPainter& painter, const QRectF& selectionBounds, qreal corner
     const int physicalShadowWidth = std::max(1, qRound(shadowWidth * effectiveDevicePixelRatio));
     const QColor color = shadowColor.isValid() ? shadowColor : QColor(0x33, 0x33, 0x33);
     const QImage asset =
-        shadowAsset(physicalRadius, physicalShadowWidth, color, effectiveDevicePixelRatio);
+        retainAsset
+            ? shadowAsset(physicalRadius, physicalShadowWidth, color, effectiveDevicePixelRatio)
+            : buildShadowAsset(ShadowKey{physicalRadius, physicalShadowWidth, color.rgba(),
+                                         quantizedDpr(effectiveDevicePixelRatio)});
     paintNineSlice(painter, selectionBounds, cornerRadius, shadowWidth, asset);
 }
 } // namespace
@@ -379,9 +386,9 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
     }
     if (normalized.shadowWidth > 0) {
         painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-        ScreenshotSelectionShadowRenderer::renderResultShadow(
-            painter, layout.contentRect, physicalRadius, layout.effectInsets.left(),
-            normalized.shadowColor, 1.0);
+        // Composition draws this shadow only once; retain assets for repainted live surfaces.
+        renderShadow(painter, layout.contentRect, physicalRadius, layout.effectInsets.left(),
+                     normalized.shadowColor, 1.0, false);
     }
     painter.end();
     return applyOutputOpacity(std::move(output), outputOpacity);
@@ -426,6 +433,7 @@ ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread() {
     ScreenshotSelectionShadowDiagnostics result = g_diagnostics;
     result.retainedBytes = g_cache.bytes;
     result.retainedEntries = g_cache.entries.size();
+    result.checkerboardRetainedBytes = static_cast<std::size_t>(g_checkerboard.sizeInBytes());
     return result;
 }
 
@@ -435,4 +443,5 @@ void ScreenshotSelectionShadowRenderer::resetDiagnosticsForCurrentThread() {
 
 void ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread() {
     g_cache = ShadowCache{};
+    g_checkerboard = QImage{};
 }

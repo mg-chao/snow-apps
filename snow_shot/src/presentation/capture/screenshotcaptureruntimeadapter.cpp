@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotcaptureruntimeadapter.h"
+#include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
@@ -180,6 +181,10 @@ void ScreenshotCaptureRuntimeAdapter::hideOverlayWindowsImmediately(
 void ScreenshotCaptureRuntimeAdapter::hideOverlayWindows(
     const ScreenshotDisplaySession& displaySession) {
     m_context.overlayCoordinator.hideOverlayWindows(displaySession);
+}
+
+void ScreenshotCaptureRuntimeAdapter::releaseSelectionPreviewCache() {
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
 }
 
 void ScreenshotCaptureRuntimeAdapter::prewarmToolbarSurface(

@@ -14,6 +14,7 @@ struct ScreenshotSelectionShadowDiagnostics {
     std::size_t cacheBuilds = 0;
     std::size_t retainedBytes = 0;
     std::size_t retainedEntries = 0;
+    std::size_t checkerboardRetainedBytes = 0;
     std::size_t selectionSizedTransientAllocations = 0;
 };
 
