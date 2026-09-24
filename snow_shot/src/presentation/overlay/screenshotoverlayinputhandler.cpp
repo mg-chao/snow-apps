@@ -182,6 +182,7 @@ void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* ov
             m_regionPoints.clear();
             m_freehandPressed = true;
             m_freehandRawStart = 0;
+            m_freehandFilter.reset(virtualPosition);
         }
         m_context.actions.pauseIntelligentSelection();
         m_context.intelligentSelection.clearTransientState();
@@ -374,25 +375,8 @@ void ScreenshotOverlayInputHandler::handleMouseMove(ScreenshotOverlayWindow* ove
             handleHoverMove(overlay, localPosition);
             return;
         }
-        if (m_freehandPressed && (m_regionPoints.isEmpty() || m_regionPoints.last() != pointer)) {
-            if (m_regionPoints.size() < 65532)
-                m_regionPoints.append(pointer);
-            // Finalized chunks are never simplified again during the drag. Reserve
-            // half the error budget for this reduction and half for release.
-            if (m_regionPoints.size() - m_freehandRawStart >= 128) {
-                qreal scale = 1.0;
-                m_context.displaySession.forEachActiveDisplay(
-                    [&](qsizetype, const CapturedDisplayModel& display) {
-                        if (display.canvasUsesPoints)
-                            scale = std::max(scale, display.backingScale);
-                    });
-                const auto tail = simplifyScreenshotRegionPoints(
-                    m_regionPoints.mid(m_freehandRawStart), 0.125 / scale);
-                m_regionPoints.resize(m_freehandRawStart);
-                m_regionPoints.append(tail);
-                m_freehandRawStart = m_regionPoints.size() - 1;
-            }
-        }
+        if (m_freehandPressed)
+            m_freehandFilter.append(pointer);
         if (m_context.selection.constructionActive()) {
             m_pendingRegionPointer = pointer;
             m_pendingRegionEdge = !m_freehandPressed;
@@ -503,8 +487,8 @@ void ScreenshotOverlayInputHandler::handleMouseRelease(ScreenshotOverlayWindow* 
     }
     if (customRegionInputActive()) {
         if (m_freehandPressed) {
-            if (m_regionPoints.isEmpty() || m_regionPoints.last() != virtualPosition)
-                m_regionPoints.append(virtualPosition);
+            m_freehandFilter.append(virtualPosition);
+            flushFreehandPoints(true);
             m_freehandPressed = false;
             if (!finishRegionDraft()) {
                 m_regionPoints.clear();
@@ -1127,8 +1111,39 @@ bool ScreenshotOverlayInputHandler::removeRegionVertex() {
     return true;
 }
 
+void ScreenshotOverlayInputHandler::flushFreehandPoints(bool finish) {
+    const auto points = m_freehandFilter.takePoints(finish);
+    if (points.isEmpty())
+        return;
+    qreal scale = 1.0;
+    m_context.displaySession.forEachActiveDisplay(
+        [&](qsizetype, const CapturedDisplayModel& display) {
+            if (display.canvasUsesPoints)
+                scale = std::max(scale, display.backingScale);
+        });
+    for (const auto& point : points) {
+        if (m_regionPoints.size() >= 65532)
+            break;
+        m_regionPoints.append(point);
+        // Compact fixed windows so batch size cannot change the geometry or
+        // make a delayed preview simplify an unbounded tail in one operation.
+        if (m_regionPoints.size() - m_freehandRawStart >= 128) {
+            const auto tail = simplifyScreenshotRegionPoints(m_regionPoints.mid(m_freehandRawStart),
+                                                             0.125 / scale);
+            m_regionPoints.resize(m_freehandRawStart);
+            m_regionPoints.append(tail);
+            m_freehandRawStart = m_regionPoints.size() - 1;
+        }
+    }
+    // Reserve room for the release endpoint even when the stroke reaches its cap.
+    if (finish && (m_regionPoints.isEmpty() || m_regionPoints.last() != points.last()))
+        m_regionPoints.append(points.last());
+}
+
 void ScreenshotOverlayInputHandler::updateRegionDraft(const QPointF& pointer, bool includePointer) {
     m_regionPreviewTimer.stop();
+    if (m_freehandPressed)
+        flushFreehandPoints();
     auto vertices = m_regionPoints;
     if (includePointer && !vertices.isEmpty() && QLineF(vertices.last(), pointer).length() > 0.01)
         vertices.append(pointer);

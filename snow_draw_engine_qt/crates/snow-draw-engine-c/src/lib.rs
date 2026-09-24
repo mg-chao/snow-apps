@@ -12,6 +12,7 @@ mod abi {
     pub(crate) mod patch_exports;
     pub(crate) mod path_exports;
     pub(crate) mod raw_enum;
+    pub(crate) mod stroke_exports;
     pub(crate) mod style_exports;
     pub(crate) mod text;
     pub(crate) mod text_exports;
@@ -26,6 +27,7 @@ pub use abi::history_exports::*;
 pub use abi::input_exports::*;
 pub use abi::patch_exports::*;
 pub use abi::path_exports::*;
+pub use abi::stroke_exports::*;
 pub use abi::style_exports::*;
 pub use abi::text_exports::*;
 pub use abi::types::*;

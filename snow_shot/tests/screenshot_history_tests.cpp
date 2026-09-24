@@ -1,3 +1,4 @@
+#include "snow_shot/image/screenshotregionpoints.h"
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
 #include "snow_shot/presentation/screenshotregiontypeshortcut.h"
@@ -3440,6 +3441,60 @@ void customRegionsMoveDuringManualSelection() {
     }
 }
 
+void freehandRegionSuppressesSlowJitter() {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("custom"), QStringLiteral("custom"),
+                                   QRect(0, 0, 500, 500),
+                                   solidImage(QSize(500, 500), qRgb(0, 0, 0))));
+    ScreenshotGeometryMapper mapper;
+    mapper.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    int confirmations = 0, completions = 0, hitTests = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.selectionConfirmed = [&] { ++confirmations; };
+    actions.activateScreenshotShortcut = [&](const QString&) {
+        ++completions;
+        return true;
+    };
+    actions.requestUiSelectorHitTest = [&](const QPoint&) { ++hitTests; };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, mapper, displays, actions});
+    handler.setRegionType(ScreenshotRegionType::Freehand);
+    for (int stroke = 0; stroke < 2; ++stroke) {
+        selection.clearSelection();
+        interaction.enterOverlayVisible(false);
+        const qreal top = 50.0 + stroke * 100.0;
+        handler.handleMousePress(nullptr, QPointF(50, top));
+        for (int i = 1; i <= 1200; ++i) {
+            handler.handleMouseMove(nullptr, QPointF(50.0 + i * 0.1, top + (i % 2 ? -1 : 1)));
+            if (i % 16 == 0)
+                QCoreApplication::processEvents();
+        }
+        const auto path = selection.draftPath();
+        int interiorPoints = 0;
+        for (int i = 0; i < path.elementCount(); ++i) {
+            const auto point = path.elementAt(i);
+            // Inspect the curve and its controls away from the start and tip.
+            if (point.x > 60 && point.x < 160) {
+                ++interiorPoints;
+                require(std::abs(point.y - top) < 0.3,
+                        "slow freehand boundary must suppress one-pixel pointer jitter");
+            }
+        }
+        require(interiorPoints > 0, "slow motion still produces a curved region draft");
+        handler.handleMouseMove(nullptr, QPointF(170, top + 60));
+        handler.handleMouseMove(nullptr, QPointF(50, top + 60));
+        handler.handleMouseRelease(nullptr, QPointF(50, top));
+        require(selection.hasPixelSelection() &&
+                    selection.selectionRegion().contains(QPointF(100, top + 30)),
+                "filtered freehand release closes and preserves the region interior");
+    }
+}
+
 void customRegionInputTransactions() {
     ScreenshotCaptureState capture;
     ScreenshotDisplaySession displays;
@@ -3502,8 +3557,15 @@ void customRegionInputTransactions() {
     handler.handleMouseMove(nullptr, QPointF(100, 50));
     handler.handleMouseMove(nullptr, QPointF(90, 95));
     QCoreApplication::processEvents();
-    const auto expectedFreehandPath =
-        snowCanvasCatmullRomPath({{70, 50}, {100, 50}, {90, 95}}, true);
+    SnowCanvasStrokeFilter referenceFilter;
+    referenceFilter.reset({70, 50});
+    referenceFilter.append({100, 50});
+    referenceFilter.append({90, 95});
+    QVector<QPointF> filteredPoints{{70, 50}};
+    filteredPoints.append(referenceFilter.takePoints());
+    if (filteredPoints.size() >= 128)
+        filteredPoints = simplifyScreenshotRegionPoints(filteredPoints, 0.125);
+    const auto expectedFreehandPath = snowCanvasCatmullRomPath(filteredPoints, true);
     require(selection.draftPath() == expectedFreehandPath &&
                 selection.draftPath().elementAt(1).type == QPainterPath::CurveToElement,
             "freehand preview uses the same smooth path as Free Draw");
@@ -3607,6 +3669,7 @@ int main(int argc, char** argv) {
     if (QCoreApplication::arguments().contains(QStringLiteral("--region-shapes-only"))) {
         rectangularRegionOperationsUseSmartSelection();
         customRegionInputTransactions();
+        freehandRegionSuppressesSlowJitter();
         regionOperationsUseMarqueeAndRestoreOnCancel();
         complexRegionsMoveFromTheirBoundingRectangle();
         customRegionsMoveDuringManualSelection();

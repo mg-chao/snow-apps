@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use snow_draw_engine_core::{
-    PATH_CHUNK_COMMAND_CAPACITY, PathGeometry, PathSegmentMode, Point, catmull_rom_path_commands,
+    PATH_CHUNK_COMMAND_CAPACITY, PathGeometry, PathSegmentMode, Point, StrokePointFilter,
+    catmull_rom_path_commands,
 };
 use snow_draw_engine_document::{ElementMeta, FreeDrawData, FreeDrawStyle};
 
@@ -9,78 +10,8 @@ use super::*;
 
 const MAX_PENDING_SAMPLES: usize = 128;
 const PENDING_OVERLAP: usize = 4;
-const MIN_FILTER_RESPONSE: f64 = 0.18;
-const MAX_FILTER_RESPONSE: f64 = 0.82;
-
-// Round caps only stroke a real segment, so a click without movement finishes as this
-// sub-pixel stub to render a dot.
+// Round caps need a real segment for click-only dots.
 const DOT_SEGMENT_LENGTH: f64 = 1e-3;
-
-// Resampling makes stabilization depend on stroke geometry instead of device event frequency.
-#[derive(Clone, Debug, PartialEq)]
-struct StrokePointFilter {
-    last_raw: Point<f64>,
-    filtered: Point<f64>,
-    sample_spacing: f64,
-    distance_until_sample: f64,
-    response_distance: f64,
-}
-
-impl StrokePointFilter {
-    fn new(start: Point<f64>, sample_spacing: f64, response_distance: f64) -> Self {
-        Self {
-            last_raw: start,
-            filtered: start,
-            sample_spacing,
-            distance_until_sample: sample_spacing,
-            response_distance,
-        }
-    }
-
-    fn reset(&mut self, point: Point<f64>) {
-        self.last_raw = point;
-        self.filtered = point;
-        self.distance_until_sample = self.sample_spacing;
-    }
-
-    fn ingest(&mut self, point: Point<f64>, output: &mut Vec<Point<f64>>) {
-        let mut segment_start = self.last_raw;
-        let mut segment_length = distance(segment_start, point);
-        if segment_length <= 1e-12 {
-            self.last_raw = point;
-            return;
-        }
-
-        while segment_length + 1e-12 >= self.distance_until_sample {
-            let ratio = self.distance_until_sample / segment_length;
-            let sample = lerp_point(segment_start, point, ratio);
-            output.push(self.stabilize(sample));
-            segment_start = sample;
-            segment_length = distance(segment_start, point);
-            self.distance_until_sample = self.sample_spacing;
-        }
-        self.distance_until_sample = (self.distance_until_sample - segment_length).max(1e-12);
-        self.last_raw = point;
-    }
-
-    fn stabilize(&mut self, sample: Point<f64>) -> Point<f64> {
-        let normalized_error =
-            (distance(self.filtered, sample) / self.response_distance).clamp(0.0, 1.0);
-        let adaptive = smoothstep(normalized_error);
-        let response = MIN_FILTER_RESPONSE + (MAX_FILTER_RESPONSE - MIN_FILTER_RESPONSE) * adaptive;
-        self.filtered = lerp_point(self.filtered, sample, response);
-        self.filtered
-    }
-
-    fn settle_endpoint(&mut self) -> Option<Point<f64>> {
-        if distance(self.filtered, self.last_raw) <= 1e-12 {
-            return None;
-        }
-        self.filtered = self.last_raw;
-        self.distance_until_sample = self.sample_spacing;
-        Some(self.filtered)
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct StreamingFreeDrawBuilder {
@@ -193,7 +124,7 @@ impl StreamingFreeDrawBuilder {
             }
             self.flush_pending();
             let start = self.last_point();
-            if distance(start, point) < self.point_filter.sample_spacing {
+            if distance(start, point) < self.point_filter.sample_spacing() {
                 return false;
             }
             self.committed_vertices.push(point);
@@ -206,7 +137,7 @@ impl StreamingFreeDrawBuilder {
         let Some(endpoint) = self.committed_vertices.last_mut() else {
             return false;
         };
-        if distance(*endpoint, point) < self.point_filter.sample_spacing {
+        if distance(*endpoint, point) < self.point_filter.sample_spacing() {
             return false;
         }
         *endpoint = point;
@@ -438,7 +369,7 @@ impl StreamingFreeDrawBuilder {
             self.committed_modes[vertex_start.min(self.committed_modes.len())..].to_vec();
         let mut tail_samples = self.pending_samples.clone();
         if !self.shift_active {
-            let endpoint = self.point_filter.last_raw;
+            let endpoint = self.point_filter.last_raw();
             if tail_samples
                 .last()
                 .is_none_or(|last| distance(*last, endpoint) > 1e-12)
@@ -832,17 +763,6 @@ fn distance(left: Point<f64>, right: Point<f64>) -> f64 {
     (right.x - left.x).hypot(right.y - left.y)
 }
 
-fn lerp_point(start: Point<f64>, end: Point<f64>, ratio: f64) -> Point<f64> {
-    Point::new(
-        start.x + (end.x - start.x) * ratio,
-        start.y + (end.y - start.y) * ratio,
-    )
-}
-
-fn smoothstep(value: f64) -> f64 {
-    value * value * (3.0 - 2.0 * value)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1095,26 +1015,6 @@ mod tests {
     }
 
     #[test]
-    fn stabilization_reduces_slow_pointer_jitter() {
-        let mut filter = StrokePointFilter::new(Point::new(0.0, 0.0), 1.0, 6.0);
-        let mut filtered = Vec::new();
-        for x in 1..=120 {
-            let y = if x % 2 == 0 { 1.0 } else { -1.0 };
-            filter.ingest(Point::new(x as f64, y), &mut filtered);
-        }
-
-        let settled = &filtered[12..];
-        let maximum_deviation = settled
-            .iter()
-            .map(|point| point.y.abs())
-            .fold(0.0_f64, f64::max);
-        assert!(
-            maximum_deviation < 0.35,
-            "stabilized deviation was {maximum_deviation}"
-        );
-    }
-
-    #[test]
     fn finalized_pipeline_keeps_stabilized_history_and_exact_endpoint() {
         let mut style = crate::defaults::editor_style_defaults().free_draw;
         style.stroke_width = 1.0;
@@ -1138,62 +1038,6 @@ mod tests {
     }
 
     #[test]
-    fn spatial_resampling_is_independent_of_event_density() {
-        fn filtered_polyline(subdivisions: usize) -> Vec<Point<f64>> {
-            let controls = [
-                Point::new(0.0, 0.0),
-                Point::new(30.0, 8.0),
-                Point::new(60.0, -6.0),
-                Point::new(90.0, 0.0),
-            ];
-            let mut filter = StrokePointFilter::new(controls[0], 1.0, 6.0);
-            let mut output = Vec::new();
-            for segment in controls.windows(2) {
-                for step in 1..=subdivisions {
-                    filter.ingest(
-                        lerp_point(segment[0], segment[1], step as f64 / subdivisions as f64),
-                        &mut output,
-                    );
-                }
-            }
-            output
-        }
-
-        let sparse = filtered_polyline(1);
-        let dense = filtered_polyline(20);
-        assert_eq!(sparse.len(), dense.len());
-        assert!(
-            sparse
-                .iter()
-                .zip(dense)
-                .all(|(left, right)| distance(*left, right) < 1e-9)
-        );
-    }
-
-    #[test]
-    fn adaptive_response_tracks_deliberate_corners() {
-        let mut filter = StrokePointFilter::new(Point::new(0.0, 0.0), 1.0, 6.0);
-        let mut filtered = Vec::new();
-        for x in 1..=40 {
-            filter.ingest(Point::new(x as f64, 0.0), &mut filtered);
-        }
-        for y in 1..=40 {
-            filter.ingest(Point::new(40.0, y as f64), &mut filtered);
-        }
-
-        let corner = Point::new(40.0, 0.0);
-        let closest_corner_distance = filtered
-            .iter()
-            .map(|point| distance(*point, corner))
-            .fold(f64::INFINITY, f64::min);
-        assert!(
-            closest_corner_distance < 3.0,
-            "corner miss distance was {closest_corner_distance}"
-        );
-        assert!(distance(*filtered.last().unwrap(), Point::new(40.0, 40.0)) < 3.0);
-    }
-
-    #[test]
     fn finalized_stroke_preserves_exact_pointer_endpoint() {
         let mut style = crate::defaults::editor_style_defaults().free_draw;
         style.stroke_width = 1.0;
@@ -1214,12 +1058,12 @@ mod tests {
         let zoomed = StreamingFreeDrawBuilder::new(Point::new(0.0, 0.0), 2.0, style);
 
         assert_eq!(
-            normal.point_filter.sample_spacing,
-            zoomed.point_filter.sample_spacing * 2.0
+            normal.point_filter.sample_spacing(),
+            zoomed.point_filter.sample_spacing() * 2.0
         );
         assert_eq!(
-            normal.point_filter.response_distance,
-            zoomed.point_filter.response_distance * 2.0
+            normal.point_filter.response_distance(),
+            zoomed.point_filter.response_distance() * 2.0
         );
         assert_eq!(normal.rdp_tolerance, zoomed.rdp_tolerance * 2.0);
     }
