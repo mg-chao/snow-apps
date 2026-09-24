@@ -74,6 +74,31 @@
       }
     },
     {
+      "name": "windows-clang-portability",
+      "displayName": "Windows Clang portability diagnostics",
+      "inherits": "windows-msvc-base",
+      "generator": "Ninja",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "toolset": {
+        "value": "host=x64,version=14.51",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_IMAGE_PROFILE": "full",
+        "SNOW_IMAGE_DEFAULT_LINKAGE": "static"
+      }
+    },
+    {
       "name": "snow-shot-msvc-release",
       "displayName": "Snow Shot MSVC Static Qt Release",
       "inherits": "windows-msvc-base",
@@ -299,6 +324,13 @@
       "name": "build-windows-msvc-performance",
       "configurePreset": "windows-msvc-performance",
       "configuration": "Release",
+      "targets": [
+        "snow-all"
+      ]
+    },
+    {
+      "name": "build-windows-clang-portability",
+      "configurePreset": "windows-clang-portability",
       "targets": [
         "snow-all"
       ]

@@ -143,14 +143,14 @@ QString formatError(const QString& context, const QString& detail = {}) {
 bool safeRelativePath(const QString& path) {
     const QString normalized = QDir::fromNativeSeparators(path);
     if (normalized.isEmpty() || normalized.startsWith(u'/') ||
-        normalized.contains(QStringLiteral("//")) || normalized.contains(u'\0') ||
+        normalized.contains(QStringLiteral("//")) || normalized.contains(QChar(u'\0')) ||
         QDir::isAbsolutePath(normalized)) {
         return false;
     }
     const QStringList parts = normalized.split(u'/');
     return std::all_of(parts.cbegin(), parts.cend(), [](const QString& part) {
         return !part.isEmpty() && part != QStringLiteral(".") && part != QStringLiteral("..") &&
-               !part.contains(u':');
+               !part.contains(QChar(u':'));
     });
 }
 

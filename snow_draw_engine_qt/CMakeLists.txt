@@ -59,13 +59,20 @@ qt_add_library(snow_draw_engine_qt_canvas STATIC
 )
 
 if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-set_source_files_properties(
+    set_source_files_properties(
         src/rendering/snow_canvas_filter_avx2.cpp
         src/rendering/snow_canvas_pen_mask_avx2.cpp
         PROPERTIES
             COMPILE_OPTIONS "/arch:AVX2"
             SKIP_UNITY_BUILD_INCLUSION ON
     )
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        # Clang cannot load a baseline-CPU PCH in an AVX2 translation unit.
+        set_source_files_properties(
+            src/rendering/snow_canvas_filter_avx2.cpp
+            src/rendering/snow_canvas_pen_mask_avx2.cpp
+            PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    endif()
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
     set_source_files_properties(
         src/rendering/snow_canvas_filter_avx2.cpp

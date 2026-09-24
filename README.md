@@ -4,11 +4,6 @@ Snow Apps repository, providing source code for Snow Shot and Snow Image Viewer.
 
 <div style="font-size: 128px">🏗️🚧🦺</div>
 
-## Building on macOS
-
-See [the Snow Shot macOS build guide](docs-macos-build.md) for prerequisites,
-Apple Silicon and Intel presets, shell scripts, targeted tests, and DMG packaging.
-
 ## Open Source Licenses
 
 This is a multi-license repository. See [LICENSE.md](LICENSE.md) for the

@@ -23,6 +23,10 @@ set(CMAKE_OBJCXX_STANDARD 20)
 set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+
 if(APPLE)
     set(SNOW_SELECTED_FILES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/selectedfiles.mm)
     set(SNOW_SELECTED_FILES_LIBRARIES "-framework AppKit" "-framework ApplicationServices")
@@ -6824,60 +6828,12 @@ if(MSVC)
 endif()
 
 if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
-    if(MSVC)
+    # The directory-wide policy above covers snow_shot too. Keep only the
+    # executable's additional GCC/Clang diagnostics here.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(snow_shot PRIVATE
-            /WX
-            /W4
-            /sdl
-            /permissive-
-            /Zc:__cplusplus
-            /Zc:preprocessor
-            /Zc:inline
-            /w14242
-            /w14254
-            /w14263
-            /w14265
-            /w14287
-            /we4289
-            /w14296
-            /w14311
-            /w14545
-            /w14546
-            /w14547
-            /w14549
-            /w14555
-            /w14619
-            /w14640
-            /w14826
-            /w14905
-            /w14906
-            /w14928
-        )
-    else()
-        target_compile_options(snow_shot PRIVATE
-            -Werror
-            -Wall
-            -Wextra
-            -Wpedantic
-            -Wcast-qual
-            -Wcast-align
-            -Wconversion
-            -Wdouble-promotion
             -Wextra-semi
-            # Exact comparisons are required by geometry/cache ordering. Qt event
-            # switches intentionally handle subsets, while -Wall still diagnoses
-            # missing enum cases in switches without a default handler.
-            -Wformat=2
-            -Wimplicit-fallthrough
-            -Wmissing-declarations
-            -Wnon-virtual-dtor
-            -Wnull-dereference
-            -Wold-style-cast
-            -Woverloaded-virtual
             -Wredundant-decls
-            -Wshadow
-            -Wsign-conversion
-            -Wundef
             -Wunreachable-code
             -Wzero-as-null-pointer-constant
         )

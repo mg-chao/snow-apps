@@ -420,20 +420,22 @@ QByteArray captureNativePng() {
 qint64 nativeDibPixelOffset(const QByteArray& bytes, const BITMAPINFOHEADER& header,
                             qint64 pixelBytes) {
     const qint64 headerSize = header.biSize;
-    const qint64 colorTableSize = static_cast<qint64>(header.biClrUsed) * sizeof(RGBQUAD);
+    const qint64 colorTableSize =
+        static_cast<qint64>(header.biClrUsed) * static_cast<qint64>(sizeof(RGBQUAD));
     const qint64 tableEnd = headerSize + colorTableSize;
     if (header.biCompression != BI_BITFIELDS)
         return tableEnd;
-    constexpr qint64 masksSize = 3 * sizeof(DWORD);
-    if (headerSize < sizeof(BITMAPV4HEADER)) {
+    constexpr qint64 masksSize = 3 * static_cast<qint64>(sizeof(DWORD));
+    if (headerSize < static_cast<qint64>(sizeof(BITMAPV4HEADER))) {
         return tableEnd + masksSize;
     }
     qint64 payloadEnd = bytes.size();
-    if (headerSize >= sizeof(BITMAPV5HEADER)) {
+    if (headerSize >= static_cast<qint64>(sizeof(BITMAPV5HEADER))) {
         const auto* v5 = reinterpret_cast<const BITMAPV5HEADER*>(bytes.constData());
         if (v5->bV5ProfileSize != 0) {
             const qint64 profileStart = v5->bV5ProfileData;
-            if (profileStart < tableEnd || profileStart + v5->bV5ProfileSize > bytes.size()) {
+            if (profileStart < tableEnd ||
+                profileStart + static_cast<qint64>(v5->bV5ProfileSize) > bytes.size()) {
                 return -1;
             }
             payloadEnd = profileStart;

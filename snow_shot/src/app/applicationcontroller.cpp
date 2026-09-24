@@ -416,9 +416,9 @@ class ApplicationController::Impl {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), translationClient.get());
+#ifdef Q_OS_MACOS
             screenshotController->setRecordingPermissionCheck([this](bool microphone, bool input,
                                                                      bool notify) {
-#ifdef Q_OS_MACOS
                 permissions.refresh();
                 presentation::AppPermissions required{presentation::AppPermission::ScreenRecording};
                 if (microphone)
@@ -427,13 +427,11 @@ class ApplicationController::Impl {
                     required.append(presentation::AppPermission::InputMonitoring);
                 return notify ? allowPermissions(required)
                               : permissions.missing(required).isEmpty();
-#else
-                Q_UNUSED(microphone);
-                Q_UNUSED(input);
-                Q_UNUSED(notify);
-                return true;
-#endif
             });
+#else
+            screenshotController->setRecordingPermissionCheck(
+                [](bool, bool, bool) { return true; });
+#endif
             QObject::connect(
                 screenshotController.get(), &ScreenshotController::accessibilityPermissionRequested,
                 &q, [this] {

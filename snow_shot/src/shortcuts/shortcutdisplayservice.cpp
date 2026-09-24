@@ -14,6 +14,7 @@
 namespace snow_shot::shortcuts {
 namespace {
 
+#ifdef Q_OS_MACOS
 QString fallbackKeyText(const ShortcutBinding& binding) {
     const QKeySequence sequence =
         QKeySequence::fromString(binding.portableText, QKeySequence::PortableText);
@@ -24,7 +25,6 @@ QString fallbackKeyText(const ShortcutBinding& binding) {
         .toString(QKeySequence::NativeText);
 }
 
-#ifdef Q_OS_MACOS
 QString specialMacKeyLegend(quint32 keyCode) {
     switch (keyCode) {
     case 36:

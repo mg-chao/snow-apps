@@ -169,7 +169,7 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
 
     void sampleModifiers() {
         for (const int key : modifierKeys) {
-            modifierDown[key] = (api.keyState(key) & 0x8000) != 0;
+            modifierDown[static_cast<std::size_t>(key)] = (api.keyState(key) & 0x8000) != 0;
         }
     }
 
@@ -264,8 +264,9 @@ class NativeGlobalMouseBackend final : public GlobalMouseBackend {
         if (result.activationModifiers.testFlag(GlobalMouseModifier::Super) ||
             result.activationModifiers.testFlag(GlobalMouseModifier::Alt)) {
             for (const int key : {VK_LWIN, VK_RWIN, VK_LMENU, VK_RMENU}) {
-                if (modifierDown[key]) {
-                    consumedActivationKeys[key] = true;
+                const auto index = static_cast<std::size_t>(key);
+                if (modifierDown[index]) {
+                    consumedActivationKeys[index] = true;
                 }
             }
             static_cast<void>(maskActivationKey());

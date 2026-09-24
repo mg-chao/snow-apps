@@ -10,9 +10,7 @@
 #if defined(__AVX2__) || defined(_M_AVX2)
 namespace {
 bool cpuSupportsAvx2() {
-#if defined(__GNUC__) || defined(__clang__)
-    return __builtin_cpu_supports("avx2");
-#elif defined(_MSC_VER)
+#if defined(_MSC_VER)
     int registers[4] = {};
     __cpuidex(registers, 0, 0);
     if (registers[0] < 1)
@@ -30,6 +28,8 @@ bool cpuSupportsAvx2() {
         return false;
     __cpuidex(registers, 7, 0);
     return (registers[1] & (1 << 5)) != 0;
+#elif defined(__GNUC__) || defined(__clang__)
+    return __builtin_cpu_supports("avx2");
 #else
     return false;
 #endif

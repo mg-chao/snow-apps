@@ -167,7 +167,7 @@ Result<void> read_extensions(GifFileType* file, GifExtensionState* state, std::s
     while (block) {
         if (stop.stop_requested())
             return cancelled_status();
-        const int size = block[0];
+        const std::size_t size = block[0];
         const GifByteType* data = block + 1;
         if (first && code == GRAPHICS_EXT_FUNC_CODE) {
             GraphicsControlBlock control{};
@@ -528,7 +528,9 @@ Result<Frame> decode_frame(const GifFileType& file, int index, std::stop_token s
         if (stop.stop_requested())
             return cancelled_status();
         for (int x = 0; x < descriptor.Width; ++x) {
-            const std::size_t source = static_cast<std::size_t>(y) * descriptor.Width + x;
+            const std::size_t source =
+                static_cast<std::size_t>(y) * static_cast<std::size_t>(descriptor.Width) +
+                static_cast<std::size_t>(x);
             const int color_index = saved.RasterBits[source];
             if (color_index < 0 || color_index >= palette->ColorCount) {
                 return Status::error(ErrorCode::corrupt_data, "GIF palette index is out of range.",

@@ -21,8 +21,9 @@ constexpr std::array<std::byte, 8> kPngSignature{std::byte{0x89}, std::byte{'P'}
                                                  std::byte{0x1A}, std::byte{0x0A}};
 
 std::uint16_t read_u16(std::span<const std::byte> bytes, std::size_t offset) {
-    return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
-           static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset + 1U])) << 8U;
+    return static_cast<std::uint16_t>(
+        static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
+        static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset + 1U])) << 8U);
 }
 
 std::uint32_t read_u32(std::span<const std::byte> bytes, std::size_t offset) {

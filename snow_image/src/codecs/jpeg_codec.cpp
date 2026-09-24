@@ -404,7 +404,7 @@ Result<void> begin_compression(JpegEncoderContext* context, std::uint32_t width,
                                ByteSink* sink, bool raw_data) {
     context->compressor.err = jpeg_std_error(&context->error.base);
     context->error.base.error_exit = jpeg_error_exit;
-    jpeg_create_compress(&context->compressor);
+    jpeg_CreateCompress(&context->compressor, JPEG_LIB_VERSION, sizeof(jpeg_compress_struct));
     initialize_destination(context, sink);
     context->compressor.image_width = width;
     context->compressor.image_height = height;

@@ -1085,11 +1085,13 @@ QJsonArray shortcutDefaults(const QJsonValue& value) {
         snow_shot::shortcuts::shortcutBindingsFromJson(value, true));
 }
 
+#ifdef Q_OS_MACOS
 QJsonArray macGlobalShortcutDefault(const QString& portableText, quint32 virtualKey) {
     snow_shot::shortcuts::ShortcutBinding binding{portableText};
     binding.physicalKeys.insert(snow_shot::shortcuts::ShortcutPlatform::MacOS, virtualKey);
     return snow_shot::shortcuts::shortcutBindingsToJson({binding});
 }
+#endif
 
 QVector<ConfigurationSchemaEntry> buildEntries() {
     QVector<ConfigurationSchemaEntry> result = kRawEntries;

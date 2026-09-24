@@ -142,7 +142,11 @@ bool hardware_crc32c_available() {
     return available;
 }
 
-std::uint32_t hardware_crc32c_update(std::uint32_t state, std::span<const std::byte> bytes) {
+#if defined(__clang__)
+__attribute__((target("sse4.2")))
+#endif
+std::uint32_t
+hardware_crc32c_update(std::uint32_t state, std::span<const std::byte> bytes) {
     std::size_t offset = 0;
     std::uint64_t crc = state;
     while (bytes.size() - offset >= sizeof(std::uint64_t)) {

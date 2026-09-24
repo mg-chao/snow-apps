@@ -157,10 +157,12 @@ Result<SvgLayout> layout_svg(std::span<const std::byte> xml, const DecodeOptions
     }
     const float intrinsic_width = document->width();
     const float intrinsic_height = document->height();
-    double width =
-        std::isfinite(intrinsic_width) && intrinsic_width > 0.0F ? intrinsic_width : 300.0;
-    double height =
-        std::isfinite(intrinsic_height) && intrinsic_height > 0.0F ? intrinsic_height : 150.0;
+    double width = std::isfinite(intrinsic_width) && intrinsic_width > 0.0F
+                       ? static_cast<double>(intrinsic_width)
+                       : 300.0;
+    double height = std::isfinite(intrinsic_height) && intrinsic_height > 0.0F
+                        ? static_cast<double>(intrinsic_height)
+                        : 150.0;
     if (options.maximum_extent && *options.maximum_extent != 0 &&
         (width > *options.maximum_extent || height > *options.maximum_extent)) {
         const double scale =

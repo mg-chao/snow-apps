@@ -63,6 +63,9 @@ void check(HRESULT result) {
                                      .arg(static_cast<quint32>(result), 8, 16, QLatin1Char('0'))
                                      .toStdString());
 }
+void checkRegistry(LSTATUS status) {
+    check(HRESULT_FROM_WIN32(static_cast<DWORD>(status)));
+}
 QString executablePath() {
     return QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
 }
@@ -398,15 +401,15 @@ bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& e
     if (opened == ERROR_FILE_NOT_FOUND) {
         return false;
     }
-    check(HRESULT_FROM_WIN32(opened));
+    checkRegistry(opened);
     RegistryHandle writeGuard{write};
     if (replacementCommand.isEmpty()) {
-        check(HRESULT_FROM_WIN32(RegDeleteValueW(write, L"SnowShot")));
+        checkRegistry(RegDeleteValueW(write, L"SnowShot"));
     } else {
         const std::wstring value = replacementCommand.toStdWString();
-        check(HRESULT_FROM_WIN32(RegSetValueExW(
-            write, L"SnowShot", 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
-            static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)))));
+        checkRegistry(RegSetValueExW(write, L"SnowShot", 0, REG_SZ,
+                                     reinterpret_cast<const BYTE*>(value.c_str()),
+                                     static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))));
     }
     return true;
 }
@@ -920,7 +923,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (status == ERROR_NO_MORE_ITEMS)
                 break;
             if (status != ERROR_SUCCESS)
-                check(HRESULT_FROM_WIN32(status));
+                checkRegistry(status);
             reconcileStartupRunValue(
                 QString::fromWCharArray(sid, size) +
                     QStringLiteral("\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
@@ -929,9 +932,9 @@ static AdministratorResult updateInstallationStartup(const QString& root,
         // Users who are signed out have no HKEY_USERS hive. Open their application hive
         // privately rather than mounting it globally or writing the installer's HKCU.
         HKEY profiles = nullptr;
-        check(HRESULT_FROM_WIN32(RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList", 0,
-            KEY_READ, &profiles)));
+        checkRegistry(RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                                    L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList",
+                                    0, KEY_READ, &profiles));
         RegistryHandle profilesGuard{profiles};
         for (DWORD index = 0;; ++index) {
             wchar_t sid[256];
@@ -940,7 +943,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 RegEnumKeyExW(profiles, index, sid, &length, nullptr, nullptr, nullptr, nullptr);
             if (status == ERROR_NO_MORE_ITEMS)
                 break;
-            check(HRESULT_FROM_WIN32(status));
+            checkRegistry(status);
             const QString owner = QString::fromWCharArray(sid, length);
             if (!owner.startsWith(u"S-1-5-21-") && !owner.startsWith(u"S-1-12-1-"))
                 continue;
@@ -951,9 +954,9 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             }
             wchar_t directory[32768];
             DWORD bytes = sizeof(directory);
-            check(HRESULT_FROM_WIN32(RegGetValueW(profiles, sid, L"ProfileImagePath",
-                                                  RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr,
-                                                  directory, &bytes)));
+            checkRegistry(RegGetValueW(profiles, sid, L"ProfileImagePath",
+                                       RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, directory,
+                                       &bytes));
             const QString hivePath =
                 QDir(QString::fromWCharArray(directory)).filePath(QStringLiteral("NTUSER.DAT"));
             if (!QFileInfo::exists(hivePath))
@@ -969,7 +972,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (reconcileStartupRunValue(
                     hive, QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
                     startupCommand, migratedCommand)) {
-                check(HRESULT_FROM_WIN32(RegFlushKey(hive)));
+                checkRegistry(RegFlushKey(hive));
             }
         }
         return {true, false, {}};

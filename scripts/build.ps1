@@ -3,6 +3,7 @@ param(
     [ValidateSet(
         "windows-msvc-debug",
         "windows-msvc-performance",
+        "windows-clang-portability",
         "snow-shot-msvc-release",
         "snow-shot-msvc-fast"
     )]

@@ -20,11 +20,21 @@ function(snow_apply_strict_warnings target)
     if(MSVC)
         target_compile_options("${target}" PRIVATE
             /FS /W4 /WX /permissive- /sdl /utf-8
-            /Zc:__cplusplus /Zc:preprocessor /Zc:inline
+            /Zc:__cplusplus /Zc:inline
             /w14242 /w14254 /w14263 /w14265 /w14287 /we4289 /w14296
             /w14311 /w14545 /w14546 /w14547 /w14549 /w14555 /w14619
             /w14640 /w14826 /w14905 /w14906 /w14928 /wd4702
         )
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+            target_compile_options("${target}" PRIVATE
+                -Wcast-align -Wcast-qual -Wconversion -Wdouble-promotion
+                -Wformat=2 -Wimplicit-fallthrough -Wmissing-declarations
+                -Wnon-virtual-dtor -Wnull-dereference -Wold-style-cast
+                -Woverloaded-virtual -Wshadow -Wsign-conversion -Wundef
+            )
+        else()
+            target_compile_options("${target}" PRIVATE /Zc:preprocessor)
+        endif()
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options("${target}" PRIVATE
             -Wall -Wextra -Wpedantic -Werror
@@ -84,11 +94,21 @@ function(snow_enable_strict_warnings)
     if(MSVC)
         add_compile_options(
             /FS /W4 /WX /permissive- /sdl /utf-8
-            /Zc:__cplusplus /Zc:preprocessor /Zc:inline
+            /Zc:__cplusplus /Zc:inline
             /w14242 /w14254 /w14263 /w14265 /w14287 /we4289 /w14296
             /w14311 /w14545 /w14546 /w14547 /w14549 /w14555 /w14619
             /w14640 /w14826 /w14905 /w14906 /w14928 /wd4702
         )
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+            add_compile_options(
+                -Wcast-align -Wcast-qual -Wconversion -Wdouble-promotion
+                -Wformat=2 -Wimplicit-fallthrough -Wmissing-declarations
+                -Wnon-virtual-dtor -Wnull-dereference -Wold-style-cast
+                -Woverloaded-virtual -Wshadow -Wsign-conversion -Wundef
+            )
+        else()
+            add_compile_options(/Zc:preprocessor)
+        endif()
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         add_compile_options(
             -Wall -Wextra -Wpedantic -Werror
