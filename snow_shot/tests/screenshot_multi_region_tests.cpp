@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotsmartselectiontransition.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
 
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
@@ -345,6 +346,146 @@ void customGeometryTransactionsAndPersistence() {
     const auto repeated = snowCanvasCatmullRomPath({{10, 10}, {10, 10}, {50, 10}, {30, 50}}, true);
     require(!repeated.isEmpty(), "curve bridge supports degenerate neighbor fallback");
 }
+void translatedGeometryRetainsContoursAndPersistence() {
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(0.25, 0.5, 160, 120));
+    auto geometry = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve)
+                        .subtracted(QRect(60, 30, 25, 80));
+    const auto original = geometry.path();
+    const auto moved = geometry.translated(123, -47);
+    require(moved.boundingRect() == geometry.boundingRect().translated(123, -47),
+            "translated geometry retains exact bounds");
+    require(moved.contains(QPointF(143, -7)) == geometry.contains(QPointF(20, 40)),
+            "translated hit testing uses local geometry");
+    const auto restored = ScreenshotRegionGeometry::fromJson(moved.toJson());
+    require(restored && *restored == moved, "translated operands round trip in canvas coordinates");
+    for (const qreal scale : {1.0, 1.25, 2.0, 1.5, 1.0, 2.0, 3.0, 1.0}) {
+        const auto fresh = ScreenshotRegionGeometry::fromJson(geometry.toJson());
+        require(moved.path(scale) == fresh->path(scale).translated(123, -47),
+                "scaled contours are independent of previous scale requests and translations");
+    }
+    require(geometry.path() == original, "render scale changes preserve the canonical contour");
+    const auto localCut = geometry.subtracted(QRect(10, 10, 20, 20)).translated(123, -47);
+    const auto movedCut = moved.subtracted(QRect(133, -37, 20, 20));
+    require(localCut == movedCut, "editing a translated snapshot retains operand coordinates");
+    require(geometry.path() == original && moved.translated(-123, 47) == geometry,
+            "editing and translation never mutate shared snapshots");
+}
+
+void regionMaskMatchesPainterCoverage() {
+    QPainterPath path;
+    path.addEllipse(QRectF(1.25, 2.75, 63.5, 48.25));
+    path.addEllipse(QRectF(16.5, 15.75, 20.25, 20.5));
+    path.setFillRule(Qt::OddEvenFill);
+    QImage content(70, 60, QImage::Format_ARGB32_Premultiplied);
+    content.fill(QColor(170, 50, 200, 180));
+    ScreenshotResultStyle style;
+    style.region = ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+    QImage reference = content;
+    QImage mask(content.size(), QImage::Format_ARGB32_Premultiplied);
+    mask.fill(Qt::transparent);
+    {
+        QPainter painter(&mask);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.fillPath(path, Qt::white);
+    }
+    {
+        QPainter painter(&reference);
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        painter.drawImage(QPoint(), mask);
+    }
+    require(ScreenshotResultCompositor::compose(content, style) == reference,
+            "region mask preserves painter coverage and translucent content exactly");
+    // A color or shadow-width change must not reuse the preceding effect.
+    style.shadowWidth = 7;
+    style.shadowColor = Qt::red;
+    const auto red = ScreenshotResultCompositor::compose(content, style);
+    style.shadowColor = Qt::blue;
+    const auto blue = ScreenshotResultCompositor::compose(content, style);
+    require(red != blue, "shadow color changes invalidate the effect independently of the mask");
+    style.shadowWidth = 0;
+    require(ScreenshotResultCompositor::compose(content, style) == reference,
+            "disabling a cached shadow restores the original masked content");
+}
+
+void sessionCacheCleanupPreservesResults() {
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(0, 0, 100, 80));
+    const auto geometry = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve)
+                              .subtracted(QRect(30, 20, 20, 30));
+    const auto snapshot = geometry.translated(2, 3);
+    geometry.clearDerivedCache();
+    const auto coldBytes = geometry.retainedBytesEstimate();
+    const auto expected = snapshot.path(1.5);
+    require(geometry.retainedBytesEstimate() > coldBytes, "fixture must retain a derived contour");
+    snapshot.clearDerivedCache();
+    require(geometry.retainedBytesEstimate() == coldBytes,
+            "session cleanup releases derived contours shared with retained snapshots");
+    require(snapshot.path(1.5) == expected, "cleaned geometry rebuilds the same contour");
+
+    QImage content(100, 80, QImage::Format_ARGB32_Premultiplied);
+    content.fill(Qt::white);
+    ScreenshotResultStyle style;
+    style.region = QRegion(content.rect()).subtracted(QRect(30, 20, 20, 30));
+    style.cornerRadius = 5;
+    style.shadowWidth = 7;
+    const auto first = ScreenshotResultCompositor::compose(content, style);
+    const auto warm = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
+    require(warm.regionCacheRetainedBytes > 0 && warm.regionPathCacheElements > 0,
+            "fixture must populate both region composition and contour caches");
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+    const auto cleared = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
+    require(cleared.retainedBytes == 0 && cleared.retainedEntries == 0 &&
+                cleared.regionCacheRetainedBytes == 0 && cleared.regionPathCacheElements == 0,
+            "session cleanup is idempotent and releases every thread-local rendering cache");
+    require(ScreenshotResultCompositor::compose(content, style) == first,
+            "a subsequent session rebuilds identical export pixels");
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+}
+
+void tiledShadowsMatchIndependentLocalCompositions(bool sparse) {
+    QImage content(sparse ? 5000 : 1200, 1000, QImage::Format_ARGB32_Premultiplied);
+    content.fill(QColor(70, 140, 210, 180));
+    QPainterPath path;
+    path.addEllipse(QRectF(1.25, 2.5, sparse ? 1095.5 : 1195.5, 990.25));
+    if (sparse)
+        path.addEllipse(QRectF(3900.25, 2.5, 1095.5, 990.25));
+    path.addRect(QRectF(490.25, 490.5, 550, 200));
+    path.setFillRule(Qt::OddEvenFill);
+    for (const int width : {1, 7, 32}) {
+        ScreenshotResultStyle style;
+        style.region = ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+        style.shadowWidth = width;
+        style.shadowColor = QColor(35, 20, 90, 190);
+        const auto tiled = ScreenshotResultCompositor::compose(content, style, 1, 0.7);
+        for (const int x : {16, 512, 1024, sparse ? 4412 : 1190}) {
+            for (const int y : {16, 512, 990}) {
+                const QPoint origin(x - width - 64, y - width - 64);
+                auto localStyle = style;
+                localStyle.region = ScreenshotRegionGeometry::fromPath(path.translated(-origin),
+                                                                       ScreenshotRegionType::Curve);
+                const auto local = ScreenshotResultCompositor::compose(
+                    content.copy(QRect(origin, QSize(128, 128))), localStyle, 1, 0.7);
+                for (int dy = -8; dy <= 8; ++dy)
+                    for (int dx = -8; dx <= 8; ++dx) {
+                        const auto a = tiled.pixelColor(x + dx, y + dy);
+                        const auto b = local.pixelColor(64 + width + dx, 64 + width + dy);
+                        // Compare premultiplied channels: unpremultiplication of
+                        // a one-level alpha difference magnifies low-alpha RGB.
+                        const auto pa = qPremultiply(a.rgba()), pb = qPremultiply(b.rgba());
+                        require(
+                            std::abs(qRed(pa) - qRed(pb)) <= 1 &&
+                                std::abs(qGreen(pa) - qGreen(pb)) <= 1 &&
+                                std::abs(qBlue(pa) - qBlue(pb)) <= 1 &&
+                                std::abs(qAlpha(pa) - qAlpha(pb)) <= 1,
+                            "tiled export matches independent full-support compositions at seams");
+                    }
+            }
+        }
+    }
+}
+
 void shapeCodecAndSamplingBoundaries() {
     QVector<QPointF> samples;
     for (int i = 0; i <= 1000; ++i)
@@ -399,6 +540,11 @@ void shapeCodecAndSamplingBoundaries() {
 } // namespace
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
+    sessionCacheCleanupPreservesResults();
+    tiledShadowsMatchIndependentLocalCompositions(false);
+    tiledShadowsMatchIndependentLocalCompositions(true);
+    translatedGeometryRetainsContoursAndPersistence();
+    regionMaskMatchesPainterCoverage();
     shapeCodecAndSamplingBoundaries();
     customGeometryTransactionsAndPersistence();
     geometryAndTransactions();

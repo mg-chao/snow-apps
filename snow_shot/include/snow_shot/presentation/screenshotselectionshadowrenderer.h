@@ -16,6 +16,11 @@ struct ScreenshotSelectionShadowDiagnostics {
     std::size_t retainedBytes = 0;
     std::size_t retainedEntries = 0;
     std::size_t selectionSizedTransientAllocations = 0;
+    std::size_t regionMaskBuilds = 0;
+    std::size_t regionShadowBuilds = 0;
+    std::size_t regionScratchPeakBytes = 0;
+    std::size_t regionCacheRetainedBytes = 0;
+    std::size_t regionPathCacheElements = 0;
 };
 
 class ScreenshotSelectionShadowRenderer final {
@@ -33,6 +38,8 @@ class ScreenshotSelectionShadowRenderer final {
 
     static ScreenshotSelectionShadowDiagnostics diagnosticsForCurrentThread();
     static void resetDiagnosticsForCurrentThread();
+    // Clears rectangle shadow assets, rounded region contours, and export masks/shadows.
+    // Must run on each owning thread after its session/export work has finished.
     static void resetCacheForCurrentThread();
 };
 

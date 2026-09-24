@@ -456,8 +456,41 @@ void compoundExportsSnapshotTheirGeometry() {
     }
 }
 
+void exportWorkerReleasesSharedDerivedContours() {
+    ExportFixture fixture;
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(0, 0, 40, 30));
+    ScreenshotResultStyle style;
+    style.region = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve)
+                       .subtracted(QRect(10, 10, 10, 10));
+    style.shadowWidth = 3;
+    style.region->clearDerivedCache();
+    const auto coldBytes = style.region->retainedBytesEstimate();
+    for (const bool clipboard : {false, true}) {
+        require(!style.region->path(1.5).isEmpty(), "warm export contour");
+        require(style.region->retainedBytesEstimate() > coldBytes, "warm contour has storage");
+        const auto result =
+            clipboard ? waitForResult(
+                            [&](QObject* receiver, auto callback) {
+                                return fixture.service().requestSelectionClipboard(
+                                    QRect(0, 0, 40, 30), style, receiver, std::move(callback));
+                            },
+                            [](ScreenshotSelectionClipboardResult value) { return value.image; })
+                      : waitForResult(
+                            [&](QObject* receiver, auto callback) {
+                                return fixture.service().requestSelectionResult(
+                                    QRect(0, 0, 40, 30), style, receiver, std::move(callback));
+                            },
+                            [](QImage value) { return value; });
+        require(!result.isNull(), "export survives cache cleanup");
+        require(style.region->retainedBytesEstimate() == coldBytes,
+                "worker releases shared derived contours before publishing its result");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    exportWorkerReleasesSharedDerivedContours();
     compoundExportsSnapshotTheirGeometry();
     pointSelectionRetainsBackingPixelsAndScalesEffects();
     styledClipboardResultRetainsPngTransparency();

@@ -67,6 +67,24 @@ struct ShadowCache {
 thread_local ShadowCache g_cache;
 thread_local ScreenshotSelectionShadowDiagnostics g_diagnostics;
 
+struct RegionPathCache {
+    QRegion region;
+    qreal radius = -1;
+    QPainterPath path;
+};
+
+struct RegionCompositionCache {
+    QPainterPath path;
+    QSize size;
+    int width = -1;
+    QColor color;
+    QImage mask;
+    QImage shadow;
+};
+
+thread_local RegionPathCache g_regionPathCache;
+thread_local RegionCompositionCache g_regionCompositionCache;
+
 int quantizedDpr(qreal dpr) {
     return std::max(1, qRound(std::max<qreal>(1.0, dpr) * kDprQuantization));
 }
@@ -288,12 +306,7 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
     const QRegion& region = geometry.rectangles();
     // The region's scanline rectangles are a storage decomposition, not contours.
     // Simplify their union before rounding so shared edges never become visible.
-    struct Cache {
-        QRegion region;
-        qreal radius = -1;
-        QPainterPath path;
-    };
-    thread_local Cache cache;
+    auto& cache = g_regionPathCache;
     if (cache.region == region && cache.radius == radius)
         return cache.path;
     if (radius > 0 && region.rectCount() > 1 && region.rectCount() <= 512) {
@@ -417,8 +430,11 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
 
 namespace {
 QImage regionMask(const QSize& size, const QPainterPath& path) {
-    QImage mask(size, QImage::Format_ARGB32_Premultiplied);
-    mask.fill(Qt::transparent);
+    QImage mask(size, QImage::Format_Alpha8);
+    ++g_diagnostics.regionMaskBuilds;
+    g_diagnostics.regionScratchPeakBytes = std::max(g_diagnostics.regionScratchPeakBytes,
+                                                    static_cast<std::size_t>(mask.sizeInBytes()));
+    mask.fill(0);
     QPainter painter(&mask);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.fillPath(path, Qt::white);
@@ -428,13 +444,21 @@ QImage regionMask(const QSize& size, const QPainterPath& path) {
 QImage regionShadow(const QImage& mask, int width, const QColor& color) {
     // Finite-support separable blur, O(pixel count) regardless of shadow width.
     const int w = mask.width(), h = mask.height();
+    ++g_diagnostics.regionShadowBuilds;
+    // Mask + output shadow + two float planes + the vertical running sums.
+    g_diagnostics.regionScratchPeakBytes =
+        std::max(g_diagnostics.regionScratchPeakBytes,
+                 static_cast<std::size_t>(mask.sizeInBytes()) +
+                     static_cast<std::size_t>(w) * h * (sizeof(QRgb) + 2 * sizeof(float)) +
+                     static_cast<std::size_t>(w) * sizeof(float));
     std::vector<float> alpha(static_cast<std::size_t>(w) * h);
     std::vector<float> scratch(alpha.size());
     for (int y = 0; y < h; ++y) {
-        const auto* row = reinterpret_cast<const QRgb*>(mask.constScanLine(y));
+        const auto* row = mask.constScanLine(y);
         for (int x = 0; x < w; ++x)
-            alpha[static_cast<std::size_t>(y) * w + x] = static_cast<float>(qAlpha(row[x]));
+            alpha[static_cast<std::size_t>(y) * w + x] = static_cast<float>(row[x]);
     }
+    std::vector<float> columns(static_cast<std::size_t>(w));
     for (int pass = 0; pass < 3; ++pass) {
         const int radius = width / 3 + (pass < width % 3 ? 1 : 0);
         if (radius == 0)
@@ -453,27 +477,32 @@ QImage regionShadow(const QImage& mask, int width, const QColor& color) {
                     sum += alpha[offset + x + radius + 1];
             }
         }
-        for (int x = 0; x < w; ++x) {
-            float sum = 0;
-            for (int y = 0; y <= radius && y < h; ++y)
-                sum += scratch[static_cast<std::size_t>(y) * w + x];
-            for (int y = 0; y < h; ++y) {
-                alpha[static_cast<std::size_t>(y) * w + x] = sum / divisor;
-                if (y - radius >= 0)
-                    sum -= scratch[static_cast<std::size_t>(y - radius) * w + x];
-                if (y + radius + 1 < h)
-                    sum += scratch[static_cast<std::size_t>(y + radius + 1) * w + x];
-            }
+        // Keep each column's running sum, but visit memory in row order.
+        // Column-major traversal of 4K/8K float buffers defeats CPU caches.
+        std::fill(columns.begin(), columns.end(), 0.0f);
+        for (int y = 0; y <= radius && y < h; ++y)
+            for (int x = 0; x < w; ++x)
+                columns[x] += scratch[static_cast<std::size_t>(y) * w + x];
+        for (int y = 0; y < h; ++y) {
+            const auto offset = static_cast<std::size_t>(y) * w;
+            for (int x = 0; x < w; ++x)
+                alpha[offset + x] = columns[x] / divisor;
+            if (y - radius >= 0)
+                for (int x = 0; x < w; ++x)
+                    columns[x] -= scratch[static_cast<std::size_t>(y - radius) * w + x];
+            if (y + radius + 1 < h)
+                for (int x = 0; x < w; ++x)
+                    columns[x] += scratch[static_cast<std::size_t>(y + radius + 1) * w + x];
         }
     }
     QImage shadow(mask.size(), QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < h; ++y) {
         auto* row = reinterpret_cast<QRgb*>(shadow.scanLine(y));
-        const auto* maskRow = reinterpret_cast<const QRgb*>(mask.constScanLine(y));
+        const auto* maskRow = mask.constScanLine(y);
         for (int x = 0; x < w; ++x) {
             const int a =
                 std::clamp(qRound(alpha[static_cast<std::size_t>(y) * w + x] * color.alphaF() *
-                                  kPeakAlphaScale * (255 - qAlpha(maskRow[x])) / 255.0),
+                                  kPeakAlphaScale * (255 - maskRow[x]) / 255.0),
                            0, 255);
             row[x] = qPremultiply(qRgba(color.red(), color.green(), color.blue(), a));
         }
@@ -542,6 +571,10 @@ std::vector<RegionTile> sparseRegionTiles(const QPainterPath& path, const QRect&
     return tiles;
 }
 
+void paintTiledRegion(QPainter& painter, const QImage& content,
+                      const ScreenshotResultLayout& layout, const ScreenshotResultStyle& style,
+                      const QPainterPath& path, const QRect& bounds);
+
 QImage composeSparseRegion(const QImage& content, const ScreenshotResultLayout& layout,
                            const ScreenshotResultStyle& style, const std::vector<RegionTile>& tiles,
                            qreal opacity) {
@@ -549,6 +582,11 @@ QImage composeSparseRegion(const QImage& content, const ScreenshotResultLayout& 
     output.fill(Qt::transparent);
     QPainter outputPainter(&output);
     for (const auto& region : tiles) {
+        if (layout.effectInsets.left() > 0 &&
+            qint64(region.bounds.width()) * region.bounds.height() > 1024 * 1024) {
+            paintTiledRegion(outputPainter, content, layout, style, region.path, region.bounds);
+            continue;
+        }
         QPainterPath localPath = region.path.translated(-region.bounds.topLeft());
         const QImage mask = regionMask(region.bounds.size(), localPath);
         QImage tile(region.bounds.size(), QImage::Format_ARGB32_Premultiplied);
@@ -569,6 +607,52 @@ QImage composeSparseRegion(const QImage& content, const ScreenshotResultLayout& 
     return applyOutputOpacity(std::move(output), opacity);
 }
 
+void paintTiledRegion(QPainter& painter, const QImage& content,
+                      const ScreenshotResultLayout& layout, const ScreenshotResultStyle& style,
+                      const QPainterPath& path, const QRect& bounds) {
+    const int width = layout.effectInsets.left();
+    // Each core owns its pixels; the halo supplies the complete finite blur
+    // support. Grow cores with the support so wide shadows do not multiply work.
+    const int side = std::max(512, width * 8);
+    for (int y = bounds.top(); y <= bounds.bottom(); y += side) {
+        for (int x = bounds.left(); x <= bounds.right(); x += side) {
+            const QRect core = QRect(x, y, side, side).intersected(bounds);
+            const QRect halo = core.adjusted(-width - 2, -width - 2, width + 2, width + 2)
+                                   .intersected(layout.outputRect);
+            if (!path.intersects(QRectF(halo)))
+                continue;
+            if (path.contains(QRectF(halo))) {
+                painter.drawImage(core, content, core.translated(-layout.contentRect.topLeft()));
+                continue;
+            }
+            const auto localPath = path.translated(-halo.topLeft());
+            const auto mask = regionMask(halo.size(), localPath);
+            QImage tile(halo.size(), QImage::Format_ARGB32_Premultiplied);
+            tile.fill(Qt::transparent);
+            {
+                QPainter tilePainter(&tile);
+                tilePainter.drawImage(layout.contentRect.topLeft() - halo.topLeft(), content);
+                tilePainter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                tilePainter.drawImage(QPoint(), mask);
+                tilePainter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+                tilePainter.drawImage(QPoint(), regionShadow(mask, width, style.shadowColor));
+            }
+            painter.drawImage(core, tile, core.translated(-halo.topLeft()));
+        }
+    }
+}
+
+QImage composeTiledRegion(const QImage& content, const ScreenshotResultLayout& layout,
+                          const ScreenshotResultStyle& style, const QPainterPath& path,
+                          qreal opacity) {
+    QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    output.fill(Qt::transparent);
+    QPainter painter(&output);
+    paintTiledRegion(painter, content, layout, style, path, layout.outputRect);
+    painter.end();
+    return applyOutputOpacity(std::move(output), opacity);
+}
+
 QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
                      qreal devicePixelRatio, qreal opacity) {
     const auto layout =
@@ -585,34 +669,35 @@ QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
     const auto sparseTiles = sparseRegionTiles(path, layout.outputRect, layout.effectInsets.left());
     if (!sparseTiles.empty())
         return composeSparseRegion(content, layout, style, sparseTiles, opacity);
-    struct Cache {
-        QPainterPath path;
-        QSize size;
-        int width = -1;
-        QColor color;
-        QImage mask;
-        QImage shadow;
-    };
-    thread_local Cache cache;
+    // Bound temporary blur storage independently of export dimensions. Interior
+    // and exterior tiles need no blur; only boundary tiles allocate scratch.
+    if (layout.effectInsets.left() > 0 &&
+        qint64(layout.outputRect.width()) * layout.outputRect.height() > 1024 * 1024)
+        return composeTiledRegion(content, layout, style, path, opacity);
+    auto& cache = g_regionCompositionCache;
     QImage mask;
     QImage shadow;
-    if (cache.path != path || cache.size != layout.outputRect.size() ||
-        cache.width != layout.effectInsets.left() || cache.color != style.shadowColor) {
+    if (cache.path != path || cache.size != layout.outputRect.size()) {
+        cache = {};
         cache.path = path;
         cache.size = layout.outputRect.size();
-        cache.width = layout.effectInsets.left();
-        cache.color = style.shadowColor;
+    }
+    mask = cache.mask;
+    if (mask.isNull()) {
         mask = regionMask(cache.size, path);
-        shadow = cache.width > 0 ? regionShadow(mask, cache.width, cache.color) : QImage();
-        if (mask.sizeInBytes() + shadow.sizeInBytes() <= qsizetype(kCacheByteLimit)) {
+        if (mask.sizeInBytes() <= qsizetype(kCacheByteLimit))
             cache.mask = mask;
-            cache.shadow = shadow;
-        } else {
-            cache = {};
-        }
-    } else {
-        mask = cache.mask;
+    }
+    if (cache.width == layout.effectInsets.left() && cache.color == style.shadowColor)
         shadow = cache.shadow;
+    else
+        cache.shadow = {};
+    cache.width = layout.effectInsets.left();
+    cache.color = style.shadowColor;
+    if (shadow.isNull() && cache.width > 0) {
+        shadow = regionShadow(mask, cache.width, cache.color);
+        if (cache.mask.sizeInBytes() + shadow.sizeInBytes() <= qsizetype(kCacheByteLimit))
+            cache.shadow = shadow;
     }
     QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
     output.fill(Qt::transparent);
@@ -761,6 +846,11 @@ ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread() {
     ScreenshotSelectionShadowDiagnostics result = g_diagnostics;
     result.retainedBytes = g_cache.bytes;
     result.retainedEntries = g_cache.entries.size();
+    result.regionCacheRetainedBytes =
+        static_cast<std::size_t>(g_regionCompositionCache.mask.sizeInBytes() +
+                                 g_regionCompositionCache.shadow.sizeInBytes());
+    result.regionPathCacheElements = static_cast<std::size_t>(
+        g_regionPathCache.path.elementCount() + g_regionCompositionCache.path.elementCount());
     return result;
 }
 
@@ -770,6 +860,8 @@ void ScreenshotSelectionShadowRenderer::resetDiagnosticsForCurrentThread() {
 
 void ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread() {
     g_cache = ShadowCache{};
+    g_regionPathCache = {};
+    g_regionCompositionCache = {};
 }
 
 void ScreenshotResultCompositor::restoreBakedExterior(QImage& image, const QImage& background,

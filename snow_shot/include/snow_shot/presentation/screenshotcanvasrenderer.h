@@ -18,6 +18,7 @@
 #include <QTransform>
 
 #include <cstddef>
+#include <array>
 #include <memory>
 
 class SnowCanvasWidget;
@@ -110,7 +111,10 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
                                 const ScreenshotResultStyle& style);
     void setBakedSelectionPath(const QPainterPath& path);
     qsizetype selectionOutlineCacheBytes() const {
-        return m_outlineCache.sizeInBytes();
+        return m_outlineCache.bytes();
+    }
+    qsizetype selectionMaskCacheBytes() const {
+        return m_maskCache.bytes();
     }
     qsizetype selectionRegionHoverCacheBytes() const {
         return m_regionHoverCache.sizeInBytes();
@@ -177,6 +181,20 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void renderAfterCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override;
 
   private:
+    struct PathRasterCache {
+        struct Entry {
+            QPainterPath path;
+            QColor color;
+            qreal scale = 0;
+            QImage image;
+        };
+        std::array<Entry, 2> entries;
+        qsizetype bytes() const {
+            return entries[0].image.sizeInBytes() + entries[1].image.sizeInBytes();
+        }
+        bool draw(QPainter& painter, const QPainterPath& path, const QColor& color, bool exterior,
+                  const QRect& viewport);
+    };
     void invalidateCachedContent();
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
     // Widget-space repaint region for a filtered-image canvas rect; empty when the
@@ -194,11 +212,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     ScreenshotResultStyle m_pinnedResultStyle;
     QColor m_pinnedBackgroundColor;
     QPainterPath m_bakedSelectionPath;
-    QPainterPath m_outlineCachePath;
-    QColor m_outlineCacheColor;
-    qreal m_outlineCacheScale = 0;
-    QRectF m_outlineCacheBounds;
-    QImage m_outlineCache;
+    PathRasterCache m_outlineCache;
+    PathRasterCache m_maskCache;
     std::optional<ScreenshotRegionGeometry> m_regionHoverCacheRegion;
     QImage m_regionHoverCache;
     int m_regionHoverCacheRadius = 0;

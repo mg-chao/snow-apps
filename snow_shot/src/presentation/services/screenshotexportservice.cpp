@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
+#include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
 #include "screenshotclipboardperfinstrumentation.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
@@ -16,6 +17,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QThread>
+#include <QScopeGuard>
 
 #include <optional>
 #include <utility>
@@ -90,6 +92,13 @@ class ScreenshotExportWorker final : public QObject {
                            const ScreenshotResultStyle& style,
                            const QList<CanvasExportSource>& sources,
                            const ScreenshotSelectionRenderSpec& spec = {}) {
+        // This thread outlives captures. Release caches on the owning thread,
+        // including failure exits, before publishing the completed result.
+        const auto releaseCaches = qScopeGuard([&style] {
+            ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+            if (style.region)
+                style.region->clearDerivedCache();
+        });
         // The pin trace needs the export baseline even though these stages are
         // shared with the clipboard-copy flows; the sink drops records whenever
         // no pin sample is active.

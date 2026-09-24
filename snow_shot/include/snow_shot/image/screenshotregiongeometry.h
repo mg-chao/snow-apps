@@ -11,6 +11,7 @@
 #include <QTransform>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -73,44 +74,22 @@ class ScreenshotRegionGeometry {
             result.addRegion(m_rectangles);
             return result.simplified();
         }
-        if (m_vector->operands.size() == 1)
-            return m_vector->operands.first().path;
-        const qreal scale = std::max(qreal(1), std::abs(deviceScale)) * kContourOversampling;
-        QMutexLocker lock(&m_vector->mutex);
-        if (m_vector->cachedScale == scale)
-            return m_vector->cachedPath;
-        QTransform transform;
-        transform.scale(scale, scale);
-        QPainterPath result;
-        bool first = true;
-        for (const auto& operand : m_vector->operands) {
-            const auto next = transform.map(operand.path);
-            if (first) {
-                result = next;
-                first = false;
-            } else if (operand.operation == Operation::Add) {
-                result = result.united(next);
-            } else if (operand.operation == Operation::Subtract) {
-                result = result.subtracted(next);
-            } else {
-                result = result.intersected(next);
-            }
-        }
-        m_vector->cachedPath = transform.inverted().map(result);
-        m_vector->cachedScale = scale;
-        return m_vector->cachedPath;
+        const auto contour = localPath(deviceScale);
+        return m_offset.isNull() ? contour : contour.translated(m_offset);
     }
     QRect boundingRect() const {
-        return custom() ? path().boundingRect().toAlignedRect() : m_rectangles.boundingRect();
+        return custom() ? localPath().boundingRect().toAlignedRect().translated(m_offset)
+                        : m_rectangles.boundingRect();
     }
     bool isEmpty() const {
-        return custom() ? path().isEmpty() : m_rectangles.isEmpty();
+        return custom() ? localPath().isEmpty() : m_rectangles.isEmpty();
     }
     int rectCount() const {
         return custom() ? (isEmpty() ? 0 : 2) : m_rectangles.rectCount();
     }
     bool contains(const QPointF& point) const {
-        return custom() ? path().contains(point) : m_rectangles.contains(point.toPoint());
+        return custom() ? localPath().contains(point - m_offset)
+                        : m_rectangles.contains(point.toPoint());
     }
     QRegion rasterRegion() const {
         return custom() ? QRegion(path().toFillPolygon().toPolygon(), Qt::OddEvenFill)
@@ -129,12 +108,8 @@ class ScreenshotRegionGeometry {
     ScreenshotRegionGeometry translated(const QPoint& offset) const {
         if (!custom())
             return m_rectangles.translated(offset);
-        auto result = copyVector();
-        for (auto& operand : result.m_vector->operands)
-            operand.path.translate(offset);
-        QMutexLocker lock(&m_vector->mutex);
-        result.m_vector->cachedScale = m_vector->cachedScale;
-        result.m_vector->cachedPath = m_vector->cachedPath.translated(offset);
+        auto result = *this;
+        result.m_offset += offset;
         return result;
     }
     void translate(const QPoint& offset) {
@@ -161,8 +136,22 @@ class ScreenshotRegionGeometry {
     }
     bool operator==(const ScreenshotRegionGeometry& other) const {
         if (m_vector == other.m_vector)
-            return m_rectangles == other.m_rectangles;
-        return m_vector && other.m_vector && m_vector->operands == other.m_vector->operands;
+            return m_rectangles == other.m_rectangles && m_offset == other.m_offset;
+        if (!m_vector || !other.m_vector)
+            return false;
+        if (m_offset == other.m_offset)
+            return m_vector->operands == other.m_vector->operands;
+        if (m_vector->operands.size() != other.m_vector->operands.size())
+            return false;
+        const QPoint delta = m_offset - other.m_offset;
+        for (qsizetype i = 0; i < m_vector->operands.size(); ++i) {
+            const auto& left = m_vector->operands[i];
+            const auto& right = other.m_vector->operands[i];
+            if (left.operation != right.operation || left.type != right.type ||
+                left.path.translated(delta) != right.path)
+                return false;
+        }
+        return true;
     }
 
     // Capacity-based estimate of vector storage and its bounded contour cache.
@@ -175,7 +164,18 @@ class ScreenshotRegionGeometry {
             sizeof(*this) + sizeof(VectorData) + m_vector->operands.capacity() * sizeof(Operand);
         for (const auto& operand : m_vector->operands)
             bytes += operand.path.capacity() * sizeof(QPainterPath::Element);
-        return bytes + m_vector->cachedPath.capacity() * sizeof(QPainterPath::Element);
+        for (const auto& contour : m_vector->contours)
+            bytes += contour.path.capacity() * sizeof(QPainterPath::Element);
+        return bytes;
+    }
+
+    // Drop derived contours for all snapshots sharing these immutable operands.
+    // Geometry and persistence remain unchanged; future readers rebuild on demand.
+    void clearDerivedCache() const {
+        if (!m_vector)
+            return;
+        QMutexLocker lock(&m_vector->mutex);
+        m_vector->contours = {};
     }
 
     QJsonObject toJson() const {
@@ -191,7 +191,7 @@ class ScreenshotRegionGeometry {
             QJsonArray commands;
             for (int i = 0; i < operand.path.elementCount(); ++i) {
                 const auto e = operand.path.elementAt(i);
-                commands.append(QJsonArray{int(e.type), e.x, e.y});
+                commands.append(QJsonArray{int(e.type), e.x + m_offset.x(), e.y + m_offset.y()});
             }
             operands.append(
                 QJsonObject{{QStringLiteral("operation"), int(operand.operation)},
@@ -297,16 +297,64 @@ class ScreenshotRegionGeometry {
 
   private:
     static constexpr qreal kContourOversampling = 4.0;
+    struct Contour {
+        qreal scale = 0;
+        QPainterPath path;
+    };
     struct VectorData {
         QVector<Operand> operands;
         mutable QMutex mutex;
-        mutable qreal cachedScale = 0;
-        mutable QPainterPath cachedPath;
+        // Slot zero is the canonical contour used by bounds/hit tests/edits.
+        // Rendering at another DPI must never evict it. The other slots are MRU.
+        mutable std::array<Contour, 3> contours;
     };
+    QPainterPath localPath(qreal deviceScale = 1.0) const {
+        if (m_vector->operands.size() == 1)
+            return m_vector->operands.first().path;
+        const qreal scale = std::max(qreal(1), std::abs(deviceScale)) * kContourOversampling;
+        {
+            QMutexLocker lock(&m_vector->mutex);
+            for (std::size_t i = 0; i < m_vector->contours.size(); ++i) {
+                if (m_vector->contours[i].scale != scale)
+                    continue;
+                if (i == 2)
+                    std::swap(m_vector->contours[1], m_vector->contours[2]);
+                return m_vector->contours[i == 2 ? 1 : i].path;
+            }
+        }
+        // Operands are immutable. Do expensive Boolean work without blocking
+        // other readers of this snapshot, then publish the derived contour.
+        const auto transform = QTransform::fromScale(scale, scale);
+        QPainterPath result;
+        bool first = true;
+        for (const auto& operand : m_vector->operands) {
+            const auto next = transform.map(operand.path);
+            if (first) {
+                result = next;
+                first = false;
+            } else if (operand.operation == Operation::Add) {
+                result = result.united(next);
+            } else if (operand.operation == Operation::Subtract) {
+                result = result.subtracted(next);
+            } else {
+                result = result.intersected(next);
+            }
+        }
+        result = transform.inverted().map(result);
+        QMutexLocker lock(&m_vector->mutex);
+        if (scale == kContourOversampling)
+            m_vector->contours[0] = {scale, result};
+        else {
+            m_vector->contours[2] = std::move(m_vector->contours[1]);
+            m_vector->contours[1] = {scale, result};
+        }
+        return result;
+    }
     ScreenshotRegionGeometry copyVector() const {
         ScreenshotRegionGeometry result;
         result.m_vector = std::make_shared<VectorData>();
         result.m_vector->operands = m_vector->operands;
+        result.m_offset = m_offset;
         return result;
     }
     ScreenshotRegionGeometry combined(const ScreenshotRegionGeometry& other, Operation op) const {
@@ -347,14 +395,14 @@ class ScreenshotRegionGeometry {
         auto result = custom() ? copyVector() : fromPath(before, ScreenshotRegionType::Rectangle);
         // The right operand of a user operation is a single untouched contour.
         // Retain its cubics instead of the flattened Boolean result.
-        result.m_vector->operands.append({operand, op,
+        result.m_vector->operands.append({operand.translated(-result.m_offset), op,
                                           other.custom() ? other.m_vector->operands.first().type
                                                          : ScreenshotRegionType::Rectangle});
-        result.m_vector->cachedScale = kContourOversampling;
-        result.m_vector->cachedPath = after;
+        result.m_vector->contours[0] = {kContourOversampling, after.translated(-result.m_offset)};
         return result;
     }
     QRegion m_rectangles;
+    QPoint m_offset;
     std::shared_ptr<VectorData> m_vector;
 };
 

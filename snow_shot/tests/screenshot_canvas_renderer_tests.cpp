@@ -4043,6 +4043,34 @@ void overlayPoolPrewarmRestoresRetainedNativeSurfaces() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void sessionTeardownClearsThreadCachesWithoutOverlays() {
+    NoopOverlayEventSink eventSink;
+    SnowCanvasRuntime canvasRuntime;
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    ScreenshotOverlayPool pool(eventSink, canvasRuntime, shortcutManager, {});
+    ScreenshotDisplaySession displaySession;
+    QImage content(120, 100, QImage::Format_ARGB32_Premultiplied);
+    content.fill(Qt::white);
+    ScreenshotResultStyle style;
+    style.region = QRegion(content.rect()).subtracted(QRect(20, 20, 30, 30));
+    style.cornerRadius = 5;
+    style.shadowWidth = 8;
+    for (const bool destroy : {false, true}) {
+        require(!ScreenshotResultCompositor::compose(content, style).isNull(), "cache fixture");
+        require(ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread()
+                        .regionCacheRetainedBytes > 0,
+                "session must have cached export data before teardown");
+        if (destroy)
+            pool.destroyDisplayPool(displaySession);
+        else
+            pool.resetForNewCapture(displaySession);
+        const auto cleared = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
+        require(cleared.regionCacheRetainedBytes == 0 && cleared.regionPathCacheElements == 0 &&
+                    cleared.retainedBytes == 0,
+                "session teardown must clear thread caches even without an overlay to reset");
+    }
+}
+
 void canvasCursorLayersKeepToolCursorAfterScreenshotSelection() {
     SnowCanvasWidget toolCanvas;
     require(toolCanvas.setCanvasTool(SnowCanvasTool::Shape),
@@ -4290,6 +4318,58 @@ void compoundSelectionRendersUnifiedMaskAndOutline() {
             "hole changes must invalidate pixels inside unchanged bounds");
 }
 
+void hoveredCompoundSelectionShowsCheckerboardInTransparentGaps() {
+    SnowCanvasWidget canvas;
+    canvas.resize(120, 120);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(60, 60, 1), "compound preview camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage background(120, 120, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    renderer.setImage(background, QRectF(0, 0, 120, 120));
+    renderer.setMaskVisible(true);
+
+    const QRegion disjoint = QRegion(QRect(10, 20, 30, 80)).united(QRect(80, 20, 30, 80));
+    const QRegion withHole = QRegion(QRect(10, 10, 100, 100)).subtracted(QRect(40, 40, 40, 40));
+    const QImage tile = adqt::widgets::themedCheckerboardTile(&canvas);
+    const QColor light = tile.pixelColor(0, 7);
+    const QColor dark = tile.pixelColor(7, 7);
+    const QPoint gap(60, 60);
+    for (const QRegion& region : {disjoint, withHole}) {
+        for (const int shadowWidth : {0, 4}) {
+            renderer.setSelection(QRectF(region.boundingRect()), false, 0, shadowWidth);
+            renderer.setSelectionRegion(region, region, {}, false, Qt::red);
+            const QImage bordered = renderCanvas(canvas);
+            ScreenshotSelectionVisualState hovered;
+            hovered.bounds = region.boundingRect();
+            hovered.present = true;
+            hovered.region = region;
+            hovered.confirmedRegion = region;
+            hovered.handlesVisible = false;
+            hovered.shadowWidth = shadowWidth;
+            auto unhovered = hovered;
+            hovered.toolbarHovered = true;
+
+            renderer.setSelectionToolbarHovered(true);
+            const QImage preview = renderCanvas(canvas);
+            require(preview.pixelColor(gap) == light || preview.pixelColor(gap) == dark,
+                    "hovering a compound selection must show checkerboard in transparent gaps");
+            require(preview.pixelColor(25, 60) == QColor(Qt::white),
+                    "checkerboard must not cover selected screenshot pixels");
+            requireChangedPixelsCoveredByDirtyRegion(
+                bordered, preview,
+                planScreenshotSelectionDamage(unhovered, hovered, canvas.rect(),
+                                              canvas.canvasToViewTransform(), true),
+                "compound hover damage must cover the checkerboard in transparent gaps");
+            renderer.setSelectionToolbarHovered(false);
+            require(renderCanvas(canvas).pixelColor(gap) == bordered.pixelColor(gap),
+                    "leaving the toolbar must remove the checkerboard from transparent gaps");
+        }
+    }
+    canvas.setCustomRenderer(nullptr);
+}
+
 void compoundSelectionDamageCoversChangedPixels() {
     SnowCanvasWidget canvas;
     canvas.resize(480, 400);
@@ -4315,7 +4395,7 @@ void compoundSelectionDamageCoversChangedPixels() {
     after.confirmedRegion = *after.region;
     after.bounds = after.region->boundingRect();
 
-    for (const int radius : {0, 8}) {
+    for (const int radius : {0, 8, 64}) {
         before.cornerRadius = radius;
         after.cornerRadius = radius;
         for (const bool hovered : {false, true}) {
@@ -4388,6 +4468,138 @@ void compoundSelectionDamageCoversChangedPixels() {
     requireChangedPixelsCoveredByDirtyRegion(
         previewOldFrame, previewNewFrame, previewDamage,
         "custom additive preview damage must cover every changed pixel");
+    // Committing an addition replaces the confirmed rounded outline while the
+    // effective selection mask stays the same. The old arc is inside the raw
+    // rectangle edge where the two operands overlap.
+    const QRegion lowerLeft(QRect(60, 170, 150, 150));
+    const QRect upperRight(130, 100, 150, 150);
+    const QRegion merged = lowerLeft.united(upperRight);
+    ScreenshotSelectionVisualState cornerPreview;
+    cornerPreview.region = merged;
+    cornerPreview.confirmedRegion = lowerLeft;
+    cornerPreview.marquee = upperRight;
+    cornerPreview.bounds = merged.boundingRect();
+    cornerPreview.present = true;
+    cornerPreview.handlesVisible = false;
+    cornerPreview.cornerRadius = 50;
+    ScreenshotSelectionVisualState cornerCommitted = cornerPreview;
+    cornerCommitted.confirmedRegion = merged;
+    cornerCommitted.marquee = {};
+    renderer.setMaskVisible(false);
+    renderer.applySelectionState(cornerPreview);
+    const QImage cornerPreviewFrame = renderCanvas(canvas);
+    ScreenshotSelectionVisualState cornerRadiusChanged = cornerPreview;
+    cornerRadiusChanged.cornerRadius = 20;
+    renderer.applySelectionState(cornerRadiusChanged);
+    const QImage cornerRadiusChangedFrame = renderCanvas(canvas);
+    requireChangedPixelsCoveredByDirtyRegion(
+        cornerPreviewFrame, cornerRadiusChangedFrame,
+        planScreenshotSelectionDamage(cornerPreview, cornerRadiusChanged, canvas.rect(),
+                                      canvas.canvasToViewTransform(), false),
+        "changing a pending merge radius must repaint the confirmed rounded outline");
+    renderer.applySelectionState(cornerPreview);
+    renderer.applySelectionState(cornerCommitted);
+    const QImage cornerCommittedFrame = renderCanvas(canvas);
+    require(cornerPreviewFrame.pixel(183, 174) != cornerCommittedFrame.pixel(183, 174),
+            "the old rounded border must disappear inside the merged selection");
+    requireChangedPixelsCoveredByDirtyRegion(
+        cornerPreviewFrame, cornerCommittedFrame,
+        planScreenshotSelectionDamage(cornerPreview, cornerCommitted, canvas.rect(),
+                                      canvas.canvasToViewTransform(), false),
+        "committing merged rounded selections must erase the previous inner arc");
+    renderer.setMaskVisible(true);
+    QRegion islands;
+    for (int row = 0; row < 7; ++row)
+        for (int column = 0; column < 9; ++column)
+            islands += QRect(10 + column * 46, 10 + row * 45, 32, 32);
+    ScreenshotSelectionVisualState many;
+    many.region = islands;
+    many.confirmedRegion = islands;
+    many.bounds = islands.boundingRect();
+    many.present = true;
+    many.cornerRadius = 4;
+    renderer.applySelectionState(many);
+    const auto manyOldFrame = renderCanvas(canvas);
+    auto movedMany = many;
+    movedMany.region = ScreenshotRegionGeometry(islands.translated(1, 1));
+    movedMany.confirmedRegion = *movedMany.region;
+    movedMany.bounds = movedMany.region->boundingRect();
+    renderer.applySelectionState(movedMany);
+    const auto manyNewFrame = renderCanvas(canvas);
+    const auto manyDamage = planScreenshotSelectionDamage(many, movedMany, canvas.rect(),
+                                                          canvas.canvasToViewTransform(), true);
+    requireChangedPixelsCoveredByDirtyRegion(manyOldFrame, manyNewFrame, manyDamage,
+                                             "coalesced contour damage covers every changed pixel");
+    require(manyDamage.rectCount() < 128,
+            "fragmented contours coalesce into inexpensive paint clips");
+    canvas.setCustomRenderer(nullptr);
+}
+
+void translatedRasterCachesMatchDirectPainting() {
+    SnowCanvasWidget canvas;
+    canvas.resize(320, 240);
+    canvas.setClearBackgroundEnabled(false);
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage background(canvas.size(), QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    renderer.setImage(background, QRectF(0, 0, 320, 240));
+    renderer.setMaskVisible(true);
+    const QRegion region = QRegion(QRect(20, 20, 180, 150)).subtracted(QRect(70, 60, 60, 50)) +
+                           QRegion(QRect(240, 40, 60, 80)) + QRegion(QRect(240, 150, 60, 30)) +
+                           QRegion(QRect(20, 200, 180, 20));
+    for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+        require(canvas.setViewportCamera(160.25, 120.5, 1), "raster cache camera");
+        for (const auto offset : {QPoint(), QPoint(1, 0), QPoint(2, 0), QPoint(-40, -30),
+                                  QPoint(200, 200), QPoint(-400, -300), QPoint()}) {
+            ScreenshotSelectionVisualState state;
+            state.region = ScreenshotRegionGeometry(region.translated(offset));
+            state.confirmedRegion = *state.region;
+            state.present = true;
+            state.bounds = state.region->boundingRect();
+            state.cornerRadius = 12;
+            renderer.applySelectionState(state);
+            const auto cached = renderCanvas(canvas, dpr);
+            require(renderer.selectionMaskCacheBytes() > 0,
+                    "complex contours exercise the mask raster cache");
+            state.confirmedRegion = {};
+            renderer.applySelectionState(state);
+            const auto direct = renderCanvas(canvas, dpr);
+            require(cached.size() == direct.size(), "cached/direct frame dimensions");
+            for (int y = 0; y < direct.height(); ++y)
+                for (int x = 0; x < direct.width(); ++x) {
+                    const auto a = cached.pixelColor(x, y), b = direct.pixelColor(x, y);
+                    const bool equal = std::abs(a.red() - b.red()) <= 1 &&
+                                       std::abs(a.green() - b.green()) <= 1 &&
+                                       std::abs(a.blue() - b.blue()) <= 1 && a.alpha() == b.alpha();
+                    if (!equal)
+                        std::cerr << "Raster mismatch dpr=" << dpr << " offset=" << offset.x()
+                                  << "," << offset.y() << " pixel=" << x << "," << y
+                                  << " cached=" << a.name(QColor::HexArgb).toStdString()
+                                  << " direct=" << b.name(QColor::HexArgb).toStdString() << '\n';
+                    require(equal,
+                            "cached movement must preserve direct rendering at fractional DPI");
+                }
+            require(renderer.selectionOutlineCacheBytes() <= 64 * 1024 * 1024 &&
+                        renderer.selectionMaskCacheBytes() <= 64 * 1024 * 1024,
+                    "selection raster caches remain bounded");
+        }
+    }
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(20, 20, 180, 150));
+    const auto retainedGeometry =
+        ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve)
+            .subtracted(QRect(70, 60, 60, 50));
+    retainedGeometry.clearDerivedCache();
+    const auto coldGeometryBytes = retainedGeometry.retainedBytesEstimate();
+    renderer.setSelectionRegion(retainedGeometry, retainedGeometry, {}, false, Qt::red);
+    require(retainedGeometry.retainedBytesEstimate() > coldGeometryBytes,
+            "renderer must have derived session geometry before reset");
+    renderer.reset();
+    require(retainedGeometry.retainedBytesEstimate() == coldGeometryBytes,
+            "renderer reset releases derived contours retained by another snapshot");
+    require(renderer.selectionOutlineCacheBytes() == 0 && renderer.selectionMaskCacheBytes() == 0,
+            "reset releases selection raster caches");
     canvas.setCustomRenderer(nullptr);
 }
 
@@ -4443,6 +4655,15 @@ void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--region-rendering-only"))) {
+        sessionTeardownClearsThreadCachesWithoutOverlays();
+        translatedRasterCachesMatchDirectPainting();
+        compoundSelectionRendersUnifiedMaskAndOutline();
+        hoveredCompoundSelectionShowsCheckerboardInTransparentGaps();
+        compoundSelectionDamageCoversChangedPixels();
+        nonRectangularSelectionDraftLeavesInteriorUnchanged();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--region-input-only"))) {
         regionEventsRemainOwnedByOverlay();
         return 0;
@@ -4553,7 +4774,10 @@ int main(int argc, char** argv) {
     }
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();
+    sessionTeardownClearsThreadCachesWithoutOverlays();
+    translatedRasterCachesMatchDirectPainting();
     compoundSelectionRendersUnifiedMaskAndOutline();
+    hoveredCompoundSelectionShowsCheckerboardInTransparentGaps();
     compoundSelectionDamageCoversChangedPixels();
     nonRectangularSelectionDraftLeavesInteriorUnchanged();
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();

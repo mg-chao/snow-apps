@@ -1813,6 +1813,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_link_libraries(snow-shot-screenshot-export-service-tests PRIVATE snow_shot_image_codec
         snow_shot_diagnostics
+        ant_design_qt
         Qt6::Widgets
         snow_draw_engine_qt_canvas
     )
@@ -2808,7 +2809,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/storage/persistedselectioncodec.cpp
     )
     target_include_directories(snow-shot-multi-region-tests PRIVATE include)
-    target_link_libraries(snow-shot-multi-region-tests PRIVATE Qt6::Gui snow_draw_engine_qt_canvas)
+    target_link_libraries(snow-shot-multi-region-tests PRIVATE
+        Qt6::Gui snow_draw_engine_qt_canvas ant_design_qt)
     if(WIN32)
         target_link_libraries(snow-shot-multi-region-tests PRIVATE user32)
     endif()

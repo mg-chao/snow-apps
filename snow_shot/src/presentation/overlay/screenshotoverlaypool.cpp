@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
 #include <algorithm>
 #include <utility>
@@ -60,6 +61,7 @@ void ScreenshotOverlayPool::destroyDisplayPool(ScreenshotDisplaySession& display
         display.stableId.clear();
         ScreenshotCaptureDisplayModelReconciler::clearCaptureMetadata(display);
     });
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
 }
 
 void ScreenshotOverlayPool::resetForNewCapture(ScreenshotDisplaySession& displaySession) const {
@@ -74,6 +76,9 @@ void ScreenshotOverlayPool::resetForNewCapture(ScreenshotDisplaySession& display
                 }
             }
         });
+    // Session teardown reaches this path after normal cancellation, restart, and
+    // deferred export cleanup. Clear thread-local data even with an empty pool.
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
 }
 
 ScreenshotOverlayWindow*
