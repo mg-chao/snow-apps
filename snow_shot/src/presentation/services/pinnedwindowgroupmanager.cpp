@@ -180,6 +180,19 @@ int PinnedWindowGroupManager::windowCount(const QString& groupId) const {
     return windowCounts(groupId).nonIgnored;
 }
 
+void PinnedWindowGroupManager::onPinnedRecordsChanged() {
+    if (m_repository == nullptr)
+        return;
+    const bool hadCounts = m_countsRevision != (std::numeric_limits<quint64>::max)();
+    const auto previousCounts = m_persistedCounts;
+    const auto previousTotals = m_persistedTotalCounts;
+    static_cast<void>(windowCounts(m_activeGroupId));
+    if (!hadCounts || previousCounts != m_persistedCounts ||
+        previousTotals != m_persistedTotalCounts) {
+        scheduleGroupsChanged();
+    }
+}
+
 bool PinnedWindowGroupManager::hasWindow(const QString& persistenceId) const {
     const auto it = m_windows.constFind(persistenceId);
     return it != m_windows.cend() && it.value() != nullptr &&
@@ -329,9 +342,10 @@ void PinnedWindowGroupManager::openDeleteEmptyGroupsConfirmation(QWidget* owner)
         createDeletionModal(owner, this, QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
     const auto updateText = [this, modal]() {
         modal->setWindowTitle(tr("Delete empty groups"));
-        modal->setText(tr("Delete every group with no non-ignored pinned windows? Ignored pinned "
-                          "windows saved in those groups will also be permanently deleted. This "
-                          "action cannot be undone."));
+        modal->setText(
+            tr("Delete every group with no pinned windows other than closed ones? Closed pinned "
+               "windows saved in those groups will also be permanently deleted. This "
+               "action cannot be undone."));
         modal->setAcceptText(tr("Delete groups"));
         modal->setRejectText(tr("Cancel"));
     };
@@ -360,10 +374,10 @@ void PinnedWindowGroupManager::openDeleteSpecifiedGroupConfirmation(const QStrin
         modal->setWindowTitle(isDefault ? tr("Clear Default group") : tr("Delete group"));
         modal->setText(
             isDefault
-                ? tr("Delete all pinned windows in \"%1\", including ignored windows? The Default "
+                ? tr("Delete all pinned windows in \"%1\", including closed windows? The Default "
                      "group will remain. This action cannot be undone.")
                       .arg(displayName(groupId))
-                : tr("Delete \"%1\" and all its pinned windows, including ignored windows? This "
+                : tr("Delete \"%1\" and all its pinned windows, including closed windows? This "
                      "action cannot be undone.")
                       .arg(displayName(groupId)));
         modal->setAcceptText(isDefault ? tr("Clear group") : tr("Delete group"));

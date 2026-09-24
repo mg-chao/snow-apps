@@ -5,6 +5,7 @@
 #include "pinnedwindowstorageconstants_p.h"
 
 #include <QBuffer>
+#include <QCache>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -919,15 +920,17 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
 }
 
 bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
-                    QHash<QString, quint64>* committedPayloadRevisions) {
-    if (committedPayloadRevisions == nullptr ||
+                    QHash<QString, quint64>* committedPayloadRevisions,
+                    QSet<QString>* changedPayloadIds) {
+    if (committedPayloadRevisions == nullptr || changedPayloadIds == nullptr ||
         !QDir().mkpath(QDir(root).filePath(QStringLiteral("pins")))) {
         return false;
     }
     for (const StoredRecord& stored : snapshot.records) {
-        if (committedPayloadRevisions->value(stored.record.id, 0) != stored.payloadRevision &&
-            !writePayload(root, stored, snapshot.compressionLevel)) {
-            return false;
+        if (committedPayloadRevisions->value(stored.record.id, 0) != stored.payloadRevision) {
+            changedPayloadIds->insert(stored.record.id);
+            if (!writePayload(root, stored, snapshot.compressionLevel))
+                return false;
         }
     }
     QJsonArray groups;
@@ -971,6 +974,10 @@ bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
 } // namespace
 
 struct PinnedWindowRepository::Impl final {
+    struct CachedPayloadBytes {
+        quint64 revision = 0;
+        qint64 bytes = 0;
+    };
     QString root;
     PinnedWindowPolicy policy;
     QString compressionLevel = QStringLiteral("medium");
@@ -1015,6 +1022,7 @@ struct PinnedWindowRepository::Impl final {
     std::condition_variable condition;
     std::thread writer;
     QHash<QString, quint64> committedPayloadRevisions;
+    QCache<QString, CachedPayloadBytes> payloadSizeCache{512};
     quint64 nextPayloadRevision = 1;
     quint64 nextPreviewSourceRevision = 1;
 
@@ -1149,9 +1157,12 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
                 Snapshot snapshot = impl->snapshotLocked();
                 impl->activeWrite = true;
                 lock.unlock();
-                const bool success =
-                    snapshotToDisk(impl->root, snapshot, &impl->committedPayloadRevisions);
+                QSet<QString> changedPayloadIds;
+                const bool success = snapshotToDisk(
+                    impl->root, snapshot, &impl->committedPayloadRevisions, &changedPayloadIds);
                 lock.lock();
+                for (const QString& id : std::as_const(changedPayloadIds))
+                    impl->payloadSizeCache.remove(id);
                 impl->activeWrite = false;
                 ++impl->attemptCount;
                 if (success) {
@@ -1908,12 +1919,24 @@ StorageResult PinnedWindowRepository::enforcePolicy(QDateTime now) {
         if (!it->record.ignored || m_impl->restoringIds.contains(it.key()))
             continue;
         qint64 size = 0;
-        const auto files =
-            QDir(payloadDirectory(m_impl->root, it.key())).entryInfoList(QDir::Files);
-        for (const auto& file : files)
-            size += file.size();
+        bool hasCommittedFiles = false;
+        const auto* cached = m_impl->payloadSizeCache.object(it.key());
+        if (cached != nullptr && cached->revision == it->payloadRevision) {
+            size = cached->bytes;
+            hasCommittedFiles = true;
+        } else {
+            const auto files =
+                QDir(payloadDirectory(m_impl->root, it.key())).entryInfoList(QDir::Files);
+            hasCommittedFiles = !files.isEmpty();
+            for (const auto& file : files)
+                size += file.size();
+            if (hasCommittedFiles) {
+                m_impl->payloadSizeCache.insert(
+                    it.key(), new Impl::CachedPayloadBytes{it->payloadRevision, size});
+            }
+        }
         // Pending payloads are accounted for before their first disk commit as well.
-        if (files.isEmpty()) {
+        if (!hasCommittedFiles) {
             size = it->record.canvasSession.size() + it->record.recognitionResults.size() +
                    it->record.resultStyle.size() + it->record.originalHtml.toUtf8().size() +
                    it->record.originalText.toUtf8().size();

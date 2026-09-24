@@ -133,7 +133,8 @@ class ApplicationController::Impl {
                                  controller->destroyPinnedRecords(ids);
                          });
         QObject::connect(&pinnedStorage, &storage::ApplicationStorage::pinnedWindowsChanged,
-                         &groupManager, &presentation::PinnedWindowGroupManager::groupsChanged);
+                         &groupManager,
+                         &presentation::PinnedWindowGroupManager::onPinnedRecordsChanged);
         QObject::connect(
             &groupManager,
             &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,

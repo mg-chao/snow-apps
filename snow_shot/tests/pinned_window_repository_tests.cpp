@@ -872,6 +872,30 @@ void managementDiskQuotaAndRestorationProtection() {
             "quota removes closed bytes and never active pins");
 }
 
+void managementPolicySizeCacheTracksPayloadCommits() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    auto record =
+        recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), patternedImage({2, 2}, 1));
+    auto policy = repository.policy();
+    policy.maxDiskMiB = 128;
+    require(repository.setPolicy(policy).success && repository.upsert(record).success &&
+                repository.markClosed(record.id).success && repository.flush().success &&
+                repository.enforcePolicy().success,
+            "warm closed-record disk usage");
+
+    auto changed = repository.loadRecord(record.id);
+    require(changed.has_value(), "load closed record before payload update");
+    changed->canvasSession = QByteArrayLiteral("changed canvas state");
+    require(repository.updateState(*changed).success && repository.flush().success,
+            "commit changed payload after disk usage was cached");
+    QFile payload(payloadFilePath(directory.path(), record.id));
+    require(payload.open(QIODevice::ReadWrite) && payload.resize(129LL * 1024 * 1024),
+            "extend committed payload for deterministic quota accounting");
+    require(repository.enforcePolicy().success && !repository.loadRecord(record.id),
+            "payload commit invalidates cached disk usage before quota enforcement");
+}
+
 void managementCreationOrderSurvivesOutOfOrderEncoding() {
     QTemporaryDir directory;
     storage::PinnedWindowRepository repository(directory.path(), true, 30000);
@@ -1074,6 +1098,7 @@ int main(int argc, char* argv[]) {
     bulkRemovalIsAtomicAndNotifiesOnce();
     canceledCreationReleasesLifecycleState();
     managementDiskQuotaAndRestorationProtection();
+    managementPolicySizeCacheTracksPayloadCommits();
     managementLegacyMetadataDefaults();
     managementExpiresBeforeApplyingQuotas();
     managementCreationOrderSurvivesOutOfOrderEncoding();

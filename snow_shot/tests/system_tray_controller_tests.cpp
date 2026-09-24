@@ -600,6 +600,7 @@ int main(int argc, char* argv[]) {
                 specifiedModal->windowModality() == Qt::ApplicationModal &&
                 specifiedModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
                 specifiedModal->text().contains(QStringLiteral("Tray specified")) &&
+                specifiedModal->text().contains(QStringLiteral("including closed windows")) &&
                 groupManager.contains(*traySpecifiedId),
             "tray specified deletion should open a detached application-modal confirmation");
     requireTrayModalCentered(specifiedModal,
@@ -627,7 +628,9 @@ int main(int argc, char* argv[]) {
     auto* emptyModal = deletionModalNamed(QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
     require(emptyModal != nullptr &&
                 emptyModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
-                emptyModal->text().contains(QStringLiteral("Ignored pinned windows saved")) &&
+                emptyModal->text().contains(
+                    QStringLiteral("no pinned windows other than closed ones")) &&
+                emptyModal->text().contains(QStringLiteral("Closed pinned windows saved")) &&
                 groupManager.contains(*trayCleanupId),
             "tray empty-group deletion should await confirmation");
     requireTrayModalCentered(emptyModal,

@@ -109,7 +109,7 @@
         <message numerus="yes">
             <source>%n pinned window(s)</source>
             <translation>
-            <numerusform>%n 個固定到螢幕的視窗</numerusform>
+            <numerusform>%n 個固定到螢幕視窗</numerusform>
         </translation>
         </message>
         <message>
@@ -118,7 +118,7 @@
         </message>
         <message>
             <source>Bulk actions for selected pinned windows</source>
-            <translation>對選取的固定到螢幕的視窗執行批次操作</translation>
+            <translation>對選取的固定到螢幕視窗執行批次操作</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -126,7 +126,7 @@
         </message>
         <message>
             <source>Change the source or date range to see more pinned windows</source>
-            <translation>變更來源或日期範圍以查看更多固定到螢幕的視窗</translation>
+            <translation>變更來源或日期範圍以查看更多固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Clipboard</source>
@@ -156,19 +156,19 @@
         </message>
         <message>
             <source>Delete all pinned windows</source>
-            <translation>刪除所有固定到螢幕的視窗</translation>
+            <translation>刪除所有固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Delete all pinned windows?</source>
-            <translation>刪除所有固定到螢幕的視窗？</translation>
+            <translation>刪除所有固定到螢幕視窗？</translation>
         </message>
         <message>
             <source>Delete selected pinned windows</source>
-            <translation>刪除選取的固定到螢幕的視窗</translation>
+            <translation>刪除選取的固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Delete this pinned window?</source>
-            <translation>刪除此固定到螢幕的視窗？</translation>
+            <translation>刪除此固定到螢幕視窗？</translation>
         </message>
         <message>
             <source>Deselect all</source>
@@ -176,7 +176,7 @@
         </message>
         <message>
             <source>Deselect all pinned windows</source>
-            <translation>取消選取所有固定到螢幕的視窗</translation>
+            <translation>取消選取所有固定到螢幕視窗</translation>
         </message>
         <message>
             <source>End date</source>
@@ -187,16 +187,12 @@
             <translation>群組：%1</translation>
         </message>
         <message>
-            <source>Loading preview…</source>
-            <translation>正在載入預覽…</translation>
-        </message>
-        <message>
             <source>No matching pinned windows</source>
-            <translation>沒有符合條件的固定到螢幕的視窗</translation>
+            <translation>沒有符合條件的固定到螢幕視窗</translation>
         </message>
         <message>
             <source>No pinned windows</source>
-            <translation>尚無固定到螢幕的視窗</translation>
+            <translation>尚無固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Other / legacy</source>
@@ -212,15 +208,11 @@
         </message>
         <message>
             <source>Pinned window image</source>
-            <translation>固定到螢幕的視窗的圖片</translation>
-        </message>
-        <message>
-            <source>Preview unavailable</source>
-            <translation>無法預覽</translation>
+            <translation>固定到螢幕視窗的圖片</translation>
         </message>
         <message>
             <source>Refresh pinned windows</source>
-            <translation>重新整理固定到螢幕的視窗</translation>
+            <translation>重新整理固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Restore</source>
@@ -490,11 +482,11 @@
         </message>
         <message>
             <source>Destroy pinned window</source>
-            <translation>銷毀固定到螢幕的視窗</translation>
+            <translation>銷毀固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Destroy this pinned window? This action cannot be undone.</source>
-            <translation>確定要銷毀此固定到螢幕的視窗嗎？此操作無法復原。</translation>
+            <translation>確定要銷毀此固定到螢幕視窗嗎？此操作無法復原。</translation>
         </message>
         <message>
             <source>Display text recognition results</source>
@@ -664,20 +656,20 @@
             <translation>預設</translation>
         </message>
         <message>
-            <source>Delete "%1" and all its pinned windows, including ignored windows? This action cannot be undone.</source>
-            <translation>刪除「%1」及其中所有釘選視窗（包括已忽略的視窗）？此操作無法復原。</translation>
+            <source>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone.</source>
+            <translation>刪除「%1」及其中所有固定到螢幕視窗（包括已關閉的視窗）？此操作無法復原。</translation>
         </message>
         <message>
-            <source>Delete all pinned windows in "%1", including ignored windows? The Default group will remain. This action cannot be undone.</source>
-            <translation>刪除「%1」中的所有釘選視窗（包括已忽略的視窗）？預設群組將保留。此操作無法復原。</translation>
+            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone.</source>
+            <translation>刪除「%1」中的所有固定到螢幕視窗（包括已關閉的視窗）？預設群組將保留。此操作無法復原。</translation>
         </message>
         <message>
             <source>Delete empty groups</source>
             <translation>刪除空群組</translation>
         </message>
         <message>
-            <source>Delete every group with no non-ignored pinned windows? Ignored pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
-            <translation>刪除所有沒有未忽略釘選視窗的群組？儲存在這些群組中的已忽略釘選視窗也將被永久刪除。此操作無法復原。</translation>
+            <source>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
+            <translation>刪除所有僅包含已關閉的固定到螢幕視窗或沒有固定到螢幕視窗的群組？儲存在這些群組中的已關閉固定到螢幕視窗也將被永久刪除。此操作無法復原。</translation>
         </message>
         <message>
             <source>Delete group</source>

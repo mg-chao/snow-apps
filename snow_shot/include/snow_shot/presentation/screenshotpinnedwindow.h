@@ -229,6 +229,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void createContextMenu();
     void confirmDestroy();
     void rebuildGroupMenu();
+    void refreshContextMenuIfVisible();
     void refreshContextMenuForGroup(const QString& groupId);
     void deleteIfInGroup(const QString& groupId);
     void applyRuntimeBorderColor();

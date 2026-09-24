@@ -148,6 +148,7 @@ class ApplicationStorage final : public QObject {
     QThreadPool m_pinnedFullImagePool;
     std::unique_ptr<StorageUsageTracker> m_usageTracker;
     std::atomic_bool m_pinnedChangeQueued{false};
+    quint64 m_lastPinnedNotifiedRevision = 0;
     bool m_initialized = false;
 };
 } // namespace snow_shot::storage

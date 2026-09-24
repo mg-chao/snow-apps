@@ -822,6 +822,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/sectionheaderwidget.cpp
     src/presentation/components/screenshothistorypagewidget.cpp
     include/snow_shot/presentation/components/historyselectionbar.h
+    include/snow_shot/presentation/components/historypagecommon.h
+    src/presentation/components/historypagecommon.cpp
     include/snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h
     src/presentation/components/pinnedwindowmanagementpagewidget.cpp
     src/presentation/services/screenshotclipboardcontent.cpp
@@ -2757,6 +2759,18 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-capture-workflow-tests
         COMMAND snow-shot-capture-workflow-tests
     )
+
+    add_executable(snow-shot-capture-modal-closer-tests
+        tests/screenshot_capture_modal_closer_tests.cpp
+        src/presentation/capture/screenshotcapturemodalcloser.h
+    )
+    target_link_libraries(snow-shot-capture-modal-closer-tests PRIVATE Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-capture-modal-closer-tests)
+    add_test(NAME snow-shot-capture-modal-closer-tests
+        COMMAND snow-shot-capture-modal-closer-tests)
+    set_tests_properties(snow-shot-capture-modal-closer-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-tool-command-workflow-tests
         tests/screenshot_tool_command_workflow_tests.cpp

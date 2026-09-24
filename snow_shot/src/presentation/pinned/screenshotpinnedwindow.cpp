@@ -1804,7 +1804,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     if (m_groupManager != nullptr) {
         m_groupManager->registerWindow(this, m_groupId);
         connect(m_groupManager, &snow_shot::presentation::PinnedWindowGroupManager::groupsChanged,
-                this, &ScreenshotPinnedWindow::refreshContextMenu, Qt::UniqueConnection);
+                this, &ScreenshotPinnedWindow::refreshContextMenuIfVisible, Qt::UniqueConnection);
         connect(m_groupManager,
                 &snow_shot::presentation::PinnedWindowGroupManager::activeGroupChanged, this,
                 &ScreenshotPinnedWindow::refreshContextMenuForGroup, Qt::UniqueConnection);
@@ -2835,7 +2835,12 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
 
 void ScreenshotPinnedWindow::refreshContextMenuForGroup(const QString& groupId) {
     Q_UNUSED(groupId);
-    refreshContextMenu();
+    refreshContextMenuIfVisible();
+}
+
+void ScreenshotPinnedWindow::refreshContextMenuIfVisible() {
+    if (m_contextMenu != nullptr && m_contextMenu->isVisible())
+        refreshContextMenu();
 }
 
 void ScreenshotPinnedWindow::deleteIfInGroup(const QString& groupId) {

@@ -16,10 +16,13 @@
 #include <QTemporaryDir>
 #include <QLabel>
 #include <QFrame>
+#include <QBoxLayout>
 #include <QEvent>
+#include <QEnterEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QStackedWidget>
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -35,6 +38,8 @@ class Fixture final : public PinnedWindowManagementDataSource {
     QVector<storage::PinnedWindowSummary> items;
     QString shown;
     QVector<QString> removed;
+    QVector<QSize> previewSizes;
+    int fullImageRequests = 0;
     QVector<storage::PinnedWindowSummary> records() const override {
         return items;
     }
@@ -42,12 +47,17 @@ class Fixture final : public PinnedWindowManagementDataSource {
         return {{QStringLiteral("default"), QStringLiteral("Default"), true},
                 {QStringLiteral("work"), QStringLiteral("Work"), false}};
     }
-    void requestPreview(const QString& id, quint64 generation) override {
+    std::optional<quint64> previewRevision(const QString&) const override {
+        return 1;
+    }
+    void requestPreview(const QString& id, quint64 requestId, const QSize& targetSize) override {
+        previewSizes.push_back(targetSize);
         QImage image(120, 60, QImage::Format_RGB32);
         image.fill(Qt::green);
-        emit previewReady(id, generation, image);
+        emit previewReady(id, requestId, image, image.size());
     }
     void requestFullImage(const QString& id, quint64 requestId) override {
+        ++fullImageRequests;
         QImage image(120, 60, QImage::Format_RGB32);
         image.fill(Qt::green);
         emit fullImageReady(id, requestId, image);
@@ -81,6 +91,52 @@ int main(int argc, char** argv) {
     second.creationSource = storage::PinnedWindowCreationSource::Screenshot;
     fixture.items = {first, second};
     {
+        QStackedWidget pages;
+        pages.resize(980, 640);
+        pages.addWidget(new QWidget);
+        pages.show();
+        application.processEvents();
+        auto* pinnedPage = new PinnedWindowManagementPageWidget(&fixture, &pages);
+        pages.addWidget(pinnedPage);
+        pages.setCurrentWidget(pinnedPage);
+        application.processEvents();
+        auto* entries = pinnedPage->findChild<QWidget*>(QStringLiteral("pinnedManagementEntries"));
+        const auto rows =
+            pinnedPage->findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+        require(entries != nullptr && entries->width() >= 560 && rows.size() == 2,
+                "switching to pinned management lays out wide records");
+        for (auto* row : rows) {
+            auto* rowLayout = dynamic_cast<QBoxLayout*>(row->layout());
+            auto* group = row->findChild<QLabel*>(QStringLiteral("pinnedManagementGroup"));
+            auto* preview = row->findChild<QWidget*>(QStringLiteral("pinnedManagementPreview"));
+            require(rowLayout != nullptr && rowLayout->direction() == QBoxLayout::LeftToRight,
+                    "pinned record preview stays beside its description after navigation");
+            require(group != nullptr && preview != nullptr &&
+                        preview->x() > group->mapTo(row, QPoint(group->width(), 0)).x(),
+                    "pinned record image is positioned to the right of its description");
+        }
+        pages.resize(500, 640);
+        application.processEvents();
+        require(entries->width() < 560, "narrow navigation test reaches the responsive breakpoint");
+        for (auto* row : rows) {
+            auto* rowLayout = dynamic_cast<QBoxLayout*>(row->layout());
+            auto* group = row->findChild<QLabel*>(QStringLiteral("pinnedManagementGroup"));
+            auto* preview = row->findChild<QWidget*>(QStringLiteral("pinnedManagementPreview"));
+            require(rowLayout->direction() == QBoxLayout::TopToBottom,
+                    "pinned records stack on narrow pages");
+            require(preview->y() > group->mapTo(row, QPoint(0, group->height())).y(),
+                    "pinned record image follows its description on narrow pages");
+        }
+        pages.resize(980, 640);
+        application.processEvents();
+        for (auto* row : rows) {
+            auto* rowLayout = dynamic_cast<QBoxLayout*>(row->layout());
+            require(rowLayout->direction() == QBoxLayout::LeftToRight,
+                    "pinned records return to one row when the page widens");
+        }
+    }
+    {
+        fixture.previewSizes.clear();
         PinnedWindowManagementPageWidget page(&fixture, nullptr);
         page.resize(980, 640);
         page.show();
@@ -91,6 +147,20 @@ int main(int argc, char** argv) {
         require(rows().size() == 2 &&
                     rows().front()->property("recordId") == QStringLiteral("second"),
                 "closed activity sorts first");
+        auto* sharedImage = rows().front()->findChild<adqt::widgets::AdImage*>(
+            QStringLiteral("pinnedManagementPreview"));
+        QElapsedTimer thumbnailTimer;
+        thumbnailTimer.start();
+        while (sharedImage != nullptr && fixture.previewSizes.isEmpty() &&
+               thumbnailTimer.elapsed() < 5000) {
+            sharedImage->grab();
+            application.processEvents();
+            QThread::msleep(1);
+        }
+        require(sharedImage != nullptr && !sharedImage->loading() && !sharedImage->loadFailed() &&
+                    !fixture.previewSizes.isEmpty() && fixture.previewSizes.front().isValid() &&
+                    fixture.fullImageRequests == 0,
+                "pinned thumbnails use AdImage and request bounded previews without full images");
         require(page.findChild<QWidget*>(QStringLiteral("pinnedManagementPageContainer")) &&
                     page.findChild<QWidget*>(QStringLiteral("pinnedManagementSelectionBar")) &&
                     page.findChild<adqt::widgets::AdPagination*>(
@@ -105,6 +175,21 @@ int main(int argc, char** argv) {
             if (button->text() == QStringLiteral("Restore"))
                 button->click();
         require(fixture.shown == QStringLiteral("second"), "restore dispatches existing record ID");
+        QPointer<QFrame> restoredRow = rows().front();
+        fixture.items[1].ignored = false;
+        emit fixture.changed();
+        require(!restoredRow.isNull() && restoredRow
+                                                 ->findChild<adqt::widgets::AdButton*>(
+                                                     QStringLiteral("pinnedManagementEntryShow"))
+                                                 ->text() == QStringLiteral("Show"),
+                "restoring a record updates its existing row");
+        fixture.items[1].ignored = true;
+        emit fixture.changed();
+        require(!restoredRow.isNull() && restoredRow
+                                                 ->findChild<adqt::widgets::AdButton*>(
+                                                     QStringLiteral("pinnedManagementEntryShow"))
+                                                 ->text() == QStringLiteral("Restore"),
+                "closing a record reuses its preview row");
         auto* dates = page.findChild<adqt::widgets::AdDateRangePicker*>();
         dates->setStartDate(today.date());
         dates->setEndDate(today.date());
@@ -128,7 +213,16 @@ int main(int argc, char** argv) {
         application.processEvents();
         require(rows().front()->isVisible() && rows().front()->height() > 100,
                 "rebuilt records must remain visible after language changes");
-        auto* singleDelete = rows().front()->findChild<adqt::widgets::AdPopconfirm*>();
+        auto* singleDelete = page.findChild<adqt::widgets::AdPopconfirm*>(
+            QStringLiteral("pinnedManagementEntryDeleteConfirm"));
+        require(page.findChildren<adqt::widgets::AdPopconfirm*>(
+                        QStringLiteral("pinnedManagementEntryDeleteConfirm"))
+                        .size() == 1,
+                "one delete confirmation serves every visible row");
+        rows()
+            .front()
+            ->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryDelete"))
+            ->click();
         require(QMetaObject::invokeMethod(singleDelete, "accepted", Qt::DirectConnection),
                 "accept single deletion");
         require(fixture.removed == QVector<QString>{QStringLiteral("second")},
@@ -137,6 +231,13 @@ int main(int argc, char** argv) {
         require(
             page.findChild<QWidget*>(QStringLiteral("pinnedManagementSelectionBar"))->isVisible(),
             "selection actions appear when an entry is selected");
+        auto* countLabel = page.findChild<QLabel*>(QStringLiteral("pinnedManagementCountLabel"));
+        auto* selectionLabel =
+            page.findChild<QLabel*>(QStringLiteral("pinnedManagementSelectionSummary"));
+        require(countLabel != nullptr && selectionLabel != nullptr &&
+                    countLabel->font().pixelSize() == selectionLabel->font().pixelSize() &&
+                    countLabel->font().weight() == selectionLabel->font().weight(),
+                "selected pinned records keep the same text style as the page subtitle");
         auto* selectedDelete = page.findChild<adqt::widgets::AdPopconfirm*>(
             QStringLiteral("pinnedManagementDeleteSelectedConfirm"));
         QMetaObject::invokeMethod(selectedDelete, "accepted", Qt::DirectConnection);
@@ -152,9 +253,42 @@ int main(int argc, char** argv) {
         emit fixture.changed();
         require(rows().size() == 1, "repository changes update page");
     }
+    {
+        Fixture many;
+        for (int index = 0; index < 50; ++index) {
+            storage::PinnedWindowSummary item;
+            item.id = QStringLiteral("many-%1").arg(index);
+            item.createdUtc = today.toUTC();
+            many.items.push_back(item);
+        }
+        PinnedWindowManagementPageWidget page(&many, nullptr);
+        page.resize(980, 640);
+        page.show();
+        auto* pagination = page.findChild<adqt::widgets::AdPagination*>(
+            QStringLiteral("pinnedManagementPagination"));
+        pagination->setPageSize(50);
+        application.processEvents();
+        QHash<QString, QPointer<QFrame>> originalRows;
+        for (auto* row : page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord")))
+            originalRows.insert(row->property("recordId").toString(), row);
+        require(originalRows.size() == 50 &&
+                    page.findChildren<adqt::widgets::AdPopconfirm*>(
+                            QStringLiteral("pinnedManagementEntryDeleteConfirm"))
+                            .size() == 1,
+                "a full page keeps one delete confirmation");
+        many.items[25].ignored = true;
+        many.items[25].lastClosedUtc = today.toUTC();
+        emit many.changed();
+        application.processEvents();
+        for (auto* row : page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord"))) {
+            const QString id = row->property("recordId").toString();
+            require(originalRows.value(id) == row,
+                    "a close event reorders a full page without recreating preview rows");
+        }
+    }
     // Exercise the production asynchronous preview path with all persisted content kinds.
     auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
-    QImage base(32, 16, QImage::Format_RGB32);
+    QImage base(640, 384, QImage::Format_RGB32);
     base.fill(Qt::cyan);
     const auto sourcePath = directory.filePath(QStringLiteral("original.png"));
     require(base.save(sourcePath), "write preview file source");
@@ -166,7 +300,7 @@ int main(int argc, char** argv) {
         record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         record.sourceKind = kind;
         record.image = base;
-        record.nativeGeometry = QRect(0, 0, 32, 16);
+        record.nativeGeometry = QRect(QPoint(0, 0), base.size());
         record.canvasSourceRect = QRectF(record.nativeGeometry);
         record.contentCanvasRect = record.canvasSourceRect;
         record.surfaceCanvasRect = record.canvasSourceRect;
@@ -189,6 +323,21 @@ int main(int argc, char** argv) {
             "previews must use persisted payloads after the original file is removed");
     {
         PinnedWindowManagementPageWidget page;
+        int completedPreviews = 0;
+        QSize imageThumbnailSize;
+        QSize imageNaturalSize;
+        auto* pageSource = page.findChild<PinnedWindowManagementDataSource*>();
+        require(pageSource != nullptr, "production page owns its preview source");
+        QObject::connect(pageSource, &PinnedWindowManagementDataSource::previewReady, &page,
+                         [&completedPreviews, &imageId, &imageThumbnailSize,
+                          &imageNaturalSize](const QString& id, quint64, const QImage& image,
+                                             const QSize& naturalSize) {
+                             ++completedPreviews;
+                             if (id == imageId) {
+                                 imageThumbnailSize = image.size();
+                                 imageNaturalSize = naturalSize;
+                             }
+                         });
         QObject::connect(&storage::ApplicationStorage::instance(),
                          &storage::ApplicationStorage::pinnedWindowDeleteRequested, &page,
                          [&repository](const QVector<QString>& ids) {
@@ -198,12 +347,12 @@ int main(int argc, char** argv) {
         page.resize(980, 900);
         page.show();
         const auto ready = [&]() {
-            const auto previews =
-                page.findChildren<QLabel*>(QStringLiteral("pinnedManagementPreview"));
-            if (previews.size() != 3)
+            const auto previews = page.findChildren<adqt::widgets::AdImage*>(
+                QStringLiteral("pinnedManagementPreview"));
+            if (previews.size() != 3 || completedPreviews < 3)
                 return false;
             for (auto* preview : previews)
-                if (preview->pixmap().isNull())
+                if (preview->loading() || preview->loadFailed())
                     return false;
             return true;
         };
@@ -214,10 +363,13 @@ int main(int argc, char** argv) {
             QThread::msleep(1);
         }
         require(ready(), "all content kinds produce asynchronous previews");
+        require(imageNaturalSize == base.size() && imageThumbnailSize.width() <= 320 &&
+                    imageThumbnailSize.height() <= 192,
+                "large pinned images keep natural dimensions while thumbnails stay bounded");
         int baseImages = 0;
-        for (auto* preview :
-             page.findChildren<QLabel*>(QStringLiteral("pinnedManagementPreview"))) {
-            const auto image = preview->pixmap().toImage();
+        for (auto* preview : page.findChildren<adqt::widgets::AdImage*>(
+                 QStringLiteral("pinnedManagementPreview"))) {
+            const auto image = preview->grab().toImage();
             if (image.pixelColor(image.width() / 2, image.height() / 2) == QColor(Qt::cyan))
                 ++baseImages;
         }
@@ -232,10 +384,16 @@ int main(int argc, char** argv) {
         }
         require(imageRow != nullptr, "saved image has a management row");
         auto* imagePreview =
-            imageRow->findChild<QLabel*>(QStringLiteral("pinnedManagementPreview"));
+            imageRow->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
         auto* viewer = imageRow->findChild<adqt::widgets::AdImageViewer*>();
         require(imagePreview != nullptr && viewer != nullptr && viewer->rowCount() == 1,
                 "saved image has a preview viewer");
+        const QColor idleCorner = imagePreview->grab().toImage().pixelColor(20, 20);
+        const QPointF hoverPoint = imagePreview->rect().center();
+        QEnterEvent hover(hoverPoint, hoverPoint, imagePreview->mapToGlobal(hoverPoint.toPoint()));
+        QApplication::sendEvent(imagePreview, &hover);
+        require(imagePreview->grab().toImage().pixelColor(20, 20) != idleCorner,
+                "hovering a pinned image draws the shared Preview overlay");
         QSize previewSize;
         QObject::connect(viewer, &adqt::widgets::AdImageViewer::currentItemChanged, &page,
                          [&previewSize](int, int, const adqt::widgets::AdImageItem&,
@@ -266,11 +424,10 @@ int main(int argc, char** argv) {
         const QString removedId = row->property("recordId").toString();
         auto* remove =
             row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryDelete"));
-        auto* confirmation = row->findChild<adqt::widgets::AdPopconfirm*>(
+        auto* confirmation = page.findChild<adqt::widgets::AdPopconfirm*>(
             QStringLiteral("pinnedManagementEntryDeleteConfirm"));
         require(remove != nullptr && confirmation != nullptr,
                 "record has a Delete action and confirmation");
-        QPointer<adqt::widgets::AdPopconfirm> confirmationGuard(confirmation);
         const QPointF local = remove->rect().center();
         const QPointF global = remove->mapToGlobal(local.toPoint());
         QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton,
@@ -288,7 +445,7 @@ int main(int argc, char** argv) {
         require(!repository.loadRecord(removedId), "confirmed Delete removes the record");
         const auto remainingRows =
             page.findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord"));
-        require(confirmationGuard.isNull() && remainingRows.size() == 2 &&
+        require(!confirmation->isVisible() && remainingRows.size() == 2 &&
                     std::none_of(remainingRows.cbegin(), remainingRows.cend(),
                                  [&removedId](const QFrame* candidate) {
                                      return candidate->property("recordId").toString() == removedId;
@@ -325,7 +482,7 @@ int main(int argc, char** argv) {
         storage::PinnedWindowRecord record;
         record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         record.image = base;
-        record.nativeGeometry = QRect(0, 0, 32, 16);
+        record.nativeGeometry = QRect(QPoint(0, 0), base.size());
         record.canvasSourceRect = QRectF(record.nativeGeometry);
         record.contentCanvasRect = record.canvasSourceRect;
         record.surfaceCanvasRect = record.canvasSourceRect;
@@ -335,6 +492,10 @@ int main(int argc, char** argv) {
     }
     application.processEvents();
     require(changeSignals == 1, "a mutation burst produces one page change signal");
+    require(storage::ApplicationStorage::instance().pinnedWindows().flush().success,
+            "commit notification burst");
+    application.processEvents();
+    require(changeSignals == 1, "disk commit does not repeat the page change signal");
     {
         PinnedWindowManagementPageWidget fleetingPage;
     }

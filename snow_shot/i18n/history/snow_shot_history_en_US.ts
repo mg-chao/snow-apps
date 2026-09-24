@@ -189,10 +189,6 @@
             <translation>Group: %1</translation>
         </message>
         <message>
-            <source>Loading preview…</source>
-            <translation>Loading preview…</translation>
-        </message>
-        <message>
             <source>No matching pinned windows</source>
             <translation>No matching pinned windows</translation>
         </message>
@@ -215,10 +211,6 @@
         <message>
             <source>Pinned window image</source>
             <translation>Pinned window image</translation>
-        </message>
-        <message>
-            <source>Preview unavailable</source>
-            <translation>Preview unavailable</translation>
         </message>
         <message>
             <source>Refresh pinned windows</source>
@@ -670,20 +662,20 @@
             <translation>Default</translation>
         </message>
         <message>
-            <source>Delete "%1" and all its pinned windows, including ignored windows? This action cannot be undone.</source>
-            <translation>Delete "%1" and all its pinned windows, including ignored windows? This action cannot be undone.</translation>
+            <source>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone.</source>
+            <translation>Delete "%1" and all its pinned windows, including closed windows? This action cannot be undone.</translation>
         </message>
         <message>
-            <source>Delete all pinned windows in "%1", including ignored windows? The Default group will remain. This action cannot be undone.</source>
-            <translation>Delete all pinned windows in "%1", including ignored windows? The Default group will remain. This action cannot be undone.</translation>
+            <source>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone.</source>
+            <translation>Delete all pinned windows in "%1", including closed windows? The Default group will remain. This action cannot be undone.</translation>
         </message>
         <message>
             <source>Delete empty groups</source>
             <translation>Delete empty groups</translation>
         </message>
         <message>
-            <source>Delete every group with no non-ignored pinned windows? Ignored pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
-            <translation>Delete every group with no non-ignored pinned windows? Ignored pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</translation>
+            <source>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</source>
+            <translation>Delete every group with no pinned windows other than closed ones? Closed pinned windows saved in those groups will also be permanently deleted. This action cannot be undone.</translation>
         </message>
         <message>
             <source>Delete group</source>

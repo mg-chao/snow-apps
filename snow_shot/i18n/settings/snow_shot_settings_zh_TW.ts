@@ -755,7 +755,7 @@
         </message>
         <message>
             <source>All closed pinned windows will be removed; retained windows are protected</source>
-            <translation>將移除所有已關閉的固定到螢幕的視窗；保留中的視窗不受影響</translation>
+            <translation>將移除所有已關閉的固定到螢幕視窗；保留中的視窗不受影響</translation>
         </message>
         <message>
             <source>All current application settings will be replaced by the archive's values. Some changes take effect after the app restarts.</source>
@@ -899,7 +899,7 @@
         </message>
         <message>
             <source>Browse, restore, and delete pinned windows</source>
-            <translation>瀏覽、還原和刪除固定到螢幕的視窗</translation>
+            <translation>瀏覽、還原和刪除固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Cached history thumbnails will be removed and rebuilt on demand</source>
@@ -1787,7 +1787,7 @@
         </message>
         <message>
             <source>Limit how much disk space closed pinned windows can use</source>
-            <translation>限制已關閉的固定到螢幕的視窗佔用的磁碟空間</translation>
+            <translation>限制已關閉的固定到螢幕視窗佔用的磁碟空間</translation>
         </message>
         <message>
             <source>Limit how much disk space screenshot history can use</source>
@@ -2051,7 +2051,7 @@
         </message>
         <message>
             <source>Permanently remove closed pinned windows</source>
-            <translation>永久移除已關閉的固定到螢幕的視窗</translation>
+            <translation>永久移除已關閉的固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Permission status and access</source>
@@ -2127,11 +2127,11 @@
         </message>
         <message>
             <source>Pinned window active border</source>
-            <translation>固定到螢幕的視窗作用中邊框</translation>
+            <translation>固定到螢幕視窗作用中邊框</translation>
         </message>
         <message>
             <source>Pinned window border</source>
-            <translation>固定到螢幕的視窗邊框</translation>
+            <translation>固定到螢幕視窗邊框</translation>
         </message>
         <message>
             <source>Play a shutter sound when capturing the focused window or current display.</source>
@@ -2571,7 +2571,7 @@
         </message>
         <message>
             <source>Set up to two keys for this pinned window action</source>
-            <translation>為此固定到螢幕的視窗操作設定最多兩個快速鍵</translation>
+            <translation>為此固定到螢幕視窗操作設定最多兩個快速鍵</translation>
         </message>
         <message>
             <source>Set up to two keys for this recording action</source>
@@ -2603,7 +2603,7 @@
         </message>
         <message>
             <source>Shortcut keys for pinned-to-screen windows</source>
-            <translation>固定到螢幕的視窗的快速鍵</translation>
+            <translation>固定到螢幕視窗的快速鍵</translation>
         </message>
         <message>
             <source>Shortcut keys for recognition and screenshot actions</source>
@@ -3228,11 +3228,11 @@ Unavailable: %2</source>
         </message>
         <message>
             <source>Pinned windows</source>
-            <translation>固定到螢幕的視窗</translation>
+            <translation>固定到螢幕視窗</translation>
         </message>
         <message>
             <source>Pinned windows disk usage</source>
-            <translation>固定到螢幕的視窗磁碟用量</translation>
+            <translation>固定到螢幕視窗磁碟用量</translation>
         </message>
         <message>
             <source>Portable</source>

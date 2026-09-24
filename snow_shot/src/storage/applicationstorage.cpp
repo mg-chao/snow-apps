@@ -189,6 +189,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_captureHistory.reset();
     m_pinnedWindows.reset();
     m_pinnedChangeQueued.store(false);
+    m_lastPinnedNotifiedRevision = 0;
     m_configuration.reset();
     const auto selection = resolveDirectory(options);
     const QString effectiveDirectory = selection.effectiveDirectory;
@@ -250,13 +251,19 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                 m_pinnedChangeQueued.store(false);
                 if (!m_initialized || !m_pinnedWindows)
                     return;
-                static_cast<void>(m_pinnedWindows->enforcePolicy());
+                const bool recordsChanged =
+                    m_pinnedWindows->revision() != m_lastPinnedNotifiedRevision;
+                if (recordsChanged)
+                    static_cast<void>(m_pinnedWindows->enforcePolicy());
                 const auto error = m_pinnedWindows->lastError();
                 if (m_status.lastPinnedError != error) {
                     m_status.lastPinnedError = error;
                     emitStatusChanged();
                 }
-                emit pinnedWindowsChanged();
+                if (recordsChanged) {
+                    m_lastPinnedNotifiedRevision = m_pinnedWindows->revision();
+                    emit pinnedWindowsChanged();
+                }
             },
             Qt::QueuedConnection);
     });

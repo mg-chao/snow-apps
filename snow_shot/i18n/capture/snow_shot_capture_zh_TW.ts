@@ -107,7 +107,7 @@
         </message>
         <message>
             <source>The pinned window could not be restored</source>
-            <translation>無法還原固定到螢幕的視窗</translation>
+            <translation>無法還原固定到螢幕視窗</translation>
         </message>
         <message>
             <source>The screenshot clipboard operation could not be started</source>

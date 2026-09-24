@@ -7,9 +7,12 @@
 #include <QHash>
 #include <QPointer>
 #include <QSet>
+#include <QSize>
 #include <QWidget>
+#include <optional>
 
 class QBoxLayout;
+class QFrame;
 class QLabel;
 class QVBoxLayout;
 namespace adqt::widgets {
@@ -28,7 +31,11 @@ class PinnedWindowManagementDataSource : public QObject {
     ~PinnedWindowManagementDataSource() override = default;
     virtual QVector<snow_shot::storage::PinnedWindowSummary> records() const = 0;
     virtual QVector<snow_shot::storage::PinnedWindowGroup> groups() const = 0;
-    virtual void requestPreview(const QString& id, quint64 generation) = 0;
+    virtual void requestPreview(const QString& id, quint64 requestId, const QSize& targetSize) = 0;
+    // Unknown revisions force a fresh row so custom sources cannot show a stale preview.
+    virtual std::optional<quint64> previewRevision(const QString&) const {
+        return std::nullopt;
+    }
     virtual void requestFullImage(const QString& id, quint64 requestId) = 0;
     virtual void cancelPreviews() {}
     virtual void showRecord(const QString& id) = 0;
@@ -36,7 +43,8 @@ class PinnedWindowManagementDataSource : public QObject {
 
   signals:
     void changed();
-    void previewReady(const QString& id, quint64 generation, const QImage& image);
+    void previewReady(const QString& id, quint64 requestId, const QImage& image,
+                      const QSize& naturalSize);
     void fullImageReady(const QString& id, quint64 requestId, const QImage& image);
 };
 
@@ -54,11 +62,12 @@ class PinnedWindowManagementPageWidget final : public QWidget {
 
   protected:
     void changeEvent(QEvent* event) override;
-    void resizeEvent(QResizeEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
+    void updateResponsiveLayout();
     void updateHeader();
     void updateSelectionBar();
     void clearSelection();
@@ -85,6 +94,8 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     adqt::widgets::AdButton* m_selectPage = nullptr;
     adqt::widgets::AdButton* m_deselect = nullptr;
     adqt::widgets::AdPopconfirm* m_deleteSelectedConfirmation = nullptr;
+    adqt::widgets::AdPopconfirm* m_entryDeleteConfirmation = nullptr;
+    QString m_pendingEntryDeleteId;
     QWidget* m_entries = nullptr;
     QVBoxLayout* m_entryLayout = nullptr;
     QLabel* m_emptyIcon = nullptr;
@@ -93,10 +104,10 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     QVector<snow_shot::storage::PinnedWindowSummary> m_records;
     QVector<snow_shot::storage::PinnedWindowSummary> m_filteredRecords;
     QVector<QString> m_pageIds;
+    QHash<QString, QPointer<QFrame>> m_entryRows;
+    QHash<QString, quint64> m_entryPreviewRevisions;
     QSet<QString> m_selected;
-    QHash<QString, QPointer<QLabel>> m_previews;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
-    quint64 m_generation = 0;
     bool m_updatingPagination = false;
 };
 

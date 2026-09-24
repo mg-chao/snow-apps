@@ -519,6 +519,7 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
       m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>()) {}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
+    m_restoreAlive->store(false);
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized())
         for (const auto& id : m_restoringIds)
@@ -958,18 +959,74 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
         return false;
     if (m_groupManager && m_groupManager->hasWindow(id))
         return m_groupManager->showWindow(id);
-    const auto loaded = storage.pinnedWindows().loadRecord(id);
-    if (!loaded)
+    const auto summaries = storage.pinnedWindows().summaries();
+    const auto found = std::find_if(summaries.cbegin(), summaries.cend(),
+                                    [&id](const auto& summary) { return summary.id == id; });
+    if (found == summaries.cend())
         return false;
-    const auto& record = *loaded;
+    if (!storage.pinnedWindows().beginRestore(id).success)
+        return false;
+    m_restoringIds.insert(id);
     if (m_groupManager) {
-        if (activateGroup && !m_groupManager->setActiveGroup(record.groupId))
+        if ((activateGroup && !m_groupManager->setActiveGroup(found->groupId)) ||
+            found->groupId != m_groupManager->activeGroupId()) {
+            m_restoringIds.remove(id);
+            storage.pinnedWindows().cancelRestore(id);
             return false;
-        if (record.groupId != m_groupManager->activeGroupId())
-            return false;
-        if (m_groupManager->hasWindow(id))
-            return m_groupManager->showWindow(id);
+        }
     }
+    auto* repository = &storage.pinnedWindows();
+    const auto alive = m_restoreAlive;
+    storage.pinnedFullImagePool().start([this, alive, repository, id]() {
+        auto loaded = repository->loadRecord(id);
+        QMetaObject::invokeMethod(
+            &snow_shot::storage::ApplicationStorage::instance(),
+            [this, alive, repository, id, loaded = std::move(loaded)]() mutable {
+                if (!alive->load() || !m_restoringIds.contains(id))
+                    return;
+                auto& storage = snow_shot::storage::ApplicationStorage::instance();
+                if (!storage.isInitialized() || &storage.pinnedWindows() != repository) {
+                    m_restoringIds.remove(id);
+                    return;
+                }
+                const auto summaries = storage.pinnedWindows().summaries();
+                const auto found =
+                    std::find_if(summaries.cbegin(), summaries.cend(),
+                                 [&id](const auto& summary) { return summary.id == id; });
+                if (found == summaries.cend() ||
+                    (m_groupManager && found->groupId != m_groupManager->activeGroupId()) ||
+                    (loaded && loaded->groupId != found->groupId)) {
+                    m_restoringIds.remove(id);
+                    storage.pinnedWindows().cancelRestore(id);
+                    return;
+                }
+                if (!loaded) {
+                    m_restoringIds.remove(id);
+                    storage.pinnedWindows().cancelRestore(id);
+                    if (m_restoreFailure)
+                        m_restoreFailure();
+                    return;
+                }
+                if (m_groupManager && m_groupManager->hasWindow(id)) {
+                    m_restoringIds.remove(id);
+                    storage.pinnedWindows().cancelRestore(id);
+                    static_cast<void>(m_groupManager->showWindow(id));
+                    return;
+                }
+                if (!presentRestoredRecord(std::move(*loaded)) && m_restoringIds.contains(id)) {
+                    m_restoringIds.remove(id);
+                    storage.pinnedWindows().cancelRestore(id);
+                    if (m_restoreFailure)
+                        m_restoreFailure();
+                }
+            },
+            Qt::QueuedConnection);
+    });
+    return true;
+}
+
+bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
+    snow_shot::storage::PinnedWindowRecord record) {
     QScreen* targetScreen = restoreScreen(record);
     if (targetScreen == nullptr || record.nativeGeometry.isEmpty()) {
         return false;
@@ -1053,16 +1110,11 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     auto* window = m_windowPool != nullptr ? m_windowPool->acquire(targetScreen) : nullptr;
     if (!window)
         return false;
-    if (!storage.pinnedWindows().beginRestore(record.id).success) {
-        window->deleteLater();
-        return false;
-    }
-    m_restoringIds.insert(record.id);
     const QPointer<ScreenshotPendingPinCoordinator> lifetime(m_pendingPinCoordinator.get());
     const QPointer<ScreenshotPinnedWindow> windowGuard(window);
     const bool presented = presentPinnedWindowAndSynchronize(
         m_windowPool.get(), window, config, m_showMainWindowRequested,
-        [this, lifetime, id, windowGuard](bool success, QImage) {
+        [this, lifetime, id = record.id, windowGuard](bool success, QImage) {
             if (lifetime.isNull())
                 return;
             m_restoringIds.remove(id);
@@ -1078,10 +1130,6 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
                 }
             }
         });
-    if (!presented) {
-        m_restoringIds.remove(id);
-        storage.pinnedWindows().cancelRestore(id);
-    }
     return presented;
 }
 

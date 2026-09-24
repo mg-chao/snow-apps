@@ -1015,6 +1015,7 @@ void groupMenuActionsExposeIconsAndCleanupState() {
                 specifiedModal->centered() &&
                 specifiedModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
                 specifiedModal->text().contains(QStringLiteral("Specified")) &&
+                specifiedModal->text().contains(QStringLiteral("including closed windows")) &&
                 groupManager.contains(*specifiedId),
             "specified-group deletion should await confirmation");
     specifiedModal->reject();
@@ -1032,8 +1033,17 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     require(!groupManager.contains(*specifiedId),
             "accepting specified-group deletion should delete the group");
 
+    QPointer<QAction> hiddenDefaultGroup(
+        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default")));
+    require(hiddenDefaultGroup && !groupMenu->isVisible(),
+            "the group menu should be closed before a background group update");
     const auto cleanupId = groupManager.createGroup(QStringLiteral("Cleanup"));
     require(cleanupId.has_value(), "an empty custom group should be created for the cleanup state");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(hiddenDefaultGroup &&
+                groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default")) ==
+                    hiddenDefaultGroup.data(),
+            "a closed pinned group menu should defer rebuilding until it is opened");
     auto ignored = pinnedWindow->persistenceSnapshot();
     ignored.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     ignored.groupId = *cleanupId;
@@ -1056,7 +1066,9 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
     require(emptyModal != nullptr && emptyModal->centered() &&
                 emptyModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
-                emptyModal->text().contains(QStringLiteral("Ignored pinned windows saved")) &&
+                emptyModal->text().contains(
+                    QStringLiteral("no pinned windows other than closed ones")) &&
+                emptyModal->text().contains(QStringLiteral("Closed pinned windows saved")) &&
                 groupManager.contains(*cleanupId) && repository.loadRecord(ignored.id).has_value(),
             "empty-group deletion should await confirmation without removing ignored pins");
     emptyModal->reject();
@@ -1097,6 +1109,7 @@ void groupMenuActionsExposeIconsAndCleanupState() {
         QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
     require(defaultModal != nullptr &&
                 defaultModal->text().contains(QStringLiteral("Default group will remain")) &&
+                defaultModal->text().contains(QStringLiteral("including closed windows")) &&
                 guardedWindow != nullptr && groupManager.contains(QStringLiteral("default")),
             "clearing Default should wait for confirmation and retain the group");
     defaultModal->reject();
@@ -1347,13 +1360,22 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
 
                 services = std::make_unique<ScreenshotSelectionExportUiServices>(&recognition);
                 services->restorePersistedWindows();
-                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-                window = onlyVisiblePinnedWindow();
+                QElapsedTimer restoreSettle;
+                restoreSettle.start();
+                while ((window = onlyVisiblePinnedWindow()) == nullptr &&
+                       restoreSettle.elapsed() < 5000) {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+                    QThread::msleep(1);
+                }
                 require(window != nullptr, "the saved OCR pin should be recreated after restart");
                 action =
                     pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedOcrAction"));
                 require(action != nullptr && action->isEnabled(),
                         "the restored pin should offer text recognition results");
+                while (!action->isChecked() && restoreSettle.elapsed() < 5000) {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+                    QThread::msleep(1);
+                }
                 require(action->isChecked(), "restored OCR must already be visible");
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
 
@@ -10636,6 +10658,9 @@ void pinnedManagementLifecycle() {
     const auto firstActivity = repository.loadRecord(first)->activitySequence;
     ScreenshotPinnedWindowTestAccess::setGeneralOpacity(*live(first), 65);
     require(service.restoreRecord(unrelated.id), "page restore activates another group");
+    require(!live(unrelated.id) && repository.loadRecord(unrelated.id)->ignored &&
+                !service.restoreRecord(unrelated.id),
+            "restore queues payload loading without blocking the UI or duplicating the request");
     require(repository.loadRecord(first)->opacityPercent == 65 &&
                 !repository.loadRecord(first)->ignored &&
                 repository.loadRecord(first)->activitySequence == firstActivity,
@@ -10666,6 +10691,21 @@ void pinnedManagementLifecycle() {
     destroyConfirmation->accept();
     require(processUntilDeleted(otherWindow, 2000) && !repository.loadRecord(unrelated.id),
             "confirming Destroy removes the record permanently");
+    auto cancelledRestore = *repository.loadRecord(first);
+    cancelledRestore.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    cancelledRestore.groupId = *other;
+    require(repository.upsert(cancelledRestore).success &&
+                repository.markClosed(cancelledRestore.id).success,
+            "seed a record for pending restore cancellation");
+    int cancellationFailures = 0;
+    service.setRestoreFailureHandler([&]() { ++cancellationFailures; });
+    require(service.restoreRecord(cancelledRestore.id, false), "queue the cancellable restore");
+    service.destroyRecords({cancelledRestore.id});
+    storage::ApplicationStorage::instance().pinnedFullImagePool().waitForDone();
+    QCoreApplication::processEvents();
+    require(!repository.loadRecord(cancelledRestore.id) && !live(cancelledRestore.id) &&
+                cancellationFailures == 0,
+            "deleting a pending restore prevents a late window without reporting a failure");
     service.destroyRecords({first, second});
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(repository.summaries().isEmpty(), "explicit deletion cleans retained inactive pins");
@@ -10759,7 +10799,8 @@ void pinnedManagementLifecycle() {
     int failures = 0;
     service.setRestoreFailureHandler([&]() { ++failures; });
     service.restoreLastClosedWindow();
-    require(failures == 1 && repository.summaries().front().ignored,
+    wait([&]() { return failures == 1; }, "failed restore reports failure");
+    require(repository.summaries().front().ignored,
             "failed restore reports failure and leaves record ignored");
     service.destroyRecords({preservedId});
 }

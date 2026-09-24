@@ -79,6 +79,7 @@
 #include "../recording/screenshotrecordingworkflow.h"
 #include "../capture/windowcaptureexclusion.h"
 #include "../capture/windowinputtransparency.h"
+#include "../capture/screenshotcapturemodalcloser.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -1414,6 +1415,9 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
                              m_captureState.sessionState == ScreenshotSessionState::IdlePrepared;
     if (!idleSession || m_captureState.captureInProgress || !m_interaction.inactive() ||
         m_captureWorkflow == nullptr || m_historyService == nullptr) {
+        return;
+    }
+    if (!snow_shot::presentation::closeActiveCaptureModalWindows()) {
         return;
     }
 
@@ -4564,7 +4568,7 @@ bool ScreenshotController::Impl::canBeginCapture() const {
 
 bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
                                               ScreenshotCaptureWorkflow::StartMode mode) {
-    if (!canBeginCapture()) {
+    if (!canBeginCapture() || !snow_shot::presentation::closeActiveCaptureModalWindows()) {
         return false;
     }
 

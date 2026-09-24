@@ -40,6 +40,7 @@ class PinnedWindowGroupManager final : public QObject {
     [[nodiscard]] GroupWindowCounts windowCounts(const QString& groupId) const;
     [[nodiscard]] int windowCount(const QString& groupId) const;
     [[nodiscard]] bool hasWindow(const QString& persistenceId) const;
+    void onPinnedRecordsChanged();
 
     bool setActiveGroup(const QString& groupId);
     [[nodiscard]] std::optional<QString>

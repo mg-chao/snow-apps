@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
                 QString::fromUtf8("固定到屏幕管理"),
             "Simplified Chinese settings should use the same management title");
     require(QCoreApplication::translate("PinnedWindowManagementPageWidget", "No pinned windows") ==
-                QString::fromUtf8("暂无固定到屏幕的窗口"),
+                QString::fromUtf8("暂无固定到屏幕窗口"),
             "Simplified Chinese management should use the same window terminology");
 
     require(manager.setLanguage(QStringLiteral("zh_TW")), "Traditional Chinese should load");
@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
                 QString::fromUtf8("固定到螢幕管理"),
             "Traditional Chinese settings should use the same management title");
     require(QCoreApplication::translate("PinnedWindowManagementPageWidget", "No pinned windows") ==
-                QString::fromUtf8("尚無固定到螢幕的視窗"),
+                QString::fromUtf8("尚無固定到螢幕視窗"),
             "Traditional Chinese management should use the same window terminology");
 
     require(manager.setLanguage(QStringLiteral("system")),
