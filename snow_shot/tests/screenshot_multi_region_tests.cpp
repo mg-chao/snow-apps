@@ -80,6 +80,28 @@ void geometryAndTransactions() {
             "subtraction must split a region");
 }
 
+void moveSnapshotEndsWithSelection() {
+    const QRegion original = QRegion(QRect(10, 10, 20, 20)) + QRect(50, 10, 20, 20);
+    for (const bool resetModel : {false, true}) {
+        ScreenshotSelectionModel model;
+        model.setSelectionRegion(original);
+        model.beginMoveDrag(QPointF(10, 10));
+        model.setDraggedSelectionRect(QRectF(15, 20, 60, 20), ScreenshotSelectionDragMode::All);
+        require(model.selectionRegion() == original.translated(5, 10),
+                "active move must retain its original complex geometry");
+
+        if (resetModel)
+            model.reset();
+        else
+            model.clearSelection();
+        const QRect fresh(100, 100, 25, 25);
+        model.setSelectionRect(fresh);
+        model.setDraggedSelectionRect(QRectF(fresh), ScreenshotSelectionDragMode::All);
+        require(model.selectionRegion() == QRegion(fresh),
+                "ended selection must not reuse the previous move snapshot");
+    }
+}
+
 void animatedMarqueeUsesDisplayedGeometry() {
     using Operation = ScreenshotSelectionModel::RegionOperation;
     const auto check = [](Operation operation, const QRect& confirmed, const QRect& first,
@@ -548,6 +570,7 @@ int main(int argc, char** argv) {
     shapeCodecAndSamplingBoundaries();
     customGeometryTransactionsAndPersistence();
     geometryAndTransactions();
+    moveSnapshotEndsWithSelection();
     animatedMarqueeUsesDisplayedGeometry();
     outlinesAndEffects();
     persistenceAndHandlePolicy();

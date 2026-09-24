@@ -16,6 +16,7 @@ void ScreenshotSelectionModel::reset() {
     m_draftRegion.reset();
     m_region.reset();
     m_confirmedRegion = {};
+    m_moveOriginalRegion = {};
     m_regionOperation = RegionOperation::Replace;
     m_start = QPointF();
     m_end = QPointF();
@@ -47,6 +48,7 @@ void ScreenshotSelectionModel::clearSelection() {
     m_draftRegion.reset();
     m_region.reset();
     m_confirmedRegion = {};
+    m_moveOriginalRegion = {};
     m_regionOperation = RegionOperation::Replace;
     m_start = QPointF();
     m_end = QPointF();
