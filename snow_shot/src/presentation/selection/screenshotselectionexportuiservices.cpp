@@ -20,6 +20,7 @@
 #include <QCursor>
 #include <QElapsedTimer>
 #include <QHash>
+#include <QPalette>
 #include <QPointer>
 #include <QScreen>
 #include <QStringList>
@@ -1101,7 +1102,7 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
         original.html = record.originalHtml;
         original.text = record.originalText;
         const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
-            original, record.firstCreationTextDpi);
+            original, record.firstCreationTextDpi, QApplication::palette().color(QPalette::Base));
         if (!rendered.has_value() || !rendered->isValid()) {
             return false;
         }

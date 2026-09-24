@@ -3500,6 +3500,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 180
         ENVIRONMENT "QT_QPA_PLATFORM=windows")
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-restored-text-theme-tests
+        COMMAND snow-shot-pinned-window-tests --restored-text-theme-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-restored-text-theme-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-file-pin-presentation-tests
         COMMAND snow-shot-pinned-window-tests --file-pin-batch-only)
     set_tests_properties(snow-shot-file-pin-presentation-tests PROPERTIES

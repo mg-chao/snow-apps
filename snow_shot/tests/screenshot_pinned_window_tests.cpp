@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/platform/windows/pinnedwindownative.h"
 #include "../src/presentation/pinned/screenshotpinnedclickthroughgeometry.h"
@@ -86,6 +87,7 @@
 #include <QMouseEvent>
 #include <QMimeData>
 #include <QPainter>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
@@ -6765,6 +6767,43 @@ void restoredSelectionPreservesShapeAndCreationSource() {
     }
 }
 
+void restoredClipboardTextUsesCurrentThemeBackground() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "clipboard text restore requires a screen");
+    const QPalette previousPalette = QApplication::palette();
+    const auto restorePalette = qScopeGuard([&]() { QApplication::setPalette(previousPalette); });
+    QPalette themedPalette = previousPalette;
+    const QColor themedBackground(QStringLiteral("#19324a"));
+    themedPalette.setColor(QPalette::Base, themedBackground);
+    for (const bool html : {false, true}) {
+        QApplication::setPalette(previousPalette);
+        IsolatedPinnedStorage storage;
+        ScreenshotClipboardOriginalContent content;
+        if (html) {
+            content.html = QStringLiteral("<p><b>Restored</b> HTML text</p>");
+        } else {
+            content.text = QStringLiteral("Restored plain text");
+        }
+        const auto initial = ScreenshotClipboardContentReader::renderOriginalText(
+            content, 1.0, previousPalette.color(QPalette::Base));
+        require(initial.has_value(), "clipboard text fixture should render");
+        auto record = savedPinnedRecord(*screen, 1.0, initial->image.size(), 100.0, QPoint(40, 40));
+        record.sourceKind = snow_shot::storage::PinnedWindowSourceKind::ClipboardText;
+        record.image = {};
+        record.originalHtml = content.html;
+        record.originalText = content.text;
+        record.firstCreationTextDpi = 1.0;
+        QApplication::setPalette(themedPalette);
+        ScreenshotSelectionExportUiServices services;
+        auto* restored = restoreSeededPinnedWindow(services, record);
+        const QImage& restoredImage = ScreenshotPinnedWindowTestAccess::originalImage(*restored);
+        require(restoredImage.size() == initial->image.size() &&
+                    restoredImage.pixelColor(0, 0) == themedBackground,
+                "restored clipboard text background should use the current theme");
+        closeRestoredPinnedWindow(restored, record.id);
+    }
+}
+
 void restoredPinnedWindowIgnoresMonitorDpiChange(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -11745,6 +11784,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--restored-ocr-only"))) {
             restoredPinnedSelectionRendersCachedOcrAfterStorageRestart();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--restored-text-theme-only"))) {
+            restoredClipboardTextUsesCurrentThemeBackground();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--early-ocr-snapshot-only"))) {
