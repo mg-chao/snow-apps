@@ -9,6 +9,7 @@
 #include "snow_shot/network/snowshotapiclient.h"
 
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
+#include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include <optional>
 #include <QObject>
 #include <QPointer>
@@ -106,6 +107,7 @@ class ScreenshotOcrController final : public QObject {
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool hasTextResult() const;
     [[nodiscard]] QString sourceTextDraft() const;
+    [[nodiscard]] std::optional<ScreenshotRecognitionFileSnapshot> fileExportSnapshot() const;
     [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
     [[nodiscard]] ScreenshotRecognitionResults recognitionResultsSnapshot() const;
     void setTextDraft(const QString& text);

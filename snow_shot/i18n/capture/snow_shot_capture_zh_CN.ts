@@ -70,6 +70,10 @@
             <translation>没有可复制的识别结果</translation>
         </message>
         <message>
+            <source>Save recognition text</source>
+            <translation>保存识别文本</translation>
+        </message>
+        <message>
             <source>Save screenshot</source>
             <translation>保存截图</translation>
         </message>
@@ -108,6 +112,10 @@
         <message>
             <source>The pinned window could not be restored</source>
             <translation>无法恢复固定到屏幕窗口</translation>
+        </message>
+        <message>
+            <source>The recognition text could not be saved: %1</source>
+            <translation>无法保存识别文本：%1</translation>
         </message>
         <message>
             <source>The screenshot clipboard operation could not be started</source>

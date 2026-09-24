@@ -1193,6 +1193,27 @@ QString ScreenshotRecognitionSessionController::originalText() const {
     return session != nullptr ? session->originalText() : QString{};
 }
 
+std::optional<ScreenshotRecognitionFileSnapshot>
+ScreenshotRecognitionSessionController::fileExportSnapshot() const {
+    if (!m_active)
+        return std::nullopt;
+    switch (m_mode) {
+    case Mode::Html:
+        return ScreenshotRecognitionFileSnapshot{ScreenshotRecognitionFileKind::Html,
+                                                 m_conversion->source()};
+    case Mode::Markdown:
+        return ScreenshotRecognitionFileSnapshot{ScreenshotRecognitionFileKind::Markdown,
+                                                 m_conversion->source()};
+    case Mode::Qr:
+        return ScreenshotRecognitionFileSnapshot{ScreenshotRecognitionFileKind::Qr,
+                                                 m_qrContents.join(QLatin1Char('\n'))};
+    case Mode::Text:
+    case Mode::Table:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionClipboardMimeData(
     const ScreenshotOcrPresentation* displayedPresentation) const {
     auto mimeData = std::make_unique<QMimeData>();

@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
+#include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 
 #include <QObject>
 #include <QHash>
@@ -151,6 +152,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] QString originalText() const;
     [[nodiscard]] std::unique_ptr<QMimeData> recognitionClipboardMimeData(
         const ScreenshotOcrPresentation* displayedPresentation = nullptr) const;
+    [[nodiscard]] std::optional<ScreenshotRecognitionFileSnapshot> fileExportSnapshot() const;
     void setTextDraft(const QString& text);
     void handleTableCommandState(const ScreenshotTableCommandState& state);
 

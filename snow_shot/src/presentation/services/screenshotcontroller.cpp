@@ -36,6 +36,7 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
+#include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 #include "snow_shot/presentation/screenshotdialogowner.h"
 #include "widgets/modal.h"
@@ -423,6 +424,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void restoreActivePinnedGroupWindows();
     void saveSelectionToFile() override;
     void saveSelectionWithSnowDialog();
+    void saveRecognitionTextWithSystemDialog(const ScreenshotRecognitionFileSnapshot& snapshot);
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> recognitionFileSaveArtifact() const;
     void quickSaveSelection() override;
     void saveImageToFile(QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
@@ -3389,6 +3391,27 @@ ScreenshotController::Impl::recognitionFileSaveArtifact() const {
 }
 
 void ScreenshotController::Impl::quickSaveSelection() {
+    const auto textSnapshot =
+        m_ocrController != nullptr ? m_ocrController->fileExportSnapshot() : std::nullopt;
+    if (textSnapshot) {
+        if (!m_selection.hasPixelSelection() || !ensureExportFeature() ||
+            !resetCanvasEditingState())
+            return;
+        const snow_shot::storage::ScreenshotSettings settings;
+        const auto result = ScreenshotRecognitionFileExport::quickSave(
+            *textSnapshot, settings.imageSaveDirectory(),
+            ScreenshotImageFileService::suggestedBaseName(settings.autoSaveFilenameFormat()));
+        if (!result.succeeded()) {
+            m_messages->error(
+                QString::fromLatin1(kSaveMessageKey),
+                QCoreApplication::translate("ScreenshotController",
+                                            "The recognition text could not be saved: %1")
+                    .arg(result.error));
+            return;
+        }
+        detachCaptureForExport();
+        return;
+    }
     auto recognitionArtifact = recognitionFileSaveArtifact();
     const bool scrolling = m_scrollingCaptureController && m_scrollingCaptureController->active();
     if ((!scrolling && !m_selection.hasPixelSelection()) || !ensureExportFeature() ||
@@ -3458,6 +3481,12 @@ void ScreenshotController::Impl::quickSaveSelection() {
 }
 
 void ScreenshotController::Impl::saveSelectionToFile() {
+    const auto textSnapshot =
+        m_ocrController != nullptr ? m_ocrController->fileExportSnapshot() : std::nullopt;
+    if (textSnapshot) {
+        saveRecognitionTextWithSystemDialog(*textSnapshot);
+        return;
+    }
     if (snow_shot::storage::ScreenshotSettings().saveAsFileDialog() ==
         QStringLiteral("snow_shot")) {
         saveSelectionWithSnowDialog();
@@ -3560,6 +3589,59 @@ void ScreenshotController::Impl::saveSelectionToFile() {
                                         "The screenshot could not be prepared for saving"));
         return;
     }
+    detachCaptureForExport();
+}
+
+void ScreenshotController::Impl::saveRecognitionTextWithSystemDialog(
+    const ScreenshotRecognitionFileSnapshot& snapshot) {
+    if (owner.property("saveDialogOpen").toBool() || !m_selection.hasPixelSelection() ||
+        !ensureExportFeature() || !resetCanvasEditingState())
+        return;
+    if (snapshot.source.isEmpty()) {
+        m_messages->error(QString::fromLatin1(kSaveMessageKey),
+                          QCoreApplication::translate("ScreenshotRecognitionFileExport",
+                                                      "No recognition text is available to save"));
+        return;
+    }
+    rememberKeyboardOwner(QApplication::focusWidget());
+    QPointer<ScreenshotOverlayWindow> dialogOwner(keyboardOwnerOverlay());
+    const auto suspension =
+        m_windowShortcutManager != nullptr ? m_windowShortcutManager->suspendInput() : 0;
+    [[maybe_unused]] const auto interactionGuard = makeScopeExit([this, dialogOwner, suspension]() {
+        if (m_windowShortcutManager != nullptr && suspension != 0)
+            m_windowShortcutManager->resumeInput(suspension);
+        restoreKeyboardOwnerQueued(dialogOwner.data());
+    });
+
+    const snow_shot::storage::ScreenshotSettings settings;
+    const QString directory = ScreenshotImageFileService::saveDialogDirectory(
+        settings.lastManualSaveDirectory(), settings.imageSaveDirectory());
+    static_cast<void>(QDir().mkpath(directory));
+    const QString initialPath = QDir(directory).filePath(
+        ScreenshotImageFileService::suggestedBaseName(settings.manualSaveFilenameFormat()) +
+        QLatin1Char('.') + ScreenshotRecognitionFileExport::extension(snapshot.kind));
+    const QString selectedPath = QFileDialog::getSaveFileName(
+        dialogOwner.data(),
+        QCoreApplication::translate("ScreenshotController", "Save recognition text"), initialPath,
+        ScreenshotRecognitionFileExport::dialogFilter(snapshot.kind), nullptr,
+        QFileDialog::DontConfirmOverwrite);
+    if (selectedPath.isEmpty())
+        return;
+    const QString primaryPath =
+        ScreenshotRecognitionFileExport::normalizedPath(selectedPath, snapshot.kind);
+    if (!ScreenshotRecognitionFileExport::confirmOverwrite(
+            dialogOwner.data(),
+            ScreenshotRecognitionFileExport::outputPaths(primaryPath, snapshot.kind)))
+        return;
+    const auto result = ScreenshotRecognitionFileExport::saveToPath(snapshot, primaryPath, true);
+    if (!result.succeeded()) {
+        m_messages->error(QString::fromLatin1(kSaveMessageKey),
+                          QCoreApplication::translate("ScreenshotController",
+                                                      "The recognition text could not be saved: %1")
+                              .arg(result.error));
+        return;
+    }
+    static_cast<void>(settings.setLastManualSaveDirectory(QFileInfo(result.path).absolutePath()));
     detachCaptureForExport();
 }
 

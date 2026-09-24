@@ -106,6 +106,71 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotRecognitionFileExport</name>
+        <message>
+            <source>An existing output file could not be replaced</source>
+            <translation>An existing output file could not be replaced</translation>
+        </message>
+        <message>
+            <source>An output file already exists</source>
+            <translation>An output file already exists</translation>
+        </message>
+        <message>
+            <source>HTML document (*.html)</source>
+            <translation>HTML document (*.html)</translation>
+        </message>
+        <message>
+            <source>Markdown document (*.md)</source>
+            <translation>Markdown document (*.md)</translation>
+        </message>
+        <message>
+            <source>No available output filename was found</source>
+            <translation>No available output filename was found</translation>
+        </message>
+        <message>
+            <source>No output file was selected</source>
+            <translation>No output file was selected</translation>
+        </message>
+        <message>
+            <source>No recognition text is available to save</source>
+            <translation>No recognition text is available to save</translation>
+        </message>
+        <message>
+            <source>Replace existing files?</source>
+            <translation>Replace existing files?</translation>
+        </message>
+        <message>
+            <source>Replace the existing file(s)?
+%1</source>
+            <translation>Replace the existing file(s)?
+%1</translation>
+        </message>
+        <message>
+            <source>Text document (*.txt)</source>
+            <translation>Text document (*.txt)</translation>
+        </message>
+        <message>
+            <source>The output directory could not be created</source>
+            <translation>The output directory could not be created</translation>
+        </message>
+        <message>
+            <source>The save directory is not configured</source>
+            <translation>The save directory is not configured</translation>
+        </message>
+        <message>
+            <source>The screenshot filename format is invalid</source>
+            <translation>The screenshot filename format is invalid</translation>
+        </message>
+        <message>
+            <source>The text file could not be published</source>
+            <translation>The text file could not be published</translation>
+        </message>
+        <message>
+            <source>The text file could not be staged</source>
+            <translation>The text file could not be staged</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotSaveAsFileDialog</name>
         <message>
             <source>%1B</source>

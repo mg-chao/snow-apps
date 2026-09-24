@@ -588,6 +588,45 @@ void conversionSessionRoutesSourceAndClearsOldViews() {
             "session deactivation keeps completed source but not visible state");
 }
 
+void recognitionFileSnapshotTracksPartialConversionAndQrValues() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    ConversionServer server;
+    server.hold = true;
+    SnowShotApiClient api(server.url());
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &api, actions);
+    session.setTarget({QStringLiteral("file-export"), sampleImage(), QRectF(0, 0, 240, 120)});
+    ScreenshotRecognitionResults results;
+    results.key = QStringLiteral("file-export");
+    results.qr =
+        ScreenshotQrRecognitionResult{{QStringLiteral("first"), QStringLiteral("second")}, {}};
+    session.seedRecognitionResults(results);
+    for (const auto mode : {Mode::Markdown, Mode::Html}) {
+        session.activate(mode);
+        const auto empty = session.fileExportSnapshot();
+        require(empty && empty->source.isEmpty(),
+                "conversion file snapshot identifies its format before source arrives");
+        until([&]() {
+            const auto snapshot = session.fileExportSnapshot();
+            return snapshot && snapshot->source == QStringLiteral("# Partial");
+        });
+        const auto snapshot = session.fileExportSnapshot();
+        require(snapshot && snapshot->kind == (mode == Mode::Markdown
+                                                   ? ScreenshotRecognitionFileKind::Markdown
+                                                   : ScreenshotRecognitionFileKind::Html),
+                "conversion file snapshot preserves active format and partial source");
+    }
+    session.activate(Mode::Qr);
+    const auto qr = session.fileExportSnapshot();
+    require(qr && qr->kind == ScreenshotRecognitionFileKind::Qr &&
+                qr->source == QStringLiteral("first\nsecond"),
+            "QR file snapshot joins all recognized values in order");
+    session.deactivate();
+    require(!session.fileExportSnapshot(), "inactive recognition must not route text save");
+}
+
 void conversionUsesRecognitionMessages() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
     ConversionServer server;
@@ -855,6 +894,7 @@ void runImageConversionTests() {
     conversionSourceNormalization();
     renderingCopyAndPersistence();
     conversionSessionRoutesSourceAndClearsOldViews();
+    recognitionFileSnapshotTracksPartialConversionAndQrValues();
     conversionUsesRecognitionMessages();
     previewThemesAndLongDocuments();
     conversionToolbarMigration();

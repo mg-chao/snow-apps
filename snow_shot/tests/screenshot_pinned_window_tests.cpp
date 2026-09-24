@@ -74,6 +74,7 @@
 #include <QEvent>
 #include <QFrame>
 #include <QFileDialog>
+#include <QFile>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QGraphicsItem>
@@ -9464,6 +9465,123 @@ void pinnedRecognitionSaveSnapshotsAndRoutesOffscreen() {
             "rotation maps paragraph background regions together with text and native dimensions");
 }
 
+void pinnedTextRecognitionSavesSourceFilesOffscreen() {
+    using Format = SnowShotImageConversionFormat;
+    const snow_shot::storage::ScreenshotSettings settings;
+    QTemporaryDir directory;
+    require(directory.isValid() && settings.setImageSaveDirectory(directory.path()) &&
+                settings.setLastManualSaveDirectory(directory.path()) &&
+                settings.setImageFormat(QStringLiteral("pdf")) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("TextResult")) &&
+                settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
+            "text recognition save settings unavailable");
+    const auto read = [](const QString& path) {
+        QFile file(path);
+        require(file.open(QIODevice::ReadOnly), "saved recognition text unavailable");
+        return file.readAll();
+    };
+    const bool native = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    const auto restoreNative =
+        qScopeGuard([native] { QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, native); });
+    snow_shot::storage::ScreenshotImageConversionSettings().setVisionModel(
+        QStringLiteral("vision-saved"));
+    for (const Format format : {Format::Html, Format::Markdown}) {
+        const QString extension =
+            format == Format::Html ? QStringLiteral("html") : QStringLiteral("md");
+        const QString source =
+            format == Format::Html ? QStringLiteral("<b>雪</b>") : QStringLiteral("# 雪");
+        auto config = cachedOcrPinConfig(nullptr);
+        config.recognitionResults.conversions = {{format, QStringLiteral("vision-saved"), source}};
+        config.recognitionResults.visibleConversion = format;
+        QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
+        require(window->present(config), "text conversion pin could not be presented");
+        waitForUi(100);
+        auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+        require(session && session->conversionModeActive(),
+                "text conversion result must be active for save");
+        ScreenshotPinnedWindowTestAccess::quickSave(*window);
+        const QString primary = directory.filePath(QStringLiteral("TextResult.") + extension);
+        require(read(primary) == source.toUtf8() &&
+                    read(directory.filePath(QStringLiteral("TextResult.txt"))) == source.toUtf8(),
+                "pinned quick save must use text extensions and duplicate exact source");
+        QFile::remove(primary);
+        QFile::remove(directory.filePath(QStringLiteral("TextResult.txt")));
+
+        const QString previousDirectory = directory.filePath(QStringLiteral("previous"));
+        require(QDir().mkpath(previousDirectory) &&
+                    settings.setLastManualSaveDirectory(previousDirectory) &&
+                    settings.setSaveAsFileDialog(format == Format::Html
+                                                     ? QStringLiteral("snow_shot")
+                                                     : QStringLiteral("system")),
+                "manual text save settings unavailable");
+        bool systemDialogSeen = false;
+        QTimer accept;
+        accept.setInterval(10);
+        QObject::connect(&accept, &QTimer::timeout, window, [&] {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                    systemDialogSeen = true;
+                    dialog->selectFile(directory.filePath(QStringLiteral("Manual.txt")));
+                    QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+                }
+            }
+        });
+        accept.start();
+        ScreenshotPinnedWindowTestAccess::saveAsFile(*window);
+        accept.stop();
+        require(systemDialogSeen &&
+                    !window->findChild<adqt::widgets::AdModal*>(
+                        QStringLiteral("screenshotSaveAsFileModal")) &&
+                    read(directory.filePath(QStringLiteral("Manual.") + extension)) ==
+                        source.toUtf8() &&
+                    read(directory.filePath(QStringLiteral("Manual.txt"))) == source.toUtf8() &&
+                    settings.lastManualSaveDirectory() == directory.path(),
+                "pinned manual text save must bypass the custom dialog and write its pair");
+        QFile::remove(directory.filePath(QStringLiteral("Manual.") + extension));
+        QFile::remove(directory.filePath(QStringLiteral("Manual.txt")));
+        window->close();
+        require(processUntilDeleted(window, 2000), "close text conversion pin");
+    }
+
+    auto config = cachedOcrPinConfig(nullptr);
+    config.recognitionResults.qr =
+        ScreenshotQrRecognitionResult{{QStringLiteral("first"), QStringLiteral("雪")}, {}};
+    QPointer<ScreenshotPinnedWindow> qrWindow(new ScreenshotPinnedWindow);
+    require(qrWindow->present(config), "QR pin could not be presented");
+    waitForUi(100);
+    auto* session = qrWindow->findChild<ScreenshotRecognitionSessionController*>();
+    require(session != nullptr, "QR session unavailable");
+    session->activate(ScreenshotRecognitionSessionController::Mode::Qr);
+    ScreenshotPinnedWindowTestAccess::quickSave(*qrWindow);
+    require(read(directory.filePath(QStringLiteral("TextResult.txt"))) ==
+                    QStringLiteral("first\n雪").toUtf8() &&
+                !QFileInfo::exists(directory.filePath(QStringLiteral("TextResult.pdf"))),
+            "pinned QR quick save must produce only ordered text despite image format setting");
+    bool qrSystemDialogSeen = false;
+    QTimer acceptQr;
+    acceptQr.setInterval(10);
+    QObject::connect(&acceptQr, &QTimer::timeout, qrWindow, [&] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                qrSystemDialogSeen = true;
+                dialog->selectFile(directory.filePath(QStringLiteral("QRManual.html")));
+                QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+            }
+        }
+    });
+    acceptQr.start();
+    ScreenshotPinnedWindowTestAccess::saveAsFile(*qrWindow);
+    acceptQr.stop();
+    require(qrSystemDialogSeen &&
+                read(directory.filePath(QStringLiteral("QRManual.txt"))) ==
+                    QStringLiteral("first\n雪").toUtf8() &&
+                !QFileInfo::exists(directory.filePath(QStringLiteral("QRManual.html"))),
+            "pinned QR manual save must export one text file");
+    qrWindow->close();
+    require(processUntilDeleted(qrWindow, 2000), "close QR pin");
+}
+
 void pinnedOpacityAppliesToRenderedExportsOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
 
@@ -11712,6 +11830,7 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--recognition-save-only"))) {
             pinnedRecognitionSaveSnapshotsAndRoutesOffscreen();
+            pinnedTextRecognitionSavesSourceFilesOffscreen();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--opacity-export-only"))) {

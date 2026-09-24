@@ -25,6 +25,7 @@
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
+#include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
@@ -4423,8 +4424,9 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
     const PinnedExportAppearance appearance =
         pinnedExportAppearance(m_resultStyle, m_opacityPercent, surfaceScale);
     ScreenshotPinnedViewportExportSource request{
-        std::move(documentSession), m_transformedImage,     m_backgroundCanvasRect,
-        contentPixelSize,           appearance.resultStyle, m_runtime.smartEraseSnapshot(),
+        std::move(documentSession), m_transformedImage,
+        m_backgroundCanvasRect,     contentPixelSize,
+        appearance.resultStyle,     m_runtime.smartEraseSnapshot(),
         appearance.outputOpacity,   {},
     };
     request.bakedSelectionPath = bakedSelectionPath(contentPixelSize);
@@ -4554,6 +4556,23 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
 void ScreenshotPinnedWindow::quickSave() {
     if (m_closing || m_quickSavePending || property("saveDialogOpen").toBool())
         return;
+    const auto textSnapshot =
+        m_recognitionSession != nullptr ? m_recognitionSession->fileExportSnapshot() : std::nullopt;
+    if (textSnapshot) {
+        const snow_shot::storage::ScreenshotSettings settings;
+        const auto result = ScreenshotRecognitionFileExport::quickSave(
+            *textSnapshot, settings.imageSaveDirectory(),
+            ScreenshotImageFileService::suggestedBaseName(settings.autoSaveFilenameFormat()));
+        if (!result.succeeded()) {
+            showPinnedRecognitionMessage(
+                this,
+                QCoreApplication::translate("ScreenshotController",
+                                            "The recognition text could not be saved: %1")
+                    .arg(result.error),
+                true);
+        }
+        return;
+    }
     m_quickSavePending = true;
     if (m_originalImage.isNull()) {
         requestMaterializedImage([this](bool succeeded) {
@@ -4884,6 +4903,56 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content) 
 void ScreenshotPinnedWindow::saveAsFile() {
     if (property("saveDialogOpen").toBool())
         return;
+    const auto textSnapshot =
+        m_recognitionSession != nullptr ? m_recognitionSession->fileExportSnapshot() : std::nullopt;
+    if (textSnapshot) {
+        if (textSnapshot->source.isEmpty()) {
+            showPinnedRecognitionMessage(
+                this,
+                QCoreApplication::translate("ScreenshotRecognitionFileExport",
+                                            "No recognition text is available to save"),
+                true);
+            return;
+        }
+        const snow_shot::storage::ScreenshotSettings settings;
+        const QString directory = ScreenshotImageFileService::saveDialogDirectory(
+            settings.lastManualSaveDirectory(), settings.imageSaveDirectory());
+        static_cast<void>(QDir().mkpath(directory));
+        const QString initialPath = QDir(directory).filePath(
+            ScreenshotImageFileService::suggestedBaseName(settings.manualSaveFilenameFormat()) +
+            QLatin1Char('.') + ScreenshotRecognitionFileExport::extension(textSnapshot->kind));
+        const QPointer<ScreenshotPinnedWindow> lifetime(this);
+        setProperty("saveDialogOpen", true);
+        const QString selectedPath = QFileDialog::getSaveFileName(
+            this, translatePinnedText("Save as file"), initialPath,
+            ScreenshotRecognitionFileExport::dialogFilter(textSnapshot->kind), nullptr,
+            QFileDialog::DontConfirmOverwrite);
+        if (!lifetime)
+            return;
+        setProperty("saveDialogOpen", false);
+        if (m_closing || selectedPath.isEmpty())
+            return;
+        const QString primaryPath =
+            ScreenshotRecognitionFileExport::normalizedPath(selectedPath, textSnapshot->kind);
+        if (!ScreenshotRecognitionFileExport::confirmOverwrite(
+                this,
+                ScreenshotRecognitionFileExport::outputPaths(primaryPath, textSnapshot->kind)))
+            return;
+        const auto result =
+            ScreenshotRecognitionFileExport::saveToPath(*textSnapshot, primaryPath, true);
+        if (result.succeeded()) {
+            static_cast<void>(
+                settings.setLastManualSaveDirectory(QFileInfo(result.path).absolutePath()));
+        } else {
+            showPinnedRecognitionMessage(
+                this,
+                QCoreApplication::translate("ScreenshotController",
+                                            "The recognition text could not be saved: %1")
+                    .arg(result.error),
+                true);
+        }
+        return;
+    }
     if (m_originalImage.isNull()) {
         requestMaterializedImage([this](bool succeeded) {
             if (succeeded && !m_closing) {

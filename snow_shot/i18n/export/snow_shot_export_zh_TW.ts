@@ -106,6 +106,71 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotRecognitionFileExport</name>
+        <message>
+            <source>An existing output file could not be replaced</source>
+            <translation>無法取代現有輸出檔案</translation>
+        </message>
+        <message>
+            <source>An output file already exists</source>
+            <translation>輸出檔案已存在</translation>
+        </message>
+        <message>
+            <source>HTML document (*.html)</source>
+            <translation>HTML 文件 (*.html)</translation>
+        </message>
+        <message>
+            <source>Markdown document (*.md)</source>
+            <translation>Markdown 文件 (*.md)</translation>
+        </message>
+        <message>
+            <source>No available output filename was found</source>
+            <translation>找不到可用的輸出檔名</translation>
+        </message>
+        <message>
+            <source>No output file was selected</source>
+            <translation>未選取輸出檔案</translation>
+        </message>
+        <message>
+            <source>No recognition text is available to save</source>
+            <translation>沒有可儲存的辨識文字</translation>
+        </message>
+        <message>
+            <source>Replace existing files?</source>
+            <translation>取代現有檔案？</translation>
+        </message>
+        <message>
+            <source>Replace the existing file(s)?
+%1</source>
+            <translation>取代以下現有檔案？
+%1</translation>
+        </message>
+        <message>
+            <source>Text document (*.txt)</source>
+            <translation>文字文件 (*.txt)</translation>
+        </message>
+        <message>
+            <source>The output directory could not be created</source>
+            <translation>無法建立輸出目錄</translation>
+        </message>
+        <message>
+            <source>The save directory is not configured</source>
+            <translation>尚未設定儲存目錄</translation>
+        </message>
+        <message>
+            <source>The screenshot filename format is invalid</source>
+            <translation>螢幕截圖檔名格式無效</translation>
+        </message>
+        <message>
+            <source>The text file could not be published</source>
+            <translation>無法完成文字檔案的儲存</translation>
+        </message>
+        <message>
+            <source>The text file could not be staged</source>
+            <translation>無法暫存文字檔案</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotSaveAsFileDialog</name>
         <message>
             <source>%1B</source>

@@ -70,6 +70,10 @@
             <translation>No recognized result is available to copy</translation>
         </message>
         <message>
+            <source>Save recognition text</source>
+            <translation>Save recognition text</translation>
+        </message>
+        <message>
             <source>Save screenshot</source>
             <translation>Save screenshot</translation>
         </message>
@@ -108,6 +112,10 @@
         <message>
             <source>The pinned window could not be restored</source>
             <translation>The pinned window could not be restored</translation>
+        </message>
+        <message>
+            <source>The recognition text could not be saved: %1</source>
+            <translation>The recognition text could not be saved: %1</translation>
         </message>
         <message>
             <source>The screenshot clipboard operation could not be started</source>
