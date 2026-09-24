@@ -872,6 +872,66 @@ void managementDiskQuotaAndRestorationProtection() {
             "quota removes closed bytes and never active pins");
 }
 
+void membershipAndPreviewRevisionsTrackOnlyTheirSources() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "revision fixture needs a directory");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    quint64 previewRevision = 0;
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        auto record = recordWithId(id, patternedImage({12, 8}, 1));
+        require(repository.upsert(record).success, "create revision fixture");
+        const quint64 membershipRevision = repository.membershipRevision();
+        previewRevision = *repository.previewSourceRevision(id);
+        record.opacityPercent = 70;
+        require(repository.updateState(record).success &&
+                    repository.membershipRevision() == membershipRevision &&
+                    repository.previewSourceRevision(id) == previewRevision,
+                "state-only saves must not rebuild membership or thumbnails");
+        require(repository.markClosed(id).success &&
+                    repository.membershipRevision() > membershipRevision,
+                "closing a pin changes membership");
+        const quint64 closedRevision = repository.membershipRevision();
+        require(repository.markRestored(id).success &&
+                    repository.membershipRevision() > closedRevision,
+                "restoring a pin changes membership");
+        record.image = patternedImage({12, 8}, 2);
+        require(repository.upsert(record).success, "change preview source");
+        previewRevision = *repository.previewSourceRevision(id);
+        require(repository.flush().success, "commit stable preview revision");
+    }
+    {
+        storage::PinnedWindowRepository reloaded(directory.path(), true, 30000);
+        require(reloaded.previewSourceRevision(id) == previewRevision,
+                "disk thumbnail keys must remain stable across restart");
+        require(reloaded.remove(id).success && reloaded.flush().success,
+                "remove source before reusing its id");
+    }
+    storage::PinnedWindowRepository recreated(directory.path(), true, 30000);
+    require(recreated.upsert(recordWithId(id, patternedImage({12, 8}, 3))).success &&
+                *recreated.previewSourceRevision(id) > previewRevision,
+            "recreated ids must not reuse a stale disk thumbnail key");
+}
+
+void deferredPolicyEnforcementRunsOnlyWhenRequested() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    auto first =
+        recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), patternedImage({2, 2}, 1));
+    auto second =
+        recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), patternedImage({2, 2}, 2));
+    require(repository.upsert(first).success && repository.upsert(second).success &&
+                repository.markClosedDeferred(first.id).success &&
+                repository.markClosedDeferred(second.id).success,
+            "seed closed pins without a synchronous sweep");
+    auto policy = repository.policy();
+    policy.maxEntries = 1;
+    require(repository.setPolicy(policy, false).success && repository.summaries().size() == 2,
+            "deferred policy update leaves cleanup to the maintenance worker");
+    require(repository.enforcePolicy().success && repository.summaries().size() == 1,
+            "maintenance applies the deferred policy");
+}
+
 void managementPolicySizeCacheTracksPayloadCommits() {
     QTemporaryDir directory;
     storage::PinnedWindowRepository repository(directory.path(), true, 30000);
@@ -1098,6 +1158,8 @@ int main(int argc, char* argv[]) {
     bulkRemovalIsAtomicAndNotifiesOnce();
     canceledCreationReleasesLifecycleState();
     managementDiskQuotaAndRestorationProtection();
+    membershipAndPreviewRevisionsTrackOnlyTheirSources();
+    deferredPolicyEnforcementRunsOnlyWhenRequested();
     managementPolicySizeCacheTracksPayloadCommits();
     managementLegacyMetadataDefaults();
     managementExpiresBeforeApplyingQuotas();

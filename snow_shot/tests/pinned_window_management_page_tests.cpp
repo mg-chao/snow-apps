@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
+#include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "widgets/select.h"
 #include "widgets/date_picker.h"
@@ -366,6 +367,29 @@ int main(int argc, char** argv) {
         require(imageNaturalSize == base.size() && imageThumbnailSize.width() <= 320 &&
                     imageThumbnailSize.height() <= 192,
                 "large pinned images keep natural dimensions while thumbnails stay bounded");
+        bool explicitPreviewReady = false;
+        constexpr quint64 kCacheProbeRequestId = 100000;
+        QObject::connect(pageSource, &PinnedWindowManagementDataSource::previewReady, &page,
+                         [&explicitPreviewReady, &imageId](const QString& id, quint64 requestId,
+                                                           const QImage& image, const QSize&) {
+                             if (id == imageId && requestId == kCacheProbeRequestId)
+                                 explicitPreviewReady = !image.isNull();
+                         });
+        pageSource->requestPreview(imageId, kCacheProbeRequestId, QSize(260, 156));
+        timer.restart();
+        while (!explicitPreviewReady && timer.elapsed() < 5000) {
+            application.processEvents();
+            QThread::msleep(1);
+        }
+        require(explicitPreviewReady, "explicit pinned thumbnail request completes");
+        const QString cacheKey = QStringLiteral("pinned|") + imageId + u':' +
+                                 QString::number(*repository.previewSourceRevision(imageId)) +
+                                 QStringLiteral(":260x156");
+        const auto cached = snow_shot::presentation::components::thumbnail_cache::load(
+            snow_shot::presentation::components::thumbnail_cache::pathForKey(cacheKey));
+        require(!cached.image.isNull() && cached.image.size() == imageThumbnailSize &&
+                    cached.naturalSize == base.size(),
+                "pinned thumbnails share the persistent bounded cache and retain natural size");
         int baseImages = 0;
         for (auto* preview : page.findChildren<adqt::widgets::AdImage*>(
                  QStringLiteral("pinnedManagementPreview"))) {

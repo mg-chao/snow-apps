@@ -53,6 +53,8 @@ class PinnedWindowRepository final {
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
     [[nodiscard]] quint64 revision() const;
+    // Advances only when records enter, leave, close, restore, or change groups.
+    [[nodiscard]] quint64 membershipRevision() const;
     [[nodiscard]] int allocateHideToTopAccent();
     [[nodiscard]] QVector<PinnedWindowGroup> groups() const;
     [[nodiscard]] QString activeGroupId() const;
@@ -88,7 +90,9 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult beginRestore(const QString& id);
     void cancelRestore(const QString& id);
     [[nodiscard]] StorageResult markRestored(const QString& id);
-    [[nodiscard]] StorageResult setPolicy(PinnedWindowPolicy policy);
+    // Application startup/settings can defer the potentially slow cleanup to a worker.
+    [[nodiscard]] StorageResult setPolicy(PinnedWindowPolicy policy,
+                                          bool enforceImmediately = true);
     [[nodiscard]] PinnedWindowPolicy policy() const;
     void setCompressionLevel(const QString& level);
     [[nodiscard]] StorageResult enforcePolicy(QDateTime now = QDateTime::currentDateTimeUtc());

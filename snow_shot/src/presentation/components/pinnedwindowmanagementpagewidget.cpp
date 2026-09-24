@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/components/historyselectionbar.h"
 #include "snow_shot/presentation/components/historypagecommon.h"
+#include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
@@ -43,6 +44,7 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 namespace styles = snow_shot::presentation::styles;
 namespace storage = snow_shot::storage;
 namespace history_page = snow_shot::presentation::components::history_page;
+namespace thumbnail_cache = snow_shot::presentation::components::thumbnail_cache;
 
 constexpr int kPreviewWidth = 260;
 constexpr int kPreviewHeight = 156;
@@ -157,21 +159,30 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         const auto alive = m_alive;
         const auto previewEpoch = m_previewEpoch;
         const quint64 requestedEpoch = previewEpoch->load();
+        const QString cachePath = thumbnail_cache::pathForKey(QStringLiteral("pinned|") + cacheKey);
         auto* receiver = this;
         applicationStorage.pinnedPreviewPool().start([alive, previewEpoch, requestedEpoch, receiver,
                                                       repository, id, requestId, boundedSize,
-                                                      cacheKey]() {
+                                                      cacheKey, cachePath]() {
             if (!alive->load() || previewEpoch->load() != requestedEpoch) {
                 return;
             }
-            QImage image = loadPinnedPreview(repository, id);
+            auto thumbnail = thumbnail_cache::load(cachePath);
+            QImage image = std::move(thumbnail.image);
+            QSize naturalSize = thumbnail.naturalSize;
+            if (image.isNull()) {
+                image = loadPinnedPreview(repository, id);
+                naturalSize = image.size();
+                if (!image.isNull() && (image.width() > boundedSize.width() ||
+                                        image.height() > boundedSize.height())) {
+                    image =
+                        image.scaled(boundedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                }
+                if (!image.isNull())
+                    thumbnail_cache::persist(cachePath, image, naturalSize);
+            }
             if (!alive->load() || previewEpoch->load() != requestedEpoch) {
                 return;
-            }
-            const QSize naturalSize = image.size();
-            if (!image.isNull() &&
-                (image.width() > boundedSize.width() || image.height() > boundedSize.height())) {
-                image = image.scaled(boundedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
             QMetaObject::invokeMethod(
                 &storage::ApplicationStorage::instance(),

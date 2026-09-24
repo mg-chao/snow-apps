@@ -271,7 +271,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
             },
             Qt::QueuedConnection);
     });
-    static_cast<void>(m_pinnedWindows->setPolicy(pinnedWindowPolicy()));
+    static_cast<void>(m_pinnedWindows->setPolicy(pinnedWindowPolicy(), false));
     m_pinnedWindows->setCompressionLevel(
         m_configuration->value(QStringLiteral("pinned_history/compression_level")).toString());
     auto* pinnedCleanupTimer = new QTimer(m_configuration.get());
@@ -290,8 +290,10 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                     return;
                 }
                 const auto requestedPolicy = pinnedWindowPolicy();
-                if (m_pinnedWindows->policy() != requestedPolicy)
-                    static_cast<void>(m_pinnedWindows->setPolicy(requestedPolicy));
+                if (m_pinnedWindows->policy() != requestedPolicy) {
+                    static_cast<void>(m_pinnedWindows->setPolicy(requestedPolicy, false));
+                    requestPinnedWindowRetentionCleanup();
+                }
             }
         });
     m_status.historyUsage = m_captureHistory->usage();
@@ -341,6 +343,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     qCInfo(storageLog) << "Storage initialized at" << effectiveDirectory
                        << "write available:" << m_status.writeAvailable;
     emitStatusChanged();
+    requestPinnedWindowRetentionCleanup();
     if (effectiveDirectory.isEmpty()) {
         return StorageResult::failure(m_status.fallbackReason);
     }

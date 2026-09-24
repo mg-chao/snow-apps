@@ -130,7 +130,7 @@ GroupWindowCounts PinnedWindowGroupManager::windowCounts(const QString& groupId)
     QSet<QString> nonIgnoredPersistedIds;
     QSet<QString> allPersistedIds;
     if (m_repository != nullptr) {
-        const quint64 repositoryRevision = m_repository->revision();
+        const quint64 repositoryRevision = m_repository->membershipRevision();
         if (repositoryRevision != m_countsRevision) {
             m_persistedCounts.clear();
             m_persistedTotalCounts.clear();
@@ -182,6 +182,8 @@ int PinnedWindowGroupManager::windowCount(const QString& groupId) const {
 
 void PinnedWindowGroupManager::onPinnedRecordsChanged() {
     if (m_repository == nullptr)
+        return;
+    if (m_repository->membershipRevision() == m_countsRevision)
         return;
     const bool hadCounts = m_countsRevision != (std::numeric_limits<quint64>::max)();
     const auto previousCounts = m_persistedCounts;

@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/components/emptystateicon.h"
 #include "snow_shot/presentation/components/historyselectionbar.h"
 #include "snow_shot/presentation/components/historypagecommon.h"
+#include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
@@ -34,7 +35,6 @@
 #include <QPointer>
 #include <QApplication>
 #include <QCoreApplication>
-#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QEvent>
@@ -42,7 +42,6 @@
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
-#include <QSaveFile>
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QPainter>
@@ -68,6 +67,7 @@
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
 namespace history_page = snow_shot::presentation::components::history_page;
+namespace thumbnail_cache = snow_shot::presentation::components::thumbnail_cache;
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 namespace storage = snow_shot::storage;
 namespace styles = snow_shot::presentation::styles;
@@ -498,58 +498,6 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
     bool aborted_ = false;
 };
 
-constexpr qint64 kMaximumThumbnailCacheBytes = 256LL * 1024LL * 1024LL;
-
-qint64 thumbnailCacheBytes(const QDir& cache) {
-    const QFileInfoList entries =
-        cache.entryInfoList({QStringLiteral("*.png")}, QDir::Files, QDir::Time | QDir::Reversed);
-    qint64 totalBytes = 0;
-    for (const QFileInfo& entry : entries) {
-        totalBytes += entry.size();
-    }
-    return totalBytes;
-}
-
-// Byte estimate of the thumbnail cache, shared with persistence jobs so they
-// can outlive the loader instance that submitted them.
-struct ThumbnailCacheCapacity {
-    std::mutex mutex;
-    // -1 until the first write reconciles the estimate with the directory.
-    qint64 bytes = -1;
-};
-
-// Keeps the 256 MiB cache cap with an incrementally maintained byte estimate
-// instead of listing the whole cache directory after every write; the estimate
-// is re-checked against disk only when a write crosses the cap (a concurrent
-// cache clear shows up there as a lower true total).
-void maintainThumbnailCacheCapacity(const std::shared_ptr<ThumbnailCacheCapacity>& capacity,
-                                    const QString& directory, qint64 writtenBytes) {
-    const QDir cache(directory);
-    std::lock_guard<std::mutex> lock(capacity->mutex);
-    if (capacity->bytes < 0) {
-        capacity->bytes = thumbnailCacheBytes(cache);
-    } else {
-        capacity->bytes += writtenBytes;
-    }
-    if (capacity->bytes <= kMaximumThumbnailCacheBytes) {
-        return;
-    }
-    capacity->bytes = thumbnailCacheBytes(cache);
-    if (capacity->bytes <= kMaximumThumbnailCacheBytes) {
-        return;
-    }
-    const QFileInfoList entries =
-        cache.entryInfoList({QStringLiteral("*.png")}, QDir::Files, QDir::Time | QDir::Reversed);
-    for (const QFileInfo& entry : entries) {
-        if (capacity->bytes <= kMaximumThumbnailCacheBytes) {
-            break;
-        }
-        if (QFile::remove(entry.absoluteFilePath())) {
-            capacity->bytes -= entry.size();
-        }
-    }
-}
-
 class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
   public:
     HistoryThumbnailLoader(storage::CaptureHistoryRecord record,
@@ -607,36 +555,15 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
                          .arg(options.targetPixelSize.height())
                          .arg(static_cast<int>(options.aspectRatioMode))
                          .arg(options.allowUpscale ? 1 : 0);
-        const QByteArray digest =
-            QCryptographicHash::hash(sourceKey.toUtf8(), QCryptographicHash::Sha256).toHex();
-        return QDir(m_cacheDirectory)
-            .filePath(QString::fromLatin1(digest) + QStringLiteral(".png"));
+        return thumbnail_cache::pathForKey(sourceKey, m_cacheDirectory);
     }
 
     void persist(const QString& path, QImage image) const {
-        const QString directory = QFileInfo(path).absolutePath();
-        auto capacity = m_capacity;
-        historyTaskExecutor().persist(
-            path, std::move(image), [capacity, directory, path](QImage image) mutable {
-                if (!QDir().mkpath(directory)) {
-                    return;
-                }
-                QSaveFile file(path);
-                const QByteArray png = snow_shot::image_codec::encodePng(image);
-                image = QImage();
-                if (!file.open(QIODevice::WriteOnly) || png.isEmpty() ||
-                    file.write(png) != png.size() || !file.commit()) {
-                    return;
-                }
-                maintainThumbnailCacheCapacity(capacity, directory, png.size());
-            });
+        historyTaskExecutor().persist(path, std::move(image), [path](QImage image) mutable {
+            thumbnail_cache::persist(path, std::move(image));
+        });
     }
 
-    static std::shared_ptr<ThumbnailCacheCapacity> capacity() {
-        static auto shared = std::make_shared<ThumbnailCacheCapacity>();
-        return shared;
-    }
-    std::shared_ptr<ThumbnailCacheCapacity> m_capacity = capacity();
     storage::CaptureHistoryRecord m_record;
     QPointer<ScreenshotHistoryPageDataSource> m_dataSource;
 
