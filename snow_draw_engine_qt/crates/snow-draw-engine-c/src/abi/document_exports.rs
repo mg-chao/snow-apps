@@ -172,6 +172,40 @@ pub unsafe extern "C" fn snow_viewport_duplicate_selected_ex(
     })
 }
 
+/// # Safety
+/// Handles must be live; `bytes` must point to `size` readable bytes and
+/// `out_changed_viewports` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_insert_draw_template_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    bytes: *const u8,
+    size: usize,
+    center_x: f64,
+    center_y: f64,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if bytes.is_null() || size == 0 || out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let bytes = unsafe { std::slice::from_raw_parts(bytes, size) };
+            let result = state
+                .runtime
+                .insert_draw_template_with_viewport_changes(
+                    id,
+                    bytes,
+                    Point::new(center_x, center_y),
+                )
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_reorder_selected_ex(
     runtime: SnowRuntime,

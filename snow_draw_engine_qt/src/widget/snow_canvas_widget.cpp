@@ -407,6 +407,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool deleteAllElements();
     bool clearDocument();
     bool duplicateSelected(const QPointF& offset);
+    bool insertDrawTemplate(const QByteArray& payload, const QPointF& center);
     bool reorderSelected(SnowCanvasSelectionOrder order);
     bool alignSelected(SnowCanvasSelectionAlignment alignment);
     bool setSelectedOpacity(double opacity);
@@ -1607,6 +1608,15 @@ bool SnowCanvasWidget::Impl::duplicateSelected(const QPointF& offset) {
 
 bool SnowCanvasWidget::duplicateSelected(const QPointF& offset) {
     return m_impl->duplicateSelected(offset);
+}
+
+bool SnowCanvasWidget::insertDrawTemplate(const QByteArray& payload, const QPointF& center) {
+    return m_impl->insertDrawTemplate(payload, center);
+}
+
+bool SnowCanvasWidget::Impl::insertDrawTemplate(const QByteArray& payload, const QPointF& center) {
+    return applyMutationResult(snow_canvas_commands::insertDrawTemplate(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(), payload, center.x(), center.y()));
 }
 
 bool SnowCanvasWidget::Impl::reorderSelected(SnowCanvasSelectionOrder order) {

@@ -73,6 +73,191 @@ fn setup() -> (Engine, ViewportId, ElementId) {
     (engine, viewport, id)
 }
 
+#[test]
+fn draw_template_exports_multi_selection_and_inserts_centered_as_one_undo_step() {
+    let (mut engine, viewport, first) = setup();
+    engine
+        .duplicate_selected_with_viewport_changes(viewport, Point::new(230.0, 0.0))
+        .unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        280.0,
+        180.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        750.0,
+        420.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        750.0,
+        420.0,
+        false,
+    );
+    assert_eq!(engine.selected_ids().len(), 2);
+
+    let payload = engine.serialize_selected_draw_template().unwrap();
+    let template: snow_draw_engine_editor::DrawTemplate = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(template.elements.len(), 2);
+    assert_eq!(template.selected_ids.len(), 2);
+    assert_eq!(template.source_center, Point::new(115.0, 0.0));
+    let before = engine.model.paint_order().len();
+    engine
+        .insert_draw_template_with_viewport_changes(viewport, &payload, Point::new(600.0, 500.0))
+        .unwrap();
+    assert_eq!(engine.model.paint_order().len(), before + 2);
+    let inserted = engine.selected_ids();
+    assert_eq!(inserted.len(), 2);
+    assert!(inserted.iter().all(|id| *id != first));
+    let mut centers: Vec<_> = inserted
+        .iter()
+        .map(|id| engine.model.rectangle(*id).unwrap().center)
+        .collect();
+    centers.sort_by(|a, b| a.x.total_cmp(&b.x));
+    assert_eq!(
+        centers,
+        vec![Point::new(485.0, 500.0), Point::new(715.0, 500.0)]
+    );
+    for (source, inserted) in template.selected_ids.iter().zip(inserted.iter()) {
+        let original = engine.model.rectangle(*source).unwrap();
+        let copy = engine.model.rectangle(*inserted).unwrap();
+        assert_eq!(original.fill, copy.fill);
+        assert_eq!(original.stroke, copy.stroke);
+        assert_eq!(original.opacity, copy.opacity);
+        assert_eq!(
+            engine.model.element(*source).unwrap().meta,
+            engine.model.element(*inserted).unwrap().meta
+        );
+    }
+    engine.undo_with_viewport_changes().unwrap();
+    assert_eq!(engine.model.paint_order().len(), before);
+    engine.redo_with_viewport_changes().unwrap();
+    assert_eq!(engine.model.paint_order().len(), before + 2);
+
+    let stable = engine.serialize_document_history().unwrap();
+    let mut invalid: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    invalid["schemaVersion"] = serde_json::json!(999);
+    assert_eq!(
+        engine.insert_draw_template_with_viewport_changes(
+            viewport,
+            &serde_json::to_vec(&invalid).unwrap(),
+            Point::new(0.0, 0.0),
+        ),
+        Err(ErrorCode::Unsupported)
+    );
+    invalid["schemaVersion"] = serde_json::json!(1);
+    invalid["sourceCenter"]["x"] = serde_json::json!("bad");
+    assert_eq!(
+        engine.insert_draw_template_with_viewport_changes(
+            viewport,
+            &serde_json::to_vec(&invalid).unwrap(),
+            Point::new(0.0, 0.0),
+        ),
+        Err(ErrorCode::InvalidArgument)
+    );
+    assert_eq!(engine.serialize_document_history().unwrap(), stable);
+}
+
+#[test]
+fn draw_template_discards_document_specific_auto_filter_region() {
+    let (mut engine, viewport, _) = setup();
+    let payload = engine.serialize_selected_draw_template().unwrap();
+    let mut template: snow_draw_engine_editor::DrawTemplate =
+        serde_json::from_slice(&payload).unwrap();
+    template.elements[0].data =
+        snow_draw_engine_document::ElementData::Filter(snow_draw_engine_document::FilterData {
+            auto_region_id: Some(77),
+            center: Point::new(0.0, 0.0),
+            width: 100.0,
+            height: 80.0,
+            ..Default::default()
+        });
+    let payload = serde_json::to_vec(&template).unwrap();
+    engine
+        .insert_draw_template_with_viewport_changes(viewport, &payload, Point::new(600.0, 500.0))
+        .unwrap();
+    let inserted = engine.selected_ids()[0];
+    let filter = engine.model.filter(inserted).unwrap();
+    assert_eq!(filter.auto_region_id, None);
+    assert_eq!(filter.center, Point::new(600.0, 500.0));
+}
+
+#[test]
+fn draw_template_remaps_serial_number_text() {
+    use snow_draw_engine_document::{ElementMeta, SerialNumberData, TextData, Transaction};
+    let mut engine = Engine::default();
+    let viewport = engine.create_viewport(ViewportConfig::default()).unwrap();
+    let text_id = ElementId {
+        index: 0,
+        generation: 1,
+    };
+    let serial_id = ElementId {
+        index: 1,
+        generation: 1,
+    };
+    let mut transaction = Transaction::new("serial template fixture");
+    transaction.insert_text(
+        text_id,
+        ElementMeta::default(),
+        TextData {
+            center: Point::new(130.0, 0.0),
+            text: "serial label".to_owned(),
+            layout: TextLayoutSize::new(80.0, 24.0),
+            ..TextData::default()
+        },
+    );
+    transaction.insert_serial_number(
+        serial_id,
+        ElementMeta::default(),
+        SerialNumberData {
+            center: Point::new(0.0, 0.0),
+            text_element_id: Some(text_id),
+            ..SerialNumberData::default()
+        },
+    );
+    engine
+        .commit_transaction(
+            viewport,
+            ApplyTransactionCommand {
+                transaction,
+                history_undo_snapshot: None,
+            },
+        )
+        .unwrap();
+    engine
+        .editor
+        .select_element(&engine.model, serial_id)
+        .unwrap();
+    let payload = engine.serialize_selected_draw_template().unwrap();
+    let template: snow_draw_engine_editor::DrawTemplate = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(template.elements.len(), 2);
+    engine
+        .insert_draw_template_with_viewport_changes(viewport, &payload, Point::new(500.0, 200.0))
+        .unwrap();
+    let inserted_serial = engine.selected_ids()[0];
+    let inserted_text = engine
+        .model
+        .serial_number(inserted_serial)
+        .unwrap()
+        .text_element_id
+        .unwrap();
+    assert_ne!(inserted_serial, serial_id);
+    assert_ne!(inserted_text, text_id);
+    assert_eq!(
+        engine.model.text(inserted_text).unwrap().text,
+        "serial label"
+    );
+}
+
 fn scene(engine: &Engine, viewport: ViewportId) -> Vec<SceneDisplayItem> {
     engine
         .acquire_patch(viewport, None)

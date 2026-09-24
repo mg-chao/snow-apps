@@ -1620,8 +1620,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-storage-quit-lifetime-tests
         COMMAND snow-shot-application-storage-tests --quit-lifetime-only)
+    add_test(NAME snow-shot-draw-template-storage-tests
+        COMMAND snow-shot-application-storage-tests --draw-template-only)
     set_tests_properties(snow-shot-application-storage-tests
-        snow-shot-storage-quit-lifetime-tests PROPERTIES
+        snow-shot-storage-quit-lifetime-tests snow-shot-draw-template-storage-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -4183,6 +4185,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --watermark-template-width-only
             -platform offscreen)
     set_tests_properties(snow-shot-watermark-template-width-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-draw-template-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --draw-template-only -platform offscreen)
+    set_tests_properties(snow-shot-draw-template-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-toolbar-popup-recovery-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --popup-recovery-only -platform offscreen)
     set_tests_properties(snow-shot-toolbar-popup-recovery-tests PROPERTIES LABELS "unit" TIMEOUT 60

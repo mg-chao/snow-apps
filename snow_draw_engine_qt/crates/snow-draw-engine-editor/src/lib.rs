@@ -8,6 +8,7 @@ mod creation_workflow;
 pub use creation_workflow::SerialNumberLabelLayoutRequest;
 mod defaults;
 mod document_ops;
+mod draw_template;
 mod edit_workflow;
 mod eraser_workflow;
 mod free_draw_workflow;
@@ -56,6 +57,7 @@ pub use api::{
     TEXT_STYLE_MIXED_VERTICAL_ALIGN, selection_box_visible_for_members,
 };
 pub use defaults::{EditorStyleDefaults, editor_style_defaults};
+pub use draw_template::DrawTemplate;
 pub use session::{
     EditorSession, EditorSessionSnapshot, PersistedEditorSession, validate_editor_style_defaults,
 };

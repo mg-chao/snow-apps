@@ -3,6 +3,8 @@
 #include "snow_canvas_ffi_handles.h"
 #include "snow_draw_engine.h"
 
+#include <QByteArray>
+
 #include <cstdint>
 #include <vector>
 
@@ -82,6 +84,8 @@ MutationResult deleteSelected(SnowRuntime runtime, SnowViewport viewport);
 MutationResult deleteAllElements(SnowRuntime runtime, SnowViewport viewport);
 MutationResult duplicateSelected(SnowRuntime runtime, SnowViewport viewport, double offsetX,
                                  double offsetY);
+MutationResult insertDrawTemplate(SnowRuntime runtime, SnowViewport viewport,
+                                  const QByteArray& payload, double centerX, double centerY);
 MutationResult reorderSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t action);
 MutationResult alignSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t alignment);
 MutationResult setSelectedOpacity(SnowRuntime runtime, SnowViewport viewport, double opacity);

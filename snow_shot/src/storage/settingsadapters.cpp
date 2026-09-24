@@ -7,6 +7,7 @@
 #include "capturehistorypolicy_p.h"
 
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeySequence>
 #include <QSet>
@@ -1566,6 +1567,41 @@ bool WatermarkTemplateSettings::setTemplates(const QVector<WatermarkTemplate>& t
                                     {QStringLiteral("value"), watermarkTemplate.value}});
     }
     return cache().setValue(QStringLiteral("drawing/watermark_templates"), array);
+}
+
+QVector<DrawTemplate> DrawTemplateSettings::templates() const {
+    QVector<DrawTemplate> result;
+    const QJsonArray array = cache().value(QStringLiteral("drawing/draw_templates")).toArray();
+    result.reserve(array.size());
+    for (const QJsonValue& item : array) {
+        const QJsonObject object = item.toObject();
+        result.push_back({object.value(QStringLiteral("name")).toString(),
+                          QByteArray::fromBase64(
+                              object.value(QStringLiteral("payload")).toString().toLatin1())});
+    }
+    return result;
+}
+
+bool DrawTemplateSettings::setTemplates(const QVector<DrawTemplate>& templates) const {
+    QJsonArray array;
+    for (const DrawTemplate& drawTemplate : templates) {
+        const QString name = drawTemplate.name.trimmed();
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(drawTemplate.payload, &error);
+        const QJsonObject payload = document.object();
+        if (name.isEmpty() || drawTemplate.payload.isEmpty() ||
+            drawTemplate.payload.size() > 16 * 1024 * 1024 ||
+            error.error != QJsonParseError::NoError ||
+            payload.value(QStringLiteral("schemaVersion")).toInt(-1) != 1 ||
+            payload.value(QStringLiteral("elements")).toArray().isEmpty() ||
+            payload.value(QStringLiteral("selectedIds")).toArray().isEmpty()) {
+            return false;
+        }
+        array.push_back(QJsonObject{
+            {QStringLiteral("name"), name},
+            {QStringLiteral("payload"), QString::fromLatin1(drawTemplate.payload.toBase64())}});
+    }
+    return cache().setValue(QStringLiteral("drawing/draw_templates"), array);
 }
 
 QString PinToScreenSettings::doubleClickAction() const {

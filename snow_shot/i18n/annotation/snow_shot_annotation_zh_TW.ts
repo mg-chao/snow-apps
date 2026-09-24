@@ -12,6 +12,10 @@
             <translation>新增</translation>
         </message>
         <message>
+            <source>Add Template</source>
+            <translation>新增範本</translation>
+        </message>
+        <message>
             <source>Add screenshot region</source>
             <translation>新增截圖區域</translation>
         </message>
@@ -168,6 +172,18 @@
             <translation>圓角半徑（捲動調整）</translation>
         </message>
         <message>
+            <source>Could not capture selected elements</source>
+            <translation>無法擷取所選元素</translation>
+        </message>
+        <message>
+            <source>Could not delete the draw template</source>
+            <translation>無法刪除繪圖範本</translation>
+        </message>
+        <message>
+            <source>Could not save the draw template</source>
+            <translation>無法儲存繪圖範本</translation>
+        </message>
+        <message>
             <source>Cross-line fill</source>
             <translation>交叉線填充</translation>
         </message>
@@ -240,6 +256,14 @@
             <translation>刪除</translation>
         </message>
         <message>
+            <source>Delete Draw Template</source>
+            <translation>刪除繪圖範本</translation>
+        </message>
+        <message>
+            <source>Delete draw template "%1"? This action cannot be undone.</source>
+            <translation>刪除繪圖範本「%1」？此操作無法復原。</translation>
+        </message>
+        <message>
             <source>Delete selected elements</source>
             <translation>刪除選取的元素</translation>
         </message>
@@ -274,6 +298,10 @@
         <message>
             <source>Drag toolbar</source>
             <translation>拖曳工具列</translation>
+        </message>
+        <message>
+            <source>Draw Template</source>
+            <translation>繪圖範本</translation>
         </message>
         <message>
             <source>Edit</source>
@@ -574,6 +602,10 @@
         <message>
             <source>Move selection vertically (press and hold to drag)</source>
             <translation>垂直移動選取範圍（按住並拖曳）</translation>
+        </message>
+        <message>
+            <source>No matching templates</source>
+            <translation>沒有符合的範本</translation>
         </message>
         <message>
             <source>No templates yet</source>

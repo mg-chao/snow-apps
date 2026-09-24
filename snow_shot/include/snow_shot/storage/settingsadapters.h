@@ -6,6 +6,7 @@
 #include "snow_shot/storage/persistedwindowgeometry.h"
 
 #include <QColor>
+#include <QByteArray>
 #include <QJsonObject>
 #include <QMap>
 #include <QString>
@@ -405,6 +406,19 @@ class WatermarkTemplateSettings final {
   public:
     [[nodiscard]] QVector<WatermarkTemplate> templates() const;
     bool setTemplates(const QVector<WatermarkTemplate>& templates) const;
+};
+
+struct DrawTemplate {
+    QString name;
+    QByteArray payload;
+
+    friend bool operator==(const DrawTemplate&, const DrawTemplate&) = default;
+};
+
+class DrawTemplateSettings final {
+  public:
+    [[nodiscard]] QVector<DrawTemplate> templates() const;
+    bool setTemplates(const QVector<DrawTemplate>& templates) const;
 };
 
 class PinToScreenSettings final {

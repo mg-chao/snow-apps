@@ -31,7 +31,12 @@
 #include "widgets/form.h"
 #include "widgets/modal.h"
 #include "widgets/input_number.h"
+#include "widgets/input_line_edit.h"
+#include "widgets/alert.h"
+#include "theme/theme_manager.h"
 
+#include <QAbstractItemDelegate>
+#include <QAbstractButton>
 #include <QColor>
 #include <QEvent>
 #include <QFrame>
@@ -39,6 +44,7 @@
 #include <QBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListView>
 #include <QLayout>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -49,6 +55,8 @@
 #include <QSpacerItem>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QStyle>
+#include <QStyleOptionViewItem>
 #include <QSet>
 #include <QStringList>
 #include <QVBoxLayout>
@@ -706,6 +714,116 @@ initialActionToolsLayout(const ScreenshotToolPalette::Options& options) {
         options.actionToolsLayoutKind);
 }
 
+int drawTemplateIndex(const QString& key) {
+    const QString prefix = QStringLiteral("draw-template:");
+    if (!key.startsWith(prefix)) {
+        return -1;
+    }
+    bool ok = false;
+    const int index = key.sliced(prefix.size()).toInt(&ok);
+    return ok ? index : -1;
+}
+
+class DrawTemplateOptionActionDelegate final : public QAbstractItemDelegate {
+  public:
+    DrawTemplateOptionActionDelegate(adqt::widgets::AdSelect* select, QListView* view,
+                                     QAbstractItemDelegate* baseDelegate,
+                                     std::function<void(int)> deleteRequested)
+        : QAbstractItemDelegate(select), m_view(view), m_baseDelegate(baseDelegate),
+          m_deleteRequested(std::move(deleteRequested)) {
+        if (m_view != nullptr && m_view->viewport() != nullptr) {
+            m_view->viewport()->installEventFilter(this);
+        }
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        return m_baseDelegate != nullptr ? m_baseDelegate->sizeHint(option, index) : QSize();
+    }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override {
+        if (m_baseDelegate != nullptr) {
+            m_baseDelegate->paint(painter, option, index);
+        }
+        if (painter == nullptr || m_view == nullptr ||
+            (option.state & QStyle::State_MouseOver) == 0 ||
+            drawTemplateIndex(index.data(Qt::UserRole).toString()) < 0) {
+            return;
+        }
+        const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(m_view);
+        const QRect action(option.rect.right() - 31, option.rect.top(), 32, option.rect.height());
+        const bool hovered = m_hovered == index.data(Qt::UserRole).toString();
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->fillRect(action.adjusted(-4, 0, 0, 0), theme.colorBgElevated);
+        painter->fillRect(action.adjusted(-4, 0, 0, 0), theme.colorFillTertiary);
+        if (hovered) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(theme.colorErrorBgHover);
+            painter->drawRoundedRect(action.adjusted(-4, 2, -2, -2), 4, 4);
+        }
+        const auto colors =
+            adqt::icons::IconColors::primary(hovered ? theme.colorErrorHover : theme.colorError);
+        const QPixmap icon = adqt::icons::renderIconPixmap(
+            outlined_icons::IconDelete(colors), {QSize(16, 16), m_view->devicePixelRatioF()});
+        painter->drawPixmap(action.center() - QPoint(8, 8), icon);
+        painter->restore();
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (m_view == nullptr || watched != m_view->viewport() || event == nullptr) {
+            return QAbstractItemDelegate::eventFilter(watched, event);
+        }
+        if (event->type() == QEvent::Leave) {
+            m_hovered.clear();
+            m_pressed.clear();
+            m_view->viewport()->update();
+            return false;
+        }
+        if (event->type() != QEvent::MouseMove && event->type() != QEvent::MouseButtonPress &&
+            event->type() != QEvent::MouseButtonRelease &&
+            event->type() != QEvent::MouseButtonDblClick) {
+            return false;
+        }
+        auto* mouse = static_cast<QMouseEvent*>(event);
+        const QModelIndex index = m_view->indexAt(mouse->position().toPoint());
+        const QString key = index.data(Qt::UserRole).toString();
+        const QRect action(m_view->visualRect(index).right() - 31, m_view->visualRect(index).top(),
+                           32, m_view->visualRect(index).height());
+        const bool overAction = index.isValid() && drawTemplateIndex(key) >= 0 &&
+                                action.contains(mouse->position().toPoint());
+        const QString nextHovered = overAction ? key : QString();
+        if (m_hovered != nextHovered) {
+            m_hovered = nextHovered;
+            m_view->viewport()->update();
+        }
+        if (event->type() == QEvent::MouseMove || mouse->button() != Qt::LeftButton) {
+            return false;
+        }
+        if (event->type() == QEvent::MouseButtonPress ||
+            event->type() == QEvent::MouseButtonDblClick) {
+            m_pressed = overAction ? key : QString();
+            return overAction;
+        }
+        if (event->type() == QEvent::MouseButtonRelease && !m_pressed.isEmpty()) {
+            const QString pressed = std::exchange(m_pressed, {});
+            if (overAction && key == pressed && m_deleteRequested) {
+                m_deleteRequested(drawTemplateIndex(key));
+            }
+            return true;
+        }
+        return false;
+    }
+
+  private:
+    QPointer<QListView> m_view;
+    QPointer<QAbstractItemDelegate> m_baseDelegate;
+    std::function<void(int)> m_deleteRequested;
+    QString m_hovered;
+    QString m_pressed;
+};
+
 } // namespace
 
 ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* parent)
@@ -1307,8 +1425,12 @@ void ScreenshotToolPalette::updateSelectionActionAvailability(bool hasSelection,
     m_selectedElementCount = selectedElementCount;
     for (QWidget* control : std::as_const(m_selectionActionControls)) {
         if (control != nullptr) {
-            control->setEnabled(control == m_resetCanvasButton || hasSelection);
+            control->setEnabled(control == m_resetCanvasButton || control == m_drawTemplateSelect ||
+                                hasSelection);
         }
+    }
+    if (m_drawTemplateAddButton != nullptr) {
+        m_drawTemplateAddButton->setEnabled(hasSelection);
     }
     const bool canAlign = hasSelection && selectedElementCount >= 2;
     for (QWidget* control : std::as_const(m_selectionAlignControls)) {
@@ -2581,6 +2703,13 @@ void ScreenshotToolPalette::setWatermarkTemplateModalOwnerWindow(QWidget* owner)
     m_watermarkTemplateModalOwnerWindow = owner;
 }
 
+void ScreenshotToolPalette::setDrawTemplateCallbacks(
+    std::function<QByteArray()> selectedPayload,
+    std::function<void(const QByteArray&)> insertPayload) {
+    m_selectedDrawTemplatePayload = std::move(selectedPayload);
+    m_insertDrawTemplatePayload = std::move(insertPayload);
+}
+
 void ScreenshotToolPalette::setSpotlightConfig(const SnowCanvasSpotlightConfig& config) {
     m_styleControls->styleState().spotlightConfig = config;
     m_styleControls->updateSpotlightColorControls(config.color);
@@ -2942,7 +3071,8 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                 configureScreenshotToolPaletteStyleButton(button, tooltip.constData(), metrics);
             }
         }
-        for (adqt::widgets::AdSelect* select : {m_textFormattingSelect, m_textPunctuationSelect}) {
+        for (adqt::widgets::AdSelect* select :
+             {m_textFormattingSelect, m_textPunctuationSelect, m_drawTemplateSelect}) {
             ScreenshotToolPaletteSelectEditor editor{select, TEXT_TRANSFORM_SELECT_WIDTH};
             configureScreenshotToolPaletteSelectEditor(editor, metrics);
         }
@@ -3594,6 +3724,7 @@ void ScreenshotToolPalette::changeEvent(QEvent* event) {
 
 void ScreenshotToolPalette::retranslateUi() {
     retranslateScreenshotToolPalette(this);
+    retranslateDrawTemplateUi();
     if (m_styleControls != nullptr) {
         m_styleControls->retranslateWatermarkTemplateUi();
     }
@@ -6207,6 +6338,10 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
 
     m_selectionOpacityIcon = nullptr;
     m_selectionOpacitySlider = nullptr;
+    m_drawTemplateSelect = nullptr;
+    m_drawTemplateAddButton = nullptr;
+    m_drawTemplateEmptyLabel = nullptr;
+    m_pendingDrawTemplatePayload.clear();
     m_showOriginalImageButton = nullptr;
     m_showOriginalImageSpacing = nullptr;
     m_textEditButton = nullptr;
@@ -6647,6 +6782,10 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
     addSpacing(STYLE_GROUP_SPACING * 2);
     m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
     addSpacing(STYLE_GROUP_SPACING * 2);
+    createDrawTemplateSelect();
+    addSpacing(STYLE_ITEM_SPACING);
+    m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
+    addSpacing(STYLE_GROUP_SPACING * 2);
     ScreenshotToolPaletteSliderEditorConfig opacityConfig;
     opacityConfig.iconObjectName = QStringLiteral("screenshotSelectionOpacityIcon");
     opacityConfig.sliderObjectName = QStringLiteral("screenshotSelectionOpacitySlider");
@@ -6692,6 +6831,324 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
     m_selectionActionAvailabilityInitialized = false;
     updateSelectionActionAvailability(m_hasSelectedElements, m_selectedElementCount);
     setSelectionOpacity(m_selectionOpacity, m_selectionOpacityMixed);
+}
+
+void ScreenshotToolPalette::createDrawTemplateSelect() {
+    ScreenshotToolPaletteSelectEditorConfig config;
+    config.objectName = QStringLiteral("screenshotDrawTemplateSelect");
+    config.accessibleName = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Draw Template");
+    config.tooltip = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Draw Template");
+    config.placeholder = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Draw Template");
+    config.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
+    config.compact = false;
+    config.searchEnabled = true;
+    config.popupMatchSelectWidth = true;
+    m_drawTemplateSelect = createScreenshotToolPaletteSelectEditor(
+                               m_selectActionPanel, config, actionButtonMetrics(m_physicalScale))
+                               .select;
+    if (m_drawTemplateSelect == nullptr) {
+        return;
+    }
+    m_drawTemplateSelect->setAutoClearSearchValue(true);
+    m_selectionActionControls.push_back(m_drawTemplateSelect);
+    m_selectActionLayout->addWidget(m_drawTemplateSelect);
+
+    auto* emptyLabel = new QLabel(m_drawTemplateSelect);
+    emptyLabel->setObjectName(QStringLiteral("screenshotDrawTemplateEmptyLabel"));
+    emptyLabel->setAlignment(Qt::AlignCenter);
+    emptyLabel->setContentsMargins(12, 8, 12, 8);
+    m_drawTemplateEmptyLabel = emptyLabel;
+    m_drawTemplateSelect->setNotFoundContentWidget(emptyLabel);
+    m_drawTemplateSelect->setPopupExtraContentFactory([this](QWidget* parent) {
+        auto* button = new adqt::widgets::AdButton(parent);
+        button->setObjectName(QStringLiteral("screenshotDrawTemplateAddButton"));
+        button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+        button->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+        button->setIconRef(outlined_icons::Plus());
+        button->setIconPosition(adqt::widgets::AdButton::IconPosition::Leading);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_drawTemplateAddButton = button;
+        button->setEnabled(m_hasSelectedElements);
+        button->setText(tr("Add Template"));
+        button->setToolTip(tr("Add Template"));
+        button->setAccessibleName(tr("Add Template"));
+        connect(button, &QAbstractButton::clicked, this, [this]() {
+            if (m_drawTemplateSelect != nullptr) {
+                m_drawTemplateSelect->hidePopup();
+            }
+            openCreateDrawTemplateModal();
+        });
+        return button;
+    });
+    connect(m_drawTemplateSelect, &adqt::widgets::AdSelect::popupOpening, this, [this]() {
+        if (m_drawTemplateSelect == nullptr) {
+            return;
+        }
+        QListView* view = m_drawTemplateSelect->view();
+        if (view != nullptr &&
+            dynamic_cast<DrawTemplateOptionActionDelegate*>(view->itemDelegate()) == nullptr) {
+            auto* delegate = new DrawTemplateOptionActionDelegate(
+                m_drawTemplateSelect, view, view->itemDelegate(), [this](int index) {
+                    if (m_drawTemplateSelect != nullptr) {
+                        m_drawTemplateSelect->hidePopup();
+                    }
+                    openDeleteDrawTemplateModal(index);
+                });
+            m_drawTemplateSelect->setItemDelegate(delegate);
+        }
+        refreshDrawTemplateOptions();
+    });
+    connect(m_drawTemplateSelect, &adqt::widgets::AdSelect::searchTextChanged, this,
+            [this](const QString&) { retranslateDrawTemplateUi(); });
+    connect(m_drawTemplateSelect, &adqt::widgets::AdSelect::selected, this,
+            [this](const QVariant& value, const QString&) {
+                const int index = drawTemplateIndex(value.toString());
+                if (index < 0 || index >= m_drawTemplates.size() ||
+                    m_drawTemplateSelect == nullptr) {
+                    return;
+                }
+                const QByteArray payload = m_drawTemplates.at(index).payload;
+                {
+                    const QSignalBlocker blocker(m_drawTemplateSelect);
+                    m_drawTemplateSelect->setCurrentValue(QVariant{});
+                }
+                m_drawTemplateSelect->setSearchText({});
+                if (m_insertDrawTemplatePayload) {
+                    m_insertDrawTemplatePayload(payload);
+                }
+            });
+    refreshDrawTemplateOptions();
+}
+
+void ScreenshotToolPalette::refreshDrawTemplateOptions() {
+    if (m_drawTemplateSelect == nullptr) {
+        return;
+    }
+    m_drawTemplates = snow_shot::storage::DrawTemplateSettings().templates();
+    QVector<adqt::widgets::AdSelect::Option> options;
+    options.reserve(m_drawTemplates.size());
+    for (int index = 0; index < m_drawTemplates.size(); ++index) {
+        adqt::widgets::AdSelect::Option option;
+        option.value = QStringLiteral("draw-template:") + QString::number(index);
+        option.label = m_drawTemplates.at(index).name;
+        options.push_back(option);
+    }
+    const QSignalBlocker blocker(m_drawTemplateSelect);
+    m_drawTemplateSelect->setOptions(options);
+    m_drawTemplateSelect->setCurrentValue(QVariant{});
+    retranslateDrawTemplateUi();
+}
+
+void ScreenshotToolPalette::openCreateDrawTemplateModal() {
+    if (m_drawTemplateSelect == nullptr || m_createDrawTemplateModal != nullptr) {
+        return;
+    }
+    m_pendingDrawTemplatePayload.clear();
+    m_drawTemplates = snow_shot::storage::DrawTemplateSettings().templates();
+    QSet<QString> names;
+    for (const auto& drawTemplate : std::as_const(m_drawTemplates)) {
+        names.insert(drawTemplate.name.toCaseFolded());
+    }
+    int suffix = 1;
+    while (names.contains(tr("Template %1").arg(suffix).toCaseFolded())) {
+        ++suffix;
+    }
+
+    auto* form = new adqt::widgets::AdForm();
+    form->setObjectName(QStringLiteral("screenshotDrawTemplateCreateForm"));
+    form->setFixedWidth(352);
+    form->setFormLayout(adqt::widgets::AdForm::FormLayout::Vertical);
+    form->setLabelAlign(adqt::widgets::AdForm::LabelAlign::Left);
+    form->setRequiredMark(adqt::widgets::AdForm::RequiredMark::Visible);
+    form->setControlSize(adqt::widgets::AdForm::ControlSize::Medium);
+    form->setVariant(adqt::widgets::AdForm::Variant::Outlined);
+    form->setColon(false);
+
+    auto* nameInput = new adqt::widgets::AdLineEdit(form);
+    nameInput->setObjectName(QStringLiteral("screenshotDrawTemplateNameInput"));
+    nameInput->setAllowClear(true);
+    nameInput->setMaxLength(80);
+    nameInput->setText(tr("Template %1").arg(suffix));
+    auto* nameItem =
+        form->addField(tr("Template Name"), nameInput, QStringLiteral("drawTemplateName"));
+    nameItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
+    nameItem->setRequired(true);
+    nameItem->setRequiredMessage(tr("Please enter a template name"));
+    nameItem->setFormValidator([this](const QVariant& value, adqt::widgets::AdFormItem*) {
+        adqt::widgets::AdFormItem::ValidationResult result;
+        if (value.toString().trimmed().isEmpty()) {
+            result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
+            result.errors.push_back(tr("Please enter a template name"));
+        }
+        return result;
+    });
+
+    auto* alert = new adqt::widgets::AdAlert(form);
+    alert->setObjectName(QStringLiteral("screenshotDrawTemplateCreateAlert"));
+    alert->setSeverity(adqt::widgets::AdAlert::Severity::Error);
+    alert->setClosable(false);
+    if (auto* layout = qobject_cast<QBoxLayout*>(form->layout())) {
+        layout->addWidget(alert);
+    }
+    alert->hide();
+
+    auto* modal = new adqt::widgets::AdModal(m_drawTemplateSelect);
+    modal->setObjectName(QStringLiteral("screenshotDrawTemplateCreateModal"));
+    modal->setOwnerWindow(m_watermarkTemplateModalOwnerWindow != nullptr
+                              ? m_watermarkTemplateModalOwnerWindow.data()
+                              : m_drawTemplateSelect->window());
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::ApplicationModal);
+    modal->setCentered(true);
+    modal->setPreferredWidth(400);
+    modal->setMaskVisible(false);
+    modal->setCloseOnMaskClick(false);
+    modal->setClosePolicy(adqt::widgets::AdModal::ClosePolicy::Manual);
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    modal->setContentWidget(form);
+    modal->setInitialFocusWidget(nameInput);
+    m_createDrawTemplateModal = modal;
+    m_drawTemplateNameItem = nameItem;
+    m_drawTemplateAlert = alert;
+    m_drawTemplateAlertKind = 0;
+    retranslateDrawTemplateUi();
+
+    const QPointer<adqt::widgets::AdForm> formGuard(form);
+    const QPointer<adqt::widgets::AdLineEdit> nameGuard(nameInput);
+    connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
+            [this, modal, formGuard, nameGuard](adqt::widgets::AdModal::CloseReason reason) {
+                if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                    modal->reject();
+                    return;
+                }
+                if (formGuard == nullptr || nameGuard == nullptr || !formGuard->submit()) {
+                    return;
+                }
+                m_pendingDrawTemplatePayload =
+                    m_selectedDrawTemplatePayload ? m_selectedDrawTemplatePayload() : QByteArray();
+                if (m_pendingDrawTemplatePayload.isEmpty()) {
+                    m_drawTemplateAlertKind = 1;
+                    retranslateDrawTemplateUi();
+                    return;
+                }
+                const snow_shot::storage::DrawTemplateSettings settings;
+                QVector<snow_shot::storage::DrawTemplate> templates = settings.templates();
+                templates.push_back({nameGuard->text().trimmed(), m_pendingDrawTemplatePayload});
+                if (!settings.setTemplates(templates)) {
+                    m_drawTemplateAlertKind = 2;
+                    retranslateDrawTemplateUi();
+                    return;
+                }
+                m_pendingDrawTemplatePayload.clear();
+                refreshDrawTemplateOptions();
+                modal->accept();
+            });
+    connect(modal, &adqt::widgets::AdModal::finished, modal,
+            [this, modal](adqt::widgets::AdModal::DialogCode) {
+                if (m_createDrawTemplateModal == modal) {
+                    m_createDrawTemplateModal = nullptr;
+                    m_drawTemplateNameItem = nullptr;
+                    m_drawTemplateAlert = nullptr;
+                    m_pendingDrawTemplatePayload.clear();
+                }
+                modal->deleteLater();
+            });
+    modal->open();
+    nameInput->focusEditor(adqt::widgets::AdLineEdit::FocusSelection::SelectAll);
+}
+
+void ScreenshotToolPalette::openDeleteDrawTemplateModal(int index) {
+    if (m_drawTemplateSelect == nullptr || m_deleteDrawTemplateModal != nullptr || index < 0 ||
+        index >= m_drawTemplates.size()) {
+        return;
+    }
+    const snow_shot::storage::DrawTemplate target = m_drawTemplates.at(index);
+    m_deleteDrawTemplateName = target.name;
+    auto* modal = new adqt::widgets::AdModal(m_drawTemplateSelect);
+    modal->setObjectName(QStringLiteral("screenshotDrawTemplateDeleteModal"));
+    modal->setOwnerWindow(m_watermarkTemplateModalOwnerWindow != nullptr
+                              ? m_watermarkTemplateModalOwnerWindow.data()
+                              : m_drawTemplateSelect->window());
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::ApplicationModal);
+    modal->setCentered(true);
+    modal->setPreferredWidth(400);
+    modal->setMaskVisible(false);
+    modal->setCloseOnMaskClick(false);
+    modal->setClosePolicy(adqt::widgets::AdModal::ClosePolicy::Manual);
+    modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
+    modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    m_deleteDrawTemplateModal = modal;
+    retranslateDrawTemplateUi();
+    connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
+            [this, modal, index, target](adqt::widgets::AdModal::CloseReason reason) {
+                if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                    modal->reject();
+                    return;
+                }
+                const snow_shot::storage::DrawTemplateSettings settings;
+                QVector<snow_shot::storage::DrawTemplate> templates = settings.templates();
+                if (index >= templates.size() || templates.at(index) != target) {
+                    modal->setText(tr("Could not delete the draw template"));
+                    return;
+                }
+                templates.removeAt(index);
+                if (!settings.setTemplates(templates)) {
+                    modal->setText(tr("Could not delete the draw template"));
+                    return;
+                }
+                refreshDrawTemplateOptions();
+                modal->accept();
+            });
+    connect(modal, &adqt::widgets::AdModal::finished, modal,
+            [this, modal](adqt::widgets::AdModal::DialogCode) {
+                if (m_deleteDrawTemplateModal == modal) {
+                    m_deleteDrawTemplateModal = nullptr;
+                    m_deleteDrawTemplateName.clear();
+                }
+                modal->deleteLater();
+            });
+    modal->open();
+}
+
+void ScreenshotToolPalette::retranslateDrawTemplateUi() {
+    if (m_drawTemplateAddButton != nullptr) {
+        m_drawTemplateAddButton->setText(tr("Add Template"));
+        m_drawTemplateAddButton->setToolTip(tr("Add Template"));
+        m_drawTemplateAddButton->setAccessibleName(tr("Add Template"));
+    }
+    if (m_drawTemplateEmptyLabel != nullptr) {
+        m_drawTemplateEmptyLabel->setText(m_drawTemplateSelect != nullptr &&
+                                                  !m_drawTemplateSelect->searchText().isEmpty()
+                                              ? tr("No matching templates")
+                                              : tr("No templates yet"));
+    }
+    if (m_createDrawTemplateModal != nullptr) {
+        m_createDrawTemplateModal->setWindowTitle(tr("Add Template"));
+        m_createDrawTemplateModal->setAcceptText(tr("Add"));
+        m_createDrawTemplateModal->setRejectText(tr("Cancel"));
+    }
+    if (m_drawTemplateNameItem != nullptr) {
+        m_drawTemplateNameItem->setLabel(tr("Template Name"));
+        m_drawTemplateNameItem->setRequiredMessage(tr("Please enter a template name"));
+    }
+    if (m_drawTemplateAlert != nullptr) {
+        m_drawTemplateAlert->setText(m_drawTemplateAlertKind == 1
+                                         ? tr("Could not capture selected elements")
+                                         : tr("Could not save the draw template"));
+        m_drawTemplateAlert->setVisible(m_drawTemplateAlertKind != 0);
+    }
+    if (m_deleteDrawTemplateModal != nullptr) {
+        m_deleteDrawTemplateModal->setWindowTitle(tr("Delete Draw Template"));
+        m_deleteDrawTemplateModal->setText(
+            tr("Delete draw template \"%1\"? This action cannot be undone.")
+                .arg(m_deleteDrawTemplateName));
+        m_deleteDrawTemplateModal->setAcceptText(tr("Delete"));
+        m_deleteDrawTemplateModal->setRejectText(tr("Cancel"));
+    }
 }
 
 void ScreenshotToolPalette::setShowOriginalImage(bool show) {

@@ -481,6 +481,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void alignSelectedElements(SnowCanvasSelectionAlignment alignment) override;
     void setSelectedElementsOpacity(qreal opacity) override;
     void duplicateSelectedElements() override;
+    QByteArray selectedDrawTemplatePayload() override;
+    void insertDrawTemplate(const QByteArray& payload) override;
     void deleteSelectedElements() override;
     void deleteAllElements() override;
     void repositionToolbarForContentChange() override;
@@ -5015,6 +5017,25 @@ void ScreenshotController::Impl::setSelectedElementsOpacity(qreal opacity) {
 
 void ScreenshotController::Impl::duplicateSelectedElements() {
     m_overlayCoordinator->duplicateSelectedElements(m_displaySession);
+}
+
+QByteArray ScreenshotController::Impl::selectedDrawTemplatePayload() {
+    return m_canvasRuntime.serializeSelectedDrawTemplate();
+}
+
+void ScreenshotController::Impl::insertDrawTemplate(const QByteArray& payload) {
+    const QRectF selection = m_selection.normalizedSelection();
+    const CapturedDisplayModel* display =
+        m_geometry.displayForCanvasRect(m_displaySession, selection);
+    ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display);
+    if (!m_selection.hasPixelSelection() || overlay == nullptr || overlay->canvas() == nullptr ||
+        !overlay->canvas()->insertDrawTemplate(payload, selection.center())) {
+        if (m_messages != nullptr) {
+            m_messages->error(QStringLiteral("draw-template"),
+                              QCoreApplication::translate("ScreenshotController",
+                                                          "Could not insert the draw template"));
+        }
+    }
 }
 
 void ScreenshotController::Impl::deleteSelectedElements() {

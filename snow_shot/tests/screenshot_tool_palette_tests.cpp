@@ -7444,6 +7444,224 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
     palette.hide();
 }
 
+void drawTemplateSelectSavesFiltersInsertsAndDeletes() {
+    const snow_shot::storage::DrawTemplateSettings settings;
+    require(settings.setTemplates({}), "draw-template test must start with an empty library");
+    const QByteArray payload =
+        QByteArrayLiteral(R"({"schemaVersion":1,"selectedIds":[1],"elements":[1]})");
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    options.showOcrTool = true;
+    ScreenshotToolPalette palette(options);
+    QWidget display;
+    display.setGeometry(60, 60, 600, 440);
+    display.show();
+    palette.setWatermarkTemplateModalOwnerWindow(&display);
+    int snapshots = 0;
+    QVector<QByteArray> inserted;
+    palette.setDrawTemplateCallbacks(
+        [&]() {
+            ++snapshots;
+            return payload;
+        },
+        [&](const QByteArray& value) { inserted.push_back(value); });
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* select =
+        palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenshotDrawTemplateSelect"));
+    auto* opacity = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotSelectionOpacitySlider"));
+    auto* layout =
+        select == nullptr ? nullptr : qobject_cast<QBoxLayout*>(select->parentWidget()->layout());
+    require(select != nullptr && opacity != nullptr && layout != nullptr &&
+                select->placeholder() == QStringLiteral("Draw Template") &&
+                select->searchEnabled() && select->isEnabled() &&
+                layout->indexOf(select) < layout->indexOf(opacity),
+            "Draw Template should be an enabled searchable select left of opacity");
+    bool separatorBetween = false;
+    for (int i = layout->indexOf(select) + 1; i < layout->indexOf(opacity); ++i) {
+        separatorBetween |= qobject_cast<QFrame*>(layout->itemAt(i)->widget()) != nullptr;
+    }
+    require(separatorBetween, "Draw Template and opacity need a separator");
+
+    select->showPopup();
+    QCoreApplication::processEvents();
+    auto* add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawTemplateAddButton"));
+    require(add != nullptr && !add->isEnabled(),
+            "Add Template should be disabled without selected elements");
+
+    SnowCanvasStyleToolbarState selected;
+    selected.source = SnowCanvasStyleToolbarSource::SelectedRectangle;
+    selected.selectedElementCount = 1;
+    palette.setStyleToolbarState(selected);
+    require(select->isEnabled() && add->isEnabled(),
+            "selecting an element should enable Add Template without changing the select");
+    const SnowCanvasStyleToolbarState unselected;
+    palette.setStyleToolbarState(unselected);
+    require(select->isEnabled() && !add->isEnabled(),
+            "clearing selection while the popup is open should disable only Add Template");
+    palette.setStyleToolbarState(selected);
+    require(add->isEnabled(), "reselecting an element should enable the open Add Template footer");
+    select->showPopup();
+    QCoreApplication::processEvents();
+    add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawTemplateAddButton"));
+    require(add != nullptr && add->isVisible() && add->text() == QStringLiteral("Add Template") &&
+                add->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
+            "an empty Draw Template popup should retain its Add Template footer");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    require(language.setLanguage(QStringLiteral("zh_CN")),
+            "Draw Template popup should load Simplified Chinese");
+    QCoreApplication::processEvents();
+    require(select->placeholder() == QStringLiteral("绘图模板") &&
+                add->text() == QStringLiteral("添加模板"),
+            "an open Draw Template popup should retranslate its field and footer");
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "Draw Template popup should restore English before naming");
+    QCoreApplication::processEvents();
+    add->click();
+    QCoreApplication::processEvents();
+    auto* modal = palette.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotDrawTemplateCreateModal"));
+    auto* form =
+        modal == nullptr ? nullptr : qobject_cast<adqt::widgets::AdForm*>(modal->contentWidget());
+    auto* name = form == nullptr ? nullptr
+                                 : form->findChild<adqt::widgets::AdLineEdit*>(
+                                       QStringLiteral("screenshotDrawTemplateNameInput"));
+    require(modal != nullptr && modal->isOpen(), "Add Template should open a modal");
+    require(modal->ownerWindow() == &display, "Add Template modal should use the current display");
+    require(name != nullptr, "Add Template should expose a name input");
+    require(name->text() == QStringLiteral("Template 1"),
+            "Add Template should generate Template 1");
+    require(language.setLanguage(QStringLiteral("zh_TW")),
+            "Draw Template modal should load Traditional Chinese");
+    QCoreApplication::processEvents();
+    require(modal->windowTitle() == QStringLiteral("新增範本") &&
+                select->placeholder() == QStringLiteral("繪圖範本"),
+            "an open Add Template modal should retranslate without closing");
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "Draw Template test should restore English");
+    QCoreApplication::processEvents();
+    require(snapshots == 0, "Add Template should wait for confirmation to capture the selection");
+    modal->acceptButton()->click();
+    QCoreApplication::processEvents();
+    require(snapshots == 1, "confirming Add Template should capture the selected elements once");
+    require(settings.templates() ==
+                QVector<snow_shot::storage::DrawTemplate>{{QStringLiteral("Template 1"), payload}},
+            "confirming Add Template should persist the editable element payload");
+
+    palette.setStyleToolbarState(unselected);
+    select->showPopup();
+    QCoreApplication::processEvents();
+    add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawTemplateAddButton"));
+    require(select->isEnabled() && add != nullptr && !add->isEnabled() &&
+                select->options().size() == 1,
+            "saved templates should remain selectable without selected elements");
+    emit select->selected(QVariant(QStringLiteral("draw-template:0")),
+                          QStringLiteral("Template 1"));
+    require(inserted == QVector<QByteArray>{payload},
+            "choosing a draw template without a selection should insert its elements");
+    inserted.clear();
+    select->hidePopup();
+    palette.setStyleToolbarState(selected);
+
+    select->showPopup();
+    QCoreApplication::processEvents();
+    add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawTemplateAddButton"));
+    require(add != nullptr, "saved Draw Template should retain its Add footer");
+    add->click();
+    QCoreApplication::processEvents();
+    modal = nullptr;
+    for (auto* candidate : palette.findChildren<adqt::widgets::AdModal*>(
+             QStringLiteral("screenshotDrawTemplateCreateModal"))) {
+        if (candidate->isOpen()) {
+            modal = candidate;
+        }
+    }
+    form =
+        modal == nullptr ? nullptr : qobject_cast<adqt::widgets::AdForm*>(modal->contentWidget());
+    name = form == nullptr ? nullptr
+                           : form->findChild<adqt::widgets::AdLineEdit*>(
+                                 QStringLiteral("screenshotDrawTemplateNameInput"));
+    require(modal != nullptr && name != nullptr && name->text() == QStringLiteral("Template 2"),
+            "Add Template should propose the next available numbered name");
+    modal->rejectButton()->click();
+    QCoreApplication::processEvents();
+    require(snapshots == 1 && settings.templates().size() == 1,
+            "canceling Add Template should neither capture nor save content");
+
+    select->showPopup();
+    QCoreApplication::processEvents();
+    add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawTemplateAddButton"));
+    select->setSearchText(QStringLiteral("missing"));
+    QCoreApplication::processEvents();
+    int visibleOptions = 0;
+    for (int row = 0; row < select->view()->model()->rowCount(); ++row) {
+        visibleOptions += select->view()
+                              ->model()
+                              ->index(row, 0)
+                              .data(Qt::UserRole)
+                              .toString()
+                              .startsWith(QStringLiteral("draw-template:"));
+    }
+    require(visibleOptions == 0 && add->isVisible(),
+            "typing in Draw Template should filter options without hiding Add Template");
+    select->setSearchText(QStringLiteral("template"));
+    QCoreApplication::processEvents();
+    visibleOptions = 0;
+    for (int row = 0; row < select->view()->model()->rowCount(); ++row) {
+        visibleOptions += select->view()->model()->index(row, 0).data(Qt::UserRole).toString() ==
+                          QStringLiteral("draw-template:0");
+    }
+    require(visibleOptions == 1, "Draw Template search should match names case insensitively");
+    select->hidePopup();
+    emit select->selected(QVariant(QStringLiteral("draw-template:0")),
+                          QStringLiteral("Template 1"));
+    emit select->selected(QVariant(QStringLiteral("draw-template:0")),
+                          QStringLiteral("Template 1"));
+    require(inserted == QVector<QByteArray>{payload, payload} && !select->currentValue().isValid(),
+            "choosing the same template twice should insert twice and restore the placeholder");
+
+    select->showPopup();
+    QCoreApplication::processEvents();
+    QListView* view = select->view();
+    QModelIndex option;
+    for (int row = 0; row < view->model()->rowCount(); ++row) {
+        const QModelIndex candidate = view->model()->index(row, 0);
+        if (candidate.data(Qt::UserRole).toString() == QStringLiteral("draw-template:0")) {
+            option = candidate;
+            break;
+        }
+    }
+    require(option.isValid(), "saved Draw Template should have an option row");
+    const QRect rowRect = view->visualRect(option);
+    const QPoint action(rowRect.right() - 15, rowRect.center().y());
+    const auto mouse = [view, action](QEvent::Type type, Qt::MouseButton button,
+                                      Qt::MouseButtons buttons) {
+        QMouseEvent event(type, QPointF(action), QPointF(view->viewport()->mapToGlobal(action)),
+                          button, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(view->viewport(), &event);
+    };
+    mouse(QEvent::MouseMove, Qt::NoButton, Qt::NoButton);
+    mouse(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton);
+    QCoreApplication::processEvents();
+    auto* deletion = palette.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotDrawTemplateDeleteModal"));
+    require(deletion != nullptr && deletion->isOpen() && deletion->ownerWindow() == &display &&
+                deletion->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger,
+            "the option delete action should open a danger confirmation on the current display");
+    deletion->acceptButton()->click();
+    QCoreApplication::processEvents();
+    require(settings.templates().isEmpty(), "deleting a Draw Template should remove its row");
+    palette.hide();
+}
+
 void watermarkControlsFollowPhysicalScale() {
     ScreenshotToolPalette::Options options;
     options.showWatermarkTool = true;
@@ -12432,6 +12650,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--draw-template-only"))) {
+        drawTemplateSelectSavesFiltersInsertsAndDeletes();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--watermark-template-width-only"))) {
         watermarkTemplateSelectMatchesFontSelectWidth();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -12547,6 +12770,7 @@ int main(int argc, char** argv) {
     watermarkEditsCommitCompleteConfigsAndClampWheel();
     watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically();
     watermarkControlsFollowPhysicalScale();
+    drawTemplateSelectSavesFiltersInsertsAndDeletes();
     selectedStyleEditsAreReflectedInTheCreationStyleContext();
     mixedColorsKeepUniformStyleButtonsActive();
     styleToolbarWidthTracksTheActiveTool();

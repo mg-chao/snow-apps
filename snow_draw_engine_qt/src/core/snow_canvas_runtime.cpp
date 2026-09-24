@@ -16,6 +16,7 @@ struct SnowCanvasRuntime::Impl {
     bool reset();
     bool cloneDocumentSessionFrom(const Impl& source);
     QByteArray serializeDocumentSession() const;
+    QByteArray serializeSelectedDrawTemplate() const;
     bool restoreDocumentSession(const QByteArray& payload);
     QByteArray serializeDocumentHistory() const;
     bool restoreDocumentHistory(const QByteArray& payload);
@@ -85,6 +86,13 @@ QByteArray SnowCanvasRuntime::Impl::serializeDocumentSession() const {
         return {};
     }
     return session.serializeDocumentSession();
+}
+
+QByteArray SnowCanvasRuntime::Impl::serializeSelectedDrawTemplate() const {
+    if (!hasThreadAccess("serializeSelectedDrawTemplate")) {
+        return {};
+    }
+    return session.serializeSelectedDrawTemplate();
 }
 
 bool SnowCanvasRuntime::Impl::restoreDocumentSession(const QByteArray& payload) {
@@ -203,6 +211,10 @@ bool SnowCanvasRuntime::cloneDocumentSessionFrom(const SnowCanvasRuntime& source
 
 QByteArray SnowCanvasRuntime::serializeDocumentSession() const {
     return m_impl->serializeDocumentSession();
+}
+
+QByteArray SnowCanvasRuntime::serializeSelectedDrawTemplate() const {
+    return m_impl->serializeSelectedDrawTemplate();
 }
 
 bool SnowCanvasRuntime::restoreDocumentSession(const QByteArray& payload) {

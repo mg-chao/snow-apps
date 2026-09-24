@@ -2,6 +2,7 @@
 #include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
 
 #include <QRect>
+#include <QByteArray>
 #include <QRectF>
 #include <QTransform>
 #include <QVariant>
@@ -81,6 +82,7 @@ class SnowCanvasWidget : public QWidget {
     // Clears all document elements and history, preserving viewports and creation styles.
     bool clearDocument();
     bool duplicateSelected(const QPointF& offset = QPointF(12.0, 12.0));
+    bool insertDrawTemplate(const QByteArray& payload, const QPointF& center);
     bool reorderSelected(SnowCanvasSelectionOrder order);
     // Aligns or distributes the selected elements to their shared bounds as one
     // undoable history entry. Requires at least two selected elements for the

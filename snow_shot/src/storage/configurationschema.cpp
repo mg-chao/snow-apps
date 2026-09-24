@@ -7,6 +7,7 @@
 #include "snow_shot/shortcuts/shortcutbinding.h"
 
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeySequence>
 #include <QLocale>
@@ -444,6 +445,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("drawing/spotlight_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/watermark_templates"), QJsonArray(),
      ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/draw_templates"), QJsonArray(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing_shortcuts/select"),
      QJsonArray{QStringLiteral("V")},
      ConfigurationValueKind::StringList,
@@ -1350,6 +1352,37 @@ ConfigurationNormalization normalizeWatermarkTemplates(const QJsonValue& value) 
     return {result, true, changed};
 }
 
+ConfigurationNormalization normalizeDrawTemplates(const QJsonValue& value) {
+    if (!value.isArray()) {
+        return {};
+    }
+    QJsonArray result;
+    bool changed = false;
+    for (const QJsonValue& item : value.toArray()) {
+        const QJsonObject object = item.toObject();
+        const QString name = object.value(QStringLiteral("name")).toString().trimmed();
+        const QString encoded = object.value(QStringLiteral("payload")).toString();
+        const QByteArray bytes = QByteArray::fromBase64(encoded.toLatin1());
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(bytes, &error);
+        const QJsonObject payload = document.object();
+        if (!item.isObject() || name.isEmpty() || bytes.isEmpty() ||
+            bytes.size() > 16 * 1024 * 1024 || QString::fromLatin1(bytes.toBase64()) != encoded ||
+            error.error != QJsonParseError::NoError ||
+            payload.value(QStringLiteral("schemaVersion")).toInt(-1) != 1 ||
+            payload.value(QStringLiteral("elements")).toArray().isEmpty() ||
+            payload.value(QStringLiteral("selectedIds")).toArray().isEmpty()) {
+            changed = true;
+            continue;
+        }
+        const QJsonObject normalized{{QStringLiteral("name"), name},
+                                     {QStringLiteral("payload"), encoded}};
+        result.push_back(normalized);
+        changed = changed || normalized != object;
+    }
+    return {result, true, changed};
+}
+
 bool isRgbaColorKey(const QString& key) {
     return key == QStringLiteral("interface/theme_primary_color") ||
            key == QStringLiteral("screenshot_ui/selection_border_color") ||
@@ -1708,6 +1741,9 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     }
     if (key == QStringLiteral("drawing/watermark_templates")) {
         return normalizeWatermarkTemplates(value);
+    }
+    if (key == QStringLiteral("drawing/draw_templates")) {
+        return normalizeDrawTemplates(value);
     }
     if (key == QStringLiteral("screenshot/save_path_shortcuts")) {
         if (!value.isArray()) {

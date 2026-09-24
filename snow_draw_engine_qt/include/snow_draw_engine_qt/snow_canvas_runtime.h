@@ -32,6 +32,7 @@ class SnowCanvasRuntime {
     bool reset();
     bool cloneDocumentSessionFrom(const SnowCanvasRuntime& source);
     QByteArray serializeDocumentSession() const;
+    QByteArray serializeSelectedDrawTemplate() const;
     bool restoreDocumentSession(const QByteArray& payload);
     QByteArray serializeDocumentHistory() const;
     bool restoreDocumentHistory(const QByteArray& payload);

@@ -75,6 +75,79 @@ fn label(engine: &mut Engine, viewport: ViewportId, owner: ElementId, text: &str
 }
 
 #[test]
+fn draw_template_remaps_attached_arrow_text_and_detaches_external_endpoints() {
+    let (mut engine, viewport, arrow_id) = setup();
+    let label_id = label(&mut engine, viewport, arrow_id, "linked text");
+    engine
+        .editor
+        .select_element(&engine.model, arrow_id)
+        .unwrap();
+    let bytes = engine.serialize_selected_draw_template().unwrap();
+    let mut template: snow_draw_engine_editor::DrawTemplate =
+        serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(template.elements.len(), 2);
+    let arrow = template
+        .elements
+        .iter_mut()
+        .find_map(|record| match &mut record.data {
+            ElementData::Arrow(arrow) => Some(arrow),
+            _ => None,
+        })
+        .unwrap();
+    arrow.start_binding = Some(snow_draw_engine_document::ArrowEndpointBinding {
+        element_id: ElementId {
+            index: 999,
+            generation: 1,
+        },
+        fixed_point: [0.5, 0.5],
+        mode: snow_draw_engine_core::arrow::BindMode::Orbit,
+    });
+    arrow.end_binding = Some(snow_draw_engine_document::ArrowEndpointBinding {
+        element_id: label_id,
+        fixed_point: [0.5, 0.5],
+        mode: snow_draw_engine_core::arrow::BindMode::Orbit,
+    });
+    let payload = serde_json::to_vec(&template).unwrap();
+    let before = engine.model.paint_order().len();
+    engine
+        .insert_draw_template_with_viewport_changes(viewport, &payload, Point::new(500.0, 200.0))
+        .unwrap();
+    assert_eq!(engine.model.paint_order().len(), before + 2);
+    let inserted_arrow = engine.selected_ids()[0];
+    let inserted_label = engine
+        .model
+        .bound_text_id_for_arrow(inserted_arrow)
+        .unwrap();
+    assert_ne!(inserted_arrow, arrow_id);
+    assert_ne!(inserted_label, label_id);
+    assert_eq!(
+        engine.model.text(inserted_label).unwrap().text,
+        "linked text"
+    );
+    assert!(
+        engine
+            .model
+            .arrow(inserted_arrow)
+            .unwrap()
+            .start_binding
+            .is_none()
+    );
+    assert_eq!(
+        engine
+            .model
+            .arrow(inserted_arrow)
+            .unwrap()
+            .end_binding
+            .as_ref()
+            .unwrap()
+            .element_id,
+        inserted_label
+    );
+    engine.undo_with_viewport_changes().unwrap();
+    assert_eq!(engine.model.paint_order().len(), before);
+}
+
+#[test]
 fn arrow_text_anchor_matches_middle_vertex_segment_and_vertical_minimum() {
     for kind in [ArrowType::Straight, ArrowType::Curve, ArrowType::Elbow] {
         let a = arrow(&[[0.0, 0.0], [0.0, 100.0]], kind);

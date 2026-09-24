@@ -2226,6 +2226,65 @@ void watermarkTemplateSettingsRepairAndSurviveRestart() {
     applicationStorage.shutdown();
 }
 
+void drawTemplateSettingsRepairAndSurviveRestart() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary draw-template settings directory");
+    const QString executable = temporary.filePath(QStringLiteral("app"));
+    require(QDir().mkpath(executable), "failed to create draw-template executable directory");
+    const QString config = temporary.filePath(QStringLiteral("config.json"));
+    const QByteArray payload =
+        QByteArrayLiteral(R"({"schemaVersion":1,"selectedIds":[1],"elements":[1]})");
+    const QString encoded = QString::fromLatin1(payload.toBase64());
+    writeBytes(
+        config,
+        QJsonDocument(
+            QJsonObject{
+                {QStringLiteral("storage"), QJsonObject{{QStringLiteral("schema_version"), 1}}},
+                {QStringLiteral("drawing"),
+                 QJsonObject{
+                     {QStringLiteral("draw_templates"),
+                      QJsonArray{
+                          QJsonObject{{QStringLiteral("name"), QStringLiteral("  Mark  ")},
+                                      {QStringLiteral("payload"), encoded},
+                                      {QStringLiteral("extra"), 1}},
+                          QJsonObject{{QStringLiteral("name"), QStringLiteral("Mark")},
+                                      {QStringLiteral("payload"), encoded}},
+                          QJsonObject{{QStringLiteral("name"), QStringLiteral("Bad")},
+                                      {QStringLiteral("payload"), QStringLiteral("!invalid!")}},
+                          QJsonObject{{QStringLiteral("name"), QStringLiteral("  ")},
+                                      {QStringLiteral("payload"), encoded}},
+                      }}}},
+            })
+            .toJson(QJsonDocument::Compact));
+
+    auto& applicationStorage = initialize(executable, temporary.path());
+    const storage::DrawTemplateSettings settings;
+    require(settings.templates() ==
+                QVector<storage::DrawTemplate>{{QStringLiteral("Mark"), payload},
+                                               {QStringLiteral("Mark"), payload}},
+            "draw-template repair must retain order and duplicate names");
+    require(applicationStorage.flushNow().success, "repaired draw-template settings must flush");
+    const QJsonArray stored = readObject(config)
+                                  .value(QStringLiteral("drawing"))
+                                  .toObject()
+                                  .value(QStringLiteral("draw_templates"))
+                                  .toArray();
+    require(stored.size() == 2 && stored.at(0).toObject().size() == 2,
+            "draw-template repair must discard malformed entries and extra fields");
+    require(!settings.setTemplates({{QStringLiteral("Invalid"), QByteArrayLiteral("no")}}),
+            "draw-template settings must reject malformed payloads");
+    require(settings.setTemplates(
+                {{QStringLiteral("  First  "), payload}, {QStringLiteral("First"), payload}}) &&
+                applicationStorage.flushNow().success,
+            "draw-template settings must persist valid entries");
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(settings.templates() ==
+                QVector<storage::DrawTemplate>{{QStringLiteral("First"), payload},
+                                               {QStringLiteral("First"), payload}},
+            "draw templates must survive restart without deduplicating");
+    applicationStorage.shutdown();
+}
+
 void pinnedManagementConfigurationAndTrayMigration() {
     QTemporaryDir directory;
     const auto defaults =
@@ -2298,6 +2357,10 @@ int main(int argc, char** argv) {
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--draw-template-only"))) {
+        drawTemplateSettingsRepairAndSurviveRestart();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--pin-shortcuts-only"))) {
         settingsSchemaDefaultsAndValidationAreComplete();
         pinnedDestroyShortcutMigratesPreviousDefault();
@@ -2317,6 +2380,7 @@ int main(int argc, char** argv) {
     legacyTrayHotkeyCommandMigratesToQuickAction();
     trayClickSettingsSurviveRestart();
     watermarkTemplateSettingsRepairAndSurviveRestart();
+    drawTemplateSettingsRepairAndSurviveRestart();
     globalMouseCombinationSchemaIsStrictAndPersistent();
     screenshotUiSchemaRepairsStructuredValues();
     screenshotUiAdaptersRoundTripTypedValues();

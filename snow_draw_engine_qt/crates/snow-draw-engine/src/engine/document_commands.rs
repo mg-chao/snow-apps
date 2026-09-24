@@ -1,4 +1,32 @@
 use super::*;
+use snow_draw_engine_editor::DrawTemplate;
+
+impl Engine {
+    pub fn insert_draw_template_with_viewport_changes(
+        &mut self,
+        source_viewport_id: ViewportId,
+        bytes: &[u8],
+        center: Point<f64>,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(source_viewport_id)?;
+        if bytes.is_empty() || bytes.len() > crate::session::MAX_DOCUMENT_SESSION_BYTES {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        let template: DrawTemplate =
+            serde_json::from_slice(bytes).map_err(|_| ErrorCode::InvalidArgument)?;
+        let previous_editor = self.editor.clone();
+        let command = self
+            .editor
+            .insert_draw_template(&self.model, &template, center)?;
+        match self.apply_editor_command(source_viewport_id, command) {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                self.editor = previous_editor;
+                Err(error)
+            }
+        }
+    }
+}
 
 impl Engine {
     pub fn reset_editing_state_with_viewport_changes(

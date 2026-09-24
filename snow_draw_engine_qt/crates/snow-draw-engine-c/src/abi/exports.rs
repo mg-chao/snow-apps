@@ -118,6 +118,36 @@ pub unsafe extern "C" fn snow_runtime_serialize_document_session(
     })
 }
 
+/// Serializes the selected editable elements as a versioned draw template.
+/// A null buffer with zero capacity queries the required byte count.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_serialize_selected_draw_template(
+    runtime: SnowRuntime,
+    buffer: *mut u8,
+    buffer_capacity: usize,
+    out_size: *mut usize,
+) -> SnowError {
+    ffi_error(|| {
+        if runtime.is_null() || out_size.is_null() || (buffer.is_null() && buffer_capacity != 0) {
+            return SnowError::InvalidArgument;
+        }
+        let runtime = unsafe { &*runtime };
+        let bytes = match runtime.runtime.serialize_selected_draw_template() {
+            Ok(bytes) => bytes,
+            Err(error) => return SnowError::from(error),
+        };
+        write_out(out_size, bytes.len());
+        if buffer.is_null() {
+            return SnowError::Ok;
+        }
+        if buffer_capacity < bytes.len() {
+            return SnowError::BufferTooSmall;
+        }
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len()) };
+        SnowError::Ok
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_runtime_create_from_document_session_with_config(
     bytes: *const u8,

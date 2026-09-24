@@ -142,6 +142,20 @@ MutationResult duplicateSelected(SnowRuntime runtime, SnowViewport viewport, dou
     return result;
 }
 
+MutationResult insertDrawTemplate(SnowRuntime runtime, SnowViewport viewport,
+                                  const QByteArray& payload, double centerX, double centerY) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport) || payload.isEmpty()) {
+        return result;
+    }
+    result.success =
+        snow_viewport_insert_draw_template_ex(
+            runtime, viewport, reinterpret_cast<const std::uint8_t*>(payload.constData()),
+            static_cast<std::size_t>(payload.size()), centerX, centerY,
+            result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult reorderSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t action) {
     MutationResult result;
     if (!hasViewport(runtime, viewport)) {

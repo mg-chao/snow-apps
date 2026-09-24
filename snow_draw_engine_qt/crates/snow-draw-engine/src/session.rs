@@ -30,6 +30,15 @@ struct DocumentHistory {
 }
 
 impl Engine {
+    pub fn serialize_selected_draw_template(&self) -> Result<Vec<u8>, ErrorCode> {
+        let template = self.editor.selected_draw_template(&self.model)?;
+        let bytes = serde_json::to_vec(&template).map_err(|_| ErrorCode::Internal)?;
+        if bytes.len() > MAX_DOCUMENT_SESSION_BYTES {
+            return Err(ErrorCode::InvalidState);
+        }
+        Ok(bytes)
+    }
+
     pub fn serialize_document_session(&self) -> Result<Vec<u8>, ErrorCode> {
         let session = DocumentSession {
             schema_version: DOCUMENT_SESSION_SCHEMA_VERSION,

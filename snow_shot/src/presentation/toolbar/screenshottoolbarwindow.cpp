@@ -111,6 +111,10 @@ void ScreenshotToolbarWindow::initializePalette() {
         return;
     }
 
+    toolPalette->setDrawTemplateCallbacks(
+        [this]() { return m_commands.selectedDrawTemplatePayload(); },
+        [this](const QByteArray& payload) { m_commands.insertDrawTemplate(payload); });
+
     resetForNewCapture();
     synchronizeCaptureCursorSetting();
 

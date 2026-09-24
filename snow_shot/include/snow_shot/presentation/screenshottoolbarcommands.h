@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 
 #include <QString>
+#include <QByteArray>
 #include <QPoint>
 
 namespace adqt::widgets {
@@ -97,6 +98,10 @@ class ScreenshotToolbarCommandSink {
     virtual void alignSelectedElements(SnowCanvasSelectionAlignment) {}
     virtual void setSelectedElementsOpacity(qreal) {}
     virtual void duplicateSelectedElements() {}
+    virtual QByteArray selectedDrawTemplatePayload() {
+        return {};
+    }
+    virtual void insertDrawTemplate(const QByteArray&) {}
     virtual void deleteSelectedElements() {}
     virtual void deleteAllElements() {}
     virtual void repositionToolbarForContentChange() = 0;

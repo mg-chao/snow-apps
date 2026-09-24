@@ -36,6 +36,8 @@ typedef enum SnowError {
 
 SnowError snow_runtime_serialize_document_session(SnowRuntime runtime, uint8_t* buffer,
                                                   size_t buffer_capacity, size_t* out_size);
+SnowError snow_runtime_serialize_selected_draw_template(SnowRuntime runtime, uint8_t* buffer,
+                                                        size_t buffer_capacity, size_t* out_size);
 SnowError snow_runtime_create_from_document_session_with_config(const uint8_t* bytes, size_t size,
                                                                 const SnowRuntimeConfig* config,
                                                                 SnowRuntime* out_runtime);
@@ -1356,6 +1358,10 @@ SnowError snow_viewport_delete_all_elements_ex(SnowRuntime runtime, SnowViewport
 SnowError snow_viewport_duplicate_selected_ex(SnowRuntime runtime, SnowViewport viewport,
                                               double offset_x, double offset_y,
                                               SnowChangedViewportList* out_changed_viewports);
+SnowError snow_viewport_insert_draw_template_ex(SnowRuntime runtime, SnowViewport viewport,
+                                                const uint8_t* bytes, size_t size, double center_x,
+                                                double center_y,
+                                                SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_reorder_selected_ex(SnowRuntime runtime, SnowViewport viewport,
                                             uint32_t action,

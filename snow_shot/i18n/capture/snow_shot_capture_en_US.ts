@@ -42,6 +42,10 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Could not insert the draw template</source>
+            <translation>Could not insert the draw template</translation>
+        </message>
+        <message>
             <source>Could not read the selected files from Finder. Please try again.</source>
             <translation>Could not read the selected files from Finder. Please try again.</translation>
         </message>

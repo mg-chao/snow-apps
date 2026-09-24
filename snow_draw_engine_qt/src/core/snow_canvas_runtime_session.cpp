@@ -181,6 +181,27 @@ QByteArray RuntimeSession::serializeDocumentSession() const {
     return payload;
 }
 
+QByteArray RuntimeSession::serializeSelectedDrawTemplate() const {
+    if (m_runtime.get() == nullptr) {
+        return {};
+    }
+    std::size_t size = 0;
+    if (snow_runtime_serialize_selected_draw_template(m_runtime.get(), nullptr, 0, &size) !=
+            SNOW_OK ||
+        size == 0 || size > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        return {};
+    }
+    QByteArray payload(static_cast<int>(size), Qt::Uninitialized);
+    std::size_t written = 0;
+    if (snow_runtime_serialize_selected_draw_template(
+            m_runtime.get(), reinterpret_cast<std::uint8_t*>(payload.data()), size, &written) !=
+            SNOW_OK ||
+        written != size) {
+        return {};
+    }
+    return payload;
+}
+
 bool RuntimeSession::restoreDocumentSession(const QByteArray& payload) {
     return replaceRuntime(runtimeFromSerializedSession(payload, m_config));
 }

@@ -76,6 +76,48 @@ void shapeCopyGesture() {
     require(canvas.redo(), "redo copy");
     require(records(runtime, QStringLiteral("Rectangle")) == copied, "redo restores copy");
 }
+void drawTemplateRoundTrip() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(800, 600);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0, 0, 1), "set draw-template camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "select draw-template shape tool");
+    mouse(canvas, QEvent::MouseButtonPress, {300, 200});
+    mouse(canvas, QEvent::MouseMove, {500, 400});
+    mouse(canvas, QEvent::MouseButtonRelease, {500, 400});
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select draw-template move tool");
+    mouse(canvas, QEvent::MouseButtonPress, {400, 200});
+    mouse(canvas, QEvent::MouseButtonRelease, {400, 200});
+
+    const QByteArray payload = runtime.serializeSelectedDrawTemplate();
+    require(!payload.isEmpty(), "export selected elements through the Qt and C APIs");
+    const QJsonArray original = records(runtime, QStringLiteral("Rectangle"));
+    require(original.size() == 1, "draw-template fixture should contain one rectangle");
+    require(canvas.insertDrawTemplate(payload, QPointF(100, 120)),
+            "insert draw template through the Qt and C APIs");
+    const QJsonArray inserted = records(runtime, QStringLiteral("Rectangle"));
+    require(inserted.size() == 2 && inserted.first() == original.first(),
+            "draw-template insertion should preserve the original element");
+    const QJsonObject center =
+        inserted.last().toObject().value(QStringLiteral("center")).toObject();
+    require(center.value(QStringLiteral("x")).toDouble() == 100 &&
+                center.value(QStringLiteral("y")).toDouble() == 120,
+            "draw-template insertion should use the requested center");
+    const auto selected = QJsonDocument::fromJson(runtime.serializeSelectedDrawTemplate()).object();
+    require(selected.value(QStringLiteral("selectedIds")).toArray().size() == 1,
+            "draw-template insertion should select its new element");
+    require(!canvas.insertDrawTemplate(QByteArrayLiteral("invalid"), QPointF(0, 0)) &&
+                records(runtime, QStringLiteral("Rectangle")) == inserted,
+            "malformed draw templates should leave the document unchanged");
+    require(canvas.undo(), "undo draw-template insertion");
+    require(records(runtime, QStringLiteral("Rectangle")) == original,
+            "one undo should remove the inserted draw template");
+    require(canvas.redo(), "redo draw-template insertion");
+    require(records(runtime, QStringLiteral("Rectangle")) == inserted,
+            "redo should restore the inserted draw template");
+}
 enum class TextGesture { Copy, Resize, Rotate };
 
 struct TextGestureCase {
@@ -252,6 +294,7 @@ int main(int argc, char** argv) {
 #endif
     QApplication app(argc, argv);
     shapeCopyGesture();
+    drawTemplateRoundTrip();
     TextGestureCase testCase;
     testCase.editText = false;
     selectedTextGesture(testCase);

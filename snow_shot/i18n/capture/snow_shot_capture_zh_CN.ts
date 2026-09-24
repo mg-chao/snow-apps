@@ -42,6 +42,10 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Could not insert the draw template</source>
+            <translation>无法插入绘图模板</translation>
+        </message>
+        <message>
             <source>Could not read the selected files from Finder. Please try again.</source>
             <translation>无法读取访达中选中的文件，请重试。</translation>
         </message>

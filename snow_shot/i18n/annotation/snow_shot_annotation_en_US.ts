@@ -12,6 +12,10 @@
             <translation>Add</translation>
         </message>
         <message>
+            <source>Add Template</source>
+            <translation>Add Template</translation>
+        </message>
+        <message>
             <source>Add screenshot region</source>
             <translation>Add screenshot region</translation>
         </message>
@@ -168,6 +172,18 @@
             <translation>Corner radius (scroll to adjust)</translation>
         </message>
         <message>
+            <source>Could not capture selected elements</source>
+            <translation>Could not capture selected elements</translation>
+        </message>
+        <message>
+            <source>Could not delete the draw template</source>
+            <translation>Could not delete the draw template</translation>
+        </message>
+        <message>
+            <source>Could not save the draw template</source>
+            <translation>Could not save the draw template</translation>
+        </message>
+        <message>
             <source>Cross-line fill</source>
             <translation>Cross-line fill</translation>
         </message>
@@ -240,6 +256,14 @@
             <translation>Delete</translation>
         </message>
         <message>
+            <source>Delete Draw Template</source>
+            <translation>Delete Draw Template</translation>
+        </message>
+        <message>
+            <source>Delete draw template "%1"? This action cannot be undone.</source>
+            <translation>Delete draw template "%1"? This action cannot be undone.</translation>
+        </message>
+        <message>
             <source>Delete selected elements</source>
             <translation>Delete selected elements</translation>
         </message>
@@ -274,6 +298,10 @@
         <message>
             <source>Drag toolbar</source>
             <translation>Drag toolbar</translation>
+        </message>
+        <message>
+            <source>Draw Template</source>
+            <translation>Draw Template</translation>
         </message>
         <message>
             <source>Edit</source>
@@ -574,6 +602,10 @@
         <message>
             <source>Move selection vertically (press and hold to drag)</source>
             <translation>Move selection vertically (press and hold to drag)</translation>
+        </message>
+        <message>
+            <source>No matching templates</source>
+            <translation>No matching templates</translation>
         </message>
         <message>
             <source>No templates yet</source>
