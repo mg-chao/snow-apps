@@ -7,6 +7,7 @@
 
 #include <QColor>
 #include <QImage>
+#include <QMetaObject>
 #include <QPoint>
 #include <QPointer>
 #include <QRect>
@@ -184,6 +185,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     [[nodiscard]] QRegion ocrFilterImageDamageRegion(const QRectF& canvasRect) const;
 
     SnowCanvasWidget& m_canvas;
+    QMetaObject::Connection m_themeConnection;
     std::uint64_t m_contentRevision = 0;
     ScreenshotImageSource m_imageSource;
     QSize m_imageViewportPhysicalSize;

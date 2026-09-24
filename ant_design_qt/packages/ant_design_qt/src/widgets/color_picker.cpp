@@ -1,6 +1,7 @@
 #include "color_picker.h"
 
 #include "color_picker_style.h"
+#include "checkerboard.h"
 #include "combo_box.h"
 #include "detail/color_picker_value_model.h"
 #include "detail/timing_hub.h"
@@ -19,7 +20,6 @@
 #include <QFrame>
 #include <QFontMetrics>
 #include <QGridLayout>
-#include <QHash>
 #include <QHBoxLayout>
 #include <QImage>
 #include <QKeyEvent>
@@ -127,27 +127,7 @@ qreal snapToDevicePixelCoord(qreal value, qreal dpr) {
   return qRound(value * dpr) / dpr;
 }
 
-constexpr int kCheckerBrushCacheMaxEntries = 32;
 constexpr int kInteractiveEditorRefreshIntervalMs = 16;
-
-struct CheckerBrushCacheKey {
-  int cellSize = 0;
-  QRgb light = 0;
-  QRgb dark = 0;
-
-  bool operator==(const CheckerBrushCacheKey& other) const {
-    return cellSize == other.cellSize && light == other.light && dark == other.dark;
-  }
-};
-
-size_t qHash(const CheckerBrushCacheKey& key, size_t seed) {
-  return qHashMulti(seed, key.cellSize, key.light, key.dark);
-}
-
-QHash<CheckerBrushCacheKey, QBrush>& checkerBrushCache() {
-  static QHash<CheckerBrushCacheKey, QBrush> cache;
-  return cache;
-}
 
 QRectF snapRectToDevicePixels(const QRectF& rect, qreal dpr) {
   if (dpr <= 0.0) {
@@ -974,33 +954,6 @@ QString colorToTriggerHexText(const QColor& color) {
   return QStringLiteral("%1,%2%").arg(hex).arg(alphaPercent);
 }
 
-QBrush makeCheckerBrush(int cellSize, const QColor& light = QColor(255, 255, 255),
-                        const QColor& dark = QColor(0, 0, 0, 20)) {
-  const int cell = std::max(2, cellSize);
-  const CheckerBrushCacheKey key{cell, light.rgba(), dark.rgba()};
-  auto& cache = checkerBrushCache();
-  const auto cached = cache.constFind(key);
-  if (cached != cache.constEnd()) {
-    return cached.value();
-  }
-
-  QPixmap pixmap(cell * 2, cell * 2);
-  pixmap.fill(light);
-
-  QPainter painter(&pixmap);
-  painter.fillRect(QRect(0, 0, cell, cell), dark);
-  painter.fillRect(QRect(cell, cell, cell, cell), dark);
-  painter.end();
-
-  QBrush brush(pixmap);
-  brush.setStyle(Qt::TexturePattern);
-  if (cache.size() >= kCheckerBrushCacheMaxEntries) {
-    cache.clear();
-  }
-  cache.insert(key, brush);
-  return brush;
-}
-
 QBrush makeHueBrush() {
   static const QBrush brush = []() {
     QLinearGradient gradient(0.0, 0.0, 1.0, 0.0);
@@ -1130,12 +1083,14 @@ class ColorPickerSwatch final : public QWidget {
 
     switch (fillMode_) {
       case FillMode::Solid: {
-        painter.fillPath(fillPath, makeCheckerBrush(checkerCellSize_, checkerLight_, checkerDark_));
+        painter.fillPath(fillPath,
+                         checkerboardBrush(checkerCellSize_, checkerLight_, checkerDark_));
         painter.fillPath(fillPath, solidFill_);
         break;
       }
       case FillMode::Gradient: {
-        painter.fillPath(fillPath, makeCheckerBrush(checkerCellSize_, checkerLight_, checkerDark_));
+        painter.fillPath(fillPath,
+                         checkerboardBrush(checkerCellSize_, checkerLight_, checkerDark_));
         if (!gradientStops_.isEmpty()) {
           QLinearGradient gradient(0.0, 0.0, 1.0, 0.0);
           gradient.setCoordinateMode(QGradient::ObjectBoundingMode);
@@ -1657,7 +1612,7 @@ class PresetColorButton final : public QAbstractButton {
     const qreal radius = std::max<qreal>(0.0, radius_);
     const QPainterPath fillPath = roundedRectPath(shapeRect, radius, radius, radius, radius);
 
-    painter.fillPath(fillPath, makeCheckerBrush(checkerCellSize_, checkerLight_, checkerDark_));
+    painter.fillPath(fillPath, checkerboardBrush(checkerCellSize_, checkerLight_, checkerDark_));
     if (fillMode_ == FillMode::Gradient) {
       if (!gradientStops_.isEmpty()) {
         QLinearGradient gradient(0.0, 0.0, 1.0, 0.0);
@@ -5634,7 +5589,8 @@ void AdColorPicker::refreshChannelVisuals(LivePanelSyncSource source) {
 
   if (alphaSlider_ && refreshAlpha) {
     AdSliderSemanticStyles alphaStyles;
-    alphaStyles.rail.brush = makeCheckerBrush(kTransparencyCell);
+    alphaStyles.rail.brush =
+        checkerboardBrush(kTransparencyCell, style.panelBackground, style.transparentCellB);
     alphaStyles.tracks.brush = makeAlphaBrush(editableColor);
     alphaStyles.handle.borderColor = style.channelHandleBorder;
     QColor alphaHandleColor = editableColor.toRgb();

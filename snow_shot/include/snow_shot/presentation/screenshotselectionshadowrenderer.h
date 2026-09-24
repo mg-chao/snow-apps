@@ -8,6 +8,7 @@
 #include <cstddef>
 
 class QPainter;
+class QWidget;
 
 struct ScreenshotSelectionShadowDiagnostics {
     std::size_t cacheHits = 0;
@@ -19,9 +20,9 @@ struct ScreenshotSelectionShadowDiagnostics {
 
 class ScreenshotSelectionShadowRenderer final {
   public:
-    [[nodiscard]] static const QImage& checkerboardTile();
     static void renderPreview(QPainter& painter, const QRectF& selectionBounds, qreal cornerRadius,
-                              qreal shadowWidth, const QColor& shadowColor, qreal devicePixelRatio);
+                              qreal shadowWidth, const QColor& shadowColor, qreal devicePixelRatio,
+                              const QWidget* widget = nullptr);
 
     static QImage composeExport(const QImage& content, int cornerRadius, int shadowWidth,
                                 const QColor& shadowColor);

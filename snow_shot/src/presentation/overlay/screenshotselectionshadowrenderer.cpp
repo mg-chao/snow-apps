@@ -2,16 +2,18 @@
 
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
+#include "widgets/checkerboard.h"
 
-#include <QBrush>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegion>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <list>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -19,7 +21,6 @@ constexpr qreal kPeakAlphaScale = 0.36;
 constexpr int kCacheEntryLimit = 8;
 constexpr std::size_t kCacheByteLimit = 16u * 1024u * 1024u;
 constexpr int kDprQuantization = 64;
-constexpr int kCheckerTileSize = 6;
 
 struct ShadowKey {
     int physicalRadius = 0;
@@ -68,22 +69,6 @@ thread_local ScreenshotSelectionShadowDiagnostics g_diagnostics;
 
 int quantizedDpr(qreal dpr) {
     return std::max(1, qRound(std::max<qreal>(1.0, dpr) * kDprQuantization));
-}
-
-const QImage& checkerboard() {
-    static const QImage image = [] {
-        QImage result(QSize(kCheckerTileSize * 2, kCheckerTileSize * 2),
-                      QImage::Format_ARGB32_Premultiplied);
-        result.fill(QColor(QStringLiteral("#ffffff")));
-        QPainter painter(&result);
-        painter.fillRect(QRect(0, 0, kCheckerTileSize, kCheckerTileSize),
-                         QColor(QStringLiteral("#f0f0f0")));
-        painter.fillRect(
-            QRect(kCheckerTileSize, kCheckerTileSize, kCheckerTileSize, kCheckerTileSize),
-            QColor(QStringLiteral("#f0f0f0")));
-        return result;
-    }();
-    return image;
 }
 
 qreal roundedRectangleDistance(qreal x, qreal y, qreal halfWidth, qreal halfHeight, qreal radius) {
@@ -241,7 +226,7 @@ void paintNineSlice(QPainter& painter, const QRectF& selectionBounds, qreal corn
 }
 
 void paintCheckerboardPerimeter(QPainter& painter, const QRectF& selectionBounds,
-                                qreal cornerRadius, qreal shadowWidth) {
+                                qreal cornerRadius, qreal shadowWidth, const QWidget* widget) {
     if (shadowWidth <= 0.0) {
         return;
     }
@@ -253,7 +238,7 @@ void paintCheckerboardPerimeter(QPainter& painter, const QRectF& selectionBounds
     perimeter.setFillRule(Qt::OddEvenFill);
     perimeter.addRect(outer);
     perimeter.addPath(roundedHole(selectionBounds, cornerRadius));
-    painter.fillPath(perimeter, QBrush(ScreenshotSelectionShadowRenderer::checkerboardTile()));
+    painter.fillPath(perimeter, adqt::widgets::themedCheckerboardBrush(widget));
     painter.restore();
 }
 
@@ -273,16 +258,10 @@ void renderShadow(QPainter& painter, const QRectF& selectionBounds, qreal corner
 }
 } // namespace
 
-const QImage& ScreenshotSelectionShadowRenderer::checkerboardTile() {
-    return checkerboard();
-}
-
-void ScreenshotSelectionShadowRenderer::renderPreview(QPainter& painter,
-                                                      const QRectF& selectionBounds,
-                                                      qreal cornerRadius, qreal shadowWidth,
-                                                      const QColor& shadowColor,
-                                                      qreal devicePixelRatio) {
-    paintCheckerboardPerimeter(painter, selectionBounds, cornerRadius, shadowWidth);
+void ScreenshotSelectionShadowRenderer::renderPreview(
+    QPainter& painter, const QRectF& selectionBounds, qreal cornerRadius, qreal shadowWidth,
+    const QColor& shadowColor, qreal devicePixelRatio, const QWidget* widget) {
+    paintCheckerboardPerimeter(painter, selectionBounds, cornerRadius, shadowWidth, widget);
     renderShadow(painter, selectionBounds, cornerRadius, shadowWidth, shadowColor,
                  devicePixelRatio);
 }
@@ -317,6 +296,32 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
     thread_local Cache cache;
     if (cache.region == region && cache.radius == radius)
         return cache.path;
+    if (radius > 0 && region.rectCount() > 1 && region.rectCount() <= 512) {
+        std::vector<QRect> rectangles(region.begin(), region.end());
+        const int clearance = qCeil(radius * 2);
+        bool isolated = true;
+        for (std::size_t i = 0; isolated && i < rectangles.size(); ++i) {
+            const QRect nearby =
+                rectangles[i].adjusted(-clearance, -clearance, clearance, clearance);
+            for (std::size_t j = i + 1; j < rectangles.size(); ++j) {
+                if (nearby.intersects(rectangles[j])) {
+                    isolated = false;
+                    break;
+                }
+            }
+        }
+        if (isolated) {
+            QPainterPath rounded;
+            for (const QRect& rectangle : rectangles) {
+                const qreal effectiveRadius =
+                    std::min<qreal>(radius, std::min(rectangle.width(), rectangle.height()) / 2.0);
+                rounded.addRoundedRect(QRectF(rectangle), effectiveRadius, effectiveRadius,
+                                       Qt::AbsoluteSize);
+            }
+            cache = {region, radius, rounded};
+            return rounded;
+        }
+    }
     QPainterPath joined;
     joined.addRegion(region);
     joined = joined.simplified();
@@ -325,6 +330,44 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
         return joined;
     }
     const auto polygons = joined.toSubpathPolygons();
+    struct Edge {
+        QPointF a;
+        QPointF b;
+    };
+    std::vector<Edge> edges;
+    for (const auto& contour : polygons) {
+        for (qsizetype j = 1; j < contour.size(); ++j)
+            edges.push_back({contour[j - 1], contour[j]});
+    }
+    // Only edges within twice the requested radius can constrain a corner.
+    // Index them once instead of testing every edge at every corner.
+    const QRectF bounds = joined.boundingRect();
+    const qreal cellSize = std::max<qreal>(
+        {16.0, radius * 2.0, std::max(bounds.width(), bounds.height()) / 128.0,
+         std::sqrt(std::max<qreal>(1.0, bounds.width() * bounds.height()) / 4096.0)});
+    const int columns = std::max(1, qCeil(bounds.width() / cellSize) + 1);
+    const int rows = std::max(1, qCeil(bounds.height() / cellSize) + 1);
+    std::vector<std::vector<int>> edgeCells(static_cast<std::size_t>(columns) * rows);
+    const auto columnFor = [&](qreal x) {
+        return std::clamp(qFloor((x - bounds.left()) / cellSize), 0, columns - 1);
+    };
+    const auto rowFor = [&](qreal y) {
+        return std::clamp(qFloor((y - bounds.top()) / cellSize), 0, rows - 1);
+    };
+    const auto cellAt = [&](int column, int row) -> std::vector<int>& {
+        return edgeCells[static_cast<std::size_t>(row) * columns + column];
+    };
+    const qreal reach = radius * 2.0 + 1.0e-6;
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+        const auto& edge = edges[index];
+        const int firstColumn = columnFor(std::min(edge.a.x(), edge.b.x()) - reach);
+        const int lastColumn = columnFor(std::max(edge.a.x(), edge.b.x()) + reach);
+        const int firstRow = rowFor(std::min(edge.a.y(), edge.b.y()) - reach);
+        const int lastRow = rowFor(std::max(edge.a.y(), edge.b.y()) + reach);
+        for (int row = firstRow; row <= lastRow; ++row)
+            for (int column = firstColumn; column <= lastColumn; ++column)
+                cellAt(column, row).push_back(static_cast<int>(index));
+    }
     QPainterPath rounded;
     rounded.setFillRule(Qt::OddEvenFill);
     for (auto polygon : polygons) {
@@ -344,19 +387,17 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
             qreal r = std::min({radius, before / 2, after / 2});
             // Bound curvature by all nonincident edges, including other contours.
             // This keeps thin bridges and nearby hole boundaries from crossing.
-            for (const auto& contour : polygons) {
-                for (qsizetype j = 1; j < contour.size(); ++j) {
-                    const QPointF a = contour[j - 1], b = contour[j];
-                    if (a == corner || b == corner)
-                        continue;
-                    const QPointF ab = b - a;
-                    const qreal lengthSquared = QPointF::dotProduct(ab, ab);
-                    if (lengthSquared <= 0)
-                        continue;
-                    const qreal t = std::clamp(QPointF::dotProduct(corner - a, ab) / lengthSquared,
-                                               qreal(0), qreal(1));
-                    r = std::min(r, QLineF(corner, a + ab * t).length() / 2);
-                }
+            for (const int index : cellAt(columnFor(corner.x()), rowFor(corner.y()))) {
+                const QPointF a = edges[index].a, b = edges[index].b;
+                if (a == corner || b == corner)
+                    continue;
+                const QPointF ab = b - a;
+                const qreal lengthSquared = QPointF::dotProduct(ab, ab);
+                if (lengthSquared <= 0)
+                    continue;
+                const qreal t = std::clamp(QPointF::dotProduct(corner - a, ab) / lengthSquared,
+                                           qreal(0), qreal(1));
+                r = std::min(r, QLineF(corner, a + ab * t).length() / 2);
             }
             const QPointF entry = corner + (previous - corner) * (r / before);
             const QPointF leave = corner + (next - corner) * (r / after);
@@ -440,6 +481,94 @@ QImage regionShadow(const QImage& mask, int width, const QColor& color) {
     return shadow;
 }
 
+struct RegionTile {
+    QRect bounds;
+    QPainterPath path;
+};
+
+std::vector<RegionTile> sparseRegionTiles(const QPainterPath& path, const QRect& outputBounds,
+                                          int shadowWidth) {
+    std::vector<RegionTile> tiles;
+    QPainterPath subpath;
+    subpath.setFillRule(path.fillRule());
+    const auto appendSubpath = [&] {
+        if (subpath.isEmpty())
+            return;
+        const QRect bounds =
+            subpath.boundingRect()
+                .toAlignedRect()
+                .adjusted(-shadowWidth - 2, -shadowWidth - 2, shadowWidth + 2, shadowWidth + 2)
+                .intersected(outputBounds);
+        if (bounds.isEmpty())
+            return;
+        RegionTile tile{bounds, subpath};
+        for (std::size_t index = 0; index < tiles.size();) {
+            if (!tile.bounds.intersects(tiles[index].bounds)) {
+                ++index;
+                continue;
+            }
+            tile.bounds = tile.bounds.united(tiles[index].bounds);
+            tile.path.addPath(tiles[index].path);
+            tiles.erase(tiles.begin() + static_cast<std::ptrdiff_t>(index));
+            index = 0;
+        }
+        tiles.push_back(std::move(tile));
+    };
+    for (int index = 0; index < path.elementCount(); ++index) {
+        const auto element = path.elementAt(index);
+        if (element.type == QPainterPath::MoveToElement) {
+            appendSubpath();
+            subpath = QPainterPath();
+            subpath.setFillRule(path.fillRule());
+            subpath.moveTo(element.x, element.y);
+        } else if (element.type == QPainterPath::LineToElement) {
+            subpath.lineTo(element.x, element.y);
+        } else if (element.type == QPainterPath::CurveToElement &&
+                   index + 2 < path.elementCount()) {
+            const auto control = path.elementAt(++index);
+            const auto end = path.elementAt(++index);
+            subpath.cubicTo(QPointF(element.x, element.y), QPointF(control.x, control.y),
+                            QPointF(end.x, end.y));
+        }
+    }
+    appendSubpath();
+    if (tiles.size() < 2)
+        return {};
+    qint64 area = 0;
+    for (const auto& tile : tiles)
+        area += qint64(tile.bounds.width()) * tile.bounds.height();
+    if (area * 2 >= qint64(outputBounds.width()) * outputBounds.height())
+        return {};
+    return tiles;
+}
+
+QImage composeSparseRegion(const QImage& content, const ScreenshotResultLayout& layout,
+                           const ScreenshotResultStyle& style, const std::vector<RegionTile>& tiles,
+                           qreal opacity) {
+    QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    output.fill(Qt::transparent);
+    QPainter outputPainter(&output);
+    for (const auto& region : tiles) {
+        QPainterPath localPath = region.path.translated(-region.bounds.topLeft());
+        const QImage mask = regionMask(region.bounds.size(), localPath);
+        QImage tile(region.bounds.size(), QImage::Format_ARGB32_Premultiplied);
+        tile.fill(Qt::transparent);
+        QPainter painter(&tile);
+        painter.drawImage(layout.contentRect.topLeft() - region.bounds.topLeft(), content);
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        painter.drawImage(QPoint(), mask);
+        if (layout.effectInsets.left() > 0) {
+            const QImage shadow = regionShadow(mask, layout.effectInsets.left(), style.shadowColor);
+            painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+            painter.drawImage(QPoint(), shadow);
+        }
+        painter.end();
+        outputPainter.drawImage(region.bounds.topLeft(), tile);
+    }
+    outputPainter.end();
+    return applyOutputOpacity(std::move(output), opacity);
+}
+
 QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
                      qreal devicePixelRatio, qreal opacity) {
     const auto layout =
@@ -453,6 +582,9 @@ QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
              ? style.region->path(scale)
              : screenshotRegionPath(*style.region,
                                     style.cornerRadius * layout.devicePixelRatio / scale)));
+    const auto sparseTiles = sparseRegionTiles(path, layout.outputRect, layout.effectInsets.left());
+    if (!sparseTiles.empty())
+        return composeSparseRegion(content, layout, style, sparseTiles, opacity);
     struct Cache {
         QPainterPath path;
         QSize size;

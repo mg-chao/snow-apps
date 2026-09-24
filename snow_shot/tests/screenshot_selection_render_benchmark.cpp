@@ -384,6 +384,9 @@ int main(int argc, char** argv) {
         QStringLiteral("custom-freehand"),
         QStringLiteral("custom-curve"),
         QStringLiteral("custom-mixed-operations"),
+        QStringLiteral("custom-growing-draft"),
+        QStringLiteral("rounded-many-regions"),
+        QStringLiteral("sparse-region-export"),
         QStringLiteral("region-one-pixel-move"),
         QStringLiteral("region-hover-one-pixel-move"),
         QStringLiteral("region-two-stage-presentation"),
@@ -486,6 +489,44 @@ int main(int argc, char** argv) {
     run(QStringLiteral("custom-mixed-operations"), [&](int index) {
         const auto candidate = mixed.united(freehandRegion.translated(index & 1, 0));
         renderer.setSelectionRegion(candidate, mixed, {}, false, Qt::red);
+    });
+    QVector<QPointF> growingVertices;
+    growingVertices.reserve(4096);
+    for (int i = 0; i < 4096; ++i) {
+        const qreal angle = i * 6.283185307179586 / 4096.0;
+        growingVertices.append(QPointF(620 * std::cos(angle), 390 * std::sin(angle)));
+    }
+    run(QStringLiteral("custom-growing-draft"), [&](int index) {
+        const int count = 2048 + index % 2048;
+        renderer.setSelectionDraft(snowCanvasCatmullRomPath(growingVertices.mid(0, count), true),
+                                   {});
+    });
+    QRegion manyRegions;
+    for (int row = 0; row < 10; ++row)
+        for (int column = 0; column < 20; ++column)
+            manyRegions += QRect(-1250 + column * 125, -650 + row * 130, 82, 82);
+    run(QStringLiteral("rounded-many-regions"), [&](int index) {
+        ScreenshotSelectionVisualState state;
+        const ScreenshotRegionGeometry region(manyRegions.translated(index & 1, 0));
+        state.region = region;
+        state.confirmedRegion = region;
+        state.bounds = region.boundingRect();
+        state.present = true;
+        state.cornerRadius = 8;
+        renderer.applySelectionState(state);
+    });
+    QImage sparseContent(surfaceSize, QImage::Format_ARGB32_Premultiplied);
+    sparseContent.fill(Qt::white);
+    ScreenshotResultStyle sparseStyle;
+    sparseStyle.region =
+        QRegion(QRect(40, 40, 120, 120)) +
+        QRegion(QRect(surfaceSize.width() - 160, surfaceSize.height() - 160, 120, 120));
+    sparseStyle.shadowWidth = 16;
+    run(QStringLiteral("sparse-region-export"), [&](int index) {
+        sparseStyle.shadowColor = (index & 1) ? QColor(0x33, 0x33, 0x33) : QColor(0x34, 0x33, 0x33);
+        const QImage result = ScreenshotResultCompositor::compose(sparseContent, sparseStyle);
+        if (result.isNull())
+            throw std::runtime_error("sparse region export failed");
     });
     run(QStringLiteral("region-one-pixel-move"), [&](int index) {
         const auto moved = compoundRegion.translated(index & 1, 0);

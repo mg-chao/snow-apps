@@ -573,9 +573,9 @@ class PinnedBorderFrame final : public QFrame {
             return;
         }
         painter.setTransform(painter.transform() * toSurface);
-        const QRectF contentOutline = property("contentOutline").toRectF();
-        if (contentOutline.isValid()) {
-            const QRectF mappedOutline = surfaceTransform.mapRect(contentOutline);
+        const QRectF borderOutline = property("borderOutline").toRectF();
+        if (borderOutline.isValid()) {
+            const QRectF mappedOutline = surfaceTransform.mapRect(borderOutline);
             const QSizeF radii =
                 surfaceTransform.mapRect(QRectF(QPointF(), property("cornerRadii").toSizeF()))
                     .size();
@@ -829,6 +829,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     auto& themeManager = adqt::theme::ThemeManager::instance();
     connect(&themeManager, &adqt::theme::ThemeManager::themeChanged, this, [this]() {
         updateThumbnailPresentation();
+        m_canvas->update();
         update();
     });
     connect(qGuiApp, &QGuiApplication::screenRemoved, this, [this](QScreen*) {
@@ -1422,7 +1423,10 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
     if (!m_checkerboardEnabled && !m_originalImage.isNull()) {
         m_checkerboardEnabled = m_originalImage.hasAlphaChannel();
     }
-    m_showBorder = !m_borderAppearance || !m_borderAppearance->hasShadow;
+    const bool compoundSelection =
+        m_borderAppearance && m_borderAppearance->region &&
+        (m_borderAppearance->region->custom() || m_borderAppearance->region->rectCount() != 1);
+    m_showBorder = compoundSelection || !m_borderAppearance || !m_borderAppearance->hasShadow;
     if (m_borderFrame != nullptr)
         m_borderFrame->setVisible(m_showBorder);
     updateBorderOutline();
@@ -2907,7 +2911,7 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
         m_borderFrame->setGeometry(rect());
     m_borderFrame->raise();
 
-    QRectF contentOutline;
+    QRectF borderOutline;
     QSizeF cornerRadii;
     QPainterPath bakedPath;
     if (m_borderAppearance && !m_borderAppearance->sourceSize.isEmpty() &&
@@ -2927,11 +2931,14 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
                            m_backgroundCanvasRect.height() / transformedBounds.height());
             const QTransform sourceToCanvas = sourceScale * rotation * toCanvas;
             const QTransform mapping = sourceToCanvas * m_canvas->canvasToViewTransform();
-            contentOutline = mapping.mapRect(appearance.contentRect);
-            contentOutline.translate(m_canvas->mapTo(this, QPoint()) - m_borderFrame->pos());
             const bool singleRectangle =
                 !appearance.region ||
                 (!appearance.region->custom() && appearance.region->rectCount() == 1);
+            const QRectF borderSourceRect = singleRectangle
+                                                ? appearance.contentRect
+                                                : QRectF(QPointF(), QSizeF(appearance.sourceSize));
+            borderOutline = mapping.mapRect(borderSourceRect);
+            borderOutline.translate(m_canvas->mapTo(this, QPoint()) - m_borderFrame->pos());
             if (singleRectangle) {
                 const qreal radius =
                     std::min(appearance.cornerRadius, std::min(appearance.contentRect.width(),
@@ -2955,7 +2962,7 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
         }
     }
     m_screenshotRenderer->setBakedSelectionPath(bakedPath);
-    m_borderFrame->setProperty("contentOutline", contentOutline);
+    m_borderFrame->setProperty("borderOutline", borderOutline);
     m_borderFrame->setProperty("cornerRadii", cornerRadii);
     m_borderFrame->update();
 

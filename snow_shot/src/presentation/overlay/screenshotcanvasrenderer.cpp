@@ -8,6 +8,7 @@
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "theme/theme_manager.h"
+#include "widgets/checkerboard.h"
 
 #include <QApplication>
 #include <QBrush>
@@ -146,7 +147,7 @@ bool rectFCovers(const QRectF& outer, const QRect& inner) {
 
 void renderSelectionShadow(QPainter& painter, const SnowCanvasRenderContext& context,
                            const QRectF& selection, int cornerRadius, int shadowWidth,
-                           const QColor& shadowColor) {
+                           const QColor& shadowColor, const QWidget* widget) {
     if (shadowWidth <= 0) {
         return;
     }
@@ -162,7 +163,7 @@ void renderSelectionShadow(QPainter& painter, const SnowCanvasRenderContext& con
     }
     ScreenshotSelectionShadowRenderer::renderPreview(
         painter, selectionView, std::max(0, cornerRadius) * scale, shadowWidth * scale, shadowColor,
-        context.devicePixelRatio);
+        context.devicePixelRatio, widget);
 }
 
 bool hasSelectionBounds(const ScreenshotSelectionVisualState& state) {
@@ -956,9 +957,14 @@ void ScreenshotOcrTextLayer::synchronizeTextItem(TextItem& item,
     item.graphicsText->show();
 }
 
-ScreenshotCanvasRenderer::ScreenshotCanvasRenderer(SnowCanvasWidget& canvas) : m_canvas(canvas) {}
+ScreenshotCanvasRenderer::ScreenshotCanvasRenderer(SnowCanvasWidget& canvas) : m_canvas(canvas) {
+    m_themeConnection = QObject::connect(&adqt::theme::ThemeManager::instance(),
+                                         &adqt::theme::ThemeManager::themeChanged, &canvas,
+                                         [&canvas]() { canvas.update(); });
+}
 
 ScreenshotCanvasRenderer::~ScreenshotCanvasRenderer() {
+    QObject::disconnect(m_themeConnection);
     delete m_ocrTextLayer.data();
 }
 
@@ -1505,8 +1511,13 @@ ScreenshotOcrTextLayer* ScreenshotCanvasRenderer::ensureOcrTextLayer() {
 void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
                                                   const SnowCanvasRenderContext& context) {
     if (m_renderMode == RenderMode::ScrollingCapture || m_renderMode == RenderMode::PinnedResult) {
+        painter.save();
+        // Replace every covered device pixel, including fractional-DPI edges.
+        // Antialiasing a clear leaves residual canvas/parent background alpha.
+        painter.setRenderHint(QPainter::Antialiasing, false);
         painter.setCompositionMode(QPainter::CompositionMode_Source);
         painter.fillRect(context.viewportRect, QColor(Qt::transparent));
+        painter.restore();
         painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         if (m_renderMode == RenderMode::ScrollingCapture) {
             return;
@@ -1616,7 +1627,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                         ? context.canvasToViewTransform.mapRect(m_pinnedSurfaceCanvasRect)
                         : QRectF(context.viewportRect);
                 painter.fillRect(checkerBounds.intersected(QRectF(context.viewportRect)),
-                                 QBrush(ScreenshotSelectionShadowRenderer::checkerboardTile()));
+                                 adqt::widgets::themedCheckerboardBrush(&m_canvas));
             }
             if (m_pinnedBackgroundColor.isValid())
                 painter.fillRect(context.viewportRect, m_pinnedBackgroundColor);
@@ -1726,7 +1737,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             } else {
                 renderSelectionShadow(painter, context, m_selectionState.bounds,
                                       visibleCornerRadius, m_selectionState.shadowWidth,
-                                      m_selectionState.shadowColor);
+                                      m_selectionState.shadowColor, &m_canvas);
             }
         } else if (m_selectionState.borderVisible) {
             painter.setPen(QPen(selectionAccent, kSelectionBorderWidth));

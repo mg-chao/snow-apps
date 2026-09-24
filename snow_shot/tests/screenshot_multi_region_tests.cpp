@@ -144,6 +144,26 @@ void outlinesAndEffects() {
     require(effected.size() == QSize(112, 92), "shadow padding");
     require(effected.pixelColor(56, 46).alpha() == 0, "hole center remains transparent");
     require(effected.pixelColor(37, 46).alpha() > 0, "shadow follows internal cutout edge");
+    const QRegion separated = QRegion(QRect(0, 0, 32, 32)) + QRegion(QRect(160, 0, 32, 32));
+    const auto separatedOutline = screenshotRegionPath(separated, 8);
+    require(!separatedOutline.contains(QPointF(0.5, 0.5)) &&
+                separatedOutline.contains(QPointF(16, 16)) &&
+                separatedOutline.contains(QPointF(176, 16)) &&
+                !separatedOutline.contains(QPointF(96, 16)),
+            "isolated rounded regions preserve their separate contours");
+    QImage separatedContent(192, 32, QImage::Format_ARGB32_Premultiplied);
+    separatedContent.fill(Qt::red);
+    ScreenshotResultStyle separatedStyle;
+    separatedStyle.region = separated;
+    separatedStyle.cornerRadius = 8;
+    separatedStyle.shadowWidth = 4;
+    const QImage separatedOutput =
+        ScreenshotResultCompositor::compose(separatedContent, separatedStyle);
+    require(separatedOutput.pixelColor(20, 20).alpha() == 255 &&
+                separatedOutput.pixelColor(180, 20).alpha() == 255 &&
+                separatedOutput.pixelColor(100, 20).alpha() == 0 &&
+                separatedOutput.pixelColor(37, 20).alpha() > 0,
+            "sparse export retains both regions and their local shadows");
     QImage annotated = effected;
     {
         QPainter painter(&annotated);
@@ -303,6 +323,25 @@ void customGeometryTransactionsAndPersistence() {
             antialiased |= alpha > 0 && alpha < 255;
         }
     require(antialiased, "custom contour edges must be antialiased");
+    QPainterPath sparseCurves;
+    sparseCurves.addEllipse(QRectF(10, 10, 30, 30));
+    sparseCurves.addEllipse(QRectF(160, 10, 30, 30));
+    QPainterPath wholeBounds = sparseCurves;
+    wholeBounds.moveTo(35, 25);
+    wholeBounds.lineTo(165, 25);
+    ScreenshotResultStyle sparseCurveStyle;
+    sparseCurveStyle.shadowWidth = 8;
+    sparseCurveStyle.region =
+        ScreenshotRegionGeometry::fromPath(sparseCurves, ScreenshotRegionType::Curve);
+    QImage sparseContent(200, 50, QImage::Format_ARGB32_Premultiplied);
+    sparseContent.fill(Qt::blue);
+    const QImage sparseResult =
+        ScreenshotResultCompositor::compose(sparseContent, sparseCurveStyle);
+    sparseCurveStyle.region =
+        ScreenshotRegionGeometry::fromPath(wholeBounds, ScreenshotRegionType::Curve);
+    const QImage wholeResult = ScreenshotResultCompositor::compose(sparseContent, sparseCurveStyle);
+    require(sparseResult == wholeResult,
+            "tiled sparse export must match whole-image mask and shadow pixels");
     const auto repeated = snowCanvasCatmullRomPath({{10, 10}, {10, 10}, {50, 10}, {30, 50}}, true);
     require(!repeated.isEmpty(), "curve bridge supports degenerate neighbor fallback");
 }

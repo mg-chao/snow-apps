@@ -3449,6 +3449,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --show-border-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-show-border-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-transparent-edges-tests
+        COMMAND snow-shot-pinned-window-tests --transparent-edges-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-transparent-edges-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-checkerboard-tests
         COMMAND snow-shot-pinned-window-tests --checkerboard-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-checkerboard-tests PROPERTIES LABELS "unit"
@@ -7226,6 +7230,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_TESTS)
         add_test(NAME snow-shot-pinned-selection-content-alignment-${_pin_scale}-tests
             COMMAND snow-shot-pinned-window-tests --selection-content-alignment-only -platform windows)
         set_tests_properties(snow-shot-pinned-selection-content-alignment-${_pin_scale}-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_pin_factor};SNOW_PIN_TEST_DPR=${_pin_scale}")
+        add_test(NAME snow-shot-pinned-native-transparent-edges-${_pin_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --native-transparent-edges-only -platform windows)
+        set_tests_properties(snow-shot-pinned-native-transparent-edges-${_pin_scale}-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
             ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_pin_factor};SNOW_PIN_TEST_DPR=${_pin_scale}")
     endforeach()

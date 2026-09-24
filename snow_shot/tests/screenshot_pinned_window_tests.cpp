@@ -45,6 +45,7 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "theme/theme_manager.h"
+#include "widgets/checkerboard.h"
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
 #include "widgets/context_menu.h"
@@ -56,6 +57,7 @@
 #include <QAbstractButton>
 #include <QActionGroup>
 #include <QApplication>
+#include <QBackingStore>
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QContextMenuEvent>
@@ -7493,9 +7495,23 @@ void pinnedCheckerboardTracksContentSource() {
         config.imageSource = ScreenshotImageSource::fromImage(cutout, config.canvasSourceRect);
         Access::restoreOffscreen(window, config);
         window.show();
-        const QColor hole = renderWidget(window).pixelColor(140, 140);
-        require(hole == QColor(Qt::white) || hole == QColor(0xf0, 0xf0, 0xf0),
-                "transparent pixels must reveal the checkerboard in the canvas");
+        auto& themes = adqt::theme::ThemeManager::instance();
+        const auto originalTheme = themes.config();
+        QColor lightHole;
+        for (const auto scheme :
+             {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+            themes.setColorScheme(scheme);
+            const QColor hole = renderWidget(window).pixelColor(140, 140);
+            const QImage tile = adqt::widgets::themedCheckerboardTile(&window);
+            require(hole == tile.pixelColor(1, 1) || hole == tile.pixelColor(7, 1),
+                    "transparent pinned pixels must reveal the current theme checkerboard");
+            if (scheme == adqt::theme::ThemeScheme::Light)
+                lightHole = hole;
+            else
+                require(hole.lightness() < lightHole.lightness(),
+                        "a pinned window must show the dark checkerboard after a theme switch");
+        }
+        themes.setConfig(originalTheme);
         window.close();
     }
 
@@ -7669,6 +7685,60 @@ void pinnedSelectionBorderOffscreen() {
                     "replacement clears old shape metadata");
             window.close();
         }
+    }
+    for (const bool curved : {false, true}) {
+        ScreenshotResultStyle style;
+        style.shadowWidth = 8;
+        if (curved) {
+            QPainterPath ellipse;
+            ellipse.addEllipse(QRectF(0, 0, 400, 400));
+            style.region = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve);
+        } else {
+            style.region = QRegion(0, 0, 400, 400).subtracted(QRegion(120, 120, 160, 160));
+        }
+        auto config = clickThroughTestConfig(*screen);
+        const QImage composed =
+            ScreenshotResultCompositor::compose(config.imageSource.materializedImage, style);
+        require(!composed.isNull(), "shadowed compound selection must compose");
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(100, 120), composed.size());
+        config.canvasSourceRect = QRectF(QPointF(), QSizeF(composed.size()));
+        config.initialWindowSize = composed.size();
+        config.imageSource = ScreenshotImageSource::fromImage(composed, config.canvasSourceRect);
+        config.borderAppearance = screenshotSelectionBorderAppearance(QSize(400, 400), style);
+        config.checkerboardEnabled = true;
+        ScreenshotPinnedWindow window;
+        Access::prepareReplacement(window, config);
+        window.show();
+        waitForUi(20);
+        auto* action =
+            window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
+        require(action && action->isChecked() && window.persistenceSnapshot().showBorder,
+                "shadowed compound selections must show their border by default");
+        setPinnedWindowActive(window, false);
+        const QImage withBorder = renderWidget(window);
+        const int middle = withBorder.height() / 2;
+        const int borderWidth = qCeil(window.devicePixelRatioF());
+        requireColorNear(withBorder.pixelColor(0, middle), borderColor, 2,
+                         "compound selection border must include the shadow area");
+        requireColorNear(withBorder.pixelColor(withBorder.width() - 1, middle), borderColor, 2,
+                         "compound selection border must reach the outer image edge");
+        require(withBorder.pixelColor(borderWidth + 1, middle) != borderColor,
+                "compound selection border must not also outline the content edge");
+        action->trigger();
+        const QImage withoutBorder = renderWidget(window);
+        require(withoutBorder.pixelColor(0, middle) != borderColor &&
+                    withBorder.pixelColor(borderWidth + 1, middle) ==
+                        withoutBorder.pixelColor(borderWidth + 1, middle),
+                "the compound border must add a rim without adding a shadow");
+        window.close();
+
+        config.restorePersistentState = true;
+        config.persistedShowBorder = false;
+        ScreenshotPinnedWindow restored;
+        Access::restoreOffscreen(restored, config);
+        require(!restored.persistenceSnapshot().showBorder,
+                "a saved hidden border must override the compound selection default");
+        restored.close();
     }
     // Reusing a shell must reset defaults, while restoration must honor explicit overrides.
     ScreenshotPinnedWindow reused;
@@ -10251,6 +10321,128 @@ void pinnedSelectionContentMatchesScreenshotSelection() {
 
 } // namespace
 
+void transparentSurfaceClearReplacesEveryPixel() {
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    for (const auto mode : {ScreenshotCanvasRenderer::RenderMode::PinnedResult,
+                            ScreenshotCanvasRenderer::RenderMode::ScrollingCapture}) {
+        renderer.setRenderMode(mode);
+        for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+            for (int width = 181; width <= 185; ++width) {
+                const QRect viewport(0, 0, width, width + 2);
+                QImage surface(
+                    QSize(qRound(viewport.width() * dpr), qRound(viewport.height() * dpr)),
+                    QImage::Format_ARGB32_Premultiplied);
+                surface.setDevicePixelRatio(dpr);
+                surface.fill(Qt::black);
+                QPainter painter(&surface);
+                painter.setRenderHint(QPainter::Antialiasing, true);
+                painter.setClipRect(viewport);
+                renderer.renderBeforeCanvas(
+                    painter,
+                    SnowCanvasRenderContext{viewport, QRegion(viewport), QTransform(), dpr});
+                require(painter.testRenderHint(QPainter::Antialiasing),
+                        "surface clearing must preserve shape antialiasing");
+                painter.end();
+                for (int y = 0; y < surface.height(); ++y)
+                    for (int x = 0; x < surface.width(); ++x)
+                        require(surface.pixelColor(x, y).alpha() == 0,
+                                "surface clearing must fully replace every covered physical pixel");
+            }
+        }
+    }
+}
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+void pinnedTransparentPhysicalEdges(bool liveSurface) {
+    require(QGuiApplication::platformName() == QStringLiteral("windows"),
+            "native transparency regression requires the Windows platform");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "transparent edge fixture needs a screen");
+    const QColor backdropColor(40, 180, 90);
+    QWidget backdrop(nullptr, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    QPalette palette;
+    palette.setColor(QPalette::Window, backdropColor);
+    backdrop.setPalette(palette);
+    backdrop.setAutoFillBackground(true);
+    backdrop.setGeometry(QRect(screen->geometry().topLeft() + QPoint(100, 100), QSize(1400, 1100)));
+    backdrop.show();
+    waitForUi(30);
+    // Include the reported 1145x922 pin and adjacent rounding cases. Both its
+    // canvas origin and native position are deliberately off the DIP grid.
+    for (const QSize extent : {QSize(1145, 922), QSize(321, 181), QSize(322, 182), QSize(323, 183),
+                               QSize(324, 184), QSize(325, 185)}) {
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        auto config = clickThroughTestConfig(*screen);
+        QImage source(extent, QImage::Format_RGB32);
+        source.fill(Qt::white);
+        const ScreenshotResultStyle style{34, 0, QColor(0x33, 0x33, 0x33)};
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(120, 120), extent);
+        config.nativeGeometry.translate(1, 0);
+        config.initialWindowSize = extent;
+        config.canvasSourceRect = QRectF(QPointF(1083, 759), QSizeF(extent));
+        config.contentCanvasRect = config.canvasSourceRect;
+        config.surfaceCanvasRect = config.canvasSourceRect;
+        if (liveSurface)
+            config.resultStyle = style;
+        config.imageSource = ScreenshotImageSource::fromImage(
+            liveSurface ? source : ScreenshotResultCompositor::compose(source, style),
+            config.canvasSourceRect);
+        config.borderAppearance = screenshotSelectionBorderAppearance(extent, style);
+        config.checkerboardEnabled = false;
+        require(window.present(config), "transparent edge fixture must present");
+        waitForUi(30);
+        const qreal dpr = window.devicePixelRatioF();
+        const auto verifyCorners = [&](const QImage& image, bool desktop) {
+            require(image.width() >= extent.width() && image.height() >= extent.height(),
+                    "raster must cover the physical client");
+            for (int y = 0; y < 12; ++y) {
+                for (int x = 0; x < 4; ++x) {
+                    for (const QPoint point :
+                         {QPoint(x, y), QPoint(extent.width() - 1 - x, y),
+                          QPoint(x, extent.height() - 1 - y),
+                          QPoint(extent.width() - 1 - x, extent.height() - 1 - y)}) {
+                        const QColor pixel = image.pixelColor(point);
+                        if (desktop ? pixel != backdropColor : pixel.alpha() != 0) {
+                            throw std::runtime_error(
+                                QStringLiteral("transparent edge at %1,%2: extent=%3x%4 "
+                                               "DPR=%5 rgba=%6 desktop=%7 live=%8")
+                                    .arg(point.x())
+                                    .arg(point.y())
+                                    .arg(extent.width())
+                                    .arg(extent.height())
+                                    .arg(dpr)
+                                    .arg(pixel.name(QColor::HexArgb))
+                                    .arg(desktop)
+                                    .arg(liveSurface)
+                                    .toStdString());
+                        }
+                    }
+                }
+            }
+        };
+        const auto verifyPublished = [&] {
+            auto* store = window.backingStore();
+            require(store && store->paintDevice() &&
+                        store->paintDevice()->devType() == QInternal::Image,
+                    "transparent pin must have a raster backing store");
+            verifyCorners(*static_cast<const QImage*>(store->paintDevice()), false);
+            require(SetWindowPos(toNativeHwnd(window.winId()), HWND_TOPMOST, 0, 0, 0, 0,
+                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE,
+                    "transparent fixture must be above its backdrop");
+            require(SUCCEEDED(DwmFlush()), "transparent fixture must reach the compositor");
+            verifyCorners(capturePresentedPixels(window.currentNativeGeometry()), true);
+        };
+        verifyPublished();
+        window.update(QRect(window.width() - 1, 0, 1, window.height()));
+        waitForUi(30);
+        verifyPublished();
+        window.close();
+    }
+}
+#endif
+
 void pinnedOddPixelExtentRemainsSharp() {
     QScreen* screen = QGuiApplication::primaryScreen();
     for (const QSize extent : {QSize(321, 181), QSize(1000, 667), QSize(667, 1000), QSize(868, 936),
@@ -10797,6 +10989,17 @@ int main(int argc, char* argv[]) {
             pinnedPhysicalAuthoritySurvivesObservations();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--transparent-edges-only"))) {
+            transparentSurfaceClearReplacesEveryPixel();
+            return 0;
+        }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (app.arguments().contains(QStringLiteral("--native-transparent-edges-only"))) {
+            pinnedTransparentPhysicalEdges(false);
+            pinnedTransparentPhysicalEdges(true);
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--pixel-alignment-only"))) {
             pinnedOddPixelExtentRemainsSharp();
             SnowCanvasRuntime pixelRuntime;

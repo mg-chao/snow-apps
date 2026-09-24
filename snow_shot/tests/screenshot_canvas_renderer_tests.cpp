@@ -23,6 +23,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "theme/theme_manager.h"
+#include "widgets/checkerboard.h"
 #include "widgets/message.h"
 
 #include <QApplication>
@@ -584,14 +585,26 @@ void pinnedCheckerboardStaysBehindTransparentPixels() {
     };
 
     renderer.setPinnedCheckerboardEnabled(true);
-    const QImage checker = paint();
-    const QImage& tile = ScreenshotSelectionShadowRenderer::checkerboardTile();
-    require(tile.size() == QSize(12, 12) && checker.pixelColor(8, 8) == tile.pixelColor(8, 8) &&
-                checker.pixelColor(14, 8) == tile.pixelColor(2, 8) &&
-                checker.pixelColor(8, 8) != checker.pixelColor(14, 8),
-            "pinned transparent pixels must reveal the cached preview tile");
-    require(checker.pixelColor(2, 8) == QColor(42, 84, 126),
-            "the checkerboard must remain behind opaque screenshot pixels");
+    auto& themeManager = adqt::theme::ThemeManager::instance();
+    const auto originalScheme = themeManager.config().scheme;
+    QColor lightCell;
+    for (const auto scheme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+        themeManager.setColorScheme(scheme);
+        const QImage checker = paint();
+        const QImage tile = adqt::widgets::themedCheckerboardTile(&canvas);
+        require(tile.size() == QSize(12, 12) && checker.pixelColor(8, 8) == tile.pixelColor(8, 8) &&
+                    checker.pixelColor(14, 8) == tile.pixelColor(2, 8) &&
+                    checker.pixelColor(8, 8) != checker.pixelColor(14, 8),
+                "pinned transparent pixels must reveal the theme checkerboard");
+        require(checker.pixelColor(2, 8) == QColor(42, 84, 126),
+                "the checkerboard must remain behind opaque screenshot pixels");
+        if (scheme == adqt::theme::ThemeScheme::Light)
+            lightCell = checker.pixelColor(8, 8);
+        else
+            require(checker.pixelColor(8, 8).lightness() < lightCell.lightness(),
+                    "dark pins must use a darker checkerboard");
+    }
+    themeManager.setColorScheme(originalScheme);
 
     renderer.setPinnedCheckerboardEnabled(false);
     require(paint().pixelColor(8, 8).alpha() == 0,
@@ -1618,8 +1631,9 @@ void hoveredSelectionToolbarHidesBorderAndRendersShadowPreview() {
             "selection shadow width should be retained by the renderer");
 
     const QImage preview = renderCanvas(canvas);
-    const QColor checkerLight(QStringLiteral("#ffffff"));
-    const QColor checkerDark(QStringLiteral("#f0f0f0"));
+    const QImage tile = adqt::widgets::themedCheckerboardTile(&canvas);
+    const QColor checkerLight = tile.pixelColor(0, 7);
+    const QColor checkerDark = tile.pixelColor(7, 7);
     require(preview.pixelColor(20, 40) == screenshotColor,
             "hovering the selection toolbar should hide the selection border");
     require(preview.pixelColor(17, 17) == checkerLight || preview.pixelColor(17, 17) == checkerDark,
@@ -1630,6 +1644,18 @@ void hoveredSelectionToolbarHidesBorderAndRendersShadowPreview() {
             "the shadow should composite over the transparency checkerboard");
     require(preview.pixelColor(12, 40).blue() < shadow.blue(),
             "pixels beyond the expanded mask should remain dimmed");
+
+    auto& themeManager = adqt::theme::ThemeManager::instance();
+    const auto originalScheme = themeManager.config().scheme;
+    themeManager.setColorScheme(adqt::theme::ThemeScheme::Dark);
+    const QImage darkTile = adqt::widgets::themedCheckerboardTile(&canvas);
+    const QImage darkPreview = renderCanvas(canvas);
+    require(darkPreview.pixelColor(17, 17) == darkTile.pixelColor(0, 7) ||
+                darkPreview.pixelColor(17, 17) == darkTile.pixelColor(7, 7),
+            "rounded shadow preview must use the dark checkerboard");
+    require(darkPreview.pixelColor(17, 17).lightness() < preview.pixelColor(17, 17).lightness(),
+            "dark rounded shadow preview must be darker than light preview");
+    themeManager.setColorScheme(originalScheme);
 
     renderer.setSelectionToolbarHovered(false);
     require(!renderer.selectionToolbarHovered(),
@@ -4289,22 +4315,28 @@ void compoundSelectionDamageCoversChangedPixels() {
     after.confirmedRegion = *after.region;
     after.bounds = after.region->boundingRect();
 
-    for (const bool hovered : {false, true}) {
-        before.toolbarHovered = hovered;
-        after.toolbarHovered = hovered;
-        renderer.applySelectionState(before);
-        const QImage oldFrame = renderCanvas(canvas);
-        renderer.applySelectionState(after);
-        const QImage newFrame = renderCanvas(canvas);
-        const QRegion dirty = planScreenshotSelectionDamage(before, after, canvas.rect(),
-                                                            canvas.canvasToViewTransform(), true);
-        requireChangedPixelsCoveredByDirtyRegion(
-            oldFrame, newFrame, dirty, "compound movement damage must cover every changed pixel");
-        require(regionArea(dirty) < 480 * 400 / 3,
-                "compound movement must not repaint the full selection bounds");
-        if (hovered) {
-            require(renderer.selectionRegionHoverCacheBytes() > 0,
-                    "hover preview should retain a translated region shadow");
+    for (const int radius : {0, 8}) {
+        before.cornerRadius = radius;
+        after.cornerRadius = radius;
+        for (const bool hovered : {false, true}) {
+            before.toolbarHovered = hovered;
+            after.toolbarHovered = hovered;
+            renderer.applySelectionState(before);
+            const QImage oldFrame = renderCanvas(canvas);
+            renderer.applySelectionState(after);
+            const QImage newFrame = renderCanvas(canvas);
+            const QRegion dirty = planScreenshotSelectionDamage(
+                before, after, canvas.rect(), canvas.canvasToViewTransform(), true);
+            requireChangedPixelsCoveredByDirtyRegion(
+                oldFrame, newFrame, dirty,
+                "compound movement damage must cover every changed pixel");
+            if (radius == 0)
+                require(regionArea(dirty) < 480 * 400 / 3,
+                        "compound movement must not repaint the full selection bounds");
+            if (hovered) {
+                require(renderer.selectionRegionHoverCacheBytes() > 0,
+                        "hover preview should retain a translated region shadow");
+            }
         }
     }
 
@@ -4333,6 +4365,29 @@ void compoundSelectionDamageCoversChangedPixels() {
         planScreenshotSelectionDamage(noSelection, draftOnly, canvas.rect(),
                                       canvas.canvasToViewTransform(), true),
         "draft-only state must invalidate its painted line");
+    QPainterPath ellipse;
+    ellipse.addEllipse(QRectF(60, 50, 320, 280));
+    const auto confirmed = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve);
+    ScreenshotSelectionVisualState previewBefore;
+    previewBefore.confirmedRegion = confirmed;
+    previewBefore.marquee = QRectF(350, 170, 24, 24);
+    previewBefore.region = confirmed.united(QRect(350, 170, 24, 24));
+    previewBefore.bounds = QRectF(previewBefore.region->boundingRect());
+    previewBefore.present = true;
+    previewBefore.shadowWidth = 8;
+    ScreenshotSelectionVisualState previewAfter = previewBefore;
+    previewAfter.marquee = QRectF(380, 170, 24, 24);
+    previewAfter.region = confirmed.united(QRect(380, 170, 24, 24));
+    previewAfter.bounds = QRectF(previewAfter.region->boundingRect());
+    renderer.applySelectionState(previewBefore);
+    const QImage previewOldFrame = renderCanvas(canvas);
+    renderer.applySelectionState(previewAfter);
+    const QImage previewNewFrame = renderCanvas(canvas);
+    const QRegion previewDamage = planScreenshotSelectionDamage(
+        previewBefore, previewAfter, canvas.rect(), canvas.canvasToViewTransform(), true);
+    requireChangedPixelsCoveredByDirtyRegion(
+        previewOldFrame, previewNewFrame, previewDamage,
+        "custom additive preview damage must cover every changed pixel");
     canvas.setCustomRenderer(nullptr);
 }
 

@@ -145,6 +145,17 @@ if(ADQT_BUILD_TESTS)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
+    add_executable(adqt-checkerboard-tests
+        packages/ant_design_qt/tests/checkerboard_tests.cpp)
+    target_link_libraries(adqt-checkerboard-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-checkerboard-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-checkerboard-tests COMMAND adqt-checkerboard-tests)
+    set_tests_properties(adqt-checkerboard-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 30)
     add_executable(adqt-context-menu-tests
         packages/ant_design_qt/tests/context_menu_tests.cpp)
     target_link_libraries(adqt-context-menu-tests PRIVATE adqt::widgets Qt6::Test)
