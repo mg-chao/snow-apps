@@ -1,3 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M5 16.667V3.333L10 15l5-11.667v13.334" stroke-width="1.25"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <path d="M224 800V224l288 384 288-384v576"/>
+  </g>
 </svg>

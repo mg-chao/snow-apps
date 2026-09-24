@@ -140,7 +140,10 @@ void recaptureIconUsesThemeColor() {
         for (int y = 0; y < image.height(); ++y) {
             for (int x = 0; x < image.width(); ++x) {
                 const QColor pixel = image.pixelColor(x, y);
-                require(pixel.alpha() != 255 || pixel.rgb() == color.rgb(),
+                // Fractional SVG transforms can round an opaque overlap by one color level.
+                require(pixel.alpha() != 255 || (std::abs(pixel.red() - color.red()) <= 1 &&
+                                                 std::abs(pixel.green() - color.green()) <= 1 &&
+                                                 std::abs(pixel.blue() - color.blue()) <= 1),
                         "Recapture must not retain any fixed SVG colors");
             }
         }

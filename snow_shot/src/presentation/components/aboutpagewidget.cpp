@@ -334,7 +334,7 @@ struct AboutPageWidget::Ui {
     std::array<AdDivider*, 6> featureSeparators{};
     std::array<adqt::icons::IconRef, 6> featureRefs{
         custom::twotone::ScreenshotFeature(),  custom::outlined::ToolFreeDraw(),
-        custom::outlined::ToolRecognizeText(), custom::outlined::RecordScreen(),
+        custom::outlined::TextRecognition(),  custom::outlined::RecordScreen(),
         custom::outlined::PinToScreen(),       outlined::History()};
     AdDivider* featureDivider = nullptr;
     QFrame* versionPanel = nullptr;

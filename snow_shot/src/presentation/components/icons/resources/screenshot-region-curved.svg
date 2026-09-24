@@ -1,3 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round">
-  <path d="M180 580C112 348 280 140 476 180C624 212 608 348 760 364C948 384 892 656 720 780C524 924 240 788 180 580Z"/>
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <path d="M180 580C112 348 280 140 476 180C624 212 608 348 760 364C948 384 892 656 720 780C524 924 240 788 180 580Z"/>
+  </g>
 </svg>

@@ -117,7 +117,7 @@ SettingsItemDefinition screenshotOcrItem() {
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "OCR")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Recognize text"))},
         GlobalShortcutAction::ScreenshotOcr, QStringLiteral("global_shortcuts/screenshot_ocr"),
-        []() { return custom_outlined_icons::ToolRecognizeText(); });
+        []() { return custom_outlined_icons::TextRecognition(); });
 }
 
 SettingsItemDefinition screenshotTranslationItem() {
@@ -1578,7 +1578,7 @@ QVector<SettingsItemDefinition> screenshotOtherShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Screenshot,
                           QStringLiteral("text_recognition"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"),
-                          []() { return custom_outlined_icons::ToolRecognizeText(); }),
+                          []() { return custom_outlined_icons::TextRecognition(); }),
         localShortcutItem(SettingsLocalShortcutScope::Screenshot,
                           QStringLiteral("text_translation"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
@@ -1663,7 +1663,7 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
                           QStringLiteral("show_text_recognition_results"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Show text recognition results"),
-                          []() { return custom_outlined_icons::ToolRecognizeText(); }),
+                          []() { return custom_outlined_icons::TextRecognition(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("drawing_mode"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing mode"),
                           []() { return outlined_icons::Edit(); }),
@@ -3103,7 +3103,7 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
           quick(QStringLiteral("quick.screenshot-ocr"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"),
                 GlobalShortcutAction::ScreenshotOcr,
-                []() { return custom_outlined_icons::ToolRecognizeText(); }),
+                []() { return custom_outlined_icons::TextRecognition(); }),
           quick(QStringLiteral("quick.screenshot-translation"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
                 GlobalShortcutAction::ScreenshotTranslation,

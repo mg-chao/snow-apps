@@ -3750,6 +3750,11 @@ void actionStacksKeepEnabledAlternativesReachable() {
     auto* ocr = popoverButtonWithTooltip(popover, "Text recognition");
     auto* record = popoverButtonWithTooltip(popover, "Record screen");
     require(ocr && record, "the mixed stack must expose both actions");
+    require(adqt::icons::describeIcon(trigger->iconRef()).key.name ==
+                    QStringLiteral("text-recognition") &&
+                adqt::icons::describeIcon(ocr->iconRef()).key.name ==
+                    QStringLiteral("text-recognition"),
+            "the text recognition stack trigger and option must use the text recognition icon");
     int ocrRequests = 0;
     int recordRequests = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::ocrRequested, [&]() { ++ocrRequests; });
@@ -3858,6 +3863,15 @@ void pinnedActionLayoutUsesGenericStacks() {
     };
     require(positions() == expected.positions,
             "pinned rendering must preserve configured positions");
+    const auto actionButtons = mainActionToolbarButtons(palette);
+    const auto ocrButton = std::find_if(
+        actionButtons.cbegin(), actionButtons.cend(), [&ocr](const adqt::widgets::AdButton* button) {
+            return button->property("screenshotToolbarItemId").toString() == ocr;
+        });
+    require(ocrButton != actionButtons.cend() &&
+                adqt::icons::describeIcon((*ocrButton)->iconRef()).key.name ==
+                    QStringLiteral("text-recognition"),
+            "the pinned text recognition tool must keep the text recognition icon after layout");
     auto* trigger = mainActionToolbarButtons(palette).first();
     require(trigger->property("screenshotToolbarItemId").toString() == table,
             "legacy Barcode preference must not replace the configured Table entry");

@@ -5183,7 +5183,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
     }
 
     if (options.showOcrTool) {
-        m_ocrButton = addToolButton("Text recognition", custom_outlined_icons::ToolRecognizeText());
+        m_ocrButton = addToolButton("Text recognition", custom_outlined_icons::TextRecognition());
         applyScreenshotShortcutTooltip(m_ocrButton, QStringLiteral("Text recognition"),
                                        QStringLiteral("text_recognition"));
         m_ocrButton->setBusyIndicatorPresentation(

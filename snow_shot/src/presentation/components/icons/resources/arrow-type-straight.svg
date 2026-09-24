@@ -1,1 +1,6 @@
-<svg aria-hidden="true" focusable="false" role="img" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><g><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 18l12 -12"/><path d="M18 10v-4h-4"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <path d="M240 784L784 240"/>
+    <path d="M512 240H784V512"/>
+  </g>
+</svg>

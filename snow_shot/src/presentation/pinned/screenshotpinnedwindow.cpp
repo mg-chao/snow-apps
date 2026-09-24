@@ -2491,7 +2491,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(saveAction, &QAction::triggered, this, &ScreenshotPinnedWindow::saveAsFile);
 
     m_ocrAction =
-        m_contextMenu->addItem(tr("Recognizing text"), custom_outlined_icons::ToolRecognizeText());
+        m_contextMenu->addItem(tr("Recognizing text"), custom_outlined_icons::TextRecognition());
     setActionTranslationSource(m_ocrAction, "Recognizing text");
     m_ocrAction->setObjectName(QStringLiteral("screenshotPinnedOcrAction"));
     m_ocrAction->setCheckable(true);

@@ -1,1 +1,6 @@
-<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg t="1785572334080" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="12789" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="200"><path data-adqt-slot="primary" d="M33.450667 3.413333h102.4v956.8256H33.450667V3.413333z m887.330133 1.8432h102.4v957.713067h-102.4V5.188267z m-425.301333 200.704h108.9536l223.6416 584.977067h-102.4l-53.248-146.6368H427.485867l-53.248 146.6368h-102.4l223.6416-584.9088z m-39.3216 359.697067H643.754667L552.004267 309.248h-3.2768L456.157867 565.6576z" fill="#333333" p-id="12790"></path></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <path d="M136 128h56a8 8 0 0 1 8 8v752a8 8 0 0 1-8 8h-56a8 8 0 0 1-8-8V136a8 8 0 0 1 8-8Zm696 0h56a8 8 0 0 1 8 8v752a8 8 0 0 1-8 8h-56a8 8 0 0 1-8-8V136a8 8 0 0 1 8-8Z"/>
+    <path d="M481.6 256h60.8a8 8 0 0 1 7.5 5.2l185.2 496a8 8 0 0 1-7.5 10.8h-63.2a8 8 0 0 1-7.6-5.3L609.6 632H414.4l-47.2 130.7a8 8 0 0 1-7.6 5.3h-63.2a8 8 0 0 1-7.5-10.8l185.2-496a8 8 0 0 1 7.5-5.2ZM440.4 560h143.2L512 361.6 440.4 560Z"/>
+  </g>
+</svg>

@@ -34,7 +34,7 @@ adqt::icons::IconRef actionIcon(settings::SettingsGlobalMouseAction action) {
     case settings::SettingsGlobalMouseAction::ScreenshotFixed:
         return custom_outlined_icons::PinToScreen();
     case settings::SettingsGlobalMouseAction::ScreenshotOcr:
-        return custom_outlined_icons::ToolRecognizeText();
+        return custom_outlined_icons::TextRecognition();
     case settings::SettingsGlobalMouseAction::ScreenshotTranslation:
         return custom_outlined_icons::OcrTranslate();
     case settings::SettingsGlobalMouseAction::ScreenshotSave:

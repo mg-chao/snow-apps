@@ -1495,7 +1495,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
             : nullptr;
     require(ocrShortcut != nullptr && ocrShortcut->iconFactory &&
                 ocrShortcut->iconFactory() ==
-                    snow_shot::presentation::icons::custom::outlined::ToolRecognizeText(),
+                    snow_shot::presentation::icons::custom::outlined::TextRecognition(),
             "Text recognition quick action must use the screenshot toolbar OCR icon");
     const auto* translationItem =
         catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("screenshot"),

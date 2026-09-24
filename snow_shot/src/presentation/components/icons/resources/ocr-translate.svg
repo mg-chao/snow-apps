@@ -1,3 +1,31 @@
-<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true">
-  <path d="M85.312 213.312a128 128 0 0 1 128-128h85.376a128 128 0 0 1 128 128v256H341.312V362.688H170.688v106.624H85.312v-256z m85.376 64h170.624v-64a42.688 42.688 0 0 0-42.624-42.624H213.312a42.688 42.688 0 0 0-42.624 42.624v64z m341.312-128h256a128 128 0 0 1 128 128V384h-85.312V277.312A42.688 42.688 0 0 0 768 234.688H512V149.312z m256 341.376v64h170.688V640h-45.312a340.224 340.224 0 0 1-93.44 194.688c29.696 12.032 62.08 18.624 96.064 18.624h42.688v85.376H896c-62.208 0-120.448-16.64-170.688-45.696a339.776 339.776 0 0 1-170.624 45.696H512v-85.376h42.688c33.92 0 66.368-6.592 96-18.56a341.888 341.888 0 0 1-63.168-91.136l-18.304-38.528 77.056-36.608 18.368 38.528c14.72 30.976 35.456 58.56 60.672 81.152A255.616 255.616 0 0 0 807.104 640H512V554.688h170.688v-64H768z m-512 64v256c0 23.552 19.072 42.624 42.688 42.624h106.624v85.376H298.688a128 128 0 0 1-128-128v-256H256z"/>
+<!--
+Translation symbol adapted from Ant Design Icons outlined/translation.svg.
+
+MIT License
+
+Copyright (c) 2018-present Ant UED, https://xtech.antfin.com/
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <path d="M140 188h584v164h76V144c0-17.7-14.3-32-32-32H96c-17.7 0-32 14.3-32 32v736c0 17.7 14.3 32 32 32h544v-76H140V188z"/>
+    <path d="M414.3 256h-60.6c-3.4 0-6.4 2.2-7.6 5.4L219 629.4c-.3.8-.4 1.7-.4 2.6 0 4.4 3.6 8 8 8h55.1c3.4 0 6.4-2.2 7.6-5.4L322 540h196.2L422 261.4c-1.3-3.2-4.3-5.4-7.7-5.4zm12.4 228h-85.5L384 360.2 426.7 484zM936 528H800v-93c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v93H592c-13.3 0-24 10.7-24 24v176c0 13.3 10.7 24 24 24h136v152c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V752h136c13.3 0 24-10.7 24-24V552c0-13.3-10.7-24-24-24zM728 680h-88v-80h88v80zm160 0h-88v-80h88v80z"/>
+  </g>
 </svg>

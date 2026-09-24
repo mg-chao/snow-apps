@@ -1,3 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linejoin="round">
-  <rect x="148" y="212" width="728" height="600" rx="8"/>
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <rect x="148" y="212" width="728" height="600" rx="8"/>
+  </g>
 </svg>

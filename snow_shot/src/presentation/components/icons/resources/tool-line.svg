@@ -1,1 +1,5 @@
-<svg viewBox="64 64 896 896" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M226.4576 722.7904l485.12-485.12 72.3968 72.3968-485.12 485.12z"></path><path d="M783.36 240.64m-102.4 0a102.4 102.4 0 1 0 204.8 0 102.4 102.4 0 1 0-204.8 0Z"></path><path d="M240.64 783.36m-102.4 0a102.4 102.4 0 1 0 204.8 0 102.4 102.4 0 1 0-204.8 0Z"></path></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <path d="m776 173-603 603a8 8 0 0 0 0 11l40 40a8 8 0 0 0 11 0l603-603a8 8 0 0 0 0-11l-40-40a8 8 0 0 0-11 0Z"/>
+  </g>
+</svg>

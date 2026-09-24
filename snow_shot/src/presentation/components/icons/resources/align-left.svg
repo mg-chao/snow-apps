@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-  <g stroke-width="1.25">
-    <path d="M3.333 3.333v13.334"/>
-    <path d="M15.208 4.792H8.125c-.92 0-1.667.746-1.667 1.666v.417c0 .92.747 1.667 1.667 1.667h7.083c.92 0 1.667-.747 1.667-1.667v-.417c0-.92-.746-1.666-1.667-1.666ZM12.516 11.458H8.125c-.92 0-1.667.746-1.667 1.667v.417c0 .92.747 1.666 1.667 1.666h4.391c.92 0 1.667-.746 1.667-1.666v-.417c0-.92-.746-1.667-1.667-1.667Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <path d="M136 128H184a8 8 0 0 1 8 8V888a8 8 0 0 1 -8 8H136a8 8 0 0 1 -8 -8V136a8 8 0 0 1 8 -8Z"/>
+    <path d="M328 256H888a8 8 0 0 1 8 8V472a8 8 0 0 1 -8 8H328a8 8 0 0 1 -8 -8V264a8 8 0 0 1 8 -8ZM384 320V416H832V320Z"/>
+    <path d="M328 608H696a8 8 0 0 1 8 8V824a8 8 0 0 1 -8 8H328a8 8 0 0 1 -8 -8V616a8 8 0 0 1 8 -8ZM384 672V768H640V672Z"/>
   </g>
 </svg>

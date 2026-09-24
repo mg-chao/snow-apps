@@ -1,3 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-adqt-slot="primary" fill="currentColor">
-  <path d="M284.444444 279.552L677.831111 512 284.444444 744.448V279.552zM227.555556 113.777778a56.888889 56.888889 0 0 0-56.888889 56.888889v682.666666a56.888889 56.888889 0 0 0 56.888889 56.888889l601.258666-355.328a49.834667 49.834667 0 0 0 0-85.788444L227.555556 113.777778z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <circle cx="512" cy="512" r="352"/>
+    <path d="m424 350 248 162-248 162V350Z" fill="currentColor" stroke="none"/>
+  </g>
 </svg>

@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-adqt-slot="primary" fill="currentColor">
-  <path d="M511.991992 511.991992m-239.658893 0a239.658893 239.658893 0 1 0 479.317786 0 239.658893 239.658893 0 1 0-479.317786 0Z"/>
-  <path d="M511.991992 1024C229.680447 1024 0 794.319553 0 511.991992S229.680447 0 511.991992 0s511.991992 229.680447 511.991991 511.991992-229.680447 512.008008-511.991991 512.008008z m0-946.911298c-239.819061 0-434.855239 195.084229-434.855239 434.90329s195.036178 434.935323 434.855239 434.935323 434.855239-195.116262 434.855239-434.935323S751.811052 77.088702 511.991992 77.088702z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <g transform="translate(-61.44 -61.44) scale(1.12)">
+    <circle cx="512" cy="512" r="352"/>
+    <circle cx="512" cy="512" r="132" fill="currentColor" stroke="none"/>
+  </g>
 </svg>
