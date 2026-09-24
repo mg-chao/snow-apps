@@ -205,6 +205,13 @@ Qt::KeyboardModifiers normalizedEventModifiers(const QKeyEvent& event,
     return modifiers;
 }
 
+bool matchesLogicalKey(const ShortcutIdentity& expected, Qt::Key eventKey) {
+    // Qt may report Shift+Tab as Backtab even when the binding stores Tab.
+    return expected.key == eventKey ||
+           (expected.key == Qt::Key_Tab && eventKey == Qt::Key_Backtab &&
+            expected.modifiers.testFlag(Qt::ShiftModifier));
+}
+
 } // namespace
 
 QString canonicalPortableText(const QString& text, bool allowModifierOnlyShift) {
@@ -538,7 +545,7 @@ bool shortcutMatchesEvent(const ShortcutBinding& binding, const QKeyEvent& event
         if (event.nativeVirtualKey() != *expected.physicalKey) {
             return false;
         }
-    } else if (expected.key != static_cast<Qt::Key>(event.key())) {
+    } else if (!matchesLogicalKey(expected, static_cast<Qt::Key>(event.key()))) {
         return false;
     }
 
@@ -553,7 +560,7 @@ bool shortcutReleaseMatchesEvent(const ShortcutBinding& binding, const QKeyEvent
     if (expected.physicalKey.has_value() && cocoaEvent(event)) {
         return event.nativeVirtualKey() == *expected.physicalKey;
     }
-    return expected.key == static_cast<Qt::Key>(event.key());
+    return matchesLogicalKey(expected, static_cast<Qt::Key>(event.key()));
 }
 
 quint64 shortcutKeyToken(const ShortcutBinding& binding) {

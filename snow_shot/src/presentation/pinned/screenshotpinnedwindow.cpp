@@ -4425,7 +4425,7 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
     ScreenshotPinnedViewportExportSource request{
         std::move(documentSession), m_transformedImage,     m_backgroundCanvasRect,
         contentPixelSize,           appearance.resultStyle, m_runtime.smartEraseSnapshot(),
-        appearance.outputOpacity,
+        appearance.outputOpacity,   {},
     };
     request.bakedSelectionPath = bakedSelectionPath(contentPixelSize);
     invalidatePendingCopy();
@@ -4544,7 +4544,8 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
                                                  m_transformedImage.size(),
                                                  appearance.resultStyle,
                                                  m_runtime.smartEraseSnapshot(),
-                                                 appearance.outputOpacity};
+                                                 appearance.outputOpacity,
+                                                 {}};
     request.bakedSelectionPath = bakedSelectionPath(m_transformedImage.size());
     return std::make_shared<ScreenshotExportArtifact>(
         ScreenshotExportSource::fromPinnedViewport(std::move(request)));

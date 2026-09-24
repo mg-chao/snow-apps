@@ -186,6 +186,24 @@ class MacOSOcrAssets(unittest.TestCase):
         self.assertFalse((self.runtime / dependency.name).exists())
         self.assertTrue(worker.is_file())
 
+    def test_development_cleanup_removes_versioned_library_symlink_chain(self):
+        versioned = self.runtime / 'libz.1.3.1.zlib-ng.dylib'
+        versioned.write_bytes(b'temporary library')
+        (self.runtime / 'libz.1.dylib').symlink_to(versioned.name)
+        (self.runtime / 'libz.dylib').symlink_to('libz.1.dylib')
+        retained = self.runtime / 'libonnxruntime-link.dylib'
+        retained.symlink_to('libonnxruntime.dylib')
+        marker = self.runtime / 'assets/ocr/development-libraries.json'
+        ocr.atomic_json(marker, [versioned.name])
+
+        ocr.remove_development_libraries(self.runtime)
+
+        for name in (versioned.name, 'libz.1.dylib', 'libz.dylib'):
+            self.assertFalse((self.runtime / name).is_symlink())
+            self.assertFalse((self.runtime / name).exists())
+        self.assertTrue(retained.is_symlink())
+        self.assertFalse(marker.exists())
+
     def test_native_closure_is_copied_and_rewritten_without_build_rpaths(self):
         app = self.root / 'Native App.app'
         worker = app / 'Contents/MacOS/snow_shot'

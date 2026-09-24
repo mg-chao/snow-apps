@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include <QApplication>
@@ -192,6 +193,19 @@ void priorityAndFallthroughAreDeterministic() {
     require(sendKey(&child, QEvent::KeyPress, Qt::Key_J) && firstEqualCount == 1 &&
                 secondEqualCount == 1,
             "equal-priority shortcuts must dispatch in registration order");
+}
+
+void shiftedTabMatchesBacktabEvents() {
+    const auto binding =
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Alt+Shift+Tab"));
+    QKeyEvent press(QEvent::KeyPress, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
+    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
+    QKeyEvent plainTab(QEvent::KeyPress, Qt::Key_Tab, Qt::AltModifier);
+    require(snow_shot::shortcuts::shortcutMatchesEvent(binding, press) &&
+                snow_shot::shortcuts::shortcutReleaseMatchesEvent(binding, release),
+            "Shift+Tab bindings must recognize Qt Backtab press and release events");
+    require(!snow_shot::shortcuts::shortcutMatchesEvent(binding, plainTab),
+            "an unshifted Tab must not match a Shift+Tab binding");
 }
 
 void scopeRepeatUpdatesAndLifetimeAreEnforced() {
@@ -1140,6 +1154,7 @@ int main(int argc, char** argv) {
     finalResumeRecoversKeysObservedDuringSuspension();
     recoveredPressSurvivesCrossManagerFallthrough();
     priorityAndFallthroughAreDeterministic();
+    shiftedTabMatchesBacktabEvents();
     scopeRepeatUpdatesAndLifetimeAreEnforced();
     bindingsCanExplicitlyHandleTransientToolWindows();
     textGuardsLeaveInputUntouched();

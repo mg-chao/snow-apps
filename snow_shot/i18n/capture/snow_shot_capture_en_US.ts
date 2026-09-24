@@ -164,8 +164,8 @@
     <context>
         <name>ScreenshotRegionTypeControl</name>
         <message>
-            <source>Ctrl+Tab to switch region type</source>
-            <translation>Ctrl+Tab to switch region type</translation>
+            <source>%1 to switch region type</source>
+            <translation>%1 to switch region type</translation>
         </message>
         <message>
             <source>Curve region</source>

@@ -158,14 +158,19 @@ class ScreenshotRegionGeometry {
     // Implicitly shared allocations may also belong to other snapshots.
     qsizetype retainedBytesEstimate() const {
         if (!m_vector)
-            return sizeof(*this) + m_rectangles.rectCount() * sizeof(QRect);
+            return static_cast<qsizetype>(sizeof(*this)) +
+                   static_cast<qsizetype>(m_rectangles.rectCount()) *
+                       static_cast<qsizetype>(sizeof(QRect));
         QMutexLocker lock(&m_vector->mutex);
-        qsizetype bytes =
-            sizeof(*this) + sizeof(VectorData) + m_vector->operands.capacity() * sizeof(Operand);
+        qsizetype bytes = static_cast<qsizetype>(sizeof(*this)) +
+                          static_cast<qsizetype>(sizeof(VectorData)) +
+                          m_vector->operands.capacity() * static_cast<qsizetype>(sizeof(Operand));
         for (const auto& operand : m_vector->operands)
-            bytes += operand.path.capacity() * sizeof(QPainterPath::Element);
+            bytes += static_cast<qsizetype>(operand.path.capacity()) *
+                     static_cast<qsizetype>(sizeof(QPainterPath::Element));
         for (const auto& contour : m_vector->contours)
-            bytes += contour.path.capacity() * sizeof(QPainterPath::Element);
+            bytes += static_cast<qsizetype>(contour.path.capacity()) *
+                     static_cast<qsizetype>(sizeof(QPainterPath::Element));
         return bytes;
     }
 

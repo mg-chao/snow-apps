@@ -46,8 +46,8 @@ namespace storage = snow_shot::storage;
 namespace history_page = snow_shot::presentation::components::history_page;
 namespace thumbnail_cache = snow_shot::presentation::components::thumbnail_cache;
 
-constexpr int kPreviewWidth = 260;
-constexpr int kPreviewHeight = 156;
+constexpr int kPinnedPreviewWidth = 260;
+constexpr int kPinnedPreviewHeight = 156;
 
 QImage loadPinnedImage(storage::PinnedWindowRepository* repository, const QString& id) {
     const auto record = repository->loadRecord(id);
@@ -148,7 +148,7 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         }
         const QSize boundedSize = targetSize.isValid() && !targetSize.isEmpty()
                                       ? targetSize
-                                      : QSize(kPreviewWidth, kPreviewHeight);
+                                      : QSize(kPinnedPreviewWidth, kPinnedPreviewHeight);
         const QString cacheKey = id + u':' + QString::number(*revision) + u':' +
                                  QString::number(boundedSize.width()) + u'x' +
                                  QString::number(boundedSize.height());
@@ -715,13 +715,13 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
 
             auto* preview = new adqt::widgets::AdImage(row);
             preview->setObjectName(QStringLiteral("pinnedManagementPreview"));
-            preview->setFixedSize(kPreviewWidth, kPreviewHeight);
+            preview->setFixedSize(kPinnedPreviewWidth, kPinnedPreviewHeight);
             adqt::widgets::AdImage::SemanticStyles imageStyles;
             imageStyles.root.borderColor = QColor(Qt::transparent);
             preview->setSemanticStyles(imageStyles);
             preview->setLoadingPolicy(adqt::widgets::AdImage::LoadingPolicy::WhenVisible);
             preview->setDecodePolicy(adqt::widgets::AdImage::DecodePolicy::FitWidget);
-            preview->setPreferredImageSize(QSize(kPreviewWidth, kPreviewHeight));
+            preview->setPreferredImageSize(QSize(kPinnedPreviewWidth, kPinnedPreviewHeight));
             rowLayout->addWidget(preview, 0, Qt::AlignCenter);
             auto* viewer = new adqt::widgets::AdImageViewer(row);
             viewer->setOwnerWindow(preview);

@@ -72,8 +72,8 @@ namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlin
 namespace storage = snow_shot::storage;
 namespace styles = snow_shot::presentation::styles;
 
-constexpr int kPreviewWidth = 260;
-constexpr int kPreviewHeight = 156;
+constexpr int kHistoryPreviewWidth = 260;
+constexpr int kHistoryPreviewHeight = 156;
 // Reserve the empty-state stack before its first layout measurement is available.
 constexpr int kEmptyStateBaselineHeight = 260;
 
@@ -714,7 +714,7 @@ class HistoryEntryWidget final : public QFrame {
 
         m_carousel = new adqt::widgets::AdCarousel(this);
         m_carousel->setObjectName(QStringLiteral("screenshotHistoryImageCarousel"));
-        m_carousel->setFixedSize(kPreviewWidth, kPreviewHeight);
+        m_carousel->setFixedSize(kHistoryPreviewWidth, kHistoryPreviewHeight);
         m_carousel->setEffect(adqt::widgets::AdCarousel::Effect::Fade);
         m_carousel->setAutoplay(false);
         m_carousel->setDraggable(true);
@@ -758,7 +758,7 @@ class HistoryEntryWidget final : public QFrame {
             image->setViewer(m_viewer);
             image->setImageLoader(imageLoader);
             image->setPreviewRow(static_cast<int>(index));
-            image->setPreferredImageSize(QSize(kPreviewWidth, kPreviewHeight));
+            image->setPreferredImageSize(QSize(kHistoryPreviewWidth, kHistoryPreviewHeight));
             image->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
             image->setAltText(previewItems[index].altText);
             image->setSource(previewItems[index].source);
@@ -1011,8 +1011,8 @@ class HistoryEntryWidget final : public QFrame {
         const int availableWidth = parentWidget() != nullptr ? parentWidget()->width() : width();
         const bool wide = availableWidth >= history_page::kWideEntryBreakpoint;
         m_layout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
-        setMinimumHeight(wide ? kPreviewHeight + 32 : kPreviewHeight + 190);
-        m_carousel->setFixedWidth(wide ? kPreviewWidth : std::max(220, availableWidth - 36));
+        setMinimumHeight(wide ? kHistoryPreviewHeight + 32 : kHistoryPreviewHeight + 190);
+        m_carousel->setFixedWidth(wide ? kHistoryPreviewWidth : std::max(220, availableWidth - 36));
     }
 
     storage::CaptureHistoryRecord m_record;
@@ -1441,8 +1441,9 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
             }
         }
         const int responsiveEntryMinimumHeight =
-            m_entriesHost->width() >= history_page::kWideEntryBreakpoint ? kPreviewHeight + 32
-                                                                         : kPreviewHeight + 190;
+            m_entriesHost->width() >= history_page::kWideEntryBreakpoint
+                ? kHistoryPreviewHeight + 32
+                : kHistoryPreviewHeight + 190;
         m_entriesHost->setMinimumHeight(
             std::max(m_emptyStateMinimumHeight, responsiveEntryMinimumHeight));
         updateSelectionBar();
@@ -1452,8 +1453,8 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
 
     clearLayoutItems(m_entriesLayout);
     const int responsiveEntryMinimumHeight =
-        m_entriesHost->width() >= history_page::kWideEntryBreakpoint ? kPreviewHeight + 32
-                                                                     : kPreviewHeight + 190;
+        m_entriesHost->width() >= history_page::kWideEntryBreakpoint ? kHistoryPreviewHeight + 32
+                                                                     : kHistoryPreviewHeight + 190;
     m_entriesHost->setMinimumHeight(
         std::max(m_emptyStateMinimumHeight, responsiveEntryMinimumHeight));
     for (int index = firstIndex; index < lastIndex; ++index) {
@@ -1568,8 +1569,8 @@ void ScreenshotHistoryPageWidget::updateEmptyStateMinimumHeight() {
     }
     m_entriesLayout->activate();
     const int responsiveEntryMinimumHeight =
-        m_entriesHost->width() >= history_page::kWideEntryBreakpoint ? kPreviewHeight + 32
-                                                                     : kPreviewHeight + 190;
+        m_entriesHost->width() >= history_page::kWideEntryBreakpoint ? kHistoryPreviewHeight + 32
+                                                                     : kHistoryPreviewHeight + 190;
     m_emptyStateMinimumHeight =
         std::max({kEmptyStateBaselineHeight, m_entriesLayout->sizeHint().height(),
                   responsiveEntryMinimumHeight});

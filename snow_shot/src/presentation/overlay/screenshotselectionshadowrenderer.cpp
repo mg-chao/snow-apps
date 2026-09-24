@@ -292,7 +292,7 @@ QImage ScreenshotSelectionShadowRenderer::composeExport(const QImage& content, i
                                                         int shadowWidth,
                                                         const QColor& shadowColor) {
     return ScreenshotResultCompositor::compose(
-        content, ScreenshotResultStyle{cornerRadius, shadowWidth, shadowColor},
+        content, ScreenshotResultStyle{cornerRadius, shadowWidth, shadowColor, {}, 1.0},
         std::max<qreal>(1.0, content.devicePixelRatio()));
 }
 
@@ -364,15 +364,18 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
          std::sqrt(std::max<qreal>(1.0, bounds.width() * bounds.height()) / 4096.0)});
     const int columns = std::max(1, qCeil(bounds.width() / cellSize) + 1);
     const int rows = std::max(1, qCeil(bounds.height() / cellSize) + 1);
-    std::vector<std::vector<int>> edgeCells(static_cast<std::size_t>(columns) * rows);
+    const auto columnCount = static_cast<std::size_t>(columns);
+    std::vector<std::vector<std::size_t>> edgeCells(columnCount *
+                                                    static_cast<std::size_t>(rows));
     const auto columnFor = [&](qreal x) {
         return std::clamp(qFloor((x - bounds.left()) / cellSize), 0, columns - 1);
     };
     const auto rowFor = [&](qreal y) {
         return std::clamp(qFloor((y - bounds.top()) / cellSize), 0, rows - 1);
     };
-    const auto cellAt = [&](int column, int row) -> std::vector<int>& {
-        return edgeCells[static_cast<std::size_t>(row) * columns + column];
+    const auto cellAt = [&](int column, int row) -> std::vector<std::size_t>& {
+        return edgeCells[static_cast<std::size_t>(row) * columnCount +
+                         static_cast<std::size_t>(column)];
     };
     const qreal reach = radius * 2.0 + 1.0e-6;
     for (std::size_t index = 0; index < edges.size(); ++index) {
@@ -383,7 +386,7 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
         const int lastRow = rowFor(std::max(edge.a.y(), edge.b.y()) + reach);
         for (int row = firstRow; row <= lastRow; ++row)
             for (int column = firstColumn; column <= lastColumn; ++column)
-                cellAt(column, row).push_back(static_cast<int>(index));
+                cellAt(column, row).push_back(index);
     }
     QPainterPath rounded;
     rounded.setFillRule(Qt::OddEvenFill);
@@ -404,7 +407,7 @@ QPainterPath screenshotRegionPath(const ScreenshotRegionGeometry& geometry, qrea
             qreal r = std::min({radius, before / 2, after / 2});
             // Bound curvature by all nonincident edges, including other contours.
             // This keeps thin bridges and nearby hole boundaries from crossing.
-            for (const int index : cellAt(columnFor(corner.x()), rowFor(corner.y()))) {
+            for (const std::size_t index : cellAt(columnFor(corner.x()), rowFor(corner.y()))) {
                 const QPointF a = edges[index].a, b = edges[index].b;
                 if (a == corner || b == corner)
                     continue;
@@ -448,37 +451,41 @@ QImage regionMask(const QSize& size, const QPainterPath& path) {
 QImage regionShadow(const QImage& mask, int width, const QColor& color) {
     // Finite-support separable blur, O(pixel count) regardless of shadow width.
     const int w = mask.width(), h = mask.height();
+    const auto rowWidth = static_cast<std::size_t>(w);
+    const auto pixelCount = rowWidth * static_cast<std::size_t>(h);
     ++g_diagnostics.regionShadowBuilds;
     // Mask + output shadow + two float planes + the vertical running sums.
     g_diagnostics.regionScratchPeakBytes =
         std::max(g_diagnostics.regionScratchPeakBytes,
                  static_cast<std::size_t>(mask.sizeInBytes()) +
-                     static_cast<std::size_t>(w) * h * (sizeof(QRgb) + 2 * sizeof(float)) +
-                     static_cast<std::size_t>(w) * sizeof(float));
-    std::vector<float> alpha(static_cast<std::size_t>(w) * h);
+                     pixelCount * (sizeof(QRgb) + 2 * sizeof(float)) +
+                     rowWidth * sizeof(float));
+    std::vector<float> alpha(pixelCount);
     std::vector<float> scratch(alpha.size());
     for (int y = 0; y < h; ++y) {
         const auto* row = mask.constScanLine(y);
         for (int x = 0; x < w; ++x)
-            alpha[static_cast<std::size_t>(y) * w + x] = static_cast<float>(row[x]);
+            alpha[static_cast<std::size_t>(y) * rowWidth + static_cast<std::size_t>(x)] =
+                static_cast<float>(row[x]);
     }
-    std::vector<float> columns(static_cast<std::size_t>(w));
+    std::vector<float> columns(rowWidth);
     for (int pass = 0; pass < 3; ++pass) {
         const int radius = width / 3 + (pass < width % 3 ? 1 : 0);
         if (radius == 0)
             continue;
         const float divisor = static_cast<float>(2 * radius + 1);
         for (int y = 0; y < h; ++y) {
-            const auto offset = static_cast<std::size_t>(y) * w;
+            const auto offset = static_cast<std::size_t>(y) * rowWidth;
             float sum = 0;
             for (int x = 0; x <= radius && x < w; ++x)
-                sum += alpha[offset + x];
+                sum += alpha[offset + static_cast<std::size_t>(x)];
             for (int x = 0; x < w; ++x) {
-                scratch[offset + x] = sum / divisor;
+                const auto column = static_cast<std::size_t>(x);
+                scratch[offset + column] = sum / divisor;
                 if (x - radius >= 0)
-                    sum -= alpha[offset + x - radius];
+                    sum -= alpha[offset + static_cast<std::size_t>(x - radius)];
                 if (x + radius + 1 < w)
-                    sum += alpha[offset + x + radius + 1];
+                    sum += alpha[offset + static_cast<std::size_t>(x + radius + 1)];
             }
         }
         // Keep each column's running sum, but visit memory in row order.
@@ -486,17 +493,24 @@ QImage regionShadow(const QImage& mask, int width, const QColor& color) {
         std::fill(columns.begin(), columns.end(), 0.0f);
         for (int y = 0; y <= radius && y < h; ++y)
             for (int x = 0; x < w; ++x)
-                columns[x] += scratch[static_cast<std::size_t>(y) * w + x];
+                columns[static_cast<std::size_t>(x)] +=
+                    scratch[static_cast<std::size_t>(y) * rowWidth +
+                            static_cast<std::size_t>(x)];
         for (int y = 0; y < h; ++y) {
-            const auto offset = static_cast<std::size_t>(y) * w;
+            const auto offset = static_cast<std::size_t>(y) * rowWidth;
             for (int x = 0; x < w; ++x)
-                alpha[offset + x] = columns[x] / divisor;
+                alpha[offset + static_cast<std::size_t>(x)] =
+                    columns[static_cast<std::size_t>(x)] / divisor;
             if (y - radius >= 0)
                 for (int x = 0; x < w; ++x)
-                    columns[x] -= scratch[static_cast<std::size_t>(y - radius) * w + x];
+                    columns[static_cast<std::size_t>(x)] -=
+                        scratch[static_cast<std::size_t>(y - radius) * rowWidth +
+                                static_cast<std::size_t>(x)];
             if (y + radius + 1 < h)
                 for (int x = 0; x < w; ++x)
-                    columns[x] += scratch[static_cast<std::size_t>(y + radius + 1) * w + x];
+                    columns[static_cast<std::size_t>(x)] +=
+                        scratch[static_cast<std::size_t>(y + radius + 1) * rowWidth +
+                                static_cast<std::size_t>(x)];
         }
     }
     QImage shadow(mask.size(), QImage::Format_ARGB32_Premultiplied);
@@ -505,7 +519,10 @@ QImage regionShadow(const QImage& mask, int width, const QColor& color) {
         const auto* maskRow = mask.constScanLine(y);
         for (int x = 0; x < w; ++x) {
             const int a =
-                std::clamp(qRound(alpha[static_cast<std::size_t>(y) * w + x] * color.alphaF() *
+                std::clamp(qRound(static_cast<qreal>(
+                                      alpha[static_cast<std::size_t>(y) * rowWidth +
+                                            static_cast<std::size_t>(x)]) *
+                                  static_cast<qreal>(color.alphaF()) *
                                   kPeakAlphaScale * (255 - maskRow[x]) / 255.0),
                            0, 255);
             row[x] = qPremultiply(qRgba(color.red(), color.green(), color.blue(), a));

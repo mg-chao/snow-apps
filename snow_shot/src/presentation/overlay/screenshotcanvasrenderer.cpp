@@ -1885,7 +1885,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                     if (!cacheHit) {
                         ScreenshotResultStyle style{visibleCornerRadius,
                                                     m_selectionState.shadowWidth,
-                                                    m_selectionState.shadowColor};
+                                                    m_selectionState.shadowColor, {}, 1.0};
                         style.region = localRegion;
                         QImage empty(bounds.size(), QImage::Format_ARGB32_Premultiplied);
                         empty.fill(Qt::transparent);

@@ -45,7 +45,8 @@ historySelectionBorderAppearance(const snow_shot::storage::CaptureHistoryRecord&
     }
     auto style = ScreenshotResultCompositor::normalizedStyle({record.selection.cornerRadius,
                                                               record.selection.shadowWidth,
-                                                              record.selection.shadowColor});
+                                                              record.selection.shadowColor,
+                                                              {}, 1.0});
     if (record.selection.region)
         style.region = record.selection.region->translated(-record.selection.rectangle.topLeft());
     if (!record.selection.rectangle.size().isEmpty() && record.scrolling != true) {
@@ -63,7 +64,7 @@ historySelectionBorderAppearance(const snow_shot::storage::CaptureHistoryRecord&
         return {};
     }
     return snow_shot::storage::PinnedBorderAppearance{
-        record.result->imageSize, content, style.cornerRadius * scale, style.shadowWidth > 0};
+        record.result->imageSize, content, style.cornerRadius * scale, style.shadowWidth > 0, {}};
 }
 
 bool historyRecordSupportsSelectionPin(const snow_shot::storage::CaptureHistoryRecord& record) {
@@ -95,7 +96,7 @@ historySelectionPinPlacement(const snow_shot::storage::CaptureHistoryRecord& rec
         return {};
     }
     ScreenshotResultStyle style{record.selection.cornerRadius, record.selection.shadowWidth,
-                                record.selection.shadowColor};
+                                record.selection.shadowColor, {}, 1.0};
     if (record.selection.region)
         style.region = record.selection.region->translated(-record.selection.rectangle.topLeft());
     return screenshotSelectionPinRequest(displays, geometry, selection, style);

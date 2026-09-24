@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
+#include "snow_shot/presentation/screenshotregiontypeshortcut.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/presentation/directcapturehistory.h"
 #include "snowimageqtcodec.h"
@@ -3535,13 +3536,19 @@ void customRegionInputTransactions() {
     shortcuts.addScopeWindow(&shortcutWindow);
     ScreenshotOverlayShortcutController controller(shortcuts, handler, interaction, intelligent,
                                                    actions);
-    require(dispatchShortcut(shortcutWindow, Qt::Key_Tab, Qt::ControlModifier) &&
+    const auto cycleModifier = screenshotRegionTypeCycleKey().keyboardModifiers();
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Tab, cycleModifier) &&
                 selection.regionType() == ScreenshotRegionType::Curve,
-            "Ctrl+Tab advances region type in Move mode");
-    require(
-        dispatchShortcut(shortcutWindow, Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier) &&
-            selection.regionType() == ScreenshotRegionType::Polyline,
-        "Ctrl+Shift+Tab reverses region type");
+            "the platform region shortcut advances the type in Move mode");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Backtab, cycleModifier | Qt::ShiftModifier) &&
+                selection.regionType() == ScreenshotRegionType::Polyline,
+            "the platform reverse region shortcut accepts Backtab");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Tab, cycleModifier | Qt::ShiftModifier) &&
+                selection.regionType() == ScreenshotRegionType::Rectangle,
+            "the reverse region shortcut also accepts Shift+Tab");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Tab, cycleModifier) &&
+                selection.regionType() == ScreenshotRegionType::Polyline,
+            "region cycling restores the type needed by the following shape transaction");
     interaction.enterOverlayVisible(false);
     selection.clearSelection();
     handler.handleMousePress(nullptr, QPointF(20, 20));

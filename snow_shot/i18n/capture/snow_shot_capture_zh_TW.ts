@@ -164,8 +164,8 @@
     <context>
         <name>ScreenshotRegionTypeControl</name>
         <message>
-            <source>Ctrl+Tab to switch region type</source>
-            <translation>按 Ctrl+Tab 切換區域類型</translation>
+            <source>%1 to switch region type</source>
+            <translation>按 %1 切換區域類型</translation>
         </message>
         <message>
             <source>Curve region</source>

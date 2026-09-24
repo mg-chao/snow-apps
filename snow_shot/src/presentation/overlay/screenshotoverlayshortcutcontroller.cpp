@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
+#include "snow_shot/presentation/screenshotregiontypeshortcut.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -116,9 +117,7 @@ struct ScreenshotOverlayShortcutController::Impl {
                 &q, fixedBinding(
                         reverse ? QStringLiteral("screenshot.region_previous")
                                 : QStringLiteral("screenshot.region_next"),
-                        {QKeyCombination(reverse ? Qt::ControlModifier | Qt::ShiftModifier
-                                                 : Qt::ControlModifier,
-                                         Qt::Key_Tab)},
+                        {screenshotRegionTypeCycleKey(reverse)},
                         ShortcutManager::StandardPriority::WindowCommand,
                         [this] {
                             return actions.localShortcutInputAllowed() &&

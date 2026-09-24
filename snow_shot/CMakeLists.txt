@@ -1195,8 +1195,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotcanvascolorsampler.cpp
     src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
     src/presentation/services/screenshotcolorpickercontroller.cpp
-    src/presentation/services/screenshotclipboardcontent.cpp
-    src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
     src/presentation/services/screenshotclipboardservice.cpp
     src/presentation/services/screenshotcolorpickerwindow.cpp
     src/presentation/services/screenshotcontroller.cpp
@@ -7424,7 +7422,8 @@ endif()
 get_property(_region_switcher_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_target IN LISTS _region_switcher_targets)
     get_target_property(_sources ${_target} SOURCES)
-    if(_sources MATCHES "screenshotoverlaywindow.cpp" AND NOT _sources MATCHES "snowshoticons.cpp")
+    if(NOT "${_target}" STREQUAL "snow_shot" AND
+       _sources MATCHES "screenshotoverlaywindow.cpp" AND NOT _sources MATCHES "snowshoticons.cpp")
         target_sources(${_target} PRIVATE src/presentation/components/icons/snowshoticons.cpp)
     endif()
 endforeach()
@@ -7466,6 +7465,18 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-region-shortcut-native-tests
+        tests/macos_region_shortcut_native_tests.mm)
+    target_include_directories(snow-shot-macos-region-shortcut-native-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-region-shortcut-native-tests PRIVATE
+        snow_shot_window_shortcuts Qt6::Widgets "-framework AppKit"
+        "-framework ApplicationServices")
+    add_test(NAME snow-shot-macos-region-shortcut-native-tests
+        COMMAND snow-shot-macos-region-shortcut-native-tests)
+    set_tests_properties(snow-shot-macos-region-shortcut-native-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
+        RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 30)
+
     add_executable(snow-shot-macos-recapture-native-tests
         tests/macos_recapture_native_tests.mm
         src/platform/macos/screenshotnative.mm

@@ -125,9 +125,18 @@ def remove_development_libraries(runtime):
     marker = runtime / 'assets/ocr/development-libraries.json'
     if not marker.exists():
         return
-    for name in json.loads(marker.read_text()):
+    names = json.loads(marker.read_text())
+    for name in names:
         if Path(name).name != name or not name.endswith('.dylib') or name in RUNTIME_FILES:
             raise ValueError('Invalid development library inventory')
+    staged_libraries = {runtime.resolve() / name for name in names}
+    # CMake may stage versioned dylib symlinks alongside the temporary files.
+    # Remove links before their targets so the signed bundle has no dangling code.
+    staged_links = [path for path in runtime.iterdir()
+                    if path.is_symlink() and path.resolve() in staged_libraries]
+    for path in staged_links:
+        path.unlink()
+    for name in names:
         (runtime / name).unlink(missing_ok=True)
     marker.unlink()
 

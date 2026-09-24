@@ -10658,7 +10658,7 @@ void secondaryRowsDoNotDriftAcrossScaleRoundTrips() {
         if (panel->size() != initial) {
             std::cerr << "row round trip " << static_cast<int>(tool) << " initial "
                       << initial.width() << 'x' << initial.height() << " final " << panel->width()
-                      << 'x' << panel->height() << '\\n';
+                      << 'x' << panel->height() << '\n';
         }
         require(panel->size() == initial, "secondary row accumulated geometry drift");
     }
@@ -12173,10 +12173,18 @@ void regionSwitcherRetranslatesAndRenders() {
                         scheme.map.colorBgContainer,
                     "floating region surface uses the drawing toolbar container background");
             auto* hint = floating.findChild<QLabel*>();
-            require(
-                hint && hint->heightForWidth(hint->width()) <= hint->fontMetrics().lineSpacing() &&
-                    hint->palette().color(QPalette::WindowText) == scheme.map.colorTextSecondary,
-                "floating hint stays on one line and uses the secondary theme text color");
+            require(hint &&
+                        hint->text() == QCoreApplication::translate("ScreenshotRegionTypeControl",
+                                                                    "%1 to switch region type")
+                                            .arg(QKeySequence(screenshotRegionTypeCycleKey())
+                                                     .toString(QKeySequence::NativeText)),
+                    "region hint must show the active platform shortcut in every language");
+            require(hint &&
+                        hint->heightForWidth(hint->width()) ==
+                            hint->heightForWidth(hint->width() * 2) &&
+                        hint->palette().color(QPalette::WindowText) ==
+                            scheme.map.colorTextSecondary,
+                    "floating hint stays on one line and uses the secondary theme text color");
             if (!snapshots.isEmpty()) {
                 const auto suffix =
                     locale + (dark ? QStringLiteral("-dark") : QStringLiteral("-light"));

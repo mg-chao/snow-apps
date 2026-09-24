@@ -342,7 +342,7 @@ void PinnedWindowGroupManager::openDeleteEmptyGroupsConfirmation(QWidget* owner)
     }
     auto* modal =
         createDeletionModal(owner, this, QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
-    const auto updateText = [this, modal]() {
+    const auto updateText = [modal]() {
         modal->setWindowTitle(tr("Delete empty groups"));
         modal->setText(
             tr("Delete every group with no pinned windows other than closed ones? Closed pinned "

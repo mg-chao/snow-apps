@@ -333,7 +333,7 @@ void ScreenshotSelectionModel::setDraggedSelectionRect(const QRectF& rect,
 }
 
 ScreenshotResultStyle ScreenshotSelectionModel::resultStyle() const {
-    ScreenshotResultStyle style{m_cornerRadius, m_shadowWidth, m_shadowColor};
+    ScreenshotResultStyle style{m_cornerRadius, m_shadowWidth, m_shadowColor, {}, 1.0};
     if (m_region) {
         style.region = m_region->translated(-pixelSelection().topLeft());
     }
