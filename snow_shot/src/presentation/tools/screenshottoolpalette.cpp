@@ -3921,6 +3921,16 @@ adqt::widgets::AdButton* ScreenshotToolPalette::drawingToolButton(const QString&
     return nullptr;
 }
 
+adqt::widgets::AdButton* ScreenshotToolPalette::drawingItemButton(const QString& itemId) const {
+    if (itemId == QStringLiteral("undo")) {
+        return m_undoButton;
+    }
+    if (itemId == QStringLiteral("redo")) {
+        return m_redoButton;
+    }
+    return drawingToolButton(itemId);
+}
+
 adqt::widgets::AdButton* ScreenshotToolPalette::drawingToolEntryButton(Tool tool) const {
     const QString itemId = drawingToolItemId(tool);
     for (const DrawingToolGroup& group : m_drawingToolGroups) {
@@ -4192,15 +4202,55 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
     return true;
 }
 
+bool ScreenshotToolPalette::historyActionEnabled(const QString& itemId) const {
+    if (!m_options.showHistoryActions ||
+        (itemId != QStringLiteral("undo") && itemId != QStringLiteral("redo"))) {
+        return false;
+    }
+    const bool undo = itemId == QStringLiteral("undo");
+    if (m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown || m_activeTool == Tool::Html) {
+        return false;
+    }
+    if (m_activeTool == Tool::Table) {
+        return m_tableEditingAvailable && (undo ? m_tableCanUndo : m_tableCanRedo);
+    }
+    if (m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation) {
+        return m_textEditingAvailable && (undo ? m_textCanUndo : m_textCanRedo);
+    }
+    return undo ? m_canvasHistoryState.canUndo : m_canvasHistoryState.canRedo;
+}
+
+bool ScreenshotToolPalette::activateDrawingItem(const QString& itemId, bool toggleVisibleButton) {
+    if (itemId == QStringLiteral("undo") || itemId == QStringLiteral("redo")) {
+        const auto* button = drawingItemButton(itemId);
+        if (!historyActionEnabled(itemId) || (button != nullptr && !button->isEnabled())) {
+            return false;
+        }
+        selectDrawingItemGroupEntry(itemId);
+        if (itemId == QStringLiteral("undo")) {
+            emit undoRequested();
+        } else {
+            emit redoRequested();
+        }
+        return true;
+    }
+    const auto* descriptor = toolbar_layout::descriptor(itemId);
+    return descriptor != nullptr &&
+           activateToolFromToolbar(drawingToolFromItem(descriptor->item), toggleVisibleButton);
+}
+
 void ScreenshotToolPalette::selectDrawingToolGroupEntry(Tool tool) {
     const Tool entryTool = toolbarFacingDrawingTool(tool);
-    const QString itemId = drawingToolItemId(entryTool);
+    selectDrawingItemGroupEntry(drawingToolItemId(entryTool));
+}
+
+void ScreenshotToolPalette::selectDrawingItemGroupEntry(const QString& itemId) {
     for (int groupIndex = 0; groupIndex < m_drawingToolGroups.size(); ++groupIndex) {
         DrawingToolGroup& group = m_drawingToolGroups[groupIndex];
-        if (!group.itemIds.contains(itemId) || group.entryTool == entryTool) {
+        if (!group.itemIds.contains(itemId) || group.entryItemId == itemId) {
             continue;
         }
-        group.entryTool = entryTool;
+        group.entryItemId = itemId;
         refreshDrawingToolGroup(groupIndex);
         return;
     }
@@ -4211,28 +4261,58 @@ void ScreenshotToolPalette::refreshDrawingToolGroup(int groupIndex) {
         return;
     }
     DrawingToolGroup& group = m_drawingToolGroups[groupIndex];
-    const QString itemId = drawingToolItemId(group.entryTool);
-    const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
-    if (group.trigger == nullptr || descriptor == nullptr) {
+    const QString& itemId = group.entryItemId;
+    const auto& definitions = toolbar_layout::drawingEditorDescriptors();
+    const auto descriptor =
+        std::find_if(definitions.cbegin(), definitions.cend(), [&itemId](const auto& candidate) {
+            return itemId == QLatin1String(candidate.id);
+        });
+    if (group.trigger == nullptr || descriptor == definitions.cend()) {
         return;
     }
     configureScreenshotToolPaletteTooltip(group.trigger, descriptor->label);
-    applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
+    if (itemId == QStringLiteral("undo") || itemId == QStringLiteral("redo")) {
+        applyScreenshotShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
+    } else {
+        applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
+    }
     setScreenshotToolPaletteToolButtonIcon(group.trigger, toolbar_layout::icon(descriptor->icon));
     group.trigger->setProperty("screenshotToolbarItemId", itemId);
     group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
-    refreshRecordingToolAvailability(group.trigger, group.entryTool,
-                                     QString::fromUtf8(descriptor->label));
+    if (const auto* drawing = toolbar_layout::descriptor(itemId)) {
+        refreshRecordingToolAvailability(group.trigger, drawingToolFromItem(drawing->item),
+                                         QString::fromUtf8(descriptor->label));
+    } else {
+        group.trigger->setEnabled(group.itemIds.size() > 1 || historyActionEnabled(itemId));
+    }
     for (adqt::widgets::AdButton* optionButton : group.optionButtons) {
         if (optionButton == nullptr) {
             continue;
         }
-        applyDrawingShortcutTooltip(
-            optionButton, optionButton->property("snowShotDrawingShortcutTooltipSource").toString(),
-            optionButton->property("screenshotToolbarItemId").toString());
+        const QString optionId = optionButton->property("screenshotToolbarItemId").toString();
+        if (optionId == QStringLiteral("undo") || optionId == QStringLiteral("redo")) {
+            applyScreenshotShortcutTooltip(optionButton,
+                                           optionId == QStringLiteral("undo")
+                                               ? QStringLiteral("Undo")
+                                               : QStringLiteral("Redo"),
+                                           optionId);
+            optionButton->setEnabled(historyActionEnabled(optionId));
+        } else {
+            applyDrawingShortcutTooltip(
+                optionButton,
+                optionButton->property("snowShotDrawingShortcutTooltipSource").toString(),
+                optionId);
+        }
     }
+    const QString activeId = m_activeTool.has_value()
+                                 ? drawingToolItemId(toolbarFacingDrawingTool(*m_activeTool))
+                                 : QString();
+    const auto active =
+        std::find_if(definitions.cbegin(), definitions.cend(), [&activeId](const auto& candidate) {
+            return activeId == QLatin1String(candidate.id);
+        });
     const int activeValue =
-        m_activeTool.has_value() ? static_cast<int>(toolbarFacingDrawingTool(*m_activeTool)) : -1;
+        active == definitions.cend() ? -1 : static_cast<int>(active - definitions.cbegin());
     updateScreenshotToolPaletteOptionPopoverEditor(group.optionButtons, group.optionValues,
                                                    activeValue);
 }
@@ -4255,18 +4335,26 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
             config.contentObjectName = QStringLiteral("screenshotDrawingToolGroupPopoverContent");
         }
         config.optionSpacing = TOOLBAR_ITEM_SPACING;
+        const auto& definitions = toolbar_layout::drawingEditorDescriptors();
         for (const QString& itemId : std::as_const(group.popoverItemIds)) {
-            const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
-            if (descriptor == nullptr) {
+            const auto descriptor = std::find_if(
+                definitions.cbegin(), definitions.cend(),
+                [&itemId](const auto& candidate) { return itemId == QLatin1String(candidate.id); });
+            if (descriptor == definitions.cend()) {
                 continue;
             }
-            config.options.push_back({static_cast<int>(drawingToolFromItem(descriptor->item)),
+            config.options.push_back({static_cast<int>(descriptor - definitions.cbegin()),
                                       QString::fromUtf8(descriptor->label),
                                       toolbar_layout::icon(descriptor->icon)});
         }
         const auto editor = materializeScreenshotToolPaletteOptionPopoverEditor(
             group.popover, this, config,
-            [this](int value) { activateToolFromToolbar(static_cast<Tool>(value), false); },
+            [this](int value) {
+                const auto& definitions = toolbar_layout::drawingEditorDescriptors();
+                if (value >= 0 && value < definitions.size()) {
+                    activateDrawingItem(QString::fromLatin1(definitions.at(value).id), false);
+                }
+            },
             actionButtonMetrics(1.0));
         group.optionButtons = editor.buttons;
         group.optionValues = editor.values;
@@ -4282,6 +4370,13 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
                 applyDrawingShortcutTooltip(button, QString::fromUtf8(descriptor->label), itemId);
                 refreshRecordingToolAvailability(button, drawingToolFromItem(descriptor->item),
                                                  QString::fromUtf8(descriptor->label));
+            } else if (itemId == QStringLiteral("undo") || itemId == QStringLiteral("redo")) {
+                applyScreenshotShortcutTooltip(button,
+                                               itemId == QStringLiteral("undo")
+                                                   ? QStringLiteral("Undo")
+                                                   : QStringLiteral("Redo"),
+                                               itemId);
+                button->setEnabled(historyActionEnabled(itemId));
             }
         }
         group.popoverConstructing = false;
@@ -4697,20 +4792,25 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         addSeparator();
     }
 
+    for (adqt::widgets::AdButton* source : {m_undoButton, m_redoButton}) {
+        if (source != nullptr) {
+            source->hide();
+            source->setProperty("screenshotToolbarPositionItems", QStringList{});
+        }
+    }
+
     bool hasDrawingPositions = false;
     for (const QStringList& position : normalized.positions) {
+        if (position.contains(QStringLiteral("separator"))) {
+            addSeparator();
+            continue;
+        }
         const auto stack =
             toolbar_layout::stackPresentation(position, [this](const QString& itemId) {
-                return toolbar_layout::descriptor(itemId) != nullptr &&
-                       drawingToolButton(itemId) != nullptr;
+                return drawingItemButton(itemId) != nullptr;
             });
         const QStringList& availableItemIds = stack.itemIds;
-        QVector<Tool> tools;
-        for (const QString& itemId : availableItemIds) {
-            const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
-            tools.push_back(drawingToolFromItem(descriptor->item));
-        }
-        if (tools.isEmpty()) {
+        if (availableItemIds.isEmpty()) {
             continue;
         }
         if (!hasDrawingPositions &&
@@ -4722,16 +4822,17 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         }
         DrawingToolGroup group;
         group.itemIds = availableItemIds;
-        group.tools = tools;
-        group.entryTool =
-            drawingToolFromItem(toolbar_layout::descriptor(stack.entryItemId())->item);
+        group.entryItemId = stack.entryItemId();
         group.popoverItemIds = stack.popoverItemIds;
-        if (tools.size() == 1) {
-            group.trigger = drawingToolButton(availableItemIds.constFirst());
+        if (availableItemIds.size() == 1) {
+            group.trigger = drawingItemButton(availableItemIds.constFirst());
         } else {
-            const toolbar_layout::Descriptor* entryDescriptor =
-                toolbar_layout::descriptor(stack.entryItemId());
-            if (entryDescriptor == nullptr) {
+            const auto& definitions = toolbar_layout::drawingEditorDescriptors();
+            const auto entryDescriptor = std::find_if(
+                definitions.cbegin(), definitions.cend(), [&stack](const auto& candidate) {
+                    return stack.entryItemId() == QLatin1String(candidate.id);
+                });
+            if (entryDescriptor == definitions.cend()) {
                 continue;
             }
             group.trigger = createScreenshotToolPaletteToolButton(
@@ -4760,7 +4861,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
                         for (const DrawingToolGroup& candidate :
                              std::as_const(m_drawingToolGroups)) {
                             if (candidate.trigger == trigger) {
-                                activateToolFromToolbar(candidate.entryTool);
+                                activateDrawingItem(candidate.entryItemId);
                                 return;
                             }
                         }
@@ -4777,12 +4878,6 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         separated = false;
         hasDrawingPositions = true;
     }
-
-    if (hasContent && (m_undoButton != nullptr || m_redoButton != nullptr)) {
-        addSeparator();
-    }
-    addFixedWidget(m_undoButton);
-    addFixedWidget(m_redoButton);
 
     if (m_options.showRecordingControls) {
         if (hasContent) {
@@ -5032,21 +5127,17 @@ void ScreenshotToolPalette::setHistoryState(const SnowCanvasHistoryState& state)
 }
 
 void ScreenshotToolPalette::updateHistoryActionAvailability() {
-    const bool tableActive = m_activeTool == Tool::Table;
-    const bool textActive = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
-    const bool qrActive =
-        m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     if (m_undoButton != nullptr) {
-        m_undoButton->setEnabled(qrActive      ? false
-                                 : tableActive ? m_tableEditingAvailable && m_tableCanUndo
-                                 : textActive  ? m_textEditingAvailable && m_textCanUndo
-                                               : m_canvasHistoryState.canUndo);
+        m_undoButton->setEnabled(historyActionEnabled(QStringLiteral("undo")));
     }
     if (m_redoButton != nullptr) {
-        m_redoButton->setEnabled(qrActive      ? false
-                                 : tableActive ? m_tableEditingAvailable && m_tableCanRedo
-                                 : textActive  ? m_textEditingAvailable && m_textCanRedo
-                                               : m_canvasHistoryState.canRedo);
+        m_redoButton->setEnabled(historyActionEnabled(QStringLiteral("redo")));
+    }
+    for (int index = 0; index < m_drawingToolGroups.size(); ++index) {
+        if (m_drawingToolGroups.at(index).itemIds.contains(QStringLiteral("undo")) ||
+            m_drawingToolGroups.at(index).itemIds.contains(QStringLiteral("redo"))) {
+            refreshDrawingToolGroup(index);
+        }
     }
 }
 
@@ -5079,9 +5170,9 @@ bool ScreenshotToolPalette::addMainHistoryButtons(const Options& options, QBoxLa
     addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
     layout->addWidget(m_redoButton);
     connect(m_undoButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::undoRequested);
+            [this]() { activateDrawingItem(QStringLiteral("undo")); });
     connect(m_redoButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::redoRequested);
+            [this]() { activateDrawingItem(QStringLiteral("redo")); });
     return true;
 }
 
@@ -5247,7 +5338,10 @@ ScreenshotToolPalette::Tool ScreenshotToolPalette::drawingShortcutEntryTool(cons
     }
     for (const DrawingToolGroup& group : m_drawingToolGroups) {
         if (group.itemIds.contains(itemId)) {
-            return group.entryTool;
+            if (const auto* descriptor = toolbar_layout::descriptor(group.entryItemId)) {
+                return drawingToolFromItem(descriptor->item);
+            }
+            return fallback;
         }
     }
     return fallback;
@@ -5310,6 +5404,9 @@ bool ScreenshotToolPalette::activateRememberedDrawingTool() {
 }
 
 bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) {
+    if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
+        return activateDrawingItem(actionId);
+    }
     if (actionId == QStringLiteral("move_tool")) {
         return activateToolShortcut(Tool::Move);
     }
@@ -8013,15 +8110,26 @@ void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeB
         }
     }
 
-    const int activeValue =
-        m_activeTool.has_value() ? static_cast<int>(toolbarFacingDrawingTool(*m_activeTool)) : -1;
+    const auto& definitions = toolbar_layout::drawingEditorDescriptors();
+    const QString activeId = m_activeTool.has_value()
+                                 ? drawingToolItemId(toolbarFacingDrawingTool(*m_activeTool))
+                                 : QString();
+    const auto activeDescriptor =
+        std::find_if(definitions.cbegin(), definitions.cend(), [&activeId](const auto& candidate) {
+            return activeId == QLatin1String(candidate.id);
+        });
+    const int activeValue = activeDescriptor == definitions.cend()
+                                ? -1
+                                : static_cast<int>(activeDescriptor - definitions.cbegin());
     for (const DrawingToolGroup& group : std::as_const(m_drawingToolGroups)) {
         updateScreenshotToolPaletteOptionPopoverEditor(group.optionButtons, group.optionValues,
                                                        activeValue);
     }
     refreshActionToolGroups();
+    const int activeToolValue =
+        m_activeTool.has_value() ? static_cast<int>(toolbarFacingDrawingTool(*m_activeTool)) : -1;
     updateScreenshotToolPaletteOptionPopoverEditor(m_tableQrOptionButtons, m_tableQrOptionValues,
-                                                   activeValue);
+                                                   activeToolValue);
 }
 
 #if defined(SNOW_SHOT_TEST_HOOKS)

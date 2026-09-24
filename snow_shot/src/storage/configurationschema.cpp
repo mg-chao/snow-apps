@@ -22,13 +22,16 @@
 
 namespace snow_shot::storage {
 namespace {
-const QStringList kDrawingToolbarItemIds = {
+const QStringList kDrawingToolIds = {
     QStringLiteral("shape"),     QStringLiteral("arrow"),         QStringLiteral("line"),
     QStringLiteral("free-draw"), QStringLiteral("highlighter"),   QStringLiteral("spotlight"),
     QStringLiteral("text"),      QStringLiteral("serial-number"), QStringLiteral("filter"),
     QStringLiteral("eraser"),    QStringLiteral("watermark"),
 };
-const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolbarItemIds;
+const QStringList kDrawingToolbarItemIds =
+    kDrawingToolIds +
+    QStringList{QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")};
+const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolIds;
 
 const QStringList kActionToolbarItemIds = {
     QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
@@ -61,7 +64,8 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
         {QStringLiteral("free-draw")}, {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},      {QStringLiteral("serial-number")},
         {QStringLiteral("filter")},    {QStringLiteral("eraser")},
-        {QStringLiteral("watermark")},
+        {QStringLiteral("watermark")}, {QStringLiteral("separator")},
+        {QStringLiteral("undo")},      {QStringLiteral("redo")},
     };
 }
 
@@ -1469,6 +1473,15 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         QStringList position;
         for (const QString& id : ids) {
             if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
+                if (id == QStringLiteral("separator")) {
+                    if (!position.isEmpty()) {
+                        positions.push_back(position);
+                        position.clear();
+                    }
+                    positions.push_back({id});
+                    positioned.insert(id);
+                    continue;
+                }
                 position.push_back(id);
                 positioned.insert(id);
             }

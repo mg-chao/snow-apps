@@ -574,6 +574,7 @@ class ScreenshotToolPalette final : public QWidget,
     void addMainActionButtons(const Options& options, QBoxLayout* layout);
     void applyMainToolbarLayout(bool notify);
     adqt::widgets::AdButton* drawingToolButton(const QString& itemId) const;
+    adqt::widgets::AdButton* drawingItemButton(const QString& itemId) const;
     adqt::widgets::AdButton* drawingToolEntryButton(Tool tool) const;
     Tool rememberedDrawingMode(Tool tool) const;
     void rememberDrawingMode(Tool tool);
@@ -589,6 +590,9 @@ class ScreenshotToolPalette final : public QWidget,
                                           const QString& label);
     [[nodiscard]] Tool drawingShortcutEntryTool(const QString& itemId, Tool fallback) const;
     void selectDrawingToolGroupEntry(Tool tool);
+    void selectDrawingItemGroupEntry(const QString& itemId);
+    bool activateDrawingItem(const QString& itemId, bool toggleVisibleButton = true);
+    [[nodiscard]] bool historyActionEnabled(const QString& itemId) const;
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
     void createRecordingExportSettingsToolbar();
@@ -721,8 +725,7 @@ class ScreenshotToolPalette final : public QWidget,
 
     struct DrawingToolGroup {
         QStringList itemIds;
-        QVector<Tool> tools;
-        Tool entryTool = Tool::Shape;
+        QString entryItemId;
         adqt::widgets::AdButton* trigger = nullptr;
         adqt::widgets::AdPopover* popover = nullptr;
         QVector<adqt::widgets::AdButton*> optionButtons;

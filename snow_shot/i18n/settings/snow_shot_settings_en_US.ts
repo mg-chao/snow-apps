@@ -293,8 +293,8 @@
             <translation>Drawing toolbar preview</translation>
         </message>
         <message>
-            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
-            <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</translation>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Separator Component occupies its own position.</source>
+            <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Separator Component occupies its own position.</translation>
         </message>
         <message>
             <source>Eraser</source>
@@ -329,6 +329,14 @@
             <translation>Pen</translation>
         </message>
         <message>
+            <source>Redo</source>
+            <translation>Redo</translation>
+        </message>
+        <message>
+            <source>Separator Component</source>
+            <translation>Separator Component</translation>
+        </message>
+        <message>
             <source>Serial number</source>
             <translation>Serial number</translation>
         </message>
@@ -343,6 +351,10 @@
         <message>
             <source>Text</source>
             <translation>Text</translation>
+        </message>
+        <message>
+            <source>Undo</source>
+            <translation>Undo</translation>
         </message>
         <message>
             <source>Watermark</source>

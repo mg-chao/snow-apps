@@ -65,6 +65,9 @@ enum class Icon {
     Filter,
     Eraser,
     Watermark,
+    Undo,
+    Redo,
+    Separator,
     BarcodeRecognition,
     TableRecognition,
     RecordScreen,
@@ -145,6 +148,7 @@ struct EditorDescriptor {
     for (const Descriptor& candidate : descriptors()) {
         result.push_back(QString::fromLatin1(candidate.id));
     }
+    result.append({QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")});
     return result;
 }
 
@@ -185,6 +189,29 @@ struct EditorDescriptor {
     return value;
 }
 
+[[nodiscard]] inline const QVector<EditorDescriptor>& drawingEditorDescriptors() {
+    static const QVector<EditorDescriptor> value = [] {
+        QVector<EditorDescriptor> result;
+        result.reserve(descriptors().size() + 3);
+        for (const Descriptor& descriptor : descriptors()) {
+            result.push_back({descriptor.id, "DrawingToolbarEditorSettingsWidget", descriptor.label,
+                              descriptor.icon});
+        }
+        result.push_back(
+            {"separator", "DrawingToolbarEditorSettingsWidget",
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             Icon::Separator});
+        result.push_back({"undo", "DrawingToolbarEditorSettingsWidget",
+                          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Undo"),
+                          Icon::Undo});
+        result.push_back({"redo", "DrawingToolbarEditorSettingsWidget",
+                          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Redo"),
+                          Icon::Redo});
+        return result;
+    }();
+    return value;
+}
+
 [[nodiscard]] inline QVector<EditorDescriptor>
 editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
     if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
@@ -205,13 +232,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
     if (kind == storage::ScreenshotToolbarLayoutKind::ActionTools) {
         return actionDescriptors();
     }
-    QVector<EditorDescriptor> result;
-    result.reserve(descriptors().size());
-    for (const Descriptor& descriptor : descriptors()) {
-        result.push_back({descriptor.id, "DrawingToolbarEditorSettingsWidget", descriptor.label,
-                          descriptor.icon});
-    }
-    return result;
+    return drawingEditorDescriptors();
 }
 
 [[nodiscard]] inline const EditorDescriptor* actionDescriptor(const QString& id) {
@@ -229,7 +250,8 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         {QStringLiteral("free-draw")}, {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},      {QStringLiteral("serial-number")},
         {QStringLiteral("filter")},    {QStringLiteral("eraser")},
-        {QStringLiteral("watermark")},
+        {QStringLiteral("watermark")}, {QStringLiteral("separator")},
+        {QStringLiteral("undo")},      {QStringLiteral("redo")},
     };
 }
 
@@ -280,6 +302,15 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
         QStringList position;
         for (const QString& itemId : inputPosition) {
             if (known.contains(itemId) && !positioned.contains(itemId)) {
+                if (itemId == QStringLiteral("separator")) {
+                    if (!position.isEmpty()) {
+                        result.positions.push_back(position);
+                        position.clear();
+                    }
+                    result.positions.push_back({itemId});
+                    positioned.insert(itemId);
+                    continue;
+                }
                 position.push_back(itemId);
                 positioned.insert(itemId);
             }
@@ -369,7 +400,8 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
 
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input) {
-    return normalizedLayout(input, defaultOrder(), defaultPositions());
+    return normalizedLayout(input, defaultOrder(storage::ScreenshotToolbarLayoutKind::DrawingTools),
+                            defaultPositions());
 }
 
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
@@ -434,6 +466,12 @@ stackItemInPosition(const storage::ScreenshotToolbarLayout& input,
                     storage::ScreenshotToolbarLayoutKind kind, const QString& itemId,
                     int targetPositionIndex, int targetItemIndex) {
     storage::ScreenshotToolbarLayout result = normalizedLayout(input, kind);
+    if (kind == storage::ScreenshotToolbarLayoutKind::DrawingTools &&
+        (itemId == QStringLiteral("separator") ||
+         result.positions.value(targetPositionIndex).contains(QStringLiteral("separator")))) {
+        return moveItemToPosition(result, kind, itemId,
+                                  targetPositionIndex + (targetItemIndex > 0 ? 1 : 0));
+    }
     const detail::ItemLocation source = detail::itemLocation(result, itemId);
     if (source.positionIndex < 0 && source.hiddenIndex < 0) {
         return result;
@@ -519,6 +557,12 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ToolEraser();
     case Icon::Watermark:
         return custom::ToolWatermark();
+    case Icon::Undo:
+        return adqt::icons::antd::outlined::Undo();
+    case Icon::Redo:
+        return adqt::icons::antd::outlined::Redo();
+    case Icon::Separator:
+        return {};
     case Icon::BarcodeRecognition:
         return custom::ScanQrcode();
     case Icon::TableRecognition:

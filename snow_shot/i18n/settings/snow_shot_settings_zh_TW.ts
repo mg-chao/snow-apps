@@ -293,8 +293,8 @@
             <translation>繪圖工具列預覽</translation>
         </message>
         <message>
-            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
-            <translation>拖放到工具旁可建立新位置；拖放到工具上方可將其堆疊。最下方的工具會保留在主工具列上。</translation>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Separator Component occupies its own position.</source>
+            <translation>將工具拖到旁邊以建立位置，拖到上方以堆疊。最下方的工具顯示在主工具列中。分隔元件單獨佔據一個位置。</translation>
         </message>
         <message>
             <source>Eraser</source>
@@ -329,6 +329,14 @@
             <translation>畫筆</translation>
         </message>
         <message>
+            <source>Redo</source>
+            <translation>重做</translation>
+        </message>
+        <message>
+            <source>Separator Component</source>
+            <translation>分隔元件</translation>
+        </message>
+        <message>
             <source>Serial number</source>
             <translation>序號</translation>
         </message>
@@ -343,6 +351,10 @@
         <message>
             <source>Text</source>
             <translation>文字</translation>
+        </message>
+        <message>
+            <source>Undo</source>
+            <translation>復原</translation>
         </message>
         <message>
             <source>Watermark</source>

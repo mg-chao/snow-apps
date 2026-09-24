@@ -13,6 +13,8 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QEvent>
 #include <QClipboard>
 #include <QMimeData>
@@ -511,6 +513,99 @@ void toolbarEditorsUseSeparateDefinitionsAndRetranslate() {
     QCoreApplication::removeTranslator(&translator);
 }
 
+void drawingToolbarSeparatorCanMoveAndHideByDrop() {
+    const auto kind = storage::ScreenshotToolbarLayoutKind::DrawingTools;
+    const storage::ScreenshotToolbarSettings settingsStore;
+    const storage::ScreenshotToolbarLayout original = settingsStore.layout(kind);
+    presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const auto renderer = settings::SettingsCustomRenderer::DrawingToolbarEditor;
+    const auto* field = registry.fieldForCustom(renderer);
+    require(field != nullptr, "drawing editor field must exist");
+    std::unique_ptr<SettingsCustomWidget> editor(
+        createSettingsCustomWidget(renderer, registry, *field->definition, session));
+    editor->show();
+    flushEvents();
+    auto* separator = editor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-drawing-toolbar-item-separator"));
+    auto* undo =
+        editor->findChild<QAbstractButton*>(QStringLiteral("settings-drawing-toolbar-item-undo"));
+    auto* redo =
+        editor->findChild<QAbstractButton*>(QStringLiteral("settings-drawing-toolbar-item-redo"));
+    QWidget* surface =
+        editor->findChild<QWidget*>(QStringLiteral("settings-drawing-toolbar-surface"));
+    QWidget* hidden =
+        editor->findChild<QWidget*>(QStringLiteral("settings-drawing-toolbar-hidden-zone"));
+    require(separator != nullptr && undo != nullptr && redo != nullptr && surface != nullptr &&
+                hidden != nullptr &&
+                separator->accessibleName() == QStringLiteral("Separator Component"),
+            "drawing editor must expose the separator and both history actions");
+
+    const auto drop = [](QWidget* target, const QString& itemId, const QPoint& point) {
+        QMimeData mime;
+        mime.setData("application/x-snow-shot-toolbar-item", itemId.toUtf8());
+        QDragEnterEvent enter(point, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &enter);
+        QDropEvent event(QPointF(point), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &event);
+        return event.isAccepted();
+    };
+    require(drop(surface, QStringLiteral("separator"), QPoint(1, surface->height() - 1)),
+            "separator drop into the toolbar must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).positions.constFirst() ==
+                QStringList{QStringLiteral("separator")},
+            "dragging separator to the start must move its standalone position");
+    require(drop(hidden, QStringLiteral("separator"), QPoint(1, 1)),
+            "separator drop into Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("separator")) &&
+                !separator->property("screenshotToolbarMainButton").toBool(),
+            "dragging separator into Hidden tools must remove it from the preview");
+    require(drop(surface, QStringLiteral("separator"), QPoint(1, surface->height() - 1)),
+            "restoring separator from Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).positions.constFirst() ==
+                    QStringList{QStringLiteral("separator")} &&
+                separator->property("screenshotToolbarMainButton").toBool(),
+            "restored separator must return as its own toolbar position");
+
+    auto* shape =
+        editor->findChild<QAbstractButton*>(QStringLiteral("settings-drawing-toolbar-item-shape"));
+    require(shape != nullptr, "drawing editor must expose a target for history stacking");
+    const auto stackWithShape = [&](const QString& itemId) {
+        const QPoint aboveShape = shape->mapTo(surface, QPoint(shape->width() / 2, 1));
+        require(drop(surface, itemId, aboveShape), "history action stack drop must be accepted");
+        flushEvents();
+        const auto updated = backend.toolbarLayout(kind);
+        return std::any_of(updated.positions.cbegin(), updated.positions.cend(),
+                           [&itemId](const QStringList& position) {
+                               return position.contains(itemId) &&
+                                      position.contains(QStringLiteral("shape"));
+                           });
+    };
+    require(stackWithShape(QStringLiteral("undo")),
+            "Undo must be draggable into an ordinary drawing tool stack");
+    require(drop(hidden, QStringLiteral("undo"), QPoint(1, 1)),
+            "Undo drop into Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("undo")) &&
+                !undo->property("screenshotToolbarMainButton").toBool(),
+            "dragging Undo into Hidden tools must hide it");
+    require(stackWithShape(QStringLiteral("redo")),
+            "Redo must be draggable into an ordinary drawing tool stack");
+    require(drop(hidden, QStringLiteral("redo"), QPoint(1, 1)),
+            "Redo drop into Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("redo")) &&
+                !redo->property("screenshotToolbarMainButton").toBool(),
+            "dragging Redo into Hidden tools must hide it");
+    require(settingsStore.setLayout(kind, original),
+            "drawing toolbar editor test must restore the original layout");
+}
+
 void diagnosticsStateAndCopyFeedback() {
     const auto registry = storageStatusRegistry();
     FakeSettingsBackend backend;
@@ -620,6 +715,7 @@ int main(int argc, char** argv) {
     widgetRendersAppUsageBreakdown();
     widgetShowsScanningStateAndForwardsRefresh();
     toolbarEditorsUseSeparateDefinitionsAndRetranslate();
+    drawingToolbarSeparatorCanMoveAndHideByDrop();
     pinnedToolbarSectionResetRefreshesEditor();
     diagnosticsStateAndCopyFeedback();
     copyPublishesStableFileAndPreservesClipboardOnFailure();

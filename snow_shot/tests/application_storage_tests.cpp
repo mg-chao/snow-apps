@@ -774,6 +774,10 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
 }
 
 void screenshotUiSchemaRepairsStructuredValues() {
+    require(!storage::ConfigurationSchema::normalize(
+                 QStringLiteral("screenshot_toolbar/last_drawing_tool"), QStringLiteral("undo"))
+                 .valid,
+            "history actions must not become remembered drawing tools");
     const QJsonObject defaultActionLayout =
         storage::ConfigurationSchema::defaultValue(
             QStringLiteral("screenshot_toolbar/action_tools_layout"))
@@ -834,10 +838,44 @@ void screenshotUiSchemaRepairsStructuredValues() {
                         QJsonArray{QStringLiteral("serial-number")},
                         QJsonArray{QStringLiteral("filter")},
                         QJsonArray{QStringLiteral("eraser")},
+                        QJsonArray{QStringLiteral("separator")},
+                        QJsonArray{QStringLiteral("undo")},
+                        QJsonArray{QStringLiteral("redo")},
                     } &&
                 layout.value(QStringLiteral("hidden")).toArray() ==
                     QJsonArray{QStringLiteral("arrow"), QStringLiteral("free-draw")},
             "toolbar layout normalization did not preserve hidden nested membership");
+
+    const QJsonObject invalidSeparatorLayout{
+        {QStringLiteral("positions"),
+         QJsonArray{QJsonArray{QStringLiteral("shape"), QStringLiteral("separator"),
+                               QStringLiteral("undo"), QStringLiteral("redo")},
+                    QJsonArray{}}},
+        {QStringLiteral("hidden"), QJsonArray{}}};
+    const auto separated = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot_toolbar/layout"), invalidSeparatorLayout);
+    const QJsonArray separatedPositions =
+        separated.value.toObject().value(QStringLiteral("positions")).toArray();
+    require(separated.valid && separated.changed && separatedPositions.size() >= 3 &&
+                separatedPositions.at(0).toArray() == QJsonArray{QStringLiteral("shape")} &&
+                separatedPositions.at(1).toArray() == QJsonArray{QStringLiteral("separator")} &&
+                separatedPositions.at(2).toArray() ==
+                    QJsonArray{QStringLiteral("undo"), QStringLiteral("redo")},
+            "separator must normalize into its own drawing toolbar position");
+    const QJsonObject hiddenSeparatorLayout{
+        {QStringLiteral("positions"),
+         QJsonArray{QJsonArray{QStringLiteral("shape")}, QJsonArray{}}},
+        {QStringLiteral("hidden"), QJsonArray{QStringLiteral("separator")}}};
+    const auto hiddenSeparator = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot_toolbar/layout"), hiddenSeparatorLayout);
+    require(hiddenSeparator.valid &&
+                hiddenSeparator.value.toObject().value(QStringLiteral("hidden")).toArray() ==
+                    QJsonArray{QStringLiteral("separator")} &&
+                !hiddenSeparator.value.toObject()
+                     .value(QStringLiteral("positions"))
+                     .toArray()
+                     .contains(QJsonArray{QStringLiteral("separator")}),
+            "a hidden separator must stay hidden during legacy layout upgrade");
 
     const QJsonObject malformedActionLayout{
         {QStringLiteral("positions"),
@@ -930,6 +968,9 @@ void screenshotUiAdaptersRoundTripTypedValues() {
         {QStringLiteral("serial-number")},
         {QStringLiteral("filter")},
         {QStringLiteral("eraser")},
+        {QStringLiteral("separator")},
+        {QStringLiteral("undo")},
+        {QStringLiteral("redo")},
     };
     const storage::ScreenshotToolbarLayout expectedLayout{
         expectedPositions,

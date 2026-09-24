@@ -2793,8 +2793,8 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     palette.show();
     QCoreApplication::processEvents();
     const QList<adqt::widgets::AdButton*> drawingButtons = mainDrawingToolbarButtons(palette);
-    require(drawingButtons.size() == 3,
-            "each configured drawing position should occupy one live toolbar slot");
+    require(drawingButtons.size() == 5,
+            "each configured drawing and history position should occupy one live toolbar slot");
     auto* firstTrigger = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotDrawingToolGroupButton0"));
     auto* secondTrigger = palette.findChild<adqt::widgets::AdButton*>(
@@ -2892,7 +2892,7 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     if (updatedPopover != nullptr) {
         materializeLazyPopover(updatedGroupTrigger);
     }
-    require(updatedDrawingButtons.size() == 4 && updatedPopover != nullptr &&
+    require(updatedDrawingButtons.size() == 6 && updatedPopover != nullptr &&
                 updatedGroupTrigger->accessibleName() == QStringLiteral("Pen") &&
                 popoverButtonWithTooltip(updatedPopover, "Pen") != nullptr &&
                 popoverButtonWithTooltip(updatedPopover, "Highlight") != nullptr &&
@@ -2912,7 +2912,7 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     QCoreApplication::processEvents();
     const QList<adqt::widgets::AdButton*> restoredDrawingButtons =
         mainDrawingToolbarButtons(palette);
-    require(restoredDrawingButtons.size() == 5 &&
+    require(restoredDrawingButtons.size() == 7 &&
                 std::any_of(
                     restoredDrawingButtons.cbegin(), restoredDrawingButtons.cend(),
                     [](const adqt::widgets::AdButton* button) {
@@ -3824,6 +3824,204 @@ void sharedToolbarLayoutModelOperationsAreDeterministic() {
              QStringLiteral("table-recognition"), QStringLiteral("text-translation"));
     exercise(ScreenshotToolbarLayoutKind::ActionTools, QStringLiteral("barcode-recognition"),
              QStringLiteral("table-recognition"), QStringLiteral("record-screen"));
+
+    const auto drawing = ScreenshotToolbarLayoutKind::DrawingTools;
+    const ScreenshotToolbarLayout legacy{{{QStringLiteral("shape")}}, {}};
+    const ScreenshotToolbarLayout upgraded = normalizedLayout(legacy, drawing);
+    require(upgraded.positions.at(upgraded.positions.size() - 3) ==
+                    QStringList{QStringLiteral("separator")} &&
+                upgraded.positions.at(upgraded.positions.size() - 2) ==
+                    QStringList{QStringLiteral("undo")} &&
+                upgraded.positions.constLast() == QStringList{QStringLiteral("redo")},
+            "legacy drawing layouts must gain separator, Undo and Redo after the drawing tools");
+
+    QStringList remaining = defaultOrder(drawing);
+    for (const QString& id : {QStringLiteral("shape"), QStringLiteral("separator"),
+                              QStringLiteral("undo"), QStringLiteral("redo")}) {
+        remaining.removeAll(id);
+    }
+    const ScreenshotToolbarLayout withSeparator{{{QStringLiteral("shape")},
+                                                 {QStringLiteral("separator")},
+                                                 {QStringLiteral("undo"), QStringLiteral("redo")}},
+                                                remaining};
+    const auto separatorMoved =
+        stackItemInPosition(withSeparator, drawing, QStringLiteral("separator"), 0, 1);
+    const auto undoMoved =
+        stackItemInPosition(withSeparator, drawing, QStringLiteral("undo"), 1, 0);
+    for (const auto& candidate : {separatorMoved, undoMoved}) {
+        for (const QStringList& position : candidate.positions) {
+            require(!position.contains(QStringLiteral("separator")) || position.size() == 1,
+                    "separator must never stack with a drawing or history button");
+        }
+    }
+    const auto hiddenSeparator =
+        moveItemToHidden(withSeparator, drawing, QStringLiteral("separator"), 0);
+    require(hiddenSeparator.hidden.constFirst() == QStringLiteral("separator") &&
+                std::none_of(hiddenSeparator.positions.cbegin(), hiddenSeparator.positions.cend(),
+                             [](const QStringList& position) {
+                                 return position.contains(QStringLiteral("separator"));
+                             }),
+            "separator must be movable into Hidden tools");
+}
+
+void drawingHistoryActionsFollowStacksAndHiddenShortcuts() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
+    options.showHistoryActions = true;
+    options.enableStyleToolbar = false;
+    QStringList hidden =
+        layout::defaultOrder(snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools);
+    for (const QString& id : {QStringLiteral("shape"), QStringLiteral("undo"),
+                              QStringLiteral("redo"), QStringLiteral("separator")}) {
+        hidden.removeAll(id);
+    }
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("shape"), QStringLiteral("undo"), QStringLiteral("redo")},
+         {QStringLiteral("separator")}},
+        hidden};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+
+    SnowCanvasHistoryState history;
+    history.canUndo = true;
+    history.canRedo = true;
+    palette.setHistoryState(history);
+    int undoRequests = 0;
+    int redoRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::undoRequested,
+                     [&undoRequests]() { ++undoRequests; });
+    QObject::connect(&palette, &ScreenshotToolPalette::redoRequested,
+                     [&redoRequests]() { ++redoRequests; });
+    auto* trigger = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawingToolGroupButton0"));
+    require(trigger != nullptr &&
+                trigger->property("screenshotToolbarItemId").toString() == QStringLiteral("redo"),
+            "Redo at the bottom of a mixed stack must be its initial visible button");
+    materializeLazyPopover(trigger);
+    auto* popover = popoverForTrigger(trigger);
+    auto* undoOption = popoverButtonWithTooltip(popover, "Undo");
+    auto* redoOption = popoverButtonWithTooltip(popover, "Redo");
+    require(undoOption != nullptr && redoOption != nullptr && undoOption->isEnabled() &&
+                redoOption->isEnabled(),
+            "Undo and Redo must appear as ordinary enabled stack options");
+    undoOption->click();
+    require(undoRequests == 1 &&
+                trigger->property("screenshotToolbarItemId").toString() == QStringLiteral("undo"),
+            "selecting Undo must execute it and make it the stack's visible entry");
+    history.canUndo = false;
+    palette.setHistoryState(history);
+    materializeLazyPopover(trigger);
+    popover = popoverForTrigger(trigger);
+    undoOption = popoverButtonWithTooltip(popover, "Undo");
+    redoOption = popoverButtonWithTooltip(popover, "Redo");
+    require(undoOption != nullptr && redoOption != nullptr && !undoOption->isEnabled() &&
+                trigger->isEnabled(),
+            "an unavailable selected history action must leave other stack options reachable");
+    redoOption->click();
+    require(redoRequests == 1 &&
+                trigger->property("screenshotToolbarItemId").toString() == QStringLiteral("redo"),
+            "an available Redo option must remain executable after Undo becomes unavailable");
+
+    QStringList hiddenAll =
+        layout::defaultOrder(snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools);
+    hiddenAll.removeAll(QStringLiteral("shape"));
+    palette.setToolbarLayout({{{QStringLiteral("shape")}}, hiddenAll});
+    QCoreApplication::processEvents();
+    auto* undoButton =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotUndoButton"));
+    auto* redoButton =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRedoButton"));
+    require(undoButton != nullptr && undoButton->isHidden() && redoButton != nullptr &&
+                redoButton->isHidden(),
+            "hidden Undo and Redo must have no visible toolbar buttons");
+    QLayout* hiddenRow = palette.mainPanel()->layout();
+    bool hiddenSeparatorVisible = false;
+    for (int index = 0; index < hiddenRow->count(); ++index) {
+        hiddenSeparatorVisible |=
+            qobject_cast<QFrame*>(hiddenRow->itemAt(index)->widget()) != nullptr;
+    }
+    require(!hiddenSeparatorVisible,
+            "hiding Separator Component must remove the configurable divider");
+    history.canUndo = true;
+    palette.setHistoryState(history);
+    require(palette.activateScreenshotShortcut(QStringLiteral("undo")) &&
+                palette.activateScreenshotShortcut(QStringLiteral("redo")) && undoRequests == 2 &&
+                redoRequests == 2,
+            "hidden history actions must still respond to their shortcuts");
+    history.canUndo = false;
+    history.canRedo = false;
+    palette.setHistoryState(history);
+    require(!palette.activateScreenshotShortcut(QStringLiteral("undo")) &&
+                !palette.activateScreenshotShortcut(QStringLiteral("redo")),
+            "hidden history shortcuts must still respect command availability");
+
+    palette.setToolbarLayout({{{QStringLiteral("undo")},
+                               {QStringLiteral("separator")},
+                               {QStringLiteral("shape")},
+                               {QStringLiteral("redo")}},
+                              hidden});
+    QCoreApplication::processEvents();
+    const auto drawingButtons = mainDrawingToolbarButtons(palette);
+    QLayout* row = palette.mainPanel()->layout();
+    int separatorIndex = -1;
+    for (int index = 0; index < row->count(); ++index) {
+        if (qobject_cast<QFrame*>(row->itemAt(index)->widget()) != nullptr) {
+            separatorIndex = index;
+            break;
+        }
+    }
+    require(drawingButtons.size() == 3 && drawingButtons.at(0) == undoButton &&
+                drawingButtons.at(2) == redoButton && separatorIndex > row->indexOf(undoButton) &&
+                separatorIndex < row->indexOf(drawingButtons.at(1)),
+            "standalone Undo and Redo must follow their configured order around the separator");
+    history.canUndo = true;
+    palette.setHistoryState(history);
+    undoButton->click();
+    require(undoRequests == 3, "a moved standalone Undo button must remain executable");
+}
+
+void recordingDrawingLayoutRendersConfiguredSeparator() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
+    options.showArrowTool = true;
+    options.showRecordingControls = true;
+    options.enableStyleToolbar = false;
+    QStringList hidden =
+        layout::defaultOrder(snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools);
+    for (const QString& id :
+         {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("separator")}) {
+        hidden.removeAll(id);
+    }
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("shape")}, {QStringLiteral("separator")}, {QStringLiteral("arrow")}},
+        hidden};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+
+    const auto hasDividerBetweenDrawingButtons = [&palette]() {
+        const auto buttons = mainDrawingToolbarButtons(palette);
+        require(buttons.size() == 2, "recording toolbar must show the configured drawing tools");
+        const QLayout* row = palette.mainPanel()->layout();
+        const int first = row->indexOf(buttons.at(0));
+        const int second = row->indexOf(buttons.at(1));
+        for (int index = first + 1; index < second; ++index) {
+            if (qobject_cast<QFrame*>(row->itemAt(index)->widget()) != nullptr) {
+                return true;
+            }
+        }
+        return false;
+    };
+    require(hasDividerBetweenDrawingButtons(),
+            "recording toolbar must render the configured separator without history buttons");
+    hidden.push_back(QStringLiteral("separator"));
+    palette.setToolbarLayout({{{QStringLiteral("shape")}, {QStringLiteral("arrow")}}, hidden});
+    QCoreApplication::processEvents();
+    require(!hasDividerBetweenDrawingButtons(),
+            "hiding the shared separator must remove it from the recording drawing tools");
 }
 
 void pinnedActionLayoutUsesGenericStacks() {
@@ -3864,10 +4062,11 @@ void pinnedActionLayoutUsesGenericStacks() {
     require(positions() == expected.positions,
             "pinned rendering must preserve configured positions");
     const auto actionButtons = mainActionToolbarButtons(palette);
-    const auto ocrButton = std::find_if(
-        actionButtons.cbegin(), actionButtons.cend(), [&ocr](const adqt::widgets::AdButton* button) {
-            return button->property("screenshotToolbarItemId").toString() == ocr;
-        });
+    const auto ocrButton =
+        std::find_if(actionButtons.cbegin(), actionButtons.cend(),
+                     [&ocr](const adqt::widgets::AdButton* button) {
+                         return button->property("screenshotToolbarItemId").toString() == ocr;
+                     });
     require(ocrButton != actionButtons.cend() &&
                 adqt::icons::describeIcon((*ocrButton)->iconRef()).key.name ==
                     QStringLiteral("text-recognition"),
@@ -12678,10 +12877,19 @@ int main(int argc, char** argv) {
         drawingModeSelectionsSurviveToolbarReentry();
         drawingGroupClicksActivateOnceAfterPointerReentry();
         configurableToolbarLayoutSupportsArbitraryPopoverGroups();
+        drawingHistoryActionsFollowStacksAndHiddenShortcuts();
+        recordingDrawingLayoutRendersConfiguredSeparator();
         arrowAndLineUseConfiguredPopoverGroup();
         highlightVariantsUseConfiguredPopoverGroup();
         drawingToolbarGroupsUseToolbarPopoverMetrics();
         spotlightControlsMatchMaskConfigurationBehavior();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--history-only"))) {
+        screenshotShortcutsShareButtonCommandsAndAvailability();
+        drawingHistoryActionsFollowStacksAndHiddenShortcuts();
+        tableToolExposesStructureActionsAndOwnHistoryState();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -12742,6 +12950,8 @@ int main(int argc, char** argv) {
     groupedActionOptionsShowShortcutTooltips();
     screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
     configurableToolbarLayoutSupportsArbitraryPopoverGroups();
+    drawingHistoryActionsFollowStacksAndHiddenShortcuts();
+    recordingDrawingLayoutRendersConfiguredSeparator();
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();
     clickingActiveToolbarToolReturnsToSelect();

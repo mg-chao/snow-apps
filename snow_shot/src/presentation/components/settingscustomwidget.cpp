@@ -56,7 +56,7 @@ constexpr int kHiddenZoneHeight = 56;
     QT_TRANSLATE_NOOP(
         "DrawingToolbarEditorSettingsWidget",
         "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
-        "tool stays on the main toolbar row."),
+        "tool stays on the main toolbar row. Separator Component occupies its own position."),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Drawing toolbar preview"),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Hidden tools"),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget",
@@ -118,6 +118,9 @@ class ToolbarDragButton final : public adqt::widgets::AdButton {
         setCursor(Qt::OpenHandCursor);
         setFixedSize(kToolbarButtonSize, kToolbarButtonSize);
         setIconSize(QSize(kToolbarIconSize, kToolbarIconSize));
+        if (itemId == QStringLiteral("separator")) {
+            setText(QStringLiteral("│"));
+        }
     }
 
   protected:
@@ -273,7 +276,8 @@ class ToolbarDropSurface final : public QFrame {
     void dragEnterEvent(QDragEnterEvent* event) override {
         if (hasToolbarItem(event != nullptr ? event->mimeData() : nullptr)) {
             m_dragActive = true;
-            updateIndicator(event->position().toPoint());
+            updateIndicator(event->position().toPoint(),
+                            QString::fromUtf8(event->mimeData()->data(kToolbarItemMimeType)));
             update();
             event->acceptProposedAction();
             return;
@@ -283,7 +287,8 @@ class ToolbarDropSurface final : public QFrame {
 
     void dragMoveEvent(QDragMoveEvent* event) override {
         if (hasToolbarItem(event != nullptr ? event->mimeData() : nullptr)) {
-            updateIndicator(event->position().toPoint());
+            updateIndicator(event->position().toPoint(),
+                            QString::fromUtf8(event->mimeData()->data(kToolbarItemMimeType)));
             event->acceptProposedAction();
             return;
         }
@@ -311,7 +316,7 @@ class ToolbarDropSurface final : public QFrame {
             return;
         }
         if (m_dropHandler) {
-            m_dropHandler(itemId, dropLocation(event->position().toPoint()));
+            m_dropHandler(itemId, dropLocation(event->position().toPoint(), itemId));
         }
         event->setDropAction(Qt::MoveAction);
         event->accept();
@@ -354,7 +359,7 @@ class ToolbarDropSurface final : public QFrame {
         return mimeData != nullptr && mimeData->hasFormat(kToolbarItemMimeType);
     }
 
-    [[nodiscard]] DropLocation dropLocation(const QPoint& position) const {
+    [[nodiscard]] DropLocation dropLocation(const QPoint& position, const QString& itemId) const {
         for (int index = 0; index < m_positions.size(); ++index) {
             ToolbarPositionWidget* toolbarPosition = m_positions.at(index);
             if (toolbarPosition == nullptr) {
@@ -362,6 +367,11 @@ class ToolbarDropSurface final : public QFrame {
             }
             const QRect geometry = toolbarPosition->geometry();
             if (position.x() >= geometry.left() && position.x() <= geometry.right()) {
+                if (itemId == QStringLiteral("separator") ||
+                    toolbarPosition->property("screenshotToolbarContainsSeparator").toBool()) {
+                    return {DropKind::NewPosition,
+                            index + (position.x() > geometry.center().x() ? 1 : 0), 0};
+                }
                 return {DropKind::Stack, index, toolbarPosition->insertionIndex(position, this)};
             }
             if (position.x() < geometry.left()) {
@@ -371,8 +381,8 @@ class ToolbarDropSurface final : public QFrame {
         return {DropKind::NewPosition, static_cast<int>(m_positions.size()), 0};
     }
 
-    void updateIndicator(const QPoint& position) {
-        const DropLocation location = dropLocation(position);
+    void updateIndicator(const QPoint& position, const QString& itemId) {
+        const DropLocation location = dropLocation(position, itemId);
         if (location.kind == DropKind::NewPosition) {
             int indicatorX = kToolbarHorizontalMargin;
             if (!m_positions.isEmpty()) {
@@ -891,7 +901,9 @@ struct ToolbarEditorSettingsWidget::Private {
         for (const toolbar_layout::EditorDescriptor& descriptor : descriptors) {
             const QString itemId = QString::fromLatin1(descriptor.id);
             auto* button = new ToolbarDragButton(itemId, objectNamePrefix, &owner);
-            button->setIconRef(toolbar_layout::icon(descriptor.icon));
+            if (itemId != QStringLiteral("separator")) {
+                button->setIconRef(toolbar_layout::icon(descriptor.icon));
+            }
             buttons.insert(itemId, button);
         }
 
@@ -931,6 +943,8 @@ struct ToolbarEditorSettingsWidget::Private {
             const QStringList& itemIds = layout.positions.at(positionIndex);
             auto* position =
                 new ToolbarPositionWidget(positionIndex, objectNamePrefix, toolbarSurface);
+            position->setProperty("screenshotToolbarContainsSeparator",
+                                  itemIds.contains(QStringLiteral("separator")));
             for (const QString& itemId : itemIds) {
                 ToolbarDragButton* button = buttons.value(itemId);
                 if (button == nullptr) {
@@ -1045,8 +1059,12 @@ struct ToolbarEditorSettingsWidget::Private {
     void retranslateUi() {
         instructionLabel->setText(translatedToolbarText(
             translationContext,
-            "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
-            "tool stays on the main toolbar row."));
+            layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
+                ? "Drop beside a tool to create a position. Drop above a tool to stack it. The "
+                  "bottom tool stays on the main toolbar row. Separator Component occupies its "
+                  "own position."
+                : "Drop beside a tool to create a position. Drop above a tool to stack it. The "
+                  "bottom tool stays on the main toolbar row."));
         toolbarSurface->setAccessibleName(translatedToolbarText(
             translationContext,
             layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
