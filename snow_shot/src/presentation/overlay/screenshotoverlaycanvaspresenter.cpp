@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -308,10 +309,10 @@ void ScreenshotOverlayCanvasPresenter::showOverlayWindows(
 
 namespace {
 void updateOverlayStateForDisplaySession(const ScreenshotDisplaySession& displaySession,
-                                         const QRectF& selection, int cornerRadius, int shadowWidth,
-                                         const QColor& shadowColor, bool selectionToolbarHovered,
-                                         bool selectionHandlesVisible, bool intelligentSelecting,
-                                         bool manualSelecting, bool dragging) {
+                                         const ScreenshotSelectionVisualState& selectionState,
+                                         bool intelligentSelecting, bool manualSelecting,
+                                         bool dragging) {
+    const QRectF& selection = selectionState.bounds;
     const bool hasSelection = selection.isValid() && !selection.isEmpty();
     const ScreenshotHalfOpenRect selectionRect =
         hasSelection ? ScreenshotHalfOpenRect::fromRectF(selection) : ScreenshotHalfOpenRect();
@@ -327,10 +328,14 @@ void updateOverlayStateForDisplaySession(const ScreenshotDisplaySession& display
             hasSelection && selectionRect.intersects(displayRect);
         overlay->setScreenshotMaskVisible(true);
         if (selectionIntersectsDisplay) {
-            overlay->setScreenshotSelection(selection, selectionHandlesVisible, cornerRadius,
-                                            shadowWidth, shadowColor, selectionToolbarHovered);
+            overlay->setScreenshotSelectionState(selectionState);
         } else {
-            overlay->clearScreenshotSelection();
+            ScreenshotSelectionVisualState draftOnly;
+            draftOnly.draftPath = selectionState.draftPath;
+            draftOnly.draftVertices = selectionState.draftVertices;
+            draftOnly.subtracting = selectionState.subtracting;
+            draftOnly.dangerColor = selectionState.dangerColor;
+            overlay->setScreenshotSelectionState(draftOnly);
         }
     });
     updateOverlayCursorsForDisplaySession(displaySession, intelligentSelecting || manualSelecting,
@@ -339,13 +344,11 @@ void updateOverlayStateForDisplaySession(const ScreenshotDisplaySession& display
 } // namespace
 
 void ScreenshotOverlayCanvasPresenter::updateOverlayState(
-    const ScreenshotDisplaySession& displaySession, const QRectF& selection, int cornerRadius,
-    int shadowWidth, const QColor& shadowColor, bool selectionToolbarHovered,
-    bool selectionHandlesVisible, bool intelligentSelecting, bool manualSelecting,
-    bool dragging) const {
-    updateOverlayStateForDisplaySession(
-        displaySession, selection, cornerRadius, shadowWidth, shadowColor, selectionToolbarHovered,
-        selectionHandlesVisible, intelligentSelecting, manualSelecting, dragging);
+    const ScreenshotDisplaySession& displaySession,
+    const ScreenshotSelectionVisualState& selectionState, bool intelligentSelecting,
+    bool manualSelecting, bool dragging) const {
+    updateOverlayStateForDisplaySession(displaySession, selectionState, intelligentSelecting,
+                                        manualSelecting, dragging);
 }
 
 namespace {

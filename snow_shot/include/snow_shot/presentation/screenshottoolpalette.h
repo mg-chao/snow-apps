@@ -5,6 +5,7 @@
 #include "widgets/control_scale.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
+#include "snow_shot/image/screenshotregiongeometry.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -311,6 +312,7 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
     [[nodiscard]] bool activateRememberedDrawingTool();
     void setCaptureCursorEnabled(bool enabled);
+    void setScreenshotRegionType(ScreenshotRegionType type);
     [[nodiscard]] bool captureCursorEnabled() const;
     void setSelectionToolbarHidden(bool hidden);
     [[nodiscard]] bool selectionToolbarHidden() const;
@@ -939,6 +941,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_recordingKeyboardVisible = false;
     bool m_recordingCursorVisible = true;
     bool m_captureCursorEnabled = false;
+    ScreenshotRegionType m_screenshotRegionType = ScreenshotRegionType::Rectangle;
     bool m_selectionToolbarHidden = false;
     bool m_recaptureBusy = false;
     bool m_ocrEnabled = true;

@@ -9,6 +9,7 @@ makeScreenshotToolbarPresentationState(const ScreenshotInteractionState& interac
                                        const ScreenshotSelectionModel& selection) {
     ScreenshotToolbarPresentationState state;
     state.selectionPixels = selection.pixelSelection();
+    state.regionType = selection.regionType();
     state.selectionCanvas = selection.normalizedSelection();
     state.inactive = interaction.inactive();
     state.selectionToolbarMode =

@@ -384,12 +384,17 @@ int main(int argc, char** argv) {
         QStringLiteral("custom-freehand"),
         QStringLiteral("custom-curve"),
         QStringLiteral("custom-mixed-operations"),
+        QStringLiteral("region-one-pixel-move"),
+        QStringLiteral("region-hover-one-pixel-move"),
+        QStringLiteral("region-two-stage-presentation"),
+        QStringLiteral("region-one-pass-presentation"),
         QStringLiteral("one-pixel-move"),
         QStringLiteral("one-pixel-resize"),
         QStringLiteral("smart-selection-animation"),
         QStringLiteral("rounded-corners"),
         QStringLiteral("hover-entry-exit"),
         QStringLiteral("shadow-width-sweep"),
+        QStringLiteral("rounded-shadow-toggle"),
         QStringLiteral("cursor-and-monitor-guide-lines"),
         QStringLiteral("monitor-center-guide-line-only"),
         QStringLiteral("active-spotlight"),
@@ -417,6 +422,8 @@ int main(int argc, char** argv) {
     auto& renderer = *fixture.renderer;
     const QRectF baseSelection(-960.0, -540.0, 1920.0, 1080.0);
     const QColor shadowColor(0x59, 0x59, 0x59);
+    const ScreenshotRegionGeometry compoundRegion(
+        QRegion(QRect(-960, -540, 1920, 1080)).subtracted(QRect(-120, -120, 240, 240)));
     QList<QJsonObject> reports;
 
     const auto run = [&](const QString& name, const std::function<void(int)>& mutation,
@@ -480,6 +487,34 @@ int main(int argc, char** argv) {
         const auto candidate = mixed.united(freehandRegion.translated(index & 1, 0));
         renderer.setSelectionRegion(candidate, mixed, {}, false, Qt::red);
     });
+    run(QStringLiteral("region-one-pixel-move"), [&](int index) {
+        const auto moved = compoundRegion.translated(index & 1, 0);
+        renderer.setSelectionRegion(moved, moved, {}, false, Qt::red);
+    });
+    run(QStringLiteral("region-hover-one-pixel-move"), [&](int index) {
+        const auto moved = compoundRegion.translated(index & 1, 0);
+        renderer.setSelectionRegion(moved, moved, {}, false, Qt::red);
+        renderer.setSelectionToolbarHovered(true);
+    });
+    run(QStringLiteral("region-two-stage-presentation"), [&](int index) {
+        const auto moved = compoundRegion.translated(index & 1, 0);
+        renderer.setSelection(QRectF(moved.boundingRect()), false, 0, 16, shadowColor);
+        renderer.setSelectionRegion(moved, moved, {}, false, Qt::red);
+        renderer.setSelectionToolbarHovered(false);
+    });
+    run(QStringLiteral("region-one-pass-presentation"), [&](int index) {
+        const auto moved = compoundRegion.translated(index & 1, 0);
+        ScreenshotSelectionVisualState state;
+        state.bounds = QRectF(moved.boundingRect());
+        state.present = true;
+        state.handlesVisible = false;
+        state.shadowWidth = 16;
+        state.shadowColor = shadowColor;
+        state.region = moved;
+        state.confirmedRegion = moved;
+        state.dangerColor = Qt::red;
+        renderer.applySelectionState(state);
+    });
     QElapsedTimer commitTimer;
     commitTimer.start();
     const auto committed = mixed.united(freehandRegion);
@@ -526,6 +561,10 @@ int main(int argc, char** argv) {
     run(QStringLiteral("shadow-width-sweep"), [&](int index) {
         static constexpr std::array<int, 8> widths = {1, 4, 16, 32, 64, 32, 16, 4};
         renderer.setSelection(baseSelection, true, 16, widths[index % widths.size()], shadowColor);
+        renderer.setSelectionToolbarHovered(true);
+    });
+    run(QStringLiteral("rounded-shadow-toggle"), [&](int index) {
+        renderer.setSelection(baseSelection, false, 18, (index & 1) ? 10 : 0, shadowColor);
         renderer.setSelectionToolbarHovered(true);
     });
 

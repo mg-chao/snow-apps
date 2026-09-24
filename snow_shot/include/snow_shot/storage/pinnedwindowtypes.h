@@ -82,6 +82,7 @@ struct PinnedWindowRecord final {
     bool alwaysOnTop = true;
     bool showBorder = true;
     std::optional<PinnedBorderAppearance> borderAppearance;
+    std::optional<bool> checkerboardEnabled;
     QRect preThumbnailNativeGeometry;
     QByteArray resultStyle;
     QByteArray canvasSession;

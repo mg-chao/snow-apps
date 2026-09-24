@@ -70,7 +70,7 @@ int quantizedDpr(qreal dpr) {
     return std::max(1, qRound(std::max<qreal>(1.0, dpr) * kDprQuantization));
 }
 
-QImage checkerboard() {
+const QImage& checkerboard() {
     static const QImage image = [] {
         QImage result(QSize(kCheckerTileSize * 2, kCheckerTileSize * 2),
                       QImage::Format_ARGB32_Premultiplied);
@@ -253,7 +253,7 @@ void paintCheckerboardPerimeter(QPainter& painter, const QRectF& selectionBounds
     perimeter.setFillRule(Qt::OddEvenFill);
     perimeter.addRect(outer);
     perimeter.addPath(roundedHole(selectionBounds, cornerRadius));
-    painter.fillPath(perimeter, QBrush(checkerboard()));
+    painter.fillPath(perimeter, QBrush(ScreenshotSelectionShadowRenderer::checkerboardTile()));
     painter.restore();
 }
 
@@ -272,6 +272,10 @@ void renderShadow(QPainter& painter, const QRectF& selectionBounds, qreal corner
     paintNineSlice(painter, selectionBounds, cornerRadius, shadowWidth, asset);
 }
 } // namespace
+
+const QImage& ScreenshotSelectionShadowRenderer::checkerboardTile() {
+    return checkerboard();
+}
 
 void ScreenshotSelectionShadowRenderer::renderPreview(QPainter& painter,
                                                       const QRectF& selectionBounds,

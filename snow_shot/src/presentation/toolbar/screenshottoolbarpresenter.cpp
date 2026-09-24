@@ -84,6 +84,9 @@ void ScreenshotToolbarPresenter::repositionForContentChange(
 
 void ScreenshotToolbarPresenter::updateSelectionToolbarState(
     const ScreenshotToolbarPresentationState& state, bool reposition) {
+    if (auto* toolbar = m_overlayCoordinator.toolbar()) {
+        toolbar->setScreenshotRegionType(state.regionType);
+    }
     updateOcrAvailability(m_overlayCoordinator, state.ocrAvailable);
     if (!state.selectionToolbarMode || !hasValidSelection(state.selectionPixels)) {
         m_overlayCoordinator.hideSelectionToolbar();

@@ -28,6 +28,7 @@ class ScreenshotOverlayEventSink;
 class ScreenshotOverlayFramePresenter;
 class ScreenshotScrollingThumbnailWidget;
 class ScreenshotRegionTypeControl;
+struct ScreenshotSelectionVisualState;
 
 struct ScreenshotImageSource;
 
@@ -52,6 +53,7 @@ class ScreenshotOverlayWindow final : public QWidget {
                                 int shadowWidth = 0,
                                 const QColor& shadowColor = QColor(0x33, 0x33, 0x33),
                                 bool selectionToolbarHovered = false);
+    void setScreenshotSelectionState(const ScreenshotSelectionVisualState& state);
     void setRegionTypeControlVisible(bool visible, ScreenshotRegionType type,
                                      const QRectF& selectionGlobal = {},
                                      const QPointF& cursorGlobal = {});

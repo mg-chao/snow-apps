@@ -493,6 +493,12 @@ void ScreenshotToolbarWindow::setScrollingScreenshotMode(bool enabled) {
     }
 }
 
+void ScreenshotToolbarWindow::setScreenshotRegionType(ScreenshotRegionType type) {
+    if (auto* toolPalette = palette()) {
+        toolPalette->setScreenshotRegionType(type);
+    }
+}
+
 void ScreenshotToolbarWindow::setActiveTool(ScreenshotToolPalette::Tool tool) {
     // An explicit tool set supersedes the remembered-tool restore for this capture.
     m_rememberedDrawingToolRestorePending = false;

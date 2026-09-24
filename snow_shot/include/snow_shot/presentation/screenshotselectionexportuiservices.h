@@ -54,7 +54,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         const QString& formattedPlainText = {}, qreal formattedTextDevicePixelRatio = 1.0,
         ScreenshotClipboardOriginalContent originalContent = {},
         ScreenshotImageLoader imageLoader = {}, PinnedCompletion completion = {},
-        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {});
+        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
+        std::optional<bool> checkerboardEnabled = {});
     // An already composited selection bitmap placed by screenshotSelectionPinRequest.
     [[nodiscard]] bool
     presentCompositedSelectionImage(const QImage& image,
@@ -79,7 +80,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::shared_ptr<QTextDocument> formattedTextDocument, const QString& formattedPlainText,
         qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
         ScreenshotImageLoader imageLoader, PinnedCompletion completion,
-        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {});
+        std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
+        std::optional<bool> checkerboardEnabled = {});
 
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;

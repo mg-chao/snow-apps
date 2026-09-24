@@ -3011,16 +3011,23 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
                 presented = impl.m_selectionExportUiServices->presentCompositedSelectionImage(
                     result.image, selectionPlacement, std::move(completion));
             } else {
+                const auto appearance =
+                    snow_shot::presentation::historySelectionBorderAppearance(record);
+                const std::optional<bool> checkerboardEnabled =
+                    record.contentKind ==
+                            snow_shot::storage::CaptureHistoryContentKind::ScreenshotSession
+                        ? std::optional<bool>(screenshotSelectionNeedsCheckerboard(appearance))
+                        : std::nullopt;
                 const auto fit = snow_shot::presentation::fitPinnedImageOnScreen(
                     *fallbackScreen,
                     snow_shot::presentation::pinnedImageWindowSize(
                         result.image, fallbackScreen->devicePixelRatio()),
                     autoResizeWindow);
-                presented = fit.valid &&
-                            impl.m_selectionExportUiServices->presentPinnedImage(
-                                result.image, fallbackScreen, fit.nativeGeometry,
-                                fit.initialWindowSize, {}, {}, 1.0, {}, {}, std::move(completion),
-                                snow_shot::presentation::historySelectionBorderAppearance(record));
+                presented =
+                    fit.valid &&
+                    impl.m_selectionExportUiServices->presentPinnedImage(
+                        result.image, fallbackScreen, fit.nativeGeometry, fit.initialWindowSize, {},
+                        {}, 1.0, {}, {}, std::move(completion), appearance, checkerboardEnabled);
             }
             if (!presented) {
                 qWarning("Screenshot history pin could not be presented");

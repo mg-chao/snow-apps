@@ -505,6 +505,8 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("always_on_top"), record.alwaysOnTop},
         {QStringLiteral("show_border"), record.showBorder},
         {QStringLiteral("border_appearance"), borderAppearanceToJson(record.borderAppearance)},
+        {QStringLiteral("checkerboard_enabled"),
+         record.checkerboardEnabled ? QJsonValue(*record.checkerboardEnabled) : QJsonValue()},
         {QStringLiteral("recognition_visible"), record.recognitionVisible},
         {QStringLiteral("translation_visible"), record.translationVisible},
         {QStringLiteral("pre_thumbnail_geometry"), rectToJson(record.preThumbnailNativeGeometry)},
@@ -824,6 +826,12 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     record.showBorder = object.value(QStringLiteral("show_border")).toBool(true);
     record.borderAppearance =
         borderAppearanceFromJson(object.value(QStringLiteral("border_appearance")));
+    const QJsonValue checkerboard = object.value(QStringLiteral("checkerboard_enabled"));
+    if (checkerboard.isBool()) {
+        record.checkerboardEnabled = checkerboard.toBool();
+    } else if (!checkerboard.isNull() && !checkerboard.isUndefined()) {
+        return false;
+    }
     if (object.value(QStringLiteral("border_appearance"))
             .toObject()
             .contains(QStringLiteral("geometry")) &&
@@ -1486,6 +1494,9 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
     record.originalFileName = existing->record.originalFileName;
     record.originalHtml = existing->record.originalHtml;
     record.originalText = existing->record.originalText;
+    if (!record.checkerboardEnabled) {
+        record.checkerboardEnabled = existing->record.checkerboardEnabled;
+    }
     record.resultStyle = existing->record.resultStyle;
 
     QJsonObject payloads = existing->payloads;

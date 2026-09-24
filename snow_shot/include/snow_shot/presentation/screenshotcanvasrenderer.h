@@ -111,8 +111,13 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     qsizetype selectionOutlineCacheBytes() const {
         return m_outlineCache.sizeInBytes();
     }
-    void setPinnedBorder(const QPainterPath& canvasPath, const QColor& color, bool visible,
-                         const QRectF& clientLogicalBounds = {});
+    qsizetype selectionRegionHoverCacheBytes() const {
+        return m_regionHoverCache.sizeInBytes();
+    }
+    void setPinnedCheckerboardEnabled(bool enabled);
+    [[nodiscard]] bool pinnedCheckerboardEnabled() const {
+        return m_pinnedCheckerboardEnabled;
+    }
     void setPinnedBackgroundColor(const QColor& color);
     void setMaskVisible(bool visible);
     void setSelectionBorderColor(const QColor& color);
@@ -192,10 +197,12 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     qreal m_outlineCacheScale = 0;
     QRectF m_outlineCacheBounds;
     QImage m_outlineCache;
-    QPainterPath m_pinnedBorderPath;
-    QRectF m_pinnedBorderClientBounds;
-    QColor m_pinnedBorderColor;
-    bool m_pinnedBorderVisible = false;
+    std::optional<ScreenshotRegionGeometry> m_regionHoverCacheRegion;
+    QImage m_regionHoverCache;
+    int m_regionHoverCacheRadius = 0;
+    int m_regionHoverCacheShadowWidth = 0;
+    QColor m_regionHoverCacheShadowColor;
+    bool m_pinnedCheckerboardEnabled = false;
     ScreenshotSelectionVisualState m_selectionState;
     RenderMode m_renderMode = RenderMode::Standard;
     bool m_maskVisible = false;

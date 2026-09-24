@@ -2,6 +2,7 @@
 
 #include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcapturestate.h"
+#include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -145,20 +146,46 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
                                                          m_uiPreferences.selectionBorderColor);
     m_context.overlayCoordinator.setSelectionMaskColor(m_context.displaySession,
                                                        m_uiPreferences.selectionMaskColor);
+    const bool regionOperation = m_context.selection.regionOperationActive();
+    const bool shaped = regionOperation || m_context.selection.selectionRegion().rectCount() > 1;
+    ScreenshotSelectionVisualState visualState;
+    visualState.bounds =
+        regionOperation
+            ? QRectF(m_context.selection.confirmedRegion().boundingRect()).united(selection)
+            : selection;
+    visualState.present = visualState.bounds.isValid() && !visualState.bounds.isEmpty();
+    visualState.handlesVisible = !m_context.interaction.intelligentSelecting() &&
+                                 m_context.interaction.selectionHandlesVisible() &&
+                                 m_context.selection.rectangular();
+    visualState.cornerRadius = m_context.selection.cornerRadius();
+    visualState.shadowWidth = m_context.selection.shadowWidth();
+    visualState.shadowColor = m_context.selection.shadowColor();
+    visualState.toolbarHovered = m_selectionToolbarHovered;
+    visualState.draftPath = m_context.selection.draftPath();
+    visualState.draftVertices = m_context.selection.draftVertices();
+    if (shaped) {
+        const bool animatedMarquee = m_context.interaction.intelligentSelecting() &&
+                                     regionOperation && !m_context.selection.constructionActive();
+        visualState.region = animatedMarquee
+                                 ? m_context.selection.selectionRegionForMarquee(selection)
+                                 : m_context.selection.selectionRegion();
+        visualState.confirmedRegion = m_context.selection.confirmedRegion();
+        visualState.marquee = animatedMarquee ? selection : m_context.selection.pendingMarquee();
+        visualState.subtracting = m_context.selection.regionOperation() ==
+                                  ScreenshotSelectionModel::RegionOperation::Subtract;
+        visualState.dangerColor =
+            snow_shot::presentation::styles::generateThemeColorScheme().map.colorError;
+        visualState.bounds = QRectF(visualState.region->boundingRect())
+                                 .united(QRectF(visualState.confirmedRegion.boundingRect()))
+                                 .united(visualState.marquee);
+        visualState.present = !visualState.bounds.isEmpty();
+        visualState.handlesVisible = false;
+    }
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("overlay.canvas_state");
         m_context.overlayCoordinator.updateOverlayState(
-            m_context.displaySession,
-            m_context.selection.regionOperationActive()
-                ? QRectF(m_context.selection.confirmedRegion().boundingRect()).united(selection)
-                : selection,
-            m_context.selection.cornerRadius(), m_context.selection.shadowWidth(),
-            m_context.selection.shadowColor(), m_selectionToolbarHovered,
-            !m_context.interaction.intelligentSelecting() &&
-                m_context.interaction.selectionHandlesVisible() &&
-                m_context.selection.rectangular(),
-            m_context.interaction.intelligentSelecting(), m_context.interaction.marqueeSelecting(),
-            m_context.interaction.dragging());
+            m_context.displaySession, visualState, m_context.interaction.intelligentSelecting(),
+            m_context.interaction.marqueeSelecting(), m_context.interaction.dragging());
     }
 
     ScreenshotOverlayWindow* selectionOwner = nullptr;
@@ -181,34 +208,11 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
     }
     m_context.displaySession.forEachOverlay([&](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay)
-            overlay->setSelectionDraft(m_context.selection.draftPath(),
-                                       m_context.selection.draftVertices());
-        if (overlay)
             overlay->setRegionTypeControlVisible(
                 m_uiPreferences.screenshotAreaTypeHintEnabled && overlay == cursorOwner &&
                     m_context.interaction.preselectionActive(m_context.selection),
                 m_context.selection.regionType(), selectionGlobal, cursorPosition);
     });
-    if (m_context.selection.regionOperationActive() ||
-        m_context.selection.selectionRegion().rectCount() > 1) {
-        const auto danger =
-            snow_shot::presentation::styles::generateThemeColorScheme().map.colorError;
-        const bool animatedMarquee = m_context.interaction.intelligentSelecting() &&
-                                     m_context.selection.regionOperationActive() &&
-                                     !m_context.selection.constructionActive();
-        const ScreenshotRegionGeometry region =
-            animatedMarquee ? m_context.selection.selectionRegionForMarquee(selection)
-                            : m_context.selection.selectionRegion();
-        m_context.displaySession.forEachOverlay([&](qsizetype, ScreenshotOverlayWindow* overlay) {
-            if (overlay)
-                overlay->setScreenshotSelectionRegion(
-                    region, m_context.selection.confirmedRegion(),
-                    animatedMarquee ? selection : m_context.selection.pendingMarquee(),
-                    m_context.selection.regionOperation() ==
-                        ScreenshotSelectionModel::RegionOperation::Subtract,
-                    danger);
-        });
-    }
     m_context.overlayCoordinator.updateGuideLines(
         m_context.displaySession, cursorOwner,
         cursorOwner ? QPointF(cursorPosition - cursorOwner->geometry().topLeft()) : QPointF(),

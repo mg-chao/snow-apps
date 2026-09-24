@@ -83,6 +83,10 @@ void stateUpdatesBeforeFirstFlushPreserveRestorableSources() {
         const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         const QString group = QUuid::createUuid().toString(QUuid::WithoutBraces);
         auto record = recordWithId(id, patternedImage(QSize(29, 13), 3));
+        if (source == 0) {
+            record.image.setPixelColor(0, 0, Qt::transparent);
+        }
+        record.checkerboardEnabled = source == 0;
         const QImage originalImage = record.image;
         const QByteArray encoded = pngBytes(originalImage, 8);
         if (source == 1) {
@@ -120,6 +124,7 @@ void stateUpdatesBeforeFirstFlushPreserveRestorableSources() {
                     "move pin into inactive group and activate it");
             const auto beforeFlush = repository.loadRecord(id);
             require(beforeFlush && beforeFlush->groupId == group &&
+                        beforeFlush->checkerboardEnabled == record.checkerboardEnabled &&
                         beforeFlush->canvasSession == record.canvasSession &&
                         beforeFlush->recognitionResults == record.recognitionResults &&
                         (source == 1 ? beforeFlush->originalHtml == record.originalHtml
@@ -130,7 +135,9 @@ void stateUpdatesBeforeFirstFlushPreserveRestorableSources() {
         storage::PinnedWindowRepository reopened(directory.path(), false);
         const auto restored = reopened.loadRecord(id);
         require(reopened.summaries().size() == 1 && reopened.activeGroupId() == group && restored &&
-                    restored->groupId == group && restored->canvasSession == record.canvasSession &&
+                    restored->groupId == group &&
+                    restored->checkerboardEnabled == record.checkerboardEnabled &&
+                    restored->canvasSession == record.canvasSession &&
                     restored->recognitionResults == record.recognitionResults &&
                     (source == 1 ? restored->originalText == record.originalText &&
                                        restored->originalHtml == record.originalHtml

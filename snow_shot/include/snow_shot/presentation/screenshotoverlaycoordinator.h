@@ -23,6 +23,7 @@ class ScreenshotColorPickerWindow;
 class ScreenshotDisplaySession;
 class ScreenshotOverlayEventSink;
 class ScreenshotSelectionToolbarCommandSink;
+struct ScreenshotSelectionVisualState;
 class ScreenshotSelectionToolbarWidget;
 class ScreenshotToolbarCommandSink;
 class ScreenshotToolbarWindow;
@@ -53,9 +54,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
                             ScreenshotOverlayShowMode mode);
     void hideOverlayWindowsImmediately(const ScreenshotDisplaySession& displaySession);
     void hideOverlayWindows(const ScreenshotDisplaySession& displaySession);
-    void updateOverlayState(const ScreenshotDisplaySession& displaySession, const QRectF& selection,
-                            int cornerRadius, int shadowWidth, const QColor& shadowColor,
-                            bool selectionToolbarHovered, bool selectionHandlesVisible,
+    void updateOverlayState(const ScreenshotDisplaySession& displaySession,
+                            const ScreenshotSelectionVisualState& selectionState,
                             bool intelligentSelecting, bool manualSelecting, bool dragging);
     void setScrollingCaptureMode(const ScreenshotDisplaySession& displaySession,
                                  const QRectF& selection, bool enabled);

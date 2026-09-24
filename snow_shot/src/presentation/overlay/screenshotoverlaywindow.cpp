@@ -152,27 +152,34 @@ void ScreenshotOverlayWindow::setScreenshotSelection(const QRectF& selection, bo
                                                      int cornerRadius, int shadowWidth,
                                                      const QColor& shadowColor,
                                                      bool selectionToolbarHovered) {
+    const QRectF normalizedSelection = selection.normalized();
+    ScreenshotSelectionVisualState state;
+    state.bounds = normalizedSelection;
+    state.present = normalizedSelection.isValid() && !normalizedSelection.isEmpty();
+    state.handlesVisible = handlesVisible;
+    state.cornerRadius = cornerRadius;
+    state.shadowWidth = shadowWidth;
+    state.shadowColor = shadowColor;
+    state.toolbarHovered = selectionToolbarHovered;
+    setScreenshotSelectionState(state);
+}
+
+void ScreenshotOverlayWindow::setScreenshotSelectionState(
+    const ScreenshotSelectionVisualState& requestedState) {
     if (m_canvas != nullptr) {
-        const QRectF normalizedSelection = selection.normalized();
-        const QRectF configuredArea =
-            normalizedSelection.isValid() && !normalizedSelection.isEmpty() ? normalizedSelection
-                                                                            : QRectF();
+        const QRectF normalizedSelection = requestedState.bounds.normalized();
+        const QRectF configuredArea = requestedState.present && normalizedSelection.isValid() &&
+                                              !normalizedSelection.isEmpty()
+                                          ? normalizedSelection
+                                          : QRectF();
         m_canvas->setDecorationRenderAreas(SnowCanvasDecorationRenderAreas{
             std::optional<QRectF>(configuredArea),
             std::optional<QRectF>(configuredArea),
         });
     }
     if (m_screenshotRenderer != nullptr) {
-        const QRectF normalizedSelection = selection.normalized();
-        ScreenshotSelectionVisualState state;
-        state.bounds = normalizedSelection;
-        state.present = normalizedSelection.isValid() && !normalizedSelection.isEmpty();
-        state.handlesVisible = handlesVisible;
+        ScreenshotSelectionVisualState state = requestedState;
         state.borderVisible = m_screenshotRenderer->selectionBorderVisible();
-        state.cornerRadius = cornerRadius;
-        state.shadowWidth = shadowWidth;
-        state.shadowColor = shadowColor;
-        state.toolbarHovered = selectionToolbarHovered;
         m_screenshotRenderer->applySelectionState(state);
     }
 }
@@ -836,12 +843,15 @@ void ScreenshotOverlayWindow::setRegionTypeControlVisible(bool visible, Screensh
                                                           const QPointF& cursorGlobal) {
     m_regionTypeControl->setType(type);
     if (visible) {
-        m_regionTypeControl->setMaximumWidth(std::max(1, width() - 16));
-        m_regionTypeControl->adjustSize();
-        m_regionTypeControl->move(
-            std::max(0, (width() - m_regionTypeControl->width()) / 2),
-            std::max(0, std::min(12, height() - m_regionTypeControl->height())));
-        m_regionTypeControl->raise();
+        const int maximumWidth = std::max(1, width() - 16);
+        if (m_regionTypeControl->maximumWidth() != maximumWidth) {
+            m_regionTypeControl->setMaximumWidth(maximumWidth);
+            m_regionTypeControl->adjustSize();
+        }
+        const QPoint position(std::max(0, (width() - m_regionTypeControl->width()) / 2),
+                              std::max(0, std::min(12, height() - m_regionTypeControl->height())));
+        if (m_regionTypeControl->pos() != position)
+            m_regionTypeControl->move(position);
     }
     m_regionTypeControl->setPresentationVisible(visible, selectionGlobal, cursorGlobal);
 }

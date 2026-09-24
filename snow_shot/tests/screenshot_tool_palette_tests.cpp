@@ -11728,6 +11728,60 @@ void autoFilterControlsShareStylesAndKeepCategoryUnselected() {
     }
 }
 
+void regionControlsFollowTheActiveCaptureType() {
+    const auto previous = screenshotRegionPreference();
+    for (const auto type : {ScreenshotRegionType::Rectangle, ScreenshotRegionType::Polyline,
+                            ScreenshotRegionType::Curve, ScreenshotRegionType::Freehand}) {
+        // A previous capture's preference must not override the active capture on confirmation.
+        setScreenshotRegionPreference(ScreenshotRegionType((int(type) + 1) % 4));
+        ScreenshotRegionTypeControl floating(nullptr, true);
+        floating.setType(type);
+        ScreenshotToolPalette::Options options;
+        options.showMoveTool = true;
+        options.showMoveOptionsToolbar = true;
+        ScreenshotToolPalette palette(options);
+        int commands = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::screenshotRegionTypeRequested,
+                         [&] { ++commands; });
+        palette.setScreenshotRegionType(type);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+        auto* group = palette.findChild<adqt::widgets::AdRadioButtonGroup*>(
+            QStringLiteral("screenshotMoveRegionTypeButtonGroup"));
+        const auto requireSynchronized = [&] {
+            require(group && group->checkedId() == int(type),
+                    "Move region controls display the active capture type before any click");
+            for (int i = 0; i < 4; ++i) {
+                auto* hint = floating.findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotRegionType_") +
+                    screenshotRegionTypeId(ScreenshotRegionType(i)));
+                require(hint &&
+                            (hint->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid) ==
+                                (i == int(type)) &&
+                            group->button(i)->isChecked() == (i == int(type)),
+                        "Move and overlay controls highlight exactly the same initial region");
+            }
+        };
+        requireSynchronized();
+        palette.show();
+        floating.show();
+        QCoreApplication::processEvents();
+        requireSynchronized();
+        setScreenshotRegionPreference(ScreenshotRegionType((int(type) + 2) % 4));
+        floating.setType(type);
+        palette.setPhysicalScale(1.5);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+        group = palette.findChild<adqt::widgets::AdRadioButtonGroup*>(
+            QStringLiteral("screenshotMoveRegionTypeButtonGroup"));
+        requireSynchronized();
+        const auto next = ScreenshotRegionType((int(type) + 3) % 4);
+        palette.setScreenshotRegionType(next);
+        require(group->checkedId() == int(next) && commands == 0,
+                "live capture type updates synchronize the toolbar without issuing commands");
+    }
+    setScreenshotRegionPreference(previous);
+}
+
 void moveToolExposesCaptureCursorAndRecaptureOptions() {
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
@@ -11795,6 +11849,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                      [&](int type) {
                          selectedType = type;
                          setScreenshotRegionPreference(ScreenshotRegionType(type));
+                         palette.setScreenshotRegionType(ScreenshotRegionType(type));
                      });
     for (const auto type : {ScreenshotRegionType::Rectangle, ScreenshotRegionType::Polyline,
                             ScreenshotRegionType::Curve, ScreenshotRegionType::Freehand}) {
@@ -12085,6 +12140,7 @@ void regionSwitcherRetranslatesAndRenders() {
              {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
             require(language.setLanguage(locale), "region catalog loads");
             setScreenshotRegionPreference(ScreenshotRegionType::Curve);
+            palette.setScreenshotRegionType(ScreenshotRegionType::Curve);
             QCoreApplication::processEvents();
             auto* curve = floating.findChild<adqt::widgets::AdButton*>(
                 QStringLiteral("screenshotRegionType_curve"));
@@ -12224,12 +12280,14 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--move-options-only"))) {
+        regionControlsFollowTheActiveCaptureType();
         moveToolExposesCaptureCursorAndRecaptureOptions();
         regionSwitcherRetranslatesAndRenders();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--region-switcher-only"))) {
+        regionControlsFollowTheActiveCaptureType();
         regionSwitcherRetranslatesAndRenders();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -12417,6 +12475,7 @@ int main(int argc, char** argv) {
     dynamicToolbarLabelsUseEveryTranslationCatalog();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
+    regionControlsFollowTheActiveCaptureType();
     moveToolExposesCaptureCursorAndRecaptureOptions();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
     shapeAndArrowStrokeEditorsShareThePresetCatalog();

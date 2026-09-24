@@ -560,6 +560,44 @@ void pinnedResultDownscaleUsesLinearFiltering() {
             "stay pixel-exact");
 }
 
+void pinnedCheckerboardStaysBehindTransparentPixels() {
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    QImage source(24, 24, QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(42, 84, 126));
+    {
+        QPainter painter(&source);
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+        painter.fillRect(QRect(6, 6, 12, 6), Qt::transparent);
+    }
+    const QRectF surface(source.rect());
+    renderer.setImage(source, surface);
+    renderer.setPinnedResultSurface(surface, surface, {});
+    const SnowCanvasRenderContext context{source.rect(), QRegion(source.rect()), QTransform(), 1.0};
+    const auto paint = [&]() {
+        QImage output(source.size(), QImage::Format_ARGB32_Premultiplied);
+        output.fill(Qt::transparent);
+        QPainter painter(&output);
+        renderer.renderBeforeCanvas(painter, context);
+        renderer.renderAfterCanvas(painter, context);
+        return output;
+    };
+
+    renderer.setPinnedCheckerboardEnabled(true);
+    const QImage checker = paint();
+    const QImage& tile = ScreenshotSelectionShadowRenderer::checkerboardTile();
+    require(tile.size() == QSize(12, 12) && checker.pixelColor(8, 8) == tile.pixelColor(8, 8) &&
+                checker.pixelColor(14, 8) == tile.pixelColor(2, 8) &&
+                checker.pixelColor(8, 8) != checker.pixelColor(14, 8),
+            "pinned transparent pixels must reveal the cached preview tile");
+    require(checker.pixelColor(2, 8) == QColor(42, 84, 126),
+            "the checkerboard must remain behind opaque screenshot pixels");
+
+    renderer.setPinnedCheckerboardEnabled(false);
+    require(paint().pixelColor(8, 8).alpha() == 0,
+            "disabling the checkerboard must leave source transparency intact");
+}
+
 QImage renderMaterializedImage(const QImage& source, const QSize& targetSize,
                                const QRegion& exposedRegion, const QColor& background,
                                bool smooth = false) {
@@ -1626,6 +1664,29 @@ void roundedSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow() {
 
     renderer.setSelection(selection, false, 18, 10);
     const QImage withShadow = renderCanvas(canvas);
+    ScreenshotSelectionVisualState before;
+    before.bounds = selection;
+    before.present = true;
+    before.handlesVisible = false;
+    before.cornerRadius = 18;
+    before.toolbarHovered = true;
+    ScreenshotSelectionVisualState after = before;
+    after.shadowWidth = 10;
+    requireChangedPixelsCoveredByDirtyRegion(
+        withoutShadow, withShadow,
+        planScreenshotSelectionDamage(before, after, canvas.rect(), canvas.canvasToViewTransform(),
+                                      true),
+        "rounded preview shadow-width damage must cover every changed pixel");
+    const QColor changedShadowColor(200, 30, 30);
+    renderer.setSelection(selection, false, 18, 10, changedShadowColor);
+    const QImage recoloredShadow = renderCanvas(canvas);
+    ScreenshotSelectionVisualState recolored = after;
+    recolored.shadowColor = changedShadowColor;
+    requireChangedPixelsCoveredByDirtyRegion(
+        withShadow, recoloredShadow,
+        planScreenshotSelectionDamage(after, recolored, canvas.rect(),
+                                      canvas.canvasToViewTransform(), true),
+        "rounded preview shadow-color damage must cover every changed pixel");
     constexpr std::array<QPoint, 5> stableContentPoints = {
         QPoint(32, 60), QPoint(88, 60), QPoint(60, 37), QPoint(60, 83), QPoint(38, 43)};
     for (const QPoint& point : stableContentPoints) {
@@ -1961,6 +2022,14 @@ void selectionDamagePlannerAvoidsFullCanvasFallback() {
     require(planScreenshotSelectionDamage(offscreenBefore, offscreenAfter, viewport, unavailable,
                                           true) == QRegion(viewport),
             "an unavailable canvas transform is the only full-viewport fallback");
+
+    ScreenshotSelectionVisualState regionBefore = offscreenBefore;
+    regionBefore.region = QRect(10, 10, 40, 40);
+    ScreenshotSelectionVisualState regionAfter = regionBefore;
+    regionAfter.region = QRect(11, 10, 40, 40);
+    require(planScreenshotSelectionDamage(regionBefore, regionAfter, viewport, unavailable, true) ==
+                QRegion(viewport),
+            "compound damage needs a full repaint when the transform is unavailable");
 
     ScreenshotSelectionVisualState before;
     before.bounds = QRectF(120.2, 90.2, 240.4, 180.4);
@@ -4036,14 +4105,17 @@ void overlayPresenterRespectsSelectionHandleVisibility() {
 
     ScreenshotOverlayCanvasPresenter presenter({});
     const QRectF selection(10.0, 10.0, 60.0, 40.0);
-    presenter.updateOverlayState(displays, selection, 0, 0, QColor(0x33, 0x33, 0x33), false, false,
-                                 false, false, false);
+    ScreenshotSelectionVisualState state;
+    state.bounds = selection;
+    state.present = true;
+    state.handlesVisible = false;
+    presenter.updateOverlayState(displays, state, false, false, false);
     require(overlay.hasScreenshotSelection() && !overlay.screenshotSelectionHandlesVisible() &&
                 overlay.screenshotSelectionBorderVisible(),
             "hidden selection control points must retain the recognition selection border");
 
-    presenter.updateOverlayState(displays, selection, 0, 0, QColor(0x33, 0x33, 0x33), false, true,
-                                 false, false, false);
+    state.handlesVisible = true;
+    presenter.updateOverlayState(displays, state, false, false, false);
     require(overlay.screenshotSelectionHandlesVisible(),
             "the overlay presenter must restore explicitly visible selection control points");
 }
@@ -4190,6 +4262,78 @@ void compoundSelectionRendersUnifiedMaskAndOutline() {
     require(planScreenshotSelectionDamage(before, after, canvas.rect(), QTransform(), true)
                 .contains(QPoint(55, 55)),
             "hole changes must invalidate pixels inside unchanged bounds");
+}
+
+void compoundSelectionDamageCoversChangedPixels() {
+    SnowCanvasWidget canvas;
+    canvas.resize(480, 400);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(240, 200, 1), "compound damage camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    QImage background(canvas.size(), QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    renderer.setImage(background, QRectF(0, 0, 480, 400));
+    renderer.setMaskVisible(true);
+
+    const QRegion donut = QRegion(QRect(60, 50, 320, 280)).subtracted(QRect(150, 130, 130, 110));
+    ScreenshotSelectionVisualState before;
+    before.region = donut;
+    before.confirmedRegion = donut;
+    before.bounds = donut.boundingRect();
+    before.present = true;
+    before.handlesVisible = false;
+    before.shadowWidth = 8;
+    ScreenshotSelectionVisualState after = before;
+    after.region = donut.translated(1, 0);
+    after.confirmedRegion = *after.region;
+    after.bounds = after.region->boundingRect();
+
+    for (const bool hovered : {false, true}) {
+        before.toolbarHovered = hovered;
+        after.toolbarHovered = hovered;
+        renderer.applySelectionState(before);
+        const QImage oldFrame = renderCanvas(canvas);
+        renderer.applySelectionState(after);
+        const QImage newFrame = renderCanvas(canvas);
+        const QRegion dirty = planScreenshotSelectionDamage(before, after, canvas.rect(),
+                                                            canvas.canvasToViewTransform(), true);
+        requireChangedPixelsCoveredByDirtyRegion(
+            oldFrame, newFrame, dirty, "compound movement damage must cover every changed pixel");
+        require(regionArea(dirty) < 480 * 400 / 3,
+                "compound movement must not repaint the full selection bounds");
+        if (hovered) {
+            require(renderer.selectionRegionHoverCacheBytes() > 0,
+                    "hover preview should retain a translated region shadow");
+        }
+    }
+
+    ScreenshotSelectionVisualState hidden = after;
+    hidden.present = false;
+    renderer.applySelectionState(after);
+    const QImage visibleFrame = renderCanvas(canvas);
+    renderer.applySelectionState(hidden);
+    const QImage hiddenFrame = renderCanvas(canvas);
+    requireChangedPixelsCoveredByDirtyRegion(
+        visibleFrame, hiddenFrame,
+        planScreenshotSelectionDamage(after, hidden, canvas.rect(), canvas.canvasToViewTransform(),
+                                      true),
+        "compound visibility damage must cover the selection interior");
+
+    ScreenshotSelectionVisualState noSelection;
+    renderer.applySelectionState(noSelection);
+    const QImage emptyFrame = renderCanvas(canvas);
+    ScreenshotSelectionVisualState draftOnly;
+    draftOnly.draftPath.moveTo(30, 30);
+    draftOnly.draftPath.lineTo(430, 350);
+    renderer.applySelectionState(draftOnly);
+    const QImage draftFrame = renderCanvas(canvas);
+    requireChangedPixelsCoveredByDirtyRegion(
+        emptyFrame, draftFrame,
+        planScreenshotSelectionDamage(noSelection, draftOnly, canvas.rect(),
+                                      canvas.canvasToViewTransform(), true),
+        "draft-only state must invalidate its painted line");
+    canvas.setCustomRenderer(nullptr);
 }
 
 void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
@@ -4355,6 +4499,7 @@ int main(int argc, char** argv) {
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();
     compoundSelectionRendersUnifiedMaskAndOutline();
+    compoundSelectionDamageCoversChangedPixels();
     nonRectangularSelectionDraftLeavesInteriorUnchanged();
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
     selectionBorderAndHandlesFollowTheConfiguredColor();
@@ -4364,6 +4509,7 @@ int main(int argc, char** argv) {
     overlayCameraPreservesDesktopPixels();
     physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
     pinnedResultDownscaleUsesLinearFiltering();
+    pinnedCheckerboardStaysBehindTransparentPixels();
     largeRasterSourceExtentsRenderWithoutFixedPointWrap();
     smoothLargeImageChunkBoundariesRemainPixelEquivalent();
     extremeImageDownscaleUsesSafePreprocessing();

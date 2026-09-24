@@ -204,12 +204,11 @@ void ScreenshotOverlayCoordinator::flushDeferredOverlayMaintenance(
 }
 
 void ScreenshotOverlayCoordinator::updateOverlayState(
-    const ScreenshotDisplaySession& displaySession, const QRectF& selection, int cornerRadius,
-    int shadowWidth, const QColor& shadowColor, bool selectionToolbarHovered,
-    bool selectionHandlesVisible, bool intelligentSelecting, bool manualSelecting, bool dragging) {
-    m_canvasPresenter.updateOverlayState(
-        displaySession, selection, cornerRadius, shadowWidth, shadowColor, selectionToolbarHovered,
-        selectionHandlesVisible, intelligentSelecting, manualSelecting, dragging);
+    const ScreenshotDisplaySession& displaySession,
+    const ScreenshotSelectionVisualState& selectionState, bool intelligentSelecting,
+    bool manualSelecting, bool dragging) {
+    m_canvasPresenter.updateOverlayState(displaySession, selectionState, intelligentSelecting,
+                                         manualSelecting, dragging);
 }
 
 namespace {

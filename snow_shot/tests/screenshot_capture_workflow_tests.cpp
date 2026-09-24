@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
+#include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
 
 #include <QVector>
 
@@ -264,6 +265,21 @@ ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
     });
 }
 
+void confirmedSelectionPreservesRegionTypeInToolbarPresentation() {
+    for (auto type : {ScreenshotRegionType::Rectangle, ScreenshotRegionType::Polyline,
+                      ScreenshotRegionType::Curve, ScreenshotRegionType::Freehand}) {
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        interaction.beginCapture();
+        selection.setRegionType(type);
+        selection.setSelectionRect(QRectF(10, 20, 100, 80));
+        interaction.confirmSelection();
+        const auto state = makeScreenshotToolbarPresentationState(interaction, selection);
+        require(state.regionType == type,
+                "confirmation passes the active area tool to the toolbar, independent of geometry");
+    }
+}
+
 void captureRestoresSelectionPreferencesAfterReset() {
     for (const bool prewarm : {false, true}) {
         ScreenshotCaptureState state;
@@ -278,7 +294,9 @@ void captureRestoresSelectionPreferencesAfterReset() {
         int radius = 24;
         int shadowWidth = 12;
         bool aspectRatioLocked = true;
+        auto regionType = ScreenshotRegionType::Polyline;
         context.restoreSelectionPreferences = [&]() {
+            selection.setRegionType(regionType);
             static_cast<void>(selection.setCornerRadius(radius));
             static_cast<void>(selection.setShadowWidth(shadowWidth));
             static_cast<void>(selection.setAspectRatioLockEnabled(aspectRatioLocked, 5.0));
@@ -288,6 +306,8 @@ void captureRestoresSelectionPreferencesAfterReset() {
             workflow.prewarmResources();
         }
         workflow.startCapture();
+        require(selection.regionType() == regionType,
+                "cold and prewarmed captures restore the saved region type");
         require(selection.cornerRadius() == 24 && selection.shadowWidth() == 12,
                 "cold and prewarmed captures must restore effects after resetting the model");
         require(!selection.hasPixelSelection() && selection.aspectRatioLocked(),
@@ -295,13 +315,19 @@ void captureRestoresSelectionPreferencesAfterReset() {
         workflow.cancelCapture();
         radius = 32;
         shadowWidth = 16;
+        regionType = ScreenshotRegionType::Curve;
         workflow.startCapture();
+        require(selection.regionType() == regionType,
+                "captures after cancellation reload the latest region type");
         require(selection.cornerRadius() == 32 && selection.shadowWidth() == 16,
                 "captures after cancellation must reload the latest saved effects");
         radius = 0;
         shadowWidth = 0;
         aspectRatioLocked = false;
+        regionType = ScreenshotRegionType::Freehand;
         workflow.startCapture();
+        require(selection.regionType() == regionType,
+                "restarting an active capture reloads the latest region type");
         require(selection.cornerRadius() == 0 && selection.shadowWidth() == 0 &&
                     !selection.aspectRatioLocked(),
                 "restarting an active capture must restore disabled selection preferences");
@@ -1801,6 +1827,7 @@ void customCaptureDoesNotWaitForSelector() {
 }
 
 int main() {
+    confirmedSelectionPreservesRegionTypeInToolbarPresentation();
     customCaptureDoesNotWaitForSelector();
     startupDisplayIdentityMatchesByNameRectOrNativeId();
     injectedLayoutRefreshDoesNotFallBackToEnumeration();

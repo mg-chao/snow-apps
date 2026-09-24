@@ -2714,6 +2714,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-capture-workflow-tests
         tests/screenshot_capture_workflow_tests.cpp
+        src/presentation/toolbar/screenshottoolbarpresentationstatefactory.cpp
         src/presentation/selector/screenshotselectorworkflow.cpp
         include/snow_shot/presentation/screenshotcapturedisplaymodelreconciler.h
         include/snow_shot/presentation/screenshotcapturestate.h
@@ -3447,6 +3448,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-show-border-tests
         COMMAND snow-shot-pinned-window-tests --show-border-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-show-border-tests PROPERTIES LABELS "unit"
+        RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-checkerboard-tests
+        COMMAND snow-shot-pinned-window-tests --checkerboard-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-checkerboard-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-remembered-drawing-tool-tests
         COMMAND snow-shot-pinned-window-tests --remembered-drawing-tool-only -platform offscreen)
@@ -5919,6 +5924,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         dwmapi
         user32
     )
+    snow_shot_import_offscreen_platform(snow-shot-selection-render-benchmark)
 
     # This executable deliberately is not registered with CTest. It creates
     # real always-on-top toolbar windows and measures real DWM presentation

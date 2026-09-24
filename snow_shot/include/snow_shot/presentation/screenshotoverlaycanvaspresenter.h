@@ -14,6 +14,7 @@
 
 class ScreenshotDisplaySession;
 class ScreenshotOverlayWindow;
+struct ScreenshotSelectionVisualState;
 
 class ScreenshotOverlayCanvasPresenter final {
   public:
@@ -26,9 +27,8 @@ class ScreenshotOverlayCanvasPresenter final {
     void applyDisplayModels(ScreenshotDisplaySession& displaySession) const;
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode) const;
-    void updateOverlayState(const ScreenshotDisplaySession& displaySession, const QRectF& selection,
-                            int cornerRadius, int shadowWidth, const QColor& shadowColor,
-                            bool selectionToolbarHovered, bool selectionHandlesVisible,
+    void updateOverlayState(const ScreenshotDisplaySession& displaySession,
+                            const ScreenshotSelectionVisualState& selectionState,
                             bool intelligentSelecting, bool manualSelecting, bool dragging) const;
     void updateOverlayCursors(const ScreenshotDisplaySession& displaySession, bool selecting,
                               bool dragging) const;

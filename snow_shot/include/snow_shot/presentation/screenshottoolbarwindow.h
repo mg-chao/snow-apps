@@ -23,6 +23,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setActionToolsLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
     void setScrollingScreenshotMode(bool enabled);
     void setActiveTool(ScreenshotToolPalette::Tool tool);
+    void setScreenshotRegionType(ScreenshotRegionType type);
     void setRecaptureBusy(bool busy);
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void restoreRememberedDrawingTool();

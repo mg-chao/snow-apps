@@ -20,6 +20,7 @@
 
 #include <array>
 #include <algorithm>
+#include <optional>
 
 class ScreenshotRegionTypeControl final : public QWidget {
   public:
@@ -96,17 +97,23 @@ class ScreenshotRegionTypeControl final : public QWidget {
 
     void refreshVisibility(const QPointF& cursorGlobal) {
         if (!m_floating || !m_requestedVisible) {
-            hide();
+            if (!isHidden())
+                hide();
             return;
         }
         const QRectF hintArea(mapToGlobal(QPoint()), size());
         const bool obscured =
             screenshotShortcutHintAreaIsObscured(hintArea, m_selectionGlobal, cursorGlobal);
-        setVisible(!obscured);
-        if (!obscured)
-            raise();
+        if (isHidden() != obscured) {
+            setVisible(!obscured);
+            if (!obscured)
+                raise();
+        }
     }
     void setType(ScreenshotRegionType type) {
+        if (m_type == type)
+            return;
+        m_type = type;
         for (int i = 0; i < 4; ++i) {
             auto* button = m_buttons[static_cast<std::size_t>(i)];
             const bool selected = i == int(type);
@@ -172,4 +179,5 @@ class ScreenshotRegionTypeControl final : public QWidget {
     bool m_floating = false;
     bool m_requestedVisible = false;
     QRectF m_selectionGlobal;
+    std::optional<ScreenshotRegionType> m_type;
 };

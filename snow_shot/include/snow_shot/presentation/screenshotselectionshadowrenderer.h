@@ -19,6 +19,7 @@ struct ScreenshotSelectionShadowDiagnostics {
 
 class ScreenshotSelectionShadowRenderer final {
   public:
+    [[nodiscard]] static const QImage& checkerboardTile();
     static void renderPreview(QPainter& painter, const QRectF& selectionBounds, qreal cornerRadius,
                               qreal shadowWidth, const QColor& shadowColor, qreal devicePixelRatio);
 
