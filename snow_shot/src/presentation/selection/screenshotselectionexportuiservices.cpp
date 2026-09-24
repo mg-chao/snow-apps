@@ -71,7 +71,8 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
         if (storage.isInitialized()) {
             static_cast<void>(storage.pinnedWindows().updateState(record));
-            static_cast<void>(storage.pinnedWindows().markClosed(record.id));
+            if (storage.pinnedWindows().markClosedDeferred(record.id).success)
+                storage.requestPinnedWindowRetentionCleanup();
         }
     };
     config->replacementPersistenceWriter =
@@ -341,6 +342,9 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         if (transaction->snapshot.sourceKind !=
             snow_shot::storage::PinnedWindowSourceKind::ImageData) {
             persistNonImageSource(*transaction);
+            if (transaction->intent == snow_shot::storage::PinnedWindowCloseIntent::Close)
+                snow_shot::storage::ApplicationStorage::instance()
+                    .requestPinnedWindowRetentionCleanup();
             finish(persistenceId);
             return;
         }
@@ -426,9 +430,9 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         } else if (!result.succeeded()) {
             qWarning("Pinned source PNG encoding failed: %s", qPrintable(result.error));
         }
-        auto& storage = snow_shot::storage::ApplicationStorage::instance();
-        if (storage.isInitialized())
-            static_cast<void>(storage.pinnedWindows().enforcePolicy());
+        if (transaction->intent == snow_shot::storage::PinnedWindowCloseIntent::Close)
+            snow_shot::storage::ApplicationStorage::instance()
+                .requestPinnedWindowRetentionCleanup();
         finish(persistenceId);
     }
 

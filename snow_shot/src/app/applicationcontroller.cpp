@@ -680,6 +680,9 @@ class ApplicationController::Impl {
         case presentation::GlobalShortcutAction::OpenCaptureHistory:
             ensureMainWindow().showScreenshotHistory();
             break;
+        case presentation::GlobalShortcutAction::OpenPinToScreenManagement:
+            ensureMainWindow().showPinToScreenManagement();
+            break;
         case presentation::GlobalShortcutAction::OpenSettings:
             showInterfaceSettings();
             break;

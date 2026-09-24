@@ -214,6 +214,19 @@ SettingsItemDefinition openCaptureHistoryItem() {
         []() { return outlined_icons::History(); });
 }
 
+SettingsItemDefinition openPinToScreenManagementItem() {
+    SettingsItemDefinition item = quickActionItem(
+        QStringLiteral("quick.open-pin-to-screen-management"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen Management"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Open the Pin to Screen Management page in the main window"),
+        {}, GlobalShortcutAction::OpenPinToScreenManagement,
+        QStringLiteral("global_shortcuts/open_pin_to_screen_management"),
+        []() { return custom_outlined_icons::PinToScreenManagement(); });
+    std::get<SettingsShortcutActionDefinition>(item.payload).showInTrayMenu = false;
+    return item;
+}
+
 SettingsItemDefinition themeItem() {
     SettingsSelectDefinition payload;
     payload.options = {
@@ -1981,6 +1994,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::OtherShortcuts,
                     {
                         openCaptureHistoryItem(),
+                        openPinToScreenManagementItem(),
                         translateSelectedTextItem(),
                         toggleGlobalHotkeysItem(),
                         toggleDisableOnFocusedFullscreenWindowItem(),
@@ -2794,6 +2808,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/open_screen_recording_folder");
     case GlobalShortcutAction::OpenCaptureHistory:
         return QStringLiteral("global_shortcuts/open_capture_history");
+    case GlobalShortcutAction::OpenPinToScreenManagement:
+        return QStringLiteral("global_shortcuts/open_pin_to_screen_management");
     case GlobalShortcutAction::OpenSettings:
         return QStringLiteral("global_shortcuts/open_settings");
     case GlobalShortcutAction::PinClipboardContent:
@@ -2982,7 +2998,7 @@ QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const
             for (const SettingsItemDefinition& itemDefinition : sectionDefinition.items) {
                 const auto* shortcut =
                     std::get_if<SettingsShortcutActionDefinition>(&itemDefinition.payload);
-                if (shortcut == nullptr) {
+                if (shortcut == nullptr || !shortcut->showInTrayMenu) {
                     continue;
                 }
                 group.options.push_back(

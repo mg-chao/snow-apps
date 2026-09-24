@@ -262,6 +262,7 @@ struct SettingsShortcutActionDefinition {
     TranslatableText trayLabel;
     // Marks the tray menu entry as checkable so it can mirror runtime state.
     bool trayCheckable = false;
+    bool showInTrayMenu = true;
 };
 
 enum class SettingsLocalShortcutScope {

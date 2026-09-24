@@ -39,6 +39,7 @@ class MainWindow : public QMainWindow {
     void showAbout();
     void showAppPermissions(const QString& permissionId = {});
     void showScreenshotHistory();
+    void showPinToScreenManagement();
     void showTranslation(const QString& text);
 
   signals:

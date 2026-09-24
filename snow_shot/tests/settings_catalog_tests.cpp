@@ -226,11 +226,11 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 41, "macOS adds one permissions section");
-    require(itemCount == 179, "macOS adds login settings and omits administrator controls "
+    require(itemCount == 180, "macOS adds login settings and omits administrator controls "
                               "and Windows-only choices");
 #else
     require(sectionCount == 40, "catalog must contain forty sections");
-    require(itemCount == 181, "catalog must contain one hundred eighty-one items");
+    require(itemCount == 182, "catalog must contain one hundred eighty-two items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1284,6 +1284,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::OpenCaptureHistory, "other", "quick.open-capture-history",
          "global_shortcuts/open_capture_history",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::OpenPinToScreenManagement, "other", "quick.open-pin-to-screen-management",
+         "global_shortcuts/open_pin_to_screen_management",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::TranslateSelectedText, "other", "quick.translate-selected-text",
          "global_shortcuts/translate_selected_text",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -1336,8 +1339,18 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 18,
-            "the global-hotkeys catalog must expose all eighteen shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 19,
+            "the global-hotkeys catalog must expose all nineteen shortcut actions exactly once");
+    const auto* pinnedManagementShortcut =
+        catalog.itemForShortcut(Action::OpenPinToScreenManagement);
+    const auto* pinnedManagementSchema = storage::ConfigurationSchema::entry(
+        QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
+    require(pinnedManagementShortcut != nullptr &&
+                pinnedManagementShortcut->title.translated() ==
+                    QStringLiteral("Pin to Screen Management") &&
+                pinnedManagementSchema != nullptr &&
+                pinnedManagementSchema->defaultValue.toArray().isEmpty(),
+            "Pin to Screen Management must start without an assigned global hotkey");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
             "Open Interface settings must not appear in Global hotkeys");
 
@@ -1346,6 +1359,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
     QStringList checkableOptionIds;
     for (const auto& group : trayGroups) {
         for (const auto& option : group.options) {
+            require(option.shortcutAction != Action::OpenPinToScreenManagement,
+                    "Pin to Screen Management must not appear in the tray menu");
             trayOptionIds.push_back(option.id);
             if (option.checkable) {
                 checkableOptionIds.push_back(option.id);
@@ -1522,13 +1537,15 @@ void globalHotkeyShortcutsHaveStableContracts() {
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
     require(
-        otherShortcuts != nullptr && otherShortcuts->items.size() == 4 &&
+        otherShortcuts != nullptr && otherShortcuts->items.size() == 5 &&
             otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
-            otherShortcuts->items.at(1).id == QStringLiteral("quick.translate-selected-text") &&
-            otherShortcuts->items.at(2).id == QStringLiteral("quick.toggle-global-hotkeys") &&
-            otherShortcuts->items.at(3).id ==
+            otherShortcuts->items.at(1).id ==
+                QStringLiteral("quick.open-pin-to-screen-management") &&
+            otherShortcuts->items.at(2).id == QStringLiteral("quick.translate-selected-text") &&
+            otherShortcuts->items.at(3).id == QStringLiteral("quick.toggle-global-hotkeys") &&
+            otherShortcuts->items.at(4).id ==
                 QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
-        "Other quick actions expose history, selected text translation, and both hotkey toggles");
+        "Other quick actions expose history, pinned management, translation, and hotkey toggles");
     const auto* pinSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"));
     require(pinSection != nullptr && pinSection->title.source != nullptr &&

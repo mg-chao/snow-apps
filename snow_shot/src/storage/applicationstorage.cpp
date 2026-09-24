@@ -100,6 +100,7 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
 ApplicationStorage::ApplicationStorage(QObject* parent) : QObject(parent) {
     m_pinnedPreviewPool.setMaxThreadCount(2);
     m_pinnedFullImagePool.setMaxThreadCount(1);
+    m_pinnedMaintenancePool.setMaxThreadCount(1);
     qRegisterMetaType<CaptureHistoryUsage>();
     qRegisterMetaType<AppStorageUsage>();
     qRegisterMetaType<StorageStatus>();
@@ -189,6 +190,11 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_captureHistory.reset();
     m_pinnedWindows.reset();
     m_pinnedChangeQueued.store(false);
+    {
+        std::lock_guard lock(m_pinnedMaintenanceMutex);
+        m_pinnedMaintenancePending = false;
+        m_pinnedMaintenanceRunning = false;
+    }
     m_lastPinnedNotifiedRevision = 0;
     m_configuration.reset();
     const auto selection = resolveDirectory(options);
@@ -253,8 +259,6 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                     return;
                 const bool recordsChanged =
                     m_pinnedWindows->revision() != m_lastPinnedNotifiedRevision;
-                if (recordsChanged)
-                    static_cast<void>(m_pinnedWindows->enforcePolicy());
                 const auto error = m_pinnedWindows->lastError();
                 if (m_status.lastPinnedError != error) {
                     m_status.lastPinnedError = error;
@@ -272,20 +276,24 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
         m_configuration->value(QStringLiteral("pinned_history/compression_level")).toString());
     auto* pinnedCleanupTimer = new QTimer(m_configuration.get());
     pinnedCleanupTimer->setInterval(60000);
-    connect(pinnedCleanupTimer, &QTimer::timeout, this, [this]() {
-        if (m_initialized && m_pinnedWindows)
-            static_cast<void>(m_pinnedWindows->enforcePolicy());
-    });
+    connect(pinnedCleanupTimer, &QTimer::timeout, this,
+            &ApplicationStorage::requestPinnedWindowRetentionCleanup);
     pinnedCleanupTimer->start();
-    connect(m_configuration.get(), &ConfigurationStore::valueChanged, this,
-            [this](const QString& key, const QJsonValue&) {
-                if (key.startsWith(QStringLiteral("pinned_history/")) && m_pinnedWindows) {
-                    static_cast<void>(m_pinnedWindows->setPolicy(pinnedWindowPolicy()));
+    connect(
+        m_configuration.get(), &ConfigurationStore::valueChanged, this,
+        [this](const QString& key, const QJsonValue&) {
+            if (key.startsWith(QStringLiteral("pinned_history/")) && m_pinnedWindows) {
+                if (key == QStringLiteral("pinned_history/compression_level")) {
                     m_pinnedWindows->setCompressionLevel(
                         m_configuration->value(QStringLiteral("pinned_history/compression_level"))
                             .toString());
+                    return;
                 }
-            });
+                const auto requestedPolicy = pinnedWindowPolicy();
+                if (m_pinnedWindows->policy() != requestedPolicy)
+                    static_cast<void>(m_pinnedWindows->setPolicy(requestedPolicy));
+            }
+        });
     m_status.historyUsage = m_captureHistory->usage();
     m_status.lastHistoryError = m_captureHistory->lastError();
 
@@ -372,6 +380,12 @@ void ApplicationStorage::shutdown() {
     m_pinnedFullImagePool.clear();
     m_pinnedPreviewPool.waitForDone();
     m_pinnedFullImagePool.waitForDone();
+    m_pinnedMaintenancePool.waitForDone();
+    {
+        std::lock_guard lock(m_pinnedMaintenanceMutex);
+        m_pinnedMaintenancePending = false;
+        m_pinnedMaintenanceRunning = false;
+    }
     if (m_captureHistory != nullptr) {
         m_captureHistory->drain();
         m_status.lastHistoryError = m_captureHistory->lastError();
@@ -527,6 +541,33 @@ bool ApplicationStorage::requestPinnedWindowClear() {
     m_status.lastPinnedError = result.error;
     emitStatusChanged();
     return result.success;
+}
+
+void ApplicationStorage::requestPinnedWindowRetentionCleanup() {
+    if (!m_initialized || !m_pinnedWindows)
+        return;
+    // Preserve requests that arrive during a sweep, including late source commits.
+    {
+        std::lock_guard lock(m_pinnedMaintenanceMutex);
+        m_pinnedMaintenancePending = true;
+        if (m_pinnedMaintenanceRunning)
+            return;
+        m_pinnedMaintenanceRunning = true;
+    }
+    auto* repository = m_pinnedWindows.get();
+    m_pinnedMaintenancePool.start([this, repository]() {
+        for (;;) {
+            {
+                std::lock_guard lock(m_pinnedMaintenanceMutex);
+                if (!m_pinnedMaintenancePending) {
+                    m_pinnedMaintenanceRunning = false;
+                    return;
+                }
+                m_pinnedMaintenancePending = false;
+            }
+            static_cast<void>(repository->enforcePolicy());
+        }
+    });
 }
 
 bool ApplicationStorage::requestCaptureHistoryClear() {

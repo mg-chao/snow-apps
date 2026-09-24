@@ -2,6 +2,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/storageusagetracker.h"
@@ -9,6 +10,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfoList>
 #include <QJsonArray>
@@ -17,6 +19,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QUuid>
 
 #include <atomic>
 #include <chrono>
@@ -1922,6 +1925,66 @@ void asynchronousMutationResultsAreObservable() {
             "history clear remained busy after completion");
 }
 
+void pendingClosedPinsReceiveBackgroundRetentionCleanup() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create pin retention directory");
+    const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executable), "failed to create pin retention executable directory");
+    auto& applicationStorage = initialize(executable, temporary.path(), 60000);
+    auto& repository = applicationStorage.pinnedWindows();
+    auto policy = repository.policy();
+    policy.maxEntries = 1;
+    require(repository.setPolicy(policy).success, "set closed-pin retention limit");
+
+    const auto makeRecord = [](const QString& id) {
+        storage::PinnedWindowRecord record;
+        record.id = id;
+        record.sourceKind = storage::PinnedWindowSourceKind::ClipboardText;
+        record.originalText = QStringLiteral("Pinned text");
+        record.nativeGeometry = QRect(0, 0, 2, 2);
+        record.canvasSourceRect = QRectF(record.nativeGeometry);
+        record.contentCanvasRect = record.canvasSourceRect;
+        record.surfaceCanvasRect = record.canvasSourceRect;
+        record.initialWindowSize = record.nativeGeometry.size();
+        return record;
+    };
+    const QString firstId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString secondId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repository.reserveCreation(firstId);
+    repository.reserveCreation(secondId);
+    require(repository.markClosedDeferred(firstId).success &&
+                repository.markClosedDeferred(secondId).success,
+            "record closes before their sources are saved");
+    require(repository.createReserved(makeRecord(firstId)).success &&
+                repository.createReserved(makeRecord(secondId)).success &&
+                repository.summaries().size() == 2,
+            "pending closed sources are retained until cleanup runs");
+
+    applicationStorage.requestPinnedWindowRetentionCleanup();
+    QElapsedTimer timer;
+    timer.start();
+    while (repository.summaries().size() != 1 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const auto records = repository.summaries();
+    require(records.size() == 1 && records.front().id == secondId && records.front().ignored,
+            "background cleanup prunes the oldest pending closed pin");
+
+    const QString thirdId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    require(repository.upsert(makeRecord(thirdId)).success &&
+                repository.markClosedDeferred(thirdId).success &&
+                repository.loadRecord(thirdId)->ignored,
+            "ordinary close state is visible before background cleanup");
+    applicationStorage.requestPinnedWindowRetentionCleanup();
+    applicationStorage.shutdown();
+    auto& reopened = initialize(executable, temporary.path(), 60000);
+    const auto persisted = reopened.pinnedWindows().summaries();
+    require(persisted.size() == 1 && persisted.front().id == thirdId,
+            "shutdown drains pending pin retention cleanup before flushing");
+    reopened.shutdown();
+}
+
 void appUsageScanAndCacheCleanup() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create app usage directory");
@@ -2265,6 +2328,7 @@ int main(int argc, char** argv) {
     concurrentFlushKeepsLatestRevision();
     persistedSelectionCodecIsCanonicalAndStrict();
     asynchronousMutationResultsAreObservable();
+    pendingClosedPinsReceiveBackgroundRetentionCleanup();
     appUsageScanAndCacheCleanup();
     applicationQuitPreservesStorageForConsumerDestruction();
     storage::ApplicationStorage::instance().shutdown();

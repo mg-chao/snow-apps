@@ -396,6 +396,16 @@ bool ShortcutSettings::setOpenCaptureHistory(const shortcuts::ShortcutBindingLis
     return setShortcutValue(QStringLiteral("global_shortcuts/open_capture_history"), bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::openPinToScreenManagement() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
+}
+
+bool ShortcutSettings::setOpenPinToScreenManagement(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/open_pin_to_screen_management"),
+                            bindings);
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::openSettings() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_settings"));
 }

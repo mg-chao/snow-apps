@@ -1986,6 +1986,10 @@
             <translation>在獨立視窗中翻譯選取的文字。</translation>
         </message>
         <message>
+            <source>Open the Pin to Screen Management page in the main window</source>
+            <translation>在主視窗開啟固定到螢幕管理頁面</translation>
+        </message>
+        <message>
             <source>Open the folder where recorded videos are saved</source>
             <translation>開啟儲存錄製影片的資料夾</translation>
         </message>

@@ -1831,6 +1831,15 @@ void PinnedWindowRepository::cancelCreation(const QString& id) {
 }
 
 StorageResult PinnedWindowRepository::markClosed(const QString& id, QDateTime when) {
+    return markClosedImpl(id, when, true);
+}
+
+StorageResult PinnedWindowRepository::markClosedDeferred(const QString& id, QDateTime when) {
+    return markClosedImpl(id, when, false);
+}
+
+StorageResult PinnedWindowRepository::markClosedImpl(const QString& id, QDateTime when,
+                                                     bool enforceImmediately) {
     if (!m_impl->writeAvailable || !safeId(id) || !when.isValid())
         return StorageResult::failure(QStringLiteral("Pinned-window close could not be saved"));
     {
@@ -1854,7 +1863,7 @@ StorageResult PinnedWindowRepository::markClosed(const QString& id, QDateTime wh
         }
         m_impl->markDirtyLocked();
     }
-    return enforcePolicy(when);
+    return enforceImmediately ? enforcePolicy(when) : StorageResult::ok();
 }
 
 StorageResult PinnedWindowRepository::beginRestore(const QString& id) {

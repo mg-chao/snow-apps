@@ -82,6 +82,9 @@ class PinnedWindowRepository final {
     void cancelCreation(const QString& id);
     [[nodiscard]] StorageResult markClosed(const QString& id,
                                            QDateTime when = QDateTime::currentDateTimeUtc());
+    // Updates close state immediately; the caller must request retention cleanup separately.
+    [[nodiscard]] StorageResult
+    markClosedDeferred(const QString& id, QDateTime when = QDateTime::currentDateTimeUtc());
     [[nodiscard]] StorageResult beginRestore(const QString& id);
     void cancelRestore(const QString& id);
     [[nodiscard]] StorageResult markRestored(const QString& id);
@@ -98,6 +101,8 @@ class PinnedWindowRepository final {
                                            bool requireReservation);
     [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, bool requireReservation);
     [[nodiscard]] StorageResult upsertImpl(PinnedWindowRecord record, bool requireExisting);
+    [[nodiscard]] StorageResult markClosedImpl(const QString& id, QDateTime when,
+                                               bool enforceImmediately);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

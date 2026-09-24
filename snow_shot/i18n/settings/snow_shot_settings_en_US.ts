@@ -1986,6 +1986,10 @@
             <translation>Open selected text translation in a standalone window.</translation>
         </message>
         <message>
+            <source>Open the Pin to Screen Management page in the main window</source>
+            <translation>Open the Pin to Screen Management page in the main window</translation>
+        </message>
+        <message>
             <source>Open the folder where recorded videos are saved</source>
             <translation>Open the folder where recorded videos are saved</translation>
         </message>

@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 19;
+constexpr std::size_t ACTION_COUNT = 20;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -37,6 +37,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::ScreenRecordCopy,
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
+    GlobalShortcutAction::OpenPinToScreenManagement,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
@@ -147,6 +148,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.openScreenRecordingFolder();
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.openCaptureHistory();
+    case GlobalShortcutAction::OpenPinToScreenManagement:
+        return settings.openPinToScreenManagement();
     case GlobalShortcutAction::OpenSettings:
         return settings.openSettings();
     case GlobalShortcutAction::PinClipboardContent:
@@ -192,6 +195,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setOpenScreenRecordingFolder(bindings);
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.setOpenCaptureHistory(bindings);
+    case GlobalShortcutAction::OpenPinToScreenManagement:
+        return settings.setOpenPinToScreenManagement(bindings);
     case GlobalShortcutAction::OpenSettings:
         return settings.setOpenSettings(bindings);
     case GlobalShortcutAction::PinClipboardContent:

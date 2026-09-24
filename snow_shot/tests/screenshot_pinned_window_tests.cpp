@@ -4033,7 +4033,7 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     require(processUntilDeleted(guardedWindow, 2000), "shortcut test pin was not deleted");
 }
 
-void pinnedDestroyShortcutUsesNormalMenuColor() {
+void pinnedDestroyShortcutUsesDestructiveMenuColor() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
     QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
@@ -4049,11 +4049,14 @@ void pinnedDestroyShortcutUsesNormalMenuColor() {
     auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
     auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
+    auto* closeAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
     auto* destroyAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
-    require(canvas != nullptr && menu != nullptr && destroyAction != nullptr &&
-                !menu->actionDanger(destroyAction),
-            "Destroy must use the normal pinned menu color");
+    require(canvas != nullptr && menu != nullptr && closeAction != nullptr &&
+                destroyAction != nullptr && !menu->actionDanger(closeAction) &&
+                menu->actionDanger(destroyAction),
+            "recoverable Close should use normal styling and permanent Destroy should be danger");
     require(destroyAction->text().endsWith(QStringLiteral("\tShift+Esc")),
             "Destroy must show its default shortcut in the pinned menu");
     sendShortcut(*canvas, Qt::Key_Escape, Qt::ControlModifier);
@@ -11020,7 +11023,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--pinned-destroy-shortcut-only"))) {
-            pinnedDestroyShortcutUsesNormalMenuColor();
+            pinnedDestroyShortcutUsesDestructiveMenuColor();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--movement-shortcut-only"))) {

@@ -15,6 +15,7 @@
 #include <atomic>
 #include <memory>
 #include <future>
+#include <mutex>
 
 namespace snow_shot::storage {
 class CaptureHistoryRepository;
@@ -101,6 +102,7 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] PinnedWindowPolicy pinnedWindowPolicy() const;
     bool requestPinnedWindowPolicy(const PinnedWindowPolicy& policy);
     bool requestPinnedWindowClear();
+    void requestPinnedWindowRetentionCleanup();
     void requestPinnedWindowShow(const QString& id) {
         emit pinnedWindowShowRequested(id);
     }
@@ -146,8 +148,12 @@ class ApplicationStorage final : public QObject {
     std::unique_ptr<PinnedWindowRepository> m_pinnedWindows;
     QThreadPool m_pinnedPreviewPool;
     QThreadPool m_pinnedFullImagePool;
+    QThreadPool m_pinnedMaintenancePool;
     std::unique_ptr<StorageUsageTracker> m_usageTracker;
     std::atomic_bool m_pinnedChangeQueued{false};
+    std::mutex m_pinnedMaintenanceMutex;
+    bool m_pinnedMaintenancePending = false;
+    bool m_pinnedMaintenanceRunning = false;
     quint64 m_lastPinnedNotifiedRevision = 0;
     bool m_initialized = false;
 };
