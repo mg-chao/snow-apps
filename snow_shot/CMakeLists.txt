@@ -1163,6 +1163,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshottoolbarwindow.h
     include/snow_shot/presentation/screenshottypes.h
     include/snow_shot/presentation/screenshotuipreferences.h
+    include/snow_shot/presentation/screenshotselectiondisplayunit.h
     include/snow_shot/presentation/screenrecordingareawindow.h
     include/snow_shot/presentation/screenrecordingcontroller.h
     include/snow_shot/presentation/screenrecordingfolder.h
@@ -2940,6 +2941,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-selection-geometry-tests PRIVATE
+        ant_design_qt
         Qt6::Gui
     )
     if(WIN32)
@@ -4246,6 +4248,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
     )
     snow_shot_add_translations(snow-shot-screenshot-tool-palette-tests)
+    add_test(NAME snow-shot-selection-display-unit-toolbar-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --selection-unit-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-display-unit-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-move-region-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --move-options-only -platform offscreen)
     set_tests_properties(snow-shot-move-region-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -7582,9 +7587,10 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-macos-overlay-initialization-tests
         tests/macos_overlay_initialization_tests.mm
+        ${SNOW_PINNED_PLATFORM_SOURCES}
         src/platform/macos/screenshotnative.mm
         src/presentation/core/screenshotgeometry.cpp)
-    target_include_directories(snow-shot-macos-overlay-initialization-tests PRIVATE include)
+    target_include_directories(snow-shot-macos-overlay-initialization-tests PRIVATE include src)
     target_link_libraries(snow-shot-macos-overlay-initialization-tests PRIVATE ant_design_qt Qt6::Widgets
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-overlay-initialization-tests

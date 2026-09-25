@@ -374,6 +374,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("select_previously_selected_area"), QJsonArray{QStringLiteral("R")}},
         {QStringLiteral("recapture"), QJsonArray{QStringLiteral("Alt+R")}},
         {QStringLiteral("copy_color"), QJsonArray{QStringLiteral("C")}},
+        {QStringLiteral("toggle_coordinate_mode"), QJsonArray{QStringLiteral("Shift+P")}},
         {QStringLiteral("table_recognition"), QJsonArray{QStringLiteral("Ctrl+X")}},
         {QStringLiteral("qr_code_recognition"), QJsonArray{QStringLiteral("Ctrl+Q")}},
         {QStringLiteral("video_recording"), QJsonArray{QStringLiteral("Ctrl+R")}},
@@ -1544,7 +1545,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 26 &&
+        screenshotDefaults.size() == 27 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -1569,6 +1570,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 QStringList{QStringLiteral("R")} &&
             portable(screenshotShortcuts.recapture()) == QStringList{QStringLiteral("Alt+R")} &&
             portable(screenshotShortcuts.copyColor()) == QStringList{QStringLiteral("C")} &&
+            portable(screenshotShortcuts.toggleCoordinateMode()) ==
+                QStringList{QStringLiteral("Shift+P")} &&
             portable(screenshotDefaults.value(QStringLiteral("pin_to_screen"))) ==
                 QStringList{QStringLiteral("Ctrl+F")} &&
             portable(screenshotDefaults.value(QStringLiteral("quick_save"))) ==
@@ -2381,6 +2384,12 @@ int main(int argc, char** argv) {
     }
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
+    if (application.arguments().contains(QStringLiteral("--shortcut-settings-only"))) {
+        settingsSchemaDefaultsAndValidationAreComplete();
+        settingsAdaptersRoundTripAndRejectInvalidValues();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--quit-lifetime-only"))) {
         applicationQuitPreservesStorageForConsumerDestruction();
         return 0;

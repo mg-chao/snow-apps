@@ -57,7 +57,7 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     setAttribute(Qt::WA_DeleteOnClose, false);
     prepareForDisplay();
 #ifdef Q_OS_MACOS
-    snow_shot::platform::configureScreenshotToolbarWindow(this);
+    snow_shot::platform::configureScreenRecordingToolbarWindow(this);
 #endif
     // Secondary rows can grow without changing the fixed native frame or the
     // main-row anchor. Observe the committed host content, including those cases.

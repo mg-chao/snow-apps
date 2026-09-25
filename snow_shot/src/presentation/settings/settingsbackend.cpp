@@ -1649,6 +1649,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("select_previously_selected_area"),
               QStringLiteral("recapture"),
               QStringLiteral("copy_color"),
+              QStringLiteral("toggle_coordinate_mode"),
               QStringLiteral("pin_to_screen"),
               QStringLiteral("video_recording"),
               QStringLiteral("scrolling_screenshot"),

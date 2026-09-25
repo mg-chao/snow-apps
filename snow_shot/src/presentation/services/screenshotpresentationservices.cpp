@@ -253,6 +253,7 @@ void ScreenshotPresentationServices::updateOverlayCursors() const {
 
 ScreenshotColorPickerContext ScreenshotPresentationServices::colorPickerContext() const {
     ScreenshotColorPickerContext context;
+    context.selectionDisplayUnit = m_uiPreferences.selectionDisplayUnit;
     context.active = !m_context.interaction.inactive() &&
                      !m_context.captureState.captureInProgress &&
                      !m_context.interaction.scrollingCapture();
@@ -269,5 +270,7 @@ ScreenshotColorPickerContext ScreenshotPresentationServices::colorPickerContext(
 
 ScreenshotToolbarPresentationState
 ScreenshotPresentationServices::toolbarPresentationState() const {
-    return makeScreenshotToolbarPresentationState(m_context.interaction, m_context.selection);
+    auto state = makeScreenshotToolbarPresentationState(m_context.interaction, m_context.selection);
+    state.selectionDisplayUnit = m_uiPreferences.selectionDisplayUnit;
+    return state;
 }

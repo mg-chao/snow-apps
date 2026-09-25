@@ -536,19 +536,29 @@ displayForCanvasRectInDisplaySession(const ScreenshotDisplaySession& displaySess
                 std::nextafter(target.bottom, target.top)),
         QPointF(target.left, std::nextafter(target.bottom, target.top)),
     };
-    for (const QPointF& point : points) {
-        const CapturedDisplayModel* display =
-            displayForCanvasPointInDisplaySession(displaySession, point);
-        if (display != nullptr) {
-            return display;
-        }
-    }
-
+    // Preserve center/corner priority and session-order ties without rescanning displays.
+    int bestPoint = 5;
+    const CapturedDisplayModel* containingDisplay = nullptr;
     double bestDistance = std::numeric_limits<double>::max();
     const CapturedDisplayModel* bestDisplay = nullptr;
     const QPointF center = target.center();
-    displaySession.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& display) {
-        const QPointF displayCenter = ScreenshotHalfOpenRect::fromRect(display.canvasRect).center();
+    for (qsizetype index = 0; index < displaySession.size(); ++index) {
+        const auto& display = displaySession.displayAt(index);
+        if (!display.active)
+            continue;
+        const auto bounds = ScreenshotHalfOpenRect::fromRect(display.canvasRect);
+        for (int pointIndex = 0; pointIndex < bestPoint; ++pointIndex) {
+            if (!bounds.contains(points[pointIndex]))
+                continue;
+            if (pointIndex == 0)
+                return &display;
+            bestPoint = pointIndex;
+            containingDisplay = &display;
+            break;
+        }
+        if (containingDisplay)
+            continue;
+        const QPointF displayCenter = bounds.center();
         const double dx = displayCenter.x() - center.x();
         const double dy = displayCenter.y() - center.y();
         const double distance = dx * dx + dy * dy;
@@ -556,8 +566,8 @@ displayForCanvasRectInDisplaySession(const ScreenshotDisplaySession& displaySess
             bestDistance = distance;
             bestDisplay = &display;
         }
-    });
-    return bestDisplay;
+    }
+    return containingDisplay ? containingDisplay : bestDisplay;
 }
 } // namespace
 
@@ -1259,4 +1269,61 @@ QScreen* ScreenshotGeometryMapper::screenForPhysicalRect(const QRect& rect) {
         }
     }
     return QGuiApplication::primaryScreen();
+}
+
+ScreenshotSelectionDisplayConversion
+screenshotSelectionDisplayConversion(const ScreenshotGeometryMapper& geometry,
+                                     const ScreenshotDisplaySession& displays,
+                                     const QRect& selection, ScreenshotSelectionDisplayUnit unit,
+                                     const CapturedDisplayModel* fallbackDisplay) {
+    ScreenshotSelectionDisplayConversion result;
+    const auto* owner =
+        selection.isEmpty() ? fallbackDisplay : geometry.displayForCanvasRect(displays, selection);
+    if (!owner)
+        owner = fallbackDisplay;
+    result.canvasUsesPoints = owner && owner->canvasUsesPoints;
+    result.selection.unit = unit;
+    result.selection.canvasUsesPoints = result.canvasUsesPoints;
+    if (result.canvasUsesPoints && unit == ScreenshotSelectionDisplayUnit::PhysicalPixels) {
+        const auto spec = screenshotSelectionRenderSpec(displays, selection);
+        result.scale = spec.isValid() ? spec.scale : owner->backingScale;
+        if (!std::isfinite(result.scale) || result.scale <= 0.0)
+            result.scale = 1.0;
+        result.selection.size =
+            spec.isValid() ? spec.pixelSize
+                           : screenshotSelectionRenderedPixelSize(selection.size(), result.scale);
+    } else {
+        if (owner && !result.canvasUsesPoints &&
+            unit == ScreenshotSelectionDisplayUnit::LogicalPixels)
+            result.scale = ScreenshotGeometryMapper::canvasToLogicalScale(*owner);
+        if (!std::isfinite(result.scale) || result.scale <= 0.0)
+            result.scale = 1.0;
+        result.selection.size = QSizeF(selection.size()) * result.scale;
+    }
+    result.selection.position = QPointF(selection.topLeft()) * result.scale;
+    return result;
+}
+
+QPointF screenshotMagnifierDisplayPosition(const ScreenshotGeometryMapper& geometry,
+                                           const CapturedDisplayModel& sampleDisplay,
+                                           const QPoint& physicalPoint,
+                                           const ScreenshotSelectionDisplayConversion& conversion) {
+    const QPointF desktopPoint =
+        sampleDisplay.canvasUsesPoints
+            ? geometry.logicalPositionForPhysicalPoint(sampleDisplay, physicalPoint)
+            : QPointF(physicalPoint);
+    return desktopPoint * conversion.scale;
+}
+
+std::optional<QPointF>
+screenshotMagnifierRelativeDisplayPosition(const ScreenshotGeometryMapper& geometry,
+                                           const CapturedDisplayModel& sampleDisplay,
+                                           const QPoint& physicalPoint, const QRect& selection,
+                                           const ScreenshotSelectionDisplayConversion& conversion) {
+    if (selection.isEmpty()) {
+        return std::nullopt;
+    }
+    return (geometry.canvasPositionForPhysicalPoint(sampleDisplay, physicalPoint) -
+            QPointF(selection.topLeft())) *
+           conversion.scale;
 }

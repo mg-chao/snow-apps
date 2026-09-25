@@ -230,6 +230,7 @@ class ScreenshotShortcutSettings final {
     [[nodiscard]] shortcuts::ShortcutBindingList selectPreviouslySelectedArea() const;
     [[nodiscard]] shortcuts::ShortcutBindingList recapture() const;
     [[nodiscard]] shortcuts::ShortcutBindingList copyColor() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleCoordinateMode() const;
 
     [[nodiscard]] shortcuts::ShortcutBindingList shortcuts(const QString& actionId) const;
     bool setShortcuts(const QString& actionId,
@@ -307,8 +308,12 @@ class ScreenshotUiSettings final {
     bool setToolbarSize(const QString& size) const;
     [[nodiscard]] bool selectionTransitionAnimationEnabled() const;
     bool setSelectionTransitionAnimationEnabled(bool enabled) const;
+    [[nodiscard]] QString selectionDisplayUnit() const;
+    bool setSelectionDisplayUnit(const QString& unit) const;
     [[nodiscard]] QString colorPickerDisplayMode() const;
     bool setColorPickerDisplayMode(const QString& mode) const;
+    [[nodiscard]] QString colorPickerCoordinateMode() const;
+    bool setColorPickerCoordinateMode(const QString& mode) const;
     [[nodiscard]] QString colorPickerFormat() const;
     bool setColorPickerFormat(const QString& format) const;
     [[nodiscard]] QColor selectionBorderColor() const;

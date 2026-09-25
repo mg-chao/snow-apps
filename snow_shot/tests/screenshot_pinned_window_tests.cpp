@@ -5431,6 +5431,98 @@ void pinnedPointerPresenceIsDebounced() {
     require(!inside() && !timer.isActive(), "closed pins must ignore late callbacks");
 }
 
+void pinnedControlsRemainAboveRecognitionContent() {
+    class DeferredRecognition final : public ScreenshotOcrRecognitionPort {
+      public:
+        Completion pending;
+        RequestToken recognize(ScreenshotOcrRequest, QObject*, Completion completion) override {
+            pending = std::move(completion);
+            return 1;
+        }
+        void cancel(RequestToken) override {
+            pending = {};
+        }
+        bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override {
+            return false;
+        }
+    } recognition;
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString previousPolicy = settings.textSelectionOnRecognitionResults();
+    const auto restorePolicy = qScopeGuard(
+        [&] { static_cast<void>(settings.setTextSelectionOnRecognitionResults(previousPolicy)); });
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
+            "enable selection on background recognition results");
+    auto config = cachedOcrPinConfig(&recognition);
+    const auto recognized = config.recognitionResults;
+    config.recognitionResults = {};
+    config.nativeGeometry.setSize(QSize(600, 400));
+    config.initialWindowSize = config.nativeGeometry.size();
+    ScreenshotPinnedWindow window;
+    auto* session = ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(window, config);
+    auto* panel = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* edit =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedEditButton"));
+    auto* close =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedCloseButton"));
+    require(session && panel && edit && close, "recognition stacking fixture needs controls");
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), window.mapToGlobal(QPoint(10, 10)));
+    QCoreApplication::sendEvent(window.windowHandle(), &enter);
+    require(panel->isVisible(), "controls must be visible before recognition completes");
+    const auto requireButtonTargets = [&] {
+        for (auto* button : {edit, close}) {
+            require(window.childAt(button->mapTo(&window, button->rect().center())) == button,
+                    "visible pinned buttons must remain mouse targets after recognition updates");
+        }
+    };
+    requireButtonTargets();
+    session->prefetchText();
+    require(bool(recognition.pending), "background recognition must await its result");
+    auto complete = std::move(recognition.pending);
+    complete(*recognized.text);
+    require(ScreenshotPinnedWindowTestAccess::hiddenSelection(window),
+            "background recognition must install its selectable text surface");
+    requireButtonTargets();
+
+    // Updating an existing overlay must preserve the same order as creating it.
+    auto results = recognized;
+    results.key = QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(&window));
+    session->seedRecognitionResults(results);
+    requireButtonTargets();
+    window.resize(window.size() + QSize(20, 20));
+    requireButtonTargets();
+    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(session->active(), "displayed recognition must use the same layer policy");
+    session->seedRecognitionResults(results);
+    requireButtonTargets();
+
+    // Route through QWidgetWindow, not directly to a button: this exercises Qt's
+    // actual child hit testing, enter/leave, cursor and press/release dispatch.
+    const auto mouse = [&](QEvent::Type type, QWidget* button, Qt::MouseButton changed,
+                           Qt::MouseButtons held) {
+        const QPoint point = button->mapTo(&window, button->rect().center());
+        QMouseEvent event(type, QPointF(point), QPointF(point), window.mapToGlobal(point), changed,
+                          held, Qt::NoModifier);
+        QCoreApplication::sendEvent(window.windowHandle(), &event);
+    };
+    mouse(QEvent::MouseMove, edit, Qt::NoButton, Qt::NoButton);
+    require(edit->underMouse() && window.windowHandle()->cursor().shape() == edit->cursor().shape(),
+            "moving onto a control must deliver hover and its cursor without window re-entry");
+    mouse(QEvent::MouseButtonPress, edit, Qt::LeftButton, Qt::LeftButton);
+    require(edit->isDown(), "the edit button must receive a routed mouse press");
+    mouse(QEvent::MouseButtonRelease, edit, Qt::LeftButton, Qt::NoButton);
+    auto* editor = window.findChild<ScreenshotPinnedEditController*>();
+    require(editor && editor->editMode(), "the first routed edit click must activate drawing");
+    ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(window, false);
+    requireButtonTargets();
+    mouse(QEvent::MouseMove, close, Qt::NoButton, Qt::NoButton);
+    require(close->underMouse(), "the close button must receive hover after leaving drawing");
+    mouse(QEvent::MouseButtonPress, close, Qt::LeftButton, Qt::LeftButton);
+    require(close->isDown(), "the close button must receive a routed mouse press");
+    mouse(QEvent::MouseButtonRelease, close, Qt::LeftButton, Qt::NoButton);
+    QCoreApplication::sendPostedEvents(&window, QEvent::MetaCall);
+    require(!window.isVisible(), "the first routed close click must close the pin");
+}
+
 void pinnedControlsPresenceFollowsLiveCursor() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (QGuiApplication::platformName() != QStringLiteral("windows"))
@@ -11779,6 +11871,7 @@ int main(int argc, char* argv[]) {
             pinnedControlsVisibilityPolicy();
             pinnedPointerPresenceFollowsEvents();
             pinnedPointerPresenceIsDebounced();
+            pinnedControlsRemainAboveRecognitionContent();
             pinnedControlsPresenceFollowsLiveCursor();
             return 0;
         }

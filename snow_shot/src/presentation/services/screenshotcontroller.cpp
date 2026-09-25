@@ -358,6 +358,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void subtractScreenshotRegion() override {
         m_overlayInputHandler->beginRegionOperation(true);
     }
+    void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit) override;
     void setSelectionToolbarHiddenForSession(bool hidden) override;
     void setMoveTool() override;
     void setSelectTool() override;
@@ -717,6 +718,8 @@ void ScreenshotController::Impl::reloadUiPreferences() {
         const snow_shot::storage::ScreenshotUiSettings settings;
         preferences.selectionTransitionAnimationEnabled =
             settings.selectionTransitionAnimationEnabled();
+        preferences.selectionDisplayUnit =
+            screenshotSelectionDisplayUnitFromId(settings.selectionDisplayUnit());
         preferences.colorPickerDisplayMode =
             screenshotColorPickerDisplayModeFromString(settings.colorPickerDisplayMode());
         preferences.selectionBorderColor = settings.selectionBorderColor();
@@ -1645,6 +1648,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             return m_colorPickerController->cycleFormat(
                 m_presentationServices->colorPickerContext());
         },
+        [this]() {
+            return m_colorPickerController->toggleCoordinateMode(
+                m_presentationServices->colorPickerContext());
+        },
         [this](snow_shot::platform::PhysicalCursorDirection direction) {
             return moveCursorOnePixel(direction);
         },
@@ -1794,6 +1801,13 @@ bool ScreenshotController::Impl::canRecapture() const {
         }
     });
     return !textEditing;
+}
+
+void ScreenshotController::Impl::setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit) {
+    if (!snow_shot::storage::ScreenshotUiSettings().setSelectionDisplayUnit(
+            screenshotSelectionDisplayUnitId(unit))) {
+        reloadUiPreferences();
+    }
 }
 
 void ScreenshotController::Impl::setSelectionToolbarHiddenForSession(bool hidden) {

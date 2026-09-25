@@ -2921,6 +2921,10 @@
             <translation>縮圖模式</translation>
         </message>
         <message>
+            <source>Toggle Global/Relative Coordinates</source>
+            <translation>切換全域/相對座標</translation>
+        </message>
+        <message>
             <source>Toggle hotkeys</source>
             <translation>切換快速鍵</translation>
         </message>

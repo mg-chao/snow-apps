@@ -105,8 +105,17 @@ void ScreenshotColorPickerController::updateAtPhysicalPoint(
                  opacityForPoint(m_geometry.canvasPositionForPhysicalPoint(*display, physicalPoint),
                                  opacity < 1.0, context));
 
+    const auto conversion =
+        screenshotSelectionDisplayConversion(m_geometry, m_displaySession, context.selectionPixels,
+                                             context.selectionDisplayUnit, display);
+    const ScreenshotCoordinateDisplayValues displayValues{
+        screenshotMagnifierDisplayPosition(m_geometry, *display, physicalPoint, conversion),
+        context.selectionDisplayUnit, conversion.canvasUsesPoints,
+        screenshotMagnifierRelativeDisplayPosition(m_geometry, *display, physicalPoint,
+                                                   context.selectionPixels, conversion)};
     m_overlayCoordinator.updateColorPicker(overlay, display->image, display->physicalRect,
-                                           physicalPoint, overlayLocalPosition, pickerOpacity);
+                                           physicalPoint, overlayLocalPosition, pickerOpacity,
+                                           displayValues);
     m_overlay = overlay;
 }
 
@@ -205,6 +214,16 @@ bool ScreenshotColorPickerController::copyColorToClipboard(
     }
 
     QApplication::clipboard()->setText(picker->currentColorText());
+    return true;
+}
+
+bool ScreenshotColorPickerController::toggleCoordinateMode(
+    const ScreenshotColorPickerContext& context) {
+    ScreenshotColorPickerWindow* picker = m_overlayCoordinator.colorPicker();
+    if (!enabled(context) || picker == nullptr) {
+        return false;
+    }
+    picker->toggleCoordinateMode();
     return true;
 }
 

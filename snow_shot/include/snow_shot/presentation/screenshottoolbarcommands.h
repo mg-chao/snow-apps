@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARCOMMANDS_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARCOMMANDS_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 
@@ -22,6 +23,7 @@ class ScreenshotToolbarCommandSink {
     virtual void addScreenshotRegion() {}
     virtual void subtractScreenshotRegion() {}
     virtual void requestRecapture() {}
+    virtual void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit) {}
     virtual void setSelectionToolbarHiddenForSession(bool) {}
     virtual void setMoveTool() = 0;
     virtual void setSelectTool() = 0;

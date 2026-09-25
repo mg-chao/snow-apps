@@ -12245,9 +12245,9 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
             layout->indexOf(regionSeparator) == 6 && layout->indexOf(cursor) == 8 &&
             layout->indexOf(recapture) == 10 &&
             layout->indexOf(hideSelectionToolbar) == layout->count() - 1 &&
-            layout->itemAt(layout->indexOf(hideSelectionToolbar) - 2) != nullptr &&
+            layout->itemAt(layout->indexOf(hideSelectionToolbar) - 4) != nullptr &&
             qobject_cast<QFrame*>(
-                layout->itemAt(layout->indexOf(hideSelectionToolbar) - 2)->widget()) != nullptr,
+                layout->itemAt(layout->indexOf(hideSelectionToolbar) - 4)->widget()) != nullptr,
         "Move options must group region actions at the far left, before capture actions and hide");
     require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
             "Capture cursor must use the same state-driven action button as scrolling screenshot");
@@ -12260,6 +12260,43 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     require(regionTypes && regionGroup &&
                 layout->indexOf(regionTypes) == layout->indexOf(subtractRegion) + 2,
             "shape group follows subtract region");
+    auto* unitGroup = palette.findChild<adqt::widgets::AdRadioButtonGroup*>(
+        QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"));
+    require(unitGroup && unitGroup->buttons().size() == 2 &&
+                unitGroup->checkedId() == int(kDefaultScreenshotSelectionDisplayUnit) &&
+                layout->indexOf(qobject_cast<QWidget*>(unitGroup->parent())) ==
+                    layout->indexOf(hideSelectionToolbar) - 2,
+            "the exclusive unit group must use platform defaults directly before Hide");
+    int unitCommands = 0;
+    auto requestedUnit = kDefaultScreenshotSelectionDisplayUnit;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectionDisplayUnitChanged,
+                     [&](ScreenshotSelectionDisplayUnit unit) {
+                         ++unitCommands;
+                         requestedUnit = unit;
+                     });
+    for (const auto unit : {ScreenshotSelectionDisplayUnit::PhysicalPixels,
+                            ScreenshotSelectionDisplayUnit::LogicalPixels}) {
+        auto* button = unitGroup->button(int(unit));
+        require(button && !button->icon().isNull() && !button->toolTip().isEmpty() &&
+                    button->accessibleName() == button->toolTip(),
+                "unit buttons must expose icons and full accessible tooltips");
+        button->click();
+        require(requestedUnit == unit && unitGroup->checkedId() == int(unit) &&
+                    !unitGroup->button(1 - int(unit))->isChecked(),
+                "clicking a unit must dispatch it and select exactly one option");
+    }
+    require(unitCommands == 2, "unit clicks dispatch exactly once each");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const QString locale :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(language.setLanguage(locale), "unit tooltip catalogs must load");
+        QCoreApplication::processEvents();
+        const auto tooltip =
+            QCoreApplication::translate("ScreenshotToolPalette", "Logical Pixel Selection");
+        require(unitGroup->button(1)->toolTip() == tooltip &&
+                    unitGroup->button(1)->accessibleName() == tooltip,
+                "unit tooltips and accessible names must retranslate live");
+    }
     palette.show();
     QCoreApplication::processEvents();
     const auto requireJoinedRegionButtons = [&] {
@@ -12476,8 +12513,14 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                     palette.actionPanel()->layout()->contentsMargins() ==
                         scrollingPalette.actionPanel()->layout()->contentsMargins(),
                 "Move must share scrolling screenshot panel height and padding at every scale");
+        require(unitGroup->button(0)->size() == regionGroup->button(0)->size() &&
+                    unitGroup->button(0)->iconSize() == regionGroup->button(0)->iconSize(),
+                "unit buttons and icons must follow action metrics at every scale");
+        require(unitGroup->button(1)->x() ==
+                    unitGroup->button(0)->x() + unitGroup->button(0)->width() - 2,
+                "unit buttons must share a joined border at every scale");
         auto* scrollingLayout = scrollingControls->layout();
-        const int hideSeparator = layout->indexOf(hideSelectionToolbar) - 2;
+        const int hideSeparator = layout->indexOf(hideSelectionToolbar) - 4;
         require(regionSeparator->size() == layout->itemAt(hideSeparator)->widget()->size() &&
                     layout->itemAt(hideSeparator)->widget()->size() ==
                         scrollingLayout->itemAt(2)->widget()->size() &&
@@ -12527,6 +12570,12 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                     !recapture->isEnabled() && hideSelectionToolbar != nullptr,
                 "returning to Move must restore capture state through the shared action row");
         requireMatchingButtonState();
+        unitGroup = palette.findChild<adqt::widgets::AdRadioButtonGroup*>(
+            QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"));
+        require(unitGroup &&
+                    unitGroup->checkedId() == int(ScreenshotSelectionDisplayUnit::LogicalPixels) &&
+                    unitCommands == 2,
+                "rebuilding Move must retain the selected unit without dispatching commands");
     }
     palette.setRecaptureBusy(false);
     require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 4,

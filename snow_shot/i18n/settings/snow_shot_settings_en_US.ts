@@ -2921,6 +2921,10 @@
             <translation>Thumbnail mode</translation>
         </message>
         <message>
+            <source>Toggle Global/Relative Coordinates</source>
+            <translation>Toggle Global/Relative Coordinates</translation>
+        </message>
+        <message>
             <source>Toggle hotkeys</source>
             <translation>Toggle hotkeys</translation>
         </message>

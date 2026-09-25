@@ -9,6 +9,8 @@ using ScrollInputResult = windows::ScrollInputResult;
 // Give Qt exclusive drag ownership, including after native surface recreation.
 void configureControlledWindowDragging(QWidget* widget);
 void configureScreenshotOverlayWindow(QWidget* widget);
+void configureScreenRecordingAreaWindow(QWidget* widget);
+void configureScreenRecordingToolbarWindow(QWidget* widget);
 void configureScreenshotRecognitionWindow(QWidget* widget);
 // Cocoa masks clip drawing, but do not route input to windows underneath.
 void setScreenshotInputPassThroughRegion(QWidget* widget, const QRegion& region);

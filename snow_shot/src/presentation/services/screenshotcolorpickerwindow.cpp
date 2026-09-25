@@ -10,6 +10,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QGraphicsOpacityEffect>
+#include <QEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QWindow>
@@ -26,7 +27,9 @@ constexpr int kPanelPadding = 4;
 constexpr int kPanelRadius = 6;
 constexpr int kContentGap = 4;
 constexpr int kTextVerticalOffset = 1;
+// Keep the compact single-line layout; long coordinates are elided when painted.
 constexpr int kTextHeight = 20;
+constexpr int kTextPixelSize = 13;
 constexpr int kColorTextHeight = 24;
 constexpr int kCenterPixelBorderWidth = 1;
 constexpr int kShadowMargin = 10;
@@ -162,6 +165,9 @@ QPainterPath topRoundedRectPath(const QRectF& rect, qreal radius) {
 ScreenshotColorPickerWindow::ScreenshotColorPickerWindow(QWidget* parent)
     : QWidget(parent, colorPickerWindowFlags()) {
     if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
+        m_relativeCoordinates =
+            snow_shot::storage::ScreenshotUiSettings().colorPickerCoordinateMode() ==
+            QStringLiteral("relative");
         const QString format = snow_shot::storage::ScreenshotUiSettings().colorPickerFormat();
         if (format == QStringLiteral("hex_without_hash")) {
             m_colorFormat = ColorFormat::HexWithoutHash;
@@ -270,6 +276,8 @@ void ScreenshotColorPickerWindow::resetForNewCapture() {
     m_physicalRect = QRect();
     m_previewImage = QImage();
     m_currentPhysicalPoint = QPoint();
+    m_displayValues = {};
+    m_positionText.reset();
     m_currentColor = QColor();
     m_hasCurrentColor = false;
     hidePicker();
@@ -290,8 +298,9 @@ void ScreenshotColorPickerWindow::setCaptureImage(const QImage& image, const QRe
     m_hasCurrentColor = false;
 }
 
-void ScreenshotColorPickerWindow::updatePicker(const QPoint& physicalPoint,
-                                               const QPointF& overlayLocalPosition, qreal opacity) {
+void ScreenshotColorPickerWindow::updatePicker(
+    const QPoint& physicalPoint, const QPointF& overlayLocalPosition, qreal opacity,
+    std::optional<ScreenshotCoordinateDisplayValues> displayValues) {
     if (m_captureImage.isNull() || m_physicalRect.isNull()) {
         hidePicker();
         return;
@@ -299,6 +308,20 @@ void ScreenshotColorPickerWindow::updatePicker(const QPoint& physicalPoint,
 
     opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
     const bool previewChanged = updatePreview(physicalPoint);
+    auto values = displayValues.value_or(ScreenshotCoordinateDisplayValues{
+        QPointF(m_currentPhysicalPoint), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
+    // The readout uses whole pixels; subpixel changes do not invalidate text layout.
+    values.position = QPointF(std::round(values.position.x()), std::round(values.position.y()));
+    if (values.relativePosition) {
+        values.relativePosition = QPointF(std::round(values.relativePosition->x()),
+                                          std::round(values.relativePosition->y()));
+    }
+    const QString previousPositionText = currentPositionText();
+    if (m_displayValues != values) {
+        m_displayValues = values;
+        m_positionText.reset();
+    }
+    const bool coordinatesChanged = previousPositionText != currentPositionText();
     static_cast<void>(updatePosition(overlayLocalPosition));
     bool opacityChanged = false;
     if (m_opacityEffect != nullptr) {
@@ -318,9 +341,21 @@ void ScreenshotColorPickerWindow::updatePicker(const QPoint& physicalPoint,
         show();
         raise();
     }
-    if (previewChanged || opacityChanged) {
+    if (previewChanged || opacityChanged || coordinatesChanged) {
         update();
     }
+}
+
+QString ScreenshotColorPickerWindow::currentPositionText() const {
+    if (m_positionText)
+        return *m_positionText;
+    const QPointF position = m_relativeCoordinates && m_displayValues.relativePosition
+                                 ? *m_displayValues.relativePosition
+                                 : m_displayValues.position;
+    const QString x = QStringLiteral("X: %1").arg(screenshotSelectionDisplayValue(position.x()));
+    const QString y = QStringLiteral("Y: %1").arg(screenshotSelectionDisplayValue(position.y()));
+    m_positionText = x + QLatin1Char(' ') + y;
+    return *m_positionText;
 }
 
 void ScreenshotColorPickerWindow::hidePicker() {
@@ -336,6 +371,16 @@ void ScreenshotColorPickerWindow::setCenterGuideLineColor(const QColor& color) {
         return;
     }
     m_centerGuideLineColor = next;
+    update();
+}
+
+void ScreenshotColorPickerWindow::toggleCoordinateMode() {
+    m_relativeCoordinates = !m_relativeCoordinates;
+    m_positionText.reset();
+    if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
+        static_cast<void>(snow_shot::storage::ScreenshotUiSettings().setColorPickerCoordinateMode(
+            m_relativeCoordinates ? QStringLiteral("relative") : QStringLiteral("global")));
+    }
     update();
 }
 
@@ -380,6 +425,14 @@ QSize ScreenshotColorPickerWindow::sizeHint() const {
                             kTextHeight + kContentGap + kTextVerticalOffset + kColorTextHeight +
                             kPanelPadding;
     return QSize(panelWidth + kShadowMargin * 2, panelHeight + kShadowMargin * 2);
+}
+
+void ScreenshotColorPickerWindow::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange || event->type() == QEvent::FontChange) {
+        m_positionText.reset();
+        update();
+    }
 }
 
 void ScreenshotColorPickerWindow::paintEvent(QPaintEvent* event) {
@@ -428,12 +481,10 @@ void ScreenshotColorPickerWindow::paintEvent(QPaintEvent* event) {
     painter.drawRoundedRect(centerRect.adjusted(0.5, 0.5, -0.5, -0.5), 2.0, 2.0);
 
     QFont textFont = font();
-    textFont.setPixelSize(13);
+    textFont.setPixelSize(kTextPixelSize);
     painter.setFont(textFont);
     painter.setPen(m_panelTextColor);
-    const QString positionText = QStringLiteral("X: %1 Y: %2")
-                                     .arg(m_currentPhysicalPoint.x())
-                                     .arg(m_currentPhysicalPoint.y());
+    const QString positionText = currentPositionText();
     painter.drawText(positionTextRect(), Qt::AlignCenter,
                      fitText(textFont, positionText, positionTextRect().toAlignedRect().width()));
 

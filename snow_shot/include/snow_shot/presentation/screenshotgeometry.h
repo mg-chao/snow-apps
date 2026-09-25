@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTGEOMETRY_H
 
 #include "snow_shot/presentation/screenshottypes.h"
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 
 #include <QPoint>
 #include <QPointF>
@@ -222,5 +223,28 @@ class ScreenshotGeometryMapper final {
     QPoint m_canvasOrigin;
     QRectF m_canvasBounds;
 };
+
+// Display-only conversion. Selection and sampling geometry remain in their native units.
+struct ScreenshotSelectionDisplayConversion {
+    qreal scale = 1.0;
+    bool canvasUsesPoints = false;
+    ScreenshotSelectionDisplayValues selection;
+};
+
+[[nodiscard]] ScreenshotSelectionDisplayConversion
+screenshotSelectionDisplayConversion(const ScreenshotGeometryMapper& geometry,
+                                     const ScreenshotDisplaySession& displays,
+                                     const QRect& selection, ScreenshotSelectionDisplayUnit unit,
+                                     const CapturedDisplayModel* fallbackDisplay = nullptr);
+
+[[nodiscard]] QPointF screenshotMagnifierDisplayPosition(
+    const ScreenshotGeometryMapper& geometry, const CapturedDisplayModel& sampleDisplay,
+    const QPoint& physicalPoint, const ScreenshotSelectionDisplayConversion& conversion);
+
+[[nodiscard]] std::optional<QPointF>
+screenshotMagnifierRelativeDisplayPosition(const ScreenshotGeometryMapper& geometry,
+                                           const CapturedDisplayModel& sampleDisplay,
+                                           const QPoint& physicalPoint, const QRect& selection,
+                                           const ScreenshotSelectionDisplayConversion& conversion);
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTGEOMETRY_H

@@ -74,6 +74,7 @@ const QStringList& screenshotShortcutActionIds() {
         QStringLiteral("select_previously_selected_area"),
         QStringLiteral("recapture"),
         QStringLiteral("copy_color"),
+        QStringLiteral("toggle_coordinate_mode"),
         QStringLiteral("table_recognition"),
         QStringLiteral("qr_code_recognition"),
         QStringLiteral("video_recording"),
@@ -819,6 +820,10 @@ shortcuts::ShortcutBindingList ScreenshotShortcutSettings::recapture() const {
     return shortcuts(QStringLiteral("recapture"));
 }
 
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::toggleCoordinateMode() const {
+    return shortcuts(QStringLiteral("toggle_coordinate_mode"));
+}
+
 shortcuts::ShortcutBindingList ScreenshotShortcutSettings::copyColor() const {
     return shortcuts(QStringLiteral("copy_color"));
 }
@@ -1169,12 +1174,28 @@ bool ScreenshotUiSettings::setSelectionTransitionAnimationEnabled(bool enabled) 
                             enabled);
 }
 
+QString ScreenshotUiSettings::selectionDisplayUnit() const {
+    return cache().value(QStringLiteral("screenshot_ui/selection_display_unit")).toString();
+}
+
+bool ScreenshotUiSettings::setSelectionDisplayUnit(const QString& unit) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/selection_display_unit"), unit);
+}
+
 QString ScreenshotUiSettings::colorPickerDisplayMode() const {
     return cache().value(QStringLiteral("screenshot_ui/color_picker_display_mode")).toString();
 }
 
 bool ScreenshotUiSettings::setColorPickerDisplayMode(const QString& mode) const {
     return cache().setValue(QStringLiteral("screenshot_ui/color_picker_display_mode"), mode);
+}
+
+QString ScreenshotUiSettings::colorPickerCoordinateMode() const {
+    return cache().value(QStringLiteral("screenshot_ui/color_picker_coordinate_mode")).toString();
+}
+
+bool ScreenshotUiSettings::setColorPickerCoordinateMode(const QString& mode) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/color_picker_coordinate_mode"), mode);
 }
 
 QString ScreenshotUiSettings::colorPickerFormat() const {

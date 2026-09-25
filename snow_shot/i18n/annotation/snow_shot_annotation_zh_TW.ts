@@ -532,6 +532,10 @@
             <translation>線條文字填充</translation>
         </message>
         <message>
+            <source>Logical Pixel Selection</source>
+            <translation>邏輯像素選取範圍</translation>
+        </message>
+        <message>
             <source>Mask color</source>
             <translation>遮罩顏色</translation>
         </message>
@@ -658,6 +662,10 @@
         <message>
             <source>Pen highlight stroke width %1 (%2px)</source>
             <translation>畫筆醒目提示描邊寬度 %1 (%2px)</translation>
+        </message>
+        <message>
+            <source>Physical Pixel Selection</source>
+            <translation>實體像素選取範圍</translation>
         </message>
         <message>
             <source>Pick color from canvas</source>

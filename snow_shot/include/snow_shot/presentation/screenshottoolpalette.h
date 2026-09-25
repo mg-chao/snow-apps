@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLPALETTE_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLPALETTE_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 #include "icon_core.h"
 #include "widgets/control_scale.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
@@ -316,6 +317,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setCaptureCursorEnabled(bool enabled);
     void setScreenshotRegionType(ScreenshotRegionType type);
     [[nodiscard]] bool captureCursorEnabled() const;
+    void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit);
     void setSelectionToolbarHidden(bool hidden);
     [[nodiscard]] bool selectionToolbarHidden() const;
     void setRecaptureBusy(bool busy);
@@ -426,6 +428,7 @@ class ScreenshotToolPalette final : public QWidget,
     void screenshotRegionTypeRequested(int type);
     void addScreenshotRegionRequested();
     void subtractScreenshotRegionRequested();
+    void selectionDisplayUnitChanged(ScreenshotSelectionDisplayUnit unit);
     void selectionToolbarHiddenChanged(bool hidden);
     void selectRequested();
     void recordingExportSettingsVisibleChanged(bool visible);
@@ -776,6 +779,7 @@ class ScreenshotToolPalette final : public QWidget,
     QVector<QBoxLayout*> m_styleControlLayouts;
     QWidget* m_rectangleStyleControlsWidget = nullptr;
     QWidget* m_moveActionControls = nullptr;
+    QPointer<adqt::widgets::AdRadioButtonGroup> m_selectionDisplayUnitGroup;
     QWidget* m_lineStyleControlsWidget = nullptr;
     QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;
@@ -967,6 +971,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_recordingCursorVisible = true;
     bool m_captureCursorEnabled = false;
     ScreenshotRegionType m_screenshotRegionType = ScreenshotRegionType::Rectangle;
+    ScreenshotSelectionDisplayUnit m_selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool m_selectionToolbarHidden = false;
     bool m_recaptureBusy = false;
     bool m_ocrEnabled = true;

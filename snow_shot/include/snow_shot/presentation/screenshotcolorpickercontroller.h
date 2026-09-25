@@ -22,6 +22,7 @@ class PhysicalCursor;
 }
 
 struct ScreenshotColorPickerContext {
+    ScreenshotSelectionDisplayUnit selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool active = false;
     bool moveToolActive = false;
     bool intelligentSelecting = false;
@@ -58,6 +59,7 @@ class ScreenshotColorPickerController final {
 
     [[nodiscard]] bool copyColorToClipboard(const ScreenshotColorPickerContext& context);
     [[nodiscard]] bool cycleFormat(const ScreenshotColorPickerContext& context);
+    [[nodiscard]] bool toggleCoordinateMode(const ScreenshotColorPickerContext& context);
     [[nodiscard]] bool enabled(const ScreenshotColorPickerContext& context) const;
 
   private:

@@ -722,7 +722,7 @@ void ScreenRecordingAreaWindow::applyNativePassThrough(bool enabled) {
     NSView* view = reinterpret_cast<NSView*>(winId());
     NSWindow* window = view.window;
     window.ignoresMouseEvents = enabled;
-    snow_shot::platform::configureScreenshotOverlayWindow(this);
+    snow_shot::platform::configureScreenRecordingAreaWindow(this);
 #else
     Q_UNUSED(enabled);
 #endif
