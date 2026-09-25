@@ -2862,6 +2862,10 @@
             <translation>缩略图模式</translation>
         </message>
         <message>
+            <source>Toggle Global/Relative Coordinates</source>
+            <translation>切换全局/相对坐标</translation>
+        </message>
+        <message>
             <source>Toggle hotkeys</source>
             <translation>切换快捷键</translation>
         </message>

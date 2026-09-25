@@ -1314,3 +1314,16 @@ QPointF screenshotMagnifierDisplayPosition(const ScreenshotGeometryMapper& geome
             : QPointF(physicalPoint);
     return desktopPoint * conversion.scale;
 }
+
+std::optional<QPointF>
+screenshotMagnifierRelativeDisplayPosition(const ScreenshotGeometryMapper& geometry,
+                                           const CapturedDisplayModel& sampleDisplay,
+                                           const QPoint& physicalPoint, const QRect& selection,
+                                           const ScreenshotSelectionDisplayConversion& conversion) {
+    if (selection.isEmpty()) {
+        return std::nullopt;
+    }
+    return (geometry.canvasPositionForPhysicalPoint(sampleDisplay, physicalPoint) -
+            QPointF(selection.topLeft())) *
+           conversion.scale;
+}

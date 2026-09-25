@@ -123,7 +123,9 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
         require(host.colorPicker() == nullptr, "idle host must not own a picker");
         host.setColorPickerCenterGuideLineColor(Qt::green);
         host.prepareColorPickerSurface(&first);
-        host.updateColorPicker(&first, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0);
+        host.updateColorPicker(
+            &first, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0,
+            {QPointF(8, 8), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
         require(host.colorPicker() == nullptr,
                 "preparation and updates must never create a picker");
         host.createColorPicker();
@@ -151,7 +153,9 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
                     tracked->internalWinId() == preparedWindowId &&
                     backingPixels(*tracked) == preparedPixels && !tracked->hasCurrentColor(),
                 "repeated preparation must retain hidden native pixels without requiring an image");
-        host.updateColorPicker(&first, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0);
+        host.updateColorPicker(
+            &first, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0,
+            {QPointF(8, 8), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
         QApplication::processEvents();
         require(tracked->hasCurrentColor() && tracked->isVisible(),
                 "the prepared picker must reveal its first sample");
@@ -160,7 +164,9 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
                 "the first sampled frame must reuse the preallocated native surface");
         tracked->cycleColorFormat();
         const QString format = tracked->currentColorText();
-        host.updateColorPicker(&second, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0);
+        host.updateColorPicker(
+            &second, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0,
+            {QPointF(8, 8), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
         require(tracked == host.colorPicker() && tracked->parentWidget() == &second &&
                     tracked->windowHandle()->transientParent() == second.windowHandle(),
                 "moving between overlays must retain one picker and update its native owner");
@@ -194,7 +200,9 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
 #endif
         host.releaseColorPicker();
         host.resetColorPickerForNewCapture();
-        host.updateColorPicker(&second, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0);
+        host.updateColorPicker(
+            &second, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 1.0,
+            {QPointF(8, 8), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
         require(host.colorPicker() == nullptr,
                 "late updates and cleanup must leave the picker absent");
 
@@ -202,7 +210,9 @@ void pickerLifetimeFollowsExplicitSessionOperations() {
         tracked = host.colorPicker();
         require(!tracked->hasCurrentColor() && tracked->currentColorText().isEmpty(),
                 "a replacement picker must not retain the old sample");
-        host.updateColorPicker(&first, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 0.0);
+        host.updateColorPicker(
+            &first, image, image.rect(), QPoint(8, 8), QPointF(8, 8), 0.0,
+            {QPointF(8, 8), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
         require(tracked->currentColorText() == format,
                 "a replacement picker must restore the selected format");
         host.detachOverlayTransientUi(&first);
@@ -249,8 +259,9 @@ void visibleRecaptureWindowsIncludePicker() {
 
     QImage image(16, 16, QImage::Format_RGBA8888);
     image.fill(Qt::red);
-    coordinator.updateColorPicker(&overlay, image, image.rect(), QPoint(8, 8), QPointF(50, 50),
-                                  1.0);
+    coordinator.updateColorPicker(
+        &overlay, image, image.rect(), QPoint(8, 8), QPointF(50, 50), 1.0,
+        {QPointF(8, 8), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
     QApplication::processEvents();
     require(picker->isVisible() && picker->isWindow() &&
                 coordinator.visibleRecaptureWindows(displays) ==
@@ -303,8 +314,9 @@ void invocationMonitorOwnsThePreparedSurface() {
                 "later preparation must keep the invocation monitor's surface");
         QImage image(16, 16, QImage::Format_RGBA8888);
         image.fill(Qt::blue);
-        coordinator.updateColorPicker(&secondary, image, image.rect(), QPoint(8, 8),
-                                      secondary.rect().center(), 1.0);
+        coordinator.updateColorPicker(
+            &secondary, image, image.rect(), QPoint(8, 8), secondary.rect().center(), 1.0,
+            {QPointF(8, 8), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
         QApplication::processEvents();
         require(picker->internalWinId() == nativeId && backingPixels(*picker) == pixels,
                 "first reveal on the invocation monitor must retain the preallocated pixels");
@@ -324,6 +336,15 @@ void invocationMonitorOwnsThePreparedSurface() {
 }
 
 void startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary directory unavailable");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    storage.shutdown();
+    require(storage
+                .initialize({QDir(temporary.path()).filePath(QStringLiteral("bin")),
+                             temporary.path(), 60000})
+                .success,
+            "coordinate integration fixture must initialize isolated storage");
     NoopOverlayEventSink sink;
     SnowCanvasRuntime canvas;
     snow_shot::presentation::WindowShortcutManager shortcuts;
@@ -376,7 +397,37 @@ void startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor() {
     context.active = true;
     context.moveToolActive = true;
     context.intelligentSelecting = true;
+    context.selectionDisplayUnit = ScreenshotSelectionDisplayUnit::PhysicalPixels;
+    context.selectionPixels = QRect(90, 10, 30, 30);
     controller.updateAtCurrentCursor(context);
+    auto* picker = coordinator.colorPicker();
+    require(picker->currentPositionText().simplified() == QStringLiteral("X: 100 Y: 20") &&
+                controller.toggleCoordinateMode(context) &&
+                picker->currentPositionText().simplified() == QStringLiteral("X: 10 Y: 10"),
+            "controller must deliver selection-relative positions and refresh on toggle");
+    context.selectionPixels.translate(5, 5);
+    controller.updateAtCurrentCursor(context);
+    require(picker->currentPositionText().simplified() == QStringLiteral("X: 5 Y: 5"),
+            "selection movement must refresh the origin with a stationary sample");
+    context.selectionPixels = {};
+    controller.updateAtCurrentCursor(context);
+    require(picker->currentPositionText().simplified() == QStringLiteral("X: 100 Y: 20"),
+            "empty selection must display global coordinates");
+    context.selectionPixels = QRect(100, 20, 20, 20);
+    controller.updateAtCurrentCursor(context);
+    require(picker->currentPositionText().simplified() == QStringLiteral("X: 0 Y: 0"),
+            "relative mode must resume when a selection appears");
+    controller.setSuppressed(true);
+    require(!controller.toggleCoordinateMode(context),
+            "suppression must disable coordinate toggle");
+    controller.setSuppressed(false);
+    context.active = false;
+    require(!controller.toggleCoordinateMode(context),
+            "inactive capture must disable coordinate toggle");
+    context.active = true;
+    require(controller.toggleCoordinateMode(context) &&
+                picker->currentPositionText().simplified() == QStringLiteral("X: 100 Y: 20"),
+            "toggling back must restore desktop coordinates");
     require(reads == 0 && coordinator.colorPicker()->parentWidget() == &second &&
                 coordinator.colorPicker()->currentColorText().compare(QStringLiteral("#0000ff"),
                                                                       Qt::CaseInsensitive) == 0,
@@ -389,6 +440,7 @@ void startupPickerUsesResolvedOwnerWithoutSamplingNativeCursor() {
     require(reads == 1 && coordinator.colorPicker()->parentWidget() == &first,
             "live picker must sample once and follow the newly selected display");
     coordinator.releaseColorPicker();
+    storage.shutdown();
 }
 
 void canvasSamplerFollowsSessionOwner() {

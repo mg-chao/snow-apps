@@ -6,6 +6,7 @@
 #include <QSizeF>
 #include <QString>
 #include <cmath>
+#include <optional>
 
 enum class ScreenshotSelectionDisplayUnit { PhysicalPixels, LogicalPixels };
 
@@ -40,6 +41,7 @@ struct ScreenshotCoordinateDisplayValues {
     QPointF position;
     ScreenshotSelectionDisplayUnit unit = ScreenshotSelectionDisplayUnit::PhysicalPixels;
     bool canvasUsesPoints = false;
+    std::optional<QPointF> relativePosition = std::nullopt;
     bool operator==(const ScreenshotCoordinateDisplayValues&) const = default;
 };
 

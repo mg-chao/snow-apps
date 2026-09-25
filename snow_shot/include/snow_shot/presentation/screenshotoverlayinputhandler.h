@@ -66,6 +66,7 @@ struct ScreenshotOverlayInputActions {
         [](const QPointF&) {};
     std::function<bool()> copyColorPickerColorToClipboard = []() { return false; };
     std::function<bool()> cycleColorPickerFormat = []() { return false; };
+    std::function<bool()> toggleColorPickerCoordinateMode = []() { return false; };
     std::function<bool(snow_shot::platform::PhysicalCursorDirection direction)> moveCursorOnePixel =
         [](snow_shot::platform::PhysicalCursorDirection) { return false; };
 

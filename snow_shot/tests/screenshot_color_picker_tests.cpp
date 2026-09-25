@@ -61,17 +61,76 @@ void positionTextTracksFontAndLanguage() {
     QFont wide = picker.font();
     wide.setStretch(400);
     picker.setFont(wide);
-    require(picker.currentPositionText().contains(QLatin1Char('\n')),
-            "font changes must invalidate the cached coordinate layout");
+    require(picker.currentPositionText() == original,
+            "font changes must preserve single-line coordinate values");
     PickerUnitTranslator translator;
     require(QApplication::installTranslator(&translator), "picker translator must install");
     QApplication::processEvents();
-    require(picker.currentPositionText().endsWith(QStringLiteral("pixels-translated")),
-            "language changes must invalidate the cached unit text");
+    require(picker.currentPositionText().simplified() == original,
+            "language changes must not add coordinate units to the magnifier");
     QApplication::removeTranslator(&translator);
     QApplication::processEvents();
-    require(picker.currentPositionText().endsWith(QStringLiteral("px")),
-            "removing a translator must restore the source unit text");
+    require(picker.currentPositionText().simplified() == original,
+            "removing a translator must preserve the unit-free magnifier text");
+}
+
+void coordinateModePersistsAndRefreshesWithoutResampling() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary directory unavailable");
+    const storage::StorageInitializationOptions options{
+        QDir(temporary.path()).filePath(QStringLiteral("bin")), temporary.path(), 60000};
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    require(applicationStorage.initialize(options).success, "failed to initialize storage");
+    const storage::ScreenshotUiSettings settings;
+    require(settings.colorPickerCoordinateMode() == QStringLiteral("global"),
+            "missing coordinate mode must default to global");
+    const ScreenshotCoordinateDisplayValues values{QPointF(-100, 200),
+                                                   ScreenshotSelectionDisplayUnit::PhysicalPixels,
+                                                   false, QPointF(-3.6, 8.2)};
+    const QString global = QStringLiteral("X: -100 Y: 200");
+    const QString relative = QStringLiteral("X: -4 Y: 8");
+    for (bool restoredRelative : {false, true}) {
+        {
+            ScreenshotColorPickerWindow picker;
+            sampleRed(picker);
+            picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0, values);
+            require(picker.currentPositionText() == (restoredRelative ? relative : global),
+                    "picker must restore its coordinate preference after restart");
+            require(!settings.setColorPickerCoordinateMode(QStringLiteral("invalid")),
+                    "invalid coordinate modes must be rejected");
+            picker.toggleCoordinateMode();
+            require(
+                picker.currentPositionText() == (restoredRelative ? global : relative) &&
+                    picker.currentColorText() == QStringLiteral("#FF0000") &&
+                    settings.colorPickerCoordinateMode() ==
+                        (restoredRelative ? QStringLiteral("global") : QStringLiteral("relative")),
+                "toggle must immediately change readout and preference without resampling");
+            picker.resetForNewCapture();
+            sampleRed(picker);
+            picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0, values);
+            require(picker.currentPositionText() == (restoredRelative ? global : relative),
+                    "new capture must retain coordinate mode");
+            auto noSelection = values;
+            noSelection.relativePosition.reset();
+            picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0, noSelection);
+            require(picker.currentPositionText() == global,
+                    "no selection must fall back to global coordinates");
+            picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0, values);
+            require(picker.currentPositionText() == (restoredRelative ? global : relative),
+                    "selection appearance must restore relative readout without another toggle");
+        }
+        require(applicationStorage.flushNow().success, "failed to flush coordinate preference");
+        applicationStorage.shutdown();
+        require(applicationStorage.initialize(options).success, "failed to reload storage");
+    }
+    require(settings.colorPickerCoordinateMode() == QStringLiteral("global"),
+            "switching back to global must persist");
+    applicationStorage.shutdown();
+    ScreenshotColorPickerWindow picker;
+    sampleRed(picker);
+    picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0, values);
+    picker.toggleCoordinateMode();
+    require(picker.currentPositionText() == relative, "toggle must work without storage");
 }
 
 void formatPersistsAcrossCapturesAndRestarts() {
@@ -196,42 +255,47 @@ void selectionUnitPersistsAndCoordinatesDoNotResample() {
     const ScreenshotCoordinateDisplayValues logical{QPointF(-80.8, 40), Unit::LogicalPixels, false};
     picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0, logical);
     require(picker.currentPositionText().replace(QLatin1Char('\n'), QLatin1Char(' ')) ==
-                    QStringLiteral("X: -81 Y: 40 dp") &&
+                    QStringLiteral("X: -81 Y: 40") &&
                 picker.currentColorText() == color,
             "changing units at the same sample must update coordinates without changing the color");
     picker.updatePicker(
         QPoint(8, 8), QPointF(8, 8), 0.0,
         ScreenshotCoordinateDisplayValues{QPointF(-101, 50), Unit::PhysicalPixels, false});
     require(picker.currentPositionText().replace(QLatin1Char('\n'), QLatin1Char(' ')) ==
-                    QStringLiteral("X: -101 Y: 50 px") &&
+                    QStringLiteral("X: -101 Y: 50") &&
                 picker.currentColorText() == color,
             "physical coordinates must format as integers and preserve the sample");
     picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 1.0, logical);
     QApplication::processEvents();
     PickerPaintCounter paints;
     picker.installEventFilter(&paints);
+    QFont wideCoordinates = picker.font();
+    wideCoordinates.setStretch(150);
+    picker.setFont(wideCoordinates);
     picker.updatePicker(
         QPoint(8, 8), QPointF(8, 8), 1.0,
         ScreenshotCoordinateDisplayValues{QPointF(-12345.6, -98765.4), Unit::LogicalPixels, false});
     QApplication::processEvents();
     require(paints.count > 0,
             "coordinate changes must repaint even when the sampled pixel is unchanged");
-    const auto lines = picker.currentPositionText().split(QLatin1Char('\n'));
-    require(lines.size() == 2 && lines[0] == QStringLiteral("X: -12346") &&
-                lines[1] == QStringLiteral("Y: -98765 dp"),
-            "long rounded coordinates must wrap without truncating either axis or its unit");
+    const QString positionText = picker.currentPositionText();
+    require(positionText == QStringLiteral("X: -12346 Y: -98765"),
+            "long coordinates must retain both rounded values on one line before painting");
     QFont textFont = picker.font();
     textFont.setPixelSize(13);
-    for (const auto& line : lines)
-        require(QFontMetrics(textFont).horizontalAdvance(line) <= 132,
-                "wrapped coordinate rows must fit the magnifier width");
+    require(QFontMetrics(textFont).horizontalAdvance(positionText) > 132,
+            "long coordinate fixture must exercise horizontal overflow");
+    require(picker.sizeHint() == QSize(160, 214) && picker.size() == picker.sizeHint(),
+            "long coordinates must preserve the main-branch compact picker dimensions");
+    require(QFontMetrics(textFont).height() <= 20,
+            "single-line coordinate text must fit the compact text area vertically");
     QApplication::processEvents();
     paints.count = 0;
     picker.updatePicker(
         QPoint(8, 8), QPointF(8, 8), 1.0,
         ScreenshotCoordinateDisplayValues{QPointF(-12345.8, -98765.1), Unit::LogicalPixels, false});
     QApplication::processEvents();
-    require(paints.count == 0 && picker.currentPositionText().split(QLatin1Char('\n')) == lines,
+    require(paints.count == 0 && picker.currentPositionText() == positionText,
             "subpixel changes with identical rounded coordinates must not repaint the picker");
     picker.removeEventFilter(&paints);
     picker.resetForNewCapture();
@@ -240,7 +304,7 @@ void selectionUnitPersistsAndCoordinatesDoNotResample() {
         QPoint(8, 8), QPointF(8, 8), 0.0,
         ScreenshotCoordinateDisplayValues{QPointF(-0.04, 4.666), Unit::LogicalPixels, true});
     require(picker.currentPositionText().replace(QLatin1Char('\n'), QLatin1Char(' ')) ==
-                QStringLiteral("X: 0 Y: 5 dp"),
+                QStringLiteral("X: 0 Y: 5"),
             "point coordinates must use common rounding after a capture reset");
     appStorage.shutdown();
 }
@@ -418,6 +482,7 @@ int main(int argc, char** argv) {
 #endif
     positionTextTracksFontAndLanguage();
     selectionUnitPersistsAndCoordinatesDoNotResample();
+    coordinateModePersistsAndRefreshesWithoutResampling();
     formatPersistsAcrossCapturesAndRestarts();
     formatSurvivesResetWithoutStorage();
     plainHexPreservesSixUppercaseDigits();

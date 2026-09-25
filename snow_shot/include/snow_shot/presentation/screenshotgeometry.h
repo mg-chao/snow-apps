@@ -241,4 +241,10 @@ screenshotSelectionDisplayConversion(const ScreenshotGeometryMapper& geometry,
     const ScreenshotGeometryMapper& geometry, const CapturedDisplayModel& sampleDisplay,
     const QPoint& physicalPoint, const ScreenshotSelectionDisplayConversion& conversion);
 
+[[nodiscard]] std::optional<QPointF>
+screenshotMagnifierRelativeDisplayPosition(const ScreenshotGeometryMapper& geometry,
+                                           const CapturedDisplayModel& sampleDisplay,
+                                           const QPoint& physicalPoint, const QRect& selection,
+                                           const ScreenshotSelectionDisplayConversion& conversion);
+
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTGEOMETRY_H

@@ -1575,6 +1575,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             return m_colorPickerController->cycleFormat(
                 m_presentationServices->colorPickerContext());
         },
+        [this]() {
+            return m_colorPickerController->toggleCoordinateMode(
+                m_presentationServices->colorPickerContext());
+        },
         [this](snow_shot::platform::PhysicalCursorDirection direction) {
             return moveCursorOnePixel(direction);
         },

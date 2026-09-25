@@ -1963,6 +1963,10 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     int nextHistoryCalls = 0;
     int previousSelectionCalls = 0;
     int copyColorCalls = 0;
+    int coordinateToggles = 0;
+    int coordinateCancelCalls = 0;
+    int brushCalls = 0;
+    bool coordinateInputAllowed = true;
     int selectorHitTestRequests = 0;
     int persistedTargetChanges = 0;
     ScreenshotIntelligentSelectionTarget persistedTarget =
@@ -1993,6 +1997,19 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     actions.copyColorPickerColorToClipboard = [&copyColorCalls]() {
         ++copyColorCalls;
         return true;
+    };
+    actions.toggleColorPickerCoordinateMode = [&]() {
+        ++coordinateToggles;
+        return true;
+    };
+    actions.cancelCapture = [&]() { ++coordinateCancelCalls; };
+    actions.localShortcutInputAllowed = [&]() { return coordinateInputAllowed; };
+    actions.activateDrawingShortcut = [&](const QString& id) {
+        if (id == QStringLiteral("brush")) {
+            ++brushCalls;
+            return true;
+        }
+        return false;
     };
     ScreenshotOverlayInputHandler handler({
         captureState,
@@ -2093,10 +2110,26 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     require(dispatchShortcut(shortcutWindow, Qt::Key_R) && previousSelectionCalls == 2 &&
                 !intelligent.pressActive(),
             "R did not request the previously selected area in Move mode");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+                coordinateToggles == 1 && coordinateCancelCalls == 0 && copyColorCalls == 0,
+            "Shift+P must toggle coordinates without copying or ending capture");
+    static_cast<void>(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier, true));
+    require(coordinateToggles == 1, "coordinate toggle must ignore auto-repeat");
+    coordinateInputAllowed = false;
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+                coordinateToggles == 1,
+            "coordinate shortcut must respect local input restrictions");
+    coordinateInputAllowed = true;
+    require(dispatchShortcut(shortcutWindow, Qt::Key_P) && brushCalls == 1 &&
+                coordinateToggles == 1,
+            "unmodified P must still activate Brush");
     require(dispatchShortcut(shortcutWindow, Qt::Key_C) && copyColorCalls == 1,
             "C did not copy the color-picker color in Move mode");
 
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+                coordinateToggles == 1,
+            "coordinate toggle must be inactive in drawing modes");
     require(!dispatchShortcut(shortcutWindow, Qt::Key_R) &&
                 !dispatchShortcut(shortcutWindow, Qt::Key_C) && previousSelectionCalls == 2 &&
                 copyColorCalls == 1,
@@ -2113,6 +2146,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
                     {QStringLiteral("J")});
     remapped.insert(QStringLiteral("select_previously_selected_area"), {QStringLiteral("K")});
     remapped.insert(QStringLiteral("copy_color"), {QStringLiteral("B")});
+    remapped.insert(QStringLiteral("toggle_coordinate_mode"), {QStringLiteral("Alt+P")});
     remapped.insert(QStringLiteral("previous_screenshot_history"), {QStringLiteral("Y")});
     remapped.insert(QStringLiteral("next_screenshot_history"), {QStringLiteral("U")});
     require(shortcutSettings.setAllShortcutsAtomic(remapped),
@@ -2128,6 +2162,15 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
                 dispatchShortcut(shortcutWindow, Qt::Key_J) && selectorHitTestRequests == 6,
             "remapped Tab shortcut did not replace the default key");
     interaction.confirmSelection();
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+                dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::AltModifier) &&
+                coordinateToggles == 2,
+            "configured coordinate shortcut must replace Shift+P");
+    require(shortcutSettings.setShortcuts(QStringLiteral("toggle_coordinate_mode"), {}),
+            "failed to disable coordinate shortcut");
+    shortcutController.reloadConfiguredShortcuts();
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::AltModifier) && coordinateToggles == 2,
+            "unassigned coordinate shortcut must be inactive");
     require(!dispatchShortcut(shortcutWindow, Qt::Key_R) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_K) &&
                 !dispatchShortcut(shortcutWindow, Qt::Key_C) &&

@@ -183,6 +183,7 @@ struct ScreenshotOverlayShortcutController::Impl {
             QStringLiteral("select_previously_selected_area"),
             QStringLiteral("recapture"),
             QStringLiteral("copy_color"),
+            QStringLiteral("toggle_coordinate_mode"),
             QStringLiteral("table_recognition"),
             QStringLiteral("qr_code_recognition"),
             QStringLiteral("video_recording"),
@@ -255,7 +256,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                            !interaction.scrollingCapture() && actions.localShortcutInputAllowed() &&
                            actions.recaptureAvailable();
                 }
-                if (actionId == QStringLiteral("copy_color")) {
+                if (actionId == QStringLiteral("copy_color") ||
+                    actionId == QStringLiteral("toggle_coordinate_mode")) {
                     return interaction.moveToolActive() && actions.localShortcutInputAllowed();
                 }
                 if (actionId.startsWith(QStringLiteral("move_cursor_"))) {
@@ -317,6 +319,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                         intelligentSelection.clearPress();
                     }
                     return selected;
+                }
+                if (actionId == QStringLiteral("toggle_coordinate_mode")) {
+                    return actions.toggleColorPickerCoordinateMode();
                 }
                 if (actionId == QStringLiteral("copy_color")) {
                     if (!actions.copyColorPickerColorToClipboard()) {

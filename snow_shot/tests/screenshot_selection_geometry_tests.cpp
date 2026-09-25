@@ -1039,6 +1039,26 @@ void selectionDisplayUnitsPreserveGeometryAndOrigins() {
         require(std::abs(picker.x() - 101.0 / dpi) < 0.00001 &&
                     std::abs(picker.y() + 99.0 / dpi) < 0.00001,
                 "magnifier on another monitor must retain desktop origin and use selection scale");
+        for (const auto& conversion : {physical, logical}) {
+            require(screenshotMagnifierRelativeDisplayPosition(
+                        geometry, left, QPoint(-899, -149), selection, conversion) == QPointF(0, 0),
+                    "selection top-left must be relative origin despite desktop offsets");
+            require(screenshotMagnifierRelativeDisplayPosition(geometry, right, QPoint(101, -99),
+                                                               selection, conversion) ==
+                        QPointF(1000, 50) * conversion.scale,
+                    "cross-monitor relative coordinates must use the selection scale");
+            require(screenshotMagnifierRelativeDisplayPosition(geometry, left, QPoint(-999, -199),
+                                                               selection, conversion) ==
+                        QPointF(-100, -50) * conversion.scale,
+                    "samples above and left of selection must retain negative offsets");
+            require(screenshotMagnifierRelativeDisplayPosition(
+                        geometry, left, QPoint(-899, -149), QRect(91, 31, 200, 200), conversion) ==
+                        QPointF(10, 20) * conversion.scale,
+                    "moved and resized selection must immediately change relative origin");
+            require(!screenshotMagnifierRelativeDisplayPosition(geometry, left, QPoint(-899, -149),
+                                                                {}, conversion),
+                    "empty selection must not provide a relative coordinate");
+        }
         const auto noSelection = screenshotSelectionDisplayConversion(geometry, displays, {},
                                                                       Unit::LogicalPixels, &right);
         require(noSelection.scale == 0.5, "without selection use the sampling monitor scale");
@@ -1106,6 +1126,17 @@ void pointCanvasDisplayUnitsMatchExport() {
                                                    physical) ==
                     QPointF(left.logicalRect.topLeft()) * before.scale,
                 "point-backed magnifier must convert to desktop points before selection scaling");
+            for (const auto& conversion : {physical, logical}) {
+                require(
+                    screenshotMagnifierRelativeDisplayPosition(
+                        geometry, left, left.physicalRect.topLeft(), selection, conversion) ==
+                        -QPointF(selection.topLeft()) * conversion.scale,
+                    "point canvas relative origin must use canvas coordinates and export scale");
+                require(screenshotMagnifierRelativeDisplayPosition(
+                            geometry, right, right.physicalRect.topLeft(), selection, conversion) ==
+                            (QPointF(500, 0) - QPointF(selection.topLeft())) * conversion.scale,
+                        "mixed backing scales must preserve a common relative canvas origin");
+            }
             require(screenshotSelectionRenderSpec(displays, selection).pixelSize ==
                         before.pixelSize,
                     "display conversions must not change export dimensions");

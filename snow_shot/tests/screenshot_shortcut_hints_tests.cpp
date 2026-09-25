@@ -185,6 +185,7 @@ void configuredShortcutRowsUseActualValues() {
         {QStringLiteral("select_previously_selected_area"),
          shortcutBindings({QStringLiteral("P")})},
         {QStringLiteral("copy_color"), shortcutBindings({QStringLiteral("Alt+C")})},
+        {QStringLiteral("toggle_coordinate_mode"), shortcutBindings({QStringLiteral("Alt+P")})},
         {QStringLiteral("previous_screenshot_history"),
          shortcutBindings({QStringLiteral("PgUp"), QStringLiteral("[")})},
         {QStringLiteral("next_screenshot_history"),
@@ -192,7 +193,7 @@ void configuredShortcutRowsUseActualValues() {
     };
 
     const QVector<ScreenshotShortcutHintRow> rows = screenshotShortcutHintRows(context);
-    require(rows.size() == 10, "manual-selection configured hint row count changed");
+    require(rows.size() == 11, "manual-selection configured hint row count changed");
     require(rows.at(0).label == QStringLiteral("Move cursor up") &&
                 rows.at(0).shortcut ==
                     shortcutDisplay({QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")}) &&
@@ -208,17 +209,44 @@ void configuredShortcutRowsUseActualValues() {
                 rows.at(6).shortcut == shortcutDisplay({QStringLiteral("P")}) &&
                 rows.at(7).shortcut == shortcutDisplay({QStringLiteral("Alt+C")}),
             "selection action hints must use configured shortcuts");
-    require(rows.at(8).label == QStringLiteral("Switch color format") &&
-                rows.at(8).shortcut == shortcutDisplay({QStringLiteral("Shift")}),
+    require(rows.at(8).label == QStringLiteral("Toggle Global/Relative Coordinates") &&
+                rows.at(8).shortcut == shortcutDisplay({QStringLiteral("Alt+P")}),
+            "coordinate toggle must follow Copy color and show the configured binding");
+    require(rows.at(9).label == QStringLiteral("Switch color format") &&
+                rows.at(9).shortcut == shortcutDisplay({QStringLiteral("Shift")}),
             "the fixed color-format shortcut must remain visible");
-    require(rows.at(9).label == QStringLiteral("Switch screenshot history") &&
-                rows.at(9).shortcut ==
+    require(rows.at(10).label == QStringLiteral("Switch screenshot history") &&
+                rows.at(10).shortcut ==
                     shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("["),
                                      QStringLiteral("PgDown"), QStringLiteral("]")}) &&
-                rows.at(9).shortcutChips ==
+                rows.at(10).shortcutChips ==
                     QStringList{shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("[")}),
                                 shortcutDisplay({QStringLiteral("PgDown"), QStringLiteral("]")})},
             "history hint must split the previous and next shortcuts into separate chips");
+}
+
+void coordinateHintFollowsCopyColor() {
+    for (const auto mode :
+         {ScreenshotShortcutHintMode::Selection, ScreenshotShortcutHintMode::SmartSelection}) {
+        const auto rows = screenshotShortcutHintRows(mode);
+        const auto copy = std::find_if(rows.cbegin(), rows.cend(), [](const auto& row) {
+            return row.label == QStringLiteral("Copy color");
+        });
+        require(copy != rows.cend() && copy + 1 != rows.cend() &&
+                    (copy + 1)->label == QStringLiteral("Toggle Global/Relative Coordinates") &&
+                    (copy + 1)->shortcut == shortcutDisplay({QStringLiteral("Shift+P")}),
+                "coordinate toggle must follow Copy color in both selection modes");
+        const snow_shot::shortcuts::ShortcutBindingMap disabled{
+            {QStringLiteral("toggle_coordinate_mode"), {}}};
+        const auto disabledRows = screenshotShortcutHintRows(mode, disabled);
+        require(disabledRows.size() == rows.size() - 1 &&
+                    std::none_of(disabledRows.cbegin(), disabledRows.cend(),
+                                 [](const auto& row) {
+                                     return row.label ==
+                                            QStringLiteral("Toggle Global/Relative Coordinates");
+                                 }),
+                "disabled coordinate shortcut must not leave a stale hint");
+    }
 }
 
 void defaultHistoryShortcutUsesSeparateChips() {
@@ -263,6 +291,7 @@ void unconfiguredRowsFallBackToSchemaDefaults() {
         QStringLiteral("next_screenshot_history"),
         QStringLiteral("select_previously_selected_area"),
         QStringLiteral("copy_color"),
+        QStringLiteral("toggle_coordinate_mode"),
     };
 
     snow_shot::shortcuts::ShortcutBindingMap schemaDefaults;
@@ -402,6 +431,7 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     toolMatrixMatchesRequestedVisibility();
     configuredShortcutRowsUseActualValues();
+    coordinateHintFollowsCopyColor();
     defaultHistoryShortcutUsesSeparateChips();
     unassignedConfiguredShortcutIsNotHinted();
     unconfiguredRowsFallBackToSchemaDefaults();

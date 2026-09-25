@@ -28,6 +28,7 @@ class ScreenshotColorPickerWindow final : public QWidget {
     void hidePicker();
     void setCenterGuideLineColor(const QColor& color);
     void cycleColorFormat();
+    void toggleCoordinateMode();
     QString currentColorText() const;
     QString currentPositionText() const;
     bool hasCurrentColor() const;
@@ -66,6 +67,7 @@ class ScreenshotColorPickerWindow final : public QWidget {
     QColor m_centerGuideLineColor = QColor(0, 0, 0, 0);
     QGraphicsOpacityEffect* m_opacityEffect = nullptr;
     ColorFormat m_colorFormat = ColorFormat::Hex;
+    bool m_relativeCoordinates = false;
     bool m_hasCurrentColor = false;
     qreal m_preparedSurfaceDevicePixelRatio = 0.0;
 };
