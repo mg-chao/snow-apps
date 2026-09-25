@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 
 #include <QObject>
+#include <QJsonObject>
 #include <QHash>
 #include <QImage>
 #include <QPointer>
@@ -154,6 +155,10 @@ class ScreenshotRecognitionSessionController final : public QObject {
         const ScreenshotOcrPresentation* displayedPresentation = nullptr) const;
     [[nodiscard]] std::optional<ScreenshotRecognitionFileSnapshot> fileExportSnapshot() const;
     void setTextDraft(const QString& text);
+    [[nodiscard]] QJsonObject workflowState() const;
+    [[nodiscard]] QJsonObject workflowResult() const;
+    [[nodiscard]] bool editWorkflow(const QJsonObject& params);
+    void cancelWorkflow();
     void handleTableCommandState(const ScreenshotTableCommandState& state);
 
   signals:
@@ -267,6 +272,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     quint64 m_tableGeneration = 0;
     quint64 m_qrGeneration = 0;
     quint64 m_translationGeneration = 0;
+    mutable QString m_workflowError;
     Mode m_mode = Mode::Text;
     bool m_active = false;
     bool m_showOriginalImage = false;

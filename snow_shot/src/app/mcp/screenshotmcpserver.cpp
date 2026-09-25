@@ -326,6 +326,7 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
             }
             if ((method == QStringLiteral("screenshot_cancel") ||
                  method == QStringLiteral("screenshot_state") ||
+                 method == QStringLiteral("screenshot_operation") ||
                  method == QStringLiteral("snow_shot_status")) &&
                 !c.activeId.isEmpty()) {
                 // Cancellation must not sit behind the operation it cancels. The session adapter

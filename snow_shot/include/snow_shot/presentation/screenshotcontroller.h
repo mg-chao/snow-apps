@@ -47,6 +47,10 @@ class ScreenshotController : public QObject {
     void setRecordingPermissionCheck(std::function<bool(bool, bool, bool)> check);
 
     [[nodiscard]] QJsonObject mcpState() const;
+    using McpCompletion = std::function<void(QJsonObject, QString)>;
+    void mcpCommand(const QString& method, const QJsonObject& params, McpCompletion completion);
+    void mcpCancelCommand();
+    void mcpDetached();
     [[nodiscard]] bool mcpBegin(const QJsonObject& options, QString* error);
     [[nodiscard]] bool mcpSetSelection(const QJsonObject& params, QString* error);
     [[nodiscard]] bool mcpSetTool(const QString& tool, QString* error);

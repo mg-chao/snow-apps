@@ -47,7 +47,7 @@ def main():
             send({"jsonrpc":"2.0","method":"notifications/initialized"})
             send({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})
             tools = response(2)["tools"]
-            assert len(tools) == 15, tools
+            assert len(tools) == 28, tools
             schemas = {tool["name"]:tool["inputSchema"] for tool in tools}
             assert "expected_revision" in schemas["screenshot_apply_annotations"]["required"]
             assert "operations" in schemas["screenshot_apply_annotations"]["required"]

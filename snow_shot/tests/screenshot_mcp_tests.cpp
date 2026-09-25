@@ -330,6 +330,107 @@ void session() {
             "direct output finishes session");
     session.shutdown();
 }
+void workflowOperations() {
+    QJsonObject editor{{QStringLiteral("capture_phase"), QStringLiteral("idle")}};
+    ScreenshotMcpSession::Ports ports;
+    ports.state = [&] { return editor; };
+    ports.begin = [&](const QJsonObject&, QString*) {
+        editor.insert(QStringLiteral("capture_phase"), QStringLiteral("editing"));
+        return true;
+    };
+    ports.cancel = [&] { editor.insert(QStringLiteral("capture_phase"), QStringLiteral("idle")); };
+    ports.selection = [&](const QJsonObject&, QString*) { return true; };
+    int commands = 0, canceled = 0, detached = 0;
+    ScreenshotMcpSession::Ports::CommandCompletion deliver;
+    ports.command = [&](const QString&, const QJsonObject&, auto completion) {
+        ++commands;
+        deliver = std::move(completion);
+    };
+    ports.cancelCommand = [&] { ++canceled; };
+    ports.detached = [&] { ++detached; };
+    ScreenshotMcpSession session(std::move(ports));
+    int counter = 0;
+    const auto makeRequest = [&](const QString& method) {
+        ScreenshotMcpRequest r;
+        r.connectionId = 1;
+        r.method = method;
+        r.requestId = QString::number(++counter);
+        r.idempotencyKey = r.requestId;
+        r.sessionId = session.state().value(QStringLiteral("session_id")).toString();
+        r.expectedRevision =
+            static_cast<quint64>(session.state().value(QStringLiteral("revision")).toInteger());
+        return r;
+    };
+    std::optional<ScreenshotMcpResponse> response;
+    const auto call = [&](const ScreenshotMcpRequest& r) {
+        response.reset();
+        session.request(r, [&](auto value) { response = value; });
+    };
+    call(makeRequest(QStringLiteral("screenshot_begin")));
+    session.capturePresented();
+    require(response && response->ok, "workflow begin completes");
+    auto start = makeRequest(QStringLiteral("screenshot_recognize"));
+    start.params.insert(QStringLiteral("kind"), QStringLiteral("text"));
+    call(start);
+    require(response && response->ok && commands == 1, "recognition returns promptly");
+    const auto operation = response->result.value(QStringLiteral("operation_id")).toString();
+    require(!operation.isEmpty() &&
+                response->result.value(QStringLiteral("status")) == QStringLiteral("running"),
+            "running operation has ID");
+    call(start);
+    require(response && response->ok && commands == 1,
+            "idempotent start never repeats provider work");
+    auto query = makeRequest(QStringLiteral("screenshot_operation"));
+    query.params.insert(QStringLiteral("operation_id"), operation);
+    query.expectedRevision.reset();
+    query.idempotencyKey.clear();
+    call(query);
+    require(response && response->ok, "result query needs no revision or mutation key");
+    auto intruder = query;
+    intruder.connectionId = 2;
+    call(intruder);
+    require(response && response->errorCode == QStringLiteral("session_not_found"),
+            "results remain private to owner");
+    call(makeRequest(QStringLiteral("screenshot_set_tool_style")));
+    require(response && response->errorCode == QStringLiteral("busy"),
+            "conflicting edit rejected while recognition runs");
+    deliver({{QStringLiteral("text"), QStringLiteral("recognized")}}, {});
+    call(query);
+    require(response &&
+                response->result.value(QStringLiteral("status")) == QStringLiteral("completed") &&
+                response->result.value(QStringLiteral("result"))
+                        .toObject()
+                        .value(QStringLiteral("text")) == QStringLiteral("recognized"),
+            "typed operation result retained");
+    auto translationRequest = makeRequest(QStringLiteral("screenshot_translate"));
+    call(translationRequest);
+    const auto second = response->result.value(QStringLiteral("operation_id")).toString();
+    auto late = deliver;
+    auto cancel = makeRequest(QStringLiteral("screenshot_cancel"));
+    cancel.params.insert(QStringLiteral("operation_id"), second);
+    call(cancel);
+    require(response && response->ok && canceled > 0, "operation cancellation reaches provider");
+    late({{QStringLiteral("text"), QStringLiteral("late")}}, {});
+    query.params.insert(QStringLiteral("operation_id"), second);
+    call(query);
+    require(response &&
+                response->result.value(QStringLiteral("status")) == QStringLiteral("canceled"),
+            "late completion cannot resurrect canceled operation");
+    auto step = makeRequest(QStringLiteral("screenshot_scroll_once"));
+    step.params.insert(QStringLiteral("direction"), QStringLiteral("down"));
+    call(step);
+    require(!response, "scroll waits for controller completion");
+    const int before = commands;
+    deliver({{QStringLiteral("changed"), true}}, {});
+    require(response && response->ok, "scroll completes after capture barrier");
+    call(step);
+    require(response && response->ok && commands == before,
+            "scroll replay cannot dispatch another notch");
+    session.disconnected(1);
+    require(detached == 1 &&
+                editor.value(QStringLiteral("capture_phase")) == QStringLiteral("editing"),
+            "disconnect stops automation while preserving visible work");
+}
 void annotationRuntime() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -356,6 +457,7 @@ void annotationRuntime() {
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    workflowOperations();
     annotationRuntime();
     transport();
     descriptorOverride();

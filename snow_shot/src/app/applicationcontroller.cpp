@@ -383,6 +383,12 @@ class ApplicationController::Impl {
         if (!mcpSession) {
             mcp::ScreenshotMcpSession::Ports ports;
             ports.state = [controller] { return controller->mcpState(); };
+            ports.command = [controller](const QString& method, const QJsonObject& params,
+                                         mcp::ScreenshotMcpSession::Ports::CommandCompletion done) {
+                controller->mcpCommand(method, params, std::move(done));
+            };
+            ports.cancelCommand = [controller] { controller->mcpCancelCommand(); };
+            ports.detached = [controller] { controller->mcpDetached(); };
             ports.begin = [this, controller](const QJsonObject& options, QString* error) {
                 if (directCaptureController->blocksApplicationUpdate()) {
                     if (error)

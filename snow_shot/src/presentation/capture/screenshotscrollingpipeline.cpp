@@ -55,6 +55,8 @@ struct ScrollCaptureResult {
     bool streamPressure = false;
     bool fatalError = false;
     QString errorMessage;
+    ScrollClock::time_point observedAt{};
+    bool contentChanged = false;
 };
 
 class OwnedScrollFrame {
@@ -411,6 +413,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
                           {{QStringLiteral("width"), viewport.width()},
                            {QStringLiteral("height"), viewport.height()}});
         m_diagnostics = {};
+        m_lastObservedImage = {};
         m_source = factory();
         if (!m_pool || !m_source) {
             m_callback({generation, false, false, true,
@@ -490,7 +493,8 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
                 continue;
             }
             const bool fatal = result.fatalError;
-            if (result.wakeConsumer || result.streamPressure || fatal)
+            if (result.wakeConsumer || result.streamPressure || fatal ||
+                result.observedAt != ScrollClock::time_point{})
                 m_callback(std::move(result));
             if (fatal)
                 break;
@@ -526,6 +530,12 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         const bool valid = !source.image.isNull() && source.image.size() == m_viewport &&
                            source.image.format() == QImage::Format_RGBA8888 &&
                            source.image.bytesPerLine() == m_viewport.width() * 4;
+        if (valid) {
+            result.observedAt = ScrollClock::now();
+            result.contentChanged = !source.duplicate && source.image != m_lastObservedImage;
+            if (!source.duplicate)
+                m_lastObservedImage = source.image;
+        }
         const bool capacity = m_mailbox->hasPendingCapacity();
         SNOW_SCROLL_TRACE(trace, trace->queueDepth = m_mailbox->pendingDepth());
         if (!valid || source.duplicate || !capacity) {
@@ -587,6 +597,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
     std::shared_ptr<ScrollFrameMailbox> m_mailbox;
     Callback m_callback;
     std::unique_ptr<ScrollingFrameSource> m_source;
+    QImage m_lastObservedImage;
     SnowStitchFramePool* m_pool = nullptr;
     QSize m_viewport;
     ScrollingCaptureDiagnostics m_diagnostics;
@@ -657,6 +668,12 @@ struct ScreenshotScrollingPipeline::Impl {
             if (errorCallback)
                 errorCallback(generation, std::move(result.errorMessage));
             return;
+        }
+        if (result.observedAt != ScrollClock::time_point{}) {
+            ++observation.sequence;
+            observation.observedAt = result.observedAt;
+            if (result.contentChanged)
+                observation.changedAt = result.observedAt;
         }
         if (result.streamPressure) {
             QMetaObject::invokeMethod(
@@ -741,6 +758,7 @@ struct ScreenshotScrollingPipeline::Impl {
     }
 
     ScreenshotScrollingPipeline& owner;
+    ScreenshotScrollingPipeline::Observation observation;
     FrameCallback frameCallback;
     ErrorCallback errorCallback;
     std::shared_ptr<ScrollFrameMailbox> mailbox = std::make_shared<ScrollFrameMailbox>();
@@ -844,6 +862,9 @@ void ScreenshotScrollingPipeline::resume(quint64 generation, QSize viewport,
         Qt::QueuedConnection);
 }
 
+ScreenshotScrollingPipeline::Observation ScreenshotScrollingPipeline::observation() const {
+    return m_impl->observation;
+}
 bool ScreenshotScrollingPipeline::idle() const {
     return !m_impl->busy && m_impl->mailbox->pendingDepth() == 0;
 }

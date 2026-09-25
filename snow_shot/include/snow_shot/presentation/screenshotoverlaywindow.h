@@ -88,6 +88,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void reanchorScrollingThumbnail(const QRect& localSelection);
     void clearScrollingThumbnail();
     [[nodiscard]] ScreenshotScrollingTrimRange scrollingThumbnailTrim() const;
+    void setScrollingTrimModel(std::shared_ptr<ScreenshotScrollingTrimRange> trim);
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     [[nodiscard]] quint64 windowMaskApplicationCountForTesting() const;
     [[nodiscard]] quint64 transparentClearCountForTesting() const;

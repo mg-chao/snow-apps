@@ -17,6 +17,10 @@ class ScreenshotMcpSession final : public QObject {
         std::function<bool(const QString&, QString*)> tool;
         std::function<bool(const QByteArray&, QJsonObject*, QString*)> annotations;
         std::function<void(bool)> history;
+        using CommandCompletion = std::function<void(QJsonObject, QString)>;
+        std::function<void(const QString&, const QJsonObject&, CommandCompletion)> command;
+        std::function<void()> cancelCommand;
+        std::function<void()> detached;
         std::function<std::shared_ptr<ScreenshotExportArtifact>(qreal)> artifact;
         // Optional adapter for deterministic clipboard publication in integration tests.
         // The application leaves this unset and uses ScreenshotClipboardService directly.
@@ -62,6 +66,8 @@ class ScreenshotMcpSession final : public QObject {
                        const QJsonObject& metadata);
     bool current(quint64 generation) const;
     void cache(const ScreenshotMcpRequest&, const ScreenshotMcpResponse&);
+    void cancelOperation();
+    void trimOperations();
     Ports m_ports;
     QString m_session;
     quint64 m_owner = 0;
@@ -82,5 +88,9 @@ class ScreenshotMcpSession final : public QObject {
     QHash<QString, Cached> m_cache;
     QQueue<QString> m_cacheOrder;
     qsizetype m_cacheBytes = 0;
+    QHash<QString, QJsonObject> m_operations;
+    QQueue<QString> m_operationOrder;
+    QString m_activeOperation;
+    quint64 m_operationGeneration = 0;
 };
 } // namespace snow_shot::app::mcp

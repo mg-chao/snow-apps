@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotscrollingsnapshot.h"
 
 #include <QImage>
+#include <QJsonObject>
 #include <QObject>
 #include <QRect>
 #include <QSize>
@@ -25,6 +26,7 @@ struct ScreenshotScrollingCaptureControllerContext {
     // they appear in the stitched scrolling screenshot.
     std::function<bool()> captureUiInScrollingScreenshot = []() { return false; };
     std::function<void()> captureFailed = {};
+    std::function<bool()> presentationSuppressed = [] { return false; };
 };
 
 class ScreenshotScrollingCaptureController final : public QObject {
@@ -44,6 +46,12 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool active() const;
     void setExportPaused(bool paused);
     void setAutoScroll(bool enabled);
+    [[nodiscard]] QJsonObject state() const;
+    [[nodiscard]] bool setTrimRange(int start, int end);
+    [[nodiscard]] bool moveSelection(QPoint offset);
+    using StepCompletion = std::function<void(QJsonObject, QString)>;
+    void scrollOnce(const QString& direction, StepCompletion completion);
+    void cancelScrollOnce();
     [[nodiscard]] bool beginSelectionMove(ScreenshotScrollingRecognitionMode axis,
                                           QPoint physicalPointer);
     void updateSelectionMove(QPoint physicalPointer);

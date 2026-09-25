@@ -29,6 +29,21 @@ enum Annotation {
         #[serde(default)]
         style: Style,
     },
+    Ellipse {
+        bounds: [f64; 4],
+        #[serde(default)]
+        style: Style,
+    },
+    Diamond {
+        bounds: [f64; 4],
+        #[serde(default)]
+        style: Style,
+    },
+    EllipseHighlight {
+        bounds: [f64; 4],
+        #[serde(default)]
+        style: Style,
+    },
     RoundedRectangle {
         bounds: [f64; 4],
         #[serde(default)]
@@ -303,6 +318,32 @@ impl Engine {
                     style: s,
                 } => {
                     tx.insert_rectangle(id, meta, rectangle(b, &s)?);
+                }
+                Annotation::Ellipse {
+                    bounds: b,
+                    style: s,
+                } => {
+                    let mut data = rectangle(b, &s)?;
+                    data.highlight_shape = HighlightShape::Ellipse;
+                    tx.insert_rectangle(id, meta, data);
+                }
+                Annotation::Diamond {
+                    bounds: b,
+                    style: s,
+                } => {
+                    let mut data = rectangle(b, &s)?;
+                    data.highlight_shape = HighlightShape::Diamond;
+                    tx.insert_rectangle(id, meta, data);
+                }
+                Annotation::EllipseHighlight {
+                    bounds: b,
+                    style: s,
+                } => {
+                    tx.insert_rectangle(
+                        id,
+                        meta,
+                        rectangle(b, &s)?.into_highlight(HighlightShape::Ellipse),
+                    );
                 }
                 Annotation::RoundedRectangle {
                     bounds: b,

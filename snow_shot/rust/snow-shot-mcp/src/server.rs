@@ -85,6 +85,71 @@ const TOOLS: &[(&str, &str, bool)] = &[
         "Capture the current monitor or focused window directly.",
         false,
     ),
+    (
+        "screenshot_set_selection_style",
+        "Set selection decoration and aspect ratio lock.",
+        false,
+    ),
+    (
+        "screenshot_set_tool_style",
+        "Apply a partial toolbar style to the selected elements and drawing tool.",
+        false,
+    ),
+    (
+        "screenshot_edit_elements",
+        "Edit selected screenshot elements using typed toolbar actions.",
+        false,
+    ),
+    (
+        "screenshot_recapture",
+        "Replace the screenshot capture while retaining this session.",
+        false,
+    ),
+    (
+        "screenshot_scrolling",
+        "Control scrolling capture, axis, automatic scrolling, crop, and position.",
+        false,
+    ),
+    (
+        "screenshot_scroll_once",
+        "Scroll one wheel notch and wait for a processed, stable scrolling snapshot.",
+        false,
+    ),
+    (
+        "screenshot_recognize",
+        "Start text, table, QR, Markdown, or HTML recognition; poll the returned operation ID.",
+        false,
+    ),
+    (
+        "screenshot_translate",
+        "Translate recognized text with the configured provider; poll the returned operation ID.",
+        false,
+    ),
+    (
+        "screenshot_auto_filter",
+        "Detect and filter sensitive information categories; poll the returned operation ID.",
+        false,
+    ),
+    (
+        "screenshot_operation",
+        "Read status and typed results for a screenshot operation.",
+        true,
+    ),
+    (
+        "screenshot_edit_recognition",
+        "Edit recognized text and table cells.",
+        false,
+    ),
+    (
+        "screenshot_export_recognition",
+        "Return, copy, or save recognized content without dialogs.",
+        false,
+    ),
+    (
+        "screenshot_draw_template",
+        "Export selected drawing elements or insert a validated drawing template.",
+        false,
+    ),
 ];
 
 #[derive(Clone)]

@@ -50,6 +50,8 @@ class ScreenshotTableEditingSession final {
     std::function<void()> documentChanged;
 
     void replaceDocument(const ScreenshotTableDocument& replacement);
+    static void applyDocument(const std::shared_ptr<ScreenshotTableEditingSession>& session,
+                              const ScreenshotTableDocument& replacement, const QString& label);
 };
 
 class ScreenshotTableEditor final : public QTableView {

@@ -106,6 +106,8 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
         &m_context.recognition, &m_context.qrRecognition, m_context.tableRecognition,
         ScreenshotRecognitionSessionActions{
             [this]() -> ScreenshotRecognitionWindow* {
+                if (m_context.captureState.presentationSuppressed)
+                    return nullptr;
                 return ensureRecognitionWindow() ? m_recognitionWindow.data() : nullptr;
             },
             [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
@@ -185,10 +187,14 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 }
             },
             [this](const QString& message) {
+                if (m_context.captureState.presentationSuppressed)
+                    return;
                 m_messages->loading(QString::fromLatin1(kModelDownloadMessageKey), message, {},
                                     m_recognitionWindow.data());
             },
             [this](const QString& message) {
+                if (m_context.captureState.presentationSuppressed)
+                    return;
                 m_messages->loading(QString::fromLatin1(kRecognitionMessageKey), message, {},
                                     m_recognitionWindow.data());
             },
@@ -365,13 +371,15 @@ void ScreenshotOcrController::activateMode(Mode mode) {
 
     m_mode = mode;
     clearOcrBackgroundFromOverlays();
-    if (!ensureRecognitionWindow()) {
+    if (!m_context.captureState.presentationSuppressed && !ensureRecognitionWindow()) {
         restorePreviousToolAfterFailure();
         return;
     }
-    m_recognitionWindow->clearOcrPresentation();
-    m_recognitionWindow->clearTableSession();
-    m_recognitionWindow->clearQrContents();
+    if (m_recognitionWindow) {
+        m_recognitionWindow->clearOcrPresentation();
+        m_recognitionWindow->clearTableSession();
+        m_recognitionWindow->clearQrContents();
+    }
     if (mode == Mode::Text) {
         m_context.interaction.setOcrTool();
     } else if (mode == Mode::Table) {
@@ -671,6 +679,8 @@ void ScreenshotOcrController::clearOcrBackgroundFromOverlays() {
 }
 
 bool ScreenshotOcrController::ensureRecognitionWindow() {
+    if (m_context.captureState.presentationSuppressed)
+        return false;
     const QRect selection = m_context.selection.pixelSelection();
     const QString key = currentCacheKey();
     const QPointF center = QRectF(selection).center();
@@ -796,6 +806,8 @@ void ScreenshotOcrController::destroyRecognitionWindow() {
 }
 
 void ScreenshotOcrController::showStatus(const QString& message, bool error) const {
+    if (m_context.captureState.presentationSuppressed)
+        return;
     if (message.isEmpty()) {
         return;
     }
@@ -806,4 +818,17 @@ void ScreenshotOcrController::showStatus(const QString& message, bool error) con
         m_messages->warning(QString::fromLatin1(kStatusMessageKey), message, {},
                             m_recognitionWindow.data());
     }
+}
+
+QJsonObject ScreenshotOcrController::workflowState() const {
+    return m_session->workflowState();
+}
+QJsonObject ScreenshotOcrController::workflowResult() const {
+    return m_session->workflowResult();
+}
+bool ScreenshotOcrController::editWorkflow(const QJsonObject& params) {
+    return m_session->editWorkflow(params);
+}
+void ScreenshotOcrController::cancelWorkflow() {
+    m_session->cancelWorkflow();
 }

@@ -24,7 +24,10 @@ TOOLS = {
     "screenshot_set_selection", "screenshot_set_tool", "screenshot_apply_annotations",
     "screenshot_undo", "screenshot_redo", "screenshot_render", "screenshot_save",
     "screenshot_copy", "screenshot_pin", "screenshot_finish", "screenshot_cancel",
-    "screenshot_direct_capture",
+    "screenshot_direct_capture", "screenshot_set_selection_style", "screenshot_set_tool_style",
+    "screenshot_edit_elements", "screenshot_recapture", "screenshot_scrolling", "screenshot_scroll_once",
+    "screenshot_recognize", "screenshot_translate", "screenshot_auto_filter", "screenshot_operation",
+    "screenshot_edit_recognition", "screenshot_export_recognition", "screenshot_draw_template",
 }
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -236,7 +239,7 @@ def main():
                 "output": "save", "path": str(finish_path),
             })
             assert finish_path.is_file() and finish_save["result"]["finished"] is True
-            print("All 15 Snow Shot MCP tools passed live validation.")
+            print("All Snow Shot MCP tools passed live validation.")
     finally:
         if client is not None:
             client.close()

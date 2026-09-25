@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
+#include <QJsonArray>
 #include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
 #include "snow_shot/presentation/screenshotocrlayout.h"
 
@@ -356,6 +357,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         m_textRenderRequestToken = 0;
         ++m_textRenderGeneration;
     }
+    m_workflowError.clear();
     m_mode = mode;
     m_active = true;
     ensureContent();
@@ -700,6 +702,7 @@ void ScreenshotRecognitionSessionController::beginTextEditing() {
 }
 
 void ScreenshotRecognitionSessionController::beginTextTranslation() {
+    m_workflowError.clear();
     if (!m_active || m_mode != Mode::Text || !hasTextResult() || m_translating) {
         return;
     }
@@ -1855,6 +1858,8 @@ void ScreenshotRecognitionSessionController::hideRecognitionMessage() const {
 }
 
 void ScreenshotRecognitionSessionController::showStatus(const QString& message, bool error) const {
+    if (error)
+        m_workflowError = message;
     if (!message.isEmpty() && m_actions.showStatus) {
         m_actions.showStatus(message, error);
     }
@@ -1949,4 +1954,169 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
 
 ScreenshotRecognitionWindow* ScreenshotRecognitionSessionController::content() const {
     return m_content;
+}
+
+QJsonObject ScreenshotRecognitionSessionController::workflowState() const {
+    const auto entry = m_textCache.constFind(m_translationKey);
+    const bool translating =
+        entry != m_textCache.cend() &&
+        (m_translationInImage ? entry->overlayTranslation.status : entry->translationStatus) ==
+            TextCacheEntry::TranslationStatus::Streaming;
+    const QStringList modes{QStringLiteral("text"), QStringLiteral("table"), QStringLiteral("qr"),
+                            QStringLiteral("markdown"), QStringLiteral("html")};
+    const QString error = conversionModeActive() ? m_conversion->error() : m_workflowError;
+    return {{QStringLiteral("active"), m_active},
+            {QStringLiteral("kind"), modes.at(static_cast<int>(m_mode))},
+            {QStringLiteral("busy"), busy(m_mode) || translating},
+            {QStringLiteral("error"), error},
+            {QStringLiteral("editing"), m_editing},
+            {QStringLiteral("translating"), m_translating}};
+}
+QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
+    QJsonObject result;
+    if (!m_active)
+        return result;
+    if (m_mode == Mode::Text && hasTextResult()) {
+        result.insert(QStringLiteral("kind"), QStringLiteral("text"));
+        result.insert(QStringLiteral("text"), textDraft());
+        result.insert(QStringLiteral("source_text"), sourceTextDraft());
+        const auto entry = m_textCache.value(m_target.key);
+        if (m_translating)
+            result.insert(QStringLiteral("text"), entry.hasSuccessfulTranslation
+                                                      ? entry.successfulTranslation
+                                                      : entry.translationText);
+        QJsonArray lines;
+        const auto presentation = m_translating && entry.overlayTranslation.presentation
+                                      ? entry.overlayTranslation.presentation
+                                      : entry.presentation;
+        if (presentation)
+            for (const auto& line : presentation->lines) {
+                QJsonArray quad;
+                for (const auto& point : line.quad)
+                    quad.append(QJsonArray{point.x(), point.y()});
+                lines.append(QJsonObject{{QStringLiteral("text"), line.text},
+                                         {QStringLiteral("confidence"), line.confidence},
+                                         {QStringLiteral("quad"), quad}});
+            }
+        result.insert(QStringLiteral("lines"), lines);
+    } else if (m_mode == Mode::Table && m_tableSession) {
+        const auto& document = m_tableSession->document;
+        QJsonArray cells;
+        for (int row = 0; row < document.rowCount(); ++row)
+            for (int column = 0; column < document.columnCount(); ++column) {
+                if (!document.isAnchor(row, column))
+                    continue;
+                const auto* cell = document.cellAt(row, column);
+                cells.append(QJsonObject{{QStringLiteral("row"), row},
+                                         {QStringLiteral("column"), column},
+                                         {QStringLiteral("text"), cell->text},
+                                         {QStringLiteral("row_span"), cell->rowSpan},
+                                         {QStringLiteral("column_span"), cell->columnSpan},
+                                         {QStringLiteral("header"), cell->header}});
+            }
+        result = {{QStringLiteral("kind"), QStringLiteral("table")},
+                  {QStringLiteral("rows"), document.rowCount()},
+                  {QStringLiteral("columns"), document.columnCount()},
+                  {QStringLiteral("cells"), cells},
+                  {QStringLiteral("html"), document.toHtml()},
+                  {QStringLiteral("text"), document.toPlainText()}};
+    } else if (m_mode == Mode::Qr && m_qrResults.contains(m_target.key)) {
+        result = {{QStringLiteral("kind"), QStringLiteral("qr")},
+                  {QStringLiteral("contents"), QJsonArray::fromStringList(m_qrContents)},
+                  {QStringLiteral("text"), m_qrContents.join(u'\n')}};
+    } else if (conversionModeActive() &&
+               m_conversion->state() == ScreenshotImageConversionController::State::Completed) {
+        result = {{QStringLiteral("kind"),
+                   m_mode == Mode::Markdown ? QStringLiteral("markdown") : QStringLiteral("html")},
+                  {QStringLiteral("text"), m_conversion->source()}};
+        result.insert(m_mode == Mode::Markdown ? QStringLiteral("markdown")
+                                               : QStringLiteral("html"),
+                      m_conversion->source());
+    }
+    return result;
+}
+bool ScreenshotRecognitionSessionController::editWorkflow(const QJsonObject& params) {
+    if (!m_active || workflowState().value(QStringLiteral("busy")).toBool())
+        return false;
+    const auto action = params.value(QStringLiteral("action")).toString();
+    if (action == QStringLiteral("show_original")) {
+        setShowOriginalImage(params.value(QStringLiteral("enabled")).toBool());
+        return true;
+    }
+    if (m_mode == Mode::Text && hasTextResult()) {
+        if (action == QStringLiteral("set_text")) {
+            beginTextEditing();
+            setTextDraft(params.value(QStringLiteral("text")).toString());
+        } else if (action == QStringLiteral("reset_text"))
+            resetTextEditing();
+        else if (action == QStringLiteral("format") || action == QStringLiteral("punctuation")) {
+            const auto value = params.value(QStringLiteral("value")).toString();
+            const QStringList allowed =
+                action == QStringLiteral("format")
+                    ? QStringList{QStringLiteral("none"), QStringLiteral("keep"),
+                                  QStringLiteral("remove")}
+                    : QStringList{QStringLiteral("none"), QStringLiteral("half"),
+                                  QStringLiteral("full")};
+            if (!allowed.contains(value))
+                return false;
+            beginTextEditing();
+            if (action == QStringLiteral("format"))
+                applyTextFormatting(value == QStringLiteral("none") ? QString() : value);
+            else
+                applyTextPunctuation(value == QStringLiteral("none") ? QString() : value);
+        } else if (action == QStringLiteral("undo"))
+            undoTextEdit();
+        else if (action == QStringLiteral("redo"))
+            redoTextEdit();
+        else
+            return false;
+        return true;
+    }
+    if (m_mode != Mode::Table || !m_tableSession)
+        return false;
+    auto& table = *m_tableSession;
+    auto replacement = table.document;
+    if (action == QStringLiteral("select_cells")) {
+        const auto range = params.value(QStringLiteral("range")).toArray();
+        if (range.size() != 4)
+            return false;
+        const ScreenshotTableRange selection{range[0].toInt(-1), range[1].toInt(-1),
+                                             range[2].toInt(-1), range[3].toInt(-1)};
+        if (!selection.isValid() || selection.bottom >= replacement.rowCount() ||
+            selection.right >= replacement.columnCount())
+            return false;
+        table.selection = replacement.expandedRange(selection);
+    } else if (action == QStringLiteral("set_cell")) {
+        if (!replacement.setCellText(params.value(QStringLiteral("row")).toInt(-1),
+                                     params.value(QStringLiteral("column")).toInt(-1),
+                                     params.value(QStringLiteral("text")).toString()))
+            return false;
+    } else if (action == QStringLiteral("merge_cells")) {
+        if (!replacement.merge(table.selection))
+            return false;
+    } else if (action == QStringLiteral("split_cells")) {
+        if (!replacement.split(table.selection))
+            return false;
+    } else if (action == QStringLiteral("reset_table"))
+        replacement = table.baseline;
+    else if (action == QStringLiteral("undo")) {
+        if (!table.undoStack.canUndo())
+            return false;
+        table.undoStack.undo();
+    } else if (action == QStringLiteral("redo")) {
+        if (!table.undoStack.canRedo())
+            return false;
+        table.undoStack.redo();
+    } else
+        return false;
+    if (action != QStringLiteral("undo") && action != QStringLiteral("redo"))
+        ScreenshotTableEditingSession::applyDocument(m_tableSession, replacement, QString());
+    if (content())
+        content()->setTableSession(m_tableSession);
+    emit recognitionResultsChanged();
+    return true;
+}
+void ScreenshotRecognitionSessionController::cancelWorkflow() {
+    cancelOutstandingRequests();
+    m_conversion->invalidate();
 }

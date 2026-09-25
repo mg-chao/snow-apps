@@ -32,18 +32,38 @@ QByteArray fingerprint(const ScreenshotMcpRequest& r) {
 bool readOnly(const QString& method) {
     return method == QStringLiteral("snow_shot_status") ||
            method == QStringLiteral("screenshot_state") ||
+           method == QStringLiteral("screenshot_operation") ||
            method == QStringLiteral("screenshot_render") ||
            method == QStringLiteral("screenshot_cancel");
 }
-const QStringList tools = {
-    QStringLiteral("snow_shot_status"),         QStringLiteral("screenshot_begin"),
-    QStringLiteral("screenshot_state"),         QStringLiteral("screenshot_set_selection"),
-    QStringLiteral("screenshot_set_tool"),      QStringLiteral("screenshot_apply_annotations"),
-    QStringLiteral("screenshot_undo"),          QStringLiteral("screenshot_redo"),
-    QStringLiteral("screenshot_render"),        QStringLiteral("screenshot_save"),
-    QStringLiteral("screenshot_copy"),          QStringLiteral("screenshot_pin"),
-    QStringLiteral("screenshot_finish"),        QStringLiteral("screenshot_cancel"),
-    QStringLiteral("screenshot_direct_capture")};
+const QStringList tools = {QStringLiteral("snow_shot_status"),
+                           QStringLiteral("screenshot_begin"),
+                           QStringLiteral("screenshot_state"),
+                           QStringLiteral("screenshot_set_selection"),
+                           QStringLiteral("screenshot_set_tool"),
+                           QStringLiteral("screenshot_apply_annotations"),
+                           QStringLiteral("screenshot_undo"),
+                           QStringLiteral("screenshot_redo"),
+                           QStringLiteral("screenshot_render"),
+                           QStringLiteral("screenshot_save"),
+                           QStringLiteral("screenshot_copy"),
+                           QStringLiteral("screenshot_pin"),
+                           QStringLiteral("screenshot_finish"),
+                           QStringLiteral("screenshot_cancel"),
+                           QStringLiteral("screenshot_direct_capture"),
+                           QStringLiteral("screenshot_set_selection_style"),
+                           QStringLiteral("screenshot_set_tool_style"),
+                           QStringLiteral("screenshot_edit_elements"),
+                           QStringLiteral("screenshot_recapture"),
+                           QStringLiteral("screenshot_scrolling"),
+                           QStringLiteral("screenshot_scroll_once"),
+                           QStringLiteral("screenshot_recognize"),
+                           QStringLiteral("screenshot_translate"),
+                           QStringLiteral("screenshot_auto_filter"),
+                           QStringLiteral("screenshot_operation"),
+                           QStringLiteral("screenshot_edit_recognition"),
+                           QStringLiteral("screenshot_export_recognition"),
+                           QStringLiteral("screenshot_draw_template")};
 } // namespace
 ScreenshotMcpSession::ScreenshotMcpSession(Ports ports, QObject* parent)
     : QObject(parent), m_ports(std::move(ports)) {}
@@ -55,6 +75,13 @@ QJsonObject ScreenshotMcpSession::state() const {
     result.insert(QStringLiteral("pending_operation"),
                   m_pending ? m_pending->request.method : QString());
     result.insert(QStringLiteral("ready"), m_ready);
+    QJsonArray operations;
+    for (const auto& id : m_operationOrder) {
+        auto summary = m_operations.value(id);
+        summary.remove(QStringLiteral("result"));
+        operations.append(summary);
+    }
+    result.insert(QStringLiteral("operations"), operations);
     return result;
 }
 ScreenshotMcpResponse ScreenshotMcpSession::failure(const ScreenshotMcpRequest& request,
@@ -102,6 +129,8 @@ void ScreenshotMcpSession::startPending(const ScreenshotMcpRequest& r,
             m_artifact->cancel();
         m_clipboard.cancel();
         m_metadataJob.cancel();
+        if (m_ports.cancelCommand)
+            m_ports.cancelCommand();
         const bool capture = m_pending->request.method == QStringLiteral("screenshot_begin");
         failPending(QStringLiteral("timeout"));
         if (capture)
@@ -185,6 +214,13 @@ void ScreenshotMcpSession::captureTerminated() {
     release(false);
 }
 void ScreenshotMcpSession::release(bool cancel) {
+    cancelOperation();
+    if (m_ports.cancelCommand)
+        m_ports.cancelCommand();
+    if (m_ports.detached)
+        m_ports.detached();
+    m_operations.clear();
+    m_operationOrder.clear();
     if (m_artifact)
         m_artifact->cancel();
     m_artifact.reset();
@@ -282,6 +318,24 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
             reject(QStringLiteral("session_not_found"));
             return;
         }
+        const QString operationId = r.params.value(QStringLiteral("operation_id")).toString();
+        if (!operationId.isEmpty()) {
+            if (!m_operations.contains(operationId)) {
+                reject(QStringLiteral("operation_not_found"));
+                return;
+            }
+            if (operationId == m_activeOperation)
+                cancelOperation();
+            ScreenshotMcpResponse response;
+            response.ok = true;
+            response.sessionId = m_session;
+            response.revision = m_revision;
+            response.result = m_operations.value(operationId);
+            done(response);
+            return;
+        }
+        if (m_ports.cancelCommand)
+            m_ports.cancelCommand();
         const QString requestId = r.params.value(QStringLiteral("request_id")).toString();
         if (!requestId.isEmpty() && (!m_pending || m_pending->request.requestId != requestId)) {
             reject(QStringLiteral("request_not_found"));
@@ -371,6 +425,20 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
         done(response);
         return;
     }
+    if (r.method == QStringLiteral("screenshot_operation")) {
+        const auto id = r.params.value(QStringLiteral("operation_id")).toString();
+        if (!m_operations.contains(id)) {
+            reject(QStringLiteral("operation_not_found"));
+            return;
+        }
+        ScreenshotMcpResponse response;
+        response.ok = true;
+        response.sessionId = m_session;
+        response.revision = m_revision;
+        response.result = m_operations.value(id);
+        done(response);
+        return;
+    }
     if (!r.expectedRevision) {
         reject(QStringLiteral("revision_required"));
         return;
@@ -379,8 +447,105 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
         reject(QStringLiteral("stale_revision"));
         return;
     }
+    const bool invalidates = r.method == QStringLiteral("screenshot_set_selection") ||
+                             r.method == QStringLiteral("screenshot_recapture") ||
+                             r.method == QStringLiteral("screenshot_finish");
+    if (!m_activeOperation.isEmpty() && !invalidates) {
+        reject(QStringLiteral("busy"));
+        return;
+    }
     if (m_pending || !m_ready) {
         reject(QStringLiteral("busy"));
+        return;
+    }
+    if (invalidates) {
+        cancelOperation();
+        m_operations.clear();
+        m_operationOrder.clear();
+    }
+    const bool background = r.method == QStringLiteral("screenshot_recognize") ||
+                            r.method == QStringLiteral("screenshot_translate") ||
+                            r.method == QStringLiteral("screenshot_auto_filter");
+    const bool extended =
+        r.method == QStringLiteral("screenshot_set_selection_style") ||
+        r.method == QStringLiteral("screenshot_set_tool_style") ||
+        r.method == QStringLiteral("screenshot_edit_elements") ||
+        r.method == QStringLiteral("screenshot_recapture") ||
+        r.method == QStringLiteral("screenshot_scrolling") ||
+        r.method == QStringLiteral("screenshot_scroll_once") ||
+        r.method == QStringLiteral("screenshot_edit_recognition") ||
+        r.method == QStringLiteral("screenshot_export_recognition") ||
+        r.method == QStringLiteral("screenshot_draw_template") ||
+        ((r.method == QStringLiteral("screenshot_undo") ||
+          r.method == QStringLiteral("screenshot_redo")) &&
+         r.params.value(QStringLiteral("target")).toString(QStringLiteral("canvas")) !=
+             QStringLiteral("canvas"));
+    if (background || extended) {
+        if (!m_ports.command) {
+            reject(QStringLiteral("unsupported"));
+            return;
+        }
+        QPointer<ScreenshotMcpSession> guard(this);
+        if (background) {
+            const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            const auto generation = ++m_operationGeneration;
+            const auto sourceRevision = m_revision;
+            m_activeOperation = id;
+            m_operationOrder.enqueue(id);
+            m_operations.insert(
+                id, {{QStringLiteral("operation_id"), id},
+                     {QStringLiteral("status"), QStringLiteral("running")},
+                     {QStringLiteral("method"), r.method},
+                     {QStringLiteral("source_revision"), static_cast<qint64>(sourceRevision)}});
+            ++m_revision;
+            m_ports.command(r.method, r.params,
+                            [this, guard, generation, id](QJsonObject result, QString error) {
+                                if (!guard || generation != m_operationGeneration ||
+                                    m_activeOperation != id)
+                                    return;
+                                m_activeOperation.clear();
+                                auto& operation = m_operations[id];
+                                if (QJsonDocument(result).toJson(QJsonDocument::Compact).size() >
+                                    32 * 1024 * 1024) {
+                                    result = {};
+                                    error = QStringLiteral("output_too_large");
+                                }
+                                operation.insert(QStringLiteral("status"),
+                                                 error.isEmpty() ? QStringLiteral("completed")
+                                                                 : QStringLiteral("failed"));
+                                operation.insert(QStringLiteral("result"), result);
+                                if (!error.isEmpty())
+                                    operation.insert(QStringLiteral("error"),
+                                                     QJsonObject{{QStringLiteral("code"), error}});
+                                observe();
+                                ++m_revision;
+                                trimOperations();
+                            });
+            ScreenshotMcpResponse response;
+            response.ok = true;
+            response.sessionId = m_session;
+            response.revision = m_revision;
+            response.result = m_operations.value(id);
+            cache(r, response);
+            done(response);
+        } else {
+            startPending(r, std::move(done));
+            const auto generation = m_generation;
+            m_ports.command(r.method, r.params,
+                            [this, guard, generation](QJsonObject result, QString error) {
+                                if (!guard || !current(generation))
+                                    return;
+                                ScreenshotMcpResponse response;
+                                if (error.isEmpty()) {
+                                    response.ok = true;
+                                    response.result = state();
+                                    for (auto it = result.begin(); it != result.end(); ++it)
+                                        response.result.insert(it.key(), it.value());
+                                } else
+                                    response = failure(m_pending->request, error);
+                                complete(std::move(response));
+                            });
+        }
         return;
     }
     if (r.method == QStringLiteral("screenshot_render") ||
@@ -431,6 +596,27 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
         response.result.insert(QStringLiteral("transaction"), annotation);
     cache(r, response);
     done(response);
+}
+void ScreenshotMcpSession::cancelOperation() {
+    ++m_operationGeneration;
+    if (m_activeOperation.isEmpty())
+        return;
+    m_operations[m_activeOperation].insert(QStringLiteral("status"), QStringLiteral("canceled"));
+    m_activeOperation.clear();
+    if (m_ports.cancelCommand)
+        m_ports.cancelCommand();
+    ++m_revision;
+    trimOperations();
+}
+void ScreenshotMcpSession::trimOperations() {
+    qsizetype bytes = 0;
+    for (const auto& operation : m_operations)
+        bytes += QJsonDocument(operation).toJson(QJsonDocument::Compact).size();
+    while (!m_operationOrder.isEmpty() &&
+           (m_operationOrder.size() > 16 || bytes > 32 * 1024 * 1024)) {
+        const auto previous = m_operations.take(m_operationOrder.dequeue());
+        bytes -= QJsonDocument(previous).toJson(QJsonDocument::Compact).size();
+    }
 }
 bool ScreenshotMcpSession::validateOutputPath(const QString& path, QString* canonical) {
     if (path.isEmpty() || path.contains(QChar::Null) || path.startsWith(QStringLiteral("\\\\")) ||

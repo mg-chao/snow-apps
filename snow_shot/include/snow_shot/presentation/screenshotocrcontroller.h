@@ -12,6 +12,7 @@
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include <optional>
 #include <QObject>
+#include <QJsonObject>
 #include <QPointer>
 #include <QImage>
 #include <QRect>
@@ -111,6 +112,10 @@ class ScreenshotOcrController final : public QObject {
     [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
     [[nodiscard]] ScreenshotRecognitionResults recognitionResultsSnapshot() const;
     void setTextDraft(const QString& text);
+    [[nodiscard]] QJsonObject workflowState() const;
+    [[nodiscard]] QJsonObject workflowResult() const;
+    [[nodiscard]] bool editWorkflow(const QJsonObject& params);
+    void cancelWorkflow();
 
   signals:
     void textEditingChanged(bool editing);

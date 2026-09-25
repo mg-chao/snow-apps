@@ -51,11 +51,20 @@ live authenticated endpoint. A later call discovers the endpoint again.
 3. Retain the returned `session_id` and `revision`. Every subsequent edit or
    output call requires both `session_id` and `expected_revision`. State and
    cancellation do not require a revision.
-4. Use `screenshot_set_selection`, `screenshot_set_tool`,
-   `screenshot_apply_annotations`, `screenshot_undo`, and `screenshot_redo`.
-5. Use `screenshot_render`, `screenshot_save`, `screenshot_copy`, or
+4. Use `screenshot_set_selection`, `screenshot_set_tool`, `screenshot_set_selection_style`,
+   `screenshot_set_tool_style`, `screenshot_edit_elements`, `screenshot_apply_annotations`,
+   `screenshot_undo`, and `screenshot_redo`.
+5. Use `screenshot_scrolling` to start/stop scrolling, change axis, set automatic scrolling,
+   move the selection, or trim the stitched result. Use `screenshot_scroll_once` with `up`,
+   `down`, `left`, or `right` for one native wheel notch. The call waits for fresh capture
+   processing and returns `changed`, `processed_frame_sequence`, and stitched dimensions.
+6. Use `screenshot_recognize`, `screenshot_translate`, or `screenshot_auto_filter`; each returns
+   an operation ID. Poll `screenshot_operation` and use `screenshot_edit_recognition` or
+   `screenshot_export_recognition` for results. These operations use configured providers and
+   also work in silent sessions.
+7. Use `screenshot_render`, `screenshot_save`, `screenshot_copy`, or
    `screenshot_pin`. Continue with the new revision returned by each output.
-6. Call `screenshot_finish` to close the capture and release ownership. Set
+8. Call `screenshot_finish` to close the capture and release ownership. Set
    `output` to `render` or `save` for a final output; absent/`none` closes directly.
    `screenshot_cancel` cancels capture or editing. With `request_id`, it cancels
    that pending operation and retains the editor, except an unfinished begin.
@@ -78,8 +87,7 @@ Silent sessions cancel on disconnect or when integration is disabled. Disabling
 integration closes all clients and removes the descriptor. Escape and normal UI
 cancellation invalidate the session and cancel any pending MCP output.
 
-Scrolling capture, OCR, translation, recording, document recovery JSON, and
-arbitrary code execution are excluded from this surface.
+Recording, settings-page navigation, document recovery JSON, and arbitrary code execution are excluded from this surface. Scrolling capture, OCR, translation, conversion, auto-filtering, recognition edits, and drawing-template operations are available through the tools above.
 
 ## Coordinates and selection
 
@@ -237,7 +245,7 @@ remains separate from offscreen protocol/session tests. macOS binaries must be
 built and validated on each supported native architecture before release.
 
 On Windows, the manual live probe starts an isolated Snow Shot instance and calls
-all 15 tools through the bridge. It captures the current desktop, changes the
+all 28 tools through the bridge. It captures the current desktop, changes the
 clipboard, and briefly creates a pinned image. Run it only in an interactive
 desktop session:
 
