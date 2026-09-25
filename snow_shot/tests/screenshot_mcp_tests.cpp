@@ -121,6 +121,28 @@ void transport() {
     require(server.start(), "runtime re-enable");
     server.stop();
 }
+void descriptorOverride() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary descriptor directory");
+    const QByteArray previous = qgetenv("SNOW_SHOT_MCP_DESCRIPTOR");
+    const bool wasSet = qEnvironmentVariableIsSet("SNOW_SHOT_MCP_DESCRIPTOR");
+    const QString descriptor = directory.filePath(QStringLiteral("custom/descriptor.json"));
+    qputenv("SNOW_SHOT_MCP_DESCRIPTOR", descriptor.toUtf8());
+    ScreenshotMcpServer server;
+    require(server.descriptorPath() == descriptor, "descriptor override path");
+    QString error;
+    require(server.start(&error), qPrintable(error));
+    require(QFile::exists(descriptor), "override descriptor published");
+    server.stop();
+    require(!QFile::exists(descriptor), "override descriptor removed");
+    qputenv("SNOW_SHOT_MCP_DESCRIPTOR", QByteArrayLiteral("relative/descriptor.json"));
+    ScreenshotMcpServer relativeOverride;
+    require(!relativeOverride.start(), "relative override rejected");
+    if (wasSet)
+        qputenv("SNOW_SHOT_MCP_DESCRIPTOR", previous);
+    else
+        qunsetenv("SNOW_SHOT_MCP_DESCRIPTOR");
+}
 void selection() {
     ScreenshotSelectionModel model;
     const QRectF canvas(0, 0, 800, 600);
@@ -336,6 +358,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     annotationRuntime();
     transport();
+    descriptorOverride();
     selection();
     session();
     return 0;

@@ -154,19 +154,43 @@ struct Save {
 struct Finish {
     #[serde(default)]
     output: Option<Output>,
-    #[serde(flatten)]
-    save: Save,
+    #[serde(default)]
+    scale: Option<f64>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    automatic_path: Option<bool>,
+    #[serde(default)]
+    format: Option<Format>,
+    #[serde(default)]
+    quality: Option<u32>,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum DirectOutput {
+    Render,
+    Save,
+    Copy,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Direct {
     target: DirectTarget,
+    output: DirectOutput,
     #[serde(default)]
     capture_cursor: Option<bool>,
     #[serde(default)]
     idempotency_key: Option<String>,
-    #[serde(flatten)]
-    output: Finish,
+    #[serde(default)]
+    scale: Option<f64>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    automatic_path: Option<bool>,
+    #[serde(default)]
+    format: Option<Format>,
+    #[serde(default)]
+    quality: Option<u32>,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -345,5 +369,50 @@ mod tests {
         assert!(schema("screenshot_apply_annotations",Some(json!({"session_id":"s","expected_revision":2,"operations":[{"type":"execute"}]}))).is_err());
         assert!(schema("screenshot_set_selection",Some(json!({"session_id":"s","expected_revision":2,"type":"rectangle","bounds":[0,0,20,20]}))).is_ok());
         assert!(schema("screenshot_apply_annotations",Some(json!({"session_id":"s","expected_revision":2,"operations":[{"type":"rectangle","bounds":[0,0,20,20],"style":{}}]}))).is_ok());
+        let finish = schema(
+            "screenshot_finish",
+            Some(json!({
+                "session_id": "s", "expected_revision": 2, "output": "render"
+            })),
+        );
+        assert!(finish.is_ok(), "{finish:?}");
+        assert!(
+            schema(
+                "screenshot_finish",
+                Some(json!({
+                    "session_id": "s", "expected_revision": 2, "output": "save",
+                    "path": "C:\\capture.png", "format": "png"
+                }))
+            )
+            .is_ok()
+        );
+        assert!(
+            schema(
+                "screenshot_direct_capture",
+                Some(json!({
+                    "target": "current_monitor", "output": "render"
+                }))
+            )
+            .is_ok()
+        );
+        assert!(
+            schema(
+                "screenshot_direct_capture",
+                Some(json!({
+                    "target": "current_monitor", "output": "save",
+                    "path": "C:\\capture.png", "format": "png"
+                }))
+            )
+            .is_ok()
+        );
+        assert!(
+            schema(
+                "screenshot_direct_capture",
+                Some(json!({
+                    "target": "current_monitor"
+                }))
+            )
+            .is_err()
+        );
     }
 }

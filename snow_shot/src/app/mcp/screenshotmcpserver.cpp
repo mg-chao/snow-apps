@@ -367,9 +367,19 @@ QString ScreenshotMcpServer::defaultRuntimeDirectory() {
 #endif
 }
 ScreenshotMcpServer::ScreenshotMcpServer(QObject* parent, QString runtimeDirectory)
-    : QObject(parent),
-      m_runtimeDirectory(runtimeDirectory.isEmpty() ? defaultRuntimeDirectory()
-                                                    : std::move(runtimeDirectory)) {}
+    : QObject(parent) {
+    if (!runtimeDirectory.isEmpty()) {
+        m_runtimeDirectory = std::move(runtimeDirectory);
+        m_descriptorPath = QDir(m_runtimeDirectory).filePath(QStringLiteral("snow-shot-mcp.json"));
+    } else if (qEnvironmentVariableIsSet("SNOW_SHOT_MCP_DESCRIPTOR")) {
+        m_descriptorPath = qEnvironmentVariable("SNOW_SHOT_MCP_DESCRIPTOR");
+        if (!m_descriptorPath.isEmpty())
+            m_runtimeDirectory = QFileInfo(m_descriptorPath).absolutePath();
+    } else {
+        m_runtimeDirectory = defaultRuntimeDirectory();
+        m_descriptorPath = QDir(m_runtimeDirectory).filePath(QStringLiteral("snow-shot-mcp.json"));
+    }
+}
 ScreenshotMcpServer::~ScreenshotMcpServer() {
     stop();
 }
@@ -377,6 +387,11 @@ bool ScreenshotMcpServer::start(QString* error) {
     Q_ASSERT(QThread::currentThread() == thread());
     if (m_running)
         return true;
+    if (m_runtimeDirectory.isEmpty() || !QFileInfo(m_descriptorPath).isAbsolute()) {
+        if (error)
+            *error = tr("Could not secure the MCP runtime directory.");
+        return false;
+    }
     if (!privateDirectory(m_runtimeDirectory)) {
         if (error)
             *error = tr("Could not secure the MCP runtime directory.");
@@ -393,7 +408,6 @@ bool ScreenshotMcpServer::start(QString* error) {
     ++m_epoch;
     m_generation = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_token = randomToken();
-    m_descriptorPath = QDir(m_runtimeDirectory).filePath(QStringLiteral("snow-shot-mcp.json"));
 #ifdef Q_OS_WIN
     m_socketName = QStringLiteral("snow-shot-mcp-") + m_generation;
 #else

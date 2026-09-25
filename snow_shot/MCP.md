@@ -190,7 +190,8 @@ macOS. A lockfile establishes one owner. Atomic publication, a protected user
 ACL/private directory, a random 256-bit token, and generation-aware cleanup keep
 endpoint discovery scoped to the current user. Windows uses a named pipe with
 `QLocalServer::UserAccessOption`; macOS uses a Unix socket. No TCP listener exists.
-`SNOW_SHOT_MCP_DESCRIPTOR` can override the descriptor path for diagnostics/tests.
+`SNOW_SHOT_MCP_DESCRIPTOR` can override the absolute descriptor path for both
+the application and bridge during diagnostics/tests.
 Never put the token in a client configuration.
 
 Wire layout: `u32be payload_size`, `u32be json_size`, UTF-8 JSON, optional raw
@@ -234,3 +235,14 @@ The stdio smoke test uses an absent temporary descriptor and never captures the
 desktop or changes integration settings. Native Windows/macOS capture validation
 remains separate from offscreen protocol/session tests. macOS binaries must be
 built and validated on each supported native architecture before release.
+
+On Windows, the manual live probe starts an isolated Snow Shot instance and calls
+all 15 tools through the bridge. It captures the current desktop, changes the
+clipboard, and briefly creates a pinned image. Run it only in an interactive
+desktop session:
+
+```powershell
+python snow_shot/tests/mcp_live_tests.py `
+  build/windows-msvc-debug/snow_shot/Debug/snow_shot.exe `
+  build/windows-msvc-debug/cargo/x86_64-pc-windows-msvc/debug/snow-shot-mcp.exe
+```
