@@ -1005,7 +1005,117 @@ void historyBorderAppearanceDoesNotDependOnPlacement() {
             "imported history images must not inherit selection settings");
 }
 
+void selectionDisplayUnitsPreserveGeometryAndOrigins() {
+    using Unit = ScreenshotSelectionDisplayUnit;
+    ScreenshotGeometryMapper geometry;
+    for (const qreal dpi : {1.0, 1.25, 1.5, 2.0}) {
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel left;
+        left.active = true;
+        left.physicalRect = QRect(-1000, -200, 1000, 800);
+        left.canvasRect = QRect(0, 0, 1000, 800);
+        left.logicalRect = QRect(-1000, -200, 800, 640);
+        left.logicalToPhysicalScale = dpi;
+        displays.appendDisplay(left);
+        auto right = left;
+        right.physicalRect = QRect(0, -200, 1600, 1000);
+        right.canvasRect = QRect(1000, 0, 1600, 1000);
+        right.logicalToPhysicalScale = 2.0;
+        displays.appendDisplay(right);
+        const QRect selection(101, 51, 101, 53);
+        const auto physical = screenshotSelectionDisplayConversion(geometry, displays, selection,
+                                                                   Unit::PhysicalPixels);
+        const auto logical = screenshotSelectionDisplayConversion(geometry, displays, selection,
+                                                                  Unit::LogicalPixels);
+        require(physical.selection.position == QPointF(101, 51) &&
+                    physical.selection.size == QSizeF(101, 53),
+                "physical display must preserve capture-relative geometry");
+        require(std::abs(logical.scale - 1.0 / dpi) < 0.00001 &&
+                    std::abs(logical.selection.size.width() - 101.0 / dpi) < 0.00001 &&
+                    std::abs(logical.selection.position.x() - 101.0 / dpi) < 0.00001,
+                "logical selection must divide coordinates and size by the owner's DPI factor");
+        const auto picker =
+            screenshotMagnifierDisplayPosition(geometry, right, QPoint(101, -99), logical);
+        require(std::abs(picker.x() - 101.0 / dpi) < 0.00001 &&
+                    std::abs(picker.y() + 99.0 / dpi) < 0.00001,
+                "magnifier on another monitor must retain desktop origin and use selection scale");
+        const auto noSelection = screenshotSelectionDisplayConversion(geometry, displays, {},
+                                                                      Unit::LogicalPixels, &right);
+        require(noSelection.scale == 0.5, "without selection use the sampling monitor scale");
+        const auto centeredRight = screenshotSelectionDisplayConversion(
+            geometry, displays, QRect(900, 50, 300, 101), Unit::LogicalPixels);
+        require(centeredRight.scale == 0.5,
+                "mixed-DPI selection must belong to its center monitor");
+        const auto centerInGap = screenshotSelectionDisplayConversion(
+            geometry, displays, QRect(900, 790, 100, 100), Unit::LogicalPixels);
+        require(std::abs(centerInGap.scale - 1.0 / dpi) < 0.00001,
+                "a center outside displays must use the existing corner fallback");
+        const auto outside = screenshotSelectionDisplayConversion(
+            geometry, displays, QRect(-100, 0, 50, 50), Unit::LogicalPixels);
+        require(std::isfinite(outside.scale) && outside.scale > 0,
+                "selection owner fallback must provide a usable scale outside displays");
+    }
+    require(screenshotSelectionDisplayValue(80.8) == QStringLiteral("81") &&
+                screenshotSelectionDisplayValue(67.3333) == QStringLiteral("67") &&
+                screenshotSelectionDisplayValue(50.0) == QStringLiteral("50") &&
+                screenshotSelectionDisplayValue(-0.04) == QStringLiteral("0") &&
+                screenshotSelectionDisplayValue(-79.26) == QStringLiteral("-79") &&
+                screenshotSelectionDisplayValue(50.5) == QStringLiteral("51") &&
+                screenshotSelectionDisplayValue(-50.5) == QStringLiteral("-51") &&
+                screenshotSelectionDisplayValue(67.1) == screenshotSelectionDisplayValue(67.4),
+            "display formatting must round to whole numbers without decimals or negative zero");
+}
+
+void pointCanvasDisplayUnitsMatchExport() {
+    using Unit = ScreenshotSelectionDisplayUnit;
+    ScreenshotGeometryMapper geometry;
+    for (const qreal backing : {1.0, 1.5, 2.0}) {
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel left;
+        left.active = true;
+        left.canvasUsesPoints = true;
+        left.logicalRect = QRect(-500, -100, 500, 400);
+        left.canvasRect = QRect(0, 0, 500, 400);
+        left.physicalRect = QRect(-1000, -200, qRound(500 * backing), qRound(400 * backing));
+        left.backingScale = backing;
+        left.image = QImage(left.physicalRect.size(), QImage::Format_RGB32);
+        displays.appendDisplay(left);
+        auto right = left;
+        right.logicalRect = QRect(0, -100, 500, 400);
+        right.canvasRect = QRect(500, 0, 500, 400);
+        right.physicalRect = right.logicalRect;
+        right.backingScale = 1.0;
+        right.image = QImage(500, 400, QImage::Format_RGB32);
+        displays.appendDisplay(right);
+        for (const QRect selection :
+             {QRect(50, 50, 101, 53), QRect(450, 50, 151, 53), QRect(550, 50, 101, 53)}) {
+            const auto before = screenshotSelectionRenderSpec(displays, selection);
+            const auto physical = screenshotSelectionDisplayConversion(
+                geometry, displays, selection, Unit::PhysicalPixels);
+            const auto logical = screenshotSelectionDisplayConversion(geometry, displays, selection,
+                                                                      Unit::LogicalPixels);
+            require(before.isValid() && physical.selection.size == QSizeF(before.pixelSize) &&
+                        physical.scale == before.scale &&
+                        physical.selection.position == QPointF(selection.topLeft()) * before.scale,
+                    "physical readout must use export scale and ceiled dimensions");
+            require(logical.scale == 1.0 && logical.selection.size == QSizeF(selection.size()) &&
+                        logical.selection.position == selection.topLeft(),
+                    "logical readout must preserve point canvas geometry");
+            require(
+                screenshotMagnifierDisplayPosition(geometry, left, left.physicalRect.topLeft(),
+                                                   physical) ==
+                    QPointF(left.logicalRect.topLeft()) * before.scale,
+                "point-backed magnifier must convert to desktop points before selection scaling");
+            require(screenshotSelectionRenderSpec(displays, selection).pixelSize ==
+                        before.pixelSize,
+                    "display conversions must not change export dimensions");
+        }
+    }
+}
+
 int main() {
+    selectionDisplayUnitsPreserveGeometryAndOrigins();
+    pointCanvasDisplayUnitsMatchExport();
     historyBorderAppearanceDoesNotDependOnPlacement();
     historyPinPreservesDesktopCoordinatesAcrossLayoutChanges();
     selectionResultPixelSizeMatchesExportLayout();

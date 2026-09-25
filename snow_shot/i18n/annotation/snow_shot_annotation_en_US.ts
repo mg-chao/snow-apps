@@ -532,6 +532,10 @@
             <translation>Line text fill</translation>
         </message>
         <message>
+            <source>Logical Pixel Selection</source>
+            <translation>Logical Pixel Selection</translation>
+        </message>
+        <message>
             <source>Mask color</source>
             <translation>Mask color</translation>
         </message>
@@ -658,6 +662,10 @@
         <message>
             <source>Pen highlight stroke width %1 (%2px)</source>
             <translation>Pen highlight stroke width %1 (%2px)</translation>
+        </message>
+        <message>
+            <source>Physical Pixel Selection</source>
+            <translation>Physical Pixel Selection</translation>
         </message>
         <message>
             <source>Pick color from canvas</source>

@@ -336,12 +336,12 @@
             <translation>锁定选区宽高比</translation>
         </message>
         <message>
-            <source>Pixels</source>
-            <translation>像素</translation>
+            <source>Logical pixels</source>
+            <translation>逻辑像素</translation>
         </message>
         <message>
-            <source>Points</source>
-            <translation>点</translation>
+            <source>Pixels</source>
+            <translation>像素</translation>
         </message>
         <message>
             <source>Shadow width</source>
@@ -360,8 +360,8 @@
             <translation> Y 坐标</translation>
         </message>
         <message>
-            <source>pt</source>
-            <translation>pt</translation>
+            <source>dp</source>
+            <translation>dp</translation>
         </message>
         <message>
             <source>px</source>

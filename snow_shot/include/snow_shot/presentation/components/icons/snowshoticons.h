@@ -105,6 +105,7 @@ ArrowheadTriangleStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef LaserPointer(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef LineTypeCurved(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef LineTypeStraight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef LogicalPixels(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef MagicWand(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Markdown(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Mouse(const adqt::icons::IconColors& colors = {});
@@ -114,6 +115,7 @@ MoveSelectionHorizontal(const adqt::icons::IconColors& colors = {});
 MoveSelectionVertical(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef OcrTranslate(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Opacity(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef PhysicalPixels(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef PinClipboard(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef PinToScreen(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef

@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTUIPREFERENCES_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTUIPREFERENCES_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
+
 #include <QColor>
 #include <QString>
 #include <QtGlobal>
@@ -14,6 +16,7 @@ enum class ScreenshotColorPickerDisplayMode {
 };
 
 struct ScreenshotUiPreferences {
+    ScreenshotSelectionDisplayUnit selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool selectionTransitionAnimationEnabled = true;
     ScreenshotColorPickerDisplayMode colorPickerDisplayMode =
         ScreenshotColorPickerDisplayMode::HideOutsideSelection;

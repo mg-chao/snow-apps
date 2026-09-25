@@ -1,6 +1,9 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWIDGET_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWIDGET_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
+
+#include <optional>
 #include <QList>
 #include <QMargins>
 #include <QPoint>
@@ -32,9 +35,11 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void prewarm();
     void setSelectionResizable(bool enabled);
     void setCornerRadiusApplicable(bool enabled);
-    void setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
-                           int shadowWidth, DisplayMode displayMode = DisplayMode::Full,
-                           bool canvasUsesPoints = false);
+    void
+    setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
+                      int shadowWidth, DisplayMode displayMode = DisplayMode::Full,
+                      bool canvasUsesPoints = false,
+                      std::optional<ScreenshotSelectionDisplayValues> displayValues = std::nullopt);
     QSize contentSizeHint() const;
     bool containsInteractiveGlobalPoint(const QPoint& globalPosition) const;
     void moveContentTo(const QPoint& position);
@@ -85,6 +90,8 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     bool m_cornerRadiusApplicable = true;
     QLabel* m_widthLabel = nullptr;
     QLabel* m_sizeUnitLabel = nullptr;
+    QLabel* m_positionUnitLabel = nullptr;
+    ScreenshotSelectionDisplayValues m_displayValues;
     QList<QLabel*> m_canvasUnitLabels;
     bool m_canvasUsesPoints = false;
     QLabel* m_heightLabel = nullptr;

@@ -307,6 +307,8 @@ class ScreenshotUiSettings final {
     bool setToolbarSize(const QString& size) const;
     [[nodiscard]] bool selectionTransitionAnimationEnabled() const;
     bool setSelectionTransitionAnimationEnabled(bool enabled) const;
+    [[nodiscard]] QString selectionDisplayUnit() const;
+    bool setSelectionDisplayUnit(const QString& unit) const;
     [[nodiscard]] QString colorPickerDisplayMode() const;
     bool setColorPickerDisplayMode(const QString& mode) const;
     [[nodiscard]] QString colorPickerFormat() const;

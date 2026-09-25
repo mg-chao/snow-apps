@@ -567,6 +567,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "LogicalPixels",
+      "name": "logical-pixels",
+      "source": "../src/presentation/components/icons/resources/logical-pixels.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "MagicWand",
       "name": "magic-wand",
       "source": "../src/presentation/components/icons/resources/magic-wand.svg",
@@ -618,6 +626,14 @@
       "symbol": "Opacity",
       "name": "opacity",
       "source": "../src/presentation/components/icons/resources/opacity.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "PhysicalPixels",
+      "name": "physical-pixels",
+      "source": "../src/presentation/components/icons/resources/physical-pixels.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

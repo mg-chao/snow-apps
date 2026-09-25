@@ -1,6 +1,9 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWINDOW_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCOLORPICKERWINDOW_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
+
+#include <optional>
 #include <QColor>
 #include <QImage>
 #include <QPoint>
@@ -19,18 +22,21 @@ class ScreenshotColorPickerWindow final : public QWidget {
     void prepareNativeSurface();
     void resetForNewCapture();
     void setCaptureImage(const QImage& image, const QRect& physicalRect);
-    void updatePicker(const QPoint& physicalPoint, const QPointF& overlayLocalPosition,
-                      qreal opacity);
+    void
+    updatePicker(const QPoint& physicalPoint, const QPointF& overlayLocalPosition, qreal opacity,
+                 std::optional<ScreenshotCoordinateDisplayValues> displayValues = std::nullopt);
     void hidePicker();
     void setCenterGuideLineColor(const QColor& color);
     void cycleColorFormat();
     QString currentColorText() const;
+    QString currentPositionText() const;
     bool hasCurrentColor() const;
 
     QSize sizeHint() const override;
 
   protected:
     void paintEvent(QPaintEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
   private:
     enum class ColorFormat {
@@ -52,6 +58,7 @@ class ScreenshotColorPickerWindow final : public QWidget {
     QRect m_physicalRect;
     QImage m_previewImage;
     QPoint m_currentPhysicalPoint;
+    ScreenshotCoordinateDisplayValues m_displayValues;
     QColor m_currentColor;
     QColor m_panelBackground;
     QColor m_panelTextColor;

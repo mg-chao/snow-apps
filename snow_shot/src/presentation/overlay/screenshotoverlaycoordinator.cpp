@@ -454,11 +454,12 @@ ScreenshotColorPickerWindow* ScreenshotOverlayCoordinator::colorPicker() const {
     return m_uiHost.colorPicker();
 }
 
-void ScreenshotOverlayCoordinator::updateColorPicker(ScreenshotOverlayWindow* overlay,
-                                                     const QImage& image, const QRect& physicalRect,
-                                                     const QPoint& physicalPoint,
-                                                     const QPointF& localPosition, qreal opacity) {
-    m_uiHost.updateColorPicker(overlay, image, physicalRect, physicalPoint, localPosition, opacity);
+void ScreenshotOverlayCoordinator::updateColorPicker(
+    ScreenshotOverlayWindow* overlay, const QImage& image, const QRect& physicalRect,
+    const QPoint& physicalPoint, const QPointF& localPosition, qreal opacity,
+    const ScreenshotCoordinateDisplayValues& displayValues) {
+    m_uiHost.updateColorPicker(overlay, image, physicalRect, physicalPoint, localPosition, opacity,
+                               displayValues);
 }
 
 void ScreenshotOverlayCoordinator::hideColorPicker() {

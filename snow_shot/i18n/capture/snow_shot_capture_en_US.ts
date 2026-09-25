@@ -336,12 +336,12 @@
             <translation>Lock selection aspect ratio</translation>
         </message>
         <message>
-            <source>Pixels</source>
-            <translation>Pixels</translation>
+            <source>Logical pixels</source>
+            <translation>Logical pixels</translation>
         </message>
         <message>
-            <source>Points</source>
-            <translation>Points</translation>
+            <source>Pixels</source>
+            <translation>Pixels</translation>
         </message>
         <message>
             <source>Shadow width</source>
@@ -360,8 +360,8 @@
             <translation>Y coordinate</translation>
         </message>
         <message>
-            <source>pt</source>
-            <translation>pt</translation>
+            <source>dp</source>
+            <translation>dp</translation>
         </message>
         <message>
             <source>px</source>

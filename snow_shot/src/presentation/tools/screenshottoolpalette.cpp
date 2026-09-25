@@ -2232,6 +2232,15 @@ bool ScreenshotToolPalette::captureCursorEnabled() const {
     return m_captureCursorEnabled;
 }
 
+void ScreenshotToolPalette::setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit) {
+    m_selectionDisplayUnit = unit;
+    if (auto* group = findChild<adqt::widgets::AdRadioButtonGroup*>(
+            QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"))) {
+        const QSignalBlocker blocker(group);
+        group->setCheckedId(int(unit));
+    }
+}
+
 void ScreenshotToolPalette::setSelectionToolbarHidden(bool hidden) {
     m_selectionToolbarHidden = hidden;
     setScreenshotToolPaletteButtonActive(m_hideSelectionToolbarButton, hidden);
@@ -3087,6 +3096,12 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
             configureScreenshotToolPaletteStyleRadioButtonGroup(regionTypes, metrics, true);
             const QSignalBlocker blocker(regionTypes);
             regionTypes->setCheckedId(int(m_screenshotRegionType));
+        }
+        if (auto* units = m_selectActionPanel->findChild<adqt::widgets::AdRadioButtonGroup*>(
+                QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"))) {
+            configureScreenshotToolPaletteStyleRadioButtonGroup(units, metrics, true);
+            const QSignalBlocker blocker(units);
+            units->setCheckedId(int(m_selectionDisplayUnit));
         }
         if (m_scrollingRecognitionControls != nullptr &&
             m_scrollingRecognitionControls->layout() != nullptr) {
@@ -7490,6 +7505,26 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
     layout->addWidget(createStyleToolbarSeparator(m_moveActionControls));
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    ScreenshotToolPaletteRadioEditorConfig unitConfig;
+    unitConfig.objectName = QStringLiteral("screenshotSelectionDisplayUnitButtonGroup");
+    unitConfig.options = {
+        {int(ScreenshotSelectionDisplayUnit::PhysicalPixels),
+         QT_TR_NOOP("Physical Pixel Selection"), custom_outlined_icons::PhysicalPixels()},
+        {int(ScreenshotSelectionDisplayUnit::LogicalPixels), QT_TR_NOOP("Logical Pixel Selection"),
+         custom_outlined_icons::LogicalPixels()},
+    };
+    unitConfig.initialId = int(m_selectionDisplayUnit);
+    unitConfig.useButtonMetrics = true;
+    const auto units = createScreenshotToolPaletteRadioEditor(m_moveActionControls, unitConfig,
+                                                              actionButtonMetrics(m_physicalScale));
+    units.group->setObjectName(unitConfig.objectName);
+    layout->addWidget(units.container);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+    connect(units.group, &QButtonGroup::idClicked, this, [this](int id) {
+        const auto unit = static_cast<ScreenshotSelectionDisplayUnit>(id);
+        setSelectionDisplayUnit(unit);
+        emit selectionDisplayUnitChanged(unit);
+    });
     auto* hideSelectionToolbarButton = createScreenshotToolPaletteStyleActionButton(
         m_moveActionControls, "Hide selection toolbar", outlined_icons::EyeInvisible(),
         actionButtonMetrics(m_physicalScale));
@@ -7512,7 +7547,8 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     stampScreenshotToolbarReferenceWidth(
         m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 5 +
                                   screenshotToolbarReferenceWidth(regionTypes.container) +
-                                  STYLE_ITEM_SPACING * 2 + STYLE_GROUP_SPACING * 9 + 6 +
+                                  screenshotToolbarReferenceWidth(units.container) +
+                                  STYLE_ITEM_SPACING * 2 + STYLE_GROUP_SPACING * 10 + 6 +
                                   TOOLBAR_SEPARATOR_WIDTH * 2);
     setCaptureCursorEnabled(m_captureCursorEnabled);
     setSelectionToolbarHidden(m_selectionToolbarHidden);

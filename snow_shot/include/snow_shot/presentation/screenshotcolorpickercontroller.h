@@ -22,6 +22,7 @@ class PhysicalCursor;
 }
 
 struct ScreenshotColorPickerContext {
+    ScreenshotSelectionDisplayUnit selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool active = false;
     bool moveToolActive = false;
     bool intelligentSelecting = false;

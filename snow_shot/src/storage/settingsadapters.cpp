@@ -1169,6 +1169,14 @@ bool ScreenshotUiSettings::setSelectionTransitionAnimationEnabled(bool enabled) 
                             enabled);
 }
 
+QString ScreenshotUiSettings::selectionDisplayUnit() const {
+    return cache().value(QStringLiteral("screenshot_ui/selection_display_unit")).toString();
+}
+
+bool ScreenshotUiSettings::setSelectionDisplayUnit(const QString& unit) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/selection_display_unit"), unit);
+}
+
 QString ScreenshotUiSettings::colorPickerDisplayMode() const {
     return cache().value(QStringLiteral("screenshot_ui/color_picker_display_mode")).toString();
 }

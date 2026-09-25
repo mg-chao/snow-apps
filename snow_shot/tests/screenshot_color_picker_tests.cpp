@@ -3,6 +3,11 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QApplication>
+#include <QEvent>
+#include <QFontMetrics>
+#include <QFontDatabase>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
@@ -94,6 +99,116 @@ void formatPersistsAcrossCapturesAndRestarts() {
                 "invalid stored formats must recover to HEX");
     }
     applicationStorage.shutdown();
+}
+
+class PickerPaintCounter final : public QObject {
+  public:
+    int count = 0;
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Paint)
+            ++count;
+        return false;
+    }
+};
+
+void selectionUnitPersistsAndCoordinatesDoNotResample() {
+    using Unit = ScreenshotSelectionDisplayUnit;
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "unit settings require an isolated directory");
+    const storage::StorageInitializationOptions options{temporary.filePath(QStringLiteral("bin")),
+                                                        temporary.path(), 60000};
+    auto& appStorage = storage::ApplicationStorage::instance();
+    require(appStorage.initialize(options).success, "unit storage initialization failed");
+    const storage::ScreenshotUiSettings settings;
+#ifdef Q_OS_MACOS
+    const QString defaultId = QStringLiteral("logical_pixels");
+#else
+    const QString defaultId = QStringLiteral("physical_pixels");
+#endif
+    require(settings.selectionDisplayUnit() == defaultId &&
+                screenshotSelectionDisplayUnitId(kDefaultScreenshotSelectionDisplayUnit) ==
+                    defaultId,
+            "unit defaults must match the platform");
+    for (const auto unit : {Unit::LogicalPixels, Unit::PhysicalPixels}) {
+        const auto id = screenshotSelectionDisplayUnitId(unit);
+        require(settings.setSelectionDisplayUnit(id), "valid unit preference must be accepted");
+        require(!settings.setSelectionDisplayUnit(QStringLiteral("unknown")) &&
+                    settings.selectionDisplayUnit() == id,
+                "invalid units must preserve the accepted preference");
+        require(appStorage.flushNow().success, "unit preference must flush");
+        appStorage.shutdown();
+        require(appStorage.initialize(options).success && settings.selectionDisplayUnit() == id,
+                "unit preference must survive application restart");
+    }
+    appStorage.shutdown();
+    QFile configuration(temporary.filePath(QStringLiteral("config.json")));
+    require(configuration.open(QIODevice::ReadOnly), "read the versioned unit fixture");
+    auto document = QJsonDocument::fromJson(configuration.readAll()).object();
+    configuration.close();
+    auto ui = document.value(QStringLiteral("screenshot_ui")).toObject();
+    ui.insert(QStringLiteral("selection_display_unit"), QStringLiteral("unknown"));
+    document.insert(QStringLiteral("screenshot_ui"), ui);
+    require(configuration.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "invalid-unit fixture must open");
+    const QByteArray invalid = QJsonDocument(document).toJson();
+    require(configuration.write(invalid) == invalid.size(), "invalid-unit fixture must write");
+    configuration.close();
+    require(appStorage.initialize(options).success && settings.selectionDisplayUnit() == defaultId,
+            "invalid saved units must recover to the platform default");
+
+    ScreenshotColorPickerWindow picker;
+    sampleRed(picker);
+    const QString color = picker.currentColorText();
+    const ScreenshotCoordinateDisplayValues logical{QPointF(-80.8, 40), Unit::LogicalPixels, false};
+    picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0, logical);
+    require(picker.currentPositionText().replace(QLatin1Char('\n'), QLatin1Char(' ')) ==
+                    QStringLiteral("X: -81 Y: 40 dp") &&
+                picker.currentColorText() == color,
+            "changing units at the same sample must update coordinates without changing the color");
+    picker.updatePicker(
+        QPoint(8, 8), QPointF(8, 8), 0.0,
+        ScreenshotCoordinateDisplayValues{QPointF(-101, 50), Unit::PhysicalPixels, false});
+    require(picker.currentPositionText().replace(QLatin1Char('\n'), QLatin1Char(' ')) ==
+                    QStringLiteral("X: -101 Y: 50 px") &&
+                picker.currentColorText() == color,
+            "physical coordinates must format as integers and preserve the sample");
+    picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 1.0, logical);
+    QApplication::processEvents();
+    PickerPaintCounter paints;
+    picker.installEventFilter(&paints);
+    picker.updatePicker(
+        QPoint(8, 8), QPointF(8, 8), 1.0,
+        ScreenshotCoordinateDisplayValues{QPointF(-12345.6, -98765.4), Unit::LogicalPixels, false});
+    QApplication::processEvents();
+    require(paints.count > 0,
+            "coordinate changes must repaint even when the sampled pixel is unchanged");
+    const auto lines = picker.currentPositionText().split(QLatin1Char('\n'));
+    require(lines.size() == 2 && lines[0] == QStringLiteral("X: -12346") &&
+                lines[1] == QStringLiteral("Y: -98765 dp"),
+            "long rounded coordinates must wrap without truncating either axis or its unit");
+    QFont textFont = picker.font();
+    textFont.setPixelSize(13);
+    for (const auto& line : lines)
+        require(QFontMetrics(textFont).horizontalAdvance(line) <= 132,
+                "wrapped coordinate rows must fit the magnifier width");
+    QApplication::processEvents();
+    paints.count = 0;
+    picker.updatePicker(
+        QPoint(8, 8), QPointF(8, 8), 1.0,
+        ScreenshotCoordinateDisplayValues{QPointF(-12345.8, -98765.1), Unit::LogicalPixels, false});
+    QApplication::processEvents();
+    require(paints.count == 0 && picker.currentPositionText().split(QLatin1Char('\n')) == lines,
+            "subpixel changes with identical rounded coordinates must not repaint the picker");
+    picker.removeEventFilter(&paints);
+    picker.resetForNewCapture();
+    sampleRed(picker);
+    picker.updatePicker(
+        QPoint(8, 8), QPointF(8, 8), 0.0,
+        ScreenshotCoordinateDisplayValues{QPointF(-0.04, 4.666), Unit::LogicalPixels, true});
+    require(picker.currentPositionText().replace(QLatin1Char('\n'), QLatin1Char(' ')) ==
+                QStringLiteral("X: 0 Y: 5 dp"),
+            "point coordinates must use common rounding after a capture reset");
+    appStorage.shutdown();
 }
 
 void formatSurvivesResetWithoutStorage() {
@@ -261,6 +376,13 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+#ifdef Q_OS_WIN
+    const int fontId =
+        QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf"));
+    require(fontId >= 0, "offscreen picker tests require the Windows UI font");
+    application.setFont(QFont(QFontDatabase::applicationFontFamilies(fontId).first()));
+#endif
+    selectionUnitPersistsAndCoordinatesDoNotResample();
     formatPersistsAcrossCapturesAndRestarts();
     formatSurvivesResetWithoutStorage();
     plainHexPreservesSixUppercaseDigits();

@@ -8,6 +8,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "widgets/button.h"
+#include "widgets/radio_button_group.h"
 #include "widgets/popover.h"
 #include "widgets/detail/overlay_popup_surface.h"
 #include <QPushButton>
@@ -198,6 +199,12 @@ class NativeGeometryWarningScope final {
 
 class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
+    int selectionUnitCommands = 0;
+    void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit) override {
+        ++selectionUnitCommands;
+        static_cast<void>(snow_shot::storage::ScreenshotUiSettings().setSelectionDisplayUnit(
+            screenshotSelectionDisplayUnitId(unit)));
+    }
     int quickSaveCount = 0;
     void quickSaveSelection() override {
         ++quickSaveCount;
@@ -1649,6 +1656,46 @@ void unchangedShadowMarginsAreNoOps() {
             "setting the current shadow margins should be a no-op");
 }
 
+void screenshotSelectionUnitSurvivesWindowAndCaptureReset() {
+    using Unit = ScreenshotSelectionDisplayUnit;
+    const snow_shot::storage::ScreenshotUiSettings settings;
+    const QString saved = settings.selectionDisplayUnit();
+    require(settings.setSelectionDisplayUnit(QStringLiteral("logical_pixels")),
+            "initialize unit preference");
+    NoOpToolbarCommands commands;
+    {
+        ScreenshotToolbarWindow window(commands);
+        auto* palette = window.palette();
+        palette->setActiveTool(ScreenshotToolPalette::Tool::Move);
+        const auto group = [&] {
+            return palette->findChild<adqt::widgets::AdRadioButtonGroup*>(
+                QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"));
+        };
+        require(group() && group()->checkedId() == int(Unit::LogicalPixels),
+                "toolbar construction must load the saved selection unit");
+        group()->button(int(Unit::PhysicalPixels))->click();
+        require(commands.selectionUnitCommands == 1 &&
+                    settings.selectionDisplayUnit() == QStringLiteral("physical_pixels"),
+                "unit click must route exactly once through the toolbar command sink");
+        window.resetForNewCapture();
+        palette->setActiveTool(ScreenshotToolPalette::Tool::Move);
+        require(group() && group()->checkedId() == int(Unit::PhysicalPixels),
+                "capture reset must preserve the unit");
+        require(settings.setSelectionDisplayUnit(QStringLiteral("logical_pixels")),
+                "change unit externally");
+        require(group()->checkedId() == int(Unit::LogicalPixels) &&
+                    commands.selectionUnitCommands == 1,
+                "live preference changes must synchronize without command loops");
+    }
+    ScreenshotToolbarWindow recreated(commands);
+    recreated.palette()->setActiveTool(ScreenshotToolPalette::Tool::Move);
+    const auto* group = recreated.palette()->findChild<adqt::widgets::AdRadioButtonGroup*>(
+        QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"));
+    require(group && group->checkedId() == int(Unit::LogicalPixels),
+            "recreated windows must retain the persisted unit");
+    require(settings.setSelectionDisplayUnit(saved), "restore unit preference");
+}
+
 void screenshotToolbarSizeMultiplierSurvivesCaptureReset() {
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow window(commands);
@@ -3000,6 +3047,10 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--jump-to-translation-page-only"))) {
             jumpToTranslationPageFollowsLiveSettingsAndOcrAvailability();
             jumpToTranslationPageCommandMustOutliveItsClickDispatch();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--selection-unit-only"))) {
+            screenshotSelectionUnitSurvivesWindowAndCaptureReset();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--toolbar-size-only"))) {

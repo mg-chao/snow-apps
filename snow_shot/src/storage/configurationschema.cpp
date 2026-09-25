@@ -822,6 +822,15 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("small"), QStringLiteral("normal")}},
     {QStringLiteral("screenshot_ui/selection_transition_animation"), true,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("screenshot_ui/selection_display_unit"),
+#ifdef Q_OS_MACOS
+     QStringLiteral("logical_pixels"),
+#else
+     QStringLiteral("physical_pixels"),
+#endif
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("physical_pixels"), QStringLiteral("logical_pixels")}},
     {QStringLiteral("screenshot_ui/color_picker_display_mode"),
      QStringLiteral("hide_outside_selection"),
      ConfigurationValueKind::String,

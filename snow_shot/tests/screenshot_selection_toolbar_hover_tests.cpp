@@ -57,7 +57,7 @@ class PixelUnitTranslator final : public QTranslator {
 
     QString translate(const char*, const char* sourceText, const char*, int) const override {
         const QByteArray source(sourceText);
-        if (source == "Pixels" || source == "Points") {
+        if (source == "Pixels" || source == "Logical pixels") {
             return QStringLiteral("translated-unit");
         }
         return {};
@@ -446,15 +446,15 @@ void selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection() {
     };
     QLabel* width = field("Width");
     QLabel* height = field("Height");
-    const auto checkUnits = [&](int points, int pixels) {
-        int pointLabels = 0;
+    const auto checkUnits = [&](int logicalPixels, int pixels) {
+        int logicalPixelLabels = 0;
         int pixelLabels = 0;
         for (QLabel* label : labels) {
-            if (label->text() == QStringLiteral("pt")) {
-                ++pointLabels;
-                require(label->toolTip() == QStringLiteral("Points") &&
-                            label->accessibleName() == QStringLiteral("Points"),
-                        "point units need descriptive accessibility text");
+            if (label->text() == QStringLiteral("dp")) {
+                ++logicalPixelLabels;
+                require(label->toolTip() == QStringLiteral("Logical pixels") &&
+                            label->accessibleName() == QStringLiteral("Logical pixels"),
+                        "logical pixel units need descriptive accessibility text");
             } else if (label->text() == QStringLiteral("px")) {
                 ++pixelLabels;
                 require(label->toolTip() == QStringLiteral("Pixels") &&
@@ -462,7 +462,8 @@ void selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection() {
                         "pixel units need descriptive accessibility text");
             }
         }
-        require(pointLabels == points && pixelLabels == pixels, "incorrect toolbar unit system");
+        require(logicalPixelLabels == logicalPixels && pixelLabels == pixels,
+                "incorrect toolbar unit system");
     };
     require(width->text() == QStringLiteral("317") && height->text() == QStringLiteral("181"),
             "initial smart selection must show canvas dimensions");
@@ -501,7 +502,7 @@ void selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection() {
     require(QApplication::installTranslator(&translator), "pixel-unit translator unavailable");
     QCoreApplication::processEvents();
     for (QLabel* label : labels) {
-        if (label->text() == QStringLiteral("pt")) {
+        if (label->text() == QStringLiteral("dp")) {
             require(label->toolTip() == QStringLiteral("translated-unit") &&
                         label->accessibleName() == QStringLiteral("translated-unit"),
                     "unit descriptions must follow language changes");
@@ -509,13 +510,49 @@ void selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection() {
     }
     toolbar.setSelectionState(selection, false, 10, 5, Mode::SizeOnly, true);
     for (QLabel* label : labels) {
-        if (label->text() == QStringLiteral("pt")) {
+        if (label->text() == QStringLiteral("dp")) {
             require(label->accessibleName() == QStringLiteral("translated-unit"),
                     "smart-selection unit descriptions must follow language changes");
         }
     }
     QApplication::removeTranslator(&translator);
     QCoreApplication::processEvents();
+
+    // Converted labels must never change geometry-edit commands or effect units.
+    const ScreenshotSelectionDisplayValues logicalValues{
+        QPointF(64, 56), QSizeF(253.6, 144.8), ScreenshotSelectionDisplayUnit::LogicalPixels,
+        false};
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, false, logicalValues);
+    require(width->text() == QStringLiteral("254") && height->text() == QStringLiteral("145") &&
+                field("X coordinate")->text() == QStringLiteral("64") &&
+                field("Corner radius")->text() == QStringLiteral("10") &&
+                field("Shadow width")->text() == QStringLiteral("5"),
+            "unit toggles must update position and size while retaining effect values");
+    const QSize stableSize = toolbar.contentSizeHint();
+    auto fractionalChange = logicalValues;
+    fractionalChange.position = QPointF(64.2, 56.3);
+    fractionalChange.size = QSizeF(254.2, 145.1);
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, false, fractionalChange);
+    require(width->text() == QStringLiteral("254") && height->text() == QStringLiteral("145") &&
+                field("X coordinate")->text() == QStringLiteral("64") &&
+                toolbar.contentSizeHint() == stableSize,
+            "fractional changes within the same rounded pixel must keep labels and layout stable");
+    checkUnits(2, 2);
+    int dpLabels = 0;
+    for (auto* label : labels)
+        dpLabels += label->text() == QStringLiteral("dp") ? 1 : 0;
+    require(dpLabels == 2, "logical Windows mode must label only coordinates and dimensions as dp");
+    commands.lastAdjustment.clear();
+    QApplication::sendEvent(width, &wheel);
+    require(commands.lastAdjustment == std::vector<int>({0, 0, 1, 0}),
+            "logical unit display must retain one native geometry unit per wheel step");
+    const ScreenshotSelectionDisplayValues physicalValues{
+        QPointF(160, 140), QSizeF(634, 362), ScreenshotSelectionDisplayUnit::PhysicalPixels, true};
+    toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, true, physicalValues);
+    require(width->text() == QStringLiteral("634") &&
+                field("Corner radius")->text() == QStringLiteral("10"),
+            "physical macOS readout must not scale editable effect values");
+    checkUnits(2, 2);
 
     // A point-backed 1x display still uses points, even when values coincide.
     toolbar.setSelectionState(selection, false, 10, 5, Mode::Full, true);

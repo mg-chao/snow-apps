@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARWINDOW_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARWINDOW_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -24,6 +25,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setScrollingScreenshotMode(bool enabled);
     void setActiveTool(ScreenshotToolPalette::Tool tool);
     void setScreenshotRegionType(ScreenshotRegionType type);
+    void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit);
     void setRecaptureBusy(bool busy);
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void restoreRememberedDrawingTool();

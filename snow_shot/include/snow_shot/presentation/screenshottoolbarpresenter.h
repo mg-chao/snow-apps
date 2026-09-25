@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARPRESENTER_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARPRESENTER_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 #include "snow_shot/image/screenshotregiongeometry.h"
 
 #include <QColor>
@@ -15,6 +16,7 @@ class ScreenshotGeometryMapper;
 class ScreenshotOverlayCoordinator;
 
 struct ScreenshotToolbarPresentationState {
+    ScreenshotSelectionDisplayUnit selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     QRect selectionPixels;
     QRectF selectionCanvas;
     bool inactive = true;
