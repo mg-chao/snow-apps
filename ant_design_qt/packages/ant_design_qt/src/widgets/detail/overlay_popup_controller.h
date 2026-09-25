@@ -8,6 +8,7 @@
 #include <QFlags>
 #include <QHash>
 #include <QMetaObject>
+#include <QPoint>
 #include <QPointer>
 #include <QRect>
 #include <QScrollBar>
@@ -109,7 +110,6 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void refreshVisiblePopup();
   void invalidatePopupGeometry();
 
-
  signals:
   void popupVisibleChanged(bool value);
   void popupVisibilityRequested(bool value);
@@ -142,6 +142,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   QPoint cursorGlobalPos() const;
   bool triggerContainsGlobalPos(const QPoint& globalPos) const;
   bool hoverRegionContainsGlobalPos(const QPoint& globalPos, const QWidget* target) const;
+  const QWidget* resolvedHoverTarget(const QPoint& globalPos, const QWidget* target) const;
   void handleHoverEvent(QObject* watched, QEvent* event);
   void transitionHover(bool inside);
   void scheduleHoverReconcile();
@@ -208,6 +209,8 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
 
   enum class HoverState { Outside, WaitingToOpen, Inside, WaitingToClose };
   HoverState hoverState_ = HoverState::Outside;
+  QPointer<QWidget> lastHoverEventWindow_;
+  QPoint lastHoverEventPosition_;
   quint64 hoverGeneration_ = 0;
   bool hoverReconcileQueued_ = false;
   bool focusTriggerActive_ = false;

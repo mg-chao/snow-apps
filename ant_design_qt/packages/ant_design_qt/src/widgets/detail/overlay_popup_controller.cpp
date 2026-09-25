@@ -768,6 +768,22 @@ bool OverlayPopupController::hoverRegionContainsGlobalPos(const QPoint& globalPo
          popupDescendantContainsPointer(this, target, globalPos);
 }
 
+const QWidget* OverlayPopupController::resolvedHoverTarget(const QPoint& globalPos,
+                                                           const QWidget* target) const {
+  // The event receiver is the input target Qt actually delivered to. A later
+  // widgetAt() lookup can return no widget, or an input-transparent tooltip
+  // window, even while the cursor has not moved off that receiver.
+  const bool transparentWindow =
+      target && target->window()->windowFlags().testFlag(Qt::WindowTransparentForInput);
+  if ((target && !transparentWindow) || QWidget::mouseGrabber() || !lastHoverEventWindow_ ||
+      lastHoverEventPosition_ != globalPos) {
+    return target;
+  }
+  QWidget* scope = lastHoverEventWindow_;
+  if (!scope || !pointerRegionContains(scope, scope->rect(), globalPos)) return target;
+  return pointerTargetWithin(scope, globalPos);
+}
+
 void OverlayPopupController::handleHoverEvent(QObject* watched, QEvent* event) {
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) return;
   auto* widget = qobject_cast<QWidget*>(watched);
@@ -791,9 +807,17 @@ void OverlayPopupController::handleHoverEvent(QObject* watched, QEvent* event) {
     case QEvent::HoverMove:
       if (active || inTrigger || inPopup) {
         if (const auto position = pointerEventGlobalPosition(widget, event)) {
-          const QWidget* target = QWidget::mouseGrabber() ? pointerTargetProvider_(*position)
-                                                          : pointerTargetWithin(widget, *position);
-          transitionHover(hoverRegionContainsGlobalPos(*position, target));
+          QWidget* target = QWidget::mouseGrabber() ? pointerTargetProvider_(*position)
+                                                    : pointerTargetWithin(widget, *position);
+          if (pointerInWidgetTree(target, trigger) || pointerInWidgetTree(target, popup)) {
+            lastHoverEventWindow_ = target->window();
+            lastHoverEventPosition_ = *position;
+          } else if (target &&
+                     !target->window()->windowFlags().testFlag(Qt::WindowTransparentForInput)) {
+            lastHoverEventWindow_.clear();
+          }
+          transitionHover(
+              hoverRegionContainsGlobalPos(*position, resolvedHoverTarget(*position, target)));
         }
       }
       break;
@@ -842,7 +866,8 @@ void OverlayPopupController::scheduleHoverReconcile() {
 void OverlayPopupController::reconcileHoverFromCursor() {
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) return;
   const QPoint position = cursorGlobalPos();
-  transitionHover(hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position)));
+  transitionHover(hoverRegionContainsGlobalPos(
+      position, resolvedHoverTarget(position, pointerTargetProvider_(position))));
 }
 
 void OverlayPopupController::transitionHover(bool inside) {
@@ -895,7 +920,8 @@ void OverlayPopupController::finishHoverOpen(bool recheck) {
   }
   if (recheck) {
     const QPoint position = cursorGlobalPos();
-    if (!hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position))) {
+    if (!hoverRegionContainsGlobalPos(
+            position, resolvedHoverTarget(position, pointerTargetProvider_(position)))) {
       hoverState_ = HoverState::Outside;
       return;
     }
@@ -912,7 +938,8 @@ void OverlayPopupController::finishHoverClose(bool recheck) {
   }
   if (recheck) {
     const QPoint position = cursorGlobalPos();
-    if (hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position))) {
+    if (hoverRegionContainsGlobalPos(
+            position, resolvedHoverTarget(position, pointerTargetProvider_(position)))) {
       transitionHover(true);
       return;
     }
@@ -928,6 +955,7 @@ void OverlayPopupController::resetHoverInteraction() {
   cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
   cancelTimingTask(this, QString::fromLatin1(kHoverReconcileTaskKey));
   hoverState_ = HoverState::Outside;
+  lastHoverEventWindow_.clear();
   setReasonOpen(InternalOpenReason::Hover, false);
 }
 

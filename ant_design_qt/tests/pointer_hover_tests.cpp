@@ -168,6 +168,51 @@ void deadlinesValidateTargetAndStopWhenIdle() {
   require(opens == 1, "disabling must cancel pending transitions");
 }
 
+void tooltipWindowCannotStealAnEstablishedHoverTarget() {
+  const auto opensAfterDeliveredHover = [](bool tooltipTarget, bool moveCursor) {
+    Fixture f;
+    f.controller.setVisibilityMode(OverlayPopupController::VisibilityMode::External);
+    f.controller.setMouseEnterDelayMs(10);
+    int opens = 0;
+    QObject::connect(&f.controller, &OverlayPopupController::popupVisibilityRequested,
+                     [&opens](bool visible) {
+                       if (visible) ++opens;
+                     });
+    QWidget tooltip(nullptr, Qt::ToolTip | Qt::WindowTransparentForInput);
+    tooltip.setGeometry(QRect(f.trigger.mapToGlobal(QPoint()), f.trigger.size()));
+    tooltip.show();
+    f.target = tooltipTarget ? &tooltip : nullptr;
+    if (moveCursor) f.cursor = f.outside.mapToGlobal(QPoint(5, 5));
+    f.enter(f.trigger);
+    QTest::qWait(40);
+    return opens;
+  };
+  require(opensAfterDeliveredHover(true, false) == 1,
+          "an input-transparent tooltip must not veto a delivered trigger hover");
+  require(opensAfterDeliveredHover(false, false) == 1,
+          "a missing widgetAt result must not discard unchanged delivered input");
+  require(opensAfterDeliveredHover(false, true) == 0,
+          "a moved cursor must invalidate the delivered hover target");
+
+  Fixture covered;
+  covered.controller.setVisibilityMode(OverlayPopupController::VisibilityMode::External);
+  covered.controller.setMouseEnterDelayMs(10);
+  int coveredOpens = 0;
+  QObject::connect(&covered.controller, &OverlayPopupController::popupVisibilityRequested,
+                   [&coveredOpens](bool visible) {
+                     if (visible) ++coveredOpens;
+                   });
+  QWidget blocker(&covered.window);
+  blocker.setGeometry(covered.trigger.geometry());
+  blocker.show();
+  blocker.raise();
+  covered.target = nullptr;
+  covered.enter(covered.trigger);
+  QTest::qWait(40);
+  require(coveredOpens == 0,
+          "a missing widgetAt result must not bypass an opaque sibling over the trigger");
+}
+
 void independentReasonsAndPopupTravel() {
   Fixture f;
   f.enter(f.trigger);
@@ -546,6 +591,7 @@ int main(int argc, char** argv) {
   QApplication app(argc, argv);
   eventPositionOwnsImmediateTransitions();
   deadlinesValidateTargetAndStopWhenIdle();
+  tooltipWindowCannotStealAnEstablishedHoverTarget();
   independentReasonsAndPopupTravel();
   popupShadowOverTriggerPreservesHover();
   embeddedPopupShadowForwardsWheelAfterClosing();

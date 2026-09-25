@@ -114,6 +114,7 @@ class QtToolPopupTest final : public QObject {
   void popupTriggerTooltipsAvoidPopoverAtScreenEdges();
   void popupTriggerTooltipsRequireSpaceBelow();
   void warmTooltipSurvivesGroupPopoverOpening();
+  void hoveringFromTooltipToAdjacentPopoverOpensPopover();
   void pendingTooltipSurvivesGroupRouteRegistration();
   void selectReleasesAndRecreatesNativeResources();
   void selectSurvivesPopupContainerDestructionOrder();
@@ -659,6 +660,41 @@ void QtToolPopupTest::warmTooltipSurvivesGroupPopoverOpening() {
   }
   QCOMPARE(visibility.count(), 0);
   tip->hide();
+}
+
+void QtToolPopupTest::hoveringFromTooltipToAdjacentPopoverOpensPopover() {
+  AdTooltip::installApplicationTooltips();
+  QWidget host(nullptr, Qt::FramelessWindowHint);
+  host.resize(400, 120);
+  host.move(QApplication::primaryScreen()->availableGeometry().center() - host.rect().center());
+  auto* previous = new QPushButton(QStringLiteral("Scroll"), &host);
+  previous->setGeometry(80, 55, 100, 32);
+  previous->setToolTip(QStringLiteral("Scrolling screenshot"));
+  auto* trigger = new QPushButton(QStringLiteral("Save"), &host);
+  trigger->setGeometry(180, 55, 100, 32);
+  trigger->setToolTip(QStringLiteral("Save as file"));
+  trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
+  AdPopover popover;
+  popover.setSourceWidget(trigger);
+  popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  popover.setPlacement(AdPopover::Placement::Top);
+  popover.setTriggers(AdPopover::Trigger::Hover);
+  popover.setHoverOpenDelayMs(30);
+  auto* content = new QWidget;
+  content->setFixedSize(160, 40);
+  popover.setContentWidget(content);
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+  host.raise();
+
+  QTest::mouseMove(previous, previous->rect().center());
+  AdTooltip::showText(previous, previous->toolTip());
+  QTRY_VERIFY(findSurface(QStringLiteral("adtooltip-surface"), true));
+  QTest::mouseMove(trigger, trigger->rect().center());
+  AdTooltip::showText(trigger, trigger->toolTip());
+  QTRY_VERIFY(findSurface(QStringLiteral("adtooltip-surface"), true));
+  QTRY_VERIFY(popover.isVisible());
+  QTRY_VERIFY(content->window()->isVisible());
 }
 
 void QtToolPopupTest::pendingTooltipSurvivesGroupRouteRegistration() {

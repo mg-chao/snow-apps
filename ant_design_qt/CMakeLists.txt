@@ -381,6 +381,7 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-tooltip-hover-lifecycle-tests
         COMMAND adqt-qt-tool-popup-tests unrelatedLeaveDoesNotDismissTooltip
                 popupOptionTooltipsRemainVisible warmTooltipSurvivesGroupPopoverOpening
+                hoveringFromTooltipToAdjacentPopoverOpensPopover
                 pendingTooltipSurvivesGroupRouteRegistration -platform offscreen)
     set_tests_properties(adqt-tooltip-hover-lifecycle-tests PROPERTIES LABELS "unit")
     add_test(NAME adqt-popup-hover-recovery-tests
