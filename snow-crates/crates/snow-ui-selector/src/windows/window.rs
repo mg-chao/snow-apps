@@ -2,10 +2,12 @@ use std::ffi::c_void;
 use std::mem;
 
 use windows::Win32::Foundation::{HWND, LPARAM, RECT};
-use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, GWL_EXSTYLE, GetWindowInfo, GetWindowLongPtrW, GetWindowRect,
-    IsIconic, IsWindowVisible, WINDOW_EX_STYLE, WINDOWINFO, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+    EnumChildWindows, EnumWindows, GWL_EXSTYLE, GetWindowLongPtrW, GetWindowRect, IsIconic,
+    IsWindowVisible, WINDOW_EX_STYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT,
 };
 use windows::core::{BOOL, Result};
 
@@ -68,25 +70,27 @@ fn is_click_through_layered_window(style: WINDOW_EX_STYLE) -> bool {
 
 /// Desktop-space rectangle used for intelligent selection.
 ///
-/// This intentionally mirrors the reference app's simple Windows behavior:
-/// prefer the client rect from `WINDOWINFO`, then fall back to `GetWindowRect`.
+/// The DWM frame includes the title bar while excluding invisible resize borders.
+/// Fall back to the full Win32 window when DWM cannot supply a valid frame.
 pub(crate) fn visible_window_rect(hwnd: HWND) -> Option<RECT> {
-    let mut info = WINDOWINFO {
-        cbSize: mem::size_of::<WINDOWINFO>() as u32,
-        ..Default::default()
+    let mut rect = RECT::default();
+    let extended_frame = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut rect as *mut RECT as *mut c_void,
+            mem::size_of::<RECT>() as u32,
+        )
     };
-    if unsafe { GetWindowInfo(hwnd, &mut info) }.is_ok()
-        && info.rcClient.right > info.rcClient.left
-        && info.rcClient.bottom > info.rcClient.top
-    {
-        return Some(info.rcClient);
+    if extended_frame.is_ok() && !is_empty(rect) {
+        return Some(rect);
     }
 
     let mut rect = RECT::default();
     unsafe { GetWindowRect(hwnd, &mut rect) }
         .is_ok()
         .then_some(rect)
-        .filter(|rect| rect.right > rect.left && rect.bottom > rect.top)
+        .filter(|rect| !is_empty(*rect))
 }
 
 struct ChildWindowRectContext {
@@ -169,8 +173,9 @@ mod tests {
         IndexedWindow, SMALL_WINDOW_LINEAR_SCAN_THRESHOLD, WindowSpatialIndex,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DestroyWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SetWindowPos, WS_EX_NOACTIVATE, WS_POPUP, WS_VISIBLE,
+        CreateWindowExW, DestroyWindow, GetWindowInfo, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SetWindowPos, WINDOW_STYLE, WINDOWINFO, WS_EX_NOACTIVATE, WS_OVERLAPPEDWINDOW,
+        WS_POPUP, WS_VISIBLE,
     };
     use windows::core::w;
 
@@ -178,12 +183,16 @@ mod tests {
 
     impl TestWindow {
         fn new(style: WINDOW_EX_STYLE) -> Self {
+            Self::with_style(style, WS_POPUP | WS_VISIBLE)
+        }
+
+        fn with_style(style: WINDOW_EX_STYLE, window_style: WINDOW_STYLE) -> Self {
             Self(unsafe {
                 CreateWindowExW(
                     style | WS_EX_NOACTIVATE,
                     w!("STATIC"),
                     w!("Snow selector transparency regression"),
-                    WS_POPUP | WS_VISIBLE,
+                    window_style,
                     -32000,
                     -32000,
                     100,
@@ -211,6 +220,57 @@ mod tests {
                 .unwrap();
             }
         }
+    }
+
+    #[test]
+    fn visible_window_bounds_include_a_standard_title_bar() {
+        crate::windows::enable_high_dpi_support();
+        let behind = TestWindow::new(WINDOW_EX_STYLE(0));
+        let window = TestWindow::with_style(WINDOW_EX_STYLE(0), WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+        let mut info = WINDOWINFO {
+            cbSize: mem::size_of::<WINDOWINFO>() as u32,
+            ..Default::default()
+        };
+        unsafe { GetWindowInfo(window.0, &mut info) }.unwrap();
+        let bounds = visible_window_rect(window.0).unwrap();
+        let caption = windows::Win32::Foundation::POINT {
+            x: info.rcClient.left + 20,
+            y: bounds.top + (info.rcClient.top - bounds.top) / 2,
+        };
+
+        assert!(info.rcClient.top > bounds.top);
+        assert!(
+            crate::windows::geometry::contains_point(bounds, caption),
+            "bounds={bounds:?}, client={:?}, caption={caption:?}",
+            info.rcClient
+        );
+        assert!(!crate::windows::geometry::contains_point(
+            info.rcClient,
+            caption
+        ));
+        assert!(crate::windows::geometry::contains_point(
+            visible_window_rect(behind.0).unwrap(),
+            caption
+        ));
+
+        let index = WindowSpatialIndex::build(
+            [window.0, behind.0]
+                .into_iter()
+                .enumerate()
+                .map(|(i, hwnd)| IndexedWindow {
+                    envelope: rect_to_aabb(visible_window_rect(hwnd).unwrap()),
+                    cache_index: i,
+                    z_order: i,
+                })
+                .collect(),
+        );
+        assert_eq!(
+            index
+                .window_at_point([caption.x, caption.y])
+                .unwrap()
+                .cache_index,
+            0
+        );
     }
 
     impl Drop for TestWindow {
