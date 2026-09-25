@@ -1113,7 +1113,42 @@ void pointCanvasDisplayUnitsMatchExport() {
     }
 }
 
+void displayOwnerPreservesProbePriority() {
+    ScreenshotDisplaySession displays;
+    const auto append = [&](const QRect& bounds) {
+        CapturedDisplayModel display;
+        display.active = true;
+        display.canvasRect = bounds;
+        displays.appendDisplay(display);
+    };
+    // Session order deliberately opposes probe priority.
+    append(QRect(90, 90, 20, 20));
+    append(QRect(90, 0, 20, 20));
+    append(QRect(0, 0, 20, 20));
+    append(QRect(40, 40, 20, 20));
+    append(QRect(40, 40, 20, 20));
+    ScreenshotGeometryMapper geometry;
+    const QRect selection(0, 0, 100, 100);
+    require(geometry.displayForCanvasRect(displays, selection) == &displays.displayAt(3),
+            "center must outrank earlier corners, with session order breaking overlap ties");
+    displays.displayAt(3).active = false;
+    displays.displayAt(4).active = false;
+    require(geometry.displayForCanvasRect(displays, selection) == &displays.displayAt(2),
+            "top-left must outrank earlier top-right and bottom-right displays");
+    displays.displayAt(2).active = false;
+    require(geometry.displayForCanvasRect(displays, selection) == &displays.displayAt(1),
+            "top-right must outrank bottom-right");
+    require(geometry.displayForCanvasRect(displays, QRect(200, 0, 10, 10)) ==
+                &displays.displayAt(1),
+            "selections outside all displays must retain the nearest-center fallback");
+    displays.displayAt(0).active = false;
+    displays.displayAt(1).active = false;
+    require(geometry.displayForCanvasRect(displays, selection) == nullptr,
+            "inactive displays must never own a selection");
+}
+
 int main() {
+    displayOwnerPreservesProbePriority();
     selectionDisplayUnitsPreserveGeometryAndOrigins();
     pointCanvasDisplayUnitsMatchExport();
     historyBorderAppearanceDoesNotDependOnPlacement();

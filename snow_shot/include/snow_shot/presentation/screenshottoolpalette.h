@@ -779,6 +779,7 @@ class ScreenshotToolPalette final : public QWidget,
     QVector<QBoxLayout*> m_styleControlLayouts;
     QWidget* m_rectangleStyleControlsWidget = nullptr;
     QWidget* m_moveActionControls = nullptr;
+    QPointer<adqt::widgets::AdRadioButtonGroup> m_selectionDisplayUnitGroup;
     QWidget* m_lineStyleControlsWidget = nullptr;
     QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;

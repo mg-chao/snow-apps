@@ -274,6 +274,7 @@ void ScreenshotColorPickerWindow::resetForNewCapture() {
     m_previewImage = QImage();
     m_currentPhysicalPoint = QPoint();
     m_displayValues = {};
+    m_positionText.reset();
     m_currentColor = QColor();
     m_hasCurrentColor = false;
     hidePicker();
@@ -304,10 +305,15 @@ void ScreenshotColorPickerWindow::updatePicker(
 
     opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
     const bool previewChanged = updatePreview(physicalPoint);
-    const auto values = displayValues.value_or(ScreenshotCoordinateDisplayValues{
+    auto values = displayValues.value_or(ScreenshotCoordinateDisplayValues{
         QPointF(m_currentPhysicalPoint), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
+    // The readout uses whole pixels; subpixel changes do not invalidate text layout.
+    values.position = QPointF(std::round(values.position.x()), std::round(values.position.y()));
     const QString previousPositionText = currentPositionText();
-    m_displayValues = values;
+    if (m_displayValues != values) {
+        m_displayValues = values;
+        m_positionText.reset();
+    }
     const bool coordinatesChanged = previousPositionText != currentPositionText();
     static_cast<void>(updatePosition(overlayLocalPosition));
     bool opacityChanged = false;
@@ -334,6 +340,8 @@ void ScreenshotColorPickerWindow::updatePicker(
 }
 
 QString ScreenshotColorPickerWindow::currentPositionText() const {
+    if (m_positionText)
+        return *m_positionText;
     const QString x =
         QStringLiteral("X: %1").arg(screenshotSelectionDisplayValue(m_displayValues.position.x()));
     const QString y = QStringLiteral("Y: %1 %2")
@@ -342,9 +350,10 @@ QString ScreenshotColorPickerWindow::currentPositionText() const {
     const QString singleLine = x + QLatin1Char(' ') + y;
     QFont textFont = font();
     textFont.setPixelSize(kTextPixelSize);
-    return QFontMetrics(textFont).horizontalAdvance(singleLine) <= kPreviewCanvasSize
-               ? singleLine
-               : x + QLatin1Char('\n') + y;
+    m_positionText = QFontMetrics(textFont).horizontalAdvance(singleLine) <= kPreviewCanvasSize
+                         ? singleLine
+                         : x + QLatin1Char('\n') + y;
+    return *m_positionText;
 }
 
 void ScreenshotColorPickerWindow::hidePicker() {
@@ -408,8 +417,10 @@ QSize ScreenshotColorPickerWindow::sizeHint() const {
 
 void ScreenshotColorPickerWindow::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
-    if (event->type() == QEvent::LanguageChange || event->type() == QEvent::FontChange)
+    if (event->type() == QEvent::LanguageChange || event->type() == QEvent::FontChange) {
+        m_positionText.reset();
         update();
+    }
 }
 
 void ScreenshotColorPickerWindow::paintEvent(QPaintEvent* event) {

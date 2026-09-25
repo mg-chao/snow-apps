@@ -536,19 +536,29 @@ displayForCanvasRectInDisplaySession(const ScreenshotDisplaySession& displaySess
                 std::nextafter(target.bottom, target.top)),
         QPointF(target.left, std::nextafter(target.bottom, target.top)),
     };
-    for (const QPointF& point : points) {
-        const CapturedDisplayModel* display =
-            displayForCanvasPointInDisplaySession(displaySession, point);
-        if (display != nullptr) {
-            return display;
-        }
-    }
-
+    // Preserve center/corner priority and session-order ties without rescanning displays.
+    int bestPoint = 5;
+    const CapturedDisplayModel* containingDisplay = nullptr;
     double bestDistance = std::numeric_limits<double>::max();
     const CapturedDisplayModel* bestDisplay = nullptr;
     const QPointF center = target.center();
-    displaySession.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& display) {
-        const QPointF displayCenter = ScreenshotHalfOpenRect::fromRect(display.canvasRect).center();
+    for (qsizetype index = 0; index < displaySession.size(); ++index) {
+        const auto& display = displaySession.displayAt(index);
+        if (!display.active)
+            continue;
+        const auto bounds = ScreenshotHalfOpenRect::fromRect(display.canvasRect);
+        for (int pointIndex = 0; pointIndex < bestPoint; ++pointIndex) {
+            if (!bounds.contains(points[pointIndex]))
+                continue;
+            if (pointIndex == 0)
+                return &display;
+            bestPoint = pointIndex;
+            containingDisplay = &display;
+            break;
+        }
+        if (containingDisplay)
+            continue;
+        const QPointF displayCenter = bounds.center();
         const double dx = displayCenter.x() - center.x();
         const double dy = displayCenter.y() - center.y();
         const double distance = dx * dx + dy * dy;
@@ -556,8 +566,8 @@ displayForCanvasRectInDisplaySession(const ScreenshotDisplaySession& displaySess
             bestDistance = distance;
             bestDisplay = &display;
         }
-    });
-    return bestDisplay;
+    }
+    return containingDisplay ? containingDisplay : bestDisplay;
 }
 } // namespace
 

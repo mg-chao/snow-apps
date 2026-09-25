@@ -59,6 +59,7 @@ class ScreenshotColorPickerWindow final : public QWidget {
     QImage m_previewImage;
     QPoint m_currentPhysicalPoint;
     ScreenshotCoordinateDisplayValues m_displayValues;
+    mutable std::optional<QString> m_positionText;
     QColor m_currentColor;
     QColor m_panelBackground;
     QColor m_panelTextColor;

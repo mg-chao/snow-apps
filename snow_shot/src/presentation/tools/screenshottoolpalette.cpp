@@ -2233,9 +2233,10 @@ bool ScreenshotToolPalette::captureCursorEnabled() const {
 }
 
 void ScreenshotToolPalette::setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit) {
+    if (m_selectionDisplayUnit == unit)
+        return;
     m_selectionDisplayUnit = unit;
-    if (auto* group = findChild<adqt::widgets::AdRadioButtonGroup*>(
-            QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"))) {
+    if (auto* group = m_selectionDisplayUnitGroup.data()) {
         const QSignalBlocker blocker(group);
         group->setCheckedId(int(unit));
     }
@@ -3097,8 +3098,7 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
             const QSignalBlocker blocker(regionTypes);
             regionTypes->setCheckedId(int(m_screenshotRegionType));
         }
-        if (auto* units = m_selectActionPanel->findChild<adqt::widgets::AdRadioButtonGroup*>(
-                QStringLiteral("screenshotSelectionDisplayUnitButtonGroup"))) {
+        if (auto* units = m_selectionDisplayUnitGroup.data()) {
             configureScreenshotToolPaletteStyleRadioButtonGroup(units, metrics, true);
             const QSignalBlocker blocker(units);
             units->setCheckedId(int(m_selectionDisplayUnit));
@@ -6478,6 +6478,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
 
     m_rectangleStyleControlsWidget = nullptr;
     m_moveActionControls = nullptr;
+    m_selectionDisplayUnitGroup = nullptr;
     m_captureCursorButton = nullptr;
     m_recaptureButton = nullptr;
     m_addRegionButton = nullptr;
@@ -7518,6 +7519,7 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     const auto units = createScreenshotToolPaletteRadioEditor(m_moveActionControls, unitConfig,
                                                               actionButtonMetrics(m_physicalScale));
     units.group->setObjectName(unitConfig.objectName);
+    m_selectionDisplayUnitGroup = units.group;
     layout->addWidget(units.container);
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
     connect(units.group, &QButtonGroup::idClicked, this, [this](int id) {

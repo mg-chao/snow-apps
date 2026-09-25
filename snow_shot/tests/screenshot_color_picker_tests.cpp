@@ -13,6 +13,7 @@
 #include <QGuiApplication>
 #include <QTemporaryDir>
 #include <QWindow>
+#include <QTranslator>
 
 #ifdef Q_OS_MACOS
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
@@ -38,6 +39,39 @@ void sampleRed(ScreenshotColorPickerWindow& picker) {
     picker.setCaptureImage(image, image.rect());
     picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0);
     require(picker.hasCurrentColor(), "picker must sample the capture image");
+}
+
+class PickerUnitTranslator final : public QTranslator {
+  public:
+    bool isEmpty() const override {
+        return false;
+    }
+    QString translate(const char* context, const char* source, const char*, int) const override {
+        if (QByteArray(context) == "ScreenshotSelectionToolbarWidget" && QByteArray(source) == "px")
+            return QStringLiteral("pixels-translated");
+        return {};
+    }
+};
+
+void positionTextTracksFontAndLanguage() {
+    ScreenshotColorPickerWindow picker;
+    sampleRed(picker);
+    const QString original = picker.currentPositionText();
+    require(!original.contains(QLatin1Char('\n')), "short coordinates must fit on one line");
+    QFont wide = picker.font();
+    wide.setStretch(400);
+    picker.setFont(wide);
+    require(picker.currentPositionText().contains(QLatin1Char('\n')),
+            "font changes must invalidate the cached coordinate layout");
+    PickerUnitTranslator translator;
+    require(QApplication::installTranslator(&translator), "picker translator must install");
+    QApplication::processEvents();
+    require(picker.currentPositionText().endsWith(QStringLiteral("pixels-translated")),
+            "language changes must invalidate the cached unit text");
+    QApplication::removeTranslator(&translator);
+    QApplication::processEvents();
+    require(picker.currentPositionText().endsWith(QStringLiteral("px")),
+            "removing a translator must restore the source unit text");
 }
 
 void formatPersistsAcrossCapturesAndRestarts() {
@@ -382,6 +416,7 @@ int main(int argc, char** argv) {
     require(fontId >= 0, "offscreen picker tests require the Windows UI font");
     application.setFont(QFont(QFontDatabase::applicationFontFamilies(fontId).first()));
 #endif
+    positionTextTracksFontAndLanguage();
     selectionUnitPersistsAndCoordinatesDoNotResample();
     formatPersistsAcrossCapturesAndRestarts();
     formatSurvivesResetWithoutStorage();
