@@ -809,11 +809,8 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
             if (m_controlsPanel == nullptr)
                 return;
             m_controlsPanel->setVisible(visible);
-            if (visible) {
-                m_controlsPanel->raise();
-                if (m_scaleLabel != nullptr)
-                    m_scaleLabel->raise();
-            }
+            if (visible)
+                updateChildStackingOrder();
         });
     m_persistenceTimer = new QTimer(this);
     m_persistenceTimer->setSingleShot(true);
@@ -2260,7 +2257,6 @@ void ScreenshotPinnedWindow::resizeEvent(QResizeEvent* event) {
     invalidatePendingCopy();
     if (m_borderFrame != nullptr) {
         m_borderFrame->setGeometry(rect());
-        m_borderFrame->raise();
     }
     updateBorderOutline();
     updateCanvasViewport();
@@ -2432,7 +2428,6 @@ void ScreenshotPinnedWindow::createUi() {
     m_borderFrame->setObjectName(QStringLiteral("screenshotPinnedBorder"));
     m_borderFrame->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_borderFrame->setGeometry(rect());
-    m_borderFrame->raise();
     m_borderFrame->setVisible(m_showBorder);
     updateBorderOutline();
 
@@ -2461,7 +2456,7 @@ void ScreenshotPinnedWindow::createUi() {
     controlsLayout->addWidget(m_editButton);
     controlsLayout->addWidget(m_closeButton);
     m_controlsPanel->adjustSize();
-    m_controlsPanel->raise();
+    updateChildStackingOrder();
 
     connect(m_editButton, &adqt::widgets::AdButton::clicked, this, [this]() { setEditMode(true); });
     connect(m_closeButton, &adqt::widgets::AdButton::clicked, this,
@@ -2951,13 +2946,32 @@ void ScreenshotPinnedWindow::showContextMenu(const QPoint& globalPosition) {
     m_contextMenu->popupAt(globalPosition);
 }
 
+void ScreenshotPinnedWindow::updateChildStackingOrder() {
+    // Recognition surfaces receive input even when they paint only transparent
+    // text selection. Keep the complete layer order independent of which layer
+    // was created, updated or shown last; hover must not repair input routing.
+    QWidget* const layers[] = {m_scaleLabel, m_controlsPanel, m_borderFrame, m_recognitionContent,
+                               m_canvas};
+    QWidget* above = nullptr;
+    for (QWidget* layer : layers) {
+        if (layer == nullptr)
+            continue;
+        // Work down from the top so an already ordered stack is unchanged.
+        if (above != nullptr)
+            layer->stackUnder(above);
+        else
+            layer->raise();
+        above = layer;
+    }
+}
+
 void ScreenshotPinnedWindow::updateBorderOutline() {
     if (m_canvas == nullptr || m_screenshotRenderer == nullptr || m_borderFrame == nullptr)
         return;
 
     if (m_borderFrame->geometry() != rect())
         m_borderFrame->setGeometry(rect());
-    m_borderFrame->raise();
+    updateChildStackingOrder();
 
     QRectF borderOutline;
     QSizeF cornerRadii;
@@ -3102,11 +3116,7 @@ void ScreenshotPinnedWindow::updateControlsGeometry() {
     m_controlsPanel->move(std::max(0, width() - panelSize.width() - kControlsInset),
                           kControlsInset);
     updateControlsVisibility();
-    if (m_controlsPanel->isVisible()) {
-        m_controlsPanel->raise();
-        if (m_scaleLabel != nullptr)
-            m_scaleLabel->raise();
-    }
+    updateChildStackingOrder();
 }
 
 void ScreenshotPinnedWindow::destroyCanvas() {
@@ -3681,7 +3691,6 @@ void ScreenshotPinnedWindow::updateRecognitionContentGeometry() {
         QRectF(QPointF(), QSizeF(m_canvas->size())));
     static_cast<void>(
         m_recognitionContent->updateSelectionGeometry(m_canvas->geometry(), viewport));
-    m_recognitionContent->raise();
     updateBorderOutline();
 }
 
@@ -3940,7 +3949,6 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 if (m_recognitionContent != nullptr) {
                     if (active) {
                         m_recognitionContent->show();
-                        m_recognitionContent->raise();
                         updateRecognitionContentGeometry();
                         m_recognitionContent->setFocus(Qt::OtherFocusReason);
                     }
@@ -4321,7 +4329,6 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
             ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
         if (m_recognitionContent != nullptr) {
             m_recognitionContent->setOcrPresentation(m_displayOcrPresentation);
-            m_recognitionContent->raise();
             updateBorderOutline();
         }
     }
@@ -5399,7 +5406,7 @@ void ScreenshotPinnedWindow::showScaleReadout() {
     m_scaleLabel->layoutIn(rect());
     updateControlsGeometry();
     m_scaleLabel->show();
-    m_scaleLabel->raise();
+    updateChildStackingOrder();
     m_scaleLabelTimer->start();
 }
 
@@ -5412,7 +5419,7 @@ void ScreenshotPinnedWindow::showOpacityReadout() {
     m_scaleLabel->layoutIn(rect());
     updateControlsGeometry();
     m_scaleLabel->show();
-    m_scaleLabel->raise();
+    updateChildStackingOrder();
     m_scaleLabelTimer->start();
 }
 
