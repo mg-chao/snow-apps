@@ -246,6 +246,10 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     outerLayout->setSizeConstraint(QLayout::SetNoConstraint);
     outerLayout->addWidget(m_contentContainer);
     m_contentContainer->setObjectName(QStringLiteral("screenshotRecognitionContent"));
+    // The mouse-transparent OCR layer exposes this container as the hit-test
+    // receiver. It must receive button-free moves so they can reach the window's
+    // hover cursor and selection-resize handling in both presentation modes.
+    m_contentContainer->setMouseTracking(true);
     m_stack->setContentsMargins(0, 0, 0, 0);
     // This window is an exact overlay for the screenshot selection. Child pages such as
     // QGraphicsView and AdTextEdit have useful standalone minimum size hints, but those hints

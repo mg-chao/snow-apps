@@ -352,6 +352,45 @@ void embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer() {
     recognition.hideTextEditor();
 }
 
+void ocrHoverUpdatesCursorWithoutClicking() {
+    using Mode = ScreenshotRecognitionWindow::PresentationMode;
+    for (const auto mode : {Mode::TopLevelWindow, Mode::EmbeddedChild}) {
+        QWidget host;
+        host.resize(240, 160);
+        host.show();
+        ScreenshotRecognitionWindow recognition(ScreenshotRecognitionWindowActions{}, &host, mode);
+        require(recognition.present({QGuiApplication::primaryScreen(), &host, host.rect(),
+                                     QRectF(host.rect()), mode}),
+                "OCR hover fixture should present in both window modes");
+        auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+        presentation->selection = host.rect();
+        ScreenshotOcrLine line;
+        line.text = QStringLiteral("Hover text");
+        line.quad = QPolygonF(QRectF(40, 30, 140, 30));
+        presentation->lines.push_back(line);
+        presentation->prepareForRendering();
+        recognition.setOcrPresentation(presentation);
+        QApplication::processEvents();
+
+        const auto hover = [&](const QPoint& point, Qt::CursorShape expected) {
+            // Use the actual hit-test receiver: sending directly to the recognition
+            // window bypasses the content container's mouse-tracking policy.
+            QWidget* receiver = recognition.childAt(point);
+            require(receiver != nullptr, "OCR content should have a mouse event receiver");
+            QMouseEvent move(QEvent::MouseMove, QPointF(receiver->mapFrom(&recognition, point)),
+                             QPointF(recognition.mapToGlobal(point)), Qt::NoButton, Qt::NoButton,
+                             Qt::NoModifier);
+            QApplication::sendEvent(receiver, &move);
+            require(receiver->cursor().shape() == expected,
+                    "OCR hover must update the cursor without a mouse button held");
+            require(!presentation->textSelectionActive(), "hover must not begin a text selection");
+        };
+        hover(QPoint(100, 45), Qt::IBeamCursor);
+        hover(QPoint(10, 100), Qt::ArrowCursor);
+        hover(QPoint(100, 45), Qt::IBeamCursor);
+    }
+}
+
 void recognitionWindowCanExtendBeyondItsDpiScreen() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -2033,6 +2072,10 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    ocrHoverUpdatesCursorWithoutClicking();
+    if (application.arguments().contains(QStringLiteral("--ocr-hover-only"))) {
+        return 0;
+    }
     defaultSelectionResizeActionsDeclineInteraction();
     selectionResizeKeepsMouseCaptureWhenContentIsCleared();
     selectionResizeCompletionCanReplaceWindow();
