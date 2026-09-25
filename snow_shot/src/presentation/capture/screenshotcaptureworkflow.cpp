@@ -82,10 +82,7 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_toolbarPreparation = toolbarPreparation;
     m_toolbarVisibility = toolbarVisibility;
     m_state.restoreOriginalScreenColors = m_context.restoreOriginalScreenColors();
-    // Smart selection necessarily places the pointer inside the proposed region. Keep its
-    // source frame cursor-free; external drags and explicit recaptures are not selector-driven
-    // and continue to honor the persisted cursor option.
-    m_state.captureCursor = mode == StartMode::ExternalDrag && m_context.captureCursor();
+    m_state.captureCursor = m_context.captureCursor();
     m_state.sessionState = ScreenshotSessionState::Capturing;
     m_state.captureInProgress = true;
     clearCapturePresentationReadiness();

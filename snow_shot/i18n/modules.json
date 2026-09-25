@@ -37,6 +37,7 @@
   "capture": [
     "DirectCaptureController",
     "ScreenshotAutoFilterController",
+    "ScreenshotCaptureCoordinator",
     "ScreenshotController",
     "ScreenshotOverlayWindow",
     "ScreenshotRegionTypeControl",

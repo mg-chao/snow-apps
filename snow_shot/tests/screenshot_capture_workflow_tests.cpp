@@ -1090,7 +1090,7 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
 }
 } // namespace
 
-void initialCaptureAppliesSettingsForItsSelectionMode() {
+void initialCaptureSnapshotsScreenshotSettings() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::IdlePrepared;
     ScreenshotDisplaySession displays;
@@ -1117,13 +1117,13 @@ void initialCaptureAppliesSettingsForItsSelectionMode() {
             "active capture must retain its setting snapshot");
     workflow.startCapture();
     require(runtime.lastCaptureRequest.restoreOriginalScreenColors &&
-                state.restoreOriginalScreenColors && !runtime.lastCaptureRequest.captureCursor &&
-                !state.captureCursor,
-            "smart region selection must exclude the cursor from its source frame");
+                state.restoreOriginalScreenColors && runtime.lastCaptureRequest.captureCursor &&
+                state.captureCursor,
+            "normal capture must honor the enabled cursor setting with smart selection");
     workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::ExternalDrag);
     require(runtime.lastCaptureRequest.restoreOriginalScreenColors &&
                 runtime.lastCaptureRequest.captureCursor && state.captureCursor,
-            "external region drags must continue to observe the cursor setting");
+            "external region drags must also observe the cursor setting");
 }
 
 void toolbarVisibilityIsIndependentOfInputAndPreparation() {
@@ -1857,7 +1857,7 @@ int main() {
     externalDragDisplayChangesInvalidatePendingCapture();
     globalDragCoordinatesStayPhysicalAcrossDifferentDisplayScales();
     externalDragBypassesSelectorAndPreparesBeforeReveal();
-    initialCaptureAppliesSettingsForItsSelectionMode();
+    initialCaptureSnapshotsScreenshotSettings();
     captureRestoresSelectionPreferencesAfterReset();
     idlePrewarmDoesNotInitializeSelector();
     endingScreenshotReprewarmsOverlaySurfaces();

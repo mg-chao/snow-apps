@@ -273,7 +273,7 @@ void modeChangeAfterCaptureFailurePreservesRetainedFrame() {
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
-void recaptureOwnsCursorBeforeDispatch(bool cancel) {
+void captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose purpose, bool cancel) {
     setMode("dxgi");
     ScreenshotCaptureResult result;
     bool received = false;
@@ -289,12 +289,12 @@ void recaptureOwnsCursorBeforeDispatch(bool cancel) {
                          });
         ScreenshotCaptureRequest request;
         request.requestId = 91;
-        request.purpose = ScreenshotCapturePurpose::Recapture;
+        request.purpose = purpose;
         request.captureCursor = true;
         liveCursorPixel = 71;
         blockCapture = true;
         coordinator.captureAsync(request);
-        require(cursorSnapshots == 1, "recapture must own its cursor before returning to the UI");
+        require(cursorSnapshots == 1, "capture must own its cursor before returning to the UI");
         require(captureEntered.tryAcquire(1, 3000), "capture worker did not reach the barrier");
         require((capturedFlags & SNOW_CAPTURE_SCREENSHOT_REQUEST_INCLUDE_CURSOR) == 0,
                 "snapshot capture must disable backend cursor composition");
@@ -309,9 +309,8 @@ void recaptureOwnsCursorBeforeDispatch(bool cancel) {
         coordinator.shutdown();
         blockCapture = false;
     }
-    require(received && result.requestId == 91 &&
-                result.purpose == ScreenshotCapturePurpose::Recapture,
-            "asynchronous recapture must deliver its original identity");
+    require(received && result.requestId == 91 && result.purpose == purpose,
+            "asynchronous capture must deliver its original identity");
     require(cursorSnapshots == 0, "completion and cancellation must release the owned cursor");
     if (cancel) {
         require(!result.succeeded && cursorCompositions == compositionsBefore,
@@ -324,21 +323,25 @@ void recaptureOwnsCursorBeforeDispatch(bool cancel) {
 }
 
 void cursorSnapshotFailureDoesNotDispatchCapture() {
-    ScreenshotCaptureCoordinator coordinator;
-    bool failed = false;
-    QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &coordinator,
-                     [&](const ScreenshotCaptureResult& result) {
-                         failed = !result.succeeded && !result.errorMessage.isEmpty();
-                     });
-    ScreenshotCaptureRequest request;
-    request.purpose = ScreenshotCapturePurpose::Recapture;
-    request.captureCursor = true;
-    const int capturedBefore = captured;
-    failCursorSnapshot = true;
-    coordinator.captureAsync(request);
-    failCursorSnapshot = false;
-    require(failed && captured == capturedBefore && cursorSnapshots == 0,
-            "snapshot failure must not fall back to a stale live/backend cursor");
+    for (const auto purpose :
+         {ScreenshotCapturePurpose::Initial, ScreenshotCapturePurpose::Recapture}) {
+        ScreenshotCaptureCoordinator coordinator;
+        bool failed = false;
+        QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &coordinator,
+                         [&](const ScreenshotCaptureResult& result) {
+                             failed = !result.succeeded && result.purpose == purpose &&
+                                      !result.errorMessage.isEmpty();
+                         });
+        ScreenshotCaptureRequest request;
+        request.purpose = purpose;
+        request.captureCursor = true;
+        const int capturedBefore = captured;
+        failCursorSnapshot = true;
+        coordinator.captureAsync(request);
+        failCursorSnapshot = false;
+        require(failed && captured == capturedBefore && cursorSnapshots == 0,
+                "snapshot failure must not fall back to a stale live/backend cursor");
+    }
 }
 #endif
 
@@ -561,8 +564,10 @@ int main(int argc, char** argv) {
     failedReplacementDoesNotCaptureWithOldBackend();
     modeChangeAfterCaptureFailurePreservesRetainedFrame();
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    recaptureOwnsCursorBeforeDispatch(false);
-    recaptureOwnsCursorBeforeDispatch(true);
+    captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Initial, false);
+    captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Initial, true);
+    captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Recapture, false);
+    captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose::Recapture, true);
     cursorSnapshotFailureDoesNotDispatchCapture();
 #endif
     cursorCompositionFailureDoesNotPublishAnImage();

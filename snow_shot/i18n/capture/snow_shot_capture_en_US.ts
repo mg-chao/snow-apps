@@ -28,6 +28,13 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotCaptureCoordinator</name>
+        <message>
+            <source>Could not snapshot the cursor</source>
+            <translation>Could not snapshot the cursor</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotController</name>
         <message>
             <source>Allow Snow Shot to access Finder in System Settings &gt; Privacy &amp; Security &gt; Automation, then try again.</source>
