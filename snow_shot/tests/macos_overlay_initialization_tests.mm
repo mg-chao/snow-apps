@@ -1,4 +1,6 @@
 #include "snow_shot/platform/screenshotnative.h"
+#include "platform/macos/capturewindowlayers_p.h"
+#include "presentation/pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 
@@ -80,6 +82,155 @@ void finishNativeModalTransition() {
     loop.exec();
 }
 
+void captureFamiliesFollowOwnership() {
+    using namespace snow_shot::platform::detail;
+    QWindow screenshot;
+    screenshot.setProperty(kScreenshotLayer, kOverlayLayer);
+    QWindow recording;
+    recording.setProperty(kScreenshotLayer, kOverlayLayer);
+    recording.setProperty(kCaptureFamily, static_cast<int>(CaptureFamily::Recording));
+    QWindow toolbar;
+    toolbar.setProperty(kScreenshotLayer, kToolbarLayer);
+    toolbar.setProperty(kCaptureFamily, static_cast<int>(CaptureFamily::Recording));
+    QWindow popup;
+    QWindow nested;
+    nested.setTransientParent(&popup);
+    for (QWindow* owner : {&recording, &screenshot, &toolbar}) {
+        popup.setTransientParent(owner);
+        const auto parent = captureLayer(owner);
+        const auto child = captureLayer(&popup);
+        require(child.family == parent.family && child.offset() > parent.offset(),
+                "pooled popups must inherit their current owner's capture family");
+        require(captureLayer(&nested).offset() > child.offset(),
+                "nested popups must remain above their parent");
+    }
+    popup.setModality(Qt::WindowModal);
+    const ModalFloors floors{20, 7};
+    require(captureLayer(&popup, floors).layer == 7,
+            "recording modals must not inherit the screenshot modal floor");
+    popup.setTransientParent(&screenshot);
+    require(captureLayer(&popup, floors).layer == 20,
+            "reparented modals must use the new family's floor");
+    popup.setTransientParent(nullptr);
+    require(!captureLayer(&popup).valid() && !captureLayer(&nested).valid(),
+            "detached popups must release inherited capture roles");
+    require(captureLayer(&recording).offset() == -128 && captureLayer(&screenshot).offset() == 0,
+            "recording must occupy the reserved band below screenshots");
+    require(CaptureLayer{CaptureFamily::Recording, 1000}.offset() == -1,
+            "deep recording descendants must never enter the screenshot band");
+}
+
+void captureFamiliesKeepNativeOrder() {
+    using namespace snow_shot::platform;
+    using namespace snow_shot::presentation;
+    OverlayFixture screenshot;
+    ToolFixture pin;
+    ToolFixture recording;
+    ToolFixture toolbar;
+    ToolFixture popup;
+    ToolFixture nested;
+    for (QWidget* widget : {static_cast<QWidget*>(&screenshot), static_cast<QWidget*>(&pin),
+                            static_cast<QWidget*>(&recording), static_cast<QWidget*>(&toolbar),
+                            static_cast<QWidget*>(&popup), static_cast<QWidget*>(&nested)}) {
+        widget->setGeometry(100, 100, 80, 80);
+        static_cast<void>(widget->winId());
+    }
+    auto pinnedPlatform = createPinnedWindowPlatform(static_cast<QWidget*>(&pin));
+    require(pinnedPlatform->attach(), "pin must attach to its real Cocoa policy");
+    configureScreenRecordingAreaWindow(static_cast<QWidget*>(&recording));
+    configureScreenRecordingToolbarWindow(static_cast<QWidget*>(&toolbar));
+    toolbar.windowHandle()->setTransientParent(recording.windowHandle());
+    popup.windowHandle()->setTransientParent(toolbar.windowHandle());
+    nested.windowHandle()->setTransientParent(popup.windowHandle());
+    auto native = [](QWidget& widget) { return reinterpret_cast<NSView*>(widget.winId()).window; };
+    auto verify = [&] {
+        QCoreApplication::processEvents();
+        require(native(pin).level < native(recording).level &&
+                    native(recording).level < native(toolbar).level &&
+                    native(toolbar).level < native(popup).level &&
+                    native(popup).level < native(nested).level &&
+                    native(nested).level < native(screenshot).level,
+                "native levels must enforce screenshot > recording and its popups > pin");
+        require(native(recording).level > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
+                    native(recording).level > CGWindowLevelForKey(kCGDockWindowLevelKey),
+                "recording must retain its position above system chrome");
+        CFArrayRef windows =
+            CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
+        auto position = [&](NSWindow* window) {
+            for (CFIndex i = 0; i < CFArrayGetCount(windows); ++i) {
+                auto* info = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(windows, i));
+                int number = 0;
+                CFNumberGetValue(
+                    static_cast<CFNumberRef>(CFDictionaryGetValue(info, kCGWindowNumber)),
+                    kCFNumberIntType, &number);
+                if (number == window.windowNumber)
+                    return i;
+            }
+            return CFIndex(-1);
+        };
+        require(windows != nullptr, "WindowServer must provide window ordering");
+        CFIndex previous = -1;
+        for (QWidget* widget : {static_cast<QWidget*>(&screenshot), static_cast<QWidget*>(&nested),
+                                static_cast<QWidget*>(&popup), static_cast<QWidget*>(&toolbar),
+                                static_cast<QWidget*>(&recording), static_cast<QWidget*>(&pin)}) {
+            const CFIndex current = position(native(*widget));
+            require(current >= 0 && current > previous,
+                    "WindowServer must preserve the capture hierarchy after raising windows");
+            previous = current;
+        }
+        CFRelease(windows);
+    };
+    for (int attempt = 0; attempt != 2; ++attempt) {
+        for (QWidget* widget : {static_cast<QWidget*>(&screenshot), static_cast<QWidget*>(&nested),
+                                static_cast<QWidget*>(&popup), static_cast<QWidget*>(&toolbar),
+                                static_cast<QWidget*>(&recording), static_cast<QWidget*>(&pin)})
+            widget->show();
+        for (QWidget* widget :
+             {static_cast<QWidget*>(&screenshot), static_cast<QWidget*>(&recording),
+              static_cast<QWidget*>(&pin), static_cast<QWidget*>(&toolbar)}) {
+            widget->raise();
+            widget->activateWindow();
+            verify();
+        }
+        for (bool topmost : {false, true}) {
+            require(pinnedPlatform->setStaysOnTop(topmost), "pin topmost toggle must succeed");
+            verify();
+        }
+        const NSInteger recordingLevel = native(recording).level;
+        native(recording).level = NSNormalWindowLevel;
+        require(native(recording).level == recordingLevel,
+                "Qt level resets must not break the recording band");
+        popup.windowHandle()->setTransientParent(screenshot.windowHandle());
+        require(native(popup).level > native(screenshot).level,
+                "reparented recording popups must enter the screenshot band immediately");
+        popup.windowHandle()->setTransientParent(toolbar.windowHandle());
+        verify();
+        {
+            ToolFixture modal(static_cast<QWidget*>(&recording));
+            modal.setWindowModality(Qt::WindowModal);
+            modal.show();
+            finishNativeModalTransition();
+            require(native(modal).level > native(nested).level &&
+                        native(modal).level < native(screenshot).level,
+                    "recording modals must stay above recording popups and below screenshots");
+            modal.hide();
+            finishNativeModalTransition();
+        }
+        verify();
+        nested.recreateSurface();
+        popup.recreateSurface();
+        toolbar.recreateSurface();
+        recording.recreateSurface();
+        static_cast<void>(recording.winId());
+        static_cast<void>(toolbar.winId());
+        static_cast<void>(popup.winId());
+        static_cast<void>(nested.winId());
+        toolbar.windowHandle()->setTransientParent(recording.windowHandle());
+        popup.windowHandle()->setTransientParent(toolbar.windowHandle());
+        nested.windowHandle()->setTransientParent(popup.windowHandle());
+    }
+}
+
 void screenshotNativeSettingsFollowOwnership() {
     OverlayFixture overlay;
     ToolFixture ordinaryOwner;
@@ -146,7 +297,7 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
     static_cast<void>(toolbar.winId());
     const Class toolbarClass =
         cocoa ? object_getClass(reinterpret_cast<NSView*>(toolbar.winId()).window) : Nil;
-    snow_shot::platform::configureScreenshotToolbarWindow(&toolbar);
+    snow_shot::platform::configureScreenshotToolbarWindow(static_cast<QWidget*>(&toolbar));
     if (cocoa)
         require(object_getClass(reinterpret_cast<NSView*>(toolbar.winId()).window) == toolbarClass,
                 "stacking must preserve AppKit's native window class and observer bookkeeping");
@@ -166,8 +317,8 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
         selectionToolbar.show();
         toolbar.show();
         if (cocoa) {
-            for (QWidget* controlled :
-                 {static_cast<QWidget*>(&overlay), static_cast<QWidget*>(&toolbar)}) {
+            for (QWidget* controlled : {static_cast<QWidget*>(&overlay),
+                                        static_cast<QWidget*>(static_cast<QWidget*>(&toolbar))}) {
                 NSWindow* native = reinterpret_cast<NSView*>(controlled->winId()).window;
                 require(!native.movable && !native.movableByWindowBackground,
                         "Qt-controlled screenshot surfaces must disable AppKit dragging");
@@ -370,8 +521,8 @@ void adqtPopupPreservesScreenshotLayers(bool cocoa) {
     overlay.resize(400, 300);
     ToolFixture toolbar(&overlay);
     toolbar.resize(200, 60);
-    snow_shot::platform::configureScreenshotToolbarWindow(&toolbar);
-    QWidget trigger(&toolbar);
+    snow_shot::platform::configureScreenshotToolbarWindow(static_cast<QWidget*>(&toolbar));
+    QWidget trigger(static_cast<QWidget*>(&toolbar));
     trigger.setGeometry(40, 10, 80, 30);
     adqt::widgets::AdPopover popover(&trigger);
     popover.setSourceWidget(&trigger);
@@ -481,8 +632,11 @@ int main(int argc, char** argv) {
     // Native windows are autoreleased after Qt destroys their surfaces. Draining
     // the pool is essential: otherwise NSWindow/KVO teardown crashes go untested.
     @autoreleasepool {
-        if (cocoa)
+        captureFamiliesFollowOwnership();
+        if (cocoa) {
+            captureFamiliesKeepNativeOrder();
             screenshotNativeSettingsFollowOwnership();
+        }
         screenshotWindowsKeepTheirStackingOrder(cocoa);
         adqtPopupPreservesScreenshotLayers(cocoa);
         nativeFilePanelsCoverScreenshotModals(cocoa);

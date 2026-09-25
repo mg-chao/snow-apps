@@ -1,6 +1,7 @@
 #include "snow_shot/platform/screenshotnative.h"
 #include "screenshotwindowtarget_p.h"
 #include "screenshotinputregion_p.h"
+#include "capturewindowlayers_p.h"
 #include <QCursor>
 #include <QTimer>
 #include "snow_shot/platform/macos/recapturefocus.h"
@@ -42,11 +43,7 @@ struct ScreenshotNativeSettings {
 
 namespace snow_shot::platform {
 namespace {
-constexpr auto kScreenshotLayer = "snowScreenshotWindowLayer";
-constexpr int kOverlayLayer = 0;
-constexpr int kRecognitionLayer = 1;
-constexpr int kToolbarLayer = 2;
-constexpr int kPopupLayer = 3;
+using namespace detail;
 
 char nativePolicyKey;
 
@@ -144,23 +141,19 @@ void releaseNativeWindowPolicy(NSWindow* window) {
 
 void synchronizeScreenshotLayers();
 
-// Roles belong to Qt windows, not NSWindows: pooled native surfaces can be destroyed
-// and recreated. Unmarked transient windows (including AdQt Tool popups) belong
-// above both the overlay and its drawing toolbar.
-int screenshotLayer(QWindow* window, int modalFloor = 0) {
-    if (!window)
-        return -1;
-    const QVariant role = window->property(kScreenshotLayer);
-    if (role.isValid())
-        return role.toInt();
-    const int ownerLayer = screenshotLayer(window->transientParent(), modalFloor);
-    if (ownerLayer < 0)
-        return -1;
-    const int layer = std::max(kPopupLayer, ownerLayer + 1);
-    return window->modality() == Qt::NonModal ? layer : std::max(layer, modalFloor);
+CaptureLayer widgetCaptureLayer(QWidget* widget, const ModalFloors& floors = {}) {
+    CaptureLayer result = captureLayer(widget->windowHandle(), floors);
+    if (!result.valid() && widget->parentWidget()) {
+        result = captureLayer(widget->parentWidget()->window()->windowHandle(), floors);
+        if (result.valid())
+            result.layer = std::max(kPopupLayer, result.layer + 1);
+    }
+    if (result.valid() && widget->windowModality() != Qt::NonModal)
+        result.layer = std::max(result.layer, floors[result.index()]);
+    return result;
 }
 
-void applyScreenshotLayer(QWidget* widget, int modalFloor) {
+void applyScreenshotLayer(QWidget* widget, const ModalFloors& floors) {
     if (!widget || !widget->isWindow() || !widget->internalWinId())
         return;
     QWindow* handle = widget->windowHandle();
@@ -173,24 +166,13 @@ void applyScreenshotLayer(QWidget* widget, int modalFloor) {
         QObject::connect(handle, &QWindow::transientParentChanged, handle,
                          &synchronizeScreenshotLayers);
     }
-    const QVariant role = widget->property(kScreenshotLayer);
-    if (role.isValid())
-        handle->setProperty(kScreenshotLayer, role);
-    int layer = screenshotLayer(handle, modalFloor);
-    if (layer < 0 && widget->parentWidget()) {
-        const int ownerLayer =
-            screenshotLayer(widget->parentWidget()->window()->windowHandle(), modalFloor);
-        if (ownerLayer >= 0)
-            layer = std::max(kPopupLayer, ownerLayer + 1);
-    }
+    const CaptureLayer role = widgetCaptureLayer(widget, floors);
     NSWindow* window = reinterpret_cast<NSView*>(widget->internalWinId()).window;
-    if (layer < 0) {
+    if (!role.valid()) {
         releaseNativeWindowPolicy(window);
         return;
     }
-    if (widget->windowModality() != Qt::NonModal)
-        layer = std::max(layer, modalFloor);
-    const NSInteger level = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) + layer;
+    const NSInteger level = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) + role.offset();
     applyNativeWindowPolicy(window, level);
 }
 
@@ -204,13 +186,15 @@ void synchronizeScreenshotLayers() {
     // retains its role when a pooled QWindow/native surface is recreated.
     for (QWidget* widget : windows) {
         const QVariant role = widget->property(kScreenshotLayer);
-        if (role.isValid() && widget->windowHandle())
+        if (role.isValid() && widget->windowHandle()) {
             widget->windowHandle()->setProperty(kScreenshotLayer, role);
+            widget->windowHandle()->setProperty(kCaptureFamily, widget->property(kCaptureFamily));
+        }
     }
     // A selection modal and an OCR result can be siblings of the same overlay.
     // Transient depth alone cannot order them. Put modals above every visible
     // non-modal screenshot surface, regardless of its popup nesting depth.
-    int modalFloor = kPopupLayer;
+    ModalFloors modalFloors{kPopupLayer, kPopupLayer};
     for (QWidget* widget : windows) {
         if (!widget->isVisible())
             continue;
@@ -218,16 +202,23 @@ void synchronizeScreenshotLayers() {
         bool belongsToModal = false;
         for (QWindow* owner = handle; owner; owner = owner->transientParent())
             belongsToModal |= owner->modality() != Qt::NonModal;
-        if (!belongsToModal)
-            modalFloor = std::max(modalFloor, screenshotLayer(handle) + 1);
+        const CaptureLayer role = widgetCaptureLayer(widget);
+        if (!belongsToModal && role.valid())
+            modalFloors[role.index()] = std::max(modalFloors[role.index()], role.layer + 1);
     }
-    NSInteger panelLevel = 0;
+    std::array<NSInteger, 2> panelLevels{};
     for (QWidget* widget : windows) {
-        applyScreenshotLayer(widget, modalFloor);
+        applyScreenshotLayer(widget, modalFloors);
         if (widget->isVisible() && widget->internalWinId()) {
             NSWindow* native = reinterpret_cast<NSView*>(widget->internalWinId()).window;
-            if (nativePolicyState(native))
-                panelLevel = std::max(panelLevel, native.level + 1);
+            const CaptureLayer role = widgetCaptureLayer(widget, modalFloors);
+            if (role.valid() && nativePolicyState(native)) {
+                auto& level = panelLevels[role.index()];
+                level = std::max(level, native.level + 1);
+                if (role.family == CaptureFamily::Recording)
+                    level = std::min(
+                        level, NSInteger(CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) - 1));
+            }
         }
     }
     // QFileDialog's Cocoa helper presents NSSavePanel/NSOpenPanel without a
@@ -236,6 +227,21 @@ void synchronizeScreenshotLayers() {
     for (NSWindow* window in NSApp.windows) {
         if (![window isKindOfClass:[NSSavePanel class]])
             continue;
+        // QFileDialog retains its Qt modal owner even when Cocoa supplies the
+        // actual panel. Keep that family's band when both captures are visible.
+        CaptureLayer owner = captureLayer(QGuiApplication::modalWindow());
+        if (!owner.valid() && window.parentWindow) {
+            for (QWidget* widget : windows) {
+                if (widget->internalWinId() &&
+                    reinterpret_cast<NSView*>(widget->internalWinId()).window ==
+                        window.parentWindow) {
+                    owner = widgetCaptureLayer(widget);
+                    break;
+                }
+            }
+        }
+        const std::size_t family = owner.valid() ? owner.index() : (panelLevels[0] ? 0u : 1u);
+        const NSInteger panelLevel = panelLevels[family];
         if (panelLevel && window.visible)
             applyNativeWindowPolicy(window, panelLevel, false);
         else
@@ -254,7 +260,7 @@ class ScreenshotStackingPolicy final : public QObject {
                         return;
                     QWindow* owner = m_focusOwner;
                     m_focusOwner.clear();
-                    if (!owner->isVisible() || screenshotLayer(owner) < 0)
+                    if (!owner->isVisible() || !captureLayer(owner).valid())
                         return;
                     if (QWindow* modal = QGuiApplication::modalWindow(); modal && modal != owner)
                         return;
@@ -297,7 +303,7 @@ class ScreenshotStackingPolicy final : public QObject {
             if (widget && widget->isWindow() && widget->windowModality() != Qt::NonModal) {
                 QWindow* handle = widget->windowHandle();
                 QWindow* owner = handle ? handle->transientParent() : nullptr;
-                if (owner && screenshotLayer(owner) >= 0)
+                if (owner && captureLayer(owner).valid())
                     m_focusOwner = owner;
             }
         }
@@ -315,7 +321,8 @@ class ScreenshotStackingPolicy final : public QObject {
     id m_panelClosed = nil;
 };
 
-void registerScreenshotLayer(QWidget* widget, int layer) {
+void registerScreenshotLayer(QWidget* widget, int layer,
+                             CaptureFamily family = CaptureFamily::Screenshot) {
     if (!widget || QGuiApplication::platformName() != QStringLiteral("cocoa"))
         return;
     static QPointer<ScreenshotStackingPolicy> policy;
@@ -324,8 +331,8 @@ void registerScreenshotLayer(QWidget* widget, int layer) {
         qApp->installEventFilter(policy);
     }
     widget->setProperty(kScreenshotLayer, layer);
+    widget->setProperty(kCaptureFamily, static_cast<int>(family));
     static_cast<void>(widget->winId());
-    applyScreenshotLayer(widget, kPopupLayer);
     // A toolbar or popup may have been materialized before the overlay was shown.
     synchronizeScreenshotLayers();
 }
@@ -509,6 +516,16 @@ void configureControlledWindowDragging(QWidget* widget) {
 void configureScreenshotOverlayWindow(QWidget* widget) {
     configureControlledWindowDragging(widget);
     registerScreenshotLayer(widget, kOverlayLayer);
+}
+
+void configureScreenRecordingAreaWindow(QWidget* widget) {
+    configureControlledWindowDragging(widget);
+    registerScreenshotLayer(widget, kOverlayLayer, CaptureFamily::Recording);
+}
+
+void configureScreenRecordingToolbarWindow(QWidget* widget) {
+    configureControlledWindowDragging(widget);
+    registerScreenshotLayer(widget, kToolbarLayer, CaptureFamily::Recording);
 }
 
 void configureScreenshotRecognitionWindow(QWidget* widget) {
