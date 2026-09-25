@@ -11,13 +11,18 @@
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
 #include "widgets/divider.h"
+#include "widgets/input_text_edit.h"
+#include "widgets/tag.h"
+#include "antd_icons.h"
 
 #include <QApplication>
 #include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QPlainTextEdit>
+#include <QClipboard>
+#include <QFontDatabase>
+#include <QShowEvent>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QDrag>
@@ -1157,17 +1162,59 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
     explicit McpStatusSettingsWidget(QWidget* parent) : SettingsCustomWidget(parent) {
         auto* layout = new QVBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
-        m_status = new QLabel(this);
-        m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        m_endpoint = new QLabel(this);
-        m_endpoint->setWordWrap(true);
-        m_endpoint->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        m_config = new QPlainTextEdit(this);
+        auto* statusRow = new QHBoxLayout();
+        m_status = new adqt::widgets::AdTag(this);
+        m_status->setObjectName(QStringLiteral("settings-mcp-status"));
+        m_status->setFocusPolicy(Qt::NoFocus);
+        m_clients = new QLabel(this);
+        m_clients->setObjectName(QStringLiteral("settings-mcp-clients"));
+        m_clients->setWordWrap(true);
+        statusRow->addWidget(m_status);
+        statusRow->addWidget(m_clients, 1);
+        layout->addLayout(statusRow);
+        auto* divider = new adqt::widgets::AdDivider(this);
+        divider->setDividerSize(adqt::widgets::AdDivider::Size::Small);
+        layout->addWidget(divider);
+
+        auto* heading = new QHBoxLayout();
+        m_title = new QLabel(this);
+        m_title->setWordWrap(true);
+        m_copy = new adqt::widgets::AdButton(this);
+        m_copy->setObjectName(QStringLiteral("settings-mcp-copy"));
+        m_copy->setIconRef(adqt::icons::antd::outlined::Copy());
+        heading->addWidget(m_title, 1);
+        heading->addWidget(m_copy);
+        layout->addLayout(heading);
+        m_help = new QLabel(this);
+        m_help->setWordWrap(true);
+        layout->addWidget(m_help);
+        m_config = new adqt::widgets::AdTextEdit(this);
+        m_config->setObjectName(QStringLiteral("settings-mcp-config"));
+        // Keep this as a real Ant Design textarea in its native read-only mode. The
+        // contents remain selectable for copying while editing is disabled by the
+        // control itself.
         m_config->setReadOnly(true);
-        m_config->setMaximumHeight(160);
-        layout->addWidget(m_status);
-        layout->addWidget(m_endpoint);
+        m_config->setAcceptRichText(false);
+        // Wrap at the widget width: AdTextEdit hides the native scroll bars and only
+        // provides a vertical overlay bar, so unwrapped long command paths would be
+        // clipped without any way to reach them.
+        m_config->setLineWrapMode(QTextEdit::WidgetWidth);
+        m_config->setHeightMode(adqt::widgets::AdTextEdit::HeightMode::FixedRows);
+        m_config->setMinimumVisibleRows(9);
+        m_config->setMaximumVisibleRows(9);
+        m_config->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
         layout->addWidget(m_config);
+        m_endpoint = new QLabel(this);
+        m_endpoint->setTextFormat(Qt::PlainText);
+        m_endpoint->setWordWrap(true);
+        m_endpoint->setTextInteractionFlags(Qt::TextSelectableByMouse |
+                                            Qt::TextSelectableByKeyboard);
+        layout->addWidget(m_endpoint);
+        connect(m_copy, &QAbstractButton::clicked, this, [this] {
+            QApplication::clipboard()->setText(m_config->toPlainText());
+            m_copy->setText(QCoreApplication::translate("ScreenshotMcpSettings", "Copied"));
+            QTimer::singleShot(2000, this, [this] { updateCopyText(); });
+        });
         auto* timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, [this] {
             if (isVisible())
@@ -1175,17 +1222,29 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
         });
         timer->start(1000);
         retranslateUi();
+        applyTheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme());
     }
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) override {
-        auto colors = palette();
-        colors.setColor(QPalette::Text, scheme.map.colorText);
-        colors.setColor(QPalette::WindowText, scheme.map.colorText);
-        colors.setColor(QPalette::Base, scheme.map.colorBgContainer);
-        setPalette(colors);
+        layout()->setSpacing(scheme.metricAlias.marginSM);
+        for (auto* label : {m_title, m_clients, m_help, m_endpoint}) {
+            QFont font = label->font();
+            font.setPixelSize(scheme.metricAlias.fontSize);
+            font.setWeight(label == m_title ? QFont::DemiBold : QFont::Normal);
+            label->setFont(font);
+            auto colors = label->palette();
+            colors.setColor(QPalette::WindowText, label == m_title ? scheme.map.colorText
+                                                                   : scheme.map.colorTextSecondary);
+            label->setPalette(colors);
+        }
     }
     void retranslateUi() override {
-        m_config->setAccessibleName(
+        m_title->setText(
             QCoreApplication::translate("ScreenshotMcpSettings", "MCP client configuration"));
+        m_help->setText(QCoreApplication::translate(
+            "ScreenshotMcpSettings",
+            "Add this configuration to your MCP client, then restart the client to connect. "
+            "Keep Snow Shot running while using MCP."));
+        updateCopyText();
         const QString executable = QDir(QCoreApplication::applicationDirPath())
                                        .filePath(
 #ifdef Q_OS_WIN
@@ -1211,25 +1270,41 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
         refresh();
     }
     void changeEvent(QEvent* event) override {
-        QWidget::changeEvent(event);
-        if (event != nullptr && event->type() == QEvent::LanguageChange)
+        SettingsCustomWidget::changeEvent(event);
+        if (event != nullptr && event->type() == QEvent::LanguageChange) {
             retranslateUi();
+        }
+    }
+    void showEvent(QShowEvent* event) override {
+        SettingsCustomWidget::showEvent(event);
+        refresh();
     }
 
   private:
+    void updateCopyText() {
+        m_copy->setText(QCoreApplication::translate("ScreenshotMcpSettings", "Copy configuration"));
+    }
     void refresh() {
         const bool running = qApp->property("snowShotMcpRunning").toBool();
         const int count = qApp->property("snowShotMcpConnections").toInt();
-        m_status->setText(running
-                              ? QCoreApplication::translate("ScreenshotMcpSettings",
-                                                            "MCP enabled; connected clients: %1")
-                                    .arg(count)
-                              : QCoreApplication::translate("ScreenshotMcpSettings",
-                                                            "MCP is disabled or unavailable."));
+        m_status->setText(
+            running ? QCoreApplication::translate("ScreenshotMcpSettings", "Running")
+                    : QCoreApplication::translate("ScreenshotMcpSettings", "Unavailable"));
+        m_status->setColorScheme(running ? adqt::widgets::AdTag::ColorScheme::Success
+                                         : adqt::widgets::AdTag::ColorScheme::Default);
+        m_clients->setText(
+            running ? QCoreApplication::translate("ScreenshotMcpSettings", "Connected clients: %1")
+                          .arg(count)
+                    : QCoreApplication::translate("ScreenshotMcpSettings",
+                                                  "MCP is disabled or unavailable."));
     }
-    QLabel* m_status = nullptr;
+    adqt::widgets::AdTag* m_status = nullptr;
+    QLabel* m_clients = nullptr;
+    QLabel* m_title = nullptr;
+    QLabel* m_help = nullptr;
     QLabel* m_endpoint = nullptr;
-    QPlainTextEdit* m_config = nullptr;
+    adqt::widgets::AdButton* m_copy = nullptr;
+    adqt::widgets::AdTextEdit* m_config = nullptr;
 };
 } // namespace
 

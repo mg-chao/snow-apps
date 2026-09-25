@@ -1460,7 +1460,8 @@ SettingsItemDefinition mcpEnabledItem() {
 SettingsItemDefinition mcpStatusItem() {
     return {QStringLiteral("system.mcp-status"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "MCP connection and client setup")),
-            {},
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog", "View connection status and configure your MCP client.")),
             {},
             {},
             SettingsCustomDefinition{SettingsCustomRenderer::McpStatus}};
@@ -2548,7 +2549,7 @@ QVector<SettingsPageDefinition> builtInPages() {
 #else
                      launchAsAdministratorItem(), restartAsAdministratorItem(),
 #endif
-                     updateModeItem(), mcpEnabledItem(), mcpStatusItem()},
+                     updateModeItem()},
                 },
                 {
                     QStringLiteral("screenshot-capture"),
@@ -2597,6 +2598,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Core application settings")),
                     SettingsSectionReset::SystemSettings,
                     {applicationPriorityItem()},
+                },
+                {
+                    QStringLiteral("mcp"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "MCP")),
+                    settingsText(
+                        QT_TRANSLATE_NOOP("SettingsCatalog", "Connect AI clients to Snow Shot")),
+                    SettingsSectionReset::None,
+                    {mcpEnabledItem(), mcpStatusItem()},
                 },
             },
         },

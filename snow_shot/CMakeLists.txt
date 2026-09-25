@@ -1706,6 +1706,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-custom-ai-models-tests COMMAND snow-shot-custom-ai-models-tests -platform offscreen)
     set_tests_properties(snow-shot-custom-ai-models-tests PROPERTIES TIMEOUT 60)
 
+    add_executable(snow-shot-mcp-settings-widget-tests
+        tests/mcp_settings_widget_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-mcp-settings-widget-tests PRIVATE snow_shot_settings)
+    add_test(NAME snow-shot-mcp-settings-widget-tests COMMAND snow-shot-mcp-settings-widget-tests)
+    set_tests_properties(snow-shot-mcp-settings-widget-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-mcp-settings-widget-tests)
+
     add_executable(snow-shot-storage-status-widget-tests
         tests/storage_status_widget_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp

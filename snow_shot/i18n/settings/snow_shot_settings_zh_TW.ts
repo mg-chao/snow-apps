@@ -580,6 +580,22 @@
     <context>
         <name>ScreenshotMcpSettings</name>
         <message>
+            <source>Add this configuration to your MCP client, then restart the client to connect. Keep Snow Shot running while using MCP.</source>
+            <translation>將此設定加入 MCP 用戶端，然後重新啟動用戶端以連線。使用 MCP 時請保持 Snow Shot 執行。</translation>
+        </message>
+        <message>
+            <source>Connected clients: %1</source>
+            <translation>已連線的用戶端：%1</translation>
+        </message>
+        <message>
+            <source>Copied</source>
+            <translation>已複製</translation>
+        </message>
+        <message>
+            <source>Copy configuration</source>
+            <translation>複製設定</translation>
+        </message>
+        <message>
             <source>Local endpoint descriptor: %1</source>
             <translation>本機端點描述檔：%1</translation>
         </message>
@@ -588,12 +604,16 @@
             <translation>MCP 用戶端設定</translation>
         </message>
         <message>
-            <source>MCP enabled; connected clients: %1</source>
-            <translation>MCP 已啟用；已連線的用戶端：%1</translation>
-        </message>
-        <message>
             <source>MCP is disabled or unavailable.</source>
             <translation>MCP 已停用或無法使用。</translation>
+        </message>
+        <message>
+            <source>Running</source>
+            <translation>執行中</translation>
+        </message>
+        <message>
+            <source>Unavailable</source>
+            <translation>無法使用</translation>
         </message>
     </context>
     <context>
@@ -1249,6 +1269,10 @@
             <translation>使用快速鍵結束截圖前確認</translation>
         </message>
         <message>
+            <source>Connect AI clients to Snow Shot</source>
+            <translation>將 AI 用戶端連線至 Snow Shot</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>控制截圖色彩選擇器的顯示時機</translation>
         </message>
@@ -1855,6 +1879,10 @@
         <message>
             <source>Low</source>
             <translation>低</translation>
+        </message>
+        <message>
+            <source>MCP</source>
+            <translation>MCP</translation>
         </message>
         <message>
             <source>MCP connection and client setup</source>
@@ -3011,6 +3039,10 @@
         <message>
             <source>Video save directory</source>
             <translation>影片儲存目錄</translation>
+        </message>
+        <message>
+            <source>View connection status and configure your MCP client.</source>
+            <translation>檢視連線狀態並設定 MCP 用戶端。</translation>
         </message>
         <message>
             <source>Vision Support</source>
