@@ -7,6 +7,7 @@
 #include <QSize>
 
 #include <memory>
+#include <functional>
 
 #include "snow_draw_engine_qt/snow_canvas_export_types.h"
 #include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
@@ -39,6 +40,13 @@ class SnowCanvasRuntime {
     bool restoreDocumentHistoryPreservingEditorStyles(const QByteArray& payload);
     bool clearDocumentPreservingViewports();
     bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
+    QByteArray applyAnnotationTransaction(const QByteArray& payload);
+    bool undo();
+    bool redo();
+    bool canUndo() const;
+    bool canRedo() const;
+    quint64 documentRevision() const;
+    void setDocumentChangedHandler(std::function<void()> handler);
     void destroyAsync();
     void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
     SnowCanvasSmartEraseSnapshot smartEraseSnapshot() const;

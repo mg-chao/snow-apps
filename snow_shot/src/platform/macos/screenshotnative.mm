@@ -549,6 +549,13 @@ quint32 screenshotFocusedWindow() {
     const pid_t pid = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
     return pid > 0 ? windowTarget(pid, nullptr).id : 0;
 }
+QRectF screenshotFocusedWindowBounds() {
+    const pid_t pid = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+    const auto target = pid > 0 ? windowTarget(pid, nullptr) : detail::WindowTarget{};
+    return target.id ? QRectF(target.bounds.origin.x, target.bounds.origin.y,
+                              target.bounds.size.width, target.bounds.size.height)
+                     : QRectF{};
+}
 bool screenshotScrollPermission() {
     return AXIsProcessTrusted();
 }

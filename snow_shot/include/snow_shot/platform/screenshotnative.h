@@ -15,6 +15,7 @@ void setScreenshotInputPassThroughRegion(QWidget* widget, const QRegion& region)
 void configureScreenshotToolbarWindow(QWidget* widget);
 quint32 screenshotDisplayAtCursor();
 quint32 screenshotFocusedWindow();
+QRectF screenshotFocusedWindowBounds();
 bool screenshotScrollPermission();
 ScrollInputResult sendScreenshotScroll(const QRect& desktopSelection, const QPoint& delta);
 #else

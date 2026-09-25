@@ -4,6 +4,7 @@
 #include "snow_canvas_runtime_access.h"
 #include "snow_canvas_runtime_session.h"
 #include "snow_canvas_runtime_thread_affinity.h"
+#include "snow_canvas_ffi_handles.h"
 
 #include <memory>
 
@@ -35,6 +36,16 @@ struct SnowCanvasRuntime::Impl {
     void unregisterClient(snow_canvas_runtime::Client* client);
     void syncChangedViewports(SnowChangedViewportList changedViewports);
     void syncChangedViewportIds(const std::vector<std::uint64_t>& changedViewportIds);
+    std::function<void()> documentChanged;
+    quint64 observedRevision = 0;
+    void observeDocument() {
+        const auto revision = snow_runtime_document_revision(handle());
+        if (revision != observedRevision) {
+            observedRevision = revision;
+            if (documentChanged)
+                documentChanged();
+        }
+    }
 
   private:
     bool hasThreadAccess(const char* operation) const;
@@ -166,6 +177,7 @@ void SnowCanvasRuntime::Impl::syncChangedViewports(SnowChangedViewportList chang
         return;
     }
     session.syncChangedViewports(changedViewports);
+    observeDocument();
 }
 
 void SnowCanvasRuntime::Impl::syncChangedViewportIds(
@@ -174,6 +186,7 @@ void SnowCanvasRuntime::Impl::syncChangedViewportIds(
         return;
     }
     session.syncChangedViewportIds(changedViewportIds);
+    observeDocument();
 }
 
 QImage SnowCanvasRuntime::Impl::renderToImage(const QRectF& virtualSelectionRect,
@@ -239,6 +252,64 @@ bool SnowCanvasRuntime::clearDocumentPreservingViewports() {
 
 bool SnowCanvasRuntime::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {
     return m_impl->setQuickSelectionDisabledTools(tools);
+}
+
+QByteArray SnowCanvasRuntime::applyAnnotationTransaction(const QByteArray& payload) {
+    if (!isOwnerThread() || payload.isEmpty() || payload.size() > 1024 * 1024)
+        return {};
+    SnowChangedViewportList changed = nullptr;
+    uint8_t* json = nullptr;
+    size_t size = 0;
+    const auto result = snow_runtime_apply_annotation_json(
+        m_impl->handle(), reinterpret_cast<const uint8_t*>(payload.constData()),
+        static_cast<size_t>(payload.size()), &json, &size, &changed);
+    const QByteArray response(result == SNOW_OK ? reinterpret_cast<const char*>(json) : nullptr,
+                              result == SNOW_OK ? static_cast<qsizetype>(size) : 0);
+    snow_annotation_result_destroy(json, size);
+    if (result == SNOW_OK)
+        m_impl->syncChangedViewports(changed);
+    snow_changed_viewports_destroy(changed);
+    return response;
+}
+
+bool SnowCanvasRuntime::undo() {
+    if (!isOwnerThread() || !canUndo())
+        return false;
+    SnowChangedViewportList changed = nullptr;
+    const bool ok = snow_runtime_undo_ex(m_impl->handle(), &changed) == SNOW_OK;
+    if (ok)
+        m_impl->syncChangedViewports(changed);
+    snow_changed_viewports_destroy(changed);
+    return ok;
+}
+bool SnowCanvasRuntime::redo() {
+    if (!isOwnerThread() || !canRedo())
+        return false;
+    SnowChangedViewportList changed = nullptr;
+    const bool ok = snow_runtime_redo_ex(m_impl->handle(), &changed) == SNOW_OK;
+    if (ok)
+        m_impl->syncChangedViewports(changed);
+    snow_changed_viewports_destroy(changed);
+    return ok;
+}
+bool SnowCanvasRuntime::canUndo() const {
+    SnowHistoryState state{};
+    return isOwnerThread() && snow_runtime_get_history_state(m_impl->handle(), &state) == SNOW_OK &&
+           state.can_undo != 0;
+}
+bool SnowCanvasRuntime::canRedo() const {
+    SnowHistoryState state{};
+    return isOwnerThread() && snow_runtime_get_history_state(m_impl->handle(), &state) == SNOW_OK &&
+           state.can_redo != 0;
+}
+quint64 SnowCanvasRuntime::documentRevision() const {
+    return isOwnerThread() ? snow_runtime_document_revision(m_impl->handle()) : 0;
+}
+void SnowCanvasRuntime::setDocumentChangedHandler(std::function<void()> handler) {
+    if (isOwnerThread()) {
+        m_impl->observedRevision = documentRevision();
+        m_impl->documentChanged = std::move(handler);
+    }
 }
 
 void SnowCanvasRuntime::destroyAsync() {

@@ -1235,6 +1235,15 @@ SnowError snow_viewport_fill_auto_filter_category(SnowRuntime runtime, SnowViewp
 
 SnowError snow_runtime_get_history_state(SnowRuntime runtime, SnowHistoryState* out_state);
 
+/* Apply one validated versioned annotation batch as one history entry. Output bytes are
+   owned by
+ * the caller and released with snow_annotation_result_destroy, even on empty result. */
+SnowError snow_runtime_apply_annotation_json(SnowRuntime runtime, const uint8_t* bytes, size_t size,
+                                             uint8_t** out_json, size_t* out_size,
+                                             SnowChangedViewportList* out_changed);
+void snow_annotation_result_destroy(uint8_t* bytes, size_t size);
+uint64_t snow_runtime_document_revision(SnowRuntime runtime);
+
 SnowError
 snow_runtime_clear_document_preserving_viewports(SnowRuntime runtime,
                                                  SnowChangedViewportList* out_changed_viewports);
@@ -1487,15 +1496,15 @@ SnowError snow_patch_get_decoration_dirty_rects(SnowPatchHandle patch,
 // Stateful shared freehand stabilization. Input batches contain only new points.
 typedef struct SnowStrokeFilter SnowStrokeFilter;
 SnowError snow_stroke_filter_create(SnowArrowPoint start, double sample_spacing,
-                                     double response_distance, SnowStrokeFilter** output);
+                                    double response_distance, SnowStrokeFilter** output);
 void snow_stroke_filter_free(SnowStrokeFilter* filter);
 // Each batch is limited to 65536 input points and 65536 resampled points of work.
 // Invalid batches leave filter state unchanged.
 // Output borrows from filter until its next append/free; copy before another call.
 // finish recovers the exact endpoint. An empty finish-only batch is valid.
 SnowError snow_stroke_filter_append(SnowStrokeFilter* filter, const SnowArrowPoint* points,
-                                     size_t count, uint8_t finish, const SnowArrowPoint** output,
-                                     size_t* output_count);
+                                    size_t count, uint8_t finish, const SnowArrowPoint** output,
+                                    size_t* output_count);
 
 // Stateless curve construction; null commands queries the required count.
 SnowError snow_build_catmull_rom_path(const SnowArrowPoint* vertices, size_t vertex_count,

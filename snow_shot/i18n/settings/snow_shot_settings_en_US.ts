@@ -578,6 +578,25 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotMcpSettings</name>
+        <message>
+            <source>Local endpoint descriptor: %1</source>
+            <translation>Local endpoint descriptor: %1</translation>
+        </message>
+        <message>
+            <source>MCP client configuration</source>
+            <translation>MCP client configuration</translation>
+        </message>
+        <message>
+            <source>MCP enabled; connected clients: %1</source>
+            <translation>MCP enabled; connected clients: %1</translation>
+        </message>
+        <message>
+            <source>MCP is disabled or unavailable.</source>
+            <translation>MCP is disabled or unavailable.</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolbarEditorSettingsWidget</name>
         <message>
             <source>Barcode recognition</source>
@@ -784,6 +803,10 @@
         <message>
             <source>All screenshot history will be removed</source>
             <translation>All screenshot history will be removed</translation>
+        </message>
+        <message>
+            <source>Allow MCP clients running as your OS user to control screenshots. Snow Shot must be running.</source>
+            <translation>Allow MCP clients running as your OS user to control screenshots. Snow Shot must be running.</translation>
         </message>
         <message>
             <source>Always</source>
@@ -1470,6 +1493,10 @@
             <translation>Edit selection</translation>
         </message>
         <message>
+            <source>Enable MCP integration</source>
+            <translation>Enable MCP integration</translation>
+        </message>
+        <message>
             <source>Enable edit mode</source>
             <translation>Enable edit mode</translation>
         </message>
@@ -1828,6 +1855,10 @@
         <message>
             <source>Low</source>
             <translation>Low</translation>
+        </message>
+        <message>
+            <source>MCP connection and client setup</source>
+            <translation>MCP connection and client setup</translation>
         </message>
         <message>
             <source>MSAA</source>

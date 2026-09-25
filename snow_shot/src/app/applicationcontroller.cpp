@@ -26,6 +26,8 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenrecordingfolder.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/app/mcp/screenshotmcpserver.h"
+#include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -41,6 +43,7 @@
 #include <QJsonValue>
 #include <QPointer>
 #include <QTimer>
+#include <QUuid>
 
 #include <memory>
 
@@ -59,6 +62,7 @@ const QString kFullscreenSuppressionKey =
     QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
 const QString kOcrModelTypeKey = QStringLiteral("text_recognition/model_type");
 const QString kOcrDirectMlKey = QStringLiteral("text_recognition/direct_ml_acceleration");
+const QString kMcpEnabledKey = QStringLiteral("mcp/enabled");
 
 QStringList stringList(const QJsonValue& value) {
     QStringList result;
@@ -324,6 +328,19 @@ class ApplicationController::Impl {
                          [this](const QString& key, const QJsonValue& value) {
                              applyRuntimeConfiguration(value, key);
                          });
+        QObject::connect(&configuration, &storage::ConfigurationStore::valueChanged, &q,
+                         [this](const QString& key, const QJsonValue& value) {
+                             if (key == kMcpEnabledKey) {
+                                 if (value.toBool()) {
+                                     startMcp();
+                                 } else {
+                                     stopMcp();
+                                 }
+                             }
+                         });
+        if (configuration.value(kMcpEnabledKey).toBool()) {
+            startMcp();
+        }
 #ifdef Q_OS_MACOS
         reopenHandler = std::make_unique<platform::macos::ApplicationReopenHandler>(
             [this]() { showMainWindow(); });
@@ -331,6 +348,7 @@ class ApplicationController::Impl {
     }
 
     ~Impl() {
+        stopMcp();
         platform::windows::setAdministratorRestartGuard({});
         if (mainWindow != nullptr) {
             mainWindow->setAttribute(Qt::WA_DeleteOnClose, false);
@@ -355,6 +373,89 @@ class ApplicationController::Impl {
                  : ScreenshotOcrBackendPreference::Cpu,
              configuration.value(QStringLiteral("text_recognition/resident_process")).toBool(),
              configuration.value(QStringLiteral("text_recognition/model_hot_start")).toBool()});
+    }
+
+    void startMcp() {
+        if (mcpServer && mcpServer->isRunning())
+            return;
+        auto* controller = ensureScreenshotController();
+        ensureDirectCaptureController();
+        if (!mcpSession) {
+            mcp::ScreenshotMcpSession::Ports ports;
+            ports.state = [controller] { return controller->mcpState(); };
+            ports.begin = [this, controller](const QJsonObject& options, QString* error) {
+                if (directCaptureController->blocksApplicationUpdate()) {
+                    if (error)
+                        *error = QStringLiteral("busy");
+                    return false;
+                }
+#ifdef Q_OS_MACOS
+                permissions.refresh();
+                if (!permissions.missing({presentation::AppPermission::ScreenRecording})
+                         .isEmpty()) {
+                    if (error)
+                        *error = QStringLiteral("permission_required");
+                    return false;
+                }
+#endif
+                return controller->mcpBegin(options, error);
+            };
+            ports.cancel = [this, controller]() {
+                controller->mcpCancelCapture();
+                if (directCaptureController)
+                    directCaptureController->cancelMcpCapture();
+            };
+            ports.selection = [controller](const QJsonObject& params, QString* error) {
+                return controller->mcpSetSelection(params, error);
+            };
+            ports.tool = [controller](const QString& tool, QString* error) {
+                return controller->mcpSetTool(tool, error);
+            };
+            ports.annotations = [controller](const QByteArray& bytes, QJsonObject* result,
+                                             QString* error) {
+                return controller->mcpApplyAnnotations(bytes, result, error);
+            };
+            ports.history = [controller](bool redo) {
+                if (redo)
+                    controller->mcpRedoCanvasEdit();
+                else
+                    controller->mcpUndoCanvasEdit();
+            };
+            ports.artifact = [controller](qreal scale) {
+                return controller->mcpExportArtifact(scale);
+            };
+            ports.pin = [controller](auto artifact, auto completion) {
+                return controller->mcpPinArtifact(std::move(artifact), std::move(completion));
+            };
+            ports.direct = [this](const QJsonObject& params, auto completion) {
+                return directCaptureController->mcpCapture(params, std::move(completion));
+            };
+            mcpSession = std::make_unique<mcp::ScreenshotMcpSession>(std::move(ports), &q);
+            QObject::connect(controller, &ScreenshotController::mcpCapturePresented,
+                             mcpSession.get(), &mcp::ScreenshotMcpSession::capturePresented);
+            QObject::connect(controller, &ScreenshotController::mcpCaptureTerminated,
+                             mcpSession.get(), &mcp::ScreenshotMcpSession::captureTerminated);
+            QObject::connect(controller, &ScreenshotController::mcpCanvasChanged, mcpSession.get(),
+                             &mcp::ScreenshotMcpSession::observe);
+            QObject::connect(&app, &QCoreApplication::aboutToQuit, &q, [this] { stopMcp(); });
+        }
+        if (!mcpServer) {
+            mcpServer = std::make_unique<mcp::ScreenshotMcpServer>(&q);
+            mcpServer->setRequestHandler([this](const auto& request, auto completion) {
+                mcpSession->request(request, std::move(completion));
+            });
+            mcpServer->setClientDisconnectedHandler(
+                [this](quint64 connection) { mcpSession->disconnected(connection); });
+        }
+        QString error;
+        if (!mcpServer->start(&error))
+            qWarning("Unable to start Snow Shot MCP server: %s", qPrintable(error));
+    }
+    void stopMcp() {
+        if (mcpSession)
+            mcpSession->shutdown();
+        if (mcpServer)
+            mcpServer->stop();
     }
 
     void start() {
@@ -845,6 +946,8 @@ class ApplicationController::Impl {
     translation::TranslationService* translationService = nullptr;
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
+    std::unique_ptr<mcp::ScreenshotMcpServer> mcpServer;
+    std::unique_ptr<mcp::ScreenshotMcpSession> mcpSession;
     std::unique_ptr<presentation::DirectCaptureController> directCaptureController;
     std::unique_ptr<presentation::SelectedTextTranslationCoordinator>
         selectedTextTranslationCoordinator;

@@ -10,6 +10,7 @@ struct ScreenshotCaptureState {
     bool layoutDirty = false;
     bool restoreOriginalScreenColors = true;
     bool captureCursor = false;
+    bool presentationSuppressed = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCAPTURESTATE_H

@@ -3,6 +3,12 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/app/mcp/screenshotmcpselection.h"
+#include "snow_shot/platform/screenshotnative.h"
+#include <QJsonDocument>
+#include <QThread>
+#include <QSysInfo>
+#include <cmath>
 #include "snow_shot/platform/screenshotnative.h"
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/recapturefocus.h"
@@ -588,6 +594,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotDisplaySession m_displaySession;
     ScreenshotInteractionState m_interaction;
     ScreenshotSelectionModel m_selection;
+    QJsonObject m_mcpOptions;
+    QRectF m_mcpFocusedBounds;
     ScreenshotIntelligentSelectionModel m_intelligentSelection;
     QSet<SnowCanvasTool> m_quickSelectionDisabledTools;
     ScreenshotUiPreferences m_uiPreferences;
@@ -608,6 +616,7 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
       m_tableRecognition(sharedApiClient),
       m_canvasRuntime(
           SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()}) {
+    m_canvasRuntime.setDocumentChangedHandler([this] { emit owner.mcpCanvasChanged(); });
     createPresentationInfrastructure();
     reloadUiPreferences();
     reloadDrawingPreferences();
@@ -988,6 +997,7 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
             m_selection,
             m_intelligentSelection,
             m_quickSelectionDisabledTools,
+            [this] { emit owner.mcpCanvasChanged(); },
         });
     QObject::connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
                      &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, &owner,
@@ -1385,6 +1395,8 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             },
             [this]() {
                 m_pendingHistoryEditRecordId.clear();
+                m_mcpOptions = {};
+                emit owner.mcpCaptureTerminated();
                 resetPendingCaptureRequest();
                 QTimer::singleShot(0, &owner, [this]() {
                     emit owner.captureAvailabilityChanged(canBeginCapture());
@@ -1393,8 +1405,10 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                     m_ocrController->invalidateSession();
                 }
             },
-            []() {
-                return snow_shot::storage::ApplicationStorage::instance().smartSelectionEnabled();
+            [this]() {
+                return m_mcpOptions.value(QStringLiteral("smart_selection"))
+                    .toBool(
+                        snow_shot::storage::ApplicationStorage::instance().smartSelectionEnabled());
             },
             [this]() {
                 if (m_overlayCoordinator != nullptr) {
@@ -1412,7 +1426,10 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                     snow_shot::presentation::kScreenshotSelectionMinimumSize));
             },
             []() { return snow_shot::storage::ScreenshotSettings().restoreOriginalScreenColors(); },
-            []() { return snow_shot::storage::ScreenshotSettings().captureCursor(); },
+            [this]() {
+                return m_mcpOptions.value(QStringLiteral("capture_cursor"))
+                    .toBool(snow_shot::storage::ScreenshotSettings().captureCursor());
+            },
             [this]() { return m_selectionSettings->selectionTarget(); },
             [this](bool succeeded, const QString& errorMessage) {
                 finishRecapture(succeeded, !succeeded && !errorMessage.isEmpty());
@@ -1445,6 +1462,56 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {
+    if (!m_mcpOptions.isEmpty()) {
+        QRectF rect = m_geometry.canvasBounds();
+        const auto target = m_mcpOptions.value(QStringLiteral("target")).toString();
+        if (target == QStringLiteral("monitor") || target == QStringLiteral("current_monitor")) {
+            rect = {};
+            m_displaySession.forEachActiveDisplay(
+                [&](qsizetype, const CapturedDisplayModel& display) {
+                    if ((target == QStringLiteral("monitor") &&
+                         display.stableId ==
+                             m_mcpOptions.value(QStringLiteral("monitor_id")).toString()) ||
+                        (target == QStringLiteral("current_monitor") && m_displaySession.startup &&
+                         display.stableId == m_displaySession.startup->displayId))
+                        rect = display.canvasRect;
+                });
+        } else if (target == QStringLiteral("focused_window")) {
+#ifdef Q_OS_MACOS
+            const auto* display =
+                m_geometry.displayForLogicalPoint(m_displaySession, m_mcpFocusedBounds.center());
+            if (display) {
+                const qreal scale = ScreenshotGeometryMapper::canvasToLogicalScale(*display);
+                rect = QRectF(display->canvasRect.topLeft() +
+                                  (m_mcpFocusedBounds.topLeft() - display->logicalRect.topLeft()) /
+                                      scale,
+                              m_mcpFocusedBounds.size() / scale);
+            } else {
+                rect = {};
+            }
+#else
+            rect = m_geometry.canvasRectForPhysicalRect(m_displaySession, m_mcpFocusedBounds);
+#endif
+        }
+        rect = rect.intersected(m_geometry.canvasBounds());
+        if (rect.isEmpty()) {
+            cancelCapture();
+            return;
+        }
+        m_selection.clearSelection();
+        m_selection.setRegionType(ScreenshotRegionType::Rectangle);
+        m_selection.setSelectionRect(rect);
+        m_interaction.confirmSelection();
+        m_captureState.sessionState = ScreenshotSessionState::Editing;
+        if (m_mcpOptions.value(QStringLiteral("presentation")).toString() !=
+            QStringLiteral("silent")) {
+            m_presentationServices->updateOverlayState();
+            m_presentationServices->showToolbar();
+            m_presentationServices->showSelectionToolbar();
+        }
+        emit owner.mcpCapturePresented();
+    }
+
     if (m_globalMouseDrag.active()) {
         applyGlobalMouseDrag(true);
         return;
@@ -4696,7 +4763,13 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
                                action == PendingSelectionAction::Save;
     m_captureWorkflow->startCapture(
         mode, entersEditing ? ToolbarPreparation::Prewarm : ToolbarPreparation::OnDemand,
-        entersEditing ? ToolbarVisibility::ShowAfterSelection : ToolbarVisibility::Suppressed);
+        m_mcpOptions.value(QStringLiteral("presentation")).toString() == QStringLiteral("silent")
+            ? ToolbarVisibility::Suppressed
+            : (entersEditing ? ToolbarVisibility::ShowAfterSelection
+                             : ToolbarVisibility::Suppressed),
+        m_mcpOptions.value(QStringLiteral("presentation")).toString() == QStringLiteral("silent")
+            ? ScreenshotCaptureWorkflow::PresentationMode::Silent
+            : ScreenshotCaptureWorkflow::PresentationMode::Visible);
     return true;
 }
 
@@ -5080,6 +5153,36 @@ void ScreenshotController::pinSelectedFilesToScreen(
     m_impl->pinSelectedFilesToScreen(target);
 }
 
+void ScreenshotController::mcpCancelCapture() {
+    if (m_impl != nullptr) {
+        m_impl->cancelCapture();
+    }
+}
+
+void ScreenshotController::mcpCopySelectionToClipboard() {
+    if (m_impl != nullptr) {
+        m_impl->copySelectionToClipboard();
+    }
+}
+
+void ScreenshotController::mcpPinSelectionToScreen() {
+    if (m_impl != nullptr) {
+        m_impl->pinSelectionToScreen();
+    }
+}
+
+void ScreenshotController::mcpUndoCanvasEdit() {
+    if (m_impl != nullptr) {
+        static_cast<void>(m_impl->m_canvasRuntime.undo());
+    }
+}
+
+void ScreenshotController::mcpRedoCanvasEdit() {
+    if (m_impl != nullptr) {
+        static_cast<void>(m_impl->m_canvasRuntime.redo());
+    }
+}
+
 void ScreenshotController::Impl::setSelectionToolbarHovered(bool hovered) {
     if (m_presentationServices != nullptr) {
         m_presentationServices->setSelectionToolbarHovered(hovered);
@@ -5163,4 +5266,277 @@ void ScreenshotController::Impl::setAutoFilterTool() {
     m_toolCommandWorkflow->setAutoFilterTool();
     m_autoFilterController->validate();
     restoreToolUiAfterScrollingCapture(stopped);
+}
+
+namespace {
+QJsonArray mcpRect(const QRectF& r) {
+    return {r.x(), r.y(), r.width(), r.height()};
+}
+const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
+    {"move", ScreenshotActiveTool::Move},
+    {"select", ScreenshotActiveTool::Select},
+    {"rectangle", ScreenshotActiveTool::Shape},
+    {"arrow", ScreenshotActiveTool::Arrow},
+    {"line", ScreenshotActiveTool::Line},
+    {"freehand", ScreenshotActiveTool::FreeDraw},
+    {"rectangle_highlight", ScreenshotActiveTool::RectangleHighlight},
+    {"pen_highlight", ScreenshotActiveTool::PenHighlight},
+    {"eraser", ScreenshotActiveTool::Eraser},
+    {"rectangle_filter", ScreenshotActiveTool::RectangleFilter},
+    {"pen_filter", ScreenshotActiveTool::PenFilter},
+    {"text", ScreenshotActiveTool::Text},
+    {"serial_number", ScreenshotActiveTool::SerialNumber},
+    {"watermark", ScreenshotActiveTool::Watermark},
+    {"spotlight", ScreenshotActiveTool::Spotlight},
+};
+} // namespace
+QJsonObject ScreenshotController::mcpState() const {
+    Q_ASSERT(QThread::currentThread() == thread());
+    const auto& s = *m_impl;
+    QString phase;
+    switch (s.m_captureState.sessionState) {
+    case ScreenshotSessionState::IdleCold:
+    case ScreenshotSessionState::IdlePrepared:
+        phase = QStringLiteral("idle");
+        break;
+    case ScreenshotSessionState::Capturing:
+        phase = QStringLiteral("capturing");
+        break;
+    case ScreenshotSessionState::OverlayVisible:
+        phase = QStringLiteral("selecting");
+        break;
+    case ScreenshotSessionState::Editing:
+        phase = QStringLiteral("editing");
+        break;
+    case ScreenshotSessionState::Releasing:
+        phase = QStringLiteral("releasing");
+        break;
+    }
+    QJsonArray displays;
+    s.m_displaySession.forEachActiveDisplay([&](qsizetype, const CapturedDisplayModel& d) {
+        const qreal scale = ScreenshotGeometryMapper::canvasToLogicalScale(d);
+        const QRectF source = ScreenshotGeometryMapper::displayImageSourceCanvasRect(d);
+        displays.append(QJsonObject{
+            {QStringLiteral("stable_id"), d.stableId},
+            {QStringLiteral("name"), d.name},
+            {QStringLiteral("physical_bounds"), mcpRect(d.physicalRect)},
+            {QStringLiteral("logical_bounds"), mcpRect(d.logicalRect)},
+            {QStringLiteral("canvas_bounds"), mcpRect(d.canvasRect)},
+            {QStringLiteral("image_source_canvas_bounds"), mcpRect(source)},
+            {QStringLiteral("canvas_to_logical"),
+             QJsonArray{scale, 0, 0, scale, d.logicalRect.x() - d.canvasRect.x() * scale,
+                        d.logicalRect.y() - d.canvasRect.y() * scale}},
+            {QStringLiteral("image_width"), d.image.width()},
+            {QStringLiteral("image_height"), d.image.height()},
+            {QStringLiteral("backing_scale"), d.backingScale},
+            {QStringLiteral("native_backend"), static_cast<int>(d.backend)},
+            {QStringLiteral("canvas_uses_points"), d.canvasUsesPoints}});
+    });
+    QString tool = QStringLiteral("move");
+    for (const auto& entry : mcpTools)
+        if (s.m_interaction.activeTool() == entry.second)
+            tool = QString::fromLatin1(entry.first);
+    return {
+        {QStringLiteral("capture_phase"), phase},
+        {QStringLiteral("canvas_bounds"), mcpRect(s.m_geometry.canvasBounds())},
+        {QStringLiteral("selection"),
+         QJsonObject{
+             {QStringLiteral("bounds"), mcpRect(s.m_selection.normalizedSelection())},
+             {QStringLiteral("type"), screenshotRegionTypeId(s.m_selection.regionType())},
+             {QStringLiteral("region"), s.m_selection.selectionRegion().toJson()},
+             {QStringLiteral("corner_radius"), s.m_selection.cornerRadius()},
+             {QStringLiteral("shadow_width"), s.m_selection.shadowWidth()},
+             {QStringLiteral("shadow_color"),
+              QJsonArray{s.m_selection.shadowColor().red(), s.m_selection.shadowColor().green(),
+                         s.m_selection.shadowColor().blue(), s.m_selection.shadowColor().alpha()}},
+             {QStringLiteral("aspect_ratio_locked"), s.m_selection.aspectRatioLocked()}}},
+        {QStringLiteral("active_tool"), tool},
+        {QStringLiteral("can_undo"), s.m_canvasRuntime.canUndo()},
+        {QStringLiteral("can_redo"), s.m_canvasRuntime.canRedo()},
+        {QStringLiteral("document_revision"),
+         static_cast<qint64>(s.m_canvasRuntime.documentRevision())},
+        {QStringLiteral("displays"), displays},
+        {QStringLiteral("platform"), QSysInfo::productType()},
+        {QStringLiteral("coordinate_space"), QStringLiteral("canvas_half_open")},
+        {QStringLiteral("capture_cursor"), s.m_captureState.captureCursor},
+        {QStringLiteral("restore_original_screen_colors"),
+         s.m_captureState.restoreOriginalScreenColors},
+        {QStringLiteral("presentation"), s.m_captureState.presentationSuppressed
+                                             ? QStringLiteral("silent")
+                                             : QStringLiteral("visible")}};
+}
+bool ScreenshotController::mcpBegin(const QJsonObject& options, QString* error) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (!m_impl->canBeginCapture()) {
+        if (error)
+            *error = QStringLiteral("busy");
+        return false;
+    }
+    const QString presentation =
+        options.value(QStringLiteral("presentation")).toString(QStringLiteral("visible"));
+    const QString target =
+        options.value(QStringLiteral("target")).toString(QStringLiteral("all_displays"));
+    if ((presentation != QStringLiteral("visible") && presentation != QStringLiteral("silent")) ||
+        (target != QStringLiteral("all_displays") && target != QStringLiteral("monitor") &&
+         target != QStringLiteral("current_monitor") &&
+         target != QStringLiteral("focused_window"))) {
+        if (error)
+            *error = QStringLiteral("presentation_or_target");
+        return false;
+    }
+    if (target == QStringLiteral("monitor") &&
+        options.value(QStringLiteral("monitor_id")).toString().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("monitor_id");
+        return false;
+    }
+    if (target == QStringLiteral("focused_window")) {
+#ifdef Q_OS_WIN
+        RECT rect{};
+        const HWND window = GetForegroundWindow();
+        if (!window || !GetWindowRect(window, &rect)) {
+            if (error)
+                *error = QStringLiteral("focused_window");
+            return false;
+        }
+        m_impl->m_mcpFocusedBounds =
+            QRectF(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+#elif defined(Q_OS_MACOS)
+        m_impl->m_mcpFocusedBounds = snow_shot::platform::screenshotFocusedWindowBounds();
+#endif
+        if (m_impl->m_mcpFocusedBounds.isEmpty()) {
+            if (error)
+                *error = QStringLiteral("focused_window");
+            return false;
+        }
+    }
+    m_impl->m_mcpOptions = options;
+    m_impl->m_mcpOptions.insert(QStringLiteral("presentation"), presentation);
+    m_impl->m_mcpOptions.insert(QStringLiteral("target"), target);
+    if (!m_impl->beginCapture()) {
+        m_impl->m_mcpOptions = {};
+        if (error)
+            *error = QStringLiteral("capture_unavailable");
+        return false;
+    }
+    return true;
+}
+bool ScreenshotController::mcpSetSelection(const QJsonObject& params, QString* error) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (m_impl->m_captureState.captureInProgress || m_impl->m_interaction.inactive()) {
+        if (error)
+            *error = QStringLiteral("capture_phase");
+        return false;
+    }
+    if (!snow_shot::app::mcp::applySelection(m_impl->m_selection, m_impl->m_geometry.canvasBounds(),
+                                             params, error))
+        return false;
+    m_impl->m_intelligentSelection.clearTransientState();
+    m_impl->m_interaction.confirmSelection();
+    m_impl->m_captureState.sessionState = ScreenshotSessionState::Editing;
+    if (m_impl->m_mcpOptions.value(QStringLiteral("presentation")).toString() !=
+        QStringLiteral("silent")) {
+        m_impl->m_presentationServices->updateOverlayState();
+        m_impl->m_presentationServices->showToolbar();
+        m_impl->m_presentationServices->showSelectionToolbar();
+    }
+    return true;
+}
+bool ScreenshotController::mcpSetTool(const QString& tool, QString* error) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    for (const auto& entry : mcpTools) {
+        if (tool == QLatin1String(entry.first)) {
+            const bool ok = m_impl->activateToolForSelectionResize(entry.second);
+            emit mcpCanvasChanged();
+            return ok;
+        }
+    }
+    if (error)
+        *error = QStringLiteral("tool");
+    return false;
+}
+bool ScreenshotController::mcpApplyAnnotations(const QByteArray& payload, QJsonObject* result,
+                                               QString* error) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    const auto object = QJsonDocument::fromJson(payload).object();
+    const QRectF canvas = m_impl->m_geometry.canvasBounds();
+    const auto finite = [](double value) { return std::isfinite(value); };
+    const auto finitePoint = [&finite](const QJsonValue& value) {
+        const auto point = value.toArray();
+        return point.size() == 2 && finite(point[0].toDouble()) && finite(point[1].toDouble());
+    };
+    const auto finiteBounds = [&finite](const QJsonValue& value) {
+        const auto bounds = value.toArray();
+        return bounds.size() == 4 &&
+               std::all_of(bounds.cbegin(), bounds.cend(),
+                           [&finite](const QJsonValue& item) { return finite(item.toDouble()); });
+    };
+    // Rust is the authoritative style/type validator. The adapter additionally checks the
+    // operation's coordinates against this capture, which the generic draw engine does not own.
+    for (const auto& value : object.value(QStringLiteral("operations")).toArray()) {
+        const auto operation = value.toObject();
+        if (operation.contains(QStringLiteral("bounds"))) {
+            const auto b = operation.value(QStringLiteral("bounds")).toArray();
+            const QRectF rect(
+                b.size() == 4 ? b.at(0).toDouble() : 0, b.size() == 4 ? b.at(1).toDouble() : 0,
+                b.size() == 4 ? b.at(2).toDouble() : 0, b.size() == 4 ? b.at(3).toDouble() : 0);
+            if (!finiteBounds(operation.value(QStringLiteral("bounds"))) || rect.isEmpty() ||
+                !canvas.contains(rect)) {
+                if (error)
+                    *error = QStringLiteral("operations.bounds");
+                return false;
+            }
+        }
+        QJsonArray points = operation.value(QStringLiteral("points")).toArray();
+        if (operation.contains(QStringLiteral("center")))
+            points.append(operation.value(QStringLiteral("center")));
+        for (const auto& point : points) {
+            const auto p = point.toArray();
+            if (!finitePoint(point) ||
+                !canvas.contains(QPointF(p[0].toDouble(), p[1].toDouble()))) {
+                if (error)
+                    *error = QStringLiteral("operations.points");
+                return false;
+            }
+        }
+    }
+    const auto response = m_impl->m_canvasRuntime.applyAnnotationTransaction(payload);
+    if (response.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("operations");
+        return false;
+    }
+    if (result)
+        *result = QJsonDocument::fromJson(response).object();
+    emit mcpCanvasChanged();
+    return true;
+}
+std::shared_ptr<ScreenshotExportArtifact> ScreenshotController::mcpExportArtifact(qreal scale) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (!m_impl->m_selection.hasPixelSelection() || !m_impl->ensureExportFeature())
+        return {};
+    const QRect selection = m_impl->m_selection.pixelSelection();
+    const auto style = m_impl->m_selection.resultStyle();
+    const quint64 epoch = m_impl->m_captureEpoch;
+    QPointer<ScreenshotController> guard(this);
+    return std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImageLoader(
+        [guard, epoch, selection, style, scale](QObject* receiver,
+                                                std::function<void(QImage)> done) {
+            return guard && guard->m_impl->m_captureEpoch == epoch &&
+                   guard->m_impl->m_exportService->requestSelectionResultAtScale(
+                       selection, style, scale, receiver, std::move(done));
+        }));
+}
+bool ScreenshotController::mcpPinArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact,
+                                          std::function<void(bool)> completion) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (!m_impl->ensureExportFeature())
+        return false;
+    const auto request = m_impl->m_exportService->preparePinnedSelection(
+        m_impl->m_selection.pixelSelection(), m_impl->m_selection.resultStyle());
+    if (!request)
+        return false;
+    return m_impl->m_selectionExportUiServices->presentPinnedArtifact(
+        *request, std::move(artifact),
+        [completion = std::move(completion)](bool ok, QImage) { completion(ok); });
 }

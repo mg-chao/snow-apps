@@ -13,6 +13,13 @@
 #include "widgets/divider.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QPlainTextEdit>
+#include <QStandardPaths>
+#include <QTimer>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -1144,6 +1151,88 @@ void ToolbarEditorSettingsWidget::changeEvent(QEvent* event) {
     }
 }
 
+namespace {
+class McpStatusSettingsWidget final : public SettingsCustomWidget {
+  public:
+    explicit McpStatusSettingsWidget(QWidget* parent) : SettingsCustomWidget(parent) {
+        auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        m_status = new QLabel(this);
+        m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_endpoint = new QLabel(this);
+        m_endpoint->setWordWrap(true);
+        m_endpoint->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_config = new QPlainTextEdit(this);
+        m_config->setReadOnly(true);
+        m_config->setMaximumHeight(160);
+        layout->addWidget(m_status);
+        layout->addWidget(m_endpoint);
+        layout->addWidget(m_config);
+        auto* timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, [this] {
+            if (isVisible())
+                refresh();
+        });
+        timer->start(1000);
+        retranslateUi();
+    }
+    void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) override {
+        auto colors = palette();
+        colors.setColor(QPalette::Text, scheme.map.colorText);
+        colors.setColor(QPalette::WindowText, scheme.map.colorText);
+        colors.setColor(QPalette::Base, scheme.map.colorBgContainer);
+        setPalette(colors);
+    }
+    void retranslateUi() override {
+        m_config->setAccessibleName(
+            QCoreApplication::translate("ScreenshotMcpSettings", "MCP client configuration"));
+        const QString executable = QDir(QCoreApplication::applicationDirPath())
+                                       .filePath(
+#ifdef Q_OS_WIN
+                                           QStringLiteral("snow-shot-mcp.exe")
+#else
+                                           QStringLiteral("snow-shot-mcp")
+#endif
+                                       );
+        QJsonObject server;
+        server.insert(QStringLiteral("command"), executable);
+        server.insert(QStringLiteral("args"), QJsonArray{});
+        QJsonObject servers;
+        servers.insert(QStringLiteral("snow-shot"), server);
+        QJsonObject config;
+        config.insert(QStringLiteral("mcpServers"), servers);
+        m_config->setPlainText(QString::fromUtf8(QJsonDocument(config).toJson()));
+        const QString endpoint =
+            QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+                .filePath(QStringLiteral("SnowShot/mcp/snow-shot-mcp.json"));
+        m_endpoint->setText(
+            QCoreApplication::translate("ScreenshotMcpSettings", "Local endpoint descriptor: %1")
+                .arg(QDir::toNativeSeparators(endpoint)));
+        refresh();
+    }
+    void changeEvent(QEvent* event) override {
+        QWidget::changeEvent(event);
+        if (event != nullptr && event->type() == QEvent::LanguageChange)
+            retranslateUi();
+    }
+
+  private:
+    void refresh() {
+        const bool running = qApp->property("snowShotMcpRunning").toBool();
+        const int count = qApp->property("snowShotMcpConnections").toInt();
+        m_status->setText(running
+                              ? QCoreApplication::translate("ScreenshotMcpSettings",
+                                                            "MCP enabled; connected clients: %1")
+                                    .arg(count)
+                              : QCoreApplication::translate("ScreenshotMcpSettings",
+                                                            "MCP is disabled or unavailable."));
+    }
+    QLabel* m_status = nullptr;
+    QLabel* m_endpoint = nullptr;
+    QPlainTextEdit* m_config = nullptr;
+};
+} // namespace
+
 SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsCustomRenderer renderer,
     const snow_shot::presentation::settings::SettingsRegistry& registry,
@@ -1151,6 +1240,8 @@ SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent) {
     using snow_shot::presentation::settings::SettingsCustomRenderer;
     switch (renderer) {
+    case SettingsCustomRenderer::McpStatus:
+        return new McpStatusSettingsWidget(parent);
     case SettingsCustomRenderer::PermissionScreenRecording:
     case SettingsCustomRenderer::PermissionAccessibility:
     case SettingsCustomRenderer::PermissionInputMonitoring:

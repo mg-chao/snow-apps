@@ -51,6 +51,7 @@ option(SNOW_SHOT_BUILD_TESTS "Build Snow Shot test executables." OFF)
 option(SNOW_SHOT_BUILD_IMAGE_CODEC_SMOKE_TEST
     "Build the Snow Shot image-codec smoke test without the full QtTest suite." OFF)
 option(SNOW_SHOT_BUILD_BENCHMARKS "Build opt-in native Snow Shot benchmarks." OFF)
+option(SNOW_SHOT_ENABLE_MCP "Build and package the local Snow Shot MCP bridge." ON)
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_SHOT_RELEASE_STATIC "Prefer static Snow Shot release linkage." OFF)
 option(SNOW_SHOT_QT_STATIC "Link Snow Shot against a static Qt build." OFF)
@@ -401,6 +402,18 @@ snow_add_rust_executable(snow_ocr_process
     FEATURES ${SNOW_SHOT_OCR_PROCESS_FEATURES}
     ENVIRONMENT ${SNOW_SHOT_OCR_PROCESS_ENVIRONMENT}
 )
+
+# The MCP bridge is deliberately a small standalone process.  It only speaks
+# MCP over stdio and connects to an already running Snow Shot instance through
+# the per-user local endpoint published by the application.
+if(SNOW_SHOT_ENABLE_MCP)
+    snow_add_rust_executable(snow_shot_mcp
+        PACKAGE snow-shot-mcp
+        MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/rust/snow-shot-mcp"
+        OUTPUT_NAME snow-shot-mcp
+        REPRODUCIBLE
+    )
+endif()
 
 if(WIN32 OR APPLE)
     add_dependencies(snow_ocr_process_build snow_ocr_diagnostics_bridge)
@@ -1020,6 +1033,8 @@ if(WIN32)
 endif()
 
 set(PROJECT_HEADERS
+    include/snow_shot/app/mcp/screenshotmcpsession.h
+    include/snow_shot/app/mcp/screenshotmcpserver.h
     include/snow_shot/app/featureavailability.h
     include/snow_shot/presentation/screenshotencodingsettings.h
     include/snow_shot/presentation/directcapturecontroller.h
@@ -1166,6 +1181,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/directcapturehistory.cpp
     src/presentation/capture/camerashuttersound.cpp
     src/app/applicationcontroller.cpp
+    src/app/mcp/screenshotmcpsession.cpp
+    src/app/mcp/screenshotmcpserver.cpp
     src/app/applicationrestart.cpp
     src/app/featureavailability.cpp
     src/app/main.cpp
@@ -4119,6 +4136,37 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-export-artifact-tests PRIVATE user32)
     endif()
     add_test(NAME snow-shot-export-artifact-tests COMMAND snow-shot-export-artifact-tests)
+    get_target_property(_snow_mcp_test_sources snow-shot-export-artifact-tests SOURCES)
+    list(REMOVE_ITEM _snow_mcp_test_sources tests/screenshot_export_artifact_tests.cpp)
+    add_executable(snow-shot-mcp-tests ${_snow_mcp_test_sources}
+        tests/screenshot_mcp_tests.cpp
+        include/snow_shot/app/mcp/screenshotmcpserver.h
+        include/snow_shot/app/mcp/screenshotmcpsession.h
+        src/app/mcp/screenshotmcpserver.cpp
+        src/app/mcp/screenshotmcpsession.cpp
+        src/presentation/selection/screenshotselectionmodel.cpp
+        src/presentation/selection/screenshotselectiongeometry.cpp
+        src/presentation/selection/screenshotselectionparams.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/platform/windows/monitorgeometry.cpp)
+    target_include_directories(snow-shot-mcp-tests PRIVATE include src/image)
+    target_link_libraries(snow-shot-mcp-tests PRIVATE snow_shot_diagnostics
+        snow_shot_image_codec snow_shot_storage snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets Qt6::Network)
+    if(WIN32)
+        target_link_libraries(snow-shot-mcp-tests PRIVATE user32 advapi32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-mcp-tests)
+    add_test(NAME snow-shot-mcp-tests COMMAND snow-shot-mcp-tests -platform offscreen)
+    if(SNOW_SHOT_ENABLE_MCP)
+        add_test(NAME snow-shot-mcp-stdio-tests
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_stdio_tests.py"
+                "$<TARGET_FILE_DIR:snow_shot>/$<TARGET_FILE_NAME:snow_shot_mcp>")
+        set_tests_properties(snow-shot-mcp-stdio-tests PROPERTIES TIMEOUT 45 LABELS unit)
+    endif()
+
+    set_tests_properties(snow-shot-mcp-tests PROPERTIES TIMEOUT 90 LABELS unit
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_test(NAME snow-shot-quick-save-command-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --quick-save-only -platform offscreen)
     add_test(NAME snow-shot-quick-save-layout-storage-tests
@@ -6393,6 +6441,16 @@ target_compile_definitions(snow_shot PRIVATE
     $<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT>
 )
 add_dependencies(snow_shot snow_ocr_process)
+if(SNOW_SHOT_ENABLE_MCP)
+    add_dependencies(snow_shot snow_shot_mcp)
+    add_custom_command(TARGET snow_shot POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "$<TARGET_FILE:snow_shot_mcp>"
+            "$<TARGET_FILE_DIR:snow_shot>/$<TARGET_FILE_NAME:snow_shot_mcp>"
+        COMMENT "Staging Snow Shot MCP bridge"
+        VERBATIM
+    )
+endif()
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-uia-qt-performance-fixture
@@ -6936,6 +6994,11 @@ install(TARGETS snow_shot
 install(PROGRAMS "$<TARGET_FILE:snow_ocr_process>"
     DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+if(SNOW_SHOT_ENABLE_MCP)
+    install(PROGRAMS "$<TARGET_FILE:snow_shot_mcp>"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
 if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
     install(FILES "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}"
         DESTINATION "${CMAKE_INSTALL_BINDIR}/audios"

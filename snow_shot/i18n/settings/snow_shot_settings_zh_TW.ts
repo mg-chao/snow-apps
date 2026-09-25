@@ -578,6 +578,25 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotMcpSettings</name>
+        <message>
+            <source>Local endpoint descriptor: %1</source>
+            <translation>本機端點描述檔：%1</translation>
+        </message>
+        <message>
+            <source>MCP client configuration</source>
+            <translation>MCP 用戶端設定</translation>
+        </message>
+        <message>
+            <source>MCP enabled; connected clients: %1</source>
+            <translation>MCP 已啟用；已連線的用戶端：%1</translation>
+        </message>
+        <message>
+            <source>MCP is disabled or unavailable.</source>
+            <translation>MCP 已停用或無法使用。</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolbarEditorSettingsWidget</name>
         <message>
             <source>Barcode recognition</source>
@@ -784,6 +803,10 @@
         <message>
             <source>All screenshot history will be removed</source>
             <translation>所有截圖歷史都將被移除</translation>
+        </message>
+        <message>
+            <source>Allow MCP clients running as your OS user to control screenshots. Snow Shot must be running.</source>
+            <translation>允許以目前系統使用者身分執行的 MCP 用戶端控制螢幕擷取。Snow Shot 必須保持執行。</translation>
         </message>
         <message>
             <source>Always</source>
@@ -1470,6 +1493,10 @@
             <translation>編輯選取範圍</translation>
         </message>
         <message>
+            <source>Enable MCP integration</source>
+            <translation>啟用 MCP 整合</translation>
+        </message>
+        <message>
             <source>Enable edit mode</source>
             <translation>啟用編輯模式</translation>
         </message>
@@ -1828,6 +1855,10 @@
         <message>
             <source>Low</source>
             <translation>低</translation>
+        </message>
+        <message>
+            <source>MCP connection and client setup</source>
+            <translation>MCP 連線與用戶端設定</translation>
         </message>
         <message>
             <source>MSAA</source>

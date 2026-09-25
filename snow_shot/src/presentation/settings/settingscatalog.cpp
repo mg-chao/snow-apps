@@ -1448,6 +1448,24 @@ SettingsItemDefinition autoStartItem() {
         QStringLiteral("system/auto_start_at_boot"), SettingsSwitchBinding::AutoStartAtBoot);
 }
 
+SettingsItemDefinition mcpEnabledItem() {
+    return switchItem(QStringLiteral("system.mcp-enabled"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog", "Enable MCP integration"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Allow MCP clients running as your OS user to control "
+                                        "screenshots. Snow Shot must be running."),
+                      QStringLiteral("mcp/enabled"), SettingsSwitchBinding::McpEnabled);
+}
+
+SettingsItemDefinition mcpStatusItem() {
+    return {QStringLiteral("system.mcp-status"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "MCP connection and client setup")),
+            {},
+            {},
+            {},
+            SettingsCustomDefinition{SettingsCustomRenderer::McpStatus}};
+}
+
 SettingsItemDefinition localShortcutItem(SettingsLocalShortcutScope scope,
                                          const QString& shortcutId, const char* title,
                                          std::function<adqt::icons::IconRef()> iconFactory) {
@@ -2530,7 +2548,7 @@ QVector<SettingsPageDefinition> builtInPages() {
 #else
                      launchAsAdministratorItem(), restartAsAdministratorItem(),
 #endif
-                     updateModeItem()},
+                     updateModeItem(), mcpEnabledItem(), mcpStatusItem()},
                 },
                 {
                     QStringLiteral("screenshot-capture"),
@@ -3559,6 +3577,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         expectedKey =
                             QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
                         break;
+                    case SettingsSwitchBinding::McpEnabled:
+                        expectedKey = QStringLiteral("mcp/enabled");
+                        break;
                     case SettingsSwitchBinding::LaunchAsAdministrator:
                         expectedKey = QStringLiteral("system/launch_as_administrator");
                         break;
@@ -3911,6 +3932,7 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsCustomRenderer::PermissionAccessibility:
                     case SettingsCustomRenderer::PermissionInputMonitoring:
                     case SettingsCustomRenderer::PermissionMicrophone:
+                    case SettingsCustomRenderer::McpStatus:
                     case SettingsCustomRenderer::StorageStatus:
                         rendererSupported = true;
                         break;

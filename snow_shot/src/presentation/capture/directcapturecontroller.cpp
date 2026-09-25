@@ -211,6 +211,9 @@ class DirectCaptureController::Impl {
     }
 
     void shutdown() {
+        if (mcpCancellation)
+            mcpCancellation->store(true, std::memory_order_release);
+        mcpActive = false;
         workflow.shutdown();
         artifact.reset();
         clipboard.cancel();
@@ -224,6 +227,8 @@ class DirectCaptureController::Impl {
     QThread thread;
     QObject* worker;
     std::atomic_bool stopped = false;
+    bool mcpActive = false;
+    std::shared_ptr<std::atomic_bool> mcpCancellation;
     ScreenshotClipboardCommitHandle clipboard;
     DirectCaptureWorkflow workflow;
     std::unique_ptr<ScreenshotExportArtifact> artifact;
@@ -237,7 +242,7 @@ void DirectCaptureController::shutdown() {
 }
 
 bool DirectCaptureController::blocksApplicationUpdate() const {
-    return m_impl->workflow.pendingCount() > 0;
+    return m_impl->workflow.pendingCount() > 0 || m_impl->mcpActive;
 }
 
 void DirectCaptureController::captureFocusedWindow() {
@@ -272,5 +277,94 @@ void DirectCaptureController::captureCurrentMonitor() {
         request.monitorName = QStringLiteral("display:%1").arg(id);
 #endif
     m_impl->workflow.enqueue(std::move(request));
+}
+
+bool DirectCaptureController::mcpCapture(
+    const QJsonObject& options, std::function<void(QImage, QJsonObject, QString)> completion) {
+    if (blocksApplicationUpdate())
+        return false;
+    const auto target =
+        options.value(QStringLiteral("target")).toString(QStringLiteral("current_monitor"));
+    if (target != QStringLiteral("current_monitor") && target != QStringLiteral("focused_window"))
+        return false;
+    DirectCaptureRequest request;
+    request.target = target == QStringLiteral("focused_window")
+                         ? DirectCaptureTarget::FocusedWindow
+                         : DirectCaptureTarget::CurrentMonitor;
+    request.restoreOriginalScreenColors =
+        storage::ScreenshotSettings().restoreOriginalScreenColors();
+    request.captureCursor = options.value(QStringLiteral("capture_cursor")).toBool(false);
+#if defined(Q_OS_WIN)
+    if (request.target == DirectCaptureTarget::FocusedWindow) {
+        HWND window = GetForegroundWindow();
+        if (window)
+            request.window = reinterpret_cast<quintptr>(GetAncestor(window, GA_ROOT));
+    } else {
+        POINT cursor{};
+        MONITORINFOEXW info{};
+        info.cbSize = sizeof(info);
+        if (GetCursorPos(&cursor) &&
+            GetMonitorInfoW(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST),
+                            reinterpret_cast<MONITORINFO*>(&info)))
+            request.monitorName = QString::fromWCharArray(info.szDevice);
+    }
+#elif defined(Q_OS_MACOS)
+    if (request.target == DirectCaptureTarget::FocusedWindow)
+        request.window = platform::screenshotFocusedWindow();
+    else
+        request.monitorName =
+            QStringLiteral("display:%1").arg(platform::screenshotDisplayAtCursor());
+#endif
+    const double scale = options.value(QStringLiteral("scale")).toDouble(1);
+    if (!std::isfinite(scale) || scale < 0.1 || scale > 4)
+        return false;
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    m_impl->mcpCancellation = cancellation;
+    m_impl->mcpActive = true;
+    const bool started = m_impl->submit<DirectCaptureFrame>(
+        [request, scale, cancellation] {
+            if (cancellation->load(std::memory_order_acquire))
+                return DirectCaptureFrame{};
+            auto frame = captureDirectTarget(request);
+            if (cancellation->load(std::memory_order_acquire))
+                return DirectCaptureFrame{};
+            if (!frame.image.isNull() && scale != 1) {
+                const QSize size(qMax(1, qRound(frame.image.width() * scale)),
+                                 qMax(1, qRound(frame.image.height() * scale)));
+                if (static_cast<qint64>(size.width()) * size.height() > 100000000) {
+                    frame.image = {};
+                } else
+                    frame.image =
+                        frame.image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            }
+            return frame;
+        },
+        [this, cancellation, completion = std::move(completion)](DirectCaptureFrame frame) {
+            if (cancellation->load(std::memory_order_acquire))
+                return;
+            m_impl->mcpActive = false;
+            QJsonObject metadata{
+                {QStringLiteral("identity"), frame.identity},
+                {QStringLiteral("native_backend"), frame.backend},
+                {QStringLiteral("physical_bounds"),
+                 QJsonArray{frame.physicalBounds.x(), frame.physicalBounds.y(),
+                            frame.physicalBounds.width(), frame.physicalBounds.height()}},
+                {QStringLiteral("logical_bounds"),
+                 QJsonArray{frame.logicalBounds.x(), frame.logicalBounds.y(),
+                            frame.logicalBounds.width(), frame.logicalBounds.height()}}};
+            completion(std::move(frame.image), metadata, frame.error);
+        });
+    if (!started) {
+        m_impl->mcpActive = false;
+        m_impl->mcpCancellation.reset();
+    }
+    return started;
+}
+void DirectCaptureController::cancelMcpCapture() {
+    if (m_impl == nullptr)
+        return;
+    if (m_impl->mcpCancellation)
+        m_impl->mcpCancellation->store(true, std::memory_order_release);
+    m_impl->mcpActive = false;
 }
 } // namespace snow_shot::presentation

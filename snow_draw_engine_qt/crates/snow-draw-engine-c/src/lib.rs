@@ -1,6 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod abi {
+    pub(crate) mod annotation_exports;
     pub(crate) mod auto_filter_exports;
     pub(crate) mod convert;
     pub(crate) mod document_exports;
@@ -19,6 +20,7 @@ mod abi {
     pub(crate) mod types;
 }
 
+pub use abi::annotation_exports::*;
 pub use abi::auto_filter_exports::*;
 pub use abi::document_exports::*;
 pub use abi::exports::*;

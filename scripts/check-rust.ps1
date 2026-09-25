@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [switch]$Fix
+    [switch]$Fix,
+    [string[]]$Workspace = @(),
+    [string[]]$Package = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,9 +31,18 @@ if ([string]::IsNullOrWhiteSpace($env:FFMPEG_DIR)) {
 $rustWorkspaces = @(
     (Join-Path $workspaceRoot "snow-crates"),
     (Join-Path $workspaceRoot "snow_draw_engine_qt"),
-    (Join-Path $workspaceRoot "snow_shot\rust\snow-shot-updater")
+    (Join-Path $workspaceRoot "snow_shot\rust\snow-shot-updater"),
+    (Join-Path $workspaceRoot "snow_shot\rust\snow-shot-mcp")
 )
 
+if ($Workspace.Count -gt 0) {
+    $rustWorkspaces = @($Workspace | ForEach-Object { (Resolve-Path (Join-Path $workspaceRoot $_)).Path })
+}
+$cargoSelection = @('--workspace')
+if ($Package.Count -gt 0) {
+    $cargoSelection = @()
+    foreach ($name in $Package) { $cargoSelection += @('-p', $name) }
+}
 foreach ($rustWorkspace in $rustWorkspaces) {
     Push-Location $rustWorkspace
     try {
@@ -44,12 +55,12 @@ foreach ($rustWorkspace in $rustWorkspaces) {
             throw "rustfmt failed in $rustWorkspace"
         }
 
-        cargo check --workspace --all-targets --all-features
+        cargo check @cargoSelection --all-targets --all-features
         if ($LASTEXITCODE -ne 0) {
             throw "cargo check failed in $rustWorkspace"
         }
 
-        cargo clippy --workspace --all-targets --all-features -- -D warnings
+        cargo clippy @cargoSelection --all-targets --all-features -- -D warnings
         if ($LASTEXITCODE -ne 0) {
             throw "Clippy failed in $rustWorkspace"
         }

@@ -283,7 +283,7 @@ $updaterCargoManifest = Join-Path $repoRoot "snow_shot\rust\snow-shot-updater\Ca
     -VcpkgPrefix $staticVcpkgPrefix `
     -QtPrefix $qtPrefix `
     -CargoManifest @((Join-Path $repoRoot "snow_rust_ffi\Cargo.toml"), $ocrCargoManifest,
-        $updaterCargoManifest) `
+        $updaterCargoManifest, (Join-Path $repoRoot "snow_shot\rust\snow-shot-mcp\Cargo.toml")) `
     -CargoOptions @{ $ocrCargoManifest = @('--no-default-features', '--features',
         'static-onnx-runtime,directml-provider,crash-diagnostics') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `
@@ -322,6 +322,10 @@ foreach ($property in $expectedBinaryMetadata.Keys) {
     }
 }
 
+$mcpExecutable = Join-Path $installDirectory 'bin\snow-shot-mcp.exe'
+if (-not (Test-Path -LiteralPath $mcpExecutable -PathType Leaf)) {
+    throw "The staged Rust MCP bridge was not found: $mcpExecutable"
+}
 $updaterExecutable = Join-Path $installDirectory 'bin\snow-shot-updater.exe'
 if (-not (Test-Path -LiteralPath $updaterExecutable -PathType Leaf)) {
     throw "The staged Rust updater was not found: $updaterExecutable"
@@ -388,7 +392,7 @@ if (Test-Path -LiteralPath $stagedQtPluginDirectory -PathType Container) {
 }
 
 $stagedExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File -Filter "*.exe")
-$expectedExecutables = @("snow_shot.exe", "snow-ocr-process.exe", "crashpad_handler.exe", "snow-shot-updater.exe")
+$expectedExecutables = @("snow_shot.exe", "snow-ocr-process.exe", "crashpad_handler.exe", "snow-shot-updater.exe", "snow-shot-mcp.exe")
 $unexpectedExecutables = @($stagedExecutables | Where-Object { $_.Name -notin $expectedExecutables })
 if ($unexpectedExecutables.Count -gt 0) {
     throw "Release staging contains unexpected executables: $($unexpectedExecutables.FullName -join ', ')"
@@ -411,6 +415,7 @@ $stagedBinaries = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File 
 $expectedBinaryPaths = @(
     "bin\snow_shot.exe",
     "bin\snow-shot-updater.exe",
+    "bin\snow-shot-mcp.exe",
     "bin\crashpad_handler.exe",
     "bin\snow-ocr-process.exe",
     "bin\DirectML.dll"
@@ -494,6 +499,7 @@ $allowedSystemImports = @(
 $allowedLocalImports = @{
     "snow_shot.exe" = @()
     "snow-shot-updater.exe" = @()
+    "snow-shot-mcp.exe" = @()
     "crashpad_handler.exe" = @()
     "snow-ocr-process.exe" = @("directml.dll")
     "directml.dll" = @()

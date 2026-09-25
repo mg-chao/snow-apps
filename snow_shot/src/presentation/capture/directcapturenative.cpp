@@ -29,6 +29,8 @@ DirectCaptureFrame captureDirectTarget(const DirectCaptureRequest& request) {
     SnowCaptureScreenshotRequest nativeRequest{};
     nativeRequest.version = SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION;
     nativeRequest.struct_size = sizeof(nativeRequest);
+    if (request.captureCursor)
+        nativeRequest.flags |= SNOW_CAPTURE_SCREENSHOT_REQUEST_INCLUDE_CURSOR;
     if (request.restoreOriginalScreenColors) {
         nativeRequest.flags |= SNOW_CAPTURE_SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS;
     }
@@ -78,8 +80,14 @@ DirectCaptureFrame captureDirectTarget(const DirectCaptureRequest& request) {
 #endif
         display.stableId = QString::fromUtf8(info.stable_id);
         display.name = QString::fromUtf8(info.name);
-        if (request.target == DirectCaptureTarget::CurrentMonitor &&
-            display.name == request.monitorName) {
+        bool currentMonitor =
+            display.name == request.monitorName || display.stableId == request.monitorName;
+#ifdef Q_OS_MACOS
+        currentMonitor =
+            currentMonitor ||
+            request.monitorName == QStringLiteral("display:%1").arg(display.nativeDisplayId);
+#endif
+        if (request.target == DirectCaptureTarget::CurrentMonitor && currentMonitor) {
             result.image = display.image;
             result.logicalBounds = display.logicalBounds;
             result.physicalBounds = display.physicalBounds;

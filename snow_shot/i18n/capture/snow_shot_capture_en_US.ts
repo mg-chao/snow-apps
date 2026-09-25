@@ -174,6 +174,13 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotMcpServer</name>
+        <message>
+            <source>MCP request failed (%1).</source>
+            <translation>MCP request failed (%1).</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotOverlayWindow</name>
         <message>
             <source>Loading screenshot history</source>
@@ -421,6 +428,32 @@
         <message>
             <source>mouse wheel</source>
             <translation>mouse wheel</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::mcp::ScreenshotMcpServer</name>
+        <message>
+            <source>Another Snow Shot instance owns the MCP endpoint.</source>
+            <translation>Another Snow Shot instance owns the MCP endpoint.</translation>
+        </message>
+        <message>
+            <source>Could not open the local MCP endpoint.</source>
+            <translation>Could not open the local MCP endpoint.</translation>
+        </message>
+        <message>
+            <source>Could not secure the MCP runtime directory.</source>
+            <translation>Could not secure the MCP runtime directory.</translation>
+        </message>
+        <message>
+            <source>Could not write the private MCP descriptor.</source>
+            <translation>Could not write the private MCP descriptor.</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::mcp::ScreenshotMcpSession</name>
+        <message>
+            <source>MCP request failed (%1).</source>
+            <translation>MCP request failed (%1).</translation>
         </message>
     </context>
     <context>

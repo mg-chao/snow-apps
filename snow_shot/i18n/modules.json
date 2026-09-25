@@ -24,6 +24,7 @@
     "LoginItemService",
     "PermissionGuide",
     "PinnedToolbarEditorSettingsWidget",
+    "ScreenshotMcpSettings",
     "ScreenshotToolbarEditorSettingsWidget",
     "SettingsBackend",
     "SettingsCatalog",
@@ -39,12 +40,15 @@
     "ScreenshotAutoFilterController",
     "ScreenshotCaptureCoordinator",
     "ScreenshotController",
+    "ScreenshotMcpServer",
     "ScreenshotOverlayWindow",
     "ScreenshotRegionTypeControl",
     "ScreenshotSelectionResizeModalContent",
     "ScreenshotSelectionResizeWorkflow",
     "ScreenshotSelectionToolbarWidget",
     "ScreenshotShortcutHintsWidget",
+    "snow_shot::app::mcp::ScreenshotMcpServer",
+    "snow_shot::app::mcp::ScreenshotMcpSession",
     "snow_shot::presentation::DirectCaptureController"
   ],
   "annotation": [

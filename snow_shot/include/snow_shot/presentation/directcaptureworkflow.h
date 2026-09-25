@@ -41,6 +41,7 @@ struct DirectCaptureRequest {
     QString filenameFormat;
     bool restoreOriginalScreenColors = false;
     bool shutterSoundNotification = true;
+    bool captureCursor = false;
 };
 
 struct DirectCaptureFrame {

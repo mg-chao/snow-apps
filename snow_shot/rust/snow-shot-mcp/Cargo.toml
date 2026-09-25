@@ -1,0 +1,41 @@
+[package]
+name = "snow-shot-mcp"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[[bin]]
+name = "snow-shot-mcp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+base64 = "0.22.1"
+getrandom = "0.3.4"
+interprocess = { version = "2.4.4", features = ["tokio"] }
+rmcp = { version = "3.4.1", default-features = false, features = ["macros", "server", "transport-io"] }
+serde = { version = "1.0.228", features = ["derive"] }
+schemars = { version = "1.2.2", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+tokio = { version = "1.49.0", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+tokio-util = "0.7.18"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+debug = 2
+incremental = false
+overflow-checks = false
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 2
+codegen-units = 16
+lto = "thin"
+incremental = true
