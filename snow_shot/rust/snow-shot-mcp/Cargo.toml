@@ -33,6 +33,12 @@ debug = 2
 incremental = false
 overflow-checks = false
 
+[profile.release-size]
+inherits = "release"
+opt-level = "z"
+debug = 0
+strip = "symbols"
+
 [profile.release-fast]
 inherits = "release"
 opt-level = 2

@@ -411,7 +411,9 @@ if(SNOW_SHOT_ENABLE_MCP)
         PACKAGE snow-shot-mcp
         MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/rust/snow-shot-mcp"
         OUTPUT_NAME snow-shot-mcp
+        PRODUCTION_PROFILE release-size
         REPRODUCIBLE
+        SIZE_OPTIMIZED
     )
 endif()
 
