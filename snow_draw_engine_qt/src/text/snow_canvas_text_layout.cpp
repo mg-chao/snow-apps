@@ -6,6 +6,7 @@
 #include <QFontMetricsF>
 #include <QGlyphRun>
 #include <QGuiApplication>
+#include <QPainter>
 #include <QRawFont>
 #include <QScreen>
 #include <QStringList>
@@ -348,6 +349,17 @@ QRectF documentContentsRect(const DocumentLayout& layout) {
                   layout.textDocument().size().height());
 }
 
+void drawDocument(QPainter& painter, const DocumentLayout& layout) {
+    // QTextDocument::drawContents(rect) replaces the painter clip. Preserve both
+    // the exposed repaint region and any editor selection clip in document space.
+    QAbstractTextDocumentLayout::PaintContext context;
+    context.clip = documentContentsRect(layout);
+    painter.save();
+    painter.setClipRect(context.clip, Qt::IntersectClip);
+    layout.textDocument().documentLayout()->draw(&painter, context);
+    painter.restore();
+}
+
 QRectF documentRectToLocalItemRect(const QRectF& documentRect, const DocumentLayout& layout) {
     return QRectF(-layout.itemWidth / 2.0 + documentRect.left() * layout.resolution.scale,
                   -layout.itemHeight / 2.0 + layout.topOffset +
@@ -453,6 +465,17 @@ QRectF cursorRectInDocument(const QTextDocument& document, int cursorPosition) {
     const qreal x = documentCursorX(targetLine, blockRect, blockCursor);
     return QRectF(x, blockRect.top() + targetLine.y(), kTextCursorWidth,
                   qMax<qreal>(1.0, targetLine.height()));
+}
+
+QRectF caretPaintRectInDocument(const DocumentLayout& layout, int cursorPosition) {
+    QRectF rect = cursorRectInDocument(layout.textDocument(), cursorPosition);
+    if (rect.isEmpty()) {
+        rect.setHeight(qMax(1.0, QFontMetricsF(layout.resolution.font).height()));
+    }
+    // A flat-cap caret stroke is centered on the insertion position. Painting
+    // and invalidation must use the same zoom-scaled width on both sides of it.
+    const double width = qMax(1.0, kTextCursorWidth * layout.safeZoom) / layout.resolution.scale;
+    return QRectF(rect.left() - width / 2.0, rect.top(), width, rect.height());
 }
 
 SingleLineLayout createSingleLineLayout(const QString& text, const QFont& baseFont,

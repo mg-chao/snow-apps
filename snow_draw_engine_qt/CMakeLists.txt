@@ -238,6 +238,19 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-canvas-text-overlay-tests tests/snow_canvas_text_overlay_tests.cpp)
+    target_include_directories(snow-canvas-text-overlay-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-text-overlay-tests PRIVATE snow_draw_engine_qt_canvas)
+    qt_import_plugins(snow-canvas-text-overlay-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    add_test(NAME snow-canvas-text-overlay-tests COMMAND snow-canvas-text-overlay-tests)
+    set_tests_properties(snow-canvas-text-overlay-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "unit"
+    )
+
     add_executable(snow-canvas-arrow-text-tests tests/snow_canvas_arrow_text_tests.cpp)
     target_include_directories(snow-canvas-arrow-text-tests PRIVATE
         ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}

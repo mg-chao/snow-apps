@@ -719,6 +719,8 @@ typedef struct SnowTextElementInfo {
     double center_y;
     double width;
     double height;
+    double content_width;
+    double content_height;
     double rotation;
     double font_size;
     uint32_t text_utf8_len;

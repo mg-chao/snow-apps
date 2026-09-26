@@ -4,7 +4,6 @@
 
 #include <QBrush>
 #include <QColor>
-#include <QFontMetricsF>
 #include <QPainter>
 #include <QPen>
 #include <QTextCharFormat>
@@ -16,7 +15,6 @@ namespace snow_canvas_text_editor_overlay {
 namespace {
 
 constexpr double kRadiansToDegrees = 180.0 / 3.14159265358979323846;
-constexpr double kTextCursorWidth = 1.2;
 namespace text_layout = snow_canvas_text_layout;
 
 QColor toQColor(const SnowColorRgba8& color) {
@@ -100,8 +98,8 @@ void renderSelectedText(QPainter& painter, const SnowSceneDisplayItem& item, con
     painter.setOpacity(qBound(0.0, item.opacity, 1.0));
     for (const QRectF& documentRect : documentRects) {
         painter.save();
-        painter.setClipRect(documentRect);
-        document.drawContents(&painter, text_layout::documentContentsRect(layout));
+        painter.setClipRect(documentRect, Qt::IntersectClip);
+        text_layout::drawDocument(painter, layout);
         painter.restore();
     }
     painter.restore();
@@ -120,18 +118,14 @@ void renderCaret(QPainter& painter, const SnowSceneDisplayItem& item, const QStr
         return;
     }
 
-    QRectF cursorRect = text_layout::cursorRectInDocument(layout.textDocument(), cursorPosition);
-    if (cursorRect.isEmpty()) {
-        cursorRect.setSize(QSizeF(kTextCursorWidth / layout.resolution.scale,
-                                  qMax(1.0, QFontMetricsF(layout.resolution.font).height())));
-    }
+    const QRectF cursorRect = text_layout::caretPaintRectInDocument(layout, cursorPosition);
 
     QColor caretColor = toQColor(item.text_color);
     if (caretColor.alpha() == 0) {
         caretColor = QColor(0x1e, 0x1e, 0x1e);
     }
     QPen pen(caretColor);
-    pen.setWidthF(qMax(1.0, kTextCursorWidth * layout.safeZoom) / layout.resolution.scale);
+    pen.setWidthF(cursorRect.width());
     pen.setCapStyle(Qt::FlatCap);
 
     painter.save();
@@ -140,8 +134,8 @@ void renderCaret(QPainter& painter, const SnowSceneDisplayItem& item, const QStr
     painter.translate(-layout.itemWidth / 2.0, -layout.itemHeight / 2.0 + layout.topOffset);
     painter.scale(layout.resolution.scale, layout.resolution.scale);
     painter.setPen(pen);
-    painter.drawLine(QPointF(cursorRect.left(), cursorRect.top()),
-                     QPointF(cursorRect.left(), cursorRect.bottom()));
+    painter.drawLine(QPointF(cursorRect.center().x(), cursorRect.top()),
+                     QPointF(cursorRect.center().x(), cursorRect.bottom()));
     painter.restore();
 }
 

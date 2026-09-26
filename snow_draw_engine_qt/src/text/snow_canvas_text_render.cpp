@@ -48,7 +48,7 @@ void drawContents(QPainter& painter, const SnowSceneDisplayItem& item, const QFo
     painter.save();
     painter.translate(localRect.left(), localRect.top() + layout.topOffset);
     painter.scale(layout.resolution.scale, layout.resolution.scale);
-    document.drawContents(&painter, text_layout::documentContentsRect(layout));
+    text_layout::drawDocument(painter, layout);
     painter.restore();
 }
 
@@ -141,7 +141,7 @@ void drawStroke(QPainter& painter, const SnowSceneDisplayItem& item, const QFont
     painter.save();
     painter.translate(localRect.left(), localRect.top() + layout.topOffset);
     painter.scale(layout.resolution.scale, layout.resolution.scale);
-    document.drawContents(&painter, text_layout::documentContentsRect(layout));
+    text_layout::drawDocument(painter, layout);
     painter.restore();
 }
 

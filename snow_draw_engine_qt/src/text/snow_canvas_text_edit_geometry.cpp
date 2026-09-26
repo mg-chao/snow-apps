@@ -3,7 +3,6 @@
 #include "snow_canvas_text_layout.h"
 
 #include <QAbstractTextDocumentLayout>
-#include <QFontMetricsF>
 #include <QTextCursor>
 #include <QTextDocument>
 
@@ -13,7 +12,6 @@
 namespace snow_canvas_text_edit_geometry {
 namespace {
 
-constexpr double kTextCursorWidth = 1.2;
 namespace text_layout = snow_canvas_text_layout;
 
 int boundedTextLength(const QString& text) {
@@ -96,13 +94,7 @@ QRectF cursorRectForTextPosition(const SnowSceneDisplayItem& item, const QFont& 
         return {};
     }
 
-    QRectF cursorRect = text_layout::cursorRectInDocument(layout.textDocument(), cursorPosition);
-    if (cursorRect.isEmpty()) {
-        const QFontMetricsF metrics(layout.resolution.font);
-        cursorRect.setSize(QSizeF(qMax(1.0, kTextCursorWidth), qMax(1.0, metrics.height())));
-    }
-    cursorRect.setWidth(
-        qMax<qreal>(cursorRect.width(), kTextCursorWidth / layout.resolution.scale));
+    const QRectF cursorRect = text_layout::caretPaintRectInDocument(layout, cursorPosition);
     return text_layout::documentToViewTransform(item, centerView, layout).mapRect(cursorRect);
 }
 

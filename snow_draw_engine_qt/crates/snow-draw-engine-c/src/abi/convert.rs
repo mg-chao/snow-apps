@@ -510,6 +510,8 @@ pub(crate) fn snow_text_element_info_from_rust(value: TextElementInfo) -> SnowTe
         center_y: value.center.y,
         width: value.width,
         height: value.height,
+        content_width: value.content_width,
+        content_height: value.content_height,
         rotation: value.rotation,
         font_size: value.font_size,
         auto_resize: u8::from(value.auto_resize),
@@ -1475,6 +1477,8 @@ mod tests {
             center: Point { x: 1.0, y: 2.0 },
             width: 100.0,
             height: 30.0,
+            content_width: 84.0,
+            content_height: 27.0,
             rotation: 0.0,
             text,
             font_size: 21.0,
@@ -1483,6 +1487,8 @@ mod tests {
             measure_natural_width: false,
         });
 
+        assert_eq!(info.content_width, 84.0);
+        assert_eq!(info.content_height, 27.0);
         assert_eq!(info.text_utf8_len, (SNOW_TEXT_UTF8_CAPACITY - 1) as u32);
         assert_eq!(info.text_truncated, 1);
         assert_eq!(

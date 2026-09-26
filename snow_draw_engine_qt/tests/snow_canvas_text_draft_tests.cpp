@@ -1828,6 +1828,16 @@ void textToolInitialSelectionFrameRendersAndResizesThroughWidgetEvents() {
                 "stroke width should preserve the resized font size");
     requireNear(strokeStyle.stroke_width, strokeWidthPatch.strokeWidth,
                 "the draft should receive the requested stroke width");
+    require(afterResize.content_width > 0.0 && afterResize.content_height > 0.0,
+            "the engine resize presentation must carry its measured content bounds");
+    require(canvas.resetEditingState(), "commit the resized draft through the widget");
+    SnowTextElementInfo committed{};
+    require(snow_runtime_get_text_element(runtimeHandle, targetId, &committed) == SNOW_OK,
+            "inspect committed resized text");
+    requireNear(committed.content_width, afterResize.content_width,
+                "widget commit must preserve the engine's resized content width");
+    requireNear(committed.content_height, afterResize.content_height,
+                "widget commit must preserve the engine's resized content height");
 }
 
 void textEditorDoesNotSynthesizeSelectionControlsWithoutEngineOverlay() {

@@ -14,6 +14,8 @@ pub struct TextElementInfo {
     pub center: Point<f64>,
     pub width: f64,
     pub height: f64,
+    pub content_width: f64,
+    pub content_height: f64,
     pub rotation: f64,
     pub text: String,
     pub font_size: f64,
@@ -30,6 +32,8 @@ fn text_element_info_from_resize_request(request: TextResizeMeasurementRequest) 
         center: request.center,
         width: request.width,
         height: request.height,
+        content_width: 0.0,
+        content_height: 0.0,
         rotation: request.rotation,
         text: request.text,
         font_size: request.font_size,
@@ -47,6 +51,8 @@ fn text_element_info_from_active_draft(draft: &ActiveTextDraftPresentation) -> T
         center: draft.text.center,
         width: draft.text.width(),
         height: draft.text.height(),
+        content_width: draft.text.layout.ink_or_wrap().0,
+        content_height: draft.text.layout.ink_or_wrap().1,
         rotation: draft.text.rotation,
         text: draft.text.text.clone(),
         font_size: draft.text.font_size,
@@ -167,6 +173,8 @@ impl Engine {
                 center: snow_draw_engine_document::arrow_text_anchor(arrow),
                 width: 1.0,
                 height: style.font_size,
+                content_width: 0.0,
+                content_height: 0.0,
                 rotation: 0.0,
                 text: String::new(),
                 font_size: style.font_size,
@@ -268,6 +276,8 @@ impl Engine {
             center: layout.center,
             width: layout.width,
             height: layout.height,
+            content_width: text.layout.ink_or_wrap().0,
+            content_height: text.layout.ink_or_wrap().1,
             rotation: layout.rotation,
             text: text.text.clone(),
             font_size: text.font_size,
@@ -467,5 +477,49 @@ impl Engine {
             }
         }
         Ok((result, operation.single_text_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ViewportConfig;
+    use snow_draw_engine_editor::ActiveTextDraftTarget;
+
+    #[test]
+    fn text_presentation_preserves_resized_content_bounds() {
+        let mut engine = Engine::default();
+        let viewport = engine.create_viewport(ViewportConfig::default()).unwrap();
+        let id = engine.model.peek_next_element_id();
+        engine
+            .create_text_with_viewport_changes(
+                viewport,
+                Point::new(0.0, 0.0),
+                "resized text",
+                TextLayoutSize::with_content(432.0, 92.0, 428.0, 92.0),
+            )
+            .unwrap();
+        let stored = engine.text_element_info(id).unwrap();
+        assert_eq!((stored.content_width, stored.content_height), (428.0, 92.0));
+        let mut text = engine.model.text(id).unwrap().clone();
+        text.layout = TextLayoutSize::with_content(1354.0, 287.0, 1340.0, 287.0);
+        text.font_size = 226.0;
+        text.rotation = -0.644;
+        engine
+            .set_active_text_draft_presentation_with_viewport_changes(
+                viewport,
+                ActiveTextDraftPresentation {
+                    target: ActiveTextDraftTarget::Existing(id),
+                    revision: 0,
+                    text,
+                },
+            )
+            .unwrap();
+        let (draft, _) = engine
+            .active_text_draft_presentation(viewport)
+            .unwrap()
+            .unwrap();
+        assert_eq!((draft.width, draft.height), (1354.0, 287.0));
+        assert_eq!((draft.content_width, draft.content_height), (1340.0, 287.0));
     }
 }
