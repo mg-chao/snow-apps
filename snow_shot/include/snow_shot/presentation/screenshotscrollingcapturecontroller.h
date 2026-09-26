@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotscrollingsnapshot.h"
 
 #include <QImage>
+#include <QJsonObject>
 #include <QObject>
 #include <QRect>
 #include <QSize>
@@ -25,9 +26,11 @@ struct ScreenshotScrollingCaptureControllerContext {
     // they appear in the stitched scrolling screenshot.
     std::function<bool()> captureUiInScrollingScreenshot = []() { return false; };
     std::function<void()> captureFailed = {};
+    std::function<bool()> presentationSuppressed = [] { return false; };
 };
 
 class ScreenshotScrollingCaptureController final : public QObject {
+    Q_OBJECT
   public:
     using SnapshotResultCallback = std::function<void(ScreenshotScrollingSnapshot)>;
 
@@ -44,6 +47,11 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool active() const;
     void setExportPaused(bool paused);
     void setAutoScroll(bool enabled);
+    [[nodiscard]] QJsonObject state() const;
+    [[nodiscard]] bool setTrimRange(int start, int end);
+    [[nodiscard]] bool moveSelection(QPoint offset);
+    // Acknowledges native input dispatch; capture continues asynchronously.
+    [[nodiscard]] QJsonObject scrollOnce(const QString& direction, QString* error);
     [[nodiscard]] bool beginSelectionMove(ScreenshotScrollingRecognitionMode axis,
                                           QPoint physicalPointer);
     void updateSelectionMove(QPoint physicalPointer);
@@ -54,6 +62,9 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool requestTrimmedSnapshot(SnapshotResultCallback callback);
     void detachPendingResultRequest();
     [[nodiscard]] QRect canvasSelection() const;
+
+  signals:
+    void stateChanged();
 
   private:
     struct Impl;

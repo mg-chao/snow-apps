@@ -48,6 +48,7 @@ struct EncodeResult final {
 [[nodiscard]] QByteArray encodeWebp(const QImage& image, int quality = 75);
 [[nodiscard]] QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
                             const char* nameHint);
+[[nodiscard]] QSize inspectSize(const QByteArray& encoded, snow::image::Format expectedFormat);
 [[nodiscard]] QImage decodeFile(const QString& path, snow::image::Format expectedFormat);
 [[nodiscard]] QImage decodeFileBgra(const QString& path, snow::image::Format expectedFormat);
 [[nodiscard]] bool inspectFile(const QString& path, snow::image::Format expectedFormat,

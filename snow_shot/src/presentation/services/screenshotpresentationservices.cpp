@@ -35,10 +35,14 @@ void ScreenshotPresentationServices::hideMainToolbar() {
 }
 
 void ScreenshotPresentationServices::showToolbar() {
+    if (m_context.captureState.presentationSuppressed)
+        return;
     m_context.toolbarPresenter.showToolbar(toolbarPresentationState());
 }
 
 void ScreenshotPresentationServices::showSelectionToolbar() {
+    if (m_context.captureState.presentationSuppressed)
+        return;
     m_context.toolbarPresenter.showSelectionToolbar(toolbarPresentationState());
 }
 
@@ -55,6 +59,8 @@ void ScreenshotPresentationServices::repositionToolbarForContentChange() {
 }
 
 void ScreenshotPresentationServices::raiseToolbarForCanvasInteraction() {
+    if (m_context.captureState.presentationSuppressed)
+        return;
     m_context.toolbarPresenter.raiseToolbarForCanvasInteraction(toolbarPresentationState());
 }
 
@@ -101,6 +107,7 @@ void ScreenshotPresentationServices::setSelectionMovementActive(bool active) {
 }
 
 void ScreenshotPresentationServices::updateOverlayState() {
+    m_context.stateChanged();
     const bool smartFraming = m_context.interaction.intelligentSelecting();
     const ScreenshotToolbarPresentationState toolbarState = toolbarPresentationState();
     {

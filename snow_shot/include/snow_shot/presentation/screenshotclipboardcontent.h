@@ -101,6 +101,9 @@ struct ScreenshotClipboardContentSnapshot final {
 class ScreenshotClipboardContentReader final {
   public:
     using CancellationCheck = std::function<bool()>;
+    // Optional admission for automation. The callback reserves total retained
+    // and transient bytes before image copies, decoding, and rasterization.
+    using AllocationCheck = std::function<bool(qint64)>;
 
     [[nodiscard]] static QStringList supportedFileExtensions();
     [[nodiscard]] static QStringList localFilePaths(const QMimeData* mimeData);
@@ -111,11 +114,13 @@ class ScreenshotClipboardContentReader final {
     // Snapshot methods must run on the GUI thread. Their return value owns all
     // MIME data needed by decode(), which is safe to run on an export worker.
     [[nodiscard]] static std::optional<ScreenshotClipboardContentSnapshot>
-    snapshot(QClipboard* clipboard, qreal devicePixelRatio);
+    snapshot(QClipboard* clipboard, qreal devicePixelRatio, AllocationCheck allocate = {});
     [[nodiscard]] static std::optional<ScreenshotClipboardContentSnapshot>
-    snapshotMimeData(const QMimeData* mimeData, qreal devicePixelRatio, const QColor& baseColor);
+    snapshotMimeData(const QMimeData* mimeData, qreal devicePixelRatio, const QColor& baseColor,
+                     AllocationCheck allocate = {});
     [[nodiscard]] static std::optional<ScreenshotClipboardContent>
-    decode(ScreenshotClipboardContentSnapshot snapshot, CancellationCheck cancelled = {});
+    decode(ScreenshotClipboardContentSnapshot snapshot, CancellationCheck cancelled = {},
+           AllocationCheck allocate = {});
 
     [[nodiscard]] static std::optional<ScreenshotClipboardContent>
     readMimeData(const QMimeData* mimeData, qreal devicePixelRatio);
@@ -125,7 +130,7 @@ class ScreenshotClipboardContentReader final {
     // is the current display DPI.
     [[nodiscard]] static std::optional<ScreenshotClipboardContent>
     renderOriginalText(const ScreenshotClipboardOriginalContent& original, qreal devicePixelRatio,
-                       const QColor& baseColor = {});
+                       const QColor& baseColor = {}, AllocationCheck allocate = {});
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDCONTENT_H

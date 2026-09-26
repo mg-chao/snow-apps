@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "fixtures": [
+    {"name":"snow_shot_status","arguments":{}},
+    {"name":"screenshot_begin","arguments":{"presentation":"silent","target":"all_displays","capture_cursor":false}},
+    {"name":"screenshot_state","arguments":{"session_id":"fixture-session"}},
+    {"name":"screenshot_set_selection","arguments":{"session_id":"fixture-session","expected_revision":1,"operation":"replace","type":"rectangle","bounds":[0,0,32,20]}},
+    {"name":"screenshot_set_tool","arguments":{"session_id":"fixture-session","expected_revision":1,"tool":"rectangle"}},
+    {"name":"screenshot_apply_annotations","arguments":{"session_id":"fixture-session","expected_revision":1,"version":1,"label":"Fixture","operations":[{"type":"rectangle","bounds":[1,1,10,10],"style":{"stroke":[255,0,0,255],"stroke_width":2}}]}},
+    {"name":"screenshot_undo","arguments":{"session_id":"fixture-session","expected_revision":1}},
+    {"name":"screenshot_redo","arguments":{"session_id":"fixture-session","expected_revision":1}},
+    {"name":"screenshot_render","arguments":{"session_id":"fixture-session","expected_revision":1,"scale":1}},
+    {"name":"screenshot_save","arguments":{"session_id":"fixture-session","expected_revision":1,"path":"C:/fixture-output.png","format":"png","quality":90}},
+    {"name":"screenshot_copy","arguments":{"session_id":"fixture-session","expected_revision":1}},
+    {"name":"screenshot_pin","arguments":{"session_id":"fixture-session","expected_revision":1}},
+    {"name":"screenshot_finish","arguments":{"session_id":"fixture-session","expected_revision":1,"output":"none"}},
+    {"name":"screenshot_cancel","arguments":{"session_id":"fixture-session","request_id":"fixture-request"}},
+    {"name":"screenshot_direct_capture","arguments":{"target":"current_monitor","output":"render","capture_cursor":false}},
+    {"name":"screenshot_set_selection_style","arguments":{"session_id":"fixture-session","expected_revision":1,"corner_radius":8,"shadow_width":4,"shadow_color":[0,0,0,128],"aspect_ratio_locked":false}},
+    {"name":"screenshot_set_tool_style","arguments":{"session_id":"fixture-session","expected_revision":1,"target":"rectangle","style":{"stroke":[255,0,0,255],"stroke_width":2}}},
+    {"name":"screenshot_edit_elements","arguments":{"session_id":"fixture-session","expected_revision":1,"action":"opacity","opacity":0.5}},
+    {"name":"screenshot_recapture","arguments":{"session_id":"fixture-session","expected_revision":1}},
+    {"name":"screenshot_scrolling","arguments":{"session_id":"fixture-session","expected_revision":1,"action":"start","axis":"vertical"}},
+    {"name":"screenshot_scroll_once","arguments":{"session_id":"fixture-session","expected_revision":1,"direction":"down"}},
+    {"name":"screenshot_recognize","arguments":{"session_id":"fixture-session","expected_revision":1,"kind":"text"}},
+    {"name":"screenshot_translate","arguments":{"session_id":"fixture-session","expected_revision":1}},
+    {"name":"screenshot_auto_filter","arguments":{"session_id":"fixture-session","expected_revision":1,"categories":["text"]}},
+    {"name":"screenshot_operation","arguments":{"session_id":"fixture-session","operation_id":"fixture-operation"}},
+    {"name":"screenshot_edit_recognition","arguments":{"session_id":"fixture-session","expected_revision":1,"action":"set_text","text":"Fixture text"}},
+    {"name":"screenshot_export_recognition","arguments":{"session_id":"fixture-session","expected_revision":1,"output":"return","format":"text"}},
+    {"name":"screenshot_draw_template","arguments":{"session_id":"fixture-session","expected_revision":1,"action":"export"}}
+  ]
+}

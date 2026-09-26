@@ -578,6 +578,45 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotMcpSettings</name>
+        <message>
+            <source>Add this configuration to your MCP client, then restart the client to connect. Keep Snow Shot running while using MCP.</source>
+            <translation>Add this configuration to your MCP client, then restart the client to connect. Keep Snow Shot running while using MCP.</translation>
+        </message>
+        <message>
+            <source>Connected clients: %1</source>
+            <translation>Connected clients: %1</translation>
+        </message>
+        <message>
+            <source>Copied</source>
+            <translation>Copied</translation>
+        </message>
+        <message>
+            <source>Copy configuration</source>
+            <translation>Copy configuration</translation>
+        </message>
+        <message>
+            <source>Local endpoint descriptor: %1</source>
+            <translation>Local endpoint descriptor: %1</translation>
+        </message>
+        <message>
+            <source>MCP client configuration</source>
+            <translation>MCP client configuration</translation>
+        </message>
+        <message>
+            <source>MCP is disabled or unavailable.</source>
+            <translation>MCP is disabled or unavailable.</translation>
+        </message>
+        <message>
+            <source>Running</source>
+            <translation>Running</translation>
+        </message>
+        <message>
+            <source>Unavailable</source>
+            <translation>Unavailable</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolbarEditorSettingsWidget</name>
         <message>
             <source>Barcode recognition</source>
@@ -784,6 +823,10 @@
         <message>
             <source>All screenshot history will be removed</source>
             <translation>All screenshot history will be removed</translation>
+        </message>
+        <message>
+            <source>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</source>
+            <translation>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</translation>
         </message>
         <message>
             <source>Always</source>
@@ -1226,6 +1269,10 @@
             <translation>Confirm before exiting screenshot via shortcut</translation>
         </message>
         <message>
+            <source>Connect AI clients to Snow Shot</source>
+            <translation>Connect AI clients to Snow Shot</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>Control when the screenshot color picker is visible</translation>
         </message>
@@ -1468,6 +1515,10 @@
         <message>
             <source>Edit selection</source>
             <translation>Edit selection</translation>
+        </message>
+        <message>
+            <source>Enable MCP integration</source>
+            <translation>Enable MCP integration</translation>
         </message>
         <message>
             <source>Enable edit mode</source>
@@ -1828,6 +1879,14 @@
         <message>
             <source>Low</source>
             <translation>Low</translation>
+        </message>
+        <message>
+            <source>MCP</source>
+            <translation>MCP</translation>
+        </message>
+        <message>
+            <source>MCP connection and client setup</source>
+            <translation>MCP connection and client setup</translation>
         </message>
         <message>
             <source>MSAA</source>
@@ -2984,6 +3043,10 @@
         <message>
             <source>Video save directory</source>
             <translation>Video save directory</translation>
+        </message>
+        <message>
+            <source>View connection status and configure your MCP client.</source>
+            <translation>View connection status and configure your MCP client.</translation>
         </message>
         <message>
             <source>Vision Support</source>

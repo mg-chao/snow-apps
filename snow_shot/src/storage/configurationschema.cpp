@@ -131,6 +131,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("real_time")}},
     {QStringLiteral("system/auto_start_at_boot"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("system/launch_as_administrator"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("mcp/enabled"), false, ConfigurationValueKind::Boolean},
 #ifdef Q_OS_MACOS
     {QStringLiteral("updates/mode"),
      QStringLiteral("check"),

@@ -52,6 +52,7 @@ class ScreenshotHistoryService final : public QObject {
     void resetCaptureNavigation();
     void drainPendingWrites();
     void refreshMetadata();
+    [[nodiscard]] bool presentTransientEntry(const ScreenshotHistoryEntry& entry);
 
   private:
     struct PendingWrite {

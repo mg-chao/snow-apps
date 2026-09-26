@@ -524,6 +524,13 @@ class ScreenshotPinnedWindowTestAccess {
         window.updateCanvasViewport();
     }
 
+    static void automationReady(ScreenshotPinnedWindow& window,
+                                const ScreenshotRecognitionResults& cachedRecognition) {
+        // restoreOffscreen skips beginPresentation's recognition setup.
+        window.m_recognitionResults = cachedRecognition;
+        window.m_recognitionTargetReady = false;
+        window.m_firstContentFramePublished = true;
+    }
     static ScreenshotRecognitionSessionController*
     recognitionOffscreen(ScreenshotPinnedWindow& window, ScreenshotPinnedWindow::Config config) {
         window.m_recognitionContent = new ScreenshotRecognitionWindow(
@@ -4490,6 +4497,8 @@ void pinnedNativeDragCrossingDpiBoundaryPreservesDestination(SnowCanvasRuntime&)
         }
     }
     if (sourceScreen == nullptr || destinationScreen == nullptr) {
+        std::cout << "SKIP: native cross-DPI drag needs a higher-DPI monitor to the right of a "
+                     "lower-DPI monitor\n";
         return;
     }
 
@@ -11802,6 +11811,127 @@ int main(int argc, char* argv[]) {
             require(
                 qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(), expectedDpr),
                 "pixel fixture must run at the registered DPR, independently of monitor settings");
+        if (app.arguments().contains(QStringLiteral("--automation-only"))) {
+            ScreenshotRecognitionResults recognition;
+            recognition.text.emplace();
+            recognition.text->presentation = std::make_shared<ScreenshotOcrPresentation>();
+            recognition.text->presentation->selection = QRect(100, 200, 80, 60);
+            ScreenshotOcrLine originalLine;
+            originalLine.text = QStringLiteral("Original");
+            originalLine.quad = QPolygonF(QRectF(110, 220, 30, 10));
+            originalLine.sourceLineQuads = {originalLine.quad};
+            recognition.text->presentation->lines = {originalLine};
+            recognition.translatedText =
+                std::make_shared<ScreenshotOcrPresentation>(*recognition.text->presentation);
+            recognition.translatedText->lines[0].text = QStringLiteral("Translated");
+            // Clockwise rotation followed by a horizontal flip swaps the axes.
+            const auto transformed = ScreenshotPinnedWindow::transformedRecognitionSnapshot(
+                recognition, QRectF(100, 200, 80, 60), QSize(80, 60), QTransform(0, 1, 1, 0, 0, 0),
+                QSize(60, 80), QRectF(100, 200, 60, 80));
+            require(transformed.text->presentation->selection == QRect(100, 200, 60, 80) &&
+                        transformed.text->presentation->lines[0].quad[0] == QPointF(120, 210) &&
+                        transformed.text->presentation->lines[0].sourceLineQuads[0][0] ==
+                            QPointF(120, 210) &&
+                        transformed.translatedText->lines[0].quad[0] == QPointF(120, 210) &&
+                        transformed.translatedText->lines[0].text == QStringLiteral("Translated"),
+                    "document handoff must map original and translated OCR geometry through pin "
+                    "transforms");
+            require(recognition.text->presentation->lines[0].quad == originalLine.quad,
+                    "recognition handoff must not mutate the pin's retained original geometry");
+            ScreenshotPinnedWindow window;
+            auto config = cachedOcrPinConfig(nullptr);
+            config.persistenceId = QStringLiteral("automation-fixture");
+            ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+            ScreenshotPinnedWindowTestAccess::automationReady(window, config.recognitionResults);
+            auto recognitionCopy = window.recognitionSnapshot();
+            require(recognitionCopy.text && recognitionCopy.text->presentation &&
+                        !recognitionCopy.text->presentation->lines.isEmpty(),
+                    "a pin snapshot must preserve cached recognition before its view activates");
+            recognitionCopy.text->presentation->lines[0].text = QStringLiteral("Changed snapshot");
+            require(window.recognitionSnapshot().text->presentation->lines[0].text !=
+                        QStringLiteral("Changed snapshot"),
+                    "a worker snapshot must not share mutable OCR presentation state with its pin");
+            QString error;
+            const auto before = window.automationState();
+            require(!window.automationUpdate({{QStringLiteral("opacity_percent"), 50},
+                                              {QStringLiteral("unknown"), true}},
+                                             &error),
+                    "unknown automation properties must reject the entire patch");
+            require(window.automationState() == before,
+                    "invalid automation patch must not change an earlier valid property");
+            require(window.automationUpdate({{QStringLiteral("opacity_percent"), 75}}, &error),
+                    "automation opacity must use the normal pinned state transition");
+            require(window.automationState().value(QStringLiteral("opacity_percent")).toInt() == 75,
+                    "automation state must reflect changed pinned opacity");
+            const auto opacityRevision =
+                window.automationState().value(QStringLiteral("revision")).toInteger();
+            require(window.automationUpdate({{QStringLiteral("opacity_percent"), 40}}, &error) &&
+                        window.automationUpdate({{QStringLiteral("opacity_percent"), 75}}, &error),
+                    "inverse appearance updates must succeed without an intervening query");
+            require(window.automationState().value(QStringLiteral("revision")).toInteger() >
+                        opacityRevision,
+                    "state inversion must invalidate revisions even before persistence flush");
+            error.clear();
+            require(!window.automationEdit(QStringLiteral("tool_style"),
+                                           {{QStringLiteral("target"), QStringLiteral("arrow")},
+                                            {QStringLiteral("style"),
+                                             QJsonObject{{QStringLiteral("arrow_shaft_type"),
+                                                          QStringLiteral("tapered")},
+                                                         {QStringLiteral("arrow_ratio"), 2.0}}}},
+                                           &error)
+                            .isEmpty() &&
+                        error.isEmpty(),
+                    "pinned styles must use the real runtime's typed style command");
+            const auto payload =
+                QJsonDocument::fromJson(
+                    R"({"version":1,"operations":[{"type":"rectangle","bounds":[660,380,50,60]}]})")
+                    .object();
+            require(
+                !window.automationEdit(QStringLiteral("annotations"), payload, &error).isEmpty() &&
+                    error.isEmpty(),
+                "automation must apply actual canvas transactions");
+            require(window.automationState().value(QStringLiteral("can_undo")).toBool(),
+                    "automation edits must preserve undo history");
+            require(!window.automationEdit(QStringLiteral("undo"), {}, &error).isEmpty(),
+                    "automation undo must use the existing canvas history");
+            require(window.automationState().value(QStringLiteral("can_redo")).toBool(),
+                    "automation undo must preserve redo history");
+            require(!window.automationEdit(QStringLiteral("redo"), {}, &error).isEmpty(),
+                    "automation redo must replay the real edit transaction");
+            require(window.automationState().value(QStringLiteral("can_undo")).toBool(),
+                    "redo must restore undo availability");
+            const auto sourceImage = window.persistenceSnapshot().image;
+            require(window.automationUpdate(
+                        {{QStringLiteral("rotation"), QStringLiteral("clockwise")}}, &error),
+                    "automation rotation must succeed before comparing exports");
+            QImage originalExport;
+            QImage renderedExport;
+            const auto originalArtifact = window.automationArtifact(true);
+            const auto renderedArtifact = window.automationArtifact();
+            require(originalArtifact && renderedArtifact &&
+                        originalArtifact->requestImage(&window,
+                                                       [&](ScreenshotExportImageResult result) {
+                                                           originalExport = std::move(result.image);
+                                                       }) &&
+                        renderedArtifact->requestImage(&window,
+                                                       [&](ScreenshotExportImageResult result) {
+                                                           renderedExport = std::move(result.image);
+                                                       }),
+                    "original and rendered export requests must both start");
+            QElapsedTimer exportTimer;
+            exportTimer.start();
+            while ((originalExport.isNull() || renderedExport.isNull()) &&
+                   exportTimer.elapsed() < 10000)
+                waitForUi(5);
+            require(
+                originalExport.size() == sourceImage.size() &&
+                    originalExport.convertToFormat(QImage::Format_ARGB32) ==
+                        sourceImage.convertToFormat(QImage::Format_ARGB32),
+                "original export must retain source pixels despite opacity, rotation and edits");
+            require(renderedExport.size() == QSize(sourceImage.height(), sourceImage.width()),
+                    "rendered export must include the user's current rotation");
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--management-only"))) {
             pinnedManagementLifecycle();
             return 0;

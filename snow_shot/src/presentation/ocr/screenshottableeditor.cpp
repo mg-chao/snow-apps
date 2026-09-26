@@ -1189,3 +1189,11 @@ void ScreenshotTableEditor::selectRange(const ScreenshotTableRange& source) {
     m_session->selection = range;
     refreshCommandState();
 }
+
+void ScreenshotTableEditingSession::applyDocument(
+    const std::shared_ptr<ScreenshotTableEditingSession>& session,
+    const ScreenshotTableDocument& replacement, const QString& label) {
+    if (session && session->document != replacement)
+        session->undoStack.push(
+            new ReplaceTableDocumentCommand(session, session->document, replacement, label));
+}

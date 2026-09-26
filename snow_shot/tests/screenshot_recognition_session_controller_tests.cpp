@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include <QTextEdit>
 #include <QMimeData>
+#include <QJsonArray>
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -58,6 +59,75 @@ void processFor(int durationMs) {
     loop.exec();
 }
 
+void headlessWorkflowResultsAndEdits() {
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = []() -> ScreenshotRecognitionWindow* { return nullptr; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::white);
+    session.setTarget({QStringLiteral("mcp-headless"), image, QRectF(0, 0, 80, 60)});
+    ScreenshotRecognitionResults results;
+    results.key = QStringLiteral("mcp-headless");
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = QRect(0, 0, 80, 60);
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Original text");
+    line.confidence = 0.95;
+    line.quad = QPolygonF{QPointF(0, 0), QPointF(70, 0), QPointF(70, 20), QPointF(0, 20)};
+    presentation->lines.append(line);
+    presentation->prepareForRendering();
+    results.text = ScreenshotOcrRecognitionResult{presentation};
+    results.translatedText = std::make_shared<ScreenshotOcrPresentation>(*presentation);
+    results.translatedText->setLineText(0, QStringLiteral("Translated text"));
+    SnowShotTableResult table;
+    table.html =
+        QStringLiteral("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
+    results.table = table;
+    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("payload")}, {}};
+    session.seedRecognitionResults(results);
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(session.workflowResult().value(QStringLiteral("lines")).toArray().size() == 1,
+            "headless OCR returns layout");
+    require(session.activateCachedTextTranslation(), "headless cached translation activates");
+    const auto translated = session.workflowResult();
+    require(translated.value(QStringLiteral("text")) == QStringLiteral("Translated text") &&
+                translated.value(QStringLiteral("lines"))
+                        .toArray()
+                        .at(0)
+                        .toObject()
+                        .value(QStringLiteral("text")) == QStringLiteral("Translated text"),
+            "headless translation exports matching text and layout");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("set_text")},
+                                  {QStringLiteral("text"), QStringLiteral("Edited text")}}),
+            "headless text edit");
+    require(session.workflowResult().value(QStringLiteral("text")) == QStringLiteral("Edited text"),
+            "edited draft exported");
+    session.activate(ScreenshotRecognitionSessionController::Mode::Table);
+    require(session.workflowResult().value(QStringLiteral("cells")).toArray().size() == 4,
+            "headless table returns cells");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("select_cells")},
+                                  {QStringLiteral("range"), QJsonArray{0, 0, 0, 1}}}),
+            "table selection without widget");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("merge_cells")}}),
+            "headless table merge");
+    require(session.workflowResult().value(QStringLiteral("cells")).toArray().size() == 3,
+            "merged cells reflected in result");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("undo")}}),
+            "headless table undo");
+    require(session.workflowResult().value(QStringLiteral("cells")).toArray().size() == 4,
+            "table undo restores cells");
+    const auto before = session.workflowResult();
+    require(!session.editWorkflow({{QStringLiteral("action"), QStringLiteral("set_cell")},
+                                   {QStringLiteral("row"), 99},
+                                   {QStringLiteral("column"), 0},
+                                   {QStringLiteral("text"), QStringLiteral("invalid")}}),
+            "invalid cell rejected");
+    require(session.workflowResult() == before, "invalid cell edit is atomic");
+    session.activate(ScreenshotRecognitionSessionController::Mode::Qr);
+    require(session.workflowResult().value(QStringLiteral("contents")).toArray() ==
+                QJsonArray{QStringLiteral("payload")},
+            "headless QR result");
+}
 void tablePreparationPreservesSessionAndSiblingPopovers() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
     for (int scenario = 0; scenario < 5; ++scenario) {
@@ -303,6 +373,9 @@ void originalImageOverridePreservesSessionState() {
     session.seedRecognitionResults(cached);
     session.activate(Mode::Text);
     require(session.activateCachedTextTranslation(), "activate cached translation fixture");
+    require(session.workflowResult().value(QStringLiteral("text")) ==
+                QStringLiteral("Translated OCR"),
+            "workflow exports in-image translation through the active text draft");
     session.setShowOriginalImage(true);
     require(session.translating() && session.originalImageTranslationActive() &&
                 !session.originalImageVisible() && content->isHidden() &&
@@ -717,6 +790,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    headlessWorkflowResultsAndEdits();
     deactivationNotifiesOnlyOnStateTransition();
     tablePreparationPreservesSessionAndSiblingPopovers();
     cachedRecognitionUsesTheSelectedFillStyle();

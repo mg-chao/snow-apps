@@ -29,6 +29,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QThread>
@@ -38,6 +39,7 @@
 #include <QScreen>
 #include <QPointer>
 #include <QTimer>
+#include <QJsonArray>
 #include <QMessageBox>
 #include "widgets/color_picker.h"
 #include <future>
@@ -1668,6 +1670,68 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (app.arguments().contains(QStringLiteral("--automation-only"))) {
+        const auto saved = ApplicationStorage::instance().configuration().snapshot();
+        ScreenRecordingController controller(testEffectsSource);
+        QString error;
+        require(!controller.startAutomation(QRect(10, 10, 320, 240),
+                                            {{QStringLiteral("frame_rate"), 37}}, &error) &&
+                    error == QStringLiteral("invalid_parameters") && !controller.isOpen(),
+                "invalid automation options must reject before opening recording UI");
+        require(controller.startAutomation(QRect(10, 10, 320, 240),
+                                           {{QStringLiteral("format"), QStringLiteral("gif")},
+                                            {QStringLiteral("start_delay_seconds"), 10},
+                                            {QStringLiteral("animated_frame_rate"), 15}},
+                                           &error),
+                "automation must support isolated recording options");
+        require(controller.automationState().value(QStringLiteral("operation")).toString() ==
+                    QStringLiteral("counting_down"),
+                "automation state must expose countdown");
+        const int previousStarts = starts.load();
+        controller.detachAutomation();
+        QCoreApplication::processEvents();
+        require(!controller.isOpen() && starts == previousStarts,
+                "disconnect must cancel countdown without starting capture");
+        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+                "automation options must not change persistent preferences");
+        QTemporaryDir outputDirectory;
+        require(outputDirectory.isValid(), "recording output directory must be isolated");
+        const QString outputPath = outputDirectory.filePath(QStringLiteral("recording.mp4"));
+        require(controller.startAutomation(QRect(10, 10, 320, 240),
+                                           {{QStringLiteral("format"), QStringLiteral("mp4")},
+                                            {QStringLiteral("path"), outputPath},
+                                            {QStringLiteral("start_delay_seconds"), 0},
+                                            {QStringLiteral("frame_rate"), 24}},
+                                           &error),
+                "automation start must succeed");
+        waitForRecording(controller);
+        require(!QFileInfo::exists(outputPath),
+                "the controller must leave output publication to the recording exporter");
+        require(lastDirectConfig.capture_fps == 24,
+                "automation frame rate must reach the native capture configuration");
+        const auto runningRevision =
+            controller.automationState().value(QStringLiteral("revision")).toInteger();
+        require(controller.controlAutomation(QStringLiteral("pause"), {}, &error),
+                "automation pause must succeed");
+        require(controller.automationState().value(QStringLiteral("state")).toString() ==
+                    QStringLiteral("paused"),
+                "automation must expose paused state");
+        require(controller.controlAutomation(QStringLiteral("resume"), {}, &error),
+                "automation resume must succeed");
+        require(controller.automationState().value(QStringLiteral("revision")).toInteger() >
+                    runningRevision,
+                "pause then resume must invalidate a stale revision despite restoring state");
+        const int previousExports = exports.load();
+        controller.detachAutomation();
+        waitForIdle(controller);
+        require(exports == previousExports + 1 &&
+                    controller.automationState().value(QStringLiteral("finalized")).toBool(),
+                "disconnect must finalize exactly once and retain the output artifact");
+        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+                "recording lifecycle must preserve persistent preferences");
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
         class KeyTranslator : public QTranslator {
           public:

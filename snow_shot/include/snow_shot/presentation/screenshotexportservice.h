@@ -32,6 +32,10 @@ class ScreenshotExportService final : public ScreenshotSelectionImageComposerPor
                                                  const ScreenshotResultStyle& style,
                                                  QObject* receiver,
                                                  ClipboardCallback callback) override;
+    [[nodiscard]] bool requestSelectionResultAtScale(const QRect& selection,
+                                                     const ScreenshotResultStyle& style,
+                                                     qreal scale, QObject* receiver,
+                                                     ImageCallback callback);
     [[nodiscard]] std::optional<ScreenshotPinnedSelectionRequest>
     preparePinnedSelection(const QRect& selection,
                            const ScreenshotResultStyle& style) const override;

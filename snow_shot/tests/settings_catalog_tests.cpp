@@ -234,12 +234,12 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 41, "macOS adds one permissions section");
-    require(itemCount == 181, "macOS adds login settings and omits administrator controls "
+    require(sectionCount == 42, "macOS adds one permissions section");
+    require(itemCount == 184, "macOS adds login settings and omits administrator controls "
                               "and Windows-only choices");
 #else
-    require(sectionCount == 40, "catalog must contain forty sections");
-    require(itemCount == 184, "catalog must contain one hundred eighty-four items");
+    require(sectionCount == 41, "catalog must contain forty-one sections");
+    require(itemCount == 186, "catalog must contain one hundred eighty-six items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -782,14 +782,15 @@ void builtInCatalogIsCompleteAndValid() {
         modelType != nullptr ? std::get_if<settings::SettingsSelectDefinition>(&modelType->payload)
                              : nullptr;
     require(
-        systemPage != nullptr && systemPage->sections.size() == 6 &&
+        systemPage != nullptr && systemPage->sections.size() == 7 &&
             systemPage->sections.at(0).id == QStringLiteral("system-general") &&
             systemPage->sections.at(1).id == QStringLiteral("screenshot-capture") &&
             systemPage->sections.at(1).reset == settings::SettingsSectionReset::ScreenshotCapture &&
             systemPage->sections.at(2).id == QStringLiteral("screen-recording-capture") &&
             systemPage->sections.at(3).id == QStringLiteral("network") &&
             systemPage->sections.at(4).id == QStringLiteral("text-recognition") &&
-            systemPage->sections.at(5).id == QStringLiteral("core") && proxy != nullptr &&
+            systemPage->sections.at(5).id == QStringLiteral("core") &&
+            systemPage->sections.at(6).id == QStringLiteral("mcp") && proxy != nullptr &&
             proxy->configurationKey == QStringLiteral("network/proxy") && proxySelect != nullptr &&
             proxySelect->binding == settings::SettingsSelectBinding::Proxy &&
             proxySelect->options.size() == 2 &&
@@ -820,6 +821,16 @@ void builtInCatalogIsCompleteAndValid() {
             modelTypeSelect->options.at(5).value == QStringLiteral("small_v4") &&
             modelTypeSelect->options.at(6).value == QStringLiteral("medium_v4"),
         "System settings must expose the ordered OCR model and acceleration controls");
+    const auto* mcp = catalog.section(QStringLiteral("system-settings"), QStringLiteral("mcp"));
+    require(mcp != nullptr && mcp->items.size() == 2 &&
+                mcp->items.at(0).id == QStringLiteral("system.mcp-enabled") &&
+                mcp->items.at(1).id == QStringLiteral("system.mcp-status") &&
+                mcp->items.at(0).configurationKey == QStringLiteral("mcp/enabled") &&
+                catalog.item({QStringLiteral("system-settings"), QStringLiteral("system-general"),
+                              QStringLiteral("system.mcp-enabled")}) == nullptr &&
+                catalog.item({QStringLiteral("system-settings"), QStringLiteral("system-general"),
+                              QStringLiteral("system.mcp-status")}) == nullptr,
+            "MCP controls must live together below Core, outside General");
     const QStringList modelLabels{QStringLiteral("Ultra Small V6"), QStringLiteral("Small V6"),
                                   QStringLiteral("Medium V6"),      QStringLiteral("Small V5"),
                                   QStringLiteral("Medium V5"),      QStringLiteral("Small V4"),

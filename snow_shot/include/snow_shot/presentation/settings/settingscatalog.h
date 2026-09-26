@@ -140,6 +140,7 @@ enum class SettingsSwitchBinding {
     LoopAnimatedImages,
     ScreenRecordingCaptureToolbar,
     DisableHotkeysOnFocusedFullscreen,
+    McpEnabled,
     AutoStartAtBoot,
     LaunchAsAdministrator,
     DrawingRememberLastUsedTool,
@@ -319,6 +320,7 @@ struct SettingsActionDefinition {
 };
 
 enum class SettingsCustomRenderer {
+    McpStatus,
     PermissionScreenRecording,
     PermissionAccessibility,
     PermissionInputMonitoring,

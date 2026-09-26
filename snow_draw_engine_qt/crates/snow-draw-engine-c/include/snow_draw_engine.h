@@ -38,6 +38,8 @@ SnowError snow_runtime_serialize_document_session(SnowRuntime runtime, uint8_t* 
                                                   size_t buffer_capacity, size_t* out_size);
 SnowError snow_runtime_serialize_selected_draw_template(SnowRuntime runtime, uint8_t* buffer,
                                                         size_t buffer_capacity, size_t* out_size);
+SnowError snow_runtime_serialize_selected_element_ids(SnowRuntime runtime, uint8_t* buffer,
+                                                      size_t buffer_capacity, size_t* out_size);
 SnowError snow_runtime_create_from_document_session_with_config(const uint8_t* bytes, size_t size,
                                                                 const SnowRuntimeConfig* config,
                                                                 SnowRuntime* out_runtime);
@@ -1237,6 +1239,15 @@ SnowError snow_viewport_fill_auto_filter_category(SnowRuntime runtime, SnowViewp
                                                   SnowChangedViewportList* changed);
 
 SnowError snow_runtime_get_history_state(SnowRuntime runtime, SnowHistoryState* out_state);
+
+/* Apply one validated versioned annotation batch as one history entry. Output bytes are
+   owned by
+ * the caller and released with snow_annotation_result_destroy, even on empty result. */
+SnowError snow_runtime_apply_annotation_json(SnowRuntime runtime, const uint8_t* bytes, size_t size,
+                                             uint8_t** out_json, size_t* out_size,
+                                             SnowChangedViewportList* out_changed);
+void snow_annotation_result_destroy(uint8_t* bytes, size_t size);
+uint64_t snow_runtime_document_revision(SnowRuntime runtime);
 
 SnowError
 snow_runtime_clear_document_preserving_viewports(SnowRuntime runtime,

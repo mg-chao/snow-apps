@@ -58,7 +58,8 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
 }
 
 void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation toolbarPreparation,
-                                             ToolbarVisibility toolbarVisibility) {
+                                             ToolbarVisibility toolbarVisibility,
+                                             PresentationMode presentation) {
     const QPoint initialCursorGlobalPosition = m_context.cursorPosition();
     completeRecapture(false);
     if (m_deferredExportCleanup) {
@@ -81,6 +82,7 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_startMode = mode;
     m_toolbarPreparation = toolbarPreparation;
     m_toolbarVisibility = toolbarVisibility;
+    m_state.presentationSuppressed = presentation == PresentationMode::Silent;
     m_state.restoreOriginalScreenColors = m_context.restoreOriginalScreenColors();
     m_state.captureCursor = m_context.captureCursor();
     m_state.sessionState = ScreenshotSessionState::Capturing;
@@ -102,7 +104,8 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_startup->logicalPosition = initialCursorGlobalPosition;
     m_startup->anchorCursor = mode != StartMode::ExternalDrag;
     m_startup->phase = ScreenshotStartupContext::Phase::Preparing;
-    m_context.runtime.createColorPicker(initialCursorGlobalPosition);
+    if (!m_state.presentationSuppressed)
+        m_context.runtime.createColorPicker(initialCursorGlobalPosition);
     beginCapturePreparation(sessionId);
 }
 
@@ -398,7 +401,8 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
     }
-    if (preCapturePrepared && m_toolbarPreparation == ToolbarPreparation::Prewarm) {
+    if (preCapturePrepared && !m_state.presentationSuppressed &&
+        m_toolbarPreparation == ToolbarPreparation::Prewarm) {
         m_context.runtime.prewarmToolbarSurface(m_context.displaySession);
     }
 }
@@ -598,18 +602,20 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     const ScreenshotOverlayShowMode revealMode =
         m_startMode == StartMode::ExternalDrag ? ScreenshotOverlayShowMode::CapturedImageFramePaced
                                                : ScreenshotOverlayShowMode::CapturedImage;
-    m_context.runtime.showOverlayWindows(m_context.displaySession, revealMode);
+    if (!m_state.presentationSuppressed)
+        m_context.runtime.showOverlayWindows(m_context.displaySession, revealMode);
     SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION();
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.composited");
     SNOW_SHOT_CAPTURE_PERF_FINISH(true);
     m_startup->phase = ScreenshotStartupContext::Phase::Revealed;
-    if (m_context.presentation.updateColorPicker) {
+    if (!m_state.presentationSuppressed && m_context.presentation.updateColorPicker) {
         m_context.presentation.updateColorPicker();
     }
     if (m_context.presentation.capturePresented) {
         m_context.presentation.capturePresented();
     }
-    if (m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+    if (!m_state.presentationSuppressed &&
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         m_startMode != StartMode::ExternalDrag && !m_context.runtime.selectorReady() &&
         !m_context.runtime.selectorRefreshInFlight()) {
         m_context.runtime.startWorkflowRefresh();
@@ -617,6 +623,12 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
 }
 
 void ScreenshotCaptureWorkflow::enterOverlaySelectionModeAtCursor() {
+    if (m_state.presentationSuppressed) {
+        m_context.interaction.enterOverlayVisible(false);
+        m_context.intelligentSelection.clearTransientState();
+        m_context.runtime.clearSelectorSelection();
+        return;
+    }
     if (m_startMode != StartMode::ExternalDrag &&
         m_context.selection.regionType() != ScreenshotRegionType::Rectangle) {
         m_context.interaction.enterOverlayVisible(false);
@@ -712,8 +724,9 @@ void ScreenshotCaptureWorkflow::handleLayoutReady(const ScreenshotCaptureLayout&
     m_startup->nativeDisplayId = owner->nativeDisplayId;
     m_startup->physicalPosition = m_context.geometry.physicalPositionForLogicalPoint(
         m_context.displaySession, m_startup->logicalPosition);
-    m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
-    if (m_startMode != StartMode::ExternalDrag &&
+    if (!m_state.presentationSuppressed)
+        m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
+    if (!m_state.presentationSuppressed && m_startMode != StartMode::ExternalDrag &&
         m_context.selection.regionType() == ScreenshotRegionType::Rectangle)
         m_context.runtime.startWorkflowRefresh();
     if (beginCapturePresentation(layout.requestId))

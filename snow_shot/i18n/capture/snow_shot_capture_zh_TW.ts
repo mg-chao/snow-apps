@@ -174,6 +174,13 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotMcpServer</name>
+        <message>
+            <source>MCP request failed (%1).</source>
+            <translation>MCP 請求失敗（%1）。</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotOverlayWindow</name>
         <message>
             <source>Loading screenshot history</source>
@@ -421,6 +428,32 @@
         <message>
             <source>mouse wheel</source>
             <translation>滑鼠滾輪</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::mcp::ScreenshotMcpServer</name>
+        <message>
+            <source>Another Snow Shot instance owns the MCP endpoint.</source>
+            <translation>另一個 Snow Shot 執行個體正在使用 MCP 端點。</translation>
+        </message>
+        <message>
+            <source>Could not open the local MCP endpoint.</source>
+            <translation>無法開啟本機 MCP 端點。</translation>
+        </message>
+        <message>
+            <source>Could not secure the MCP runtime directory.</source>
+            <translation>無法設定 MCP 執行目錄的安全權限。</translation>
+        </message>
+        <message>
+            <source>Could not write the private MCP descriptor.</source>
+            <translation>無法寫入私有 MCP 描述檔。</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::mcp::ScreenshotMcpSession</name>
+        <message>
+            <source>MCP request failed (%1).</source>
+            <translation>MCP 請求失敗（%1）。</translation>
         </message>
     </context>
     <context>

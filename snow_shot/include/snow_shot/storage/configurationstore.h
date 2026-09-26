@@ -7,11 +7,13 @@
 #include <QJsonValue>
 #include <QMap>
 #include <QMutex>
+#include <QRecursiveMutex>
 #include <QObject>
 #include <QPair>
 #include <QString>
 #include <QTimer>
 #include <QVector>
+#include <functional>
 
 namespace snow_shot::storage {
 enum class ConfigurationCompatibility {
@@ -32,6 +34,11 @@ class ConfigurationStore final : public QObject {
 
     [[nodiscard]] QJsonValue value(const QString& key) const;
     [[nodiscard]] QMap<QString, QJsonValue> snapshot() const;
+    [[nodiscard]] quint64 revision() const;
+    // Serializes the revision check with all configuration writers, including
+    // nested writes made by runtime settings adapters.
+    bool mutateIfRevision(quint64 expectedRevision, const std::function<bool()>& mutation,
+                          bool* conflict = nullptr);
     [[nodiscard]] bool isDirty() const;
     [[nodiscard]] bool isWritable() const;
     [[nodiscard]] QString lastError() const;
@@ -66,6 +73,7 @@ class ConfigurationStore final : public QObject {
     bool m_readAvailable = false;
     bool m_writeAvailable = false;
     mutable QMutex m_mutex;
+    QRecursiveMutex m_mutationMutex;
     QMutex m_ioMutex;
     QMap<QString, QJsonValue> m_values;
     QJsonObject m_document;

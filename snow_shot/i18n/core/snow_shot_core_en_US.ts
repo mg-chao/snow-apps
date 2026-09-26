@@ -362,6 +362,13 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         </message>
     </context>
     <context>
+        <name>McpDocumentService</name>
+        <message>
+            <source>Document request failed (%1).</source>
+            <translation>Document request failed (%1).</translation>
+        </message>
+    </context>
+    <context>
         <name>QObject</name>
         <message>
             <source>%1 cannot be registered as a global shortcut, try another key</source>

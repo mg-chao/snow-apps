@@ -1840,7 +1840,41 @@ void customCaptureDoesNotWaitForSelector() {
     }
 }
 
+void silentCaptureSuppressesAllPresentationAndRestoresVisibleMode() {
+    ScreenshotCaptureState state;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    CaptureRuntime runtime;
+    runtime.seedActiveDisplayOnPrepare = true;
+    auto workflow =
+        makeWorkflow(state, displays, geometry, interaction, selection, intelligent, runtime);
+    workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::Normal,
+                          ScreenshotCaptureWorkflow::ToolbarPreparation::OnDemand,
+                          ScreenshotCaptureWorkflow::ToolbarVisibility::Suppressed,
+                          ScreenshotCaptureWorkflow::PresentationMode::Silent);
+    CapturedDisplayModel snapshot;
+    snapshot.stableId = QStringLiteral("primary");
+    snapshot.physicalRect = QRect(0, 0, 64, 48);
+    snapshot.logicalRect = snapshot.physicalRect;
+    snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGB32);
+    snapshot.image.fill(Qt::blue);
+    runtime.deliverResult(successfulResult(state.sessionId, snapshot));
+    require(
+        state.presentationSuppressed && runtime.showOverlayCalls == 0 &&
+            runtime.createColorPickerCalls == 0 && runtime.startWorkflowRefreshCalls == 0 &&
+            runtime.prewarmToolbarSurfaceCalls == 0,
+        "silent capture must acquire images without exposing overlay, picker, toolbar or selector");
+    require(!geometry.isEmpty(), "silent capture retains the native display session");
+    workflow.startCapture();
+    require(!state.presentationSuppressed && runtime.createColorPickerCalls == 1,
+            "normal capture after a silent session restores presentation");
+}
+
 int main() {
+    silentCaptureSuppressesAllPresentationAndRestoresVisibleMode();
     confirmedSelectionPreservesRegionTypeInToolbarPresentation();
     customCaptureDoesNotWaitForSelector();
     startupDisplayIdentityMatchesByNameRectOrNativeId();

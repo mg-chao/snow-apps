@@ -40,6 +40,11 @@ class PinnedWindowGroupManager final : public QObject {
     [[nodiscard]] GroupWindowCounts windowCounts(const QString& groupId) const;
     [[nodiscard]] int windowCount(const QString& groupId) const;
     [[nodiscard]] bool hasWindow(const QString& persistenceId) const;
+    [[nodiscard]] ::ScreenshotPinnedWindow* liveWindow(const QString& persistenceId) const;
+    [[nodiscard]] QVector<::ScreenshotPinnedWindow*> liveWindows() const;
+    [[nodiscard]] quint64 automationRevision() const {
+        return m_automationRevision;
+    }
     void onPinnedRecordsChanged();
 
     bool setActiveGroup(const QString& groupId);
@@ -86,6 +91,7 @@ class PinnedWindowGroupManager final : public QObject {
     mutable QHash<QString, QSet<QString>> m_persistedIdsByGroup;
     mutable QHash<QString, QSet<QString>> m_allPersistedIdsByGroup;
     bool m_groupsChangedScheduled = false;
+    quint64 m_automationRevision = 0;
 };
 } // namespace snow_shot::presentation
 

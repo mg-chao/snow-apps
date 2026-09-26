@@ -15,6 +15,7 @@ use snow_draw_engine_interaction::{InputEvent, InteractionOutput};
 use snow_draw_engine_model::DocumentModel;
 use snow_draw_engine_scene::{DocumentSceneCache, ViewportComposer};
 
+mod annotations;
 #[cfg(test)]
 mod auto_filter_tests;
 mod document_commands;

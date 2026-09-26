@@ -2,6 +2,9 @@
 #define SNOW_SHOT_PRESENTATION_DIRECTCAPTURECONTROLLER_H
 
 #include <QObject>
+#include <QImage>
+#include <QJsonObject>
+#include <functional>
 #include <memory>
 
 namespace snow_shot::presentation {
@@ -13,6 +16,9 @@ class DirectCaptureController final : public QObject {
     void captureFocusedWindow();
     void captureCurrentMonitor();
     void shutdown();
+    void cancelMcpCapture();
+    [[nodiscard]] bool mcpCapture(const QJsonObject& options,
+                                  std::function<void(QImage, QJsonObject, QString)> completion);
     [[nodiscard]] bool blocksApplicationUpdate() const;
 
   signals:

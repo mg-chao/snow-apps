@@ -80,8 +80,8 @@ void ScreenshotScrollingThumbnailWidget::reset() {
     m_sourceSize = {};
     m_highlightedRows = {};
     m_captureImageExtent = 0;
-    m_trimTop = 0;
-    m_trimBottom = 0;
+    m_trim->top = 0;
+    m_trim->bottom = 0;
     if (m_scrollBar != nullptr) {
         m_scrollBar->setRange(0, 0);
         m_scrollBar->setValue(0);
@@ -149,7 +149,7 @@ void ScreenshotScrollingThumbnailWidget::setStitchedImage(const QImage& previewI
 
     const int oldExtent = sourceExtent();
     const int oldCross = horizontal(m_mode) ? m_sourceSize.height() : m_sourceSize.width();
-    const int oldTrimEnd = m_trimBottom;
+    const int oldTrimEnd = m_trim->bottom;
     if (!previewImage.isNull()) {
         if (replacePreviewImage || change == ScreenshotScrollingStitchChange::Initial ||
             change == ScreenshotScrollingStitchChange::Replaced) {
@@ -192,18 +192,18 @@ void ScreenshotScrollingThumbnailWidget::setStitchedImage(const QImage& previewI
                          change == ScreenshotScrollingStitchChange::PrependedLeft;
     const bool canPreserveTrim = oldExtent > 0 && oldCross == currentCross;
     if (canPreserveTrim && append) {
-        m_trimTop = std::clamp(m_trimTop, 0, std::max(0, currentExtent - 1));
-        m_trimBottom = currentExtent;
+        m_trim->top = std::clamp(m_trim->top, 0, std::max(0, currentExtent - 1));
+        m_trim->bottom = currentExtent;
     } else if (canPreserveTrim && prepend) {
-        m_trimTop = 0;
-        m_trimBottom = std::clamp(oldTrimEnd + std::max(0, addedRows), 1, currentExtent);
+        m_trim->top = 0;
+        m_trim->bottom = std::clamp(oldTrimEnd + std::max(0, addedRows), 1, currentExtent);
     } else {
-        m_trimTop = 0;
-        m_trimBottom = currentExtent;
+        m_trim->top = 0;
+        m_trim->bottom = currentExtent;
     }
-    if (m_trimBottom <= m_trimTop) {
-        m_trimTop = 0;
-        m_trimBottom = currentExtent;
+    if (m_trim->bottom <= m_trim->top) {
+        m_trim->top = 0;
+        m_trim->bottom = currentExtent;
     }
 
     updateWidgetMetrics();
@@ -439,11 +439,11 @@ QRect ScreenshotScrollingThumbnailWidget::highlightedRowsForTesting() const {
 #endif
 
 int ScreenshotScrollingThumbnailWidget::trimTop() const {
-    return m_trimTop;
+    return m_trim->top;
 }
 
 int ScreenshotScrollingThumbnailWidget::trimBottom() const {
-    return m_trimBottom;
+    return m_trim->bottom;
 }
 
 QRect ScreenshotScrollingThumbnailWidget::previewRect() const {
@@ -495,8 +495,9 @@ int ScreenshotScrollingThumbnailWidget::sourcePositionForPreviewPosition(int pos
 }
 
 bool ScreenshotScrollingThumbnailWidget::isTrimHandleAtPosition(int position) const {
-    return hasPreview() && (std::abs(position - handlePosition(m_trimTop)) <= kHandleHitRadius ||
-                            std::abs(position - handlePosition(m_trimBottom)) <= kHandleHitRadius);
+    return hasPreview() &&
+           (std::abs(position - handlePosition(m_trim->top)) <= kHandleHitRadius ||
+            std::abs(position - handlePosition(m_trim->bottom)) <= kHandleHitRadius);
 }
 
 void ScreenshotScrollingThumbnailWidget::updateWidgetMetrics() {
@@ -552,24 +553,24 @@ void ScreenshotScrollingThumbnailWidget::paintEvent(QPaintEvent* event) {
         painter.restore();
     }
 
-    if (m_trimTop > 0) {
+    if (m_trim->top > 0) {
         const QRectF mask = horizontal(m_mode) ? QRectF(imageTarget.left(), imageTarget.top(),
-                                                        m_trimTop * scale, imageTarget.height())
+                                                        m_trim->top * scale, imageTarget.height())
                                                : QRectF(imageTarget.left(), imageTarget.top(),
-                                                        imageTarget.width(), m_trimTop * scale);
+                                                        imageTarget.width(), m_trim->top * scale);
         painter.fillRect(mask, QColor(0, 0, 0, 178));
     }
-    if (m_trimBottom < sourceExtent()) {
+    if (m_trim->bottom < sourceExtent()) {
         const QRectF mask =
             horizontal(m_mode)
-                ? QRectF(imageTarget.left() + m_trimBottom * scale, imageTarget.top(),
-                         (sourceExtent() - m_trimBottom) * scale, imageTarget.height())
-                : QRectF(imageTarget.left(), imageTarget.top() + m_trimBottom * scale,
-                         imageTarget.width(), (sourceExtent() - m_trimBottom) * scale);
+                ? QRectF(imageTarget.left() + m_trim->bottom * scale, imageTarget.top(),
+                         (sourceExtent() - m_trim->bottom) * scale, imageTarget.height())
+                : QRectF(imageTarget.left(), imageTarget.top() + m_trim->bottom * scale,
+                         imageTarget.width(), (sourceExtent() - m_trim->bottom) * scale);
         painter.fillRect(mask, QColor(0, 0, 0, 178));
     }
-    drawTrimHandle(painter, handlePosition(m_trimTop), true);
-    drawTrimHandle(painter, handlePosition(m_trimBottom), false);
+    drawTrimHandle(painter, handlePosition(m_trim->top), true);
+    drawTrimHandle(painter, handlePosition(m_trim->bottom), false);
     painter.restore();
 }
 
@@ -591,8 +592,8 @@ void ScreenshotScrollingThumbnailWidget::mousePressEvent(QMouseEvent* event) {
         return;
     }
     const int position = previewPosition(event->position());
-    const int headDistance = std::abs(position - handlePosition(m_trimTop));
-    const int tailDistance = std::abs(position - handlePosition(m_trimBottom));
+    const int headDistance = std::abs(position - handlePosition(m_trim->top));
+    const int tailDistance = std::abs(position - handlePosition(m_trim->bottom));
     if (isTrimHandleAtPosition(position)) {
         m_dragHandle = headDistance <= tailDistance ? DragHandle::Head : DragHandle::Tail;
         setCursor(horizontal(m_mode) ? Qt::SizeHorCursor : Qt::SizeVerCursor);
@@ -678,10 +679,10 @@ void ScreenshotScrollingThumbnailWidget::updateTrimFromPosition(int position) {
     }
     const int sourcePosition = sourcePositionForPreviewPosition(position);
     if (m_dragHandle == DragHandle::Head) {
-        m_trimTop = std::clamp(sourcePosition, 0, std::max(0, m_trimBottom - 1));
+        m_trim->top = std::clamp(sourcePosition, 0, std::max(0, m_trim->bottom - 1));
     } else {
-        m_trimBottom =
-            std::clamp(sourcePosition, std::min(sourceExtent(), m_trimTop + 1), sourceExtent());
+        m_trim->bottom =
+            std::clamp(sourcePosition, std::min(sourceExtent(), m_trim->top + 1), sourceExtent());
     }
     update();
 }
@@ -722,4 +723,10 @@ void ScreenshotScrollingThumbnailWidget::drawTrimHandle(QPainter& painter, int p
     painter.drawRoundedRect(
         QRectF(viewport.center().x() - kHandleTabExtent / 2, tabTop, kHandleTabExtent, tabHeight),
         2.0, 2.0);
+}
+
+void ScreenshotScrollingThumbnailWidget::setTrimModel(
+    std::shared_ptr<ScreenshotScrollingTrimRange> trim) {
+    m_trim = std::move(trim);
+    update();
 }

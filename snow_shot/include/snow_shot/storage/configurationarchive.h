@@ -4,6 +4,7 @@
 #include <QJsonValue>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 
 namespace snow_shot::storage {
 
@@ -11,6 +12,8 @@ struct ConfigurationArchiveReadResult {
     QMap<QString, QJsonValue> values;
     int schemaVersion = 0;
     QString error;
+    QStringList redactedCredentialIds;
+    void preserveOmittedCredentials(const QMap<QString, QJsonValue>& current);
 
     [[nodiscard]] bool isValid() const {
         return error.isEmpty();
@@ -27,7 +30,8 @@ class ConfigurationArchive final {
     // with a manifest stamped with `schemaVersion`.  Returns an empty string
     // on success and a translated error otherwise.
     [[nodiscard]] static QString write(const QString& archivePath,
-                                       const QMap<QString, QJsonValue>& values, int schemaVersion);
+                                       const QMap<QString, QJsonValue>& values, int schemaVersion,
+                                       bool redactCredentials = false);
 
     // Reads and validates an archive.  Unknown or invalid keys are dropped;
     // on success `values` holds only keys the current schema accepts.

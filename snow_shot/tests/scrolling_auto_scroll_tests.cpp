@@ -1,4 +1,5 @@
 #include "presentation/capture/screenshotscrollingautoscroller.h"
+#include "presentation/capture/scrollingstepinput.h"
 #include "snow_shot/platform/windows/scrollinput.h"
 
 #include <QCoreApplication>
@@ -102,6 +103,14 @@ int main(int argc, char** argv) {
     }
     nativeWheelMessagesReachTheSelection();
 #endif
+    using snow_shot::capture_detail::scrollingStepDelta;
+    require(scrollingStepDelta(QStringLiteral("up")) == QPoint(0, 120) &&
+                scrollingStepDelta(QStringLiteral("down")) == QPoint(0, -120) &&
+                scrollingStepDelta(QStringLiteral("left")) == QPoint(-120, 0) &&
+                scrollingStepDelta(QStringLiteral("right")) == QPoint(120, 0),
+            "four directions each map to exactly one native notch");
+    require(!scrollingStepDelta(QStringLiteral("diagonal")),
+            "unknown directions cannot dispatch input");
     using Mode = ScreenshotScrollingRecognitionMode;
     int steps = 0;
     QRect target;

@@ -84,6 +84,15 @@ int main(int argc, char** argv) {
     require(!backend.applySwitchValue(binding, false) && backend.switchValue(binding) &&
                 error == u"native failure",
             "native failure surfaces without falsely changing toggle");
+    auto& configuration = storage.configuration();
+    const auto enabledKey = QStringLiteral("system/auto_start_at_boot");
+    require(configuration.setValue(enabledKey, true), "startup import baseline");
+    auto imported = configuration.snapshot();
+    imported.insert(enabledKey, false);
+    require(!backend.importConfigurationSnapshot(
+                imported, snow_shot::storage::ConfigurationStore::currentSchemaVersion()) &&
+                configuration.value(enabledKey).toBool() && backend.switchValue(binding),
+            "failed native import keeps the pre-import startup preference for recovery");
     fail = false;
     save = false;
     require(!backend.applySwitchValue(binding, false) && !backend.switchValue(binding) &&

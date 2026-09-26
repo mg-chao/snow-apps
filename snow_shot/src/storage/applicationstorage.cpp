@@ -705,6 +705,7 @@ void ApplicationStorage::finishCacheClear(StorageCacheKind kind, const StorageRe
     if (m_usageTracker != nullptr) {
         m_status.appUsage = m_usageTracker->usage();
     }
+    emit cacheClearFinished(kind, result.success);
     emitStatusChanged();
 }
 

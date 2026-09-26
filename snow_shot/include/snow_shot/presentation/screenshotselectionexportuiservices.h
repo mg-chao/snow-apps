@@ -22,6 +22,7 @@ class ScreenshotPinnedWindowPool;
 class ScreenshotPendingPinCoordinator;
 class QTextDocument;
 struct ScreenshotPinnedRecognitionProviders;
+struct ScreenshotHistoryEntry;
 
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
@@ -67,6 +68,10 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     [[nodiscard]] bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
                                               ScreenshotPinnedSelectionResultHandle result,
                                               PinnedCompletion completion) override;
+    [[nodiscard]] bool presentPinnedDocument(const QImage& background, QScreen* screen,
+                                             const QRect& nativeGeometry,
+                                             const ScreenshotHistoryEntry& entry,
+                                             PinnedCompletion completion);
     [[nodiscard]] bool presentPinnedArtifact(const ScreenshotPinnedSelectionRequest& request,
                                              std::shared_ptr<ScreenshotExportArtifact> artifact,
                                              PinnedCompletion completion = {});
@@ -94,7 +99,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
         std::optional<bool> checkerboardEnabled = {},
         snow_shot::storage::PinnedWindowCreationSource source =
-            snow_shot::storage::PinnedWindowCreationSource::Other);
+            snow_shot::storage::PinnedWindowCreationSource::Other,
+        const ScreenshotHistoryEntry* document = nullptr);
 
     std::function<void()> m_restoreFailure;
     QSet<QString> m_restoringIds;

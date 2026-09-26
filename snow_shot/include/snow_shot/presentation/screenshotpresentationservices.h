@@ -15,6 +15,7 @@
 #include <QStringList>
 
 #include <optional>
+#include <functional>
 
 struct ScreenshotCaptureState;
 struct ScreenshotColorPickerContext;
@@ -37,6 +38,7 @@ struct ScreenshotPresentationServicesContext {
     ScreenshotSelectionModel& selection;
     ScreenshotIntelligentSelectionModel& intelligentSelection;
     QSet<SnowCanvasTool> quickSelectionDisabledTools;
+    std::function<void()> stateChanged = [] {};
 };
 
 class ScreenshotPresentationServices final {

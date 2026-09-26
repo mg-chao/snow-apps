@@ -92,6 +92,8 @@ class ScreenshotExportArtifact final : public QObject {
     struct PngCachePolicy {
         // Bounds retained cache entries, not in-flight encoders or consumer-owned bytes.
         qsizetype maximumBytes = 64 * 1024 * 1024;
+        // Optional internal instrumentation, invoked on the encoder worker only when encoding.
+        std::function<void()> encodingStarted;
     };
     using ImageCallback = std::function<void(ScreenshotExportImageResult)>;
     using EncodingCallback = std::function<void(ScreenshotExportEncodingResult)>;

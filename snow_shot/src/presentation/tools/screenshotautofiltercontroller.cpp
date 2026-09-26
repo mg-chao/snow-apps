@@ -50,6 +50,10 @@ void detect(QImage image, ScreenshotAutoFilterController::Completion completion)
 }
 } // namespace
 
+void ScreenshotAutoFilterController::detectRegions(QImage image, Completion completion) {
+    detect(std::move(image), std::move(completion));
+}
+
 class ScreenshotAutoFilterVisual final : public QWidget {
   public:
     ScreenshotAutoFilterVisual(SnowCanvasWidget* canvas, ScreenshotAutoFilterController* controller)

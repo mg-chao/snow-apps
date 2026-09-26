@@ -7,11 +7,13 @@
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
+#include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/pinnedwindowplacement.h"
 
 #include <QByteArray>
+#include <QJsonObject>
 #include "snow_shot/presentation/mousereleaseactioncontroller.h"
 
 #include <QColor>
@@ -157,6 +159,10 @@ class ScreenshotPinnedWindow final : public QWidget {
             snow_shot::storage::PinnedWindowCreationSource::Other;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
         QString groupId = QStringLiteral("default");
+        // Editable document imports seed the model without restoring window preferences.
+        QByteArray initialCanvasSession;
+        QByteArray initialCanvasHistory;
+        QString initialCanvasTool;
     };
 
     explicit ScreenshotPinnedWindow(QWidget* parent = nullptr);
@@ -172,6 +178,25 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] QString groupId() const {
         return m_groupId;
     }
+    [[nodiscard]] QJsonObject automationState() const;
+    [[nodiscard]] bool automationUpdate(const QJsonObject& properties, QString* error);
+    [[nodiscard]] bool automationAction(const QString& action);
+    [[nodiscard]] QJsonObject automationEdit(const QString& action, const QJsonObject& payload,
+                                             QString* error);
+    [[nodiscard]] bool automationReplaceContent(ScreenshotClipboardContent content);
+    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
+    automationArtifact(bool original = false, bool viewport = false);
+    [[nodiscard]] std::unique_ptr<QMimeData> automationClipboardMimeData(bool original) const;
+    [[nodiscard]] std::optional<ScreenshotRecognitionFileSnapshot> automationFileSnapshot() const;
+    [[nodiscard]] ScreenshotRecognitionResults recognitionSnapshot() const;
+    [[nodiscard]] static ScreenshotRecognitionResults
+    decodeRecognitionSnapshot(const QByteArray& data);
+    [[nodiscard]] static ScreenshotRecognitionResults
+    transformedRecognitionSnapshot(ScreenshotRecognitionResults results, const QRectF& sourceRect,
+                                   const QSize& sourcePixels, const QTransform& imageTransform,
+                                   const QSize& transformedPixels, const QRectF& contentRect);
+    [[nodiscard]] ScreenshotClipboardOriginalContent automationOriginalContent() const;
+    void cancelAutomationRecognition();
 
   public slots:
     void setGroupId(const QString& id);
@@ -299,6 +324,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void cancelContentReplacement();
     void saveAsFile();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
+    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> viewportArtifact();
     void quickSave();
     void invalidatePendingCopy();
     void applyImageOperation(const QTransform& operation, int quarterTurnDelta = 0);
@@ -402,6 +428,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_pinchActive = false;
     bool m_controlledEscapeRelease = false;
     SnowCanvasRuntime m_runtime;
+    quint64 m_automationRevision = 0;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_shortcutManager;
     snow_shot::presentation::MouseReleaseActionController m_mouseReleaseAction;
     std::unique_ptr<snow_shot::platform::PhysicalCursor> m_physicalCursor;
@@ -528,6 +555,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_initialTranslationVisible = false;
     bool m_translateAfterRecognition = false;
     bool m_automaticTextRecognition = true;
+    bool m_automationRecognition = false;
     bool m_editingEnabled = true;
     bool m_thumbnailMode = false;
     bool m_clickThroughActive = false;

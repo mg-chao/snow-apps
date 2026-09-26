@@ -353,6 +353,28 @@ void pauseWithDispatchedFramePreservesPreview() {
             "pause must preserve the trimmed result and reject later source frames");
 }
 
+void captureReleasesNativeFrameAfterAdmission() {
+    auto state = std::make_shared<ManualState>();
+    std::atomic_bool released = false;
+    QImage pixels = fixture().copy(0, 0, 400, 400);
+    // Match the native source's external-buffer image ownership.
+    QImage frame(
+        pixels.constBits(), pixels.width(), pixels.height(), pixels.bytesPerLine(), pixels.format(),
+        [](void* value) { static_cast<std::atomic_bool*>(value)->store(true); }, &released);
+    state->push(std::move(frame));
+    ScreenshotScrollingPipeline pipeline([](ScrollingPipelineFrame) {}, [](quint64, QString) {});
+    pipeline.begin(1, pixels.size(), ScreenshotScrollingRecognitionMode::Vertical,
+                   [state]() { return std::make_unique<ManualSource>(state); });
+    {
+        std::unique_lock lock(state->mutex);
+        require(state->wake.wait_for(lock, std::chrono::seconds(5),
+                                     [&]() { return state->receiveCalls >= 2; }),
+                "capture must finish admitting the native frame");
+    }
+    require(released.load(),
+            "capture must release native buffers without waiting for another frame or reset");
+}
+
 void overloadTest() {
     auto state = std::make_shared<ManualState>();
     const QImage frame = fixture().copy(0, 0, 400, 400);
@@ -655,6 +677,7 @@ int main(int argc, char** argv) {
         std::cerr << "vertical pipeline passed\n";
         pipelineTest(ScreenshotScrollingRecognitionMode::Horizontal);
         pauseWithDispatchedFramePreservesPreview();
+        captureReleasesNativeFrameAfterAdmission();
         overloadTest();
         replaySourceTest();
         sourceFailureTest();

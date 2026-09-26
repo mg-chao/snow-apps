@@ -48,6 +48,9 @@ class ScreenRecordingAreaWindow final : public QWidget {
     [[nodiscard]] bool countdownActive() const;
     [[nodiscard]] QColor inputSurfaceColor() const;
     [[nodiscard]] SnowCanvasWidget* canvas() const;
+    [[nodiscard]] SnowCanvasRuntime& canvasRuntime() {
+        return *m_canvasRuntime;
+    }
     [[nodiscard]] QRect canvasGeometry() const;
     [[nodiscard]] QRectF selectionRect() const {
         return m_selectionRect;

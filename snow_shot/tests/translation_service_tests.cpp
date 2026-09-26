@@ -32,6 +32,19 @@ void customModelsStayAvailableAndInvalidateTogether(const QString& directory) {
     require(service.models().size() == 1 && service.models().first().supportsVision &&
                 service.preferences().modelId == model.selectionId(),
             "custom vision model is immediately eligible");
+    {
+        QObject fixedOwner;
+        auto preferences = service.preferences();
+        preferences.sourceLanguage = QStringLiteral("en");
+        preferences.targetLanguage = QStringLiteral("ja");
+        auto* fixed = service.createJob({QStringLiteral(" ")}, preferences, &fixedOwner);
+        const auto global = service.preferences();
+        fixed->start();
+        fixed->retry();
+        require(
+            fixed->preferences() == preferences && service.preferences() == global,
+            "explicit per-job preferences survive start/retry without changing global settings");
+    }
     service.refreshModels();
     service.refreshModels();
     QObject owner;

@@ -4,6 +4,7 @@
 #include "../pinned/screenshotpintoperfinstrumentation.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QBuffer>
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QFile>
@@ -12,6 +13,7 @@
 #include <QSet>
 #include <QGuiApplication>
 #include <QMimeData>
+#include <QImageReader>
 #include <QPalette>
 #include <QPainter>
 #include <QPixmap>
@@ -52,8 +54,36 @@ constexpr qint64 kMaximumClipboardImageBytes = 256LL * 1024LL * 1024LL;
 constexpr qint64 kMaximumEncodedImageBytes = 256LL * 1024LL * 1024LL;
 constexpr qreal kFormattedTextPadding = 16.0;
 
+using AllocationCheck = ScreenshotClipboardContentReader::AllocationCheck;
+
+qint64 snapshotBytes(const ScreenshotClipboardContentSnapshot& snapshot) {
+    qint64 bytes =
+        snapshot.detachedImage.sizeInBytes() + (snapshot.html.size() + snapshot.text.size()) * 2;
+    for (const auto& encoded : snapshot.encodedImages)
+        bytes += encoded.bytes.size();
+    if (snapshot.nativeDib)
+        bytes += snapshot.nativeDib->bytes.size();
+    return bytes;
+}
+
+bool admitImage(QSize size, qint64 retained, const AllocationCheck& allocate) {
+    const auto pixels = static_cast<qint64>(size.width()) * size.height();
+    return size.isValid() && !size.isEmpty() && pixels <= kMaximumClipboardImagePixels &&
+           (!allocate || allocate(retained + pixels * 8));
+}
+
 class RestrictedTextDocument final : public QTextDocument {
   public:
+    explicit RestrictedTextDocument(AllocationCheck allocate, qint64 retained)
+        : m_allocate(std::move(allocate)), m_retained(retained) {}
+
+    [[nodiscard]] bool allocationFailed() const {
+        return m_failed;
+    }
+    [[nodiscard]] qint64 resourceBytes() const {
+        return m_resourceBytes;
+    }
+
     QVariant loadResource(int type, const QUrl& name) override {
         if (!name.isValid() || name.isEmpty()) {
             return {};
@@ -64,19 +94,50 @@ class RestrictedTextDocument final : public QTextDocument {
         // Qt can perform I/O. The clipboard snapshot does not inject any
         // external resources, so an empty QVariant is the safe cache miss.
         if (scheme == QStringLiteral("data")) {
+            if (m_allocate && type == QTextDocument::ImageResource) {
+                // Qt's default data-URL loader decodes before exposing dimensions.
+                // Inspect the immutable encoded bytes before admitting its raster.
+                const auto data = name.toEncoded();
+                const auto comma = data.indexOf(',');
+                if (comma < 0 || data.size() > 2 * 1024 * 1024) {
+                    m_failed = true;
+                    return {};
+                }
+                auto encoded = data.left(comma).endsWith(";base64")
+                                   ? QByteArray::fromBase64(data.mid(comma + 1))
+                                   : QByteArray::fromPercentEncoding(data.mid(comma + 1));
+                QBuffer buffer(&encoded);
+                buffer.open(QIODevice::ReadOnly);
+                QImageReader reader(&buffer);
+                const auto size = reader.size();
+                if (!admitImage(size, m_retained + m_resourceBytes + encoded.size(), m_allocate)) {
+                    m_failed = true;
+                    return {};
+                }
+                auto image = reader.read();
+                m_resourceBytes += image.sizeInBytes();
+                return image;
+            }
             return QTextDocument::loadResource(type, name);
         }
         return {};
     }
+
+  private:
+    AllocationCheck m_allocate;
+    qint64 m_retained = 0;
+    qint64 m_resourceBytes = 0;
+    bool m_failed = false;
 };
 
 bool cancellationRequested(const ScreenshotClipboardContentReader::CancellationCheck& cancelled) {
     return cancelled && cancelled();
 }
 
-std::shared_ptr<QTextDocument> makeRestrictedDocument() {
+std::shared_ptr<QTextDocument> makeRestrictedDocument(AllocationCheck allocate = {},
+                                                      qint64 retained = 0) {
     return std::shared_ptr<QTextDocument>(
-        new RestrictedTextDocument(), [](QTextDocument* document) {
+        new RestrictedTextDocument(std::move(allocate), retained), [](QTextDocument* document) {
             if (document == nullptr) {
                 return;
             }
@@ -188,7 +249,8 @@ std::optional<ScreenshotClipboardContent> imageContent(QImage image) {
 std::optional<ScreenshotClipboardContent>
 renderTextDocument(std::shared_ptr<QTextDocument> document, QString plainText,
                    qreal devicePixelRatio, const QColor& baseColor,
-                   const ScreenshotClipboardContentReader::CancellationCheck& cancelled) {
+                   const ScreenshotClipboardContentReader::CancellationCheck& cancelled,
+                   const AllocationCheck& allocate = {}, qint64 retained = 0) {
     if (document == nullptr || !std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
         return std::nullopt;
     }
@@ -233,6 +295,10 @@ renderTextDocument(std::shared_ptr<QTextDocument> document, QString plainText,
         return std::nullopt;
     }
 
+    const auto* restricted = static_cast<const RestrictedTextDocument*>(document.get());
+    if (restricted->allocationFailed() ||
+        !admitImage(physicalSize, retained + restricted->resourceBytes(), allocate))
+        return std::nullopt;
     QImage image(physicalSize, QImage::Format_ARGB32_Premultiplied);
     if (image.isNull()) {
         return std::nullopt;
@@ -262,12 +328,16 @@ renderTextDocument(std::shared_ptr<QTextDocument> document, QString plainText,
     return result;
 }
 
-std::shared_ptr<QTextDocument> makeDocument(const QString& source, bool html, QString* plainText) {
+std::shared_ptr<QTextDocument> makeDocument(const QString& source, bool html, QString* plainText,
+                                            const AllocationCheck& allocate = {},
+                                            qint64 retained = 0) {
     if (plainText == nullptr) {
         return {};
     }
 
-    auto document = makeRestrictedDocument();
+    if (allocate && (source.size() > 1024 * 1024 || !allocate(retained + source.size() * 32)))
+        return {};
+    auto document = makeRestrictedDocument(allocate, retained + source.size() * 32);
     if (html) {
         if (source.trimmed().isEmpty()) {
             return {};
@@ -290,7 +360,8 @@ std::shared_ptr<QTextDocument> makeDocument(const QString& source, bool html, QS
 
 std::optional<ScreenshotClipboardContent>
 readEncodedImage(const QList<ScreenshotClipboardEncodedImage>& images,
-                 const ScreenshotClipboardContentReader::CancellationCheck& cancelled) {
+                 const ScreenshotClipboardContentReader::CancellationCheck& cancelled,
+                 const AllocationCheck& allocate, qint64 retained) {
     for (const ScreenshotClipboardEncodedImage& imageData : images) {
         if (cancellationRequested(cancelled)) {
             return std::nullopt;
@@ -304,6 +375,10 @@ readEncodedImage(const QList<ScreenshotClipboardEncodedImage>& images,
             imageData.bytes.size() > kMaximumEncodedImageBytes) {
             continue;
         }
+        if (allocate &&
+            !admitImage(snow_shot::image_codec::inspectSize(imageData.bytes, format->format),
+                        retained, allocate))
+            return std::nullopt;
         if (QImage image =
                 snow_shot::image_codec::decode(imageData.bytes, format->format, format->mimeType);
             !image.isNull()) {
@@ -315,7 +390,8 @@ readEncodedImage(const QList<ScreenshotClipboardEncodedImage>& images,
 
 std::optional<ScreenshotClipboardContent>
 readFileImage(const ScreenshotClipboardLocalImage& localImage,
-              const ScreenshotClipboardContentReader::CancellationCheck& cancelled) {
+              const ScreenshotClipboardContentReader::CancellationCheck& cancelled,
+              const AllocationCheck& allocate, qint64 retained) {
     const auto format =
         std::find_if(std::begin(kFileImageFormats), std::end(kFileImageFormats),
                      [&localImage](const FileImageFormat& candidate) {
@@ -332,26 +408,30 @@ readFileImage(const ScreenshotClipboardLocalImage& localImage,
         before.size() > kMaximumEncodedImageBytes) {
         return std::nullopt;
     }
+    if (allocate && !allocate(retained + before.size() + 1))
+        return std::nullopt;
     QFile file(before.absoluteFilePath());
     if (!file.open(QIODevice::ReadOnly)) {
         return std::nullopt;
     }
-    const QByteArray encoded = file.read(kMaximumEncodedImageBytes + 1);
+    const QByteArray encoded = file.read(before.size() + 1);
     file.close();
     const QFileInfo after(localImage.absolutePath);
-    if (encoded.isEmpty() || encoded.size() > kMaximumEncodedImageBytes ||
-        after.size() != localImage.size ||
+    if (encoded.isEmpty() || encoded.size() != before.size() || after.size() != localImage.size ||
         after.lastModified().toUTC() != localImage.lastModifiedUtc ||
         cancellationRequested(cancelled)) {
         return std::nullopt;
     }
+    if (allocate && !admitImage(snow_shot::image_codec::inspectSize(encoded, format->format),
+                                retained + encoded.size(), allocate))
+        return std::nullopt;
     return imageContent(snow_shot::image_codec::decode(encoded, format->format,
                                                        QByteArray("image/") + format->suffix));
 }
 
 std::optional<ScreenshotClipboardContentSnapshot>
 snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, const QColor& baseColor,
-                         bool includeDetachedImage) {
+                         bool includeDetachedImage, const AllocationCheck& allocate = {}) {
     if (mimeData == nullptr || !std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
         return std::nullopt;
     }
@@ -365,7 +445,13 @@ snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, cons
         if (!mimeData->hasFormat(mimeType)) {
             continue;
         }
+        // QMimeData may invoke an external lazy provider and offers no byte-size
+        // query. Reserve its supported upper bound before requesting the value.
+        if (allocate && !allocate(snapshotBytes(snapshot) + kMaximumEncodedImageBytes))
+            return std::nullopt;
         QByteArray bytes = mimeData->data(mimeType);
+        if (allocate && bytes.size() > kMaximumEncodedImageBytes)
+            return std::nullopt;
         if (!bytes.isEmpty() && bytes.size() <= kMaximumEncodedImageBytes) {
             snapshot.encodedImages.push_back(
                 ScreenshotClipboardEncodedImage{std::move(bytes), mimeType});
@@ -373,6 +459,9 @@ snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, cons
     }
 
     if (includeDetachedImage) {
+        if (allocate && mimeData->hasImage() &&
+            !allocate(snapshotBytes(snapshot) + kMaximumClipboardImageBytes))
+            return std::nullopt;
         if (const QVariant imageValue = mimeData->imageData(); imageValue.isValid()) {
             if (imageValue.canConvert<QImage>()) {
                 snapshot.detachedImage = imageValue.value<QImage>();
@@ -389,10 +478,18 @@ snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, cons
     }
 
     if (mimeData->hasHtml()) {
+        if (allocate && !allocate(snapshotBytes(snapshot) + 2 * 1024 * 1024))
+            return std::nullopt;
         snapshot.html = mimeData->html();
+        if (allocate && snapshot.html.size() > 1024 * 1024)
+            return std::nullopt;
     }
     if (mimeData->hasText()) {
+        if (allocate && !allocate(snapshotBytes(snapshot) + 2 * 1024 * 1024))
+            return std::nullopt;
         snapshot.text = mimeData->text();
+        if (allocate && snapshot.text.size() > 1024 * 1024)
+            return std::nullopt;
     }
     return snapshot.isValid()
                ? std::optional<ScreenshotClipboardContentSnapshot>(std::move(snapshot))
@@ -400,7 +497,7 @@ snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, cons
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
-QByteArray captureNativePng() {
+QByteArray captureNativePng(const AllocationCheck& allocate, qint64 retained) {
     const UINT format = RegisterClipboardFormatW(L"PNG");
     if (format == 0 || !IsClipboardFormatAvailable(format) || !OpenClipboard(nullptr))
         return {};
@@ -408,7 +505,8 @@ QByteArray captureNativePng() {
     const SIZE_T size = handle == nullptr ? 0 : GlobalSize(handle);
     const void* memory = handle == nullptr ? nullptr : GlobalLock(handle);
     QByteArray bytes;
-    if (memory != nullptr && size > 0 && size <= static_cast<SIZE_T>(kMaximumEncodedImageBytes)) {
+    if (memory != nullptr && size > 0 && size <= static_cast<SIZE_T>(kMaximumEncodedImageBytes) &&
+        (!allocate || allocate(retained + static_cast<qint64>(size)))) {
         bytes = QByteArray(static_cast<const char*>(memory), static_cast<qsizetype>(size));
     }
     if (memory != nullptr)
@@ -462,7 +560,8 @@ qint64 nativeDibPixelOffset(const QByteArray& bytes, const BITMAPINFOHEADER& hea
     return tableEnd;
 }
 
-std::optional<ScreenshotClipboardNativeDib> captureNativeDib() {
+std::optional<ScreenshotClipboardNativeDib> captureNativeDib(const AllocationCheck& allocate,
+                                                             qint64 retained) {
     if (!OpenClipboard(nullptr)) {
         return std::nullopt;
     }
@@ -481,6 +580,17 @@ std::optional<ScreenshotClipboardNativeDib> captureNativeDib() {
         size > static_cast<SIZE_T>(std::numeric_limits<int>::max())) {
         if (locked != nullptr)
             GlobalUnlock(handle);
+        closeClipboard();
+        return std::nullopt;
+    }
+    const auto* rawHeader = static_cast<const BITMAPINFOHEADER*>(locked);
+    const auto rawHeight = rawHeader->biHeight < 0 ? -static_cast<qint64>(rawHeader->biHeight)
+                                                   : static_cast<qint64>(rawHeader->biHeight);
+    if (rawHeader->biWidth <= 0 || rawHeight <= 0 ||
+        static_cast<qint64>(rawHeader->biWidth) * rawHeight > kMaximumClipboardImagePixels ||
+        (allocate && !allocate(retained + static_cast<qint64>(size) +
+                               static_cast<qint64>(rawHeader->biWidth) * rawHeight * 4))) {
+        GlobalUnlock(handle);
         closeClipboard();
         return std::nullopt;
     }
@@ -750,13 +860,22 @@ ScreenshotClipboardContentReader::snapshotLocalFiles(const QStringList& paths,
 }
 
 std::optional<ScreenshotClipboardContentSnapshot>
-ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePixelRatio) {
+ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePixelRatio,
+                                           AllocationCheck allocate) {
     if (clipboard == nullptr) {
         return std::nullopt;
     }
     const QColor baseColor = QGuiApplication::palette().color(QPalette::Base);
-    auto snapshot =
-        snapshotMimeDataInternal(clipboard->mimeData(), devicePixelRatio, baseColor, false);
+    bool rejected = false;
+    const AllocationCheck checked = allocate ? AllocationCheck([&](qint64 bytes) {
+        rejected = rejected || !allocate(bytes);
+        return !rejected;
+    })
+                                             : AllocationCheck{};
+    auto snapshot = snapshotMimeDataInternal(clipboard->mimeData(), devicePixelRatio, baseColor,
+                                             false, checked);
+    if (rejected)
+        return std::nullopt;
     if (!snapshot.has_value() && std::isfinite(devicePixelRatio) && devicePixelRatio > 0.0) {
         snapshot = ScreenshotClipboardContentSnapshot{};
         snapshot->devicePixelRatio = devicePixelRatio;
@@ -764,58 +883,77 @@ ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePi
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (snapshot.has_value() && snapshot->encodedImages.isEmpty()) {
-        QByteArray png = captureNativePng();
+        QByteArray png = captureNativePng(checked, snapshotBytes(*snapshot));
         if (!png.isEmpty()) {
             snapshot->encodedImages.push_back({std::move(png), QStringLiteral("image/png")});
         }
     }
     if (snapshot.has_value()) {
-        if (auto native = captureNativeDib(); native.has_value()) {
+        if (auto native = captureNativeDib(checked, snapshotBytes(*snapshot)); native.has_value()) {
             SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.native_dib_copied");
             snapshot->nativeDib = std::move(*native);
         }
     }
 #endif
+    if (rejected)
+        return std::nullopt;
     if (snapshot.has_value() && !snapshot->nativeDib.has_value()) {
         // Providers that expose only QMimeData::imageData() remain supported.
         SNOW_SHOT_PIN_PERF_COUNTER("clipboard.native_dib_fallback", 1);
-        auto fallback =
-            snapshotMimeDataInternal(clipboard->mimeData(), devicePixelRatio, baseColor, true);
-        if (fallback.has_value()) {
-            snapshot->detachedImage = std::move(fallback->detachedImage);
+        const auto* mime = clipboard->mimeData();
+        if (mime) {
+            if (checked && !checked(snapshotBytes(*snapshot) + kMaximumClipboardImageBytes))
+                return std::nullopt;
+            const auto value = mime->imageData();
+            if (value.canConvert<QImage>())
+                snapshot->detachedImage = value.value<QImage>();
+            else if (value.canConvert<QPixmap>())
+                snapshot->detachedImage = value.value<QPixmap>().toImage();
         }
     }
-    return snapshot.has_value() && snapshot->isValid() ? snapshot : std::nullopt;
+    return !rejected && snapshot.has_value() && snapshot->isValid() ? snapshot : std::nullopt;
 }
 
 std::optional<ScreenshotClipboardContentSnapshot>
 ScreenshotClipboardContentReader::snapshotMimeData(const QMimeData* mimeData,
-                                                   qreal devicePixelRatio,
-                                                   const QColor& baseColor) {
-    return snapshotMimeDataInternal(mimeData, devicePixelRatio, baseColor, true);
+                                                   qreal devicePixelRatio, const QColor& baseColor,
+                                                   AllocationCheck allocate) {
+    return snapshotMimeDataInternal(mimeData, devicePixelRatio, baseColor, true, allocate);
 }
 
 std::optional<ScreenshotClipboardContent>
 ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snapshot,
-                                         CancellationCheck cancelled) {
+                                         CancellationCheck cancelled, AllocationCheck allocate) {
     if (!snapshot.isValid() || !std::isfinite(snapshot.devicePixelRatio) ||
         snapshot.devicePixelRatio <= 0.0 || cancellationRequested(cancelled)) {
         return std::nullopt;
     }
+    const auto rejected = std::make_shared<bool>(false);
+    const AllocationCheck checked = allocate ? AllocationCheck([allocate, rejected](qint64 bytes) {
+        *rejected = *rejected || !allocate(bytes);
+        return !*rejected;
+    })
+                                             : AllocationCheck{};
+    const auto retained = snapshotBytes(snapshot);
+    if (checked && !checked(retained))
+        return std::nullopt;
 
     {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_encoded_image");
-        if (auto result = readEncodedImage(snapshot.encodedImages, cancelled); result.has_value()) {
+        if (auto result = readEncodedImage(snapshot.encodedImages, cancelled, checked, retained);
+            result.has_value()) {
             return result;
         }
     }
-    if (cancellationRequested(cancelled)) {
+    if (*rejected || cancellationRequested(cancelled)) {
         return std::nullopt;
     }
     {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_detached_image");
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (snapshot.nativeDib.has_value()) {
+            if (!admitImage(snapshot.nativeDib->size, retained, checked))
+                return std::nullopt;
             SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_native_dib");
             if (QImage image = decodeNativeDib(*snapshot.nativeDib); !image.isNull()) {
                 SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.native_dib_decoded");
@@ -825,13 +963,17 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
             }
         }
 #endif
+        if (!snapshot.detachedImage.isNull() &&
+            !admitImage(snapshot.detachedImage.size(), retained, checked))
+            return std::nullopt;
         if (auto result = imageContent(std::move(snapshot.detachedImage)); result.has_value()) {
             return result;
         }
     }
     if (snapshot.localImage.has_value()) {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_file_image");
-        if (auto result = readFileImage(*snapshot.localImage, cancelled); result.has_value()) {
+        if (auto result = readFileImage(*snapshot.localImage, cancelled, checked, retained);
+            result.has_value()) {
             result->originalContent.localFilePath = snapshot.localImage->absolutePath;
             return result;
         }
@@ -842,14 +984,15 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
         std::shared_ptr<QTextDocument> document;
         {
             SNOW_SHOT_PIN_PERF_SCOPE("clipboard.html_document_layout");
-            document = makeDocument(snapshot.html, true, &plainText);
+            document = makeDocument(snapshot.html, true, &plainText, checked, retained);
         }
         if (document != nullptr) {
             std::optional<ScreenshotClipboardContent> result;
             {
                 SNOW_SHOT_PIN_PERF_SCOPE("clipboard.html_document_render");
                 result = renderTextDocument(document, plainText, snapshot.devicePixelRatio,
-                                            snapshot.baseColor, cancelled);
+                                            snapshot.baseColor, cancelled, checked,
+                                            retained + snapshot.html.size() * 32);
             }
             if (result.has_value()) {
                 result->originalContent.html = std::move(snapshot.html);
@@ -864,14 +1007,15 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
         std::shared_ptr<QTextDocument> document;
         {
             SNOW_SHOT_PIN_PERF_SCOPE("clipboard.text_document_layout");
-            document = makeDocument(snapshot.text, false, &plainText);
+            document = makeDocument(snapshot.text, false, &plainText, checked, retained);
         }
         if (document != nullptr) {
             std::optional<ScreenshotClipboardContent> result;
             {
                 SNOW_SHOT_PIN_PERF_SCOPE("clipboard.text_document_render");
                 result = renderTextDocument(document, plainText, snapshot.devicePixelRatio,
-                                            snapshot.baseColor, cancelled);
+                                            snapshot.baseColor, cancelled, checked,
+                                            retained + snapshot.text.size() * 32);
             }
             if (result.has_value()) {
                 result->originalContent.html = std::move(snapshot.html);
@@ -885,22 +1029,25 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
 
 std::optional<ScreenshotClipboardContent> ScreenshotClipboardContentReader::renderOriginalText(
     const ScreenshotClipboardOriginalContent& original, qreal devicePixelRatio,
-    const QColor& baseColor) {
+    const QColor& baseColor, AllocationCheck allocate) {
     if (original.html.isEmpty() && original.text.isEmpty()) {
         return std::nullopt;
     }
     QString plainText;
     std::shared_ptr<QTextDocument> document;
+    const auto retained = (original.html.size() + original.text.size()) * 2;
     if (!original.html.isEmpty()) {
-        document = makeDocument(original.html, true, &plainText);
+        document = makeDocument(original.html, true, &plainText, allocate, retained);
     }
     if (document == nullptr && !original.text.isEmpty()) {
-        document = makeDocument(original.text, false, &plainText);
+        document = makeDocument(original.text, false, &plainText, allocate, retained);
     }
     if (document == nullptr) {
         return std::nullopt;
     }
-    auto result = renderTextDocument(document, plainText, devicePixelRatio, baseColor, {});
+    auto result =
+        renderTextDocument(document, plainText, devicePixelRatio, baseColor, {}, allocate,
+                           retained + std::max(original.html.size(), original.text.size()) * 32);
     if (result.has_value()) {
         result->originalContent = original;
     }

@@ -101,6 +101,12 @@ The generated bundle is authoritative for a particular binary because its
 contents are produced from that build environment. Dependency licenses and
 copyright notices remain the property of their respective owners.
 
+The optional `snow-shot-mcp` stdio bridge uses the `rmcp` Rust SDK (Apache-2.0)
+and its macro/schema dependencies, plus `interprocess` (0BSD OR Apache-2.0)
+for same-user local sockets. The complete resolved dependency and license
+closure is collected from `snow_shot/rust/snow-shot-mcp/Cargo.lock` by the
+standard license collection script.
+
 ## STranslate OCR Layout Analysis
 
 The Smart Merge implementation in `src/presentation/ocr/screenshotocrlayout.cpp`
@@ -193,3 +199,93 @@ boundary uses the existing `image` dependency (MIT OR Apache-2.0); JPEG support
 adds `zune-core` and `zune-jpeg` (MIT OR Apache-2.0 OR Zlib). Their resolved
 licenses are included in the Rust dependency notice bundle. OpenCV is not
 required by this feature.
+
+
+## Snow Shot MCP executable
+
+`snow-shot-mcp` is GPL-3.0-only application code. It uses the official Rust MCP SDK
+(`rmcp`, Apache-2.0) and same-user local IPC (`interprocess`, 0BSD OR Apache-2.0).
+The following resolved normal/build dependencies are included in the Windows bridge;
+platform-specific dependencies for macOS are selected by Cargo for the target architecture.
+The packaging license collector includes each package's original license and notice files.
+
+| Package and version | Declared license |
+| --- | --- |
+| anyhow-1.0.104 | MIT OR Apache-2.0 |
+| autocfg-1.5.1 | Apache-2.0 OR MIT |
+| base64-0.22.1 | MIT OR Apache-2.0 |
+| bytes-1.12.1 | MIT |
+| cfg-if-1.0.5 | MIT OR Apache-2.0 |
+| chrono-0.4.45 | MIT OR Apache-2.0 |
+| darling-0.24.1 | MIT |
+| darling_core-0.24.1 | MIT |
+| darling_macro-0.24.1 | MIT |
+| doctest-file-1.1.1 | 0BSD |
+| dyn-clone-1.0.20 | MIT OR Apache-2.0 |
+| equivalent-1.0.2 | Apache-2.0 OR MIT |
+| futures-0.3.34 | MIT OR Apache-2.0 |
+| futures-channel-0.3.34 | MIT OR Apache-2.0 |
+| futures-core-0.3.34 | MIT OR Apache-2.0 |
+| futures-executor-0.3.34 | MIT OR Apache-2.0 |
+| futures-io-0.3.34 | MIT OR Apache-2.0 |
+| futures-macro-0.3.34 | MIT OR Apache-2.0 |
+| futures-sink-0.3.34 | MIT OR Apache-2.0 |
+| futures-task-0.3.34 | MIT OR Apache-2.0 |
+| futures-util-0.3.34 | MIT OR Apache-2.0 |
+| getrandom-0.3.4 | MIT OR Apache-2.0 |
+| getrandom-0.4.3 | MIT OR Apache-2.0 |
+| hashbrown-0.17.1 | MIT OR Apache-2.0 |
+| ident_case-1.0.1 | MIT/Apache-2.0 |
+| indexmap-2.14.2 | Apache-2.0 OR MIT |
+| interprocess-2.4.4 | 0BSD OR Apache-2.0 |
+| itoa-1.0.18 | MIT OR Apache-2.0 |
+| lazy_static-1.5.0 | MIT OR Apache-2.0 |
+| log-0.4.34 | MIT OR Apache-2.0 |
+| matchers-0.2.0 | MIT |
+| memchr-2.8.3 | Unlicense OR MIT |
+| mio-1.2.3 | MIT |
+| nu-ansi-term-0.50.3 | MIT |
+| num-traits-0.2.19 | MIT OR Apache-2.0 |
+| once_cell-1.21.4 | MIT OR Apache-2.0 |
+| pastey-0.2.3 | MIT OR Apache-2.0 |
+| pin-project-lite-0.2.17 | Apache-2.0 OR MIT |
+| proc-macro2-1.0.107 | MIT OR Apache-2.0 |
+| quote-1.0.47 | MIT OR Apache-2.0 |
+| recvmsg-1.0.0 | 0BSD |
+| ref-cast-1.0.27 | MIT OR Apache-2.0 |
+| ref-cast-impl-1.0.27 | MIT OR Apache-2.0 |
+| regex-automata-0.4.18 | MIT OR Apache-2.0 |
+| regex-syntax-0.8.11 | MIT OR Apache-2.0 |
+| rmcp-3.4.1 | Apache-2.0 (canonical fallback: Apache-2.0.txt) |
+| rmcp-macros-3.4.1 | Apache-2.0 (canonical fallback: Apache-2.0.txt) |
+| schemars-1.2.2 | MIT |
+| schemars_derive-1.2.2 | MIT |
+| serde-1.0.229 | MIT OR Apache-2.0 |
+| serde_core-1.0.229 | MIT OR Apache-2.0 |
+| serde_derive-1.0.229 | MIT OR Apache-2.0 |
+| serde_derive_internals-0.30.0 | MIT OR Apache-2.0 |
+| serde_json-1.0.151 | MIT OR Apache-2.0 |
+| sharded-slab-0.1.7 | MIT |
+| slab-0.4.12 | MIT |
+| smallvec-1.16.2 | MIT OR Apache-2.0 |
+| socket2-0.6.5 | MIT OR Apache-2.0 |
+| strsim-0.11.1 | MIT |
+| syn-2.0.119 | MIT OR Apache-2.0 |
+| syn-3.0.6 | MIT OR Apache-2.0 |
+| thiserror-2.0.21 | MIT OR Apache-2.0 |
+| thiserror-impl-2.0.21 | MIT OR Apache-2.0 |
+| thread_local-1.1.10 | MIT OR Apache-2.0 |
+| tokio-1.53.1 | MIT |
+| tokio-macros-2.7.2 | MIT |
+| tokio-util-0.7.19 | MIT |
+| tracing-0.1.44 | MIT |
+| tracing-attributes-0.1.31 | MIT |
+| tracing-core-0.1.36 | MIT |
+| tracing-log-0.2.0 | MIT |
+| tracing-subscriber-0.3.23 | MIT |
+| unicode-ident-1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| uuid-1.26.1 | Apache-2.0 OR MIT |
+| widestring-1.2.1 | MIT OR Apache-2.0 |
+| windows-link-0.2.1 | MIT OR Apache-2.0 |
+| windows-sys-0.61.2 | MIT OR Apache-2.0 |
+| zmij-1.0.23 | MIT |

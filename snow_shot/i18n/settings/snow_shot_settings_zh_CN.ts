@@ -578,6 +578,45 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotMcpSettings</name>
+        <message>
+            <source>Add this configuration to your MCP client, then restart the client to connect. Keep Snow Shot running while using MCP.</source>
+            <translation>将此配置添加到 MCP 客户端，然后重启客户端以连接。使用 MCP 时请保持 Snow Shot 运行。</translation>
+        </message>
+        <message>
+            <source>Connected clients: %1</source>
+            <translation>已连接的客户端：%1</translation>
+        </message>
+        <message>
+            <source>Copied</source>
+            <translation>已复制</translation>
+        </message>
+        <message>
+            <source>Copy configuration</source>
+            <translation>复制配置</translation>
+        </message>
+        <message>
+            <source>Local endpoint descriptor: %1</source>
+            <translation>本地端点描述文件：%1</translation>
+        </message>
+        <message>
+            <source>MCP client configuration</source>
+            <translation>MCP 客户端配置</translation>
+        </message>
+        <message>
+            <source>MCP is disabled or unavailable.</source>
+            <translation>MCP 已禁用或不可用。</translation>
+        </message>
+        <message>
+            <source>Running</source>
+            <translation>运行中</translation>
+        </message>
+        <message>
+            <source>Unavailable</source>
+            <translation>不可用</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolbarEditorSettingsWidget</name>
         <message>
             <source>Barcode recognition</source>
@@ -784,6 +823,10 @@
         <message>
             <source>All screenshot history will be removed</source>
             <translation>所有截图历史都将被删除</translation>
+        </message>
+        <message>
+            <source>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</source>
+            <translation>允许以当前系统用户身份运行的 MCP 客户端控制 Snow Shot。Snow Shot 必须保持运行。</translation>
         </message>
         <message>
             <source>Always</source>
@@ -1226,6 +1269,10 @@
             <translation>使用快捷键退出截图前确认</translation>
         </message>
         <message>
+            <source>Connect AI clients to Snow Shot</source>
+            <translation>将 AI 客户端连接到 Snow Shot</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>控制截图颜色拾取器何时显示</translation>
         </message>
@@ -1468,6 +1515,10 @@
         <message>
             <source>Edit selection</source>
             <translation>编辑选区</translation>
+        </message>
+        <message>
+            <source>Enable MCP integration</source>
+            <translation>启用 MCP 集成</translation>
         </message>
         <message>
             <source>Enable edit mode</source>
@@ -1828,6 +1879,14 @@
         <message>
             <source>Low</source>
             <translation>低</translation>
+        </message>
+        <message>
+            <source>MCP</source>
+            <translation>MCP</translation>
+        </message>
+        <message>
+            <source>MCP connection and client setup</source>
+            <translation>MCP 连接和客户端设置</translation>
         </message>
         <message>
             <source>MSAA</source>
@@ -2984,6 +3043,10 @@
         <message>
             <source>Video save directory</source>
             <translation>视频保存目录</translation>
+        </message>
+        <message>
+            <source>View connection status and configure your MCP client.</source>
+            <translation>查看连接状态并配置 MCP 客户端。</translation>
         </message>
         <message>
             <source>Vision Support</source>

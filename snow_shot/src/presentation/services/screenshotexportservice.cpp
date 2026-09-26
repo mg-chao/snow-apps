@@ -182,6 +182,15 @@ ScreenshotExportService::~ScreenshotExportService() {
 bool ScreenshotExportService::requestSelectionResult(const QRect& selection,
                                                      const ScreenshotResultStyle& style,
                                                      QObject* receiver, ImageCallback callback) {
+    return requestSelectionResultAtScale(selection, style, 1.0, receiver, std::move(callback));
+}
+
+bool ScreenshotExportService::requestSelectionResultAtScale(const QRect& selection,
+                                                            const ScreenshotResultStyle& style,
+                                                            qreal scale, QObject* receiver,
+                                                            ImageCallback callback) {
+    if (!qIsFinite(scale) || scale < 0.1 || scale > 4.0)
+        return false;
     if (selection.isEmpty() || receiver == nullptr || !callback || m_worker == nullptr ||
         m_thread == nullptr || !m_thread->isRunning()) {
         SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.invalid_request", 1);
@@ -194,7 +203,11 @@ bool ScreenshotExportService::requestSelectionResult(const QRect& selection,
         SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.serialize_document");
         documentSession = m_context.runtime.serializeDocumentSession();
     }
-    const auto spec = screenshotSelectionRenderSpec(m_context.displaySession, selection);
+    auto spec = screenshotSelectionRenderSpec(m_context.displaySession, selection);
+    spec.scale *= scale;
+    spec.pixelSize = screenshotSelectionRenderedPixelSize(selection.size(), spec.scale);
+    if (static_cast<qint64>(spec.pixelSize.width()) * spec.pixelSize.height() > 100000000)
+        return false;
     if (!spec.isValid())
         return false;
     QList<CanvasExportSource> sources;

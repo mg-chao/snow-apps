@@ -130,6 +130,7 @@ class ApplicationStorage final : public QObject {
     void storageStatusChanged(const snow_shot::storage::StorageStatus& status);
     void smartSelectionChanged(bool enabled);
     void captureHistoryClearFinished(bool success, const QString& error);
+    void cacheClearFinished(snow_shot::storage::StorageCacheKind kind, bool success);
 
   private:
     explicit ApplicationStorage(QObject* parent = nullptr);

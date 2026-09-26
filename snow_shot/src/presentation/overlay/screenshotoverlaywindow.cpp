@@ -867,3 +867,9 @@ void ScreenshotOverlayWindow::setSelectionDraft(const QPainterPath& path,
                                                 const QVector<QPointF>& vertices) {
     m_screenshotRenderer->setSelectionDraft(path, vertices);
 }
+
+void ScreenshotOverlayWindow::setScrollingTrimModel(
+    std::shared_ptr<ScreenshotScrollingTrimRange> trim) {
+    if (m_scrollingThumbnail)
+        m_scrollingThumbnail->setTrimModel(std::move(trim));
+}

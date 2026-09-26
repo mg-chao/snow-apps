@@ -57,9 +57,11 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     enum class StartMode { Normal, ExternalDrag };
     enum class ToolbarPreparation { Prewarm, OnDemand };
     enum class ToolbarVisibility { ShowAfterSelection, Suppressed };
+    enum class PresentationMode { Visible, Silent };
     void startCapture(StartMode mode = StartMode::Normal,
                       ToolbarPreparation toolbarPreparation = ToolbarPreparation::Prewarm,
-                      ToolbarVisibility toolbarVisibility = ToolbarVisibility::ShowAfterSelection);
+                      ToolbarVisibility toolbarVisibility = ToolbarVisibility::ShowAfterSelection,
+                      PresentationMode presentation = PresentationMode::Visible);
     [[nodiscard]] bool startRecapture(const QVector<std::uint32_t>& excludedWindowIds = {});
     [[nodiscard]] bool recaptureInProgress() const;
     [[nodiscard]] bool suppressCaptureToolbar() const;

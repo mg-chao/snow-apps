@@ -7,6 +7,7 @@
 #include <QPointF>
 #include <QMap>
 #include <QRect>
+#include <QJsonObject>
 
 #include <memory>
 #include <optional>
@@ -45,6 +46,7 @@ class ScreenshotPinnedEditController final : public QObject {
     ScreenshotFloatingToolPaletteWindow* toolbarWindow() const;
     ScreenshotToolPaletteHost* toolbarHost() const;
     void setEditMode(bool enabled);
+    bool automationSetTool(SnowCanvasTool tool);
     void activateResizeWindowTool();
     [[nodiscard]] bool beginTemporaryResizeWindowTool();
     void endTemporaryResizeWindowTool();
@@ -57,6 +59,9 @@ class ScreenshotPinnedEditController final : public QObject {
     void updateAfterPinnedWindowMove(const QPoint& logicalDelta);
     void updateCanvasColorSamplingAfterCursorMove(const QPoint& physicalPosition);
     void raiseToolbar();
+    [[nodiscard]] bool automationAutoFilter(const QStringList& categories);
+    [[nodiscard]] QJsonObject automationAutoFilterState() const;
+    void cancelAutomationAutoFilter();
 
   signals:
     void toolbarCreated(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
@@ -67,6 +72,8 @@ class ScreenshotPinnedEditController final : public QObject {
     void textTranslationRequested();
 
   private:
+    QStringList m_automationFilterCategories;
+    QString m_automationFilterError;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void ensureToolbar();
     void destroyToolbar();

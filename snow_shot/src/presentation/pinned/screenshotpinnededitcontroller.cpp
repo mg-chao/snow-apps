@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
+#include <utility>
 
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -99,6 +100,23 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
         },
         this);
     m_autoFilterController->attachCanvas(&m_canvas);
+    connect(m_autoFilterController.get(), &ScreenshotAutoFilterController::availabilityChanged,
+            this, [this](bool available) {
+                m_pinnedWindow.schedulePersistence();
+                if (!available || m_automationFilterCategories.isEmpty())
+                    return;
+                const auto categories = std::exchange(m_automationFilterCategories, {});
+                for (const auto& category : categories)
+                    m_autoFilterController->fillCategory(category);
+            });
+    connect(m_autoFilterController.get(), &ScreenshotAutoFilterController::detectionFailed, this,
+            [this](const QString& error) {
+                m_pinnedWindow.schedulePersistence();
+                if (!m_automationFilterCategories.isEmpty()) {
+                    m_automationFilterCategories.clear();
+                    m_automationFilterError = error;
+                }
+            });
     connect(m_autoFilterController.get(), &ScreenshotAutoFilterController::detectionFailed, this,
             [this](const QString& message) {
                 adqt::widgets::AdMessageService::error(message, -1, &m_pinnedWindow);
@@ -765,6 +783,14 @@ void ScreenshotPinnedEditController::activateCanvasTool(SnowCanvasTool tool) {
     m_pinnedWindow.updateWindowDragCursor(m_pinnedWindow.mapFromGlobal(QCursor::pos()));
 }
 
+bool ScreenshotPinnedEditController::automationSetTool(SnowCanvasTool tool) {
+    setEditMode(true);
+    if (!m_editMode)
+        return false;
+    activateCanvasTool(tool);
+    return m_canvas.canvasTool() == tool;
+}
+
 void ScreenshotPinnedEditController::prepareRecognitionToolActivation() {
     m_toolBeforeWindowResize.reset();
     m_resizeWindowToolActive = false;
@@ -1034,6 +1060,43 @@ bool ScreenshotPinnedEditController::commitCanvasColorSampleAtPhysicalPoint(
     }
     picker->commitValue(adqt::widgets::AdColorValue::solid(sampled));
     return true;
+}
+
+bool ScreenshotPinnedEditController::automationAutoFilter(const QStringList& categories) {
+    if (!m_autoFilterController || m_autoFilterController->detecting() || categories.isEmpty())
+        return false;
+    const QStringList allowed{QStringLiteral("text"),      QStringLiteral("text_in_box"),
+                              QStringLiteral("image"),     QStringLiteral("avatar"),
+                              QStringLiteral("icon"),      QStringLiteral("message_box"),
+                              QStringLiteral("text_block")};
+    for (const auto& category : categories)
+        if (!allowed.contains(category))
+            return false;
+    m_automationFilterError.clear();
+    m_automationFilterCategories = categories;
+    if (!m_canvas.setCanvasTool(SnowCanvasTool::AutoFilter)) {
+        m_automationFilterCategories.clear();
+        return false;
+    }
+    m_autoFilterController->validate();
+    if (m_autoFilterController->available() && !m_automationFilterCategories.isEmpty()) {
+        const auto pending = std::exchange(m_automationFilterCategories, {});
+        for (const auto& category : pending)
+            m_autoFilterController->fillCategory(category);
+    }
+    return true;
+}
+
+QJsonObject ScreenshotPinnedEditController::automationAutoFilterState() const {
+    return {{QStringLiteral("busy"), !m_automationFilterCategories.isEmpty()},
+            {QStringLiteral("error"), m_automationFilterError}};
+}
+
+void ScreenshotPinnedEditController::cancelAutomationAutoFilter() {
+    if (m_automationFilterCategories.isEmpty())
+        return;
+    m_automationFilterCategories.clear();
+    m_autoFilterController->resetSession();
 }
 
 void ScreenshotPinnedEditController::setCanvasColorSamplingCursor(bool enabled) {

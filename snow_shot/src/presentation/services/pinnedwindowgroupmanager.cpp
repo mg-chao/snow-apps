@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/automationrevision.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/languagemanager.h"
@@ -22,6 +23,18 @@
 #include <algorithm>
 
 namespace snow_shot::presentation {
+::ScreenshotPinnedWindow* PinnedWindowGroupManager::liveWindow(const QString& id) const {
+    return m_windows.value(id).data();
+}
+
+QVector<::ScreenshotPinnedWindow*> PinnedWindowGroupManager::liveWindows() const {
+    QVector<::ScreenshotPinnedWindow*> result;
+    result.reserve(m_windows.size());
+    for (const auto& window : m_windows)
+        if (window)
+            result.append(window.data());
+    return result;
+}
 namespace {
 constexpr auto kDefaultGroupId = "default";
 constexpr auto kDefaultGroupName = "Default";
@@ -58,6 +71,7 @@ adqt::widgets::AdModal* createDeletionModal(QWidget* owner, QObject* lifetimeOwn
 PinnedWindowGroupManager::PinnedWindowGroupManager(storage::PinnedWindowRepository* repository,
                                                    QObject* parent)
     : QObject(parent), m_repository(repository) {
+    m_automationRevision = nextAutomationRevision();
     if (m_repository == nullptr) {
         auto& storage = storage::ApplicationStorage::instance();
         if (storage.isInitialized()) {
@@ -213,6 +227,7 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
         return false;
     }
     m_activeGroupId = groupId;
+    m_automationRevision = nextAutomationRevision();
     for (auto it = m_windows.begin(); it != m_windows.end();) {
         if (it.value() == nullptr) {
             it = m_windows.erase(it);
@@ -516,6 +531,7 @@ void PinnedWindowGroupManager::completePendingPin(const QString& persistenceId) 
 }
 
 void PinnedWindowGroupManager::scheduleGroupsChanged() {
+    m_automationRevision = nextAutomationRevision();
     if (m_groupsChangedScheduled) {
         return;
     }

@@ -8,6 +8,7 @@
 #include <QWidget>
 
 #include <deque>
+#include <memory>
 
 class QMouseEvent;
 class QPainter;
@@ -25,6 +26,7 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     explicit ScreenshotScrollingThumbnailWidget(QWidget& parent);
 
     void reset();
+    void setTrimModel(std::shared_ptr<ScreenshotScrollingTrimRange> trim);
     void setRecognitionMode(ScreenshotScrollingRecognitionMode mode);
     void setMaximumPreviewHeight(int height);
     void setMaximumPreviewExtent(int extent);
@@ -103,8 +105,8 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     int m_captureImageExtent = 0;
     adqt::widgets::AdScrollBar* m_scrollBar = nullptr;
     int m_maximumPreviewExtent = 640;
-    int m_trimTop = 0;
-    int m_trimBottom = 0;
+    std::shared_ptr<ScreenshotScrollingTrimRange> m_trim =
+        std::make_shared<ScreenshotScrollingTrimRange>();
     DragHandle m_dragHandle = DragHandle::None;
 };
 

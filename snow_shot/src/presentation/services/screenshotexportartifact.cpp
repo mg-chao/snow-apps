@@ -157,11 +157,13 @@ struct ScreenshotExportArtifact::Impl final {
     Impl(ScreenshotExportSource value, ScreenshotCompressionLevel compression,
          PngCachePolicy policy)
         : source(std::move(value)), compressionLevel(compression),
-          maximumPngBytes(std::max(qsizetype{0}, policy.maximumBytes)) {}
+          maximumPngBytes(std::max(qsizetype{0}, policy.maximumBytes)),
+          encodingStarted(std::move(policy.encodingStarted)) {}
 
     ScreenshotExportSource source;
     const ScreenshotCompressionLevel compressionLevel;
     const qsizetype maximumPngBytes;
+    const std::function<void()> encodingStarted;
     quint64 pngUseSerial = 0;
     const QString diagnosticId = QUuid::createUuid().toString(QUuid::Id128);
     mutable QMutex mutex;
@@ -579,8 +581,8 @@ bool ScreenshotExportArtifact::requestPngCompression(QObject* receiver, int comp
             m_impl->encodingAt(compressionLevel).lastUsed = ++m_impl->pngUseSerial;
             dispatchReady = true;
         } else {
-            m_impl->encodingAt(compressionLevel).subscribers.push_back(
-                {receiver, std::move(callback)});
+            m_impl->encodingAt(compressionLevel)
+                .subscribers.push_back({receiver, std::move(callback)});
             if (m_impl->encodingAt(compressionLevel).phase == RequestPhase::Empty) {
                 m_impl->encodingAt(compressionLevel).phase = RequestPhase::Pending;
                 start = true;
@@ -625,13 +627,15 @@ void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
         this,
         compressionLevel == 0 ? ScreenshotExportCoordinator::Priority::Foreground
                               : ScreenshotExportCoordinator::Priority::Background,
-        [source = std::move(source), encoded,
+        [source = std::move(source), encoded, observed = m_impl->encodingStarted,
          compressionLevel](const ScreenshotExportCancellation& cancellation) {
             if (cancellation.isCancellationRequested()) {
                 return ScreenshotExportTaskResult::failure(
                     ScreenshotExportFailureStage::Cancelled,
                     QStringLiteral("The screenshot PNG encoding was cancelled"));
             }
+            if (observed)
+                observed();
             *encoded = encodePng(
                 withCancellation(
                     source, [&cancellation] { return cancellation.isCancellationRequested(); }),
