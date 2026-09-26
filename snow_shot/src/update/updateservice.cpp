@@ -306,8 +306,8 @@ struct UpdateService::Impl {
                    activeTrigger == Trigger::PolicyChange) {
             armAutomaticInterval();
         }
-        if (activeOperation == Operation::Check && mode == u"download" &&
-            status.state == UpdateState::Available) {
+        if ((activeOperation == Operation::Check || activeOperation == Operation::Apply) &&
+            mode == u"download" && status.state == UpdateState::Available) {
             pendingOperation = Operation::Download;
             pendingTrigger = Trigger::PolicyChange;
         }

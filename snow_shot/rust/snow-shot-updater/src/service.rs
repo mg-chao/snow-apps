@@ -2,7 +2,7 @@
 // The Windows service implementation is retained here for shared protocol tests.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use crate::contract::{MAX_METADATA_BYTES, compare_versions, verify_release};
+use crate::contract::{MAX_METADATA_BYTES, UpdateRelease, compare_versions, verify_release};
 use crate::error::{Result, UpdateError, io_error, require};
 use crate::fsutil;
 use crate::protocol::{Command, FrameDecoder, MAX_FRAME_BYTES, PROTOCOL_VERSION, Status};
@@ -265,6 +265,7 @@ impl Trigger {
 
 enum OperationMessage {
     Metadata {
+        release: UpdateRelease,
         bytes: Vec<u8>,
         manual: bool,
     },
@@ -472,52 +473,8 @@ impl Service {
             awaiting_handoff: false,
             handoff: None,
         };
-        service.restore_cached_release();
         service.consume_legacy_result();
         Ok(service)
-    }
-
-    fn restore_cached_release(&mut self) {
-        let Ok(bytes) = fsutil::read_limited(
-            &cache_path(&self.options, "release.json"),
-            MAX_METADATA_BYTES as u64,
-        ) else {
-            return;
-        };
-        let Ok(release) = verify_release(&bytes, None) else {
-            return;
-        };
-        let Ok(package) = release.update_package(&self.variant) else {
-            return;
-        };
-        if !self.persisted.observed_version.is_empty() {
-            let Ok(order) = compare_versions(&release.version, &self.persisted.observed_version)
-            else {
-                return;
-            };
-            if order.is_lt() || (order.is_eq() && package.sha256 != self.persisted.observed_hash) {
-                return;
-            }
-        }
-        if compare_versions(&release.version, &self.installed_version)
-            .is_ok_and(|order| order.is_gt())
-        {
-            let available = AvailableUpdate {
-                version: release.version.clone(),
-                path: package.path.clone(),
-                size: package.size,
-                sha256: package.sha256.clone(),
-            };
-            self.status.version.clone_from(&available.version);
-            self.status.state = "Available".to_owned();
-            let complete = cache_path(&self.options, format!("{}.zip", available.sha256));
-            if !is_failed_version(&self.options.root, &release.version)
-                && fsutil::verify_file(&complete, available.size, &available.sha256).is_ok()
-            {
-                self.status.state = "Ready".to_owned();
-            }
-            self.available = Some(available);
-        }
     }
 
     fn consume_legacy_result(&mut self) {
@@ -759,11 +716,13 @@ async fn fetch_metadata(
             )?;
             bytes.extend_from_slice(&chunk);
         }
-        Ok(bytes)
+        let release = verify_release(&bytes, None)?;
+        Ok((release, bytes))
     }
     .await;
     let message = match result {
-        Ok(bytes) => OperationMessage::Metadata {
+        Ok((release, bytes)) => OperationMessage::Metadata {
+            release,
             bytes,
             manual: inputs.manual,
         },
@@ -1136,11 +1095,11 @@ fn start_download(
 
 async fn accept_metadata(
     service: &mut Service,
+    release: UpdateRelease,
     bytes: Vec<u8>,
     manual: bool,
     writer: &mut BufWriter<tokio::io::Stdout>,
 ) -> Result<()> {
-    let release = verify_release(&bytes, None)?;
     let package = release.update_package(&service.variant)?;
     if !service.persisted.observed_version.is_empty() {
         let order = compare_versions(&release.version, &service.persisted.observed_version)?;
@@ -1312,9 +1271,7 @@ async fn handle_command(
                                     "Invalid updater command argument",
                                 ))
                             } else {
-                                service.active = Some(ActiveOperation::Apply);
-                                service.set_state("Applying", None);
-                                prepare_apply(service, operation_sender)
+                                start_check(service, true, operation_sender)
                             }
                         }
                     };
@@ -1396,18 +1353,32 @@ async fn handle_operation(
     service: &mut Service,
     message: OperationMessage,
     writer: &mut BufWriter<tokio::io::Stdout>,
+    operation_sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<Option<&'static str>> {
     match message {
-        OperationMessage::Metadata { bytes, manual } => {
+        OperationMessage::Metadata {
+            release,
+            bytes,
+            manual,
+        } => {
             if service.active != Some(ActiveOperation::Check) {
                 return Ok(None);
             }
             service.active = None;
             service.cancellation = None;
-            if let Err(error) = accept_metadata(service, bytes, manual, writer).await {
+            if let Err(error) = accept_metadata(service, release, bytes, manual, writer).await {
                 service.set_state("Failed", Some(error));
                 write_status(writer, &service.status).await?;
                 return Ok(Some("failed"));
+            }
+            if service.requested == Some(RequestedOperation::Apply)
+                && service.status.state == "Ready"
+            {
+                service.active = Some(ActiveOperation::Apply);
+                service.set_state("Applying", None);
+                write_status(writer, &service.status).await?;
+                prepare_apply(service, operation_sender)?;
+                return Ok(None);
             }
             if service.active.is_none() {
                 return Ok(Some("success"));
@@ -1679,6 +1650,7 @@ pub async fn run_with_dependencies(
                             &mut service,
                             operation,
                             &mut writer,
+                            &operation_sender,
                         ).await {
                             Ok(outcome) => outcome,
                             Err(error) => {
@@ -1713,7 +1685,9 @@ pub async fn run_with_dependencies(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::UpdatePackage;
     use futures_util::{future, stream};
+    use sha2::{Digest, Sha256};
     use std::collections::VecDeque;
     use std::sync::Mutex;
     use tempfile::TempDir;
@@ -1870,6 +1844,185 @@ mod tests {
         std::fs::create_dir_all(&inputs.options.cache_directory).unwrap();
     }
 
+    fn ready_service(temporary: &TempDir, network: FakeNetwork) -> Service {
+        let options = ServiceOptions {
+            root: temporary.path().join("root"),
+            cache_directory: temporary.path().join("cache"),
+            base_url: "http://127.0.0.1:8080".to_owned(),
+            allow_local_http: true,
+            parent_pid: 1,
+        };
+        std::fs::create_dir_all(&options.cache_directory).unwrap();
+        let hash = format!("{:x}", Sha256::digest(b"old release"));
+        std::fs::write(cache_path(&options, format!("{hash}.zip")), b"old release").unwrap();
+        Service {
+            options,
+            dependencies: ServiceDependencies {
+                clock: Arc::new(FakeClock::new(fixed_time(), Vec::new())),
+                network: Arc::new(network),
+            },
+            base_url: Url::parse("http://127.0.0.1:8080").unwrap(),
+            variant: "portable".to_owned(),
+            installed_version: "1.0.0".to_owned(),
+            persisted: PersistedState {
+                observed_version: "2.0.0".to_owned(),
+                observed_hash: hash.clone(),
+                ..PersistedState::default()
+            },
+            available: Some(AvailableUpdate {
+                version: "2.0.0".to_owned(),
+                path: "setup/snow-shot_windows-x64-portable.zip".to_owned(),
+                size: 11,
+                sha256: hash,
+            }),
+            status: Status {
+                state: "Ready".to_owned(),
+                version: "2.0.0".to_owned(),
+                ..Status::default()
+            },
+            mode: Mode::Download,
+            system_proxy: false,
+            active: None,
+            cancellation: None,
+            requested: None,
+            awaiting_handoff: false,
+            handoff: None,
+        }
+    }
+
+    fn apply_command() -> Command {
+        serde_json::from_value(json!({
+            "protocol": PROTOCOL_VERSION,
+            "id": 1,
+            "command": "execute",
+            "operation": "apply",
+            "trigger": "user",
+            "mode": "download",
+            "systemProxy": false
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn apply_checks_for_a_new_release_before_using_a_cached_payload() {
+        let temporary = TempDir::new().unwrap();
+        let network = FakeNetwork::new([FakeReply::Pending]);
+        let mut service = ready_service(&temporary, network.clone());
+        let old_hash = service.available.as_ref().unwrap().sha256.clone();
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        let (sender, _receiver) = mpsc::channel(4);
+
+        assert!(
+            !handle_command(&mut service, apply_command(), &mut writer, &sender)
+                .await
+                .unwrap()
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(service.active, Some(ActiveOperation::Check));
+        assert_eq!(service.status.state, "Checking");
+        assert_eq!(network.requests().len(), 1);
+
+        let release = UpdateRelease {
+            version: "3.0.0".to_owned(),
+            packages: vec![UpdatePackage {
+                variant: "portable".to_owned(),
+                kind: "portable".to_owned(),
+                path: "setup/snow-shot_windows-x64-portable.zip".to_owned(),
+                size: 12,
+                sha256: "a".repeat(64),
+                files: Vec::new(),
+            }],
+            envelope: Vec::new(),
+        };
+        let outcome = handle_operation(
+            &mut service,
+            OperationMessage::Metadata {
+                release,
+                bytes: b"verified newer release".to_vec(),
+                manual: true,
+            },
+            &mut writer,
+            &sender,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, Some("success"));
+        assert_eq!(service.status.state, "Available");
+        assert_eq!(service.status.version, "3.0.0");
+        assert_eq!(service.available.as_ref().unwrap().version, "3.0.0");
+        assert!(!cache_path(&service.options, format!("{old_hash}.zip")).exists());
+    }
+
+    #[tokio::test]
+    async fn failed_apply_check_does_not_install_the_cached_release() {
+        let temporary = TempDir::new().unwrap();
+        let network = FakeNetwork::new([FakeReply::Error(UpdateError::new(
+            "network_request_failed",
+            "The update request failed",
+        ))]);
+        let mut service = ready_service(&temporary, network);
+        let old_hash = service.available.as_ref().unwrap().sha256.clone();
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        let (sender, mut receiver) = mpsc::channel(4);
+
+        assert!(
+            !handle_command(&mut service, apply_command(), &mut writer, &sender)
+                .await
+                .unwrap()
+        );
+        let outcome = handle_operation(
+            &mut service,
+            receiver.recv().await.unwrap(),
+            &mut writer,
+            &sender,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, Some("failed"));
+        assert_eq!(service.status.state, "Failed");
+        assert!(!service.awaiting_handoff);
+        assert!(cache_path(&service.options, format!("{old_hash}.zip")).exists());
+    }
+
+    #[tokio::test]
+    async fn successful_check_reuses_only_the_current_cached_payload() {
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        let package = service.available.take().unwrap();
+        service.status = Status {
+            state: "Idle".to_owned(),
+            ..Status::default()
+        };
+        let release = UpdateRelease {
+            version: package.version.clone(),
+            packages: vec![UpdatePackage {
+                variant: "portable".to_owned(),
+                kind: "portable".to_owned(),
+                path: package.path.clone(),
+                size: package.size,
+                sha256: package.sha256.clone(),
+                files: Vec::new(),
+            }],
+            envelope: Vec::new(),
+        };
+        let mut writer = BufWriter::new(tokio::io::stdout());
+
+        assert!(service.available.is_none());
+        assert_eq!(service.status.state, "Idle");
+        accept_metadata(
+            &mut service,
+            release,
+            b"verified current release".to_vec(),
+            false,
+            &mut writer,
+        )
+        .await
+        .unwrap();
+        assert_eq!(service.status.state, "Ready");
+        assert_eq!(service.status.version, "2.0.0");
+        assert_eq!(service.available.as_ref().unwrap().sha256, package.sha256);
+    }
+
     #[test]
     fn accepts_only_strong_etags() {
         assert!(strong_etag("\"release-1\""));
@@ -1923,11 +2076,11 @@ mod tests {
         )
         .await;
         match receiver.recv().await.unwrap() {
-            OperationMessage::Metadata { bytes, manual } => {
-                assert_eq!(bytes, b"signed-envelope");
-                assert!(manual);
+            OperationMessage::Failed { operation, error } => {
+                assert_eq!(operation, ActiveOperation::Check);
+                assert_eq!(error.code, "unsupported_signature_schema");
             }
-            _ => panic!("expected metadata"),
+            _ => panic!("expected signature failure"),
         }
         let requests = network.requests();
         assert_eq!(requests.len(), 1);

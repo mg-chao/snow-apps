@@ -135,6 +135,13 @@ int fakeSidecar(int argc, char** argv) {
                 return 0;
             }
             if (operation == u"apply") {
+                if (scenario == u"apply-newer-release") {
+                    status("Checking");
+                    status("Available");
+                    complete(operation, "success", "Available");
+                    incrementCounter(completionCounter);
+                    return 0;
+                }
                 status("Applying");
                 frame({{QStringLiteral("protocol"), 2},
                        {QStringLiteral("type"), QStringLiteral("handoff_ready")}});
@@ -468,6 +475,30 @@ int main(int argc, char** argv) {
                 "adapter schedules a distinct download from current policy");
         require(announced.isEmpty() && readyCount == 1,
                 "automatic download keeps its update-ready notification without an early notice");
+    }
+
+    {
+        auto applyOptions = options(QStringLiteral("apply-newer-release"));
+        const QString cache = applyOptions.cacheDirectory;
+        const QString check = QDir(cache).filePath(QStringLiteral("check-user-complete"));
+        const QString apply = QDir(cache).filePath(QStringLiteral("apply-user-complete"));
+        const QString download =
+            QDir(cache).filePath(QStringLiteral("download-policyChange-count"));
+        UpdateService service(std::move(applyOptions));
+        service.start();
+        require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
+                "newer-release probe completes");
+        service.check();
+        require(waitUntil([&] {
+                    return counterValue(check) == 1 && service.status().state == UpdateState::Ready;
+                }),
+                "the first check makes the cached release ready");
+        service.beginApply();
+        require(waitUntil([&] {
+                    return counterValue(apply) == 1 && counterValue(download) == 1 &&
+                           service.status().state == UpdateState::Ready;
+                }),
+                "a newer release found before apply is downloaded automatically");
     }
 
     {
