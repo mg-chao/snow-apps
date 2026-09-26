@@ -122,7 +122,7 @@ pub(crate) const TOOLS: &[(&str, &str, bool)] = &[
     ),
     (
         "screenshot_scroll_once",
-        "Scroll one wheel notch and wait for a processed, stable scrolling snapshot.",
+        "Post one native wheel notch and return its dispatch status. Capture and stitching continue asynchronously.",
         false,
     ),
     (

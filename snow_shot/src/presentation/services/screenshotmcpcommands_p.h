@@ -18,8 +18,6 @@ void ScreenshotController::mcpCancelCommand() {
     }
     s.m_mcpFileJob.cancel();
     s.m_mcpCompletion = {};
-    if (s.m_scrollingCaptureController)
-        s.m_scrollingCaptureController->cancelScrollOnce();
     if (s.m_ocrController)
         s.m_ocrController->cancelWorkflow();
     if (s.m_autoFilterController && s.m_autoFilterController->detecting())
@@ -193,8 +191,10 @@ void ScreenshotController::mcpCommand(const QString& method, const QJsonObject& 
             completion({}, QStringLiteral("scrolling_not_ready"));
             return;
         }
-        s.m_scrollingCaptureController->scrollOnce(
-            params.value(QStringLiteral("direction")).toString(), std::move(completion));
+        QString error;
+        auto result = s.m_scrollingCaptureController->scrollOnce(
+            params.value(QStringLiteral("direction")).toString(), &error);
+        completion(std::move(result), std::move(error));
         return;
     }
     if (method == QStringLiteral("screenshot_scrolling")) {

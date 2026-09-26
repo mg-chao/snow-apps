@@ -18,7 +18,7 @@
 #include "adaptivescrollingcapturecadence.h"
 #include "screenshotscrollingautoscroller.h"
 #include "scrollingselectionmovement.h"
-#include "scrollingstepbarrier.h"
+#include "scrollingstepinput.h"
 #include "snow_shot/platform/screenshotnative.h"
 #include "screenshotscrollingpipeline.h"
 #include "screenshotscrollingdiagnostics.h"
@@ -602,9 +602,6 @@ struct ScreenshotScrollingCaptureController::Impl {
     std::shared_ptr<ScreenshotScrollingTrimRange> trimRange =
         std::make_shared<ScreenshotScrollingTrimRange>();
     quint64 contentRevision = 0;
-    quint64 stepGeneration = 0;
-    StepCompletion stepCompletion;
-    QTimer* stepTimer = nullptr;
     ScreenshotScrollingCaptureControllerContext context;
     AdaptiveScrollCadence::Config cadenceConfig;
     bool restoreOriginalColors = false;
@@ -751,8 +748,7 @@ bool ScreenshotScrollingCaptureController::setTrimRange(int start, int end) {
     const int extent = s.mode == ScreenshotScrollingRecognitionMode::Horizontal
                            ? s.latestOutputSize.width()
                            : s.latestOutputSize.height();
-    if (!s.active || s.exportPaused || s.stepCompletion || start < 0 || end <= start ||
-        end > extent)
+    if (!s.active || s.exportPaused || start < 0 || end <= start || end > extent)
         return false;
     *s.trimRange = {start, end};
     ++s.contentRevision;
@@ -762,142 +758,41 @@ bool ScreenshotScrollingCaptureController::setTrimRange(int start, int end) {
 }
 bool ScreenshotScrollingCaptureController::moveSelection(QPoint offset) {
     auto& s = *m_impl;
-    if (s.stepCompletion || !s.beginSelectionMove(s.mode, {}))
+    if (!s.beginSelectionMove(s.mode, {}))
         return false;
     s.updateSelectionMove(offset);
     s.endSelectionMove();
     return true;
 }
-void ScreenshotScrollingCaptureController::cancelScrollOnce() {
-    auto& s = *m_impl;
-    ++s.stepGeneration;
-    if (s.stepTimer) {
-        s.stepTimer->stop();
-        s.stepTimer->deleteLater();
-        s.stepTimer = nullptr;
-    }
-    auto completion = std::exchange(s.stepCompletion, {});
-    if (s.active && s.exportPaused)
-        s.setExportPaused(false);
-    if (completion)
-        completion({}, QStringLiteral("canceled"));
-}
-void ScreenshotScrollingCaptureController::scrollOnce(const QString& direction,
-                                                      StepCompletion completion) {
-    auto& s = *m_impl;
-    const bool vertical = direction == QStringLiteral("up") || direction == QStringLiteral("down");
-    const bool horizontal =
-        direction == QStringLiteral("left") || direction == QStringLiteral("right");
-    if ((!vertical && !horizontal) ||
-        vertical != (s.mode == ScreenshotScrollingRecognitionMode::Vertical)) {
-        completion({}, QStringLiteral("invalid_direction"));
-        return;
+QJsonObject ScreenshotScrollingCaptureController::scrollOnce(const QString& direction,
+                                                             QString* error) {
+    const auto& s = *m_impl;
+    const auto delta = snow_shot::capture_detail::scrollingStepDelta(direction);
+    if (!delta || (delta->y() != 0) != (s.mode == ScreenshotScrollingRecognitionMode::Vertical)) {
+        *error = QStringLiteral("invalid_direction");
+        return {};
     }
     if (!s.active || s.latestOutputSize.isEmpty()) {
-        completion({}, QStringLiteral("scrolling_not_ready"));
-        return;
+        *error = QStringLiteral("scrolling_not_ready");
+        return {};
     }
-    if (s.stepCompletion || s.autoScrollEnabled || s.exportPaused || s.movement.active()) {
-        completion({}, QStringLiteral("busy"));
-        return;
+    if (s.autoScrollEnabled || s.exportPaused || s.movement.active()) {
+        *error = QStringLiteral("busy");
+        return {};
     }
     if (!snow_shot::platform::screenshotScrollPermission()) {
-        completion({}, QStringLiteral("permission_required"));
-        return;
+        *error = QStringLiteral("permission_required");
+        return {};
     }
-    s.stepCompletion = std::move(completion);
-    const auto generation = ++s.stepGeneration;
-    const auto revision = s.contentRevision;
-    const QPointer<ScreenshotScrollingCaptureController> guard(this);
-    // Stop and join the source before dispatch, removing every pre-dispatch native buffer.
-    s.pipeline->finishInput([this, guard, generation, revision, direction] {
-        if (!guard || generation != m_impl->stepGeneration)
-            return;
-        auto& s = *m_impl;
-        s.stepTimer = new QTimer(this);
-        s.stepTimer->setInterval(10);
-        const auto started = std::make_shared<QElapsedTimer>();
-        started->start();
-        const auto dispatched = std::make_shared<bool>(false);
-        const auto dispatchTime =
-            std::make_shared<snow_shot::capture_detail::ScrollClock::time_point>();
-        connect(
-            s.stepTimer, &QTimer::timeout, this,
-            [this, generation, revision, direction, started, dispatched, dispatchTime] {
-                auto& s = *m_impl;
-                if (generation != s.stepGeneration || !s.stepCompletion)
-                    return;
-                const auto finish = [this](QJsonObject result, QString error) {
-                    auto callback = std::exchange(m_impl->stepCompletion, {});
-                    if (m_impl->stepTimer) {
-                        m_impl->stepTimer->stop();
-                        m_impl->stepTimer->deleteLater();
-                        m_impl->stepTimer = nullptr;
-                    }
-                    if (m_impl->active && m_impl->exportPaused)
-                        m_impl->setExportPaused(false);
-                    if (callback)
-                        callback(std::move(result), std::move(error));
-                };
-                if (!s.active) {
-                    finish({}, QStringLiteral("capture_unavailable"));
-                    return;
-                }
-                if (started->elapsed() >= 2000) {
-                    if (!*dispatched)
-                        s.updatePausedState();
-                    finish({}, QStringLiteral("timeout"));
-                    return;
-                }
-                if (!*dispatched) {
-                    if (!s.pipeline->idle())
-                        return;
-                    const QPoint delta = *snow_shot::capture_detail::scrollingStepDelta(direction);
-                    const auto input = snow_shot::platform::sendScreenshotScroll(
-                        s.canvasSelection.translated(s.context.geometry.canvasOrigin()), delta);
-                    if (input.status != snow_shot::platform::ScrollInputResult::Status::Posted) {
-                        s.updatePausedState();
-                        finish(
-                            {},
-                            input.status ==
-                                    snow_shot::platform::ScrollInputResult::Status::TargetNotFound
-                                ? QStringLiteral("target_not_found")
-                                : QStringLiteral("scroll_dispatch_failed"));
-                        return;
-                    }
-                    *dispatchTime = snow_shot::capture_detail::ScrollClock::now();
-                    *dispatched = true;
-                    s.updatePausedState();
-                    return;
-                }
-                const auto observation = s.pipeline->observation();
-                const snow_shot::capture_detail::ScrollingStepBarrier barrier{*dispatchTime};
-                if (!barrier.settled(observation.observedAt, observation.changedAt,
-                                     s.pipeline->idle()))
-                    return;
-                s.stepTimer->stop();
-                s.setExportPaused(true);
-                const auto processedSequence = observation.sequence;
-                if (!s.requestTrimmedSnapshot([this, generation, revision, direction,
-                                               processedSequence,
-                                               finish](ScreenshotScrollingSnapshot snapshot) {
-                        if (generation != m_impl->stepGeneration)
-                            return;
-                        if (!snapshot.isValid()) {
-                            finish({}, QStringLiteral("output_failed"));
-                            return;
-                        }
-                        auto result = state();
-                        result.insert(QStringLiteral("direction"), direction);
-                        result.insert(QStringLiteral("dispatch_status"), QStringLiteral("posted"));
-                        result.insert(QStringLiteral("changed"),
-                                      m_impl->contentRevision != revision);
-                        result.insert(QStringLiteral("processed_frame_sequence"),
-                                      static_cast<qint64>(processedSequence));
-                        finish(result, {});
-                    }))
-                    finish({}, QStringLiteral("output_failed"));
-            });
-        s.stepTimer->start();
-    });
+    const auto input = snow_shot::platform::sendScreenshotScroll(
+        s.canvasSelection.translated(s.context.geometry.canvasOrigin()), *delta);
+    if (input.status != snow_shot::platform::ScrollInputResult::Status::Posted) {
+        *error = input.status == snow_shot::platform::ScrollInputResult::Status::TargetNotFound
+                     ? QStringLiteral("target_not_found")
+                     : QStringLiteral("scroll_dispatch_failed");
+        return {};
+    }
+    error->clear();
+    return {{QStringLiteral("direction"), direction},
+            {QStringLiteral("dispatch_status"), QStringLiteral("posted")}};
 }

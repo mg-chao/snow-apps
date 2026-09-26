@@ -61,8 +61,10 @@ live authenticated endpoint. A later call discovers the endpoint again.
    `screenshot_undo`, and `screenshot_redo`.
 5. Use `screenshot_scrolling` to start/stop scrolling, change axis, set automatic scrolling,
    move the selection, or trim the stitched result. Use `screenshot_scroll_once` with `up`,
-   `down`, `left`, or `right` for one native wheel notch. The call waits for fresh capture
-   processing and returns `changed`, `processed_frame_sequence`, and stitched dimensions.
+   `down`, `left`, or `right` for one native wheel notch. The call returns `direction` and
+   `dispatch_status: "posted"` as soon as native input is posted. Capture and stitching continue
+   asynchronously; this response does not guarantee changed or settled content. Query
+   `screenshot_state` for current scrolling state and use the output tools when ready to export.
 6. Use `screenshot_recognize`, `screenshot_translate`, or `screenshot_auto_filter`; each returns
    an operation ID. Poll `screenshot_operation` and use `screenshot_edit_recognition` or
    `screenshot_export_recognition` for results. These operations use configured providers and

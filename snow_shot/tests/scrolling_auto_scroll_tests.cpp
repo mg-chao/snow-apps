@@ -1,5 +1,5 @@
 #include "presentation/capture/screenshotscrollingautoscroller.h"
-#include "presentation/capture/scrollingstepbarrier.h"
+#include "presentation/capture/scrollingstepinput.h"
 #include "snow_shot/platform/windows/scrollinput.h"
 
 #include <QCoreApplication>
@@ -103,22 +103,7 @@ int main(int argc, char** argv) {
     }
     nativeWheelMessagesReachTheSelection();
 #endif
-    using namespace std::chrono_literals;
-    using snow_shot::capture_detail::ScrollingStepBarrier;
     using snow_shot::capture_detail::scrollingStepDelta;
-    const auto origin = ScrollingStepBarrier::Clock::time_point{} + 10s;
-    const ScrollingStepBarrier barrier{origin};
-    require(!barrier.settled(origin - 1ms, origin - 200ms, true),
-            "buffered pre-dispatch frames cannot complete a step");
-    require(!barrier.settled(origin + 199ms, origin, true), "step observes at least 200 ms");
-    require(!barrier.settled(origin + 250ms, origin + 200ms, true),
-            "animation must settle for 100 ms");
-    require(!barrier.settled(origin + 300ms, origin + 200ms, false),
-            "pending stitch work prevents completion");
-    require(barrier.settled(origin + 300ms, origin + 200ms, true),
-            "fresh stable processed frames complete a step");
-    require(barrier.settled(origin + 200ms, origin - 1ms, true),
-            "fresh duplicates can confirm unchanged capture");
     require(scrollingStepDelta(QStringLiteral("up")) == QPoint(0, 120) &&
                 scrollingStepDelta(QStringLiteral("down")) == QPoint(0, -120) &&
                 scrollingStepDelta(QStringLiteral("left")) == QPoint(-120, 0) &&

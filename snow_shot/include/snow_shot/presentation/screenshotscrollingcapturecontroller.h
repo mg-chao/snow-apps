@@ -50,9 +50,8 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] QJsonObject state() const;
     [[nodiscard]] bool setTrimRange(int start, int end);
     [[nodiscard]] bool moveSelection(QPoint offset);
-    using StepCompletion = std::function<void(QJsonObject, QString)>;
-    void scrollOnce(const QString& direction, StepCompletion completion);
-    void cancelScrollOnce();
+    // Acknowledges native input dispatch; capture continues asynchronously.
+    [[nodiscard]] QJsonObject scrollOnce(const QString& direction, QString* error);
     [[nodiscard]] bool beginSelectionMove(ScreenshotScrollingRecognitionMode axis,
                                           QPoint physicalPointer);
     void updateSelectionMove(QPoint physicalPointer);

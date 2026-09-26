@@ -84,12 +84,6 @@ class ScreenshotScrollingPipeline final : public QObject {
     void pause(quint64 generation);
     void resume(quint64 generation, QSize viewport, ScrollingSourceFactory source,
                 AdaptiveScrollingCaptureCadence::Config cadence = {});
-    struct Observation {
-        quint64 sequence = 0;
-        ScrollClock::time_point observedAt{};
-        ScrollClock::time_point changedAt{};
-    };
-    [[nodiscard]] Observation observation() const;
     [[nodiscard]] bool idle() const;
     void finishInput(std::function<void()> callback);
     [[nodiscard]] bool requestSnapshot(int top, int bottom, QObject* receiver,

@@ -459,8 +459,14 @@ void workflowOperations() {
     int commands = 0, canceled = 0, detached = 0;
     bool completeOnCancel = false;
     ScreenshotMcpSession::Ports::CommandCompletion deliver;
-    ports.command = [&](const QString&, const QJsonObject&, auto completion) {
+    ports.command = [&](const QString& method, const QJsonObject& params, auto completion) {
         ++commands;
+        if (method == QStringLiteral("screenshot_scroll_once")) {
+            completion({{QStringLiteral("direction"), params.value(QStringLiteral("direction"))},
+                        {QStringLiteral("dispatch_status"), QStringLiteral("posted")}},
+                       {});
+            return;
+        }
         deliver = std::move(completion);
     };
     ports.cancelCommand = [&] {
@@ -547,38 +553,42 @@ void workflowOperations() {
     auto step = makeRequest(QStringLiteral("screenshot_scroll_once"));
     step.params.insert(QStringLiteral("direction"), QStringLiteral("down"));
     call(step);
-    require(!response, "scroll waits for controller completion");
+    require(response && response->ok &&
+                response->result.value(QStringLiteral("dispatch_status")) ==
+                    QStringLiteral("posted") &&
+                response->result.value(QStringLiteral("direction")) == QStringLiteral("down") &&
+                !response->result.contains(QStringLiteral("changed")) &&
+                !response->result.contains(QStringLiteral("processed_frame_sequence")),
+            "scroll immediately acknowledges dispatch without claiming capture completion");
     const int before = commands;
-    deliver({{QStringLiteral("changed"), true}}, {});
-    require(response && response->ok, "scroll completes after capture barrier");
     call(step);
     require(response && response->ok && commands == before,
             "scroll replay cannot dispatch another notch");
-    step = makeRequest(QStringLiteral("screenshot_scroll_once"));
-    step.params.insert(QStringLiteral("direction"), QStringLiteral("down"));
-    std::optional<ScreenshotMcpResponse> stepResponse;
-    int stepCompletions = 0;
-    session.request(step, [&](auto value) {
-        ++stepCompletions;
-        stepResponse = std::move(value);
+    auto scrollingStart = makeRequest(QStringLiteral("screenshot_scrolling"));
+    scrollingStart.params.insert(QStringLiteral("action"), QStringLiteral("start"));
+    std::optional<ScreenshotMcpResponse> startResponse;
+    int startCompletions = 0;
+    session.request(scrollingStart, [&](auto value) {
+        ++startCompletions;
+        startResponse = std::move(value);
     });
-    auto lateStep = deliver;
+    auto lateStart = deliver;
     const int cancellationsBefore = canceled;
     call(expiredCancel);
     require(response && response->errorCode == QStringLiteral("request_not_found") &&
-                canceled == cancellationsBefore && !stepResponse,
-            "a mismatched cancellation leaves the pending step running");
+                canceled == cancellationsBefore && !startResponse,
+            "a mismatched cancellation leaves the pending scrolling start running");
     cancel = makeRequest(QStringLiteral("screenshot_cancel"));
-    cancel.params.insert(QStringLiteral("request_id"), step.requestId);
+    cancel.params.insert(QStringLiteral("request_id"), scrollingStart.requestId);
     completeOnCancel = true;
     call(cancel);
     completeOnCancel = false;
-    require(response && response->ok && stepResponse &&
-                stepResponse->errorCode == QStringLiteral("canceled") && stepCompletions == 1 &&
+    require(response && response->ok && startResponse &&
+                startResponse->errorCode == QStringLiteral("canceled") && startCompletions == 1 &&
                 session.state().value(QStringLiteral("active")).toBool(),
             "synchronous controller cancellation completes once and preserves the session");
-    lateStep({{QStringLiteral("changed"), true}}, {});
-    require(stepCompletions == 1, "late step completion cannot overwrite cancellation");
+    lateStart({}, {});
+    require(startCompletions == 1, "late scrolling start completion cannot overwrite cancellation");
     session.disconnected(1);
     require(detached == 1 &&
                 editor.value(QStringLiteral("capture_phase")) == QStringLiteral("editing"),
