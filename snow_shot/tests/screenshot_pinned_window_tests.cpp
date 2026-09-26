@@ -3630,7 +3630,8 @@ void historySelectionPresentationPreservesCompositedCanvas() {
             QImage content(QSize(100, 50) * scale, QImage::Format_ARGB32_Premultiplied);
             content.fill(QColor(84, 168, 112));
             const QImage image = ScreenshotResultCompositor::compose(
-                content, ScreenshotResultStyle{12 * scale, 8 * scale, QColor(0x33, 0x33, 0x33)});
+                content,
+                ScreenshotResultStyle{12 * scale, 8 * scale, QColor(0x33, 0x33, 0x33), {}});
             ScreenshotPinnedSelectionRequest request;
             request.selection = QRect(100, 80, 100, 50);
             request.contentCanvasRect = request.selection;
@@ -3640,7 +3641,7 @@ void historySelectionPresentationPreservesCompositedCanvas() {
                 physicalPinGeometry(*screen, QPoint(92, 72), request.initialWindowSize),
                 image.size());
             request.geometry.canvasSourceRect = request.surfaceCanvasRect;
-            request.resultStyle = ScreenshotResultStyle{12, 8, QColor(0x33, 0x33, 0x33)};
+            request.resultStyle = ScreenshotResultStyle{12, 8, QColor(0x33, 0x33, 0x33), {}};
             request.screen = screen;
             ScreenshotSelectionExportUiServices services;
             require(direct ? services.presentPinnedArtifact(
@@ -8023,7 +8024,7 @@ void pinnedSelectionBorderOffscreen() {
             ScreenshotPinnedWindow window;
             auto config = clickThroughTestConfig(*screen);
             const QSize contentSize(400 - 2 * padding, 400 - 2 * padding);
-            const ScreenshotResultStyle style{radius, padding, QColor(0x33, 0x33, 0x33)};
+            const ScreenshotResultStyle style{radius, padding, QColor(0x33, 0x33, 0x33), {}};
             config.borderAppearance = screenshotSelectionBorderAppearance(contentSize, style);
             config.checkerboardEnabled = false;
             const auto source =
@@ -8159,7 +8160,7 @@ void pinnedSelectionBorderOffscreen() {
     ScreenshotPinnedWindow reused;
     auto shadow = clickThroughTestConfig(*screen);
     shadow.borderAppearance = screenshotSelectionBorderAppearance(
-        QSize(384, 384), ScreenshotResultStyle{32, 8, QColor(0x33, 0x33, 0x33)});
+        QSize(384, 384), ScreenshotResultStyle{32, 8, QColor(0x33, 0x33, 0x33), {}});
     Access::restoreOffscreen(reused, shadow);
     require(!reused.persistenceSnapshot().showBorder, "shadow shell must start without a border");
     Access::restoreOffscreen(reused, clickThroughTestConfig(*screen));
@@ -11224,6 +11225,75 @@ void pinnedNativePointerDragging() {
 }
 #endif
 
+void pinnedInteractionsReleasePointerRouting() {
+    class HoverWindow final : public QWidget {
+      public:
+        HoverWindow() : QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint) {
+            setMouseTracking(true);
+        }
+        int moves = 0;
+
+      protected:
+        void mouseMoveEvent(QMouseEvent*) override {
+            ++moves;
+        }
+    };
+    const auto sendPointer = [](QWidget& window, QEvent::Type type, const QPointF& global,
+                                Qt::MouseButton button, Qt::MouseButtons buttons) {
+        // Enter through QWindow as native input does. Sending directly to the
+        // widget bypasses Qt's implicit mouse-grab bookkeeping.
+        const QPointF local = window.mapFromGlobal(global);
+        QMouseEvent event(type, local, local, global, button, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(window.windowHandle(), &event);
+    };
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "pointer routing requires a screen");
+    for (const bool editing : {false, true}) {
+        for (const bool resize : {false, true}) {
+            ScreenshotPinnedWindow pin;
+            pin.setAttribute(Qt::WA_DeleteOnClose, false);
+            QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::white);
+            ScreenshotPinnedWindow::Config config;
+            config.screen = screen;
+            config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+            config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+            config.initialWindowSize = image.size();
+            config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+            config.automaticTextRecognition = false;
+            config.enableEditing = true;
+            require(pin.present(config), "pointer routing pin presentation failed");
+            waitForUi(30);
+            ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(pin, editing);
+            waitForUi(30);
+            const QPointF start = pin.mapToGlobal(resize ? QPoint(pin.width() - 2, pin.height() / 2)
+                                                         : pin.rect().center());
+            sendPointer(pin, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+            require(ScreenshotPinnedWindowTestAccess::interactionActive(pin),
+                    "window-delivered press must begin the controlled interaction");
+            const QPointF end = start + QPointF(20, 10);
+            sendPointer(pin, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
+            sendPointer(pin, QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
+            require(!ScreenshotPinnedWindowTestAccess::interactionActive(pin) &&
+                        QWidget::mouseGrabber() == nullptr,
+                    "release must end the controlled interaction and explicit grab");
+
+            HoverWindow screenshot;
+            screenshot.setGeometry(400, 300, 200, 150);
+            screenshot.show();
+            screenshot.activateWindow();
+            QCoreApplication::processEvents();
+            screenshot.moves = 0;
+            sendPointer(screenshot, QEvent::MouseMove,
+                        screenshot.mapToGlobal(screenshot.rect().center()), Qt::NoButton,
+                        Qt::NoButton);
+            require(screenshot.moves == 1,
+                    "a new screenshot window must receive hover without an intervening click");
+            pin.close();
+        }
+    }
+}
+
 void pinnedControlledInteractionAndGestures() {
     QScreen* screen = QGuiApplication::primaryScreen();
     ScreenshotPinnedWindow window;
@@ -11777,6 +11847,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #endif
+        if (app.arguments().contains(QStringLiteral("--pointer-routing-only"))) {
+            pinnedInteractionsReleasePointerRouting();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--controlled-interaction-only"))) {
             pinnedControlledInteractionAndGestures();
             return 0;

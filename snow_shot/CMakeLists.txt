@@ -7237,7 +7237,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-placement-tests COMMAND snow-shot-pinned-placement-tests)
     add_test(NAME snow-shot-pinned-controlled-interaction-tests
         COMMAND snow-shot-pinned-window-tests --controlled-interaction-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-pointer-routing-tests
+        COMMAND snow-shot-pinned-window-tests --pointer-routing-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-controlled-interaction-tests PROPERTIES
+        LABELS unit RUN_SERIAL TRUE TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE)
+    set_tests_properties(snow-shot-pinned-pointer-routing-tests PROPERTIES
         LABELS unit RUN_SERIAL TRUE TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE)
     set_tests_properties(snow-shot-pinned-movement-shortcut-tests PROPERTIES
         SNOW_TEST_CROSS_PLATFORM TRUE)

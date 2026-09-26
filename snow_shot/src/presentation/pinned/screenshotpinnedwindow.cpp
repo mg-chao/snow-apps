@@ -1992,7 +1992,11 @@ QRect ScreenshotPinnedWindow::authoritativeNativeGeometry() const {
 }
 
 bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (event == nullptr || m_closing) {
+    // Controlled moves/resizes install this filter on QApplication. Let QWindow
+    // translate native input before handling the resulting QWidget events: eating
+    // its release would leave Qt's implicit press target on the pinned canvas,
+    // redirecting later hover events even after our explicit mouse grab ends.
+    if (watched == nullptr || !watched->isWidgetType() || event == nullptr || m_closing) {
         return QWidget::eventFilter(watched, event);
     }
     if (event->type() == QEvent::Enter || event->type() == QEvent::MouseMove ||
