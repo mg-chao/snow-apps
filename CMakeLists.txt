@@ -12,7 +12,7 @@ endif()
 
 project(snow_apps VERSION 0.2.0 LANGUAGES CXX)
 
-set(SNOW_SHOT_VERSION "1.1.3-beta")
+set(SNOW_SHOT_VERSION "1.1.4-beta")
 if(NOT SNOW_SHOT_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$")
     message(FATAL_ERROR "SNOW_SHOT_VERSION must be a semantic version such as 0.8.0-dev")
 endif()
