@@ -59,6 +59,7 @@ class ScreenshotMcpSession final : public QObject {
     void startPending(const ScreenshotMcpRequest&, ScreenshotMcpServer::Completion);
     void complete(ScreenshotMcpResponse response);
     void failPending(const QString& code, const QString& field = {});
+    void cancelPending(const QString& code);
     void release(bool cancel);
     void output(const ScreenshotMcpRequest&, bool finish);
     void encodeOutput(const ScreenshotMcpRequest&, bool finish, quint64 generation, qreal scale);

@@ -125,14 +125,8 @@ void ScreenshotMcpSession::startPending(const ScreenshotMcpRequest& r,
     QTimer::singleShot(60000, this, [this, generation] {
         if (!current(generation))
             return;
-        if (m_artifact)
-            m_artifact->cancel();
-        m_clipboard.cancel();
-        m_metadataJob.cancel();
-        if (m_ports.cancelCommand)
-            m_ports.cancelCommand();
         const bool capture = m_pending->request.method == QStringLiteral("screenshot_begin");
-        failPending(QStringLiteral("timeout"));
+        cancelPending(QStringLiteral("timeout"));
         if (capture)
             release(true);
     });
@@ -176,6 +170,19 @@ void ScreenshotMcpSession::failPending(const QString& code, const QString& field
         if (direct)
             release(false);
     }
+}
+void ScreenshotMcpSession::cancelPending(const QString& code) {
+    if (!m_pending)
+        return;
+    // Retire callbacks before stopping work: controller cancellation may complete synchronously.
+    m_pending->generation = ++m_generation;
+    if (m_artifact)
+        m_artifact->cancel();
+    m_clipboard.cancel();
+    m_metadataJob.cancel();
+    if (m_ports.cancelCommand)
+        m_ports.cancelCommand();
+    failPending(code);
 }
 void ScreenshotMcpSession::cache(const ScreenshotMcpRequest& request,
                                  const ScreenshotMcpResponse& response) {
@@ -334,8 +341,6 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
             done(response);
             return;
         }
-        if (m_ports.cancelCommand)
-            m_ports.cancelCommand();
         const QString requestId = r.params.value(QStringLiteral("request_id")).toString();
         if (!requestId.isEmpty() && (!m_pending || m_pending->request.requestId != requestId)) {
             reject(QStringLiteral("request_not_found"));
@@ -343,11 +348,7 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
         }
         const bool capture =
             m_pending && m_pending->request.method == QStringLiteral("screenshot_begin");
-        if (m_artifact)
-            m_artifact->cancel();
-        m_clipboard.cancel();
-        m_metadataJob.cancel();
-        failPending(QStringLiteral("canceled"));
+        cancelPending(QStringLiteral("canceled"));
         m_artifact.reset();
         if (requestId.isEmpty() || capture)
             release(true);

@@ -77,6 +77,8 @@ void headlessWorkflowResultsAndEdits() {
     presentation->lines.append(line);
     presentation->prepareForRendering();
     results.text = ScreenshotOcrRecognitionResult{presentation};
+    results.translatedText = std::make_shared<ScreenshotOcrPresentation>(*presentation);
+    results.translatedText->setLineText(0, QStringLiteral("Translated text"));
     SnowShotTableResult table;
     table.html =
         QStringLiteral("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
@@ -86,6 +88,15 @@ void headlessWorkflowResultsAndEdits() {
     session.activate(ScreenshotRecognitionSessionController::Mode::Text);
     require(session.workflowResult().value(QStringLiteral("lines")).toArray().size() == 1,
             "headless OCR returns layout");
+    require(session.activateCachedTextTranslation(), "headless cached translation activates");
+    const auto translated = session.workflowResult();
+    require(translated.value(QStringLiteral("text")) == QStringLiteral("Translated text") &&
+                translated.value(QStringLiteral("lines"))
+                        .toArray()
+                        .at(0)
+                        .toObject()
+                        .value(QStringLiteral("text")) == QStringLiteral("Translated text"),
+            "headless translation exports matching text and layout");
     require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("set_text")},
                                   {QStringLiteral("text"), QStringLiteral("Edited text")}}),
             "headless text edit");
@@ -362,6 +373,9 @@ void originalImageOverridePreservesSessionState() {
     session.seedRecognitionResults(cached);
     session.activate(Mode::Text);
     require(session.activateCachedTextTranslation(), "activate cached translation fixture");
+    require(session.workflowResult().value(QStringLiteral("text")) ==
+                QStringLiteral("Translated OCR"),
+            "workflow exports in-image translation through the active text draft");
     session.setShowOriginalImage(true);
     require(session.translating() && session.originalImageTranslationActive() &&
                 !session.originalImageVisible() && content->isHidden() &&

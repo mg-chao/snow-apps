@@ -1981,14 +1981,11 @@ QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
         result.insert(QStringLiteral("text"), textDraft());
         result.insert(QStringLiteral("source_text"), sourceTextDraft());
         const auto entry = m_textCache.value(m_target.key);
-        if (m_translating)
-            result.insert(QStringLiteral("text"), entry.hasSuccessfulTranslation
-                                                      ? entry.successfulTranslation
-                                                      : entry.translationText);
         QJsonArray lines;
-        const auto presentation = m_translating && entry.overlayTranslation.presentation
-                                      ? entry.overlayTranslation.presentation
-                                      : entry.presentation;
+        const auto presentation =
+            originalImageTranslationActive() && entry.overlayTranslation.presentation
+                ? entry.overlayTranslation.presentation
+                : entry.presentation;
         if (presentation)
             for (const auto& line : presentation->lines) {
                 QJsonArray quad;

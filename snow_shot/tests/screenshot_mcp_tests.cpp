@@ -15,6 +15,7 @@
 #include <QtEndian>
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 using namespace snow_shot::app::mcp;
 namespace {
 void require(bool condition, const char* message) {
@@ -341,12 +342,19 @@ void workflowOperations() {
     ports.cancel = [&] { editor.insert(QStringLiteral("capture_phase"), QStringLiteral("idle")); };
     ports.selection = [&](const QJsonObject&, QString*) { return true; };
     int commands = 0, canceled = 0, detached = 0;
+    bool completeOnCancel = false;
     ScreenshotMcpSession::Ports::CommandCompletion deliver;
     ports.command = [&](const QString&, const QJsonObject&, auto completion) {
         ++commands;
         deliver = std::move(completion);
     };
-    ports.cancelCommand = [&] { ++canceled; };
+    ports.cancelCommand = [&] {
+        ++canceled;
+        if (completeOnCancel && deliver) {
+            auto callback = std::exchange(deliver, {});
+            callback({}, QStringLiteral("canceled"));
+        }
+    };
     ports.detached = [&] { ++detached; };
     ScreenshotMcpSession session(std::move(ports));
     int counter = 0;
@@ -380,6 +388,11 @@ void workflowOperations() {
     call(start);
     require(response && response->ok && commands == 1,
             "idempotent start never repeats provider work");
+    auto expiredCancel = makeRequest(QStringLiteral("screenshot_cancel"));
+    expiredCancel.params.insert(QStringLiteral("request_id"), start.requestId);
+    call(expiredCancel);
+    require(response && response->errorCode == QStringLiteral("request_not_found") && canceled == 0,
+            "canceling a completed request cannot stop a running background operation");
     auto query = makeRequest(QStringLiteral("screenshot_operation"));
     query.params.insert(QStringLiteral("operation_id"), operation);
     query.expectedRevision.reset();
@@ -426,6 +439,31 @@ void workflowOperations() {
     call(step);
     require(response && response->ok && commands == before,
             "scroll replay cannot dispatch another notch");
+    step = makeRequest(QStringLiteral("screenshot_scroll_once"));
+    step.params.insert(QStringLiteral("direction"), QStringLiteral("down"));
+    std::optional<ScreenshotMcpResponse> stepResponse;
+    int stepCompletions = 0;
+    session.request(step, [&](auto value) {
+        ++stepCompletions;
+        stepResponse = std::move(value);
+    });
+    auto lateStep = deliver;
+    const int cancellationsBefore = canceled;
+    call(expiredCancel);
+    require(response && response->errorCode == QStringLiteral("request_not_found") &&
+                canceled == cancellationsBefore && !stepResponse,
+            "a mismatched cancellation leaves the pending step running");
+    cancel = makeRequest(QStringLiteral("screenshot_cancel"));
+    cancel.params.insert(QStringLiteral("request_id"), step.requestId);
+    completeOnCancel = true;
+    call(cancel);
+    completeOnCancel = false;
+    require(response && response->ok && stepResponse &&
+                stepResponse->errorCode == QStringLiteral("canceled") && stepCompletions == 1 &&
+                session.state().value(QStringLiteral("active")).toBool(),
+            "synchronous controller cancellation completes once and preserves the session");
+    lateStep({{QStringLiteral("changed"), true}}, {});
+    require(stepCompletions == 1, "late step completion cannot overwrite cancellation");
     session.disconnected(1);
     require(detached == 1 &&
                 editor.value(QStringLiteral("capture_phase")) == QStringLiteral("editing"),
