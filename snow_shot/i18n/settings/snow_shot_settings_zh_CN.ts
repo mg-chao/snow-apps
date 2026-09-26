@@ -825,8 +825,8 @@
             <translation>所有截图历史都将被删除</translation>
         </message>
         <message>
-            <source>Allow MCP clients running as your OS user to control screenshots. Snow Shot must be running.</source>
-            <translation>允许以当前系统用户身份运行的 MCP 客户端控制截图。Snow Shot 必须保持运行。</translation>
+            <source>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</source>
+            <translation>允许以当前系统用户身份运行的 MCP 客户端控制 Snow Shot。Snow Shot 必须保持运行。</translation>
         </message>
         <message>
             <source>Always</source>

@@ -7,6 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const PROTOCOL: &str = "snow-shot-mcp/1";
 pub const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_RESPONSE_JSON_BYTES: usize = 32 * 1024 * 1024 + 65536;
+pub const MAX_REQUEST_JSON_BYTES: usize = 1024 * 1024 + 4096;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppRequest {
@@ -61,7 +63,10 @@ pub struct Descriptor {
 
 #[derive(Debug)]
 pub struct Frame {
+    #[cfg(test)]
     pub json: Vec<u8>,
+    pub value: Value,
+    pub json_bytes: usize,
     pub attachment: Vec<u8>,
 }
 
@@ -135,7 +140,7 @@ pub fn read_frame<R: Read>(reader: &mut R) -> io::Result<Option<Frame>> {
     }
     reader.read_exact(&mut length)?;
     let json_size = u32::from_be_bytes(length) as usize;
-    if !(2..=1024 * 1024 + 4096).contains(&json_size) || json_size > size - 4 {
+    if !(2..=MAX_RESPONSE_JSON_BYTES).contains(&json_size) || json_size > size - 4 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid JSON length",
@@ -166,7 +171,12 @@ pub fn read_frame<R: Read>(reader: &mut R) -> io::Result<Option<Frame>> {
     }
     let mut attachment = vec![0; attachment_size];
     reader.read_exact(&mut attachment)?;
-    Ok(Some(Frame { json, attachment }))
+    Ok(Some(Frame {
+        json_bytes: json.len(),
+        json,
+        value,
+        attachment,
+    }))
 }
 
 pub async fn write_frame_async<T: Serialize>(
@@ -175,6 +185,12 @@ pub async fn write_frame_async<T: Serialize>(
     attachment: &[u8],
 ) -> io::Result<()> {
     let json = serde_json::to_vec(value).map_err(io::Error::other)?;
+    if json.len() > MAX_REQUEST_JSON_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "request JSON too large",
+        ));
+    }
     let size = 4usize
         .checked_add(json.len())
         .and_then(|n| n.checked_add(attachment.len()))
@@ -208,7 +224,7 @@ pub async fn read_frame_async<R: AsyncRead + Unpin>(reader: &mut R) -> io::Resul
     }
     reader.read_exact(&mut length).await?;
     let json_size = u32::from_be_bytes(length) as usize;
-    if !(2..=1024 * 1024 + 4096).contains(&json_size) || json_size > size - 4 {
+    if !(2..=MAX_RESPONSE_JSON_BYTES).contains(&json_size) || json_size > size - 4 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid JSON length",
@@ -239,7 +255,13 @@ pub async fn read_frame_async<R: AsyncRead + Unpin>(reader: &mut R) -> io::Resul
     }
     let mut attachment = vec![0; attachment_size];
     reader.read_exact(&mut attachment).await?;
-    Ok(Some(Frame { json, attachment }))
+    Ok(Some(Frame {
+        json_bytes: json.len(),
+        #[cfg(test)]
+        json,
+        value,
+        attachment,
+    }))
 }
 
 #[cfg(test)]
@@ -336,4 +358,35 @@ mod tests {
             Ok(count)
         }
     }
+}
+#[tokio::test]
+async fn large_response_json_and_small_request_limits_are_distinct() {
+    let value = serde_json::json!({"result":{"text":"x".repeat(2 * 1024 * 1024)}});
+    let bytes = encode_frame(&value, &[]).unwrap();
+    assert!(
+        read_frame(&mut std::io::Cursor::new(&bytes))
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        read_frame_async(&mut std::io::Cursor::new(&bytes))
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        write_frame_async(&mut tokio::io::sink(), &value, &[])
+            .await
+            .is_err()
+    );
+    let mut oversized = Vec::new();
+    oversized.extend_from_slice(&(MAX_FRAME_BYTES as u32).to_be_bytes());
+    oversized.extend_from_slice(&((MAX_RESPONSE_JSON_BYTES + 1) as u32).to_be_bytes());
+    assert_eq!(
+        read_frame_async(&mut std::io::Cursor::new(oversized))
+            .await
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidData
+    );
 }

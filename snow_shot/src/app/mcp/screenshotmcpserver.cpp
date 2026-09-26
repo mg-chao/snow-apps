@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QLockFile>
@@ -20,6 +21,7 @@
 #include <QUuid>
 #include <QtEndian>
 #include <cmath>
+#include <algorithm>
 #include <utility>
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -31,6 +33,7 @@ namespace snow_shot::app::mcp {
 namespace {
 constexpr quint32 kMaximumFrameBytes = 64u * 1024u * 1024u;
 constexpr quint32 kMaximumRequestBytes = 1024u * 1024u + 4096u;
+constexpr quint32 kMaximumResponseJsonBytes = 32u * 1024u * 1024u + 65536u;
 const QString kProtocol = QStringLiteral("snow-shot-mcp/1");
 
 bool privateDirectory(const QString& path) {
@@ -101,7 +104,7 @@ ScreenshotMcpResponse failure(const QString& id, const QString& code) {
 QByteArray frame(const QJsonObject& o, const QByteArray& attachment) {
     const QByteArray json = QJsonDocument(o).toJson(QJsonDocument::Compact);
     const quint64 size = 4 + static_cast<quint64>(json.size()) + attachment.size();
-    if (size > kMaximumFrameBytes)
+    if (json.size() > kMaximumResponseJsonBytes || size > kMaximumFrameBytes)
         return {};
     QByteArray bytes(static_cast<qsizetype>(size + 4), Qt::Uninitialized);
     qToBigEndian(static_cast<quint32>(size), bytes.data());
@@ -152,12 +155,44 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
             delete c.socket;
         }
     }
+    void beginDrain(std::function<void()> drained, int timeoutMilliseconds) {
+        if (m_draining)
+            return;
+        m_draining = true;
+        m_server->close();
+        for (auto& client : m_clients) {
+            while (!client.queue.isEmpty()) {
+                const auto request = client.queue.dequeue().request;
+                write(client, failure(request.value(QStringLiteral("request_id")).toString(),
+                                      QStringLiteral("disabled")));
+            }
+        }
+        auto* timer = new QTimer(this);
+        auto elapsed = std::make_shared<QElapsedTimer>();
+        elapsed->start();
+        connect(
+            timer, &QTimer::timeout, this,
+            [this, timer, elapsed, timeoutMilliseconds, drained = std::move(drained)]() mutable {
+                bool pending = false;
+                for (const auto& client : std::as_const(m_clients))
+                    pending |= !client.activeId.isEmpty() || !client.controlIds.isEmpty() ||
+                               !client.backgroundIds.isEmpty() ||
+                               client.socket->bytesToWrite() != 0;
+                if (pending && elapsed->elapsed() < timeoutMilliseconds)
+                    return;
+                timer->stop();
+                timer->deleteLater();
+                QMetaObject::invokeMethod(QCoreApplication::instance(), std::move(drained),
+                                          Qt::QueuedConnection);
+            });
+        timer->start(10);
+    }
     void complete(quint64 id, ScreenshotMcpResponse response) {
         auto it = m_clients.find(id);
         if (it == m_clients.end())
             return;
         auto& c = it.value();
-        if (c.controlIds.remove(response.requestId)) {
+        if (c.controlIds.remove(response.requestId) || c.backgroundIds.remove(response.requestId)) {
             write(c, response);
             return;
         }
@@ -166,6 +201,20 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
         write(c, response);
         c.activeId.clear();
         dispatch(id);
+    }
+    void publishEvent(quint64 id, QJsonObject event) {
+        const auto it = m_clients.find(id);
+        if (it == m_clients.end() || !it->authenticated || !it->events)
+            return;
+        event.insert(QStringLiteral("protocol"), kProtocol);
+        event.insert(QStringLiteral("kind"), QStringLiteral("event"));
+        event.insert(QStringLiteral("attachment_length"), 0);
+        event.remove(QStringLiteral("request_id"));
+        const auto bytes = frame(event, {});
+        if (bytes.isEmpty() || bytes.size() > 16384 ||
+            it->socket->bytesToWrite() + bytes.size() > kMaximumFrameBytes)
+            return;
+        it->socket->write(bytes);
     }
   signals:
     void requestReceived(quint64 connectionId, const QJsonObject& request,
@@ -178,8 +227,11 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
         QLocalSocket* socket = nullptr;
         QByteArray buffer;
         bool authenticated = false;
+        bool events = false;
+        bool requestCancellation = false;
         QString activeId;
         QSet<QString> controlIds;
+        QSet<QString> backgroundIds;
         QElapsedTimer partialTimer;
         struct Queued {
             QJsonObject request;
@@ -187,17 +239,34 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
         };
         QQueue<Queued> queue;
         QElapsedTimer connected;
+        QVector<std::function<void()>> afterSend;
     };
+    void flushCallbacks(Client& c) {
+        if (c.socket->bytesToWrite() != 0)
+            return;
+        auto callbacks = std::exchange(c.afterSend, {});
+        for (auto& callback : callbacks)
+            QMetaObject::invokeMethod(QCoreApplication::instance(), std::move(callback),
+                                      Qt::QueuedConnection);
+    }
     void write(Client& c, ScreenshotMcpResponse r) {
         QByteArray bytes = frame(responseObject(r), r.attachment);
-        if (bytes.isEmpty())
+        if (bytes.isEmpty()) {
+            r.afterSend = {};
             bytes =
                 frame(responseObject(failure(r.requestId, QStringLiteral("output_too_large"))), {});
+        }
         if (c.socket->bytesToWrite() + bytes.size() > kMaximumFrameBytes + 4) {
             c.socket->abort();
             return;
         }
-        c.socket->write(bytes);
+        if (c.socket->write(bytes) != bytes.size()) {
+            c.socket->abort();
+            return;
+        }
+        if (r.afterSend)
+            c.afterSend.append(std::move(r.afterSend));
+        flushCallbacks(c);
     }
     void accept() {
         while (m_server->hasPendingConnections()) {
@@ -214,6 +283,11 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
             m_clients.insert(id, c);
             socket->setReadBufferSize(kMaximumRequestBytes + 8);
             connect(socket, &QLocalSocket::readyRead, this, [this, id] { read(id); });
+            connect(socket, &QLocalSocket::bytesWritten, this, [this, id](qint64) {
+                auto client = m_clients.find(id);
+                if (client != m_clients.end())
+                    flushCallbacks(*client);
+            });
             connect(
                 socket, &QLocalSocket::disconnected, this,
                 [this, id, socket] {
@@ -307,16 +381,26 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
                     return;
                 }
                 c.authenticated = true;
+                const auto capabilities = params.value(QStringLiteral("capabilities")).toArray();
+                c.events = capabilities.contains(QStringLiteral("events"));
+                c.requestCancellation = capabilities.contains(QStringLiteral("cancel_request"));
                 publishConnectionCount();
                 ScreenshotMcpResponse reply;
                 reply.requestId = requestId;
                 reply.ok = true;
                 reply.result = {{QStringLiteral("protocol"), kProtocol},
                                 {QStringLiteral("handshake_ms"), c.connected.elapsed()}};
+                QJsonArray enabled;
+                if (c.events)
+                    enabled.append(QStringLiteral("events"));
+                if (c.requestCancellation)
+                    enabled.append(QStringLiteral("cancel_request"));
+                reply.result.insert(QStringLiteral("capabilities"), enabled);
                 write(c, reply);
                 continue;
             }
-            bool duplicate = c.activeId == requestId || c.controlIds.contains(requestId);
+            bool duplicate = c.activeId == requestId || c.controlIds.contains(requestId) ||
+                             c.backgroundIds.contains(requestId);
             for (const auto& queued : std::as_const(c.queue))
                 duplicate |=
                     queued.request.value(QStringLiteral("request_id")).toString() == requestId;
@@ -324,11 +408,54 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
                 c.socket->abort();
                 return;
             }
+            if (m_draining) {
+                write(c, failure(requestId, QStringLiteral("disabled")));
+                continue;
+            }
+            if (method == QStringLiteral("snow_shot_request_cancel")) {
+                if (!c.requestCancellation) {
+                    write(c, failure(requestId, QStringLiteral("unsupported")));
+                    continue;
+                }
+                const auto target = request.value(QStringLiteral("params"))
+                                        .toObject()
+                                        .value(QStringLiteral("request_id"))
+                                        .toString();
+                if (target.isEmpty() || target.size() > 128) {
+                    write(c, failure(requestId, QStringLiteral("invalid_parameters")));
+                    continue;
+                }
+                bool removed = false;
+                for (auto queued = c.queue.begin(); queued != c.queue.end(); ++queued) {
+                    if (queued->request.value(QStringLiteral("request_id")) != target)
+                        continue;
+                    c.queue.erase(queued);
+                    write(c, failure(target, QStringLiteral("canceled")));
+                    removed = true;
+                    break;
+                }
+                if (removed || (c.activeId != target && !c.backgroundIds.contains(target) &&
+                                !c.controlIds.contains(target))) {
+                    ScreenshotMcpResponse reply;
+                    reply.requestId = requestId;
+                    reply.ok = true;
+                    reply.result = {{QStringLiteral("canceled"), removed}};
+                    write(c, reply);
+                    continue;
+                }
+            }
             if ((method == QStringLiteral("screenshot_cancel") ||
+                 method == QStringLiteral("snow_shot_request_cancel") ||
                  method == QStringLiteral("screenshot_state") ||
                  method == QStringLiteral("screenshot_operation") ||
+                 method == QStringLiteral("snow_shot_job_get") ||
+                 method == QStringLiteral("snow_shot_job_cancel") ||
+                 method == QStringLiteral("snow_shot_document_state") ||
+                 method == QStringLiteral("snow_shot_app_status") ||
+                 method == QStringLiteral("snow_shot_recording_state") ||
+                 method == QStringLiteral("snow_shot_recording_control") ||
                  method == QStringLiteral("snow_shot_status")) &&
-                !c.activeId.isEmpty()) {
+                (!c.activeId.isEmpty() || !c.backgroundIds.isEmpty())) {
                 // Cancellation must not sit behind the operation it cancels. The session adapter
                 // completes the active request before completing this cancellation request.
                 if (c.controlIds.size() >= 8) {
@@ -336,6 +463,17 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
                     continue;
                 }
                 c.controlIds.insert(requestId);
+                emit requestReceived(id, request, {});
+                continue;
+            }
+            if (method.startsWith(QStringLiteral("snow_shot_document_"))) {
+                // Background documents have independent ordered worker lanes. Do not serialize
+                // all of them behind a single connection's active visible-editor request.
+                if (c.backgroundIds.size() >= 8) {
+                    write(c, failure(requestId, QStringLiteral("queue_full")));
+                    continue;
+                }
+                c.backgroundIds.insert(requestId);
                 emit requestReceived(id, request, {});
                 continue;
             }
@@ -356,6 +494,7 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
     QString m_token;
     QHash<quint64, Client> m_clients;
     quint64 m_nextId = 0;
+    bool m_draining = false;
 };
 
 QString ScreenshotMcpServer::defaultRuntimeDirectory() {
@@ -477,6 +616,31 @@ void ScreenshotMcpServer::stop() {
     if (std::exchange(m_running, false))
         emit runningChanged(false);
 }
+void ScreenshotMcpServer::drainAndStop(std::function<void()> afterDrain, int timeoutMilliseconds) {
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (!m_worker) {
+        if (afterDrain)
+            afterDrain();
+        return;
+    }
+    QPointer<ScreenshotMcpServer> guard(this);
+    const auto epoch = m_epoch;
+    QMetaObject::invokeMethod(
+        m_worker,
+        [worker = m_worker, guard, epoch, afterDrain = std::move(afterDrain),
+         timeoutMilliseconds]() mutable {
+            worker->beginDrain(
+                [guard, epoch, afterDrain = std::move(afterDrain)]() mutable {
+                    if (!guard || guard->m_epoch != epoch)
+                        return;
+                    guard->stop();
+                    if (afterDrain)
+                        afterDrain();
+                },
+                std::clamp(timeoutMilliseconds, 1, 10000));
+        },
+        Qt::QueuedConnection);
+}
 bool ScreenshotMcpServer::isRunning() const {
     return m_running;
 }
@@ -492,11 +656,38 @@ void ScreenshotMcpServer::setRequestHandler(RequestHandler h) {
 void ScreenshotMcpServer::setClientDisconnectedHandler(ClientDisconnectedHandler h) {
     m_clientDisconnectedHandler = std::move(h);
 }
+void ScreenshotMcpServer::setRequestCancellationHandler(RequestCancellationHandler handler) {
+    m_requestCancellationHandler = std::move(handler);
+}
+void ScreenshotMcpServer::publishEvent(quint64 connection, QJsonObject event) {
+    if (!m_worker)
+        return;
+    QMetaObject::invokeMethod(
+        m_worker,
+        [worker = m_worker, connection, event = std::move(event)]() mutable {
+            worker->publishEvent(connection, std::move(event));
+        },
+        Qt::QueuedConnection);
+}
 void ScreenshotMcpServer::handleRequest(quint64 connection, const QJsonObject& object,
                                         const QByteArray&) {
     Q_ASSERT(QThread::currentThread() == thread());
     if (!m_running)
         return;
+    if (object.value(QStringLiteral("method")) == QStringLiteral("snow_shot_request_cancel")) {
+        const auto target = object.value(QStringLiteral("params"))
+                                .toObject()
+                                .value(QStringLiteral("request_id"))
+                                .toString();
+        ScreenshotMcpResponse response;
+        response.requestId = object.value(QStringLiteral("request_id")).toString();
+        response.ok = true;
+        response.result = {
+            {QStringLiteral("canceled"),
+             m_requestCancellationHandler && m_requestCancellationHandler(connection, target)}};
+        sendResponse(connection, std::move(response));
+        return;
+    }
     ScreenshotMcpRequest request;
     request.connectionId = connection;
     request.requestId = object.value(QStringLiteral("request_id")).toString();

@@ -140,6 +140,14 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {});
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);
+    bool
+    importConfigurationSnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion,
+                                std::shared_future<storage::StorageResult>* completion = nullptr) {
+        const bool result =
+            m_backend.importConfigurationSnapshot(values, schemaVersion, completion);
+        refreshAll();
+        return result;
+    }
     [[nodiscard]] storage::StorageStatus storageStatus() const;
     void refreshPlatformSettings();
     void refreshStorageStatus();

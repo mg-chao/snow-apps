@@ -33,9 +33,11 @@ class ScreenshotSelectionModel;
 class SnowCanvasWidget;
 class QWidget;
 class QUrl;
+class QTextDocument;
 struct ScreenshotCaptureState;
 struct ScreenshotTableCommandState;
 struct ScreenshotRecognitionResults;
+struct ScreenshotClipboardOriginalContent;
 
 namespace snow_shot::presentation {
 class WindowShortcutManager;
@@ -116,11 +118,14 @@ class ScreenshotOcrController final : public QObject {
     [[nodiscard]] QJsonObject workflowResult() const;
     [[nodiscard]] bool editWorkflow(const QJsonObject& params);
     void cancelWorkflow();
+    void seedImportedResults(ScreenshotRecognitionResults results,
+                             const ScreenshotClipboardOriginalContent& originalContent);
 
   signals:
     void textEditingChanged(bool editing);
     void textResultChanged(bool available);
     void textDraftChanged(const QString& text);
+    void workflowStateChanged();
 
   private:
     struct CanvasState {
@@ -155,6 +160,9 @@ class ScreenshotOcrController final : public QObject {
     std::unique_ptr<ScreenshotRecognitionSessionController> m_session;
     QPointer<ScreenshotRecognitionWindow> m_recognitionWindow;
     QString m_surfaceKey;
+    QString m_importedTargetKey;
+    std::shared_ptr<QTextDocument> m_importedFormattedDocument;
+    QString m_importedPlainText;
     QImage m_surfaceImage;
     QImage m_filteredImage;
     QRectF m_filteredCanvasRect;

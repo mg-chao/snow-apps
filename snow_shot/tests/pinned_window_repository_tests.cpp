@@ -147,6 +147,48 @@ void stateUpdatesBeforeFirstFlushPreserveRestorableSources() {
     }
 }
 
+void allocationAdmissionPrecedesSourceDecode() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary storage directory is unavailable");
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto image = patternedImage(QSize(81, 63), 23);
+    auto record = recordWithId(id, image);
+    record.canvasSession = QByteArrayLiteral("retained editor session");
+    record.originalText = QStringLiteral("retained source text");
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    require(repository.create(record).success && repository.flush().success,
+            "publish pinned source admission fixture");
+    int rejectedCalls = 0;
+    require(!repository.loadRecord(
+                id,
+                [&](qint64 bytes) {
+                    ++rejectedCalls;
+                    require(bytes > 0, "pin admission must include retained text/session payloads");
+                    return false;
+                }) &&
+                rejectedCalls == 1,
+            "rejected pin payload must stop before reading or decoding the image");
+    qint64 peak = 0;
+    const auto accepted = repository.loadRecord(id, [&](qint64 bytes) {
+        peak = std::max(peak, bytes);
+        return true;
+    });
+    require(accepted && samePixels(accepted->image, image) && peak >= 2 * image.sizeInBytes() &&
+                accepted->canvasSession == record.canvasSession,
+            "pin admission must account for decoded buffers and preserve source payloads");
+    int decodedReservations = 0;
+    require(!repository.loadRecord(id,
+                                   [&](qint64 bytes) {
+                                       if (bytes >= 2 * image.sizeInBytes()) {
+                                           ++decodedReservations;
+                                           return false;
+                                       }
+                                       return true;
+                                   }) &&
+                decodedReservations == 1,
+            "encoded pin may be admitted while decoded raster allocation is rejected");
+}
+
 void preparedSourceIsWrittenOnceAndStateUpdatesPreserveIt() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -1260,6 +1302,7 @@ int main(int argc, char* argv[]) {
     committedPayloadsAreServedFromDisk();
     missingOptionalPayloadDoesNotHideRestorableImage();
     preparedSourceIsWrittenOnceAndStateUpdatesPreserveIt();
+    allocationAdmissionPrecedesSourceDecode();
     metadataOnlyUpdatesDoNotRewriteCommittedPayloads();
     changedPayloadsRecommitAndStayLazy();
     removedRecordsPruneTheirPayloads();

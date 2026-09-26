@@ -1359,7 +1359,7 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
                 emit operationMessage(error, false);
             emit actionFinished(binding, success, error);
         };
-        const storage::ConfigurationArchiveReadResult read =
+        storage::ConfigurationArchiveReadResult read =
             storage::ConfigurationArchive::read(filePath);
         if (!read.isValid()) {
             finish(false, read.error);
@@ -1371,7 +1371,8 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
         // revert to schema defaults. The overlay is materialized with the same
         // salvage rules as loading the persisted configuration, including schema
         // upgrades.
-        if (!applicationStorage.configuration().applySnapshot(read.values, read.schemaVersion)) {
+        read.preserveOmittedCredentials(applicationStorage.configuration().snapshot());
+        if (!importConfigurationSnapshot(read.values, read.schemaVersion)) {
             finish(false, QCoreApplication::translate("SettingsBackend",
                                                       "The configuration could not be imported."));
             return true;
@@ -1393,6 +1394,81 @@ CustomAiModels BuiltInSettingsBackend::customAiModels() const {
 }
 bool BuiltInSettingsBackend::applyCustomAiModels(const CustomAiModels& models) {
     return storage::ApiConfigurationSettings().setCustomModels(models);
+}
+
+bool BuiltInSettingsBackend::importConfigurationSnapshot(
+    const QMap<QString, QJsonValue>& values, int schemaVersion,
+    std::shared_future<storage::StorageResult>* completion) {
+    if (completion)
+        *completion = {};
+    auto& storage = storage::ApplicationStorage::instance();
+    auto& configuration = storage.configuration();
+    const auto previous = configuration.snapshot();
+    const QString enabledKey = QStringLiteral("system/auto_start_at_boot");
+    const QString elevatedKey = QStringLiteral("system/launch_as_administrator");
+    const auto importedValue = [&](const QString& key) {
+        const auto fallback = storage::ConfigurationSchema::defaultValue(key);
+        const auto normalized =
+            storage::ConfigurationSchema::normalize(key, values.value(key, fallback));
+        return normalized.valid ? normalized.value : fallback;
+    };
+    const auto requestedEnabled = importedValue(enabledKey);
+    const auto requestedElevated = importedValue(elevatedKey);
+    // Startup preferences are committed by the native transaction. Keep its previous
+    // configuration baseline intact even if querying the OS during rollback fails.
+    auto staged = values;
+    staged.insert(enabledKey, previous.value(enabledKey));
+    staged.insert(elevatedKey, previous.value(elevatedKey));
+    if (!configuration.applySnapshot(staged, schemaVersion))
+        return false;
+    bool accepted = true;
+    const auto applyRuntimeValue = [&](const QString& key, const auto& apply) {
+        const auto current = configuration.value(key);
+        if (previous.value(key) == current)
+            return;
+        if (!apply(current)) {
+            // A rejected runtime operation must not leave its stored field claiming success.
+            configuration.setValue(key, previous.value(key));
+            accepted = false;
+        }
+    };
+    applyRuntimeValue(QStringLiteral("interface/theme_mode"), [&](const QJsonValue& value) {
+        return applySelectValue(SettingsSelectBinding::Theme, value.toVariant());
+    });
+    applyRuntimeValue(QStringLiteral("interface/language"), [&](const QJsonValue& value) {
+        return applySelectValue(SettingsSelectBinding::Language, value.toVariant());
+    });
+    applyRuntimeValue(QStringLiteral("interface/theme_primary_color"),
+                      [&](const QJsonValue& value) {
+                          return applyColorValue(SettingsColorBinding::ThemePrimaryColor,
+                                                 storage::colorFromRgbaString(value.toString()));
+                      });
+    applyRuntimeValue(QStringLiteral("system/application_priority"), [&](const QJsonValue& value) {
+        return applySelectValue(SettingsSelectBinding::ApplicationPriority, value.toVariant());
+    });
+    if (previous.value(enabledKey) != requestedEnabled ||
+        previous.value(elevatedKey) != requestedElevated) {
+        const auto result = applyStartupSettings(requestedEnabled.toBool(),
+                                                 requestedElevated.toBool(), m_loginItems);
+        accepted = accepted && result.success;
+    }
+    bool historyChanged = false;
+    for (auto it = previous.cbegin(); it != previous.cend(); ++it)
+        if (it.key().startsWith(QStringLiteral("capture_history/")) &&
+            configuration.value(it.key()) != it.value())
+            historyChanged = true;
+    if (historyChanged) {
+        const auto future =
+            storage.requestCaptureHistoryPolicyAsync(storage.captureHistoryPolicy());
+        if (completion)
+            *completion = future;
+        accepted = future.valid() &&
+                   (future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready ||
+                    future.get().success) &&
+                   accepted;
+    }
+    emit synchronized();
+    return accepted;
 }
 
 storage::StorageStatus BuiltInSettingsBackend::storageStatus() const {

@@ -148,6 +148,34 @@ pub unsafe extern "C" fn snow_runtime_serialize_selected_draw_template(
     })
 }
 
+/// Serializes only selected element identifiers, without document or image payloads.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_serialize_selected_element_ids(
+    runtime: SnowRuntime,
+    buffer: *mut u8,
+    buffer_capacity: usize,
+    out_size: *mut usize,
+) -> SnowError {
+    ffi_error(|| {
+        if runtime.is_null() || out_size.is_null() || (buffer.is_null() && buffer_capacity != 0) {
+            return SnowError::InvalidArgument;
+        }
+        let runtime = unsafe { &*runtime };
+        let Ok(bytes) = runtime.runtime.serialize_selected_element_ids() else {
+            return SnowError::InvalidArgument;
+        };
+        write_out(out_size, bytes.len());
+        if buffer.is_null() {
+            return SnowError::Ok;
+        }
+        if buffer_capacity < bytes.len() {
+            return SnowError::BufferTooSmall;
+        }
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len()) };
+        SnowError::Ok
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_runtime_create_from_document_session_with_config(
     bytes: *const u8,
@@ -649,6 +677,55 @@ pub unsafe extern "C" fn snow_changed_viewports_get(
 mod session_tests {
     use super::*;
     use snow_draw_engine::ActiveTool;
+
+    #[test]
+    fn selected_element_ids_abi_is_bounded_and_handles_empty_selection() {
+        unsafe {
+            let mut runtime = std::ptr::null_mut();
+            assert_eq!(snow_runtime_create(&mut runtime), SnowError::Ok);
+            let mut required = 0;
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    runtime,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                SnowError::Ok
+            );
+            assert_eq!(required, 2);
+            let mut bytes = [0u8; 2];
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    runtime,
+                    bytes.as_mut_ptr(),
+                    1,
+                    &mut required
+                ),
+                SnowError::BufferTooSmall
+            );
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    runtime,
+                    bytes.as_mut_ptr(),
+                    bytes.len(),
+                    &mut required
+                ),
+                SnowError::Ok
+            );
+            assert_eq!(&bytes, b"[]");
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                SnowError::InvalidArgument
+            );
+            snow_runtime_destroy(runtime);
+        }
+    }
 
     #[test]
     fn session_abi_is_two_pass_and_rejects_bad_input() {

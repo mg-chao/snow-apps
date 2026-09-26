@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QJsonParseError>
 #include <QUuid>
 
@@ -83,7 +84,8 @@ QJsonObject configArchiveJsonObject(const QByteArray& payload, bool* ok) {
 } // namespace
 
 QString ConfigurationArchive::write(const QString& archivePath,
-                                    const QMap<QString, QJsonValue>& values, int schemaVersion) {
+                                    const QMap<QString, QJsonValue>& values, int schemaVersion,
+                                    bool redactCredentials) {
     const QString failure = configArchiveTranslate(
         QT_TRANSLATE_NOOP("snow_shot::storage::ConfigurationArchive",
                           "The configuration archive could not be created."));
@@ -113,6 +115,19 @@ QString ConfigurationArchive::write(const QString& archivePath,
         configuration.insert(it.key(), it.value());
     }
     QJsonObject manifest;
+    if (redactCredentials) {
+        const auto key = QStringLiteral("api_configuration/custom_models");
+        auto models = configuration.value(key).toArray();
+        QJsonArray omitted;
+        for (qsizetype index = 0; index < models.size(); ++index) {
+            auto model = models[index].toObject();
+            omitted.append(model.value(QStringLiteral("id")));
+            model.insert(QStringLiteral("api_key"), QString());
+            models[index] = model;
+        }
+        configuration.insert(key, models);
+        manifest.insert(QStringLiteral("redacted_credentials"), omitted);
+    }
     manifest.insert(QStringLiteral("format"), QStringLiteral("snow-shot-configuration"));
     manifest.insert(QStringLiteral("format_version"), kConfigArchiveFormatVersion);
     manifest.insert(QStringLiteral("schema_version"), schemaVersion);
@@ -266,6 +281,11 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
             "The configuration archive was created by a newer version of Snow Shot.")));
     }
     result.schemaVersion = schemaVersion;
+    for (const auto& id : manifest.value(QStringLiteral("redacted_credentials")).toArray()) {
+        if (!id.isString())
+            return fail(invalidArchive);
+        result.redactedCredentialIds.append(id.toString());
+    }
 
     bool configurationOk = false;
     const QJsonObject configuration = configArchiveJsonObject(configurationBytes, &configurationOk);
@@ -289,6 +309,31 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
                               "The configuration archive contains no compatible settings.")));
     }
     return result;
+}
+
+void ConfigurationArchiveReadResult::preserveOmittedCredentials(
+    const QMap<QString, QJsonValue>& current) {
+    const auto key = QStringLiteral("api_configuration/custom_models");
+    auto models = values.value(key).toArray();
+    const auto existing = current.value(key).toArray();
+    for (qsizetype index = 0; index < models.size(); ++index) {
+        auto model = models[index].toObject();
+        const auto id = model.value(QStringLiteral("id")).toString();
+        if (!redactedCredentialIds.contains(id))
+            continue;
+        for (const auto& item : existing) {
+            const auto previous = item.toObject();
+            if (previous.value(QStringLiteral("id")).toString() == id &&
+                previous.value(QStringLiteral("base_url")) ==
+                    model.value(QStringLiteral("base_url"))) {
+                model.insert(QStringLiteral("api_key"), previous.value(QStringLiteral("api_key")));
+                break;
+            }
+        }
+        models[index] = model;
+    }
+    if (values.contains(key))
+        values.insert(key, models);
 }
 
 } // namespace snow_shot::storage

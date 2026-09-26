@@ -578,6 +578,22 @@ QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
               const char* /*nameHint*/) {
     return decodeBytes(encoded, expectedFormat);
 }
+QSize inspectSize(const QByteArray& encoded, snow::image::Format expectedFormat) {
+    const auto format = bridgeFormat(expectedFormat);
+    if (!backendAbiIsCompatible() || encoded.isEmpty() ||
+        format == SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN)
+        return {};
+    SnowShotImageCodecImageInfo information{};
+    std::array<char, kBackendErrorCapacity> backendError{};
+    if (snow_shot_image_codec_inspect(reinterpret_cast<const uint8_t*>(encoded.constData()),
+                                      static_cast<uint64_t>(encoded.size()), format, &information,
+                                      backendError.data(),
+                                      static_cast<uint64_t>(backendError.size())) == 0 ||
+        information.width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+        information.height > static_cast<uint32_t>(std::numeric_limits<int>::max()))
+        return {};
+    return QSize(static_cast<int>(information.width), static_cast<int>(information.height));
+}
 
 QImage decodeFile(const QString& path, snow::image::Format expectedFormat) {
     return decodeBytes(readFile(path), expectedFormat);

@@ -35,10 +35,15 @@
 #include <QString>
 #include <QDir>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QSysInfo>
 #include <optional>
 #include "snow_capture.h"
 #include "snow_recording.h"
+#ifdef SNOW_SHOT_MCP_TEST_FIXTURE
+#include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#endif
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/loginitemservice.h"
 #include <QScopeGuard>
@@ -100,6 +105,62 @@ int main(int argc, char* argv[]) {
     }
     QCoreApplication::setApplicationName(applicationName);
     QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_DIAGNOSTICS_VERSION));
+#ifdef SNOW_SHOT_MCP_TEST_FIXTURE
+    // Only test builds expose this isolated production-router fixture. It bypasses
+    // singleton acquisition, startup registration, and the user's configuration.
+    if (argc >= 3 && QString::fromLocal8Bit(argv[1]) == u"--mcp-fixture") {
+        const QFileInfo rootInfo(QString::fromLocal8Bit(argv[2]));
+        if (!rootInfo.isAbsolute() || !rootInfo.isDir() || rootInfo.isSymLink())
+            return 2;
+        const QString root = rootInfo.canonicalFilePath();
+        qputenv("SNOW_SHOT_MCP_DESCRIPTOR",
+                QDir(root).filePath(QStringLiteral("descriptor.json")).toUtf8());
+        QCoreApplication::setApplicationName(QStringLiteral("snow-shot-mcp-fixture-") +
+                                             QUuid::createUuid().toString(QUuid::Id128));
+        QStandardPaths::setTestModeEnabled(true);
+        QApplication fixture(argc, argv);
+        fixture.setQuitOnLastWindowClosed(false);
+        adqt::widgets::initializePlatformCompatibility(fixture);
+        const QString executable = QDir(root).filePath(QStringLiteral("bin"));
+        if (!QDir().mkpath(executable))
+            return 3;
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (!storage.initialize({executable, root, 60000}).success)
+            return 4;
+        storage.configuration().setValues(
+            {{QStringLiteral("mcp/enabled"), true},
+             {QStringLiteral("tray/enabled"), false},
+             {QStringLiteral("pin_to_screen/automatic_text_recognition"), false}});
+        {
+            // Publish through the real repository so router tests can exercise
+            // history payloads and artifacts without capturing the user's desktop.
+            SnowCanvasRuntime canvas;
+            snow_shot::storage::CaptureHistoryDraft draft;
+            draft.id = QStringLiteral("fd97d4e3-311c-48de-bbfb-3b4f43b0fef6");
+            draft.createdUtc = QDateTime::currentDateTimeUtc();
+            draft.canvasBounds = QRect(0, 0, 80, 60);
+            draft.selection.rectangle = draft.canvasBounds;
+            draft.selection.shadowColor = QColor(Qt::black);
+            draft.canvasHistory = canvas.serializeDocumentHistory();
+            QImage image(draft.canvasBounds.size(), QImage::Format_RGBA8888);
+            image.fill(QColor(40, 150, 210));
+            draft.displays.append({QStringLiteral("fixture"), QStringLiteral("Fixture"), image});
+            draft.resultImage = image;
+            if (!storage.captureHistory().publish(std::move(draft)).get().storage.success)
+                return 5;
+        }
+        snow_shot::presentation::LanguageManager::instance().initialize();
+        snow_shot::presentation::styles::ThemeManager::instance().initialize(fixture);
+        int result = 0;
+        {
+            snow_shot::app::ApplicationController controller(fixture);
+            QTimer::singleShot(180000, &fixture, &QCoreApplication::quit);
+            result = fixture.exec();
+        }
+        storage.shutdown();
+        return result;
+    }
+#endif
     bool applicationRestart = false;
     if (argc > 1 && QString::fromLocal8Bit(argv[1]) == u"--restart-helper") {
         QCoreApplication helper(argc, argv);

@@ -1022,8 +1022,34 @@ void compoundSelectionSurvivesRepositoryRestart() {
             "reopened screenshot history must retain holes");
 }
 
+void revisionCheckedMutations() {
+    QTemporaryDir directory;
+    auto repository = storage::makeCaptureHistoryRepository(directory.path());
+    const auto initial = repository->recordsSnapshot();
+    auto first = draftAt(QDateTime::currentDateTimeUtc());
+    require(repository->publish(first).get().storage.success, "revision fixture publication");
+    const auto published = repository->recordsSnapshot();
+    require(published.revision > initial.revision && published.records.size() == 1,
+            "history snapshot atomically reports records and revision");
+    require(!repository->removeIfRevision({first.id}, initial.revision).get().success &&
+                repository->records().size() == 1,
+            "stale deletion must not remove a newer history record");
+    auto second = draftAt(QDateTime::currentDateTimeUtc().addSecs(1));
+    require(repository->publish(second).get().storage.success,
+            "second revision fixture publication");
+    require(!repository->removeIfRevision({}, published.revision, true).get().success &&
+                repository->records().size() == 2,
+            "stale clear must not remove new captures");
+    require(repository->removeIfRevision({first.id}, repository->recordsSnapshot().revision)
+                    .get()
+                    .success &&
+                repository->records().size() == 1 && repository->records().first().id == second.id,
+            "revision-checked deletion affects only the selected record");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    revisionCheckedMutations();
     compoundSelectionSurvivesRepositoryRestart();
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();

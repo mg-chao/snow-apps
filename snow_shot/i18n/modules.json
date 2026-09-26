@@ -6,6 +6,7 @@
     "LanguageCatalog",
     "MainContentHeaderWidget",
     "MainWindow",
+    "McpDocumentService",
     "QObject",
     "SectionHeaderWidget",
     "SidebarWidget",

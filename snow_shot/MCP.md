@@ -1,6 +1,7 @@
 # Snow Shot MCP
 
-Snow Shot exposes its standard screenshot editor through the packaged Rust
+Snow Shot exposes application controls, screenshots, background documents,
+recording, pinned images, settings, history, and provider operations through the packaged Rust
 `snow-shot-mcp` executable. It uses the official `rmcp` SDK over stdio. Start Snow
 Shot, open **Settings → System**, and enable **MCP integration**. The feature is
 disabled by default. The settings page shows the live client count, descriptor
@@ -36,7 +37,11 @@ args = []
 
 On macOS set `command` to, for example,
 `/Applications/Snow Shot.app/Contents/MacOS/snow-shot-mcp`.
-The bridge never launches Snow Shot. If the application is stopped or integration
+The bridge leaves application startup to you by default. Add `"--launch-app"` to
+`args` to allow one launch attempt of the sibling Snow Shot executable. This does
+not enable MCP integration: enable it in the application first. The bridge waits
+up to ten seconds for the authenticated endpoint and never replays a mutation.
+If the application is stopped or integration
 is disabled, `snow_shot_status` returns `reachable: false`, `mcp_enabled: null`,
 and the `unavailable` error. It cannot distinguish those two conditions without a
 live authenticated endpoint. A later call discovers the endpoint again.
@@ -87,7 +92,138 @@ Silent sessions cancel on disconnect or when integration is disabled. Disabling
 integration closes all clients and removes the descriptor. Escape and normal UI
 cancellation invalidate the session and cancel any pending MCP output.
 
-Recording, settings-page navigation, document recovery JSON, and arbitrary code execution are excluded from this surface. Scrolling capture, OCR, translation, conversion, auto-filtering, recognition edits, and drawing-template operations are available through the tools above.
+The original 28 tools retain their names and request/response contracts. New tools
+use `snow_shot_<domain>_<verb>` names. `tools/list` supplies typed input schemas,
+response-envelope schemas and annotations. The checked
+[`mcp-capabilities.json`](mcp-capabilities.json) records exact application dispatch
+coverage. Use the advertised schemas rather than guessing optional fields.
+
+## Background documents and jobs
+
+`snow_shot_document_open` creates an isolated, silent document from a local file,
+history item, pinned item, clipboard, text, HTML, or a direct capture. Keep its
+`document_id` and revision. Document tools cover selection, selection style,
+annotation transactions, undo/redo, cloning, rendering, saving, copying, pinning,
+recognition, recapture, drawing tools/styles, element editing (including an eraser
+path), templates, original content, presentation, and closing. Recognition editing
+also requires its separate `expected_recognition_revision`. Edits require
+`expected_revision`; refresh document
+state after `stale_revision` and decide whether to retry. Pass an
+`idempotency_key` when the relevant mutation schema provides it.
+Opening a pinned source preserves its rotation/flip, editable annotations and undo
+history, content bounds, selection decoration, and active tool. Window opacity is a
+presentation preference: it is applied by the normal pinned export, and excluded
+from an isolated document source or an `original: true` pinned export.
+Set `as_job: true` to open any source through an owned job. Delayed captures default
+to this behavior; `as_job: false` keeps an ordinary cancelable request. A client
+negotiating the modern Tasks extension receives document-open jobs as Tasks. The
+completed job result contains the document ID and revision.
+
+Recognition and standalone translation return owned job handles. Use
+`snow_shot_job_get`, `snow_shot_job_list`, and `snow_shot_job_cancel`; honor the
+returned `poll_interval_ms` and `ttl_ms`. Results remain available until expiry
+or connection teardown. Admission and result-memory limits return explicit
+errors instead of silently evicting existing results. Documents and jobs belong
+to the current connection and are retired when it disconnects.
+To retry an owned translation, call `snow_shot_translation_start` with
+`retry_job_id` and an optional idempotency key. This creates a new job using the
+retained original input and preferences; omit new text, source, language and
+model fields in this mode. A fresh translation may instead use `texts` or
+`source: "selection"` to capture selected text through the native application.
+
+Large results use owned artifact handles. `snow_shot_artifact_read` returns a
+base64 chunk with `offset`, `next_offset`, and `eof`; its maximum raw chunk is
+256 KiB and default is 64 KiB. Continue using `next_offset` until `eof`, and
+release the handle with `snow_shot_artifact_release` when finished. Artifact
+metadata includes the MIME type, byte count, and lifetime. A digest is available
+when computed; do not assume its presence in the initial descriptor.
+Chunks travel over private IPC as binary attachments; base64 is added at the MCP
+boundary. Recording files use a bounded private file snapshot so later source-file
+changes do not change an artifact's content.
+
+Current resource budgets are explicit:
+
+| Resource | Limit |
+| --- | --- |
+| Documents | 4 per connection, 16 total; 64 million source pixels |
+| Source rasters | 512 MiB total |
+| Retained edit history | 64 MiB per document, 256 MiB total conservative budget |
+| Render/export cache | 64 MiB rendered output and 64 MiB immutable export cache |
+| Artifact handles | 16 per connection, 64 total, 15-minute lifetime |
+| In-memory artifacts | 64 MiB each, 256 MiB total |
+| File artifacts | 2 GiB each, 4 GiB total |
+
+Oversized or exhausted admissions fail explicitly. Release documents/artifacts as
+soon as the workflow no longer needs them.
+
+## Application, recording, and pinned workflows
+
+Use `snow_shot_app_status` and `snow_shot_app_displays` to inspect the running
+application. `snow_shot_app_action` covers application windows and lifecycle.
+Settings tools expose registered fields and their types, current values, and
+revision; update only intended field IDs with that revision. Provider model
+metadata is readable; credentials are write-only and omitted secrets remain
+unchanged. Templates, history, configuration import/export, storage maintenance,
+permissions, and updates each have their own typed tools. Destructive mutations
+require the revision specified by their schema.
+
+For recording, read `snow_shot_recording_state`, start an explicit region and
+options, then retain the `recording_id` and revision for controls. Stop finalizes
+the file; a successful start does not mean a completed file exists. Recording
+supports pause/resume, annotation editing, undo/redo, copying and closing. Client
+disconnect finalizes owned recording work through the application's existing
+stop path.
+Finalized recordings report `artifact_status: pending|ready|unavailable`. A ready
+descriptor provides the owned immutable file snapshot; inspect `artifact_error`
+when snapshot admission or copying fails.
+
+Pinned tools list bounded pages, inspect, create, replace, update geometry and
+appearance, edit annotations and recognition, export, and perform window actions.
+Group tools manage groups. Keep the returned per-item or group revision and
+refresh after user interaction makes it stale. Recognition uses configured
+providers; network/provider failures are returned as application errors.
+
+## Discovery, subscriptions, and cancellation
+
+Resources expose capabilities, application status, settings, owned documents,
+jobs, screenshot sessions, pinned images, history metadata, and bounded artifact
+reads under `snow-shot://` URIs. Mutable/private reads have zero cache lifetime;
+static catalogs advertise a five-minute lifetime. No arbitrary file URI reads
+are supported. Prompts provide screenshot, background-image, and recording
+workflows, with completion for background-image output formats.
+
+The stdio bridge supports legacy initialize negotiation and MCP 2026-07-28
+per-request discovery. Both legacy resource subscriptions and modern
+`subscriptions/listen` receive coalesced URI invalidations for subscribed
+resources; notifications do not contain image pixels, recognition text, or
+credentials. Subscribe to a job URI to reduce polling, then read it for state.
+The current Tasks extension is offered for negotiated document opening, background recognition,
+automatic filtering, translation, asynchronous settings/storage actions and update check/download jobs through
+`tasks/get`, `tasks/update`, and `tasks/cancel`.
+Task delivery uses polling; task-notification filters are not advertised.
+
+MCP request cancellation maps to the owned application request through negotiated
+private IPC capabilities. Control requests retain capacity when ordinary work
+is saturated. Cancellation is cooperative: a file write already committed may
+return `outcome_may_have_completed`; inspect the destination before retrying.
+The private local IPC protocol remains `snow-shot-mcp/1`, with optional negotiated
+events/cancellation capabilities for compatibility with older applications.
+
+## Validation and platform gates
+
+Focused Rust tests and stdio protocol tests run on Windows, including five
+protocol versions, bounded payloads, saturation, cancellation, discovery and
+schema/dispatch agreement. All 28 legacy requests have checked input fixtures;
+these verify contracts and are not a claim of native end-to-end feature coverage.
+The offscreen Qt fixture exercises actual bridge/Qt document and job operations.
+
+Native desktop validation is a separate release gate: capture and mixed-DPI
+behavior, clipboard, recording encoders/audio, permission prompts, packaging and
+disconnect finalization must be exercised on Windows and macOS. Native macOS
+validation is pending on this Windows development host. Run related performance
+targets with `windows-msvc-performance` or the macOS performance preset only.
+Bridge baseline comparisons against the same Qt fixture isolate bridge changes;
+they do not measure changes to the native capture or rendering implementation.
 
 ## Coordinates and selection
 
@@ -156,8 +292,10 @@ and the local response frame to 64 MiB. `source_revision` identifies the immutab
 snapshot when a user edits while export is running.
 
 Save requires an absolute `path` or explicit `automatic_path: true`. Formats are
-`png` (default), `jpeg`, `webp`, `avif`, and `pdf`, subject to the platform codecs.
-`quality` is 1–100. Canonical parent validation rejects relative, URL, UNC/device,
+`png` (default), `jpeg`, `webp`, `avif`, `jxl`, `bmp`, and `pdf`, subject to the platform codecs.
+`quality` is 1–100; `compression_level` is `low|medium|high`. PDF accepts
+`pdf_page_size: image_size|a4_portrait|a4_landscape` and a `pdf_title` up to 1024 characters.
+Canonical parent validation rejects relative, URL, UNC/device,
 Windows alternate-stream/reserved-device names, and symlink leaf paths. The file
 service writes atomically. The response reports the actual saved path, byte
 count, and digest. Copy and pin use the existing canonical clipboard and pinned
@@ -169,6 +307,9 @@ canonical PNG, and digest metadata until canvas/selection/display/style state
 or scale changes. Output lifecycle revisions alone do not force re-encoding.
 Rendering, encoding, hashing, and saving stay off the GUI thread. Local IPC
 transfers raw PNG bytes; base64 is introduced only in the MCP response.
+Background documents use two fixed worker lanes with shared memory quotas. Local
+IPC admits up to eight independent background requests per connection, while
+eight reserved control slots keep cancellation and status requests responsive.
 Responses expose timing measurements for capture/reconciliation, queue wait,
 render, encode, and total latency, with cache-hit metadata. Existing capture and
 export instrumentation provides finer native-stage measurements. No screenshot
@@ -205,6 +346,11 @@ Never put the token in a client configuration.
 Wire layout: `u32be payload_size`, `u32be json_size`, UTF-8 JSON, optional raw
 attachment. The payload limit includes the JSON-size prefix, JSON, and bytes.
 Requests carry no binary data and JSON is limited to 1 MiB plus envelope overhead.
+The stdio input-line limit is 1 MiB plus 64 KiB for MCP framing and metadata,
+which preserves the smaller local request limit. A non-reading peer may retain
+at most 16 outgoing messages and 128 MiB of serialized output; exceeding either
+budget or stalling a write for ten seconds closes that connection and retires
+its owned application work. No mutation is replayed after this disconnect.
 Responses declare `attachment_length` and MIME. Parsers validate lengths before
 allocation and handle split prefixes, split UTF-8, EOF, malformed JSON, and
 truncated attachments. Handshake negotiates `snow-shot-mcp/1` and authenticates
@@ -239,14 +385,45 @@ cmake --build --preset build-windows-msvc-debug --target snow_shot snow-shot-mcp
 ctest --preset test-windows-msvc-debug -R '^snow-shot-mcp(-stdio)?-tests$' --output-on-failure
 ```
 
+`tests/check_mcp_capabilities.py` checks both dispatch tables against the checked
+capability matrix, plus reviewed settings/canvas catalogs and actual recording
+option adapters. Adding a UI enum or option requires an explicit coverage update.
+Passing `--execution-reports <report.json> ...` additionally requires runtime
+evidence for every advertised tool and resource entry/template; catalog agreement
+alone does not satisfy that gate.
+`tests/mcp_fixture_tests.py <bridge> <Qt-document-test-executable>` runs actual
+stdio/private-IPC workflows with isolated deterministic providers, resource
+notifications, Tasks, and four concurrent clients.
+`tests/mcp_launch_tests.py <bridge>` verifies adjacent launch using a private Rust
+sentinel executable. It never launches the installed application and requires
+the repository's Rust toolchain.
+
+For measurements, build the Qt fixture with the performance preset. Supply
+`--benchmark --samples 100 --output <report.json>`; optionally pass
+`--baseline-bridge <original-HEAD-bridge>` built with the same Rust profile,
+target, CRT and linker flags. The report includes binary hashes, latency
+percentiles, output bytes, Windows process CPU/working-set counters, 1080p/4K
+incompressible-image exports, cache checks, repeated cleanup cycles and a blocked
+stdout peer while a separate client queries status. GUI thread kernel CPU counters
+measure thread CPU usage; heartbeat lateness separately measures responsiveness.
+The optional `--legacy-fixture` and `--baseline-legacy-fixture` compare original/current
+Qt session and transport code through the same synthetic ports. Copy/pin acknowledgments
+and synthetic capture do not measure native desktop behavior. Process memory retained
+after cleanup can include allocator caches and alone does not establish a leak.
+
 The stdio smoke test uses an absent temporary descriptor and never captures the
-desktop or changes integration settings. Native Windows/macOS capture validation
-remains separate from offscreen protocol/session tests. macOS binaries must be
-built and validated on each supported native architecture before release.
+desktop or changes integration settings. Native capture validation remains separate
+from synthetic Qt ports. Tests are offscreen-capable, but this host's static Qt kit
+uses the repository Windows QPA fallback. This iteration validates Windows only;
+macOS native validation was deferred by the user. See `MCP_VALIDATION.md` for the
+specific completed and outstanding gates.
 
 On Windows, the manual live probe starts an isolated Snow Shot instance and calls
-all 28 tools through the bridge. It captures the current desktop, changes the
-clipboard, and briefly creates a pinned image. Run it only in an interactive
+all 28 legacy routes through the bridge. It captures the current desktop, retains
+and restores the clipboard, and briefly creates a pinned image. Its report separates
+successful native operations from ownership guards on provider/scrolling routes.
+It uses the test-build `--mcp-fixture` startup with isolated application storage.
+Run it only in an interactive
 desktop session:
 
 ```powershell

@@ -825,8 +825,8 @@
             <translation>All screenshot history will be removed</translation>
         </message>
         <message>
-            <source>Allow MCP clients running as your OS user to control screenshots. Snow Shot must be running.</source>
-            <translation>Allow MCP clients running as your OS user to control screenshots. Snow Shot must be running.</translation>
+            <source>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</source>
+            <translation>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</translation>
         </message>
         <message>
             <source>Always</source>

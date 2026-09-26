@@ -2207,13 +2207,14 @@ fn create_staging_path(final_path: &Path) -> std::io::Result<PathBuf> {
 }
 
 fn publish_staging_file(staging_path: &Path, final_path: &Path) -> std::io::Result<()> {
-    if final_path.exists() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::AlreadyExists,
-            format!("recording output already exists: {}", final_path.display()),
-        ));
-    }
-    fs::rename(staging_path, final_path)
+    // Both paths share a filesystem. tempfile uses atomic no-replace publication
+    // on Windows and Unix; std::fs::rename replaces an existing file on both.
+    // The encoder retains responsibility for failure recovery and staging cleanup.
+    let mut staged = tempfile::TempPath::try_from_path(staging_path.to_path_buf())?;
+    staged.disable_cleanup(true);
+    staged
+        .persist_noclobber(final_path)
+        .map_err(|failure| failure.error)
 }
 
 fn publish_unless_canceled(
@@ -2249,6 +2250,46 @@ fn is_direct_staging_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn publication_never_replaces_an_existing_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let staging = directory.path().join("staged.mp4");
+        let destination = directory.path().join("recording.mp4");
+        fs::write(&staging, b"new recording").unwrap();
+        fs::write(&destination, b"existing recording").unwrap();
+        assert!(publish_staging_file(&staging, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"existing recording");
+        assert_eq!(fs::read(&staging).unwrap(), b"new recording");
+    }
+
+    #[test]
+    fn concurrent_publication_has_exactly_one_owner() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("recording.mp4");
+        let barrier = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            let attempts: Vec<_> = (0_u8..8)
+                .map(|index| {
+                    let staging = directory.path().join(format!("staged-{index}.mp4"));
+                    fs::write(&staging, [index]).unwrap();
+                    let destination = &destination;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        (index, publish_staging_file(&staging, destination).is_ok())
+                    })
+                })
+                .collect();
+            let winners: Vec<_> = attempts
+                .into_iter()
+                .map(|attempt| attempt.join().unwrap())
+                .filter_map(|(index, published)| published.then_some(index))
+                .collect();
+            assert_eq!(winners.len(), 1);
+            assert_eq!(fs::read(&destination).unwrap(), winners);
+        });
+    }
     use std::io::Write;
 
     use snow_recording_model::VideoEncodingSpeed;

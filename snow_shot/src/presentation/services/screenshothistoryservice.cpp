@@ -584,6 +584,16 @@ void ScreenshotHistoryService::finishPersistentNavigation(
     reapCompletedLoads();
 }
 
+bool ScreenshotHistoryService::presentTransientEntry(const ScreenshotHistoryEntry& entry) {
+    if (entry.displays.isEmpty() || entry.canvasHistory.isEmpty())
+        return false;
+    resetCaptureNavigation();
+    auto imported = entry;
+    imported.persistent = false;
+    imported.intelligentSelectionMode = false;
+    return applyEntry(imported);
+}
+
 bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
     const bool pointSources =
         std::any_of(entry.displays.cbegin(), entry.displays.cend(),

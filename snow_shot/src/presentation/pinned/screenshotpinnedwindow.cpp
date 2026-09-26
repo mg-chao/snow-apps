@@ -3,6 +3,8 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/automationrevision.h"
+#include "snow_shot/app/mcp/mcpstylepatch.h"
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinnedclickthroughgeometry.h"
 #include "screenshotpinnedcontrolspresence.h"
@@ -103,11 +105,46 @@
 
 #include <algorithm>
 #include <cmath>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <cstdint>
 #include <optional>
 #include <utility>
 
 namespace {
+std::shared_ptr<ScreenshotOcrPresentation>
+transformedOcrPresentation(const ScreenshotOcrPresentation& source, const QRectF& sourceRect,
+                           const QSize& sourcePixels, const QTransform& imageTransform,
+                           const QSize& transformedPixels, const QRectF& contentRect) {
+    auto result = std::make_shared<ScreenshotOcrPresentation>();
+    result->selection = contentRect.toAlignedRect();
+    result->solidBackgroundFill = source.solidBackgroundFill;
+    result->lines = source.lines;
+    const qreal sourceScaleX =
+        sourceRect.width() > 0 ? sourcePixels.width() / sourceRect.width() : 1;
+    const qreal sourceScaleY =
+        sourceRect.height() > 0 ? sourcePixels.height() / sourceRect.height() : 1;
+    const qreal targetScaleX =
+        transformedPixels.width() > 0 ? contentRect.width() / transformedPixels.width() : 1;
+    const qreal targetScaleY =
+        transformedPixels.height() > 0 ? contentRect.height() / transformedPixels.height() : 1;
+    const auto mapPoint = [&](const QPointF& point) {
+        const QPointF pixel((point.x() - sourceRect.left()) * sourceScaleX,
+                            (point.y() - sourceRect.top()) * sourceScaleY);
+        const auto transformed = imageTransform.map(pixel);
+        return QPointF(contentRect.left() + transformed.x() * targetScaleX,
+                       contentRect.top() + transformed.y() * targetScaleY);
+    };
+    for (auto& line : result->lines) {
+        for (auto& point : line.quad)
+            point = mapPoint(point);
+        for (auto& quad : line.sourceLineQuads)
+            for (auto& point : quad)
+                point = mapPoint(point);
+    }
+    result->prepareForRendering();
+    return result;
+}
 
 constexpr quint32 kTextTranslationPayloadMarker = 0x53535452;
 constexpr quint8 kTextTranslationPayloadVersion = 2;
@@ -1310,6 +1347,7 @@ void ScreenshotPinnedWindow::cancelDeferredInactiveGroupClose() {
 }
 
 void ScreenshotPinnedWindow::schedulePersistence() {
+    m_automationRevision = snow_shot::presentation::nextAutomationRevision();
     if (!m_persistenceEnabled || m_persistenceWriter == nullptr || m_persistenceId.isEmpty() ||
         !m_presented || m_closing || m_persistenceTimer == nullptr) {
         return;
@@ -1475,6 +1513,10 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
 }
 
 bool ScreenshotPinnedWindow::event(QEvent* event) {
+    if (event && (event->type() == QEvent::Show || event->type() == QEvent::Hide ||
+                  event->type() == QEvent::Move || event->type() == QEvent::Resize ||
+                  event->type() == QEvent::Close))
+        m_automationRevision = snow_shot::presentation::nextAutomationRevision();
     // QObject deletes this window while handling DeferredDelete. Never inspect
     // member state after forwarding that event to the base implementation.
     if (event != nullptr && event->type() == QEvent::DeferredDelete) {
@@ -1797,6 +1839,21 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
                               ? config.initialWindowSize
                               : config.nativeGeometry.size();
     restorePersistentState(config);
+    if ((!config.initialCanvasSession.isEmpty() &&
+         !m_runtime.restoreDocumentSession(config.initialCanvasSession)) ||
+        (config.initialCanvasSession.isEmpty() && !config.initialCanvasHistory.isEmpty() &&
+         !m_runtime.restoreDocumentHistory(config.initialCanvasHistory))) {
+        finishPresentation(false);
+        return false;
+    }
+    if (!config.initialCanvasTool.isEmpty()) {
+        const auto& tools = snow_shot::app::mcp::mcpCanvasTools();
+        const auto tool = tools.constFind(config.initialCanvasTool);
+        if (tool == tools.cend() || !m_canvas->setCanvasTool(*tool)) {
+            finishPresentation(false);
+            return false;
+        }
+    }
     // The scale value is the exact ratio encoded by window geometry. Whole
     // percent rounding belongs only to UI display and wheel-level navigation.
     // A window restored in thumbnail mode reports the scale of the geometry it
@@ -2418,6 +2475,8 @@ void ScreenshotPinnedWindow::createUi() {
         invalidatePendingCopy();
         schedulePersistence();
     });
+    connect(m_canvas, &SnowCanvasWidget::styleToolbarStateChanged, this,
+            &ScreenshotPinnedWindow::schedulePersistence);
     connect(m_canvas, &SnowCanvasWidget::watermarkPreviewApplied, this,
             &ScreenshotPinnedWindow::invalidatePendingCopy);
     connect(m_canvas, &SnowCanvasWidget::spotlightPreviewApplied, this,
@@ -3695,6 +3754,7 @@ void ScreenshotPinnedWindow::updateRecognitionContentGeometry() {
 }
 
 void ScreenshotPinnedWindow::activateRecognitionMode(int mode, bool showToolbar) {
+    m_automationRecognition = false;
     if (m_clickThroughActive && !setClickThroughMode(false)) {
         return;
     }
@@ -4259,42 +4319,9 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
     if (!m_ocrReady || m_originalOcrPresentation == nullptr || m_screenshotRenderer == nullptr) {
         return;
     }
-    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
-    presentation->selection = m_backgroundCanvasRect.toAlignedRect();
-    const qreal originalScaleX = m_canvasSourceRect.width() > 0.0
-                                     ? m_originalImage.width() / m_canvasSourceRect.width()
-                                     : 1.0;
-    const qreal originalScaleY = m_canvasSourceRect.height() > 0.0
-                                     ? m_originalImage.height() / m_canvasSourceRect.height()
-                                     : 1.0;
-    const qreal transformedScaleX =
-        m_transformedImage.width() > 0 ? m_backgroundCanvasRect.width() / m_transformedImage.width()
-                                       : 1.0;
-    const qreal transformedScaleY =
-        m_transformedImage.height() > 0
-            ? m_backgroundCanvasRect.height() / m_transformedImage.height()
-            : 1.0;
-    presentation->lines.reserve(m_originalOcrPresentation->lines.size());
-    for (const ScreenshotOcrLine& originalLine : m_originalOcrPresentation->lines) {
-        ScreenshotOcrLine line = originalLine;
-        line.quad.clear();
-        line.quad.reserve(originalLine.quad.size());
-        const auto mapPoint = [&](const QPointF& point) {
-            const QPointF imagePoint((point.x() - m_canvasSourceRect.left()) * originalScaleX,
-                                     (point.y() - m_canvasSourceRect.top()) * originalScaleY);
-            const QPointF transformed = m_imageTransform.map(imagePoint);
-            return QPointF(m_backgroundCanvasRect.left() + transformed.x() * transformedScaleX,
-                           m_backgroundCanvasRect.top() + transformed.y() * transformedScaleY);
-        };
-        for (const QPointF& point : originalLine.quad)
-            line.quad.push_back(mapPoint(point));
-        for (QPolygonF& sourceQuad : line.sourceLineQuads) {
-            for (QPointF& point : sourceQuad)
-                point = mapPoint(point);
-        }
-        presentation->lines.push_back(std::move(line));
-    }
-    presentation->prepareForRendering();
+    auto presentation = transformedOcrPresentation(
+        *m_originalOcrPresentation, m_canvasSourceRect, m_originalImage.size(), m_imageTransform,
+        m_transformedImage.size(), m_backgroundCanvasRect);
     if (m_displayOcrPresentation != nullptr &&
         m_displayOcrPresentation->selection == presentation->selection &&
         m_displayOcrPresentation->lines.size() == presentation->lines.size()) {
@@ -4378,6 +4405,52 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     return true;
 }
 
+std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::viewportArtifact() {
+    if (m_transformedImage.isNull()) {
+        return {};
+    }
+    if (m_resultSurfaceCanvasRect.isEmpty()) {
+        return {};
+    }
+    const bool logical = pinned_platform::kPinnedGeometryUnits ==
+                         pinned_platform::PinnedGeometryUnits::LogicalPixels;
+    double surfaceScale = m_scalePercent / 100.0;
+    if (m_thumbnailMode) {
+        // Copy Current Viewport exports the displayed thumbnail, including its
+        // backing resolution, independently of the saved expansion scale.
+        const QSizeF rasterViewport =
+            QSizeF(currentNativeGeometry().size()) * (logical ? devicePixelRatioF() : 1.0);
+        surfaceScale = std::min(rasterViewport.width() / m_resultSurfaceCanvasRect.width(),
+                                rasterViewport.height() / m_resultSurfaceCanvasRect.height());
+    } else if (logical) {
+        // Normal pins retain the source detail at the user's chosen zoom.
+        surfaceScale *= std::min(m_transformedImage.width() / m_backgroundCanvasRect.width(),
+                                 m_transformedImage.height() / m_backgroundCanvasRect.height());
+    }
+    if (!(surfaceScale > 0.0)) {
+        return {};
+    }
+    const QSize contentPixelSize(
+        std::max(1, qRound(m_backgroundCanvasRect.width() * surfaceScale)),
+        std::max(1, qRound(m_backgroundCanvasRect.height() * surfaceScale)));
+    if (m_canvas != nullptr && !m_canvas->resetEditingStatePreservingTool()) {
+        return {};
+    }
+    QByteArray documentSession = m_runtime.serializeDocumentSession();
+    const PinnedExportAppearance appearance =
+        pinnedExportAppearance(m_resultStyle, m_opacityPercent, surfaceScale);
+    ScreenshotPinnedViewportExportSource request{
+        std::move(documentSession), m_transformedImage,
+        m_backgroundCanvasRect,     contentPixelSize,
+        appearance.resultStyle,     m_runtime.smartEraseSnapshot(),
+        appearance.outputOpacity,   {},
+    };
+    request.bakedSelectionPath = bakedSelectionPath(contentPixelSize);
+
+    return std::make_shared<ScreenshotExportArtifact>(
+        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
+}
+
 void ScreenshotPinnedWindow::copyCurrentViewport() {
     if (copyHiddenTextSelection()) {
         return;
@@ -4397,49 +4470,10 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
         });
         return;
     }
-    if (m_transformedImage.isNull()) {
+    auto artifact = viewportArtifact();
+    if (!artifact)
         return;
-    }
-    if (m_resultSurfaceCanvasRect.isEmpty()) {
-        return;
-    }
-    const bool logical = pinned_platform::kPinnedGeometryUnits ==
-                         pinned_platform::PinnedGeometryUnits::LogicalPixels;
-    double surfaceScale = m_scalePercent / 100.0;
-    if (m_thumbnailMode) {
-        // Copy Current Viewport exports the displayed thumbnail, including its
-        // backing resolution, independently of the saved expansion scale.
-        const QSizeF rasterViewport =
-            QSizeF(currentNativeGeometry().size()) * (logical ? devicePixelRatioF() : 1.0);
-        surfaceScale = std::min(rasterViewport.width() / m_resultSurfaceCanvasRect.width(),
-                                rasterViewport.height() / m_resultSurfaceCanvasRect.height());
-    } else if (logical) {
-        // Normal pins retain the source detail at the user's chosen zoom.
-        surfaceScale *= std::min(m_transformedImage.width() / m_backgroundCanvasRect.width(),
-                                 m_transformedImage.height() / m_backgroundCanvasRect.height());
-    }
-    if (!(surfaceScale > 0.0)) {
-        return;
-    }
-    const QSize contentPixelSize(
-        std::max(1, qRound(m_backgroundCanvasRect.width() * surfaceScale)),
-        std::max(1, qRound(m_backgroundCanvasRect.height() * surfaceScale)));
-    if (m_canvas != nullptr && !m_canvas->resetEditingStatePreservingTool()) {
-        return;
-    }
-    QByteArray documentSession = m_runtime.serializeDocumentSession();
-    const PinnedExportAppearance appearance =
-        pinnedExportAppearance(m_resultStyle, m_opacityPercent, surfaceScale);
-    ScreenshotPinnedViewportExportSource request{
-        std::move(documentSession), m_transformedImage,
-        m_backgroundCanvasRect,     contentPixelSize,
-        appearance.resultStyle,     m_runtime.smartEraseSnapshot(),
-        appearance.outputOpacity,   {},
-    };
-    request.bakedSelectionPath = bakedSelectionPath(contentPixelSize);
     invalidatePendingCopy();
-    auto artifact = std::make_shared<ScreenshotExportArtifact>(
-        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
     m_exportArtifact = artifact;
     if (!artifact->requestClipboard(
             this, [this, artifact](ScreenshotExportClipboardResult result) mutable {
@@ -4457,6 +4491,7 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
 }
 
 void ScreenshotPinnedWindow::activateTextTranslation() {
+    m_automationRecognition = false;
     if (m_closing || m_recognitionSession == nullptr ||
         (!m_ocrSupported && !m_formattedTextAvailable)) {
         m_translateAfterRecognition = false;
@@ -6621,4 +6656,392 @@ QPainterPath ScreenshotPinnedWindow::bakedSelectionPath(const QSize& pixelSize) 
                     : screenshotRegionPath(*appearance.region, appearance.cornerRadius);
     path.translate(appearance.contentRect.topLeft());
     return mapping.map(path);
+}
+
+QJsonObject ScreenshotPinnedWindow::automationState() const {
+    const QRect bounds = authoritativeNativeGeometry();
+    QJsonObject result{
+        {QStringLiteral("revision"), static_cast<qint64>(m_automationRevision)},
+        {QStringLiteral("id"), m_persistenceId},
+        {QStringLiteral("group_id"), m_groupId},
+        {QStringLiteral("visible"), isVisible()},
+        {QStringLiteral("editing"), m_editController && m_editController->editMode()},
+        {QStringLiteral("active_tool"),
+         m_canvas ? snow_shot::app::mcp::mcpCanvasTools().key(m_canvas->canvasTool()) : QString()},
+        {QStringLiteral("ready"), m_firstContentFramePublished && !m_closing},
+        {QStringLiteral("source_size"),
+         QJsonArray{m_originalPixelSize.width(), m_originalPixelSize.height()}},
+        {QStringLiteral("geometry"),
+         QJsonArray{bounds.x(), bounds.y(), bounds.width(), bounds.height()}},
+        {QStringLiteral("scale_percent"), m_scalePercent},
+        {QStringLiteral("opacity_percent"), m_opacityPercent},
+        {QStringLiteral("click_through_opacity_percent"), m_clickThroughOpacityPercent},
+        {QStringLiteral("click_through"), m_clickThroughActive},
+        {QStringLiteral("always_on_top"), m_alwaysOnTop},
+        {QStringLiteral("show_border"), m_showBorder},
+        {QStringLiteral("thumbnail"), m_thumbnailMode},
+        {QStringLiteral("hide_to_top"), hideToTopActive()},
+        {QStringLiteral("quarter_turns"), m_quarterTurns},
+        {QStringLiteral("canvas_revision"), static_cast<qint64>(m_runtime.documentRevision())},
+        {QStringLiteral("selected_element_ids"), m_runtime.selectedElementIds()},
+        {QStringLiteral("can_undo"), m_runtime.canUndo()},
+        {QStringLiteral("can_redo"), m_runtime.canRedo()}};
+    if (m_recognitionSession) {
+        result.insert(QStringLiteral("recognition"), m_recognitionSession->workflowState());
+        result.insert(QStringLiteral("recognition_result"), m_recognitionSession->workflowResult());
+    }
+    if (m_editController)
+        result.insert(QStringLiteral("auto_filter"), m_editController->automationAutoFilterState());
+    return result;
+}
+
+bool ScreenshotPinnedWindow::automationUpdate(const QJsonObject& properties, QString* error) {
+    auto fail = [error](const char* code) {
+        if (error)
+            *error = QString::fromLatin1(code);
+        return false;
+    };
+    if (m_closing || !m_firstContentFramePublished)
+        return fail("not_ready");
+    const QStringList booleans{QStringLiteral("click_through"), QStringLiteral("always_on_top"),
+                               QStringLiteral("show_border"), QStringLiteral("thumbnail"),
+                               QStringLiteral("hide_to_top")};
+    for (auto it = properties.begin(); it != properties.end(); ++it) {
+        if (booleans.contains(it.key())) {
+            if (!it->isBool())
+                return fail("invalid_parameters");
+        } else if (it.key() == QStringLiteral("opacity_percent") ||
+                   it.key() == QStringLiteral("click_through_opacity_percent") ||
+                   it.key() == QStringLiteral("scale_percent")) {
+            const double value = it->toDouble(-1);
+            const double maximum = it.key() == QStringLiteral("scale_percent") ? 1000 : 100;
+            if (!it->isDouble() || !std::isfinite(value) || std::floor(value) != value ||
+                value < 1 || value > maximum)
+                return fail("invalid_parameters");
+        } else if (it.key() == QStringLiteral("geometry")) {
+            const auto values = it->toArray();
+            if (values.size() != 4)
+                return fail("invalid_parameters");
+            for (int i = 0; i < 4; ++i) {
+                const double value = values[i].toDouble(1e12);
+                if (!values[i].isDouble() || !std::isfinite(value) || std::floor(value) != value ||
+                    value < (i < 2 ? -1000000 : 1) || value > (i < 2 ? 1000000 : 32768))
+                    return fail("invalid_parameters");
+            }
+        } else if (it.key() == QStringLiteral("rotation")) {
+            if (!QStringList{QStringLiteral("clockwise"), QStringLiteral("counterclockwise"),
+                             QStringLiteral("reset")}
+                     .contains(it->toString()))
+                return fail("invalid_parameters");
+        } else if (it.key() == QStringLiteral("flip")) {
+            if (!QStringList{QStringLiteral("horizontal"), QStringLiteral("vertical")}.contains(
+                    it->toString()))
+                return fail("invalid_parameters");
+        } else
+            return fail("invalid_parameters");
+    }
+    if (properties.contains(QStringLiteral("geometry"))) {
+        const auto b = properties.value(QStringLiteral("geometry")).toArray();
+        if (!applyWindowGeometry(QRect(b[0].toInt(), b[1].toInt(), b[2].toInt(), b[3].toInt()),
+                                 GeometryMutation::Move))
+            return fail("geometry_failed");
+    }
+    if (properties.contains(QStringLiteral("click_through")) &&
+        !setClickThroughMode(properties.value(QStringLiteral("click_through")).toBool()))
+        return fail("geometry_failed");
+    if (properties.contains(QStringLiteral("scale_percent")))
+        applyScale(properties.value(QStringLiteral("scale_percent")).toInt());
+    if (properties.contains(QStringLiteral("opacity_percent")))
+        setOpacityPercent(properties.value(QStringLiteral("opacity_percent")).toInt());
+    if (properties.contains(QStringLiteral("click_through_opacity_percent")))
+        setClickThroughOpacityPercent(
+            properties.value(QStringLiteral("click_through_opacity_percent")).toInt());
+    if (properties.contains(QStringLiteral("always_on_top")))
+        setAlwaysOnTop(properties.value(QStringLiteral("always_on_top")).toBool());
+    if (properties.contains(QStringLiteral("show_border")))
+        setShowBorder(properties.value(QStringLiteral("show_border")).toBool());
+    if (properties.contains(QStringLiteral("thumbnail")))
+        setThumbnailMode(properties.value(QStringLiteral("thumbnail")).toBool(), false);
+    if (properties.contains(QStringLiteral("hide_to_top")) &&
+        properties.value(QStringLiteral("hide_to_top")).toBool() != hideToTopActive())
+        toggleHideToTop();
+    const auto rotation = properties.value(QStringLiteral("rotation")).toString();
+    if (rotation == QStringLiteral("reset"))
+        resetImageTransform();
+    else if (!rotation.isEmpty()) {
+        QTransform op;
+        const int turns = rotation == QStringLiteral("clockwise") ? 1 : -1;
+        op.rotate(90 * turns);
+        applyImageOperation(op, turns);
+    }
+    const auto flip = properties.value(QStringLiteral("flip")).toString();
+    if (!flip.isEmpty()) {
+        QTransform op;
+        op.scale(flip == QStringLiteral("horizontal") ? -1 : 1,
+                 flip == QStringLiteral("vertical") ? -1 : 1);
+        applyImageOperation(op);
+    }
+    schedulePersistence();
+    return true;
+}
+
+bool ScreenshotPinnedWindow::automationAction(const QString& action) {
+    if (m_closing)
+        return false;
+    if (action == QStringLiteral("show"))
+        showFromManagement();
+    else if (action == QStringLiteral("hide"))
+        hide();
+    else if (action == QStringLiteral("close"))
+        requestUserClose();
+    else if (action == QStringLiteral("destroy"))
+        requestDestroy();
+    else if (action == QStringLiteral("show_all"))
+        showAllPinnedWindows();
+    else if (action == QStringLiteral("hide_others"))
+        hideOtherPinnedWindows();
+    else if (action == QStringLiteral("close_others"))
+        closeOtherPinnedWindows();
+    else if (action == QStringLiteral("close_all"))
+        closeAllPinnedWindows();
+    else
+        return false;
+    return true;
+}
+
+QJsonObject ScreenshotPinnedWindow::automationEdit(const QString& action,
+                                                   const QJsonObject& payload, QString* error) {
+    auto fail = [error](const char* code) {
+        if (error)
+            *error = QString::fromLatin1(code);
+        return QJsonObject{};
+    };
+    if (m_closing || !m_firstContentFramePublished || !m_canvas)
+        return fail("not_ready");
+    if (action == QStringLiteral("tool") || action == QStringLiteral("tool_style")) {
+        const auto& tools = snow_shot::app::mcp::mcpCanvasTools();
+        const auto tool =
+            tools.constFind(payload
+                                .value(action == QStringLiteral("tool") ? QStringLiteral("tool")
+                                                                        : QStringLiteral("target"))
+                                .toString());
+        if (tool == tools.cend())
+            return fail("invalid_parameters");
+        if (action == QStringLiteral("tool")) {
+            ensureEditController();
+            if (!m_editController || !m_editController->automationSetTool(*tool))
+                return fail("action_unavailable");
+        } else {
+            const auto recovery = m_runtime.serializeDocumentSession();
+            bool ok;
+            {
+                SnowCanvasRuntimeEditor editor(m_runtime, *tool);
+                ok = editor.isValid() &&
+                     snow_shot::app::mcp::mcpStylePatch(editor, editor, payload) &&
+                     editor.succeeded();
+            }
+            if (!ok) {
+                static_cast<void>(m_runtime.restoreDocumentSession(recovery));
+                return fail("invalid_parameters");
+            }
+        }
+    } else if (action == QStringLiteral("editing")) {
+        if (!payload.value(QStringLiteral("enabled")).isBool())
+            return fail("invalid_parameters");
+        ensureEditController();
+        if (!m_editController)
+            return fail("action_unavailable");
+        const bool enabled = payload.value(QStringLiteral("enabled")).toBool();
+        m_editController->setEditMode(enabled);
+        if (m_editController->editMode() != enabled)
+            return fail("action_unavailable");
+    } else if (action == QStringLiteral("auto_filter")) {
+        QStringList categories;
+        for (const auto& category : payload.value(QStringLiteral("categories")).toArray())
+            categories.append(category.toString());
+        ensureEditController();
+        if (!m_editController || !m_editController->automationAutoFilter(categories))
+            return fail("action_unavailable");
+    } else if (action == QStringLiteral("template_export")) {
+        const auto serialized = m_runtime.serializeSelectedDrawTemplate();
+        if (serialized.isEmpty())
+            return fail("action_unavailable");
+        return {{QStringLiteral("payload"), QString::fromUtf8(serialized)}};
+    } else if (action == QStringLiteral("recognize")) {
+        const QStringList kinds{QStringLiteral("text"), QStringLiteral("table"),
+                                QStringLiteral("qr"), QStringLiteral("markdown"),
+                                QStringLiteral("html")};
+        const int mode = kinds.indexOf(payload.value(QStringLiteral("kind")).toString());
+        if (mode < 0)
+            return fail("invalid_parameters");
+        ensureRecognitionProviders();
+        activateRecognitionMode(mode, false);
+        m_automationRecognition = true;
+    } else if (action == QStringLiteral("translate")) {
+        ensureRecognitionProviders();
+        activateTextTranslation();
+        m_automationRecognition = true;
+    } else if (action == QStringLiteral("recognition_edit")) {
+        if (!m_recognitionSession || !m_recognitionSession->editWorkflow(payload))
+            return fail("action_unavailable");
+    } else if (action == QStringLiteral("annotations")) {
+        const auto result =
+            QJsonDocument::fromJson(m_runtime.applyAnnotationTransaction(
+                                        QJsonDocument(payload).toJson(QJsonDocument::Compact)))
+                .object();
+        if (result.isEmpty())
+            return fail("invalid_parameters");
+        m_canvas->update();
+        schedulePersistence();
+        return result;
+    } else {
+        bool ok = false;
+        if (action == QStringLiteral("undo"))
+            ok = m_runtime.undo();
+        else if (action == QStringLiteral("redo"))
+            ok = m_runtime.redo();
+        else if (action == QStringLiteral("reset"))
+            ok = m_canvas->deleteAllElements();
+        else if (action == QStringLiteral("duplicate")) {
+            const auto offset = payload.value(QStringLiteral("offset")).toArray();
+            if (!offset.isEmpty() &&
+                (offset.size() != 2 || !offset[0].isDouble() || !offset[1].isDouble()))
+                return fail("invalid_parameters");
+            ok = m_canvas->duplicateSelected(
+                offset.isEmpty() ? QPointF(12, 12)
+                                 : QPointF(offset[0].toDouble(), offset[1].toDouble()));
+        } else if (action == QStringLiteral("delete"))
+            ok = m_canvas->deleteSelected();
+        else if (action == QStringLiteral("serial_text"))
+            ok = m_canvas->createSerialNumberText();
+        else if (action == QStringLiteral("serial_adjust"))
+            ok = m_canvas->adjustSelectedSerialNumbers(
+                payload.value(QStringLiteral("delta")).toInteger());
+        else if (action == QStringLiteral("opacity")) {
+            const auto opacity = payload.value(QStringLiteral("opacity"));
+            if (!opacity.isDouble() || opacity.toDouble() < 0 || opacity.toDouble() > 1)
+                return fail("invalid_parameters");
+            ok = m_canvas->setSelectedOpacity(opacity.toDouble());
+        } else if (action == QStringLiteral("order")) {
+            const QStringList orders{
+                QStringLiteral("send_to_back"), QStringLiteral("send_backward"),
+                QStringLiteral("bring_forward"), QStringLiteral("bring_to_front")};
+            const int index = orders.indexOf(payload.value(QStringLiteral("order")).toString());
+            if (index < 0)
+                return fail("invalid_parameters");
+            ok = m_canvas->reorderSelected(static_cast<SnowCanvasSelectionOrder>(index));
+        } else if (action == QStringLiteral("align")) {
+            const QStringList alignments{QStringLiteral("left"),
+                                         QStringLiteral("center_horizontally"),
+                                         QStringLiteral("right"),
+                                         QStringLiteral("top"),
+                                         QStringLiteral("center_vertically"),
+                                         QStringLiteral("bottom"),
+                                         QStringLiteral("distribute_horizontally"),
+                                         QStringLiteral("distribute_vertically")};
+            const int index =
+                alignments.indexOf(payload.value(QStringLiteral("alignment")).toString());
+            if (index < 0)
+                return fail("invalid_parameters");
+            ok = m_canvas->alignSelected(static_cast<SnowCanvasSelectionAlignment>(index));
+        } else if (action == QStringLiteral("template_insert")) {
+            const auto center = payload.value(QStringLiteral("center")).toArray();
+            const auto serialized = payload.value(QStringLiteral("payload")).toString().toUtf8();
+            if (center.size() != 2 || !center[0].isDouble() || !center[1].isDouble() ||
+                serialized.size() > 1024 * 1024)
+                return fail("invalid_parameters");
+            ok = m_canvas->insertDrawTemplate(serialized,
+                                              QPointF(center[0].toDouble(), center[1].toDouble()));
+        } else
+            return fail("invalid_parameters");
+        if (!ok)
+            return fail("action_unavailable");
+        m_canvas->update();
+    }
+    schedulePersistence();
+    return automationState();
+}
+
+bool ScreenshotPinnedWindow::automationReplaceContent(ScreenshotClipboardContent content) {
+    return replaceContent(std::move(content));
+}
+
+std::shared_ptr<ScreenshotExportArtifact>
+ScreenshotPinnedWindow::automationArtifact(bool original, bool viewport) {
+    if (original)
+        return m_originalImage.isNull() ? nullptr
+                                        : std::make_shared<ScreenshotExportArtifact>(
+                                              ScreenshotExportSource::fromImage(m_originalImage));
+    return viewport ? viewportArtifact() : fileSaveArtifact();
+}
+
+std::unique_ptr<QMimeData>
+ScreenshotPinnedWindow::automationClipboardMimeData(bool original) const {
+    auto mime = std::make_unique<QMimeData>();
+    if (original) {
+        if (m_originalClipboardContent.isEmpty())
+            return {};
+        if (!m_originalClipboardContent.html.isEmpty())
+            mime->setHtml(m_originalClipboardContent.html);
+        if (!m_originalClipboardContent.text.isEmpty())
+            mime->setText(m_originalClipboardContent.text);
+        if (!m_originalClipboardContent.localFilePath.isEmpty())
+            mime->setUrls({QUrl::fromLocalFile(m_originalClipboardContent.localFilePath)});
+    } else if (m_hiddenTextSelection && m_displayOcrPresentation &&
+               m_displayOcrPresentation->hasTextSelection()) {
+        mime->setText(m_displayOcrPresentation->selectedText());
+    } else if (m_ocrMode && m_recognitionSession && m_recognitionSession->active()) {
+        return m_recognitionSession->recognitionClipboardMimeData(m_displayOcrPresentation.get());
+    } else
+        return {};
+    return mime;
+}
+
+std::optional<ScreenshotRecognitionFileSnapshot>
+ScreenshotPinnedWindow::automationFileSnapshot() const {
+    return m_recognitionSession ? m_recognitionSession->fileExportSnapshot() : std::nullopt;
+}
+
+ScreenshotRecognitionResults ScreenshotPinnedWindow::recognitionSnapshot() const {
+    auto results = m_recognitionTargetReady && m_recognitionSession
+                       ? m_recognitionSession->recognitionResultsSnapshot()
+                       : m_recognitionResults;
+    if (results.text && results.text->presentation)
+        results.text->presentation =
+            std::make_shared<ScreenshotOcrPresentation>(*results.text->presentation);
+    if (results.translatedText)
+        results.translatedText =
+            std::make_shared<ScreenshotOcrPresentation>(*results.translatedText);
+    return results;
+}
+
+ScreenshotRecognitionResults
+ScreenshotPinnedWindow::decodeRecognitionSnapshot(const QByteArray& data) {
+    return deserializeRecognitionResults(data);
+}
+
+ScreenshotRecognitionResults ScreenshotPinnedWindow::transformedRecognitionSnapshot(
+    ScreenshotRecognitionResults results, const QRectF& sourceRect, const QSize& sourcePixels,
+    const QTransform& imageTransform, const QSize& transformedPixels, const QRectF& contentRect) {
+    if (results.text && results.text->presentation)
+        results.text->presentation =
+            transformedOcrPresentation(*results.text->presentation, sourceRect, sourcePixels,
+                                       imageTransform, transformedPixels, contentRect);
+    if (results.translatedText)
+        results.translatedText =
+            transformedOcrPresentation(*results.translatedText, sourceRect, sourcePixels,
+                                       imageTransform, transformedPixels, contentRect);
+    return results;
+}
+
+ScreenshotClipboardOriginalContent ScreenshotPinnedWindow::automationOriginalContent() const {
+    return m_originalClipboardContent;
+}
+
+void ScreenshotPinnedWindow::cancelAutomationRecognition() {
+    if (m_editController)
+        m_editController->cancelAutomationAutoFilter();
+    if (m_automationRecognition && m_recognitionSession)
+        m_recognitionSession->cancelWorkflow();
+    m_automationRecognition = false;
 }

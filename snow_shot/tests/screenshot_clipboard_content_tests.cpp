@@ -15,6 +15,7 @@
 #include <QUrl>
 
 #include <cstdlib>
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <future>
@@ -89,6 +90,71 @@ void oversizedDirectImagesAreIgnored() {
     mime.setImageData(image);
     require(!ScreenshotClipboardContentReader::readMimeData(&mime, 1.0).has_value(),
             "oversized direct clipboard images should be ignored");
+}
+
+void automationAdmissionPrecedesDecodeAndRasterization() {
+    QImage image(QSize(64, 32), QImage::Format_RGB32);
+    image.fill(Qt::red);
+    const auto encoded = pngBytes(image);
+    ScreenshotClipboardContentSnapshot snapshot;
+    snapshot.encodedImages.append({encoded, QStringLiteral("image/png")});
+    qint64 maximum = 0;
+    int calls = 0;
+    const auto decoded = ScreenshotClipboardContentReader::decode(snapshot, {}, [&](qint64 bytes) {
+        maximum = std::max(maximum, bytes);
+        ++calls;
+        return true;
+    });
+    require(decoded && decoded->image.size() == image.size() && calls >= 2 &&
+                maximum >= encoded.size() + 64 * 32 * 8,
+            "encoded clipboard admission includes retained bytes and decoded peak");
+    calls = 0;
+    require(!ScreenshotClipboardContentReader::decode(snapshot, {},
+                                                      [&](qint64 bytes) {
+                                                          ++calls;
+                                                          return bytes <= encoded.size();
+                                                      }) &&
+                calls == 2,
+            "valid encoded clipboard source is rejected before raster decoding");
+
+    QMimeData mime;
+    mime.setData(QStringLiteral("image/png"), encoded);
+    calls = 0;
+    require(!ScreenshotClipboardContentReader::snapshotMimeData(&mime, 1.0, {},
+                                                                [&](qint64) {
+                                                                    ++calls;
+                                                                    return false;
+                                                                }) &&
+                calls == 1,
+            "lazy MIME data admission precedes requesting its encoded payload");
+
+    ScreenshotClipboardOriginalContent text;
+    text.text = QStringLiteral("A source with a bounded raster");
+    const auto layoutBytes = text.text.size() * 34;
+    maximum = 0;
+    require(!ScreenshotClipboardContentReader::renderOriginalText(text, 1.0, {},
+                                                                  [&](qint64 bytes) {
+                                                                      maximum =
+                                                                          std::max(maximum, bytes);
+                                                                      return bytes <= layoutBytes;
+                                                                  }) &&
+                maximum > layoutBytes,
+            "text layout and raster allocation have separate admission boundaries");
+
+    text.html = QStringLiteral("before <img src=\"data:image/png;base64,%1\"> after")
+                    .arg(QString::fromLatin1(encoded.toBase64()));
+    maximum = 0;
+    require(ScreenshotClipboardContentReader::renderOriginalText(
+                text, 1.0, {},
+                [&](qint64 bytes) {
+                    maximum = std::max(maximum, bytes);
+                    return true;
+                }).has_value() &&
+                maximum >= 64 * 32 * 8,
+            "embedded data images participate in formatted-text admission");
+    require(!ScreenshotClipboardContentReader::renderOriginalText(
+                text, 1.0, {}, [](qint64 bytes) { return bytes < 64 * 32 * 8; }),
+            "embedded image admission failure does not silently render incomplete HTML");
 }
 
 void encodedImageAndTextAreSupported() {
@@ -577,6 +643,7 @@ int main(int argc, char** argv) {
     imageSourceDensitySurvivesDecode();
     directImageWinsOverRichText();
     oversizedDirectImagesAreIgnored();
+    automationAdmissionPrecedesDecodeAndRasterization();
     encodedImageAndTextAreSupported();
     formattedTextRetainsOriginalClipboardInput();
     encodedImagesPrecedeDetachedImagesAndCorruptionFallsBack();

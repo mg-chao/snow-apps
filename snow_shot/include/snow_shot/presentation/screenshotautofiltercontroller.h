@@ -20,6 +20,7 @@ class ScreenshotAutoFilterController final : public QObject {
     using Source = std::function<void(ImageCompletion)>;
     using Completion = std::function<void(QList<SnowCanvasAutoFilterRegion>, QString)>;
     using Detector = std::function<void(QImage, Completion)>;
+    static void detectRegions(QImage image, Completion completion);
     ScreenshotAutoFilterController(std::function<QRectF()> bounds, Source source,
                                    QObject* parent = nullptr, Detector detector = {},
                                    std::function<qint64()> clock = {});

@@ -1,253 +1,12 @@
 // Private implementation fragment: ScreenshotController::Impl is defined in
 // screenshotcontroller.cpp.
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
+#include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include <QSaveFile>
 #include <QMimeData>
 #include <QClipboard>
 
-namespace {
-bool mcpStylePatch(ScreenshotToolbarCommandSink& commands, SnowCanvasWidget& canvas,
-                   const QJsonObject& params) {
-    const auto target = params.value(QStringLiteral("target")).toString();
-    const auto patch = params.value(QStringLiteral("style")).toObject();
-    if (patch.isEmpty())
-        return false;
-    const QHash<QString, QStringList> enums{
-        {QStringLiteral("shape"),
-         {QStringLiteral("rectangle"), QStringLiteral("ellipse"), QStringLiteral("diamond")}},
-        {QStringLiteral("fill_style"),
-         {QStringLiteral("line"), QStringLiteral("cross_line"), QStringLiteral("solid")}},
-        {QStringLiteral("stroke_style"),
-         {QStringLiteral("solid"), QStringLiteral("dashed"), QStringLiteral("dotted")}},
-        {QStringLiteral("arrow_type"),
-         {QStringLiteral("straight"), QStringLiteral("curve"), QStringLiteral("elbow")}},
-        {QStringLiteral("filter"),
-         {QStringLiteral("mosaic"), QStringLiteral("gaussian_blur"), QStringLiteral("grayscale"),
-          QStringLiteral("inversion"), QStringLiteral("emboss"), QStringLiteral("smart_erase")}},
-        {QStringLiteral("start_arrowhead"),
-         {QStringLiteral("none"), QStringLiteral("arrow"), QStringLiteral("bar"),
-          QStringLiteral("dot"), QStringLiteral("circle"), QStringLiteral("circle_outline"),
-          QStringLiteral("triangle"), QStringLiteral("triangle_outline"), QStringLiteral("diamond"),
-          QStringLiteral("diamond_outline"), QStringLiteral("crowfoot_one"),
-          QStringLiteral("crowfoot_many"), QStringLiteral("crowfoot_one_or_many"),
-          QStringLiteral("indented_triangle")}}};
-    const QStringList colors{QStringLiteral("stroke"), QStringLiteral("fill"),
-                             QStringLiteral("color")};
-    const QStringList textFields{QStringLiteral("text"), QStringLiteral("font_family")};
-    const QStringList numbers{QStringLiteral("stroke_width"), QStringLiteral("font_size"),
-                              QStringLiteral("opacity"),      QStringLiteral("corner_radius"),
-                              QStringLiteral("strength"),     QStringLiteral("angle"),
-                              QStringLiteral("gap")};
-    QStringList allowed;
-    if (target == QStringLiteral("text"))
-        allowed = {QStringLiteral("color"),        QStringLiteral("font_size"),
-                   QStringLiteral("font_family"),  QStringLiteral("opacity"),
-                   QStringLiteral("fill"),         QStringLiteral("stroke"),
-                   QStringLiteral("stroke_width"), QStringLiteral("fill_style"),
-                   QStringLiteral("corner_radius")};
-    else if (target == QStringLiteral("serial_number"))
-        allowed = {QStringLiteral("color"),       QStringLiteral("font_size"),
-                   QStringLiteral("font_family"), QStringLiteral("opacity"),
-                   QStringLiteral("fill"),        QStringLiteral("stroke_width"),
-                   QStringLiteral("fill_style"),  QStringLiteral("stroke_style")};
-    else if (target == QStringLiteral("watermark"))
-        allowed = {QStringLiteral("color"),       QStringLiteral("font_size"),
-                   QStringLiteral("font_family"), QStringLiteral("opacity"),
-                   QStringLiteral("text"),        QStringLiteral("angle"),
-                   QStringLiteral("gap")};
-    else if (target == QStringLiteral("spotlight"))
-        allowed = {QStringLiteral("color"), QStringLiteral("opacity")};
-    else if (target == QStringLiteral("rectangle_filter") || target == QStringLiteral("pen_filter"))
-        allowed = {QStringLiteral("filter"), QStringLiteral("strength"), QStringLiteral("opacity"),
-                   QStringLiteral("stroke_width")};
-    else if (QStringList{QStringLiteral("rectangle"), QStringLiteral("arrow"),
-                         QStringLiteral("line"), QStringLiteral("freehand"),
-                         QStringLiteral("rectangle_highlight"), QStringLiteral("pen_highlight")}
-                 .contains(target)) {
-        allowed = {QStringLiteral("fill"),         QStringLiteral("stroke"),
-                   QStringLiteral("stroke_width"), QStringLiteral("fill_style"),
-                   QStringLiteral("stroke_style"), QStringLiteral("opacity"),
-                   QStringLiteral("corner_radius")};
-        if (target == QStringLiteral("rectangle") ||
-            target == QStringLiteral("rectangle_highlight"))
-            allowed.append(QStringLiteral("shape"));
-        if (target == QStringLiteral("arrow") || target == QStringLiteral("line"))
-            allowed.append({QStringLiteral("start_arrowhead"), QStringLiteral("end_arrowhead"),
-                            QStringLiteral("arrow_type")});
-    } else
-        return false;
-    for (auto it = patch.begin(); it != patch.end(); ++it) {
-        if (!allowed.contains(it.key()))
-            return false;
-        if (colors.contains(it.key())) {
-            const auto array = it->toArray();
-            if (array.size() != 4)
-                return false;
-            for (auto v : array)
-                if (!v.isDouble() || v.toDouble() < 0 || v.toDouble() > 255 ||
-                    std::floor(v.toDouble()) != v.toDouble())
-                    return false;
-        } else if (textFields.contains(it.key())) {
-            if (!it->isString() || it->toString().toUtf8().size() > 65536)
-                return false;
-        } else if (numbers.contains(it.key())) {
-            const auto value = it->toDouble(-1);
-            const double maximum =
-                it.key() == QStringLiteral("opacity") || it.key() == QStringLiteral("strength")
-                    ? 1
-                    : 8192;
-            if (!it->isDouble() || !std::isfinite(value) || value > maximum ||
-                value < (it.key() == QStringLiteral("angle") ? -360 : 0))
-                return false;
-        } else {
-            const auto key = it.key() == QStringLiteral("end_arrowhead")
-                                 ? QStringLiteral("start_arrowhead")
-                                 : it.key();
-            if (!enums.value(key).contains(it->toString()))
-                return false;
-        }
-    }
-    const auto color = [&](const char* name, QColor fallback) {
-        const auto v = patch.value(QLatin1String(name));
-        if (v.isUndefined())
-            return fallback;
-        const auto c = v.toArray();
-        return QColor(c[0].toInt(), c[1].toInt(), c[2].toInt(), c[3].toInt());
-    };
-    const auto number = [&](const char* name, double fallback) {
-        return patch.value(QLatin1String(name)).toDouble(fallback);
-    };
-    const auto enumeration = [&](const char* name, int fallback) {
-        const auto value = patch.value(QLatin1String(name));
-        const auto key = QString::fromLatin1(name) == QStringLiteral("end_arrowhead")
-                             ? QStringLiteral("start_arrowhead")
-                             : QString::fromLatin1(name);
-        return value.isUndefined() ? fallback : enums.value(key).indexOf(value.toString());
-    };
-    const auto state = canvas.canvasStyleToolbarState();
-    if (target == QStringLiteral("watermark")) {
-        auto style = canvas.canvasWatermarkConfig();
-        style.color = color("color", style.color);
-        style.fontSize = number("font_size", style.fontSize);
-        style.opacity = number("opacity", style.opacity);
-        style.angle = number("angle", style.angle);
-        style.gap = number("gap", style.gap);
-        if (patch.contains(QStringLiteral("text"))) {
-            style.text = patch.value(QStringLiteral("text")).toString();
-            style.templateValue = style.text;
-        }
-        if (patch.contains(QStringLiteral("font_family")))
-            style.fontFamily = patch.value(QStringLiteral("font_family")).toString();
-        commands.setWatermarkConfigFromToolbar(style);
-    } else if (target == QStringLiteral("spotlight")) {
-        auto style = canvas.canvasSpotlightConfig();
-        style.color = color("color", style.color);
-        style.opacity = number("opacity", style.opacity);
-        commands.setSpotlightConfigFromToolbar(style);
-    } else if (target == QStringLiteral("text")) {
-        auto style = state.textStyle;
-        style.color = color("color", style.color);
-        style.fill = color("fill", style.fill);
-        style.stroke = color("stroke", style.stroke);
-        style.fontSize = number("font_size", style.fontSize);
-        style.strokeWidth = number("stroke_width", style.strokeWidth);
-        style.opacity = number("opacity", style.opacity);
-        if (patch.contains(QStringLiteral("font_family")))
-            style.fontFamily = patch.value(QStringLiteral("font_family")).toString();
-        if (patch.contains(QStringLiteral("corner_radius"))) {
-            const auto r = number("corner_radius", 0);
-            style.cornerRadii = {r, r, r, r};
-        }
-        style.fillStyle = static_cast<SnowCanvasFillStyle>(
-            enumeration("fill_style", static_cast<int>(style.fillStyle)));
-        commands.setTextStyleFromToolbar(style);
-    } else if (target == QStringLiteral("serial_number")) {
-        auto style = state.serialNumberStyle;
-        style.color = color("color", style.color);
-        style.fill = color("fill", style.fill);
-        style.fontSize = number("font_size", style.fontSize);
-        style.strokeWidth = number("stroke_width", style.strokeWidth);
-        style.opacity = number("opacity", style.opacity);
-        if (patch.contains(QStringLiteral("font_family")))
-            style.fontFamily = patch.value(QStringLiteral("font_family")).toString();
-        style.fillStyle = static_cast<SnowCanvasFillStyle>(
-            enumeration("fill_style", static_cast<int>(style.fillStyle)));
-        style.strokeStyle = static_cast<SnowCanvasStrokeStyle>(
-            enumeration("stroke_style", static_cast<int>(style.strokeStyle)));
-        commands.setSerialNumberStyleFromToolbar(style);
-    } else if (target.endsWith(QStringLiteral("filter"))) {
-        auto style = state.filterStyle;
-        style.type =
-            static_cast<SnowCanvasFilterType>(enumeration("filter", static_cast<int>(style.type)));
-        style.strength = number("strength", style.strength);
-        style.opacity = number("opacity", style.opacity);
-        style.strokeWidth = number("stroke_width", style.strokeWidth);
-        quint32 flags = 0;
-        if (patch.contains(QStringLiteral("filter")))
-            flags |= SnowCanvasFilterStylePropertyType;
-        if (patch.contains(QStringLiteral("strength")))
-            flags |= SnowCanvasFilterStylePropertyStrength;
-        if (patch.contains(QStringLiteral("opacity")))
-            flags |= SnowCanvasFilterStylePropertyOpacity;
-        if (patch.contains(QStringLiteral("stroke_width")))
-            flags |= SnowCanvasFilterStylePropertyStrokeWidth;
-        commands.setFilterStyleFromToolbar(style, flags);
-    } else {
-        auto style = state.shapeStyle;
-        style.fill = color("fill", style.fill);
-        style.stroke = color("stroke", style.stroke);
-        style.strokeWidth = number("stroke_width", style.strokeWidth);
-        style.opacity = number("opacity", style.opacity);
-        style.shape = static_cast<SnowCanvasRectangleShape>(
-            enumeration("shape", static_cast<int>(style.shape)));
-        if (target == QStringLiteral("rectangle_highlight")) {
-            if (style.shape == SnowCanvasRectangleShape::Diamond)
-                return false;
-            style.highlightShape = style.shape == SnowCanvasRectangleShape::Ellipse
-                                       ? SnowCanvasHighlightShape::Ellipse
-                                       : SnowCanvasHighlightShape::Rectangle;
-        }
-        style.fillStyle = static_cast<SnowCanvasFillStyle>(
-            enumeration("fill_style", static_cast<int>(style.fillStyle)));
-        style.strokeStyle = static_cast<SnowCanvasStrokeStyle>(
-            enumeration("stroke_style", static_cast<int>(style.strokeStyle)));
-        style.startArrowhead = static_cast<SnowCanvasArrowhead>(
-            enumeration("start_arrowhead", static_cast<int>(style.startArrowhead)));
-        style.endArrowhead = static_cast<SnowCanvasArrowhead>(
-            enumeration("end_arrowhead", static_cast<int>(style.endArrowhead)));
-        style.arrowType = static_cast<SnowCanvasArrowType>(
-            enumeration("arrow_type", static_cast<int>(style.arrowType)));
-        if (patch.contains(QStringLiteral("corner_radius"))) {
-            const auto r = number("corner_radius", 0);
-            style.cornerRadii = {r, r, r, r};
-        }
-        const QHash<QString, quint32> properties{
-            {QStringLiteral("fill"), SnowCanvasShapeStylePropertyFillColor},
-            {QStringLiteral("stroke"), SnowCanvasShapeStylePropertyStrokeColor},
-            {QStringLiteral("stroke_width"), SnowCanvasShapeStylePropertyStrokeWidth},
-            {QStringLiteral("fill_style"), SnowCanvasShapeStylePropertyFillStyle},
-            {QStringLiteral("stroke_style"), SnowCanvasShapeStylePropertyStrokeStyle},
-            {QStringLiteral("opacity"), SnowCanvasShapeStylePropertyOpacity},
-            {QStringLiteral("corner_radius"), SnowCanvasShapeStylePropertyCornerRadius},
-            {QStringLiteral("shape"), SnowCanvasShapeStylePropertyShape},
-            {QStringLiteral("start_arrowhead"), SnowCanvasShapeStylePropertyStartArrowhead},
-            {QStringLiteral("end_arrowhead"), SnowCanvasShapeStylePropertyEndArrowhead},
-            {QStringLiteral("arrow_type"), SnowCanvasShapeStylePropertyArrowType}};
-        quint32 flags = 0;
-        for (auto it = patch.begin(); it != patch.end(); ++it)
-            flags |= properties.value(it.key());
-        const QStringList kinds{QStringLiteral("rectangle"),
-                                QStringLiteral("arrow"),
-                                QStringLiteral("line"),
-                                QStringLiteral("freehand"),
-                                QStringLiteral("rectangle_highlight"),
-                                QStringLiteral("pen_highlight")};
-        commands.setShapeStyleFromToolbar(style, flags,
-                                          static_cast<SnowCanvasShapeKind>(kinds.indexOf(target)));
-    }
-    return true;
-}
-} // namespace
+#include "snow_shot/app/mcp/mcpstylepatch.h"
 
 void ScreenshotController::mcpCancelCommand() {
     auto& s = *m_impl;
@@ -274,6 +33,7 @@ void ScreenshotController::mcpCommand(const QString& method, const QJsonObject& 
                                       McpCompletion completion) {
     Q_ASSERT(QThread::currentThread() == thread());
     auto& s = *m_impl;
+    const auto sourceEpoch = s.m_captureEpoch;
     if (s.m_captureState.captureInProgress || s.m_interaction.inactive() ||
         !s.m_selection.hasPixelSelection()) {
         completion({}, QStringLiteral("capture_not_ready"));
@@ -346,7 +106,7 @@ void ScreenshotController::mcpCommand(const QString& method, const QJsonObject& 
         return;
     }
     if (method == QStringLiteral("screenshot_set_tool_style")) {
-        if (!canvas || !mcpStylePatch(s, *canvas, params)) {
+        if (!canvas || !snow_shot::app::mcp::mcpStylePatch(s, *canvas, params)) {
             fail();
             return;
         }
@@ -643,13 +403,14 @@ void ScreenshotController::mcpCommand(const QString& method, const QJsonObject& 
         return;
     }
     const auto generation = ++s.m_mcpCommandGeneration;
-    const auto epoch = s.m_captureEpoch;
+    const auto epoch = sourceEpoch;
     s.m_mcpCompletion = std::move(completion);
     s.m_mcpPoll = new QTimer(this);
-    s.m_mcpPoll->setInterval(25);
-    connect(s.m_mcpPoll, &QTimer::timeout, this, [this, generation, epoch, method, params] {
+    s.m_mcpPoll->setSingleShot(true);
+    s.m_mcpPoll->setInterval(300000);
+    const auto settle = [this, generation, epoch, method, params] {
         auto& s = *m_impl;
-        if (s.m_mcpCommandGeneration != generation)
+        if (s.m_mcpCommandGeneration != generation || !s.m_mcpPoll || !s.m_mcpCompletion)
             return;
         QJsonObject result;
         QString error;
@@ -699,6 +460,37 @@ void ScreenshotController::mcpCommand(const QString& method, const QJsonObject& 
         emit mcpCanvasChanged();
         if (callback)
             callback(std::move(result), std::move(error));
+    };
+    connect(this, &ScreenshotController::mcpCanvasChanged, s.m_mcpPoll, settle,
+            Qt::QueuedConnection);
+    connect(this, &ScreenshotController::mcpCapturePresented, s.m_mcpPoll, settle,
+            Qt::QueuedConnection);
+    connect(this, &ScreenshotController::mcpCaptureTerminated, s.m_mcpPoll, settle,
+            Qt::QueuedConnection);
+    if (s.m_scrollingCaptureController)
+        connect(s.m_scrollingCaptureController.get(),
+                &ScreenshotScrollingCaptureController::stateChanged, s.m_mcpPoll, settle,
+                Qt::QueuedConnection);
+    if (s.m_autoFilterController) {
+        connect(s.m_autoFilterController.get(),
+                &ScreenshotAutoFilterController::availabilityChanged, s.m_mcpPoll, settle,
+                Qt::QueuedConnection);
+        connect(s.m_autoFilterController.get(), &ScreenshotAutoFilterController::detectionFailed,
+                s.m_mcpPoll, settle, Qt::QueuedConnection);
+    }
+    if (s.m_ocrController) {
+        connect(s.m_ocrController.get(), &ScreenshotOcrController::workflowStateChanged,
+                s.m_mcpPoll, settle, Qt::QueuedConnection);
+    }
+    connect(s.m_mcpPoll, &QTimer::timeout, this, [this, generation] {
+        auto& state = *m_impl;
+        if (state.m_mcpCommandGeneration != generation)
+            return;
+        auto callback = std::exchange(state.m_mcpCompletion, {});
+        mcpCancelCommand();
+        if (callback)
+            callback({}, QStringLiteral("timeout"));
     });
     s.m_mcpPoll->start();
+    QTimer::singleShot(0, s.m_mcpPoll, settle);
 }

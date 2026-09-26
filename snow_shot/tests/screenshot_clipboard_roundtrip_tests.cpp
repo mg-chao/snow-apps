@@ -7,6 +7,7 @@
 #include <QEventLoop>
 #include <QMimeData>
 #include <QTimer>
+#include <QUrl>
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
@@ -31,6 +32,37 @@ struct ScreenshotClipboardPayloadTestAccess {
 };
 
 namespace {
+class ClipboardRestorer final {
+  public:
+    ClipboardRestorer() : m_saved(std::make_unique<QMimeData>()) {
+        const auto* current = QApplication::clipboard()->mimeData();
+        if (!current)
+            return;
+        for (const auto& format : current->formats())
+            m_saved->setData(format, current->data(format));
+        if (current->hasImage())
+            m_saved->setImageData(current->imageData());
+        if (current->hasUrls())
+            m_saved->setUrls(current->urls());
+    }
+    ~ClipboardRestorer() {
+        QApplication::clipboard()->setMimeData(m_saved.release());
+        QApplication::processEvents();
+        // Qt owns the restored OLE data object. Materialize it before this test
+        // application exits so the user's clipboard survives process teardown.
+        using FlushClipboard = HRESULT(WINAPI*)();
+        const auto module = GetModuleHandleW(L"ole32.dll");
+        const auto flush =
+            module ? reinterpret_cast<FlushClipboard>(GetProcAddress(module, "OleFlushClipboard"))
+                   : nullptr;
+        if (flush && FAILED(flush()))
+            std::cerr << "Failed to flush the restored clipboard\n";
+    }
+
+  private:
+    std::unique_ptr<QMimeData> m_saved;
+};
+
 void require(bool condition, const char* message) {
     if (!condition)
         throw std::runtime_error(message);
@@ -239,6 +271,7 @@ int main(int argc, char** argv) {
             QTimer::singleShot(120000, &application, &QApplication::quit);
             return application.exec();
         }
+        const ClipboardRestorer preserveClipboard;
         payloadsPreservePixels();
         publishAndReadThroughQt();
         corruptEncodedImageRetainsNativeBitmap();

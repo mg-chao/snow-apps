@@ -1,6 +1,7 @@
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
+#include "snow_shot/app/mcp/mcpstylepatch.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QMimeData>
@@ -61,12 +62,22 @@ void transport() {
     ScreenshotMcpServer server(nullptr, directory.path());
     ScreenshotMcpServer::Completion pending;
     int requests = 0;
+    int flushed = 0;
+    quint64 owner = 0;
     server.setRequestHandler([&](const ScreenshotMcpRequest& r, auto completion) {
         require(QThread::currentThread() == QCoreApplication::instance()->thread(),
                 "GUI thread dispatch");
         ++requests;
-        if (r.method == QStringLiteral("pending")) {
+        owner = r.connectionId;
+        if (r.method == QStringLiteral("pending") ||
+            r.method == QStringLiteral("snow_shot_document_render")) {
             pending = std::move(completion);
+            return;
+        }
+        if (r.method == QStringLiteral("snow_shot_document_sample_color")) {
+            ScreenshotMcpResponse response;
+            response.ok = true;
+            completion(response);
             return;
         }
         if (pending) {
@@ -77,7 +88,22 @@ void transport() {
         }
         ScreenshotMcpResponse response;
         response.ok = true;
+        if (r.method == QStringLiteral("after_send"))
+            response.afterSend = [&] {
+                require(QThread::currentThread() == QCoreApplication::instance()->thread(),
+                        "post-response action runs on application thread");
+                ++flushed;
+            };
         completion(response);
+    });
+    server.setRequestCancellationHandler([&](quint64 connection, const QString& id) {
+        if (connection != owner || id != QStringLiteral("active") || !pending)
+            return false;
+        auto complete = std::exchange(pending, {});
+        ScreenshotMcpResponse canceled;
+        canceled.errorCode = QStringLiteral("canceled");
+        complete(canceled);
+        return true;
     });
     QString error;
     require(server.start(&error), qPrintable(error));
@@ -116,6 +142,86 @@ void transport() {
                 QStringLiteral("cancel"),
             "bypass cancellation response preserved");
     require(requests == 2, "authenticated dispatch count");
+    client.write(frame(
+        request(QStringLiteral("background-render"), QStringLiteral("snow_shot_document_render"))));
+    await([&] { return bool(pending); });
+    client.write(frame(request(QStringLiteral("other-document"),
+                               QStringLiteral("snow_shot_document_sample_color"))));
+    require(receive(client).value(QStringLiteral("request_id")) ==
+                    QStringLiteral("other-document") &&
+                bool(pending),
+            "same-client background document operations dispatch independently");
+    client.write(
+        frame(request(QStringLiteral("cancel-background"), QStringLiteral("screenshot_cancel"))));
+    require(receive(client).value(QStringLiteral("request_id")) ==
+                    QStringLiteral("background-render") &&
+                receive(client).value(QStringLiteral("request_id")) ==
+                    QStringLiteral("cancel-background"),
+            "reserved cancellation remains responsive with background work active");
+    for (const auto& method :
+         {QStringLiteral("snow_shot_app_status"), QStringLiteral("snow_shot_recording_state"),
+          QStringLiteral("snow_shot_recording_control")}) {
+        client.write(frame(request(QStringLiteral("blocking"), QStringLiteral("pending"))));
+        await([&] { return bool(pending); });
+        client.write(frame(request(QStringLiteral("priority"), method)));
+        require(receive(client).value(QStringLiteral("request_id")) == QStringLiteral("blocking") &&
+                    receive(client).value(QStringLiteral("request_id")) ==
+                        QStringLiteral("priority"),
+                "application status and recording controls bypass an active request");
+    }
+    client.write(frame(request(QStringLiteral("ack"), QStringLiteral("after_send"))));
+    require(receive(client).value(QStringLiteral("request_id")).toString() == QStringLiteral("ack"),
+            "lifecycle acknowledgement is transmitted");
+    await([&] { return flushed == 1; });
+    QLocalSocket subscribed;
+    subscribed.connectToServer(server.socketName());
+    require(subscribed.waitForConnected(2000), "subscribed peer connects");
+    subscribed.write(
+        frame(request(QStringLiteral("hello-events"), QStringLiteral("handshake"),
+                      {{QStringLiteral("token"), data.value(QStringLiteral("token"))},
+                       {QStringLiteral("client_protocol"), QStringLiteral("snow-shot-mcp/1")},
+                       {QStringLiteral("capabilities"),
+                        QJsonArray{QStringLiteral("events"), QStringLiteral("cancel_request")}}})));
+    require(receive(subscribed)
+                    .value(QStringLiteral("result"))
+                    .toObject()
+                    .value(QStringLiteral("capabilities"))
+                    .toArray()
+                    .size() == 2,
+            "protocol extensions require explicit negotiation");
+    subscribed.write(frame(request(QStringLiteral("active"), QStringLiteral("pending"))));
+    await([&] { return bool(pending); });
+    server.publishEvent(owner,
+                        {{QStringLiteral("event"), QStringLiteral("resource_changed")},
+                         {QStringLiteral("uri"), QStringLiteral("snow-shot://jobs/private")}});
+    const auto event = receive(subscribed);
+    require(event.value(QStringLiteral("kind")) == QStringLiteral("event") &&
+                !event.contains(QStringLiteral("request_id")),
+            "negotiated events remain separate from response correlation");
+    require(client.bytesAvailable() == 0, "resource events do not reach other clients");
+    subscribed.write(
+        frame(request(QStringLiteral("cancel-active"), QStringLiteral("snow_shot_request_cancel"),
+                      {{QStringLiteral("request_id"), QStringLiteral("active")}})));
+    const auto canceled = receive(subscribed);
+    const auto cancelAck = receive(subscribed);
+    require(canceled.value(QStringLiteral("request_id")) == QStringLiteral("active") &&
+                canceled.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")) ==
+                    QStringLiteral("canceled") &&
+                cancelAck.value(QStringLiteral("result"))
+                    .toObject()
+                    .value(QStringLiteral("canceled"))
+                    .toBool(),
+            "generic cancellation settles active request and acknowledges once");
+    subscribed.write(frame(request(QStringLiteral("draining"), QStringLiteral("pending"))));
+    await([&] { return bool(pending); });
+    bool drained = false;
+    server.drainAndStop([&] { drained = true; });
+    ScreenshotMcpResponse final;
+    final.ok = true;
+    std::exchange(pending, {})(final);
+    require(receive(subscribed).value(QStringLiteral("request_id")) == QStringLiteral("draining"),
+            "drain preserves final in-flight acknowledgement");
+    await([&] { return drained; });
     server.stop();
     require(!QFile::exists(server.descriptorPath()), "descriptor removed on disable");
     await([&] { return client.state() == QLocalSocket::UnconnectedState; });
@@ -242,6 +348,15 @@ void session() {
     require(call(QStringLiteral("screenshot_begin")).ok, "begin completes on capture presented");
     require(call(QStringLiteral("screenshot_begin"), {}, 2).errorCode == QStringLiteral("busy"),
             "one session globally");
+    const auto intruderState = call(QStringLiteral("screenshot_state"), {}, 2);
+    require(intruderState.errorCode == QStringLiteral("session_not_found") &&
+                intruderState.sessionId.isEmpty() && !intruderState.revision &&
+                !intruderState.errorDetails.contains(QStringLiteral("state")),
+            "another client cannot read document state through an error");
+    const auto intruderBegin = call(QStringLiteral("screenshot_begin"), {}, 2);
+    require(intruderBegin.sessionId.isEmpty() && !intruderBegin.revision &&
+                intruderBegin.errorDetails.isEmpty(),
+            "busy response does not disclose the current owner");
     const auto oldRevision =
         static_cast<quint64>(session.state().value(QStringLiteral("revision")).toInteger());
     editor.insert(QStringLiteral("user_edit"), true);
@@ -481,6 +596,11 @@ void annotationRuntime() {
         R"({"version":1,"operations":[{"type":"rectangle","bounds":[10,10,50,60]}]})");
     require(!result.isEmpty() && changes == 1 && canvas.canvasHistoryState().canUndo,
             "typed transaction refreshes registered visible viewport");
+    require(runtime.selectedElementIds() == QJsonDocument::fromJson(result)
+                                                .object()
+                                                .value(QStringLiteral("selected_element_ids"))
+                                                .toArray(),
+            "lightweight selected ID query matches the transaction without serializing templates");
     require(runtime.undo() && canvas.canvasHistoryState().canRedo && changes == 2,
             "undo refreshes viewport history");
     require(runtime.redo() && canvas.canvasHistoryState().canUndo && changes == 3,
@@ -492,9 +612,89 @@ void annotationRuntime() {
                 runtime.documentRevision() == revision,
             "invalid typed input is atomic through Qt runtime");
 }
+void completeToolStyleContract() {
+    struct Styles {
+        SnowCanvasStyleToolbarState state;
+        quint32 properties = 0;
+        int updates = 0;
+        SnowCanvasStyleToolbarState canvasStyleToolbarState() const {
+            return state;
+        }
+        SnowCanvasWatermarkConfig canvasWatermarkConfig() const {
+            return {};
+        }
+        SnowCanvasSpotlightConfig canvasSpotlightConfig() const {
+            return {};
+        }
+        void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& value, quint32 flags,
+                                      SnowCanvasShapeKind) {
+            state.shapeStyle = value;
+            properties = flags;
+            ++updates;
+        }
+        void setTextStyleFromToolbar(const SnowCanvasTextStyle& value) {
+            state.textStyle = value;
+            ++updates;
+        }
+        void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& value) {
+            state.serialNumberStyle = value;
+            ++updates;
+        }
+        void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig&) {
+            ++updates;
+        }
+        void setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig&) {
+            ++updates;
+        }
+        void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) {
+            ++updates;
+        }
+    } styles;
+    const auto apply = [&](const QString& target, const QJsonObject& patch) {
+        return mcpStylePatch(
+            styles, styles, {{QStringLiteral("target"), target}, {QStringLiteral("style"), patch}});
+    };
+    require(apply(QStringLiteral("arrow"),
+                  {{QStringLiteral("arrow_shaft_type"), QStringLiteral("tapered")},
+                   {QStringLiteral("arrow_ratio"), 2.5}}) &&
+                styles.state.shapeStyle.arrowShaftType == SnowCanvasArrowShaftType::Tapered &&
+                styles.state.shapeStyle.arrowRatio == 2.5 &&
+                (styles.properties & SnowCanvasShapeStylePropertyArrowRatio) &&
+                (styles.properties & SnowCanvasShapeStylePropertyArrowShaftType),
+            "arrow shaft and ratio must reach the command sink with exact property flags");
+    require(apply(QStringLiteral("text"),
+                  {{QStringLiteral("horizontal_align"), QStringLiteral("right")},
+                   {QStringLiteral("vertical_align"), QStringLiteral("bottom")},
+                   {QStringLiteral("corner_radii"), QJsonArray{1, 2, 3, 4}}}) &&
+                styles.state.textStyle.horizontalAlign == SnowCanvasTextHorizontalAlign::Right &&
+                styles.state.textStyle.verticalAlign == SnowCanvasTextVerticalAlign::Bottom &&
+                styles.state.textStyle.cornerRadii == SnowCanvasCornerRadii{1, 2, 3, 4},
+            "text alignment and independent corner radii must preserve their ordering");
+    require(apply(QStringLiteral("serial_number"),
+                  {{QStringLiteral("number"), 42},
+                   {QStringLiteral("serial_type"), QStringLiteral("solid_square")}}) &&
+                styles.state.serialNumberStyle.number == 42 &&
+                styles.state.serialNumberStyle.type == SnowCanvasSerialNumberType::SolidSquare,
+            "serial-number value and shape must match the UI model");
+    const int previous = styles.updates;
+    require(
+        !apply(QStringLiteral("text"),
+               {{QStringLiteral("corner_radius"), 2},
+                {QStringLiteral("corner_radii"), QJsonArray{1, 2, 3, 4}}}) &&
+            !apply(QStringLiteral("arrow"), {{QStringLiteral("arrow_ratio"), 4}}) &&
+            !apply(QStringLiteral("serial_number"), {{QStringLiteral("number"), 1.5}}) &&
+            !apply(QStringLiteral("rectangle"), {{QStringLiteral("opacity"), 0.5}}) &&
+            !apply(QStringLiteral("arrow"), {{QStringLiteral("fill"), QJsonArray{0, 0, 0, 255}}}) &&
+            !apply(QStringLiteral("rectangle_highlight"),
+                   {{QStringLiteral("shape"), QStringLiteral("ellipse")}}) &&
+            !apply(QStringLiteral("pen_highlight"), {{QStringLiteral("corner_radius"), 3}}) &&
+            styles.updates == previous,
+        "ambiguous or unsupported styles must reject atomically before command dispatch");
+}
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    completeToolStyleContract();
     workflowOperations();
     annotationRuntime();
     transport();

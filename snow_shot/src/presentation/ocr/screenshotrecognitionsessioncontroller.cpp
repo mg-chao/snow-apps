@@ -601,6 +601,7 @@ void ScreenshotRecognitionSessionController::openImageConversionSettings() {
 }
 
 void ScreenshotRecognitionSessionController::updateConversionState() const {
+    emit workflowStateChanged();
     if (conversionModeActive() && m_conversion->active() && content() != nullptr) {
         content()->showImageConversion(m_conversion->format(), m_conversion->source(),
                                        m_conversion->busy(), m_conversion->error());
@@ -1750,12 +1751,14 @@ void ScreenshotRecognitionSessionController::handleTableCommandState(
 }
 
 void ScreenshotRecognitionSessionController::updateBusyState() const {
+    emit workflowStateChanged();
     if (m_actions.setBusyState) {
         m_actions.setBusyState(busy(Mode::Text), busy(Mode::Table), busy(Mode::Qr));
     }
 }
 
 void ScreenshotRecognitionSessionController::updateTextState() const {
+    emit workflowStateChanged();
     const bool available = hasTextResult() && m_active && m_mode == Mode::Text;
     const auto entry = m_textCache.value(m_editingKey);
     const bool overlay = originalImageTranslationActive();
@@ -1860,6 +1863,7 @@ void ScreenshotRecognitionSessionController::hideRecognitionMessage() const {
 void ScreenshotRecognitionSessionController::showStatus(const QString& message, bool error) const {
     if (error)
         m_workflowError = message;
+    emit workflowStateChanged();
     if (!message.isEmpty() && m_actions.showStatus) {
         m_actions.showStatus(message, error);
     }

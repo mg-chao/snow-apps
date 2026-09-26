@@ -19,8 +19,12 @@ namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
 }
 class ScreenshotOcrRecognitionService;
+class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
 class ScreenshotExportArtifact;
+class ScreenRecordingController;
+struct ScreenshotClipboardContent;
+struct ScreenshotHistoryEntry;
 
 class ScreenshotController : public QObject {
     Q_OBJECT
@@ -34,6 +38,7 @@ class ScreenshotController : public QObject {
     ~ScreenshotController() override;
     void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     [[nodiscard]] bool captureAvailable() const;
+    [[nodiscard]] bool captureAcquisitionActive() const;
     [[nodiscard]] bool blocksApplicationUpdate() const;
     [[nodiscard]] bool beginGlobalMouseCapture(
         snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
@@ -59,6 +64,15 @@ class ScreenshotController : public QObject {
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> mcpExportArtifact(qreal scale);
     [[nodiscard]] bool mcpPinArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact,
                                       std::function<void(bool)> completion);
+    [[nodiscard]] ScreenRecordingController* automationRecordingController();
+    [[nodiscard]] ScreenshotQrRecognitionPort* mcpQrRecognition();
+    void mcpPinnedImage(const QString& id, std::function<void(QImage, QString)> completion);
+    [[nodiscard]] bool mcpPinContent(ScreenshotClipboardContent content,
+                                     std::function<void(bool)> completion);
+    [[nodiscard]] bool mcpPinDocument(ScreenshotHistoryEntry entry, QImage background,
+                                      std::function<void(bool)> completion);
+    [[nodiscard]] bool mcpPresentDocument(ScreenshotHistoryEntry entry,
+                                          std::function<void(bool)> completion);
 
   public slots:
     void prewarmResources();

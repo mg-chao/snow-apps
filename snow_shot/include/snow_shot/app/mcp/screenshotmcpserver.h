@@ -37,6 +37,8 @@ struct ScreenshotMcpResponse final {
     QJsonObject errorDetails;
     QString attachmentMime;
     QByteArray attachment;
+    // Application lifecycle actions run only after the complete reply has left the socket queue.
+    std::function<void()> afterSend;
 };
 
 class ScreenshotMcpServer final : public QObject {
@@ -46,6 +48,7 @@ class ScreenshotMcpServer final : public QObject {
     using Completion = std::function<void(ScreenshotMcpResponse)>;
     using RequestHandler = std::function<void(const ScreenshotMcpRequest&, Completion)>;
     using ClientDisconnectedHandler = std::function<void(quint64)>;
+    using RequestCancellationHandler = std::function<bool(quint64, const QString&)>;
 
     explicit ScreenshotMcpServer(QObject* parent = nullptr, QString runtimeDirectory = {});
     [[nodiscard]] static QString defaultRuntimeDirectory();
@@ -56,12 +59,15 @@ class ScreenshotMcpServer final : public QObject {
 
     [[nodiscard]] bool start(QString* error = nullptr);
     void stop();
+    void drainAndStop(std::function<void()> afterDrain = {}, int timeoutMilliseconds = 2000);
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] QString descriptorPath() const;
     [[nodiscard]] QString socketName() const;
 
     void setRequestHandler(RequestHandler handler);
     void setClientDisconnectedHandler(ClientDisconnectedHandler handler);
+    void setRequestCancellationHandler(RequestCancellationHandler handler);
+    void publishEvent(quint64 connection, QJsonObject event);
 
   signals:
     void runningChanged(bool running);
@@ -82,6 +88,7 @@ class ScreenshotMcpServer final : public QObject {
     SocketWorker* m_worker = nullptr;
     RequestHandler m_requestHandler;
     ClientDisconnectedHandler m_clientDisconnectedHandler;
+    RequestCancellationHandler m_requestCancellationHandler;
     QString m_runtimeDirectory;
     QString m_generation;
     QString m_descriptorPath;

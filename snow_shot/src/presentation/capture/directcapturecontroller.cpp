@@ -285,7 +285,8 @@ bool DirectCaptureController::mcpCapture(
         return false;
     const auto target =
         options.value(QStringLiteral("target")).toString(QStringLiteral("current_monitor"));
-    if (target != QStringLiteral("current_monitor") && target != QStringLiteral("focused_window"))
+    if (target != QStringLiteral("current_monitor") && target != QStringLiteral("focused_window") &&
+        target != QStringLiteral("monitor"))
         return false;
     DirectCaptureRequest request;
     request.target = target == QStringLiteral("focused_window")
@@ -315,6 +316,11 @@ bool DirectCaptureController::mcpCapture(
         request.monitorName =
             QStringLiteral("display:%1").arg(platform::screenshotDisplayAtCursor());
 #endif
+    if (target == QStringLiteral("monitor")) {
+        request.monitorName = options.value(QStringLiteral("monitor_id")).toString();
+        if (request.monitorName.isEmpty())
+            return false;
+    }
     const double scale = options.value(QStringLiteral("scale")).toDouble(1);
     if (!std::isfinite(scale) || scale < 0.1 || scale > 4)
         return false;
@@ -340,9 +346,9 @@ bool DirectCaptureController::mcpCapture(
             return frame;
         },
         [this, cancellation, completion = std::move(completion)](DirectCaptureFrame frame) {
+            m_impl->mcpActive = false;
             if (cancellation->load(std::memory_order_acquire))
                 return;
-            m_impl->mcpActive = false;
             QJsonObject metadata{
                 {QStringLiteral("identity"), frame.identity},
                 {QStringLiteral("native_backend"), frame.backend},
@@ -365,6 +371,7 @@ void DirectCaptureController::cancelMcpCapture() {
         return;
     if (m_impl->mcpCancellation)
         m_impl->mcpCancellation->store(true, std::memory_order_release);
-    m_impl->mcpActive = false;
+    // Keep the acquisition lease until the worker acknowledges cancellation;
+    // repeated canceled requests must not create an unbounded native capture queue.
 }
 } // namespace snow_shot::presentation

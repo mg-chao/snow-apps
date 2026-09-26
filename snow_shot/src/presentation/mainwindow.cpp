@@ -296,6 +296,12 @@ void MainWindow::showFunctionSettings() {
     showAndActivate();
 }
 
+void MainWindow::showSettingsLocation(const QString& pageId, const QString& sectionId) {
+    if (m_contentCard)
+        m_contentCard->navigateTo({pageId, sectionId, {}});
+    showAndActivate();
+}
+
 void MainWindow::showInterfaceSettings() {
     if (m_contentCard != nullptr) {
         m_contentCard->showInterfaceSettings();

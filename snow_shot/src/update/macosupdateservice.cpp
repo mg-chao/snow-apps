@@ -124,6 +124,7 @@ struct UpdateService::Impl {
         }
         arm(options.automaticCheckInterval);
         emit q.statusChanged();
+        emit q.operationFinished(QStringLiteral("check"), QStringLiteral("failed"));
     }
 
     void read() {
@@ -208,6 +209,7 @@ struct UpdateService::Impl {
                 notified.insert(text);
             arm(options.automaticCheckInterval);
             emit q.statusChanged();
+            emit q.operationFinished(QStringLiteral("check"), QStringLiteral("success"));
             if (notify)
                 emit q.automaticUpdateAvailable(text);
         });
@@ -241,6 +243,9 @@ UpdateService::~UpdateService() {
 }
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
+}
+bool UpdateService::busy() const {
+    return !m_impl->reply.isNull();
 }
 void UpdateService::start() {
     if (m_impl->started)
@@ -278,6 +283,7 @@ void UpdateService::cancel() {
     m_impl->errorSource = m_impl->previousErrorSource;
     m_impl->arm(m_impl->options.automaticCheckInterval);
     emit statusChanged();
+    emit operationFinished(QStringLiteral("check"), QStringLiteral("cancelled"));
 }
 // These Windows installation operations intentionally have no macOS implementation.
 void UpdateService::download() {}

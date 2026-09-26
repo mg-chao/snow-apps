@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QRect>
+#include <QJsonObject>
 
 #include <memory>
 #include <functional>
@@ -29,6 +30,17 @@ class ScreenRecordingController final : public QObject {
     void startRecording();
     void stopRecordingAndCopy();
     void openRecordingFolder();
+    // The same recording lifecycle as the UI, with per-session options that do not
+    // overwrite user preferences. Errors are reported in state instead of modal dialogs.
+    [[nodiscard]] QJsonObject automationState() const;
+    [[nodiscard]] bool startAutomation(const QRect& region, const QJsonObject& options,
+                                       QString* error);
+    [[nodiscard]] bool controlAutomation(const QString& action, const QJsonObject& payload,
+                                         QString* error);
+    void detachAutomation();
+
+  signals:
+    void finalized();
 
   private:
     struct Impl;

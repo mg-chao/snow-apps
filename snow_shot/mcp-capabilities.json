@@ -1,0 +1,287 @@
+{
+  "version": 1,
+  "transport": "stdio with private same-user IPC",
+  "protocol_versions": [
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+    "2025-11-25",
+    "2026-07-28"
+  ],
+  "domains": {
+    "legacy_screenshot": {
+      "scope": "Visible or silent editor sessions, selection, annotations, scrolling, recognition and output",
+      "tools": [
+        "snow_shot_status",
+        "screenshot_begin",
+        "screenshot_state",
+        "screenshot_set_selection",
+        "screenshot_set_tool",
+        "screenshot_apply_annotations",
+        "screenshot_undo",
+        "screenshot_redo",
+        "screenshot_render",
+        "screenshot_save",
+        "screenshot_copy",
+        "screenshot_pin",
+        "screenshot_finish",
+        "screenshot_cancel",
+        "screenshot_direct_capture",
+        "screenshot_set_selection_style",
+        "screenshot_set_tool_style",
+        "screenshot_edit_elements",
+        "screenshot_recapture",
+        "screenshot_scrolling",
+        "screenshot_scroll_once",
+        "screenshot_recognize",
+        "screenshot_translate",
+        "screenshot_auto_filter",
+        "screenshot_operation",
+        "screenshot_edit_recognition",
+        "screenshot_export_recognition",
+        "screenshot_draw_template"
+      ]
+    },
+    "application": {
+      "scope": "Settings, credentials, models, history, storage, permissions, updates, templates and translation",
+      "tools": [
+        "snow_shot_app_status",
+        "snow_shot_app_displays",
+        "snow_shot_app_action",
+        "snow_shot_settings_get",
+        "snow_shot_settings_update",
+        "snow_shot_settings_reset",
+        "snow_shot_settings_action",
+        "snow_shot_models_list",
+        "snow_shot_models_update",
+        "snow_shot_credentials_set",
+        "snow_shot_history_list",
+        "snow_shot_history_get",
+        "snow_shot_history_delete",
+        "snow_shot_history_clear",
+        "snow_shot_history_action",
+        "snow_shot_configuration_export",
+        "snow_shot_configuration_import",
+        "snow_shot_storage_status",
+        "snow_shot_storage_cleanup",
+        "snow_shot_permissions_get",
+        "snow_shot_permissions_request",
+        "snow_shot_updates_status",
+        "snow_shot_updates_action",
+        "snow_shot_templates_list",
+        "snow_shot_templates_update",
+        "snow_shot_translation_catalog",
+        "snow_shot_translation_start"
+      ]
+    },
+    "documents_jobs": {
+      "scope": "Isolated background documents and owner-scoped jobs",
+      "tools": [
+        "snow_shot_document_open",
+        "snow_shot_document_list",
+        "snow_shot_document_state",
+        "snow_shot_document_clone",
+        "snow_shot_document_apply_annotations",
+        "snow_shot_document_set_selection",
+        "snow_shot_document_undo",
+        "snow_shot_document_redo",
+        "snow_shot_document_render",
+        "snow_shot_document_save",
+        "snow_shot_document_copy",
+        "snow_shot_document_pin",
+        "snow_shot_document_set_selection_style",
+        "snow_shot_document_close",
+        "snow_shot_document_recognize",
+        "snow_shot_document_present",
+        "snow_shot_document_set_tool",
+        "snow_shot_document_set_tool_style",
+        "snow_shot_document_edit_elements",
+        "snow_shot_document_draw_template",
+        "snow_shot_document_sample_color",
+        "snow_shot_document_recapture",
+        "snow_shot_document_recognition_state",
+        "snow_shot_document_edit_recognition",
+        "snow_shot_document_export_recognition",
+        "snow_shot_document_original_content",
+        "snow_shot_document_auto_filter",
+        "snow_shot_job_get",
+        "snow_shot_job_list",
+        "snow_shot_job_cancel",
+        "snow_shot_artifact_list",
+        "snow_shot_artifact_read",
+        "snow_shot_artifact_release"
+      ]
+    },
+    "recording_pinned": {
+      "scope": "Recording lifecycle, pinned images and groups",
+      "tools": [
+        "snow_shot_recording_state",
+        "snow_shot_recording_start",
+        "snow_shot_recording_control",
+        "snow_shot_pinned_list",
+        "snow_shot_pinned_get",
+        "snow_shot_pinned_create",
+        "snow_shot_pinned_replace",
+        "snow_shot_pinned_update",
+        "snow_shot_pinned_action",
+        "snow_shot_pinned_export",
+        "snow_shot_pinned_edit",
+        "snow_shot_group_list",
+        "snow_shot_group_update"
+      ]
+    }
+  },
+  "validation": {
+    "windows_protocol": "verified by crate tests and five-version stdio smoke",
+    "windows_native": "release gate: native desktop capture, clipboard, pinned UI, recording and OS permissions",
+    "macos_native": "deferred by user: this iteration validates Windows only; native arm64/x64 capture permissions, recording and bundle launch remain unverified"
+  },
+  "surface_contracts": {
+    "settings_field_kinds": {
+      "adapter": "settingsJson/settingsValue; runtime catalog roundtrip in mcp_application_tests",
+      "members": [
+        "Select",
+        "Switch",
+        "Integer",
+        "MultiSelect",
+        "Slider",
+        "Color",
+        "Radio",
+        "FilePath",
+        "DirectoryPath",
+        "Text",
+        "ShortcutAction",
+        "LocalShortcut",
+        "GlobalMouseAction",
+        "Action",
+        "Custom"
+      ]
+    },
+    "settings_action_bindings": {
+      "adapter": "registry fieldForAction, settings_action dispatches SettingsRuntimeSession.triggerAction",
+      "members": [
+        "OpenLoginItemSettings",
+        "RestartAsAdministrator",
+        "ClearCaptureHistory",
+        "ClearPinnedHistory",
+        "ClearThumbnailCache",
+        "ClearRecordingTemp",
+        "CopyTodayLog",
+        "ExportConfiguration",
+        "ImportConfiguration"
+      ]
+    },
+    "settings_custom_renderers": {
+      "adapter": "settings_get metadata; writable toolbar/tray fields plus dedicated models/permissions/status/storage APIs",
+      "members": [
+        "McpStatus",
+        "PermissionScreenRecording",
+        "PermissionAccessibility",
+        "PermissionInputMonitoring",
+        "PermissionMicrophone",
+        "CustomAiModels",
+        "StorageStatus",
+        "DrawingToolbarEditor",
+        "ScreenshotToolbarEditor",
+        "PinnedToolbarEditor",
+        "TrayMenuOptions"
+      ]
+    },
+    "canvas_style_sources": {
+      "adapter": "tool style and selected element editors; source enumeration reviewed, native behavior requires platform gate",
+      "members": [
+        "DefaultRectangle",
+        "SelectedRectangle",
+        "DefaultArrow",
+        "SelectedArrow",
+        "DefaultLine",
+        "SelectedLine",
+        "DefaultFreeDraw",
+        "SelectedFreeDraw",
+        "DefaultRectangleHighlight",
+        "SelectedRectangleHighlight",
+        "Eraser",
+        "DefaultRectangleFilter",
+        "DefaultFilter",
+        "SelectedRectangleFilter",
+        "SelectedFilter",
+        "Watermark",
+        "DefaultText",
+        "SelectedText",
+        "DefaultSerialNumber",
+        "SelectedSerialNumber",
+        "DefaultPenHighlight",
+        "SelectedPenHighlight",
+        "DefaultPenFilter",
+        "SelectedPenFilter",
+        "DefaultSpotlight",
+        "SelectedSpotlight"
+      ]
+    },
+    "canvas_tools": {
+      "adapter": "typed CanvasTool enumeration and application/drawing engine dispatch",
+      "members": {
+        "Select": "Select",
+        "Shape": "Rectangle",
+        "Arrow": "Arrow",
+        "Line": "Line",
+        "FreeDraw": "Freehand",
+        "RectangleHighlight": "RectangleHighlight",
+        "Highlight": "RectangleHighlight",
+        "Eraser": "Eraser",
+        "RectangleFilter": "RectangleFilter",
+        "Filter": "RectangleFilter",
+        "Watermark": "Watermark",
+        "Text": "Text",
+        "SerialNumber": "SerialNumber",
+        "PenHighlight": "PenHighlight",
+        "PenFilter": "PenFilter",
+        "Spotlight": "Spotlight",
+        "AutoFilter": "AutoFilter"
+      }
+    },
+    "recording_options": {
+      "adapter": "ScreenRecordingController.automationStart; native encoder/audio outcomes require platform gate",
+      "members": [
+        "path",
+        "format",
+        "start_delay_seconds",
+        "microphone",
+        "system_audio",
+        "frame_rate",
+        "animated_frame_rate",
+        "clarity",
+        "animated_clarity",
+        "encoder",
+        "encoding_preset",
+        "loop",
+        "capture_toolbar",
+        "show_cursor",
+        "show_keyboard",
+        "mouse_highlight",
+        "record_mouse_clicks",
+        "mouse_trail_duration_ms",
+        "keyboard_size",
+        "keyboard_background",
+        "keyboard_foreground",
+        "mouse_trail",
+        "mouse_click",
+        "mouse_highlight_color"
+      ]
+    },
+    "settings_shortcut_adjustments": {
+      "adapter": "Settings catalog-derived auxiliary field IDs and settings_get/update",
+      "members": [
+        "None",
+        "ScreenshotDelaySeconds"
+      ]
+    },
+    "recognition_actions": {
+      "adapter": "Actual headless recognition text/table editing controller and typed Rust actions; covered by recognition IPC workflows",
+      "members": [
+        "set_text", "reset_text", "format", "punctuation", "select_cells", "set_cell",
+        "merge_cells", "split_cells", "reset_table", "show_original", "undo", "redo"
+      ]
+    }
+  }
+}

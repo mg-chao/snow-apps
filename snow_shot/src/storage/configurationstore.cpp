@@ -255,6 +255,20 @@ QMap<QString, QJsonValue> ConfigurationStore::snapshot() const {
     return m_values;
 }
 
+quint64 ConfigurationStore::revision() const {
+    QMutexLocker locker(&m_mutex);
+    return m_revision;
+}
+
+bool ConfigurationStore::mutateIfRevision(quint64 expectedRevision,
+                                          const std::function<bool()>& mutation, bool* conflict) {
+    QMutexLocker mutationLock(&m_mutationMutex);
+    const bool stale = revision() != expectedRevision;
+    if (conflict)
+        *conflict = stale;
+    return !stale && mutation && mutation();
+}
+
 bool ConfigurationStore::isDirty() const {
     QMutexLocker locker(&m_mutex);
     return m_dirty;
@@ -280,6 +294,7 @@ bool ConfigurationStore::setValue(const QString& key, const QJsonValue& value) {
 }
 
 bool ConfigurationStore::setValues(const QMap<QString, QJsonValue>& values) {
+    QMutexLocker mutationLock(&m_mutationMutex);
     QMap<QString, QJsonValue> normalizedValues;
     for (auto it = values.cbegin(); it != values.cend(); ++it) {
         if (!ConfigurationSchema::contains(it.key())) {
@@ -338,6 +353,7 @@ void ConfigurationStore::announceChanges(QVector<QPair<QString, QJsonValue>> cha
 }
 
 bool ConfigurationStore::applySnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion) {
+    QMutexLocker mutationLock(&m_mutationMutex);
     const int currentVersion = ConfigurationSchema::currentVersion();
     if (schemaVersion <= 0) {
         schemaVersion = currentVersion;

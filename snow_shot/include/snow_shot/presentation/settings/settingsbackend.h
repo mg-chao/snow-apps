@@ -12,6 +12,7 @@
 #include <QObject>
 #include <QVariant>
 #include <QVector>
+#include <future>
 
 namespace snow_shot::presentation {
 class GlobalShortcutManager;
@@ -105,6 +106,13 @@ class SettingsBackend : public QObject {
         return {};
     }
     virtual bool applyCustomAiModels(const CustomAiModels&) {
+        return false;
+    }
+    virtual bool
+    importConfigurationSnapshot(const QMap<QString, QJsonValue>&, int,
+                                std::shared_future<storage::StorageResult>* completion = nullptr) {
+        if (completion)
+            *completion = {};
         return false;
     }
 
@@ -261,6 +269,9 @@ class BuiltInSettingsBackend final : public SettingsBackend {
                                      const QString& filePath = {}) override;
     [[nodiscard]] CustomAiModels customAiModels() const override;
     bool applyCustomAiModels(const CustomAiModels& models) override;
+    bool importConfigurationSnapshot(
+        const QMap<QString, QJsonValue>& values, int schemaVersion,
+        std::shared_future<storage::StorageResult>* completion = nullptr) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
     void refreshPlatformSettings() override;
     void refreshStorageStatus() override;

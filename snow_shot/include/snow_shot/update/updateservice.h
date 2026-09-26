@@ -50,6 +50,7 @@ class UpdateService final : public QObject {
     explicit UpdateService(Options options, QObject* parent = nullptr);
     ~UpdateService() override;
     const UpdateStatus& status() const;
+    bool busy() const;
     void start();
     void setMode(const QString& mode);
     void setSystemProxy(bool enabled);
@@ -62,6 +63,7 @@ class UpdateService final : public QObject {
 
   signals:
     void statusChanged();
+    void operationFinished(const QString& operation, const QString& outcome);
     void updateReady();
     void automaticUpdateAvailable(const QString& version);
     void restartRequested();

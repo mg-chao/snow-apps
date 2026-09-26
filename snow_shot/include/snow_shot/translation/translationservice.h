@@ -45,6 +45,8 @@ class TranslationService final : public QObject {
     void refreshModels(bool force = false);
     void setLocale(const QLocale& locale);
     TranslationJob* createJob(const QStringList& texts, QObject* owner);
+    TranslationJob* createJob(const QStringList& texts, const TranslationPreferences& preferences,
+                              QObject* owner);
 
   signals:
     void catalogChanged();
@@ -133,6 +135,7 @@ class TranslationJob final : public QObject {
     State m_state = State::Idle;
     quint64 m_generation = 0;
     bool m_rateLimited = false;
+    bool m_fixedPreferences = false;
 };
 } // namespace snow_shot::translation
 #endif

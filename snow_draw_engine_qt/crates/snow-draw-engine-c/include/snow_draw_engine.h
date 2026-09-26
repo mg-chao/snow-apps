@@ -38,6 +38,8 @@ SnowError snow_runtime_serialize_document_session(SnowRuntime runtime, uint8_t* 
                                                   size_t buffer_capacity, size_t* out_size);
 SnowError snow_runtime_serialize_selected_draw_template(SnowRuntime runtime, uint8_t* buffer,
                                                         size_t buffer_capacity, size_t* out_size);
+SnowError snow_runtime_serialize_selected_element_ids(SnowRuntime runtime, uint8_t* buffer,
+                                                      size_t buffer_capacity, size_t* out_size);
 SnowError snow_runtime_create_from_document_session_with_config(const uint8_t* bytes, size_t size,
                                                                 const SnowRuntimeConfig* config,
                                                                 SnowRuntime* out_runtime);

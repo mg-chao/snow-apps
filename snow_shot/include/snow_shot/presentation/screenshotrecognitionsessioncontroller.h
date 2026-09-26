@@ -166,6 +166,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void textResultChanged(bool available);
     void textDraftChanged(const QString& text);
     void recognitionResultsChanged();
+    void workflowStateChanged() const;
 
   private:
     struct TextCacheEntry {

@@ -306,6 +306,11 @@ int main(int argc, char** argv) {
         UpdateService service(options(QStringLiteral("default")));
         bool updateReady = false;
         bool handoff = false;
+        QList<QPair<QString, QString>> operations;
+        QObject::connect(&service, &UpdateService::operationFinished, &app,
+                         [&](const QString& operation, const QString& outcome) {
+                             operations.append({operation, outcome});
+                         });
         QObject::connect(&service, &UpdateService::updateReady, &app, [&] { updateReady = true; });
         QObject::connect(&service, &UpdateService::handoffReady, &app, [&] {
             handoff = true;
@@ -315,9 +320,12 @@ int main(int argc, char** argv) {
         require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
                 "sidecar handshake reaches idle");
         service.check();
+        require(service.busy(), "accepted update work owns the updater lifecycle immediately");
         require(
             waitUntil([&] { return updateReady && service.status().state == UpdateState::Ready; }),
             "status and update-ready mapping");
+        require(operations.contains({QStringLiteral("check"), QStringLiteral("success")}),
+                "service completion reports exact operation and outcome without polling");
         service.beginApply();
         require(waitUntil([&] { return handoff && service.status().state == UpdateState::Ready; }),
                 "reentrant handoff cancellation");
@@ -354,12 +362,20 @@ int main(int argc, char** argv) {
 
     for (const auto& scenario : {QStringLiteral("malformed"), QStringLiteral("oversized")}) {
         UpdateService service(options(scenario));
+        int failedChecks = 0;
+        QObject::connect(&service, &UpdateService::operationFinished, &service,
+                         [&](const QString& operation, const QString& outcome) {
+                             if (operation == u"check" && outcome == u"failed")
+                                 ++failedChecks;
+                         });
         service.start();
         require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
                 "protocol-failure handshake");
         service.check();
         require(waitUntil([&] { return service.status().state == UpdateState::Failed; }),
                 "terminate malformed protocol peer");
+        require(waitUntil([&] { return !service.busy(); }) && failedChecks == 1,
+                "protocol failure completes the owned operation exactly once");
     }
 
     {
@@ -378,12 +394,37 @@ int main(int argc, char** argv) {
 
     {
         UpdateService service(options(QStringLiteral("unexpected-exit")));
+        int failedChecks = 0;
+        QObject::connect(&service, &UpdateService::operationFinished, &service,
+                         [&](const QString& operation, const QString& outcome) {
+                             if (operation == u"check" && outcome == u"failed")
+                                 ++failedChecks;
+                         });
         service.start();
         require(waitUntil([&] { return service.status().state == UpdateState::Idle; }),
                 "unexpected-exit handshake");
         service.check();
         require(waitUntil([&] { return service.status().state == UpdateState::Failed; }),
                 "unexpected active exit exposes failed");
+        require(failedChecks == 1, "unexpected exit completes the owned operation exactly once");
+    }
+
+    {
+        auto missingOptions = options(QStringLiteral("missing-helper"));
+        missingOptions.applicationDirectory = directory.filePath(QStringLiteral("missing"));
+        UpdateService service(std::move(missingOptions));
+        int failedChecks = 0;
+        QObject::connect(&service, &UpdateService::operationFinished, &service,
+                         [&](const QString& operation, const QString& outcome) {
+                             if (operation == u"check" && outcome == u"failed")
+                                 ++failedChecks;
+                         });
+        service.check();
+        require(waitUntil([&] { return failedChecks == 1 && !service.busy(); }),
+                "failed helper launch completes the owned operation");
+        service.check();
+        require(waitUntil([&] { return failedChecks == 2 && !service.busy(); }),
+                "retry failure receives its own completion");
     }
 
     {

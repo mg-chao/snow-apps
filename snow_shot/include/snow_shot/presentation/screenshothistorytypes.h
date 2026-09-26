@@ -5,6 +5,8 @@
 #include "snow_shot/presentation/screenshotselectionparams.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/preparedpngimage.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotrecognitionresults.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -45,6 +47,11 @@ struct ScreenshotHistoryEntry {
     bool intelligentSelectionMode = false;
     bool persistent = true;
     std::optional<ScreenshotIntelligentSelectionModel> liveIntelligentSelection;
+    // Transient MCP handoff state; historical on-disk records remain unchanged.
+    QByteArray documentSession;
+    ScreenshotClipboardOriginalContent originalContent;
+    ScreenshotRecognitionResults recognitionResults;
+    QString tool;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTHISTORYTYPES_H

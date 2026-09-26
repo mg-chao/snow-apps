@@ -47,7 +47,8 @@ class PinnedWindowRepository final {
         return 128;
     }
 
-    [[nodiscard]] std::optional<PinnedWindowRecord> loadRecord(const QString& id) const;
+    [[nodiscard]] std::optional<PinnedWindowRecord>
+    loadRecord(const QString& id, std::function<bool(qint64)> allocationCheck = {}) const;
     [[nodiscard]] std::optional<PinnedWindowPreviewSource>
     loadPreviewSource(const QString& id) const;
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id) const;

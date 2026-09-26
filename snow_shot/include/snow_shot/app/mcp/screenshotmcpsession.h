@@ -37,6 +37,7 @@ class ScreenshotMcpSession final : public QObject {
     void capturePresented();
     void captureTerminated();
     void disconnected(quint64 connectionId);
+    bool cancelRequest(quint64 connectionId, const QString& requestId);
     void shutdown();
     [[nodiscard]] QJsonObject state() const;
     [[nodiscard]] static bool validateOutputPath(const QString& path, QString* canonical);
@@ -53,6 +54,7 @@ class ScreenshotMcpSession final : public QObject {
     struct Cached {
         QByteArray fingerprint;
         ScreenshotMcpResponse response;
+        qsizetype bytes = 0;
     };
     ScreenshotMcpResponse failure(const ScreenshotMcpRequest&, const QString& code,
                                   const QString& field = {}) const;

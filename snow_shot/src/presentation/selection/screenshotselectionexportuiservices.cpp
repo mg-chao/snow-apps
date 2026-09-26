@@ -3,6 +3,7 @@
 #include "snow_shot/diagnostics/diagnostics.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshothistorytypes.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
@@ -839,8 +840,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     qreal formattedTextDevicePixelRatio, ScreenshotClipboardOriginalContent originalContent,
     ScreenshotImageLoader imageLoader, PinnedCompletion completion,
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
-    std::optional<bool> checkerboardEnabled,
-    snow_shot::storage::PinnedWindowCreationSource source) {
+    std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
+    const ScreenshotHistoryEntry* document) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
@@ -893,6 +894,21 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
     config.recognitionProvider = m_recognitionProvider;
+    if (document != nullptr) {
+        const auto& selection = document->selection;
+        config.resultStyle = {selection.radius, selection.shadowWidth, selection.shadowColor,
+                              selection.region};
+        const auto layout = ScreenshotResultCompositor::layoutForContent(selection.selection.size(),
+                                                                         config.resultStyle);
+        config.surfaceCanvasRect =
+            QRectF(QPointF(selection.selection.topLeft() - layout.contentRect.topLeft()),
+                   QSizeF(layout.outputRect.size()));
+        config.initialWindowSize = layout.outputRect.size();
+        config.initialCanvasSession = document->documentSession;
+        config.initialCanvasHistory = document->canvasHistory;
+        config.initialCanvasTool = document->tool;
+        config.recognitionResults = document->recognitionResults;
+    }
     applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
     config.groupId =
@@ -943,6 +959,20 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     m_pendingPinCoordinator->updateSnapshot(config.persistenceId,
                                             pinnedWindow->persistenceSnapshot());
     return true;
+}
+
+bool ScreenshotSelectionExportUiServices::presentPinnedDocument(const QImage& background,
+                                                                QScreen* screen,
+                                                                const QRect& nativeGeometry,
+                                                                const ScreenshotHistoryEntry& entry,
+                                                                PinnedCompletion completion) {
+    if (background.isNull() || entry.selection.selection.isEmpty() ||
+        (entry.documentSession.isEmpty() && entry.canvasHistory.isEmpty()))
+        return false;
+    return presentPinnedImageOnCanvas(
+        background, screen, nativeGeometry, background.size(), QRectF(entry.selection.selection),
+        {}, {}, 1.0, entry.originalContent, {}, std::move(completion), {}, {},
+        snow_shot::storage::PinnedWindowCreationSource::ScreenshotHistory, &entry);
 }
 
 void ScreenshotSelectionExportUiServices::restorePersistedWindows() {

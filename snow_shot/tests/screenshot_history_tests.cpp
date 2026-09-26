@@ -945,6 +945,38 @@ void multipleValidEntriesCanBeTraversed(const QString& root) {
             "direct return did not restore the live endpoint");
 }
 
+void transientMcpDocumentPreservesUndoAndSources(const QString& root) {
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("A"), QStringLiteral("Primary"),
+                                   QRect(0, 0, 200, 100),
+                                   solidImage(QSize(200, 100), qRgb(30, 60, 90))));
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRect(10, 10, 120, 70));
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotHistoryService history({displays, runtime, selection, interaction, intelligent},
+                                     root);
+    require(!runtime
+                 .applyAnnotationTransaction(
+                     R"({"version":1,"operations":[{"type":"rectangle","bounds":[20,20,30,40]}]})")
+                 .isEmpty(),
+            "transient document fixture must contain a real undoable edit");
+    auto entry = takeSnapshot(history.snapshotCurrent(false), "transient snapshot must succeed");
+    const auto originalSelection = entry.selection;
+    require(runtime.undo(), "fixture must change live history before importing");
+    selection.setSelectionRect(QRect(0, 0, 20, 20));
+    require(history.presentTransientEntry(entry),
+            "transient document must present without persistence");
+    require(selection.pixelSelection() == originalSelection.selection && runtime.canUndo() &&
+                !runtime.canRedo(),
+            "transient presentation must restore exact selection and full undo history");
+    require(runtime.undo() && runtime.redo(), "imported edit history must remain usable");
+    require(historyDirectory(root).entryList(QDir::Dirs | QDir::NoDotAndDotDot).isEmpty(),
+            "presenting an isolated document must not publish a history record");
+}
+
 void committedSelectionFollowsHistory(const QString& root) {
     ScreenshotDisplaySession displays;
     displays.appendDisplay(display(QStringLiteral("A"), QStringLiteral("Primary"),
@@ -3709,6 +3741,11 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--mcp-transient-only"))) {
+        transientMcpDocumentPreservesUndoAndSources(temporary.path());
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--region-shapes-only"))) {
         rectangularRegionOperationsUseSmartSelection();
         customRegionInputTransactions();

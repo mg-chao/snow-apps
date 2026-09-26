@@ -2,6 +2,7 @@
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/platform/minizippath.h"
+#include "snow_shot/customaimodelconfiguration.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -363,6 +364,64 @@ void applySnapshotReplacesConfiguration(const QTemporaryDir& temporary) {
 }
 } // namespace
 
+void mcpCredentialRedactionAndRevision(const QTemporaryDir& temporary) {
+    const QString key = QStringLiteral("api_configuration/custom_models");
+    const snow_shot::CustomAiModelConfiguration model{
+        QStringLiteral("11111111-1111-4111-8111-111111111111"),
+        QStringLiteral("Example"),
+        QStringLiteral("https://example.invalid/v1"),
+        QStringLiteral("private-test-secret"),
+        QStringLiteral("model"),
+        false};
+    const QMap<QString, QJsonValue> original{{key, snow_shot::customAiModelsToJson({model})}};
+    const auto path = temporary.filePath(QStringLiteral("mcp-redacted.zip"));
+    require(storage::ConfigurationArchive::write(
+                path, original, storage::ConfigurationStore::currentSchemaVersion(), true)
+                .isEmpty(),
+            "MCP archive export must succeed with redacted credentials");
+    auto imported = storage::ConfigurationArchive::read(path);
+    require(imported.isValid() && imported.redactedCredentialIds.contains(model.id),
+            "redacted archives identify omitted credentials");
+    require(snow_shot::customAiModelsFromJson(imported.values.value(key)).first().apiKey.isEmpty(),
+            "an MCP archive must not contain the stored credential");
+    imported.preserveOmittedCredentials(original);
+    require(snow_shot::customAiModelsFromJson(imported.values.value(key)).first().apiKey ==
+                model.apiKey,
+            "redacted import must preserve matching existing credentials");
+    auto unrelated = model;
+    unrelated.baseUrl = QStringLiteral("https://other.invalid/v1");
+    imported = storage::ConfigurationArchive::read(path);
+    imported.preserveOmittedCredentials({{key, snow_shot::customAiModelsToJson({unrelated})}});
+    require(snow_shot::customAiModelsFromJson(imported.values.value(key)).first().apiKey.isEmpty(),
+            "redacted imports must not copy credentials to a different provider URL");
+
+    storage::ConfigurationStore store(temporary.filePath(QStringLiteral("mcp-cas.json")), true,
+                                      true);
+    const auto revision = store.revision();
+    bool conflict = true;
+    require(store.mutateIfRevision(
+                revision, [&] { return store.setValue(QStringLiteral("mcp/enabled"), true); },
+                &conflict) &&
+                !conflict,
+            "revision transaction permits nested runtime backend writes");
+    require(store.revision() > revision, "semantic configuration writes advance the revision");
+    bool called = false;
+    require(!store.mutateIfRevision(
+                revision,
+                [&] {
+                    called = true;
+                    return true;
+                },
+                &conflict) &&
+                conflict && !called,
+            "stale revisions must reject before any runtime side effect");
+    const auto current = store.revision();
+    require(store.mutateIfRevision(
+                current, [&] { return store.setValue(QStringLiteral("mcp/enabled"), true); }) &&
+                store.revision() == current,
+            "no-op writes preserve revision");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
@@ -378,5 +437,6 @@ int main(int argc, char** argv) {
     writeRejectsUnwritableTargets(temporary);
     unicodePathsRoundTrip();
     applySnapshotReplacesConfiguration(temporary);
+    mcpCredentialRedactionAndRevision(temporary);
     return 0;
 }

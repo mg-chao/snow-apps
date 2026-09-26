@@ -158,6 +158,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         thumbnailHost = anchorOverlay;
         thumbnailHost->setScrollingTrimModel(trimRange);
         active = true;
+        emit owner.stateChanged();
         ++generation;
         snow_shot::diagnostics::logEvent(
             QStringLiteral("snow_shot.scrolling"), QStringLiteral("scrolling.started"),
@@ -229,6 +230,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         if (pipeline)
             pipeline->reset(generation);
         latestOutputSize = {};
+        emit owner.stateChanged();
         *trimRange = {};
         cachedSnapshot = {};
         cachedSnapshotTop = -1;
@@ -271,6 +273,7 @@ struct ScreenshotScrollingCaptureController::Impl {
                  {QStringLiteral("restore_presentation"), restoreScreenshotPresentation}});
         }
         active = false;
+        emit owner.stateChanged();
         movement.end();
         exportPaused = false;
         ++generation;
@@ -412,6 +415,7 @@ struct ScreenshotScrollingCaptureController::Impl {
             logScrollingEvent("scrolling.first_preview", generation, fields);
         }
         latestOutputSize = result.sourceSize;
+        emit owner.stateChanged();
         cachedSnapshot = {};
         cachedSnapshotTop = -1;
         cachedSnapshotBottom = -1;

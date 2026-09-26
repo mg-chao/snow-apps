@@ -560,6 +560,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     quint64 m_recaptureGeneration = 0;
     bool m_recaptureBusy = false;
     QString m_pendingHistoryEditRecordId;
+    std::optional<ScreenshotHistoryEntry> m_pendingMcpDocument;
+    std::function<void(bool)> m_pendingMcpDocumentCompletion;
     quint64 m_imageExportGeneration = 0;
     QSet<quint64> m_activeImageExports;
     std::function<void()> m_cancelSaveDialog;
@@ -1404,6 +1406,9 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             },
             [this]() {
                 m_pendingHistoryEditRecordId.clear();
+                m_pendingMcpDocument.reset();
+                if (auto done = std::exchange(m_pendingMcpDocumentCompletion, {}))
+                    done(false);
                 m_mcpOptions = {};
                 emit owner.mcpCaptureTerminated();
                 resetPendingCaptureRequest();
@@ -1471,6 +1476,31 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {
+    if (m_pendingMcpDocument) {
+        const auto entry = std::exchange(m_pendingMcpDocument, {});
+        const bool ok = m_historyService && m_historyService->presentTransientEntry(*entry);
+        if (ok) {
+            if (!entry->documentSession.isEmpty())
+                static_cast<void>(m_canvasRuntime.restoreDocumentSession(entry->documentSession));
+            if ((!entry->recognitionResults.isEmpty() || !entry->originalContent.isEmpty()) &&
+                ensureRecognitionFeature())
+                m_ocrController->seedImportedResults(entry->recognitionResults,
+                                                     entry->originalContent);
+            if (!entry->tool.isEmpty()) {
+                QString toolError;
+                static_cast<void>(owner.mcpSetTool(entry->tool, &toolError));
+            }
+            m_captureState.sessionState = ScreenshotSessionState::Editing;
+            m_presentationServices->updateOverlayState();
+            m_presentationServices->showToolbar();
+            m_presentationServices->showSelectionToolbar();
+            emit owner.mcpCapturePresented();
+            emit owner.mcpCanvasChanged();
+        }
+        if (auto done = std::exchange(m_pendingMcpDocumentCompletion, {}))
+            done(ok);
+        return;
+    }
     if (!m_mcpOptions.isEmpty()) {
         QRectF rect = m_geometry.canvasBounds();
         const auto target = m_mcpOptions.value(QStringLiteral("target")).toString();
@@ -2023,6 +2053,7 @@ void ScreenshotController::Impl::finishRecapture(bool succeeded, bool reportFail
 
     if (succeeded) {
         ++m_captureEpoch;
+        emit owner.mcpCanvasChanged();
         invalidateRecognitionSession();
         if (m_autoFilterController != nullptr) {
             m_autoFilterController->resetSession();
@@ -2032,6 +2063,7 @@ void ScreenshotController::Impl::finishRecapture(bool succeeded, bool reportFail
         }
         return;
     }
+    emit owner.mcpCanvasChanged();
     if (reportFailure && m_messages != nullptr &&
         m_captureState.sessionState == ScreenshotSessionState::Editing) {
         m_messages->error(
@@ -5026,6 +5058,11 @@ bool ScreenshotController::blocksApplicationUpdate() const {
              m_impl->m_screenRecordingController->isRecording()));
 }
 
+bool ScreenshotController::captureAcquisitionActive() const {
+    return m_impl->m_captureState.captureInProgress ||
+           (m_impl->m_captureWorkflow && m_impl->m_captureWorkflow->recaptureInProgress());
+}
+
 bool ScreenshotController::beginGlobalMouseCapture(
     snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
     const QPointF& position, snow_shot::presentation::GlobalMouseCoordinateSpace space) {
@@ -5388,10 +5425,7 @@ QJsonObject ScreenshotController::mcpState() const {
                          {QStringLiteral("font_family"), state.textStyle.fontFamily},
                          {QStringLiteral("mixed"), static_cast<qint64>(state.textStyleMixed)}}}};
     });
-    const auto selected = QJsonDocument::fromJson(s.m_canvasRuntime.serializeSelectedDrawTemplate())
-                              .object()
-                              .value(QStringLiteral("selectedIds"))
-                              .toArray();
+    const auto selected = s.m_canvasRuntime.selectedElementIds();
     QJsonObject actions;
     const bool ready = s.m_selection.hasPixelSelection() && !s.m_captureState.captureInProgress &&
                        !s.m_interaction.inactive();
@@ -5667,6 +5701,96 @@ bool ScreenshotController::mcpPinArtifact(std::shared_ptr<ScreenshotExportArtifa
     return m_impl->m_selectionExportUiServices->presentPinnedArtifact(
         *request, std::move(artifact),
         [completion = std::move(completion)](bool ok, QImage) { completion(ok); });
+}
+
+bool ScreenshotController::mcpPresentDocument(ScreenshotHistoryEntry entry,
+                                              std::function<void(bool)> completion) {
+    if (entry.displays.isEmpty() || entry.canvasHistory.isEmpty() || !m_impl->canBeginCapture() ||
+        m_impl->m_pendingMcpDocument)
+        return false;
+    m_impl->m_pendingMcpDocument = std::move(entry);
+    m_impl->m_pendingMcpDocumentCompletion = std::move(completion);
+    QString error;
+    if (mcpBegin({{QStringLiteral("presentation"), QStringLiteral("visible")}}, &error))
+        return true;
+    m_impl->m_pendingMcpDocument.reset();
+    m_impl->m_pendingMcpDocumentCompletion = {};
+    return false;
+}
+
+ScreenRecordingController* ScreenshotController::automationRecordingController() {
+    return m_impl->ensureRecordingFeature() ? m_impl->m_screenRecordingController.get() : nullptr;
+}
+
+ScreenshotQrRecognitionPort* ScreenshotController::mcpQrRecognition() {
+    return m_impl->ensureRecognitionFeature() ? m_impl->m_qrRecognition.get() : nullptr;
+}
+
+void ScreenshotController::mcpPinnedImage(const QString& id,
+                                          std::function<void(QImage, QString)> completion) {
+    auto* window = m_impl->m_groupManager ? m_impl->m_groupManager->liveWindow(id) : nullptr;
+    auto artifact = window ? window->automationArtifact() : nullptr;
+    if (!artifact) {
+        completion({}, QStringLiteral("pinned_not_available"));
+        return;
+    }
+    const auto done = std::make_shared<std::function<void(QImage, QString)>>(std::move(completion));
+    if (!artifact->requestImage(this, [artifact, done](ScreenshotExportImageResult result) {
+            (*done)(std::move(result.image), std::move(result.error));
+        }))
+        (*done)({}, QStringLiteral("queue_full"));
+}
+
+bool ScreenshotController::mcpPinContent(ScreenshotClipboardContent content,
+                                         std::function<void(bool)> completion) {
+    if (!content.isValid() || !m_impl->ensureExportFeature())
+        return false;
+    QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return false;
+    const qreal scale = content.isFormattedText() ? content.formattedTextDevicePixelRatio
+                                                  : screen->devicePixelRatio();
+    const auto fit = snow_shot::presentation::fitPinnedImageOnScreen(
+        *screen, snow_shot::presentation::pinnedImageWindowSize(content.image, scale),
+        snow_shot::storage::PinToScreenSettings().autoResizeWindow());
+    return fit.valid &&
+           m_impl->m_selectionExportUiServices->presentPinnedImage(
+               content.image, screen, fit.nativeGeometry, fit.initialWindowSize,
+               std::move(content.formattedDocument), content.plainText,
+               content.formattedTextDevicePixelRatio, std::move(content.originalContent), {},
+               [completion = std::move(completion)](bool ok, QImage) {
+                   if (completion)
+                       completion(ok);
+               });
+}
+
+bool ScreenshotController::mcpPinDocument(ScreenshotHistoryEntry entry, QImage background,
+                                          std::function<void(bool)> completion) {
+    if (background.isNull() || entry.selection.selection.isEmpty() ||
+        (entry.documentSession.isEmpty() && entry.canvasHistory.isEmpty()) ||
+        !m_impl->ensureExportFeature())
+        return false;
+    QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return false;
+    const auto& selection = entry.selection;
+    const ScreenshotResultStyle style{selection.radius, selection.shadowWidth,
+                                      selection.shadowColor, selection.region};
+    const auto layout =
+        ScreenshotResultCompositor::layoutForContent(selection.selection.size(), style);
+    const auto fit = snow_shot::presentation::fitPinnedImageOnScreen(
+        *screen, layout.outputRect.size(),
+        snow_shot::storage::PinToScreenSettings().autoResizeWindow());
+    return fit.valid && m_impl->m_selectionExportUiServices->presentPinnedDocument(
+                            background, screen, fit.nativeGeometry, entry,
+                            [completion = std::move(completion)](bool ok, QImage) {
+                                if (completion)
+                                    completion(ok);
+                            });
 }
 
 #include "screenshotmcpcommands_p.h"

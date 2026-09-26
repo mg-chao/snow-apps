@@ -10,7 +10,7 @@ use interprocess::local_socket::{
 };
 use serde_json::Value;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     io::Read,
     path::PathBuf,
@@ -21,7 +21,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::{Mutex as AsyncMutex, oneshot},
+    sync::{Mutex as AsyncMutex, broadcast, oneshot},
     task::AbortHandle,
     time::timeout,
 };
@@ -46,6 +46,12 @@ pub enum AppClientError {
         "The local connection closed; the mutation was not replayed. Refresh the session state before editing."
     )]
     Disconnected,
+    #[error("Snow Shot request capacity is full; retry after a pending request finishes")]
+    QueueFull,
+    #[error("Snow Shot request exceeds the maximum JSON size")]
+    RequestTooLarge,
+    #[error("This Snow Shot application does not support resource notifications")]
+    EventsUnavailable,
 }
 impl AppClientError {
     pub fn code(&self) -> &'static str {
@@ -56,6 +62,9 @@ impl AppClientError {
             Self::Timeout => "timeout",
             Self::Canceled => "canceled",
             Self::Disconnected => "disconnected",
+            Self::QueueFull => "queue_full",
+            Self::RequestTooLarge => "invalid_parameters",
+            Self::EventsUnavailable => "unsupported_capability",
         }
     }
 }
@@ -63,16 +72,23 @@ impl AppClientError {
 pub struct AppReply {
     pub response: AppResponse,
     pub attachment: Vec<u8>,
+    pub json_bytes: usize,
+}
+#[derive(Clone, Debug)]
+pub struct AppEvent {
+    pub uri: String,
 }
 
 type ReplySender = oneshot::Sender<Result<AppReply, AppClientError>>;
 #[derive(Default)]
 struct Requests {
     pending: HashMap<String, ReplySender>,
+    controls: HashSet<String>,
     retired: VecDeque<String>,
 }
 impl Requests {
     fn retire(&mut self, id: String) {
+        self.controls.remove(&id);
         if self.retired.len() >= 64 {
             self.retired.pop_front();
         }
@@ -84,6 +100,8 @@ struct Connection {
     requests: Mutex<Requests>,
     alive: AtomicBool,
     reader: Mutex<Option<AbortHandle>>,
+    cancel_requests: bool,
+    events_supported: bool,
 }
 impl Connection {
     async fn send(&self, request: &AppRequest) -> Result<(), AppClientError> {
@@ -101,6 +119,7 @@ impl Connection {
     fn abort_requests(&self) {
         self.alive.store(false, Ordering::Release);
         if let Ok(mut requests) = self.requests.lock() {
+            requests.controls.clear();
             for (_, sender) in requests.pending.drain() {
                 let _ = sender.send(Err(AppClientError::Disconnected));
             }
@@ -128,6 +147,7 @@ struct PendingGuard {
     id: String,
     session: Option<String>,
     armed: bool,
+    legacy: bool,
 }
 impl Drop for PendingGuard {
     fn drop(&mut self) {
@@ -139,6 +159,9 @@ impl Drop for PendingGuard {
         {
             requests.retire(self.id.clone());
         }
+        if !self.connection.cancel_requests && !self.legacy {
+            return;
+        }
         let Ok(id) = request_id() else { return };
         if let Ok(mut requests) = self.connection.requests.lock() {
             requests.retire(id.clone());
@@ -146,7 +169,12 @@ impl Drop for PendingGuard {
         let cancel = AppRequest {
             protocol: PROTOCOL.into(),
             request_id: id,
-            method: "screenshot_cancel".into(),
+            method: if self.connection.cancel_requests {
+                "snow_shot_request_cancel"
+            } else {
+                "screenshot_cancel"
+            }
+            .into(),
             session_id: self.session.clone(),
             expected_revision: None,
             idempotency_key: String::new(),
@@ -163,6 +191,9 @@ pub struct AppClient {
     descriptor_path: PathBuf,
     connection: Arc<AsyncMutex<Option<Arc<Connection>>>>,
     timeout: Duration,
+    launch_enabled: bool,
+    launch_attempted: Arc<AsyncMutex<bool>>,
+    events: broadcast::Sender<AppEvent>,
 }
 impl AppClient {
     pub fn new() -> Self {
@@ -172,6 +203,72 @@ impl AppClient {
                 .unwrap_or_else(default_descriptor_path),
             connection: Arc::new(AsyncMutex::new(None)),
             timeout: Duration::from_secs(65),
+            launch_enabled: false,
+            launch_attempted: Arc::new(AsyncMutex::new(false)),
+            events: broadcast::channel(128).0,
+        }
+    }
+    pub fn with_launch_app(mut self, enabled: bool) -> Self {
+        self.launch_enabled = enabled;
+        self
+    }
+    pub fn subscribe_events(&self) -> broadcast::Receiver<AppEvent> {
+        self.events.subscribe()
+    }
+    pub async fn connect_events(&self) -> Result<(), AppClientError> {
+        if self.connect_or_launch().await?.events_supported {
+            Ok(())
+        } else {
+            Err(AppClientError::EventsUnavailable)
+        }
+    }
+    async fn connect_or_launch(&self) -> Result<Arc<Connection>, AppClientError> {
+        match self.connect().await {
+            Err(AppClientError::Unavailable) if self.launch_enabled => {}
+            result => return result,
+        }
+        let mut attempted = self.launch_attempted.lock().await;
+        if *attempted {
+            return self.connect().await;
+        }
+        *attempted = true;
+        let executable = std::env::current_exe().map_err(|_| AppClientError::Unavailable)?;
+        let application = executable
+            .parent()
+            .ok_or(AppClientError::Unavailable)?
+            .join(if cfg!(windows) {
+                "snow_shot.exe"
+            } else {
+                "snow_shot"
+            });
+        if !application.is_file() {
+            return Err(AppClientError::Unavailable);
+        }
+        let mut command = std::process::Command::new(application);
+        command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000); // No helper console window.
+        }
+        let child = command.spawn().map_err(|_| AppClientError::Unavailable)?;
+        // Reap the child without tying the application lifetime to this bridge.
+        std::thread::spawn(move || {
+            let mut child = child;
+            let _ = child.wait();
+        });
+        // The application reads its saved MCP preference. Never override it or replay requests.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match self.connect().await {
+                Err(AppClientError::Unavailable) if tokio::time::Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(100)).await
+                }
+                result => return result,
+            }
         }
     }
     async fn connect(&self) -> Result<Arc<Connection>, AppClientError> {
@@ -225,7 +322,7 @@ impl AppClient {
                 session_id: None,
                 expected_revision: None,
                 idempotency_key: String::new(),
-                params: serde_json::json!({"token":descriptor.token,"client_protocol":PROTOCOL}),
+                params: serde_json::json!({"token":descriptor.token,"client_protocol":PROTOCOL,"capabilities":["events","cancel_request"]}),
             };
             write_frame_async(&mut stream, &handshake, &[])
                 .await
@@ -235,24 +332,30 @@ impl AppClient {
                 .map_err(|_| AppClientError::Protocol)?
                 .ok_or(AppClientError::Protocol)?;
             let response: AppResponse =
-                serde_json::from_slice(&frame.json).map_err(|_| AppClientError::Protocol)?;
+                serde_json::from_value(frame.value).map_err(|_| AppClientError::Protocol)?;
             validate_response(&response, &handshake.request_id, frame.attachment.len())?;
             if !response.ok
                 || response.result.get("protocol").and_then(Value::as_str) != Some(PROTOCOL)
             {
                 return Err(AppClientError::Protocol);
             }
-            Ok(stream)
+            let capabilities=response.result.get("capabilities").and_then(Value::as_array);
+            let supports=|name:&str|capabilities.is_some_and(|caps|caps.iter().any(|v|v.as_str()==Some(name)));
+            Ok((stream,supports("events"),supports("cancel_request")))
         })
         .await
         .map_err(|_| AppClientError::Timeout)??;
+        let (stream, events_supported, cancel_requests) = stream;
         let (mut reader, writer) = stream.split();
         let connection = Arc::new(Connection {
             writer: AsyncMutex::new(writer),
             requests: Mutex::new(Requests::default()),
             alive: AtomicBool::new(true),
             reader: Mutex::new(None),
+            cancel_requests,
+            events_supported,
         });
+        let events = self.events.clone();
         let weak = Arc::downgrade(&connection);
         let task = tokio::spawn(async move {
             loop {
@@ -271,7 +374,29 @@ impl AppClient {
                 else {
                     break;
                 };
-                let Ok(response) = serde_json::from_slice::<AppResponse>(&frame.json) else {
+                if frame.value.get("kind").and_then(Value::as_str) == Some("event") {
+                    if !events_supported
+                        || !frame.attachment.is_empty()
+                        || frame.value.get("protocol").and_then(Value::as_str) != Some(PROTOCOL)
+                        || frame.value.get("event").and_then(Value::as_str)
+                            != Some("resource_changed")
+                    {
+                        break;
+                    }
+                    let Some(uri) = frame
+                        .value
+                        .get("uri")
+                        .and_then(Value::as_str)
+                        .filter(|u| u.starts_with("snow-shot://") && u.len() <= 1024)
+                    else {
+                        break;
+                    };
+                    let _ = events.send(AppEvent {
+                        uri: uri.to_owned(),
+                    });
+                    continue;
+                }
+                let Ok(response) = serde_json::from_value::<AppResponse>(frame.value) else {
                     break;
                 };
                 if validate_response(&response, &response.request_id, frame.attachment.len())
@@ -286,9 +411,11 @@ impl AppClient {
                     break;
                 };
                 if let Some(sender) = requests.pending.remove(&response.request_id) {
+                    requests.controls.remove(&response.request_id);
                     let _ = sender.send(Ok(AppReply {
                         response,
                         attachment: frame.attachment,
+                        json_bytes: frame.json_bytes,
                     }));
                 } else if let Some(index) = requests
                     .retired
@@ -300,6 +427,9 @@ impl AppClient {
                     break;
                 }
             }
+            // Owned handles expire on disconnect. Invalidate subscriptions without
+            // transmitting private state, even when no request was pending.
+            let _ = events.send(AppEvent { uri: String::new() });
             if let Some(connection) = weak.upgrade() {
                 connection.abort_requests();
             }
@@ -334,10 +464,17 @@ impl AppClient {
             idempotency_key: key,
             params,
         };
+        if serde_json::to_vec(&request)
+            .map_err(|_| AppClientError::Protocol)?
+            .len()
+            > crate::wire::MAX_REQUEST_JSON_BYTES
+        {
+            return Err(AppClientError::RequestTooLarge);
+        }
         // Only connection establishment may be retried. No application request is replayed.
         let connection = tokio::select! {
             _=canceled.cancelled()=>return Err(AppClientError::Canceled),
-            result=async {match self.connect().await {Err(AppClientError::Unavailable)=>self.connect().await,result=>result}}=>result?,
+            result=self.connect_or_launch()=>result?,
         };
         let (sender, receiver) = oneshot::channel();
         {
@@ -345,8 +482,14 @@ impl AppClient {
                 .requests
                 .lock()
                 .map_err(|_| AppClientError::Disconnected)?;
-            if requests.pending.len() >= 8 {
-                return Err(AppClientError::Unavailable);
+            let control = is_control(method);
+            if (control && requests.controls.len() >= 4)
+                || (!control && requests.pending.len() - requests.controls.len() >= 8)
+            {
+                return Err(AppClientError::QueueFull);
+            }
+            if control {
+                requests.controls.insert(id.clone());
             }
             requests.pending.insert(id.clone(), sender);
         }
@@ -355,6 +498,7 @@ impl AppClient {
             id,
             session: session_id,
             armed: true,
+            legacy: method.starts_with("screenshot_") || method == "snow_shot_status",
         };
         connection.send(&request).await?;
         let reply = tokio::select! {
@@ -362,8 +506,31 @@ impl AppClient {
             result=timeout(self.timeout,receiver)=>result.map_err(|_|AppClientError::Timeout)?.map_err(|_|AppClientError::Disconnected)?,
         };
         guard.armed = false;
-        reply
+        let reply = reply?;
+        if (method == "snow_shot_artifact_read" && reply.attachment.len() > 262144)
+            || (method != "snow_shot_artifact_read"
+                && !reply.attachment.is_empty()
+                && reply.response.attachment_mime.as_deref() != Some("image/png"))
+        {
+            return Err(AppClientError::Protocol);
+        }
+        Ok(reply)
     }
+}
+fn is_control(method: &str) -> bool {
+    matches!(
+        method,
+        "snow_shot_status"
+            | "screenshot_state"
+            | "screenshot_cancel"
+            | "screenshot_operation"
+            | "snow_shot_app_status"
+            | "snow_shot_document_state"
+            | "snow_shot_job_get"
+            | "snow_shot_job_cancel"
+            | "snow_shot_recording_state"
+            | "snow_shot_recording_control"
+    )
 }
 fn validate_descriptor(d: &Descriptor) -> Result<(), AppClientError> {
     if d.protocol != PROTOCOL
@@ -400,11 +567,26 @@ fn validate_response(r: &AppResponse, id: &str, attachment: usize) -> Result<(),
         || r.request_id != id
         || id.is_empty()
         || r.attachment_length != attachment
-        || (attachment > 0 && r.attachment_mime.as_deref() != Some("image/png"))
+        || !r.result.is_object()
+        || (attachment > 0 && !r.attachment_mime.as_deref().is_some_and(valid_mime))
     {
         return Err(AppClientError::Protocol);
     }
     Ok(())
+}
+fn valid_mime(value: &str) -> bool {
+    let essence = value.split(';').next().unwrap_or_default().trim();
+    value.len() <= 128
+        && value.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
+        && essence.split_once('/').is_some_and(|(kind, subtype)| {
+            !kind.is_empty()
+                && !subtype.is_empty()
+                && !subtype.contains('/')
+                && kind
+                    .bytes()
+                    .chain(subtype.bytes())
+                    .all(|b| b.is_ascii_alphanumeric() || b"!#$&^_.+-".contains(&b))
+        })
 }
 fn request_id() -> Result<String, AppClientError> {
     let mut bytes = [0u8; 16];
@@ -457,6 +639,13 @@ mod tests {
     fn fixture(
         handler: impl FnOnce(Stream) + Send + 'static,
     ) -> (AppClient, std::thread::JoinHandle<()>, PathBuf) {
+        fixture_with_capabilities(handler, &[])
+    }
+    fn fixture_with_capabilities(
+        handler: impl FnOnce(Stream) + Send + 'static,
+        capabilities: &[&str],
+    ) -> (AppClient, std::thread::JoinHandle<()>, PathBuf) {
+        let capabilities: Vec<String> = capabilities.iter().map(|s| (*s).to_owned()).collect();
         let id = request_id().unwrap();
         let directory = std::env::temp_dir().join(format!("snow-shot-mcp-test-{id}"));
         fs::create_dir(&directory).unwrap();
@@ -491,6 +680,9 @@ mod tests {
             descriptor_path: path,
             connection: Arc::new(AsyncMutex::new(None)),
             timeout: Duration::from_millis(250),
+            launch_enabled: false,
+            launch_attempted: Arc::new(AsyncMutex::new(false)),
+            events: broadcast::channel(128).0,
         };
         let thread = std::thread::spawn(move || {
             let mut stream = listener.accept().unwrap();
@@ -498,7 +690,9 @@ mod tests {
             let hello: AppRequest = serde_json::from_slice(&frame.json).unwrap();
             assert_eq!(hello.method, "handshake");
             assert_eq!(hello.params["token"], "a".repeat(64));
-            write_frame(&mut stream, &response(&hello), &[]).unwrap();
+            let mut reply = response(&hello);
+            reply.result["capabilities"] = json!(capabilities);
+            write_frame(&mut stream, &reply, &[]).unwrap();
             handler(stream);
         });
         (client, thread, directory)
@@ -549,6 +743,144 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[tokio::test]
+    async fn status_and_cancel_capacity_survive_work_saturation() {
+        let (filled_tx, filled_rx) = oneshot::channel();
+        let (mut client, thread, dir) = fixture(move |mut stream| {
+            let work: Vec<_> = (0..8).map(|_| request(&mut stream)).collect();
+            filled_tx.send(()).unwrap();
+            let status = request(&mut stream);
+            assert_eq!(status.method, "snow_shot_status");
+            write_frame(&mut stream, &response(&status), &[]).unwrap();
+            let cancel = request(&mut stream);
+            assert_eq!(cancel.method, "screenshot_cancel");
+            write_frame(&mut stream, &response(&cancel), &[]).unwrap();
+            for item in work {
+                write_frame(&mut stream, &response(&item), &[]).unwrap();
+            }
+        });
+        client.timeout = Duration::from_secs(5);
+        let mut workers = Vec::new();
+        for _ in 0..8 {
+            let client = client.clone();
+            workers.push(tokio::spawn(async move {
+                client
+                    .request(
+                        "screenshot_render",
+                        Some("s".into()),
+                        Some(1),
+                        json!({}),
+                        CancellationToken::new(),
+                    )
+                    .await
+            }));
+        }
+        filled_rx.await.unwrap();
+        assert!(matches!(
+            client
+                .request(
+                    "screenshot_render",
+                    Some("s".into()),
+                    Some(1),
+                    json!({}),
+                    CancellationToken::new()
+                )
+                .await,
+            Err(AppClientError::QueueFull)
+        ));
+        for method in ["snow_shot_status", "screenshot_cancel"] {
+            assert!(
+                client
+                    .request(method, None, None, json!({}), CancellationToken::new())
+                    .await
+                    .is_ok()
+            );
+        }
+        for worker in workers {
+            assert!(worker.await.unwrap().is_ok());
+        }
+        tokio::task::spawn_blocking(move || thread.join().unwrap())
+            .await
+            .unwrap();
+        drop(client);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn oversized_request_fails_before_discovery_or_connection() {
+        let mut client = AppClient::new();
+        client.descriptor_path =
+            std::env::temp_dir().join(format!("absent-{}", request_id().unwrap()));
+        assert!(matches!(
+            client
+                .request(
+                    "snow_shot_settings_update",
+                    None,
+                    Some(1),
+                    json!({"values":{"text":"x".repeat(crate::wire::MAX_REQUEST_JSON_BYTES)}}),
+                    CancellationToken::new()
+                )
+                .await,
+            Err(AppClientError::RequestTooLarge)
+        ));
+    }
+    #[tokio::test]
+    async fn negotiated_events_interleave_with_responses_and_cancel_new_domain_requests() {
+        let (client, thread, dir) = fixture_with_capabilities(
+            |mut stream| {
+                let pending = request(&mut stream);
+                assert_eq!(pending.method, "snow_shot_document_render");
+                write_frame(&mut stream,&json!({"protocol":PROTOCOL,"kind":"event","event":"resource_changed","uri":"snow-shot://documents/one","attachment_length":0}),&[]).unwrap();
+                let mut canceled = false;
+                for _ in 0..2 {
+                    let control = request(&mut stream);
+                    if control.method == "snow_shot_request_cancel" {
+                        assert_eq!(control.params["request_id"], pending.request_id);
+                        canceled = true;
+                        write_frame(&mut stream, &response(&pending), &[]).unwrap();
+                    } else {
+                        assert_eq!(control.method, "snow_shot_status");
+                    }
+                    write_frame(&mut stream, &response(&control), &[]).unwrap();
+                }
+                assert!(canceled);
+            },
+            &["events", "cancel_request"],
+        );
+        let mut events = client.subscribe_events();
+        assert!(matches!(
+            client
+                .request(
+                    "snow_shot_document_render",
+                    None,
+                    Some(1),
+                    json!({"document_id":"one"}),
+                    CancellationToken::new()
+                )
+                .await,
+            Err(AppClientError::Timeout)
+        ));
+        assert_eq!(
+            events.recv().await.unwrap().uri,
+            "snow-shot://documents/one"
+        );
+        assert!(
+            client
+                .request(
+                    "snow_shot_status",
+                    None,
+                    None,
+                    json!({}),
+                    CancellationToken::new()
+                )
+                .await
+                .is_ok()
+        );
+        tokio::task::spawn_blocking(move || thread.join().unwrap())
+            .await
+            .unwrap();
+        drop(client);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
     async fn timeout_propagates_request_cancellation() {
         let (client, thread, dir) = fixture(|mut stream| {
             let pending = request(&mut stream);
@@ -576,6 +908,17 @@ mod tests {
     }
     #[test]
     fn descriptor_and_protocol_reject_invalid_values() {
+        assert!(valid_mime("application/json"));
+        assert!(valid_mime("text/plain; charset=\"utf-8\""));
+        for invalid in [
+            "image",
+            "text/",
+            "/json",
+            "a/b/c",
+            "text/plain\r\nInjected:yes",
+        ] {
+            assert!(!valid_mime(invalid));
+        }
         let mut d = Descriptor {
             protocol: PROTOCOL.into(),
             socket: "snow-shot-mcp-test".into(),

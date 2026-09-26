@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
+#[path = "domain_schemas.rs"]
+pub mod domains;
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -128,7 +130,23 @@ enum Format {
     Jpeg,
     Webp,
     Avif,
+    Jxl,
+    Bmp,
     Pdf,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum CompressionLevel {
+    Low,
+    Medium,
+    High,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum PdfPageSize {
+    ImageSize,
+    A4Portrait,
+    A4Landscape,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -155,6 +173,13 @@ struct Save {
     format: Option<Format>,
     #[serde(default)]
     quality: Option<u32>,
+    #[serde(default)]
+    compression_level: Option<CompressionLevel>,
+    #[serde(default)]
+    pdf_page_size: Option<PdfPageSize>,
+    #[serde(default)]
+    #[schemars(length(max = 1024))]
+    pdf_title: Option<String>,
 }
 #[derive(Deserialize, JsonSchema)]
 struct Finish {
@@ -170,6 +195,13 @@ struct Finish {
     format: Option<Format>,
     #[serde(default)]
     quality: Option<u32>,
+    #[serde(default)]
+    compression_level: Option<CompressionLevel>,
+    #[serde(default)]
+    pdf_page_size: Option<PdfPageSize>,
+    #[serde(default)]
+    #[schemars(length(max = 1024))]
+    pdf_title: Option<String>,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -197,6 +229,13 @@ struct Direct {
     format: Option<Format>,
     #[serde(default)]
     quality: Option<u32>,
+    #[serde(default)]
+    compression_level: Option<CompressionLevel>,
+    #[serde(default)]
+    pdf_page_size: Option<PdfPageSize>,
+    #[serde(default)]
+    #[schemars(length(max = 1024))]
+    pdf_title: Option<String>,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -518,6 +557,8 @@ enum RecognitionAction {
     SplitCells,
     ResetTable,
     ShowOriginal,
+    Undo,
+    Redo,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -598,6 +639,56 @@ enum StyleTarget {
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+enum ArrowShaftType {
+    Plain,
+    Tapered,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum TextHorizontalAlign {
+    Left,
+    Center,
+    Right,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum TextVerticalAlign {
+    Top,
+    Center,
+    Bottom,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SerialType {
+    OutlinedCircle,
+    SolidCircle,
+    OutlinedSquare,
+    SolidSquare,
+    Circle,
+}
+macro_rules! bounded_style_number {
+    ($name:ident, $ty:ty, $kind:literal, $minimum:expr, $maximum:expr) => {
+        struct $name($ty);
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D:serde::Deserializer<'de>>(deserializer:D)->Result<Self,D::Error> {
+                let value=<$ty>::deserialize(deserializer)?;
+                if ($minimum..=$maximum).contains(&value) { Ok(Self(value)) }
+                else { Err(serde::de::Error::custom(concat!(stringify!($name), " is outside its supported range"))) }
+            }
+        }
+        impl JsonSchema for $name {
+            fn schema_name()->std::borrow::Cow<'static,str>{ stringify!($name).into() }
+            fn json_schema(_: &mut schemars::SchemaGenerator)->schemars::Schema {
+                schemars::json_schema!({"type":$kind,"minimum":$minimum,"maximum":$maximum})
+            }
+        }
+    };
+}
+bounded_style_number!(ArrowRatio, f64, "number", 1.0, 3.0);
+bounded_style_number!(CornerRadius, f64, "number", 0.0, 8192.0);
+bounded_style_number!(SerialNumber, u64, "integer", 0_u64, 9007199254740991_u64);
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 enum ShapeVariant {
     Rectangle,
     Ellipse,
@@ -647,6 +738,22 @@ struct ToolStyle {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct StylePatch {
+    #[serde(default)]
+    arrow_shaft_type: Option<ArrowShaftType>,
+    #[serde(default)]
+    arrow_ratio: Option<ArrowRatio>,
+    /// Per-corner radii in top-left, top-right, bottom-right, bottom-left order.
+    /// Mutually exclusive with corner_radius; enforced by the application.
+    #[serde(default)]
+    corner_radii: Option<[CornerRadius; 4]>,
+    #[serde(default)]
+    horizontal_align: Option<TextHorizontalAlign>,
+    #[serde(default)]
+    vertical_align: Option<TextVerticalAlign>,
+    #[serde(default)]
+    serial_type: Option<SerialType>,
+    #[serde(default)]
+    number: Option<SerialNumber>,
     #[serde(default)]
     stroke: Option<[u8; 4]>,
     #[serde(default)]
@@ -729,9 +836,7 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
         "screenshot_finish" => model::<Mutation<Finish>>(input),
         "screenshot_cancel" => model::<Cancel>(input),
         "screenshot_direct_capture" => model::<Direct>(input),
-        _ => Err(<serde_json::Error as serde::de::Error>::custom(
-            "unknown tool",
-        )),
+        _ => domains::schema(name, input),
     }
 }
 #[cfg(test)]
@@ -739,7 +844,42 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn every_legacy_tool_retains_its_checked_input_contract() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../tests/mcp_contract_fixtures.json"))
+                .unwrap();
+        let mut covered = std::collections::HashSet::new();
+        for case in fixture["fixtures"].as_array().unwrap() {
+            let name = case["name"].as_str().unwrap();
+            assert!(covered.insert(name), "duplicate contract: {name}");
+            assert!(
+                schema(name, Some(case["arguments"].clone())).is_ok(),
+                "legacy contract rejected: {name}"
+            );
+            if case["arguments"].get("expected_revision").is_some() {
+                let mut stale = case["arguments"].clone();
+                stale.as_object_mut().unwrap().remove("expected_revision");
+                assert!(
+                    schema(name, Some(stale)).is_err(),
+                    "mutation lost revision guard: {name}"
+                );
+            }
+        }
+        assert_eq!(
+            covered,
+            crate::server::TOOLS
+                .iter()
+                .map(|(name, _, _)| *name)
+                .collect()
+        );
+    }
+    #[test]
     fn workflow_schemas_are_typed() {
+        assert!(schema("screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"arrow","style":{"arrow_shaft_type":"tapered","arrow_ratio":3}}))).is_ok());
+        assert!(schema("screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"arrow","style":{"arrow_ratio":3.1}}))).is_err());
+        assert!(schema("screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"text","style":{"horizontal_align":"center","vertical_align":"bottom","corner_radii":[0,1,2,3]}}))).is_ok());
+        assert!(schema("screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"serial_number","style":{"serial_type":"solid_square","number":9007199254740991_u64}}))).is_ok());
+        assert!(schema("screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"serial_number","style":{"number":9007199254740992_u64}}))).is_err());
         for direction in ["up", "down", "left", "right"] {
             assert!(
                 schema(

@@ -1,4 +1,6 @@
 #include "snow_shot/presentation/screenshotocrcontroller.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include <QTextDocument>
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QIODevice>
@@ -246,6 +248,10 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
             &ScreenshotOcrController::textResultChanged);
     connect(m_session.get(), &ScreenshotRecognitionSessionController::textDraftChanged, this,
             &ScreenshotOcrController::textDraftChanged);
+    connect(m_session.get(), &ScreenshotRecognitionSessionController::workflowStateChanged, this,
+            &ScreenshotOcrController::workflowStateChanged);
+    connect(m_session.get(), &ScreenshotRecognitionSessionController::recognitionResultsChanged,
+            this, &ScreenshotOcrController::workflowStateChanged);
 }
 
 ScreenshotOcrController::~ScreenshotOcrController() {
@@ -419,7 +425,10 @@ void ScreenshotOcrController::activateMode(Mode mode) {
         restorePreviousToolAfterFailure();
         return;
     }
-    m_session->setTarget(ScreenshotRecognitionTarget{key, std::move(source), QRectF(selection)});
+    m_session->setTarget(ScreenshotRecognitionTarget{
+        key, std::move(source), QRectF(selection),
+        key == m_importedTargetKey ? m_importedFormattedDocument : nullptr,
+        key == m_importedTargetKey ? m_importedPlainText : QString()});
     m_session->activate(static_cast<ScreenshotRecognitionSessionController::Mode>(mode));
 }
 
@@ -530,6 +539,35 @@ ScreenshotOcrController::fileExportSnapshot() const {
     return m_session->fileExportSnapshot();
 }
 
+void ScreenshotOcrController::seedImportedResults(
+    ScreenshotRecognitionResults results,
+    const ScreenshotClipboardOriginalContent& originalContent) {
+    const auto selection = m_context.selection.pixelSelection();
+    if (selection.isEmpty())
+        return;
+    const auto key = currentCacheKey();
+    auto image = composeScreenshotSourceSelection(m_context.displaySession, selection);
+    image = clipRecognitionSelection(std::move(image), m_context.selection);
+    if (image.isNull())
+        return;
+    m_importedTargetKey = key;
+    m_importedPlainText = originalContent.text;
+    m_importedFormattedDocument.reset();
+    if (!originalContent.html.isEmpty() || !originalContent.text.isEmpty()) {
+        m_importedFormattedDocument = std::make_shared<QTextDocument>();
+        if (!originalContent.html.isEmpty())
+            m_importedFormattedDocument->setHtml(originalContent.html);
+        else
+            m_importedFormattedDocument->setPlainText(originalContent.text);
+        if (m_importedPlainText.isEmpty())
+            m_importedPlainText = m_importedFormattedDocument->toPlainText();
+    }
+    m_session->setTarget({key, std::move(image), QRectF(selection), m_importedFormattedDocument,
+                          m_importedPlainText});
+    results.key = key;
+    m_session->seedRecognitionResults(results);
+}
+
 ScreenshotRecognitionResults ScreenshotOcrController::cachedRecognitionResults() const {
     return m_session->cachedRecognitionResults();
 }
@@ -606,6 +644,9 @@ void ScreenshotOcrController::deactivateImpl(bool preserveRecognitionWindow) {
 }
 
 void ScreenshotOcrController::invalidateSession() {
+    m_importedTargetKey.clear();
+    m_importedFormattedDocument.reset();
+    m_importedPlainText.clear();
     m_session->invalidate();
     deactivate();
     m_presentation.reset();

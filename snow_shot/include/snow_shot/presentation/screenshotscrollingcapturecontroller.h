@@ -30,6 +30,7 @@ struct ScreenshotScrollingCaptureControllerContext {
 };
 
 class ScreenshotScrollingCaptureController final : public QObject {
+    Q_OBJECT
   public:
     using SnapshotResultCallback = std::function<void(ScreenshotScrollingSnapshot)>;
 
@@ -62,6 +63,9 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool requestTrimmedSnapshot(SnapshotResultCallback callback);
     void detachPendingResultRequest();
     [[nodiscard]] QRect canvasSelection() const;
+
+  signals:
+    void stateChanged();
 
   private:
     struct Impl;

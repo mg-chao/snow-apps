@@ -1,4 +1,5 @@
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
+#include "snow_shot/app/mcp/mcpimageexportoptions.h"
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -89,11 +90,16 @@ ScreenshotMcpResponse ScreenshotMcpSession::failure(const ScreenshotMcpRequest& 
                                                     const QString& field) const {
     ScreenshotMcpResponse r;
     r.requestId = request.requestId;
-    r.sessionId = m_session;
-    r.revision = m_revision;
     r.errorCode = code;
     r.errorMessage = tr("MCP request failed (%1).").arg(code);
-    r.errorDetails = {{QStringLiteral("state"), state()}};
+    // Authentication permits application access, not access to another client's document.
+    // In particular, busy and session_not_found must not disclose the owner's session ID.
+    if (m_owner != 0 && request.connectionId == m_owner &&
+        (request.sessionId.isEmpty() || request.sessionId == m_session)) {
+        r.sessionId = m_session;
+        r.revision = m_revision;
+        r.errorDetails = {{QStringLiteral("state"), state()}};
+    }
     if (!field.isEmpty())
         r.errorDetails.insert(QStringLiteral("field"), field);
     return r;
@@ -192,14 +198,20 @@ void ScreenshotMcpSession::cache(const ScreenshotMcpRequest& request,
     if (m_cache.contains(key))
         return;
     // A bounded replay window. Revisions still protect mutations after a cache eviction.
+    const qsizetype bytes =
+        response.attachment.size() +
+        QJsonDocument(response.result).toJson(QJsonDocument::Compact).size() +
+        QJsonDocument(response.errorDetails).toJson(QJsonDocument::Compact).size() +
+        response.errorMessage.toUtf8().size() + 1024;
+    if (bytes > 64 * 1024 * 1024)
+        return;
     while (!m_cacheOrder.isEmpty() &&
-           (m_cacheOrder.size() >= 64 ||
-            m_cacheBytes + response.attachment.size() > 64 * 1024 * 1024)) {
+           (m_cacheOrder.size() >= 64 || m_cacheBytes + bytes > 64 * 1024 * 1024)) {
         auto prior = m_cache.take(m_cacheOrder.dequeue());
-        m_cacheBytes -= prior.response.attachment.size();
+        m_cacheBytes -= prior.bytes;
     }
-    m_cacheBytes += response.attachment.size();
-    m_cache.insert(key, {fingerprint(request), response});
+    m_cacheBytes += bytes;
+    m_cache.insert(key, {fingerprint(request), response, bytes});
     m_cacheOrder.enqueue(key);
 }
 void ScreenshotMcpSession::capturePresented() {
@@ -251,7 +263,7 @@ void ScreenshotMcpSession::disconnected(quint64 connection) {
     const QString prefix = QString::number(connection) + u':';
     for (auto it = m_cacheOrder.begin(); it != m_cacheOrder.end();) {
         if (it->startsWith(prefix)) {
-            m_cacheBytes -= m_cache.take(*it).response.attachment.size();
+            m_cacheBytes -= m_cache.take(*it).bytes;
             it = m_cacheOrder.erase(it);
         } else
             ++it;
@@ -267,6 +279,15 @@ void ScreenshotMcpSession::shutdown() {
     m_cache.clear();
     m_cacheOrder.clear();
     m_cacheBytes = 0;
+}
+bool ScreenshotMcpSession::cancelRequest(quint64 connectionId, const QString& requestId) {
+    if (m_owner != connectionId || !m_pending || m_pending->request.requestId != requestId)
+        return false;
+    const bool beginning = m_pending->request.method == QStringLiteral("screenshot_begin");
+    cancelPending(QStringLiteral("canceled"));
+    if (beginning)
+        release(true);
+    return true;
 }
 void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
                                    ScreenshotMcpServer::Completion done) {
@@ -841,7 +862,8 @@ void ScreenshotMcpSession::publishOutput(const ScreenshotMcpRequest& r, bool fin
         const QString format =
             r.params.value(QStringLiteral("format")).toString(QStringLiteral("png"));
         if (!QStringList{QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("webp"),
-                         QStringLiteral("avif"), QStringLiteral("pdf")}
+                         QStringLiteral("jxl"), QStringLiteral("bmp"), QStringLiteral("avif"),
+                         QStringLiteral("pdf")}
                  .contains(format)) {
             failPending(QStringLiteral("invalid_parameters"), QStringLiteral("format"));
             return;
@@ -860,8 +882,8 @@ void ScreenshotMcpSession::publishOutput(const ScreenshotMcpRequest& r, bool fin
             return;
         }
         ScreenshotImageEncodingOptions encoding;
-        encoding.quality = r.params.value(QStringLiteral("quality")).toInt(100);
-        if (encoding.quality < 1 || encoding.quality > 100) {
+        ScreenshotPdfOptions pdf;
+        if (!imageExportOptions(r.params, encoding, pdf)) {
             failPending(QStringLiteral("invalid_parameters"), QStringLiteral("quality"));
             return;
         }
@@ -921,7 +943,8 @@ void ScreenshotMcpSession::publishOutput(const ScreenshotMcpRequest& r, bool fin
                         });
                     if (!m_metadataJob.isValid())
                         failPending(QStringLiteral("queue_full"));
-                }))
+                },
+                pdf))
             failPending(QStringLiteral("output_failed"));
     } else
         failPending(QStringLiteral("invalid_parameters"), QStringLiteral("output"));
