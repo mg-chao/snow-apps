@@ -194,6 +194,20 @@ pub struct SystemAudioStream {
 }
 // SAFETY: exclusive session ownership; callback state is synchronized and immutable.
 unsafe impl Send for SystemAudioStream {}
+
+fn configure_system_audio(config: &SCStreamConfiguration) {
+    unsafe {
+        // This stream has no screen-output consumer. Only the recording's video
+        // stream should request cursor capture or mouse-click visualization.
+        config.setShowsCursor(false);
+        config.setShowMouseClicks(false);
+        config.setCapturesAudio(true);
+        config.setExcludesCurrentProcessAudio(true);
+        config.setSampleRate(48_000);
+        config.setChannelCount(2);
+    }
+}
+
 impl SystemAudioStream {
     pub fn start() -> MacResult<Self> {
         Self::start_cancelable(crate::CancellationToken::default(), Duration::from_secs(5))
@@ -220,12 +234,7 @@ impl SystemAudioStream {
         options.cancellation = cancellation.clone();
         options.timeout = deadline.remaining()?;
         let prepared = crate::capture::prepare(&options)?;
-        unsafe {
-            prepared.config.setCapturesAudio(true);
-            prepared.config.setExcludesCurrentProcessAudio(true);
-            prepared.config.setSampleRate(48_000);
-            prepared.config.setChannelCount(2);
-        }
+        configure_system_audio(&prepared.config);
         let (sender, samples) = crossbeam_channel::bounded(64);
         let (error_tx, errors) = crossbeam_channel::bounded(1);
         let state = Arc::new(State {
@@ -342,6 +351,25 @@ mod tests {
     use objc2_core_media::{
         CMAudioFormatDescriptionCreate, CMSampleTimingInfo, CMTime, CMTimeFlags,
     };
+    #[test]
+    fn system_audio_does_not_capture_the_cursor() {
+        // Exercise the native configuration without starting a capture or asking
+        // for permissions. Video defaults must not leak into the audio-only stream.
+        let config = unsafe { SCStreamConfiguration::new() };
+        unsafe {
+            config.setShowsCursor(true);
+            config.setShowMouseClicks(true);
+        }
+        configure_system_audio(&config);
+        unsafe {
+            assert!(!config.showsCursor());
+            assert!(!config.showMouseClicks());
+            assert!(config.capturesAudio());
+            assert!(config.excludesCurrentProcessAudio());
+            assert_eq!(config.sampleRate(), 48_000);
+            assert_eq!(config.channelCount(), 2);
+        }
+    }
     #[test]
     fn canceled_system_audio_does_not_enumerate_or_request_permission() {
         let cancellation = crate::CancellationToken::default();

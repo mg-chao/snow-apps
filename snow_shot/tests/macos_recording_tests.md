@@ -63,6 +63,23 @@ Check decoded dimensions, duration, codec, every animation frame and loop metada
 play a known sound throughout startup and recording to distinguish silence from
 failed system-audio capture.
 
+## Concurrent screenshot input
+
+With system audio enabled, record a small region while taking a screenshot. Move
+the pointer across screenshot toolbar buttons, open their popups, and drag the
+selection. Verify smooth input and stable cursor changes with recorded cursor
+visibility both enabled and disabled. Repeat after pause/resume and with a large
+recording region. Play a known sound and confirm the exported video still contains
+system audio and follows the selected cursor visibility setting.
+
+The audio stream has no screen-output consumer and must disable cursor capture and
+click visualization. Its permission-free regression runs with
+`cargo test --manifest-path snow-crates/Cargo.toml -p snow-macos --lib audio::tests`.
+On 2026-09-26, user-assisted verification of the rebuilt arm64 debug app confirmed
+smooth screenshot-toolbar input with system audio enabled and audible sound in
+the exported recording. The configuration regression failed before the correction
+and all three focused audio tests passed afterward.
+
 ## Coverage on 2026-09-22
 
 Hardware: Apple M4 Mac mini, one 1920×1080 display at 1× scale.
