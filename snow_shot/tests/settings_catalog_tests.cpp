@@ -235,11 +235,11 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 41, "macOS adds one permissions section");
-    require(itemCount == 181, "macOS adds login settings and omits administrator controls "
+    require(itemCount == 182, "macOS adds login settings and omits administrator controls "
                               "and Windows-only choices");
 #else
     require(sectionCount == 40, "catalog must contain forty sections");
-    require(itemCount == 184, "catalog must contain one hundred eighty-four items");
+    require(itemCount == 185, "catalog must contain one hundred eighty-five items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1310,6 +1310,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
          "quick.toggle-disable-on-focused-fullscreen-window",
          "global_shortcuts/toggle_disable_on_focused_fullscreen_window",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::FullscreenCanvas, "other", "quick.fullscreen-canvas",
+         "global_shortcuts/fullscreen_canvas", settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::PinClipboardContent, "pin-to-screen", "quick.pin-clipboard-content",
          "global_shortcuts/pin_clipboard_content",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -1352,8 +1354,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 19,
-            "the global-hotkeys catalog must expose all nineteen shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 20,
+            "the global-hotkeys catalog must expose all twenty shortcut actions exactly once");
     const auto* pinnedManagementShortcut =
         catalog.itemForShortcut(Action::OpenPinToScreenManagement);
     const auto* pinnedManagementSchema = storage::ConfigurationSchema::entry(
@@ -1364,6 +1366,25 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 pinnedManagementSchema != nullptr &&
                 pinnedManagementSchema->defaultValue.toArray().isEmpty(),
             "Pin to Screen Management must start without an assigned global hotkey");
+    const auto* canvasShortcut = catalog.itemForShortcut(Action::FullscreenCanvas);
+    const auto* canvasSchema =
+        storage::ConfigurationSchema::entry(QStringLiteral("global_shortcuts/fullscreen_canvas"));
+    require(canvasShortcut != nullptr &&
+                canvasShortcut->title.translated() == QStringLiteral("Full-screen canvas") &&
+                canvasSchema != nullptr && canvasSchema->defaultValue.toArray().isEmpty() &&
+                canvasSchema->valueKind == storage::ConfigurationValueKind::ShortcutList &&
+                canvasSchema->maximumListItems == 2,
+            "full-screen canvas must expose a configurable, initially unbound global hotkey");
+    const auto canvasResetFields = settings::builtInSettingsRegistry().fieldsForReset(
+        settings::SettingsSectionReset::OtherShortcuts);
+    require(
+        std::any_of(
+            canvasResetFields.cbegin(), canvasResetFields.cend(),
+            [](int index) {
+                return settings::builtInSettingsRegistry().fields().at(index).configurationKey ==
+                       QStringLiteral("global_shortcuts/fullscreen_canvas");
+            }),
+        "resetting Other global hotkeys must include the full-screen canvas binding");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
             "Open Interface settings must not appear in Global hotkeys");
 
@@ -1408,9 +1429,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(2).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("other") &&
-                trayGroups.at(3).options.size() == 4 &&
+                trayGroups.at(3).options.size() == 5 &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
-                trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 22 &&
+                trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 23 &&
                 trayOptionIds.at(8) == QStringLiteral("quick.pin-clipboard-content") &&
                 trayOptionIds.at(9) == QStringLiteral("quick.pin-selected-files") &&
                 trayOptionIds.at(10) == QStringLiteral("quick.restore-last-closed-windows") &&
@@ -1422,17 +1443,18 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayOptionIds.at(16) == QStringLiteral("quick.toggle-global-hotkeys") &&
                 trayOptionIds.at(17) ==
                     QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
-                trayOptionIds.at(18) == QStringLiteral("tray.window-grouping") &&
+                trayOptionIds.at(18) == QStringLiteral("quick.fullscreen-canvas") &&
+                trayOptionIds.at(19) == QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(19) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(20) == QStringLiteral("tray.restart-app") &&
+                trayOptionIds.at(20) == QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(21) == QStringLiteral("tray.restart-app") &&
                 trayGroups.at(4).options.at(2).kind ==
                     settings::SettingsTrayMenuOptionKind::RestartApp &&
                 trayGroups.at(4).options.at(2).iconFactory &&
                 trayGroups.at(4).options.at(2).iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::Restart() &&
-                trayOptionIds.at(21) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
+                trayOptionIds.at(22) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
@@ -1549,16 +1571,17 @@ void globalHotkeyShortcutsHaveStableContracts() {
                       QStringLiteral("quick.pin-selected-files")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
-    require(
-        otherShortcuts != nullptr && otherShortcuts->items.size() == 5 &&
-            otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
-            otherShortcuts->items.at(1).id ==
-                QStringLiteral("quick.open-pin-to-screen-management") &&
-            otherShortcuts->items.at(2).id == QStringLiteral("quick.translate-selected-text") &&
-            otherShortcuts->items.at(3).id == QStringLiteral("quick.toggle-global-hotkeys") &&
-            otherShortcuts->items.at(4).id ==
-                QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
-        "Other quick actions expose history, pinned management, translation, and hotkey toggles");
+    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 6 &&
+                otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
+                otherShortcuts->items.at(1).id ==
+                    QStringLiteral("quick.open-pin-to-screen-management") &&
+                otherShortcuts->items.at(2).id == QStringLiteral("quick.translate-selected-text") &&
+                otherShortcuts->items.at(3).id == QStringLiteral("quick.toggle-global-hotkeys") &&
+                otherShortcuts->items.at(4).id ==
+                    QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
+                otherShortcuts->items.at(5).id == QStringLiteral("quick.fullscreen-canvas"),
+            "Other quick actions expose history, pinned management, translation, hotkey toggles, "
+            "and canvas");
     const auto* pinSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"));
     require(pinSection != nullptr && pinSection->title.source != nullptr &&
@@ -1692,6 +1715,7 @@ void compactTrayManifestMatchesRegistryCatalog() {
           presentation::GlobalShortcutAction::ScreenRecordCopy,
           presentation::GlobalShortcutAction::OpenScreenRecordingFolder,
           presentation::GlobalShortcutAction::OpenCaptureHistory,
+          presentation::GlobalShortcutAction::FullscreenCanvas,
           presentation::GlobalShortcutAction::PinClipboardContent,
           presentation::GlobalShortcutAction::PinSelectedFiles,
           presentation::GlobalShortcutAction::TranslateSelectedText,

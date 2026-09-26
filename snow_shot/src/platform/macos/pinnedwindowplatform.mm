@@ -70,11 +70,10 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
                               environmentChanged(false);
                         }] retain];
         }
-        if (m_role == Role::Image) {
-            // The shared pin controller owns proportional edge resizing and background
-            // dragging. Qt leaves these native policies enabled on its frameless NSPanel,
-            // so AppKit consumes the pointer gesture before the controller can begin and
-            // the controller subsequently restores AppKit's untracked geometry change.
+        if (m_role == Role::Image || m_role == Role::Canvas) {
+            // Pins control their own movement, and a screen canvas must never move.
+            // Qt leaves native dragging enabled on its frameless NSPanel, allowing
+            // AppKit to consume drawing gestures before the canvas receives them.
             constexpr NSWindowStyleMask nativeChrome =
                 NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                 NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;

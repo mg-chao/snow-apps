@@ -60,6 +60,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
     case Action::OpenScreenRecordingFolder:
     case Action::OpenCaptureHistory:
     case Action::OpenPinToScreenManagement:
+    case Action::FullscreenCanvas:
     case Action::OpenSettings:
     case Action::PinClipboardContent:
     case Action::RestoreLastClosedWindows:

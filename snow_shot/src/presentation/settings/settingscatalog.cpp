@@ -214,6 +214,17 @@ SettingsItemDefinition openCaptureHistoryItem() {
         []() { return outlined_icons::History(); });
 }
 
+SettingsItemDefinition fullscreenCanvasItem() {
+    return quickActionItem(
+        QStringLiteral("quick.fullscreen-canvas"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Full-screen canvas"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Draw on a transparent canvas over the current screen"),
+        {}, GlobalShortcutAction::FullscreenCanvas,
+        QStringLiteral("global_shortcuts/fullscreen_canvas"),
+        []() { return custom_outlined_icons::ToolFreeDraw(); });
+}
+
 SettingsItemDefinition openPinToScreenManagementItem() {
     SettingsItemDefinition item = quickActionItem(
         QStringLiteral("quick.open-pin-to-screen-management"),
@@ -2012,6 +2023,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         translateSelectedTextItem(),
                         toggleGlobalHotkeysItem(),
                         toggleDisableOnFocusedFullscreenWindowItem(),
+                        fullscreenCanvasItem(),
                     },
                 },
             },
@@ -2825,6 +2837,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/open_capture_history");
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return QStringLiteral("global_shortcuts/open_pin_to_screen_management");
+    case GlobalShortcutAction::FullscreenCanvas:
+        return QStringLiteral("global_shortcuts/fullscreen_canvas");
     case GlobalShortcutAction::OpenSettings:
         return QStringLiteral("global_shortcuts/open_settings");
     case GlobalShortcutAction::PinClipboardContent:
@@ -3170,7 +3184,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
               QT_TRANSLATE_NOOP("SettingsCatalog", "Disable hotkeys in fullscreen windows"),
               GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
               []() { return custom_outlined_icons::ScreenshotFullScreen(); },
-              SettingsShortcutAdjustment::None, true)}},
+              SettingsShortcutAdjustment::None, true),
+          quick(QStringLiteral("quick.fullscreen-canvas"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Full-screen canvas"),
+                GlobalShortcutAction::FullscreenCanvas,
+                []() { return custom_outlined_icons::ToolFreeDraw(); })}},
         {QStringLiteral("system"),
          {{QStringLiteral("tray.window-grouping"),
            {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Window grouping")},

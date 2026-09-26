@@ -369,6 +369,7 @@ int main(int argc, char* argv[]) {
     auto* delayedScreenshotMenuAction = actionForId(QStringLiteral("quick.screenshot-delay"));
     auto* recordingToggleMenuAction = actionForId(QStringLiteral("quick.screen-record-copy"));
     auto* hotkeyToggleMenuAction = actionForId(QStringLiteral("quick.toggle-global-hotkeys"));
+    auto* fullscreenCanvasMenuAction = actionForId(QStringLiteral("quick.fullscreen-canvas"));
     auto* showMainWindowMenuAction = actionForId(QStringLiteral("tray.show-main-window"));
     auto* restartMenuAction = actionForId(QStringLiteral("tray.restart-app"));
     auto* exitMenuAction = actionForId(QStringLiteral("tray.exit"));
@@ -381,24 +382,29 @@ int main(int argc, char* argv[]) {
     require(
         QSet<QString>(normalizedDefaultMenuOptions.cbegin(), normalizedDefaultMenuOptions.cend()) ==
                 QSet<QString>(defaultMenuOptions.cbegin(), defaultMenuOptions.cend()) &&
-            defaultVisibleActions.size() == 16 && screenshotMenuAction != nullptr &&
-            screenshotMenuAction->isVisible() && delayedScreenshotMenuAction != nullptr &&
-            delayedScreenshotMenuAction->isVisible() && recordingToggleMenuAction != nullptr &&
-            !recordingToggleMenuAction->isVisible() && !screenshotMenuAction->icon().isNull() &&
-            hotkeyToggleMenuAction != nullptr && hotkeyToggleMenuAction->isVisible() &&
-            hotkeyToggleMenuAction->isCheckable() && !hotkeyToggleMenuAction->isChecked() &&
-            showMainWindowMenuAction != nullptr && showMainWindowMenuAction->isVisible() &&
-            !showMainWindowMenuAction->icon().isNull() && restartMenuAction != nullptr &&
-            !restartMenuAction->isVisible() && !restartMenuAction->isCheckable() &&
-            !restartMenuAction->icon().isNull() && exitMenuAction != nullptr &&
-            exitMenuAction->isVisible() && !exitMenuAction->icon().isNull() &&
-            windowGroupMenuAction != nullptr && windowGroupMenuAction->isVisible() &&
+            defaultMenuOptions.size() == 13 && defaultVisibleActions.size() == 17 &&
+            screenshotMenuAction != nullptr && screenshotMenuAction->isVisible() &&
+            delayedScreenshotMenuAction != nullptr && delayedScreenshotMenuAction->isVisible() &&
+            recordingToggleMenuAction != nullptr && !recordingToggleMenuAction->isVisible() &&
+            !screenshotMenuAction->icon().isNull() && hotkeyToggleMenuAction != nullptr &&
+            hotkeyToggleMenuAction->isVisible() && hotkeyToggleMenuAction->isCheckable() &&
+            !hotkeyToggleMenuAction->isChecked() && fullscreenCanvasMenuAction != nullptr &&
+            fullscreenCanvasMenuAction->isVisible() && !fullscreenCanvasMenuAction->isCheckable() &&
+            !fullscreenCanvasMenuAction->icon().isNull() && showMainWindowMenuAction != nullptr &&
+            showMainWindowMenuAction->isVisible() && !showMainWindowMenuAction->icon().isNull() &&
+            restartMenuAction != nullptr && !restartMenuAction->isVisible() &&
+            !restartMenuAction->isCheckable() && !restartMenuAction->icon().isNull() &&
+            exitMenuAction != nullptr && exitMenuAction->isVisible() &&
+            !exitMenuAction->icon().isNull() && windowGroupMenuAction != nullptr &&
+            windowGroupMenuAction->isVisible() &&
             actionForId(QStringLiteral("tray.window-grouping")) == windowGroupMenuAction &&
             defaultVisibleActions.contains(hotkeyToggleMenuAction) &&
             defaultVisibleActions.contains(showMainWindowMenuAction) &&
             defaultVisibleActions.indexOf(windowGroupMenuAction) ==
                 defaultVisibleActions.indexOf(showMainWindowMenuAction) - 1,
-        "the tray menu should expose the twelve default options in five catalog groups");
+        "the tray menu should expose the thirteen default options in five catalog groups");
+    requireActionText(fullscreenCanvasMenuAction, QStringLiteral("Full-screen canvas"),
+                      "the default full-screen canvas action must use its catalog label");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
 #ifdef Q_OS_MACOS
@@ -552,22 +558,20 @@ int main(int argc, char* argv[]) {
         }
         return static_cast<QAction*>(nullptr);
     };
-    const auto requireTrayModalCentered = [](adqt::widgets::AdModal* modal,
-                                            const char* message) {
+    const auto requireTrayModalCentered = [](adqt::widgets::AdModal* modal, const char* message) {
         QScreen* screen = QApplication::screenAt(QCursor::pos());
         if (screen == nullptr) {
             screen = QApplication::primaryScreen();
         }
         QWidget* surface = nullptr;
         for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (widget->isVisible() &&
-                widget->objectName() == QStringLiteral("ad-modal-overlay")) {
+            if (widget->isVisible() && widget->objectName() == QStringLiteral("ad-modal-overlay")) {
                 surface = widget;
                 break;
             }
         }
-        require(screen != nullptr && modal != nullptr && modal->centered() &&
-                    surface != nullptr && surface->isVisible() &&
+        require(screen != nullptr && modal != nullptr && modal->centered() && surface != nullptr &&
+                    surface->isVisible() &&
                     (surface->geometry().center() - screen->availableGeometry().center())
                             .manhattanLength() <= 2,
                 message);
@@ -720,6 +724,14 @@ int main(int argc, char* argv[]) {
                      [&quickActions](snow_shot::presentation::GlobalShortcutAction action) {
                          quickActions.push_back(action);
                      });
+    fullscreenCanvasMenuAction->trigger();
+    require(quickActions ==
+                    QVector<snow_shot::presentation::GlobalShortcutAction>{
+                        snow_shot::presentation::GlobalShortcutAction::FullscreenCanvas} &&
+                screenshotRequests == 0 && showMainWindowRequests == 0 && restartRequests == 0 &&
+                exitRequests == 0,
+            "the full-screen canvas tray entry must dispatch exactly its shared quick action");
+    quickActions.clear();
 
     int functionSettingsRequests = 0;
     QObject::connect(&controller,
@@ -850,13 +862,14 @@ int main(int argc, char* argv[]) {
     const QList<QAction*> compactVisibleActions = visibleActions();
     require(compactVisibleActions.size() == 3 && compactVisibleActions.at(1)->isSeparator() &&
                 !windowGroupMenuAction->isVisible() && !hotkeyToggleMenuAction->isVisible() &&
-                !hotkeyToggleMenuAction->isChecked() && quickActions.size() == 3 &&
+                !fullscreenCanvasMenuAction->isVisible() && !hotkeyToggleMenuAction->isChecked() &&
+                quickActions.size() == 3 &&
                 quickActions.last() ==
                     snow_shot::presentation::GlobalShortcutAction::ToggleGlobalHotkeys,
             "hiding the checked toggle should re-enable hotkeys and collapse empty groups");
     controller.setMenuOptions(defaultMenuOptions);
     require(windowGroupMenuAction->isVisible() && hotkeyToggleMenuAction->isVisible() &&
-                !hotkeyToggleMenuAction->isChecked(),
+                fullscreenCanvasMenuAction->isVisible() && !hotkeyToggleMenuAction->isChecked(),
             "restoring the defaults should bring the window group submenu back");
 
     const QString fullscreenToggleId =

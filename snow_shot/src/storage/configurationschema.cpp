@@ -282,6 +282,18 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("global_shortcuts/fullscreen_canvas"),
+     QJsonArray(),
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("fullscreen_canvas/laser_color"), QStringLiteral("#ff0000"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("fullscreen_canvas/laser_width"), 4, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{1, 20, 1}},
+    {QStringLiteral("fullscreen_canvas/laser_duration_ms"), 1000, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{100, 5000, 1}},
     {QStringLiteral("global_shortcuts/open_settings"),
      QJsonArray(),
      ConfigurationValueKind::StringList,
@@ -925,8 +937,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
          QStringLiteral("quick.screenshot-fixed"), QStringLiteral("quick.screenshot-ocr"),
          QStringLiteral("quick.screenshot-copy"), QStringLiteral("quick.pin-clipboard-content"),
          QStringLiteral("quick.restore-last-closed-windows"), QStringLiteral("quick.screen-record"),
-         QStringLiteral("quick.toggle-global-hotkeys"), QStringLiteral("tray.window-grouping"),
-         QStringLiteral("tray.show-main-window"), QStringLiteral("tray.exit")},
+         QStringLiteral("quick.toggle-global-hotkeys"), QStringLiteral("quick.fullscreen-canvas"),
+         QStringLiteral("tray.window-grouping"), QStringLiteral("tray.show-main-window"),
+         QStringLiteral("tray.exit")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {QStringLiteral("quick.screenshot"),
@@ -947,11 +960,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("quick.translate-selected-text"),
       QStringLiteral("quick.toggle-global-hotkeys"),
       QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
+      QStringLiteral("quick.fullscreen-canvas"),
       QStringLiteral("tray.window-grouping"),
       QStringLiteral("tray.show-main-window"),
       QStringLiteral("tray.restart-app"),
       QStringLiteral("tray.exit")},
-     22},
+     23},
     {QStringLiteral("screenshot_selection/previous_selection"), QJsonValue::Null,
      ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_selection/region_type"),
@@ -1815,6 +1829,18 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     }
     if (isGlobalMouseKey(key)) {
         return normalizeGlobalMouseCombination(value);
+    }
+    if (key == QStringLiteral("fullscreen_canvas/laser_color")) {
+        if (!value.isString()) {
+            return {};
+        }
+        const QString original = value.toString();
+        const QString normalized = original.trimmed().toLower();
+        static const QRegularExpression pattern(QStringLiteral("^#[0-9a-f]{6}$"));
+        if (!pattern.match(normalized).hasMatch()) {
+            return {};
+        }
+        return {normalized, true, normalized != original};
     }
     if (isRgbaColorKey(key)) {
         return normalizeRgbaColor(value);

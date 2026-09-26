@@ -25,6 +25,8 @@ class AdSelect;
 
 namespace snow_shot::presentation {
 
+enum class ScreenshotToolPaletteStylePresentation { Compact, Inline };
+
 void setScreenshotToolPaletteStyleButtonActive(adqt::widgets::AdButton* button, bool active);
 
 ColorPickerTrigger* createScreenshotToolPaletteColorPickerTrigger(
@@ -101,7 +103,9 @@ class ScreenshotToolPaletteStyleEditorComponent {
   protected:
     ScreenshotToolPaletteStyleEditorComponent() = default;
 
-    [[nodiscard]] QBoxLayout* createRoot(QBoxLayout* layout, QWidget* parent);
+    [[nodiscard]] QBoxLayout* createRoot(QBoxLayout* layout, QWidget* parent,
+                                         ScreenshotToolPaletteStylePresentation presentation =
+                                             ScreenshotToolPaletteStylePresentation::Compact);
     void finalizeRoot();
     void refreshRootMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void releaseRoot();
@@ -111,6 +115,8 @@ class ScreenshotToolPaletteStyleEditorComponent {
 };
 
 struct ScreenshotToolPaletteColorEditorConfig {
+    ScreenshotToolPaletteStylePresentation presentation =
+        ScreenshotToolPaletteStylePresentation::Compact;
     QString accessibleName;
     QString pickerObjectName;
     QString triggerObjectName;
@@ -151,6 +157,8 @@ class ScreenshotToolPaletteColorEditor final : public ScreenshotToolPaletteStyle
 };
 
 struct ScreenshotToolPaletteStrokeEditorConfig {
+    ScreenshotToolPaletteStylePresentation presentation =
+        ScreenshotToolPaletteStylePresentation::Compact;
     QString accessibleName;
     QString popupObjectName;
     QString styleRowObjectName;
@@ -198,6 +206,8 @@ class ScreenshotToolPaletteStrokeEditor final : public ScreenshotToolPaletteStyl
 };
 
 struct ScreenshotToolPaletteFillEditorConfig {
+    ScreenshotToolPaletteStylePresentation presentation =
+        ScreenshotToolPaletteStylePresentation::Compact;
     QString accessibleName;
     QString popupObjectName;
     QString presetRowObjectName;
@@ -245,6 +255,8 @@ class ScreenshotToolPaletteFillEditor final : public ScreenshotToolPaletteStyleE
 };
 
 struct ScreenshotToolPaletteWidthColorEditorConfig {
+    ScreenshotToolPaletteStylePresentation presentation =
+        ScreenshotToolPaletteStylePresentation::Compact;
     QString accessibleName;
     QString triggerTooltip;
     QString popupObjectName;
@@ -302,6 +314,8 @@ class ScreenshotToolPaletteWidthColorEditor final
 };
 
 struct ScreenshotToolPaletteNumericPresetEditorConfig {
+    ScreenshotToolPaletteStylePresentation presentation =
+        ScreenshotToolPaletteStylePresentation::Compact;
     QString summaryTooltip;
     QString summaryObjectName;
     QString suffix;
@@ -340,6 +354,8 @@ class ScreenshotToolPaletteNumericPresetEditor final
 };
 
 struct ScreenshotToolPaletteFontEditorConfig {
+    ScreenshotToolPaletteStylePresentation presentation =
+        ScreenshotToolPaletteStylePresentation::Compact;
     QString accessibleName;
     QString summaryTooltip;
     QString summaryObjectName;
@@ -390,6 +406,8 @@ struct ScreenshotToolPaletteIconOption {
 };
 
 struct ScreenshotToolPaletteIconOptionEditorConfig {
+    ScreenshotToolPaletteStylePresentation presentation =
+        ScreenshotToolPaletteStylePresentation::Compact;
     QString accessibleName;
     QString triggerTooltip;
     QVector<ScreenshotToolPaletteIconOption> options;

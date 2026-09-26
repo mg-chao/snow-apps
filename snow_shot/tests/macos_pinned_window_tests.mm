@@ -162,9 +162,38 @@ void auxiliaryOwnershipRequiresARealOwner() {
             "a created pin must not adopt an unrelated top-level window either");
 }
 
+void canvasRoleKeepsDrawingGesturesInTheCanvas() {
+    for (const auto role :
+         {PinnedWindowPlatform::Role::Canvas, PinnedWindowPlatform::Role::Auxiliary}) {
+        QWidget widget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        widget.winId();
+        NSWindow* native = reinterpret_cast<NSView*>(widget.internalWinId()).window;
+        native.movable = YES;
+        native.movableByWindowBackground = YES;
+        const NSWindowStyleMask originalStyle = native.styleMask;
+        const bool originalShadow = native.hasShadow;
+        auto platform = createPinnedWindowPlatform(&widget, role);
+        require(platform->attach(), "canvas role policy fixture must attach");
+        if (role == PinnedWindowPlatform::Role::Canvas) {
+            require(!native.movable && !native.movableByWindowBackground && !native.hasShadow &&
+                        (native.styleMask & NSWindowStyleMaskResizable) == 0,
+                    "a full-screen canvas must deliver background and edge gestures to drawing");
+        } else {
+            require(native.movable && native.movableByWindowBackground &&
+                        native.styleMask == originalStyle && native.hasShadow == originalShadow,
+                    "ordinary auxiliary windows must retain their existing native geometry policy");
+        }
+        platform->detach();
+        require(native.movable && native.movableByWindowBackground &&
+                    native.styleMask == originalStyle && native.hasShadow == originalShadow,
+                "canvas role detachment must restore the native window's original policy");
+    }
+}
+
 void nativePolicies(bool focus) {
     auxiliaryOwnershipRequiresARealOwner();
     hiddenPlacementCommitsBeforeShow();
+    canvasRoleKeepsDrawingGesturesInTheCanvas();
     QWidget widget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     widget.setAttribute(Qt::WA_TranslucentBackground);
     widget.winId();

@@ -653,9 +653,10 @@ const char* arrowheadOptionTooltipSource(bool start, SnowCanvasArrowhead arrowhe
 
 ScreenshotToolPaletteStyleControls::ScreenshotToolPaletteStyleControls(
     ScreenshotToolPaletteStyleControlCallbacks callbacks, const SnowCanvasStyleDefaults& defaults,
-    std::function<QDateTime()> watermarkTemplateClock)
-    : m_state(defaults), m_callbacks(std::move(callbacks)), m_defaults(defaults),
-      m_watermarkTemplateClock(std::move(watermarkTemplateClock)) {}
+    std::function<QDateTime()> watermarkTemplateClock,
+    ScreenshotToolPaletteStylePresentation presentation)
+    : m_presentation(presentation), m_state(defaults), m_callbacks(std::move(callbacks)),
+      m_defaults(defaults), m_watermarkTemplateClock(std::move(watermarkTemplateClock)) {}
 
 ScreenshotToolPaletteStyleState& ScreenshotToolPaletteStyleControls::styleState() {
     return m_state;
@@ -1240,6 +1241,11 @@ QWidget* ScreenshotToolPaletteStyleControls::createRowWidget(
     auto* controls = new QWidget(panel);
     controls->setObjectName(objectName);
     auto* layout = new QHBoxLayout(controls);
+    if (m_presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        layout->setDirection(QBoxLayout::TopToBottom);
+        layout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        layout->setSizeConstraint(QLayout::SetMinimumSize);
+    }
     if (host.registerRowLayout) {
         host.registerRowLayout(layout);
     }
@@ -1334,6 +1340,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     }
 
     ScreenshotToolPaletteStrokeEditorConfig strokeConfig;
+    strokeConfig.presentation = m_presentation;
     strokeConfig.accessibleName = QStringLiteral("Stroke color");
     strokeConfig.popupObjectName = QStringLiteral("screenshotStrokeOptions");
     strokeConfig.styleRowObjectName = QStringLiteral("screenshotStrokeStyles");
@@ -1371,6 +1378,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     }
 
     ScreenshotToolPaletteNumericPresetEditorConfig strokeWidthConfig;
+    strokeWidthConfig.presentation = m_presentation;
     strokeWidthConfig.summaryTooltip = QStringLiteral("Current stroke width");
     strokeWidthConfig.values = style_presets::strokePresetWidths();
     strokeWidthConfig.strokePreview = true;
@@ -1435,6 +1443,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     }
 
     ScreenshotToolPaletteFillEditorConfig fillConfig;
+    fillConfig.presentation = m_presentation;
     fillConfig.accessibleName = QStringLiteral("Fill color");
     fillConfig.popupObjectName = QStringLiteral("screenshotFillOptions");
     fillConfig.presetRowObjectName = QStringLiteral("screenshotFillColorPresets");
@@ -1513,6 +1522,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
     auto* layout = static_cast<QHBoxLayout*>(controls->layout());
 
     ScreenshotToolPaletteStrokeEditorConfig arrowStrokeConfig;
+    arrowStrokeConfig.presentation = m_presentation;
     arrowStrokeConfig.accessibleName = QStringLiteral("Arrow stroke color");
     arrowStrokeConfig.colorValues = style_presets::strokeColors();
     arrowStrokeConfig.colorTooltip = [](const QColor& color) {
@@ -1548,6 +1558,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
     }
 
     ScreenshotToolPaletteNumericPresetEditorConfig arrowStrokeWidthConfig;
+    arrowStrokeWidthConfig.presentation = m_presentation;
     arrowStrokeWidthConfig.summaryTooltip = QStringLiteral("Current arrow stroke width");
     arrowStrokeWidthConfig.values = style_presets::strokePresetWidths();
     arrowStrokeWidthConfig.strokePreview = true;
@@ -1651,6 +1662,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
                                      &arrowheads](bool start, const char* role,
                                                   const QString& accessibleName) {
         ScreenshotToolPaletteIconOptionEditorConfig config;
+        config.presentation = m_presentation;
         config.accessibleName = accessibleName;
         config.triggerTooltip = accessibleName;
         config.gridColumnCount = 4;
@@ -1685,6 +1697,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
     m_startArrowheadEditor =
         addArrowheadEditor(true, kRoleStartArrowhead, QStringLiteral("Start arrowhead"));
     ScreenshotToolPaletteIconOptionEditorConfig shaftConfig;
+    shaftConfig.presentation = m_presentation;
     shaftConfig.accessibleName = QStringLiteral("Arrow shaft type");
     shaftConfig.triggerTooltip =
         QStringLiteral("Tapered shafts support standard, triangle, triangle outline, and indented "
@@ -1742,6 +1755,7 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         auto* rectangleLayout = static_cast<QHBoxLayout*>(rectangleControls->layout());
 
         ScreenshotToolPaletteColorEditorConfig highlightColorConfig;
+        highlightColorConfig.presentation = m_presentation;
         highlightColorConfig.accessibleName = QStringLiteral("Highlight color");
         highlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
         highlightColorConfig.presetTooltip = [](const QColor& color) {
@@ -1768,6 +1782,7 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         }
 
         ScreenshotToolPaletteWidthColorEditorConfig highlightStrokeConfig;
+        highlightStrokeConfig.presentation = m_presentation;
         highlightStrokeConfig.accessibleName = QStringLiteral("Highlight stroke width");
         highlightStrokeConfig.triggerTooltip = QStringLiteral("Highlight stroke width");
         highlightStrokeConfig.popupObjectName = QStringLiteral("screenshotHighlightStrokeOptions");
@@ -1831,6 +1846,7 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         auto* penLayout = static_cast<QHBoxLayout*>(penControls->layout());
 
         ScreenshotToolPaletteColorEditorConfig penHighlightColorConfig;
+        penHighlightColorConfig.presentation = m_presentation;
         penHighlightColorConfig.accessibleName = QStringLiteral("Pen highlight color");
         penHighlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
         penHighlightColorConfig.presetTooltip = [](const QColor& color) {
@@ -1861,6 +1877,7 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
             snow_shot::presentation::screenshotToolPaletteSizePresetEditorConfig(
                 QStringLiteral("Current pen highlight stroke width"), QString(),
                 "Pen highlight stroke width %1 (%2px)");
+        penHighlightWidthConfig.presentation = m_presentation;
         if (auto reused =
                 takeReusableEditor(kRoleBrushWidth, kSignatureBrushWidth, penLayout, penControls)) {
             m_penHighlightStrokeWidthEditor.reset(
@@ -1916,6 +1933,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSpotlightFamily(
     auto* layout = static_cast<QHBoxLayout*>(controls->layout());
 
     ScreenshotToolPaletteColorEditorConfig spotlightColorConfig;
+    spotlightColorConfig.presentation = m_presentation;
     spotlightColorConfig.accessibleName = QStringLiteral("Mask color");
     spotlightColorConfig.pickerObjectName = QStringLiteral("screenshotSpotlightColorPicker");
     spotlightColorConfig.triggerObjectName = QStringLiteral("screenshotSpotlightColorTrigger");
@@ -2002,6 +2020,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     const SnowCanvasTextStyle& style = m_state.m_textStyle.textStyle();
 
     ScreenshotToolPaletteColorEditorConfig textColorConfig;
+    textColorConfig.presentation = m_presentation;
     textColorConfig.accessibleName = QStringLiteral("Text color");
     textColorConfig.presetValues = m_state.m_textStyle.colorValues();
     textColorConfig.observePopup = true;
@@ -2026,6 +2045,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
         host.addGroupSeparator(layout);
     }
     ScreenshotToolPaletteFontEditorConfig textFontConfig;
+    textFontConfig.presentation = m_presentation;
     textFontConfig.accessibleName = QStringLiteral("Text font family");
     textFontConfig.summaryTooltip = QStringLiteral("Current text font size");
     textFontConfig.sizeValues = m_state.m_textStyle.fontSizeValues();
@@ -2050,6 +2070,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     registerEditor(m_textFontEditor.get());
 
     ScreenshotToolPaletteIconOptionEditorConfig alignmentConfig;
+    alignmentConfig.presentation = m_presentation;
     alignmentConfig.accessibleName = QStringLiteral("Text alignment");
     alignmentConfig.triggerTooltip = QStringLiteral("Text alignment");
     alignmentConfig.minimizeTitleWidth = true;
@@ -2091,6 +2112,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
         host.addGroupSeparator(layout);
     }
     ScreenshotToolPaletteWidthColorEditorConfig textStrokeConfig;
+    textStrokeConfig.presentation = m_presentation;
     textStrokeConfig.accessibleName = QStringLiteral("Text stroke width");
     textStrokeConfig.triggerTooltip = QStringLiteral("Text stroke width");
     textStrokeConfig.popupObjectName = QStringLiteral("screenshotTextStrokeWidthOptions");
@@ -2125,6 +2147,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     addToolbarSpacing(layout, kTextStrokeColorTrailingSpacing, metrics);
 
     ScreenshotToolPaletteFillEditorConfig textFillConfig;
+    textFillConfig.presentation = m_presentation;
     textFillConfig.accessibleName = QStringLiteral("Text fill color");
     textFillConfig.popupObjectName = QStringLiteral("screenshotTextFillOptions");
     textFillConfig.presetRowObjectName = QStringLiteral("screenshotTextFillColorPresets");
@@ -2195,6 +2218,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
     auto* layout = static_cast<QHBoxLayout*>(controls->layout());
 
     ScreenshotToolPaletteColorEditorConfig serialNumberColorConfig;
+    serialNumberColorConfig.presentation = m_presentation;
     serialNumberColorConfig.accessibleName = QStringLiteral("Sequence number color");
     serialNumberColorConfig.presetValues = m_state.m_textStyle.colorValues();
     serialNumberColorConfig.observePopup = true;
@@ -2322,6 +2346,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
     addToolbarSpacing(layout, kSerialNumberTrailingSpacing, metrics);
 
     ScreenshotToolPaletteFontEditorConfig serialNumberFontConfig;
+    serialNumberFontConfig.presentation = m_presentation;
     serialNumberFontConfig.accessibleName = QStringLiteral("Sequence number font family");
     serialNumberFontConfig.summaryTooltip = QStringLiteral("Current sequence number font size");
     serialNumberFontConfig.sizeValues = m_state.m_textStyle.fontSizeValues();
@@ -2354,6 +2379,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
         host.addGroupSeparator(layout);
     }
     ScreenshotToolPaletteFillEditorConfig serialNumberFillConfig;
+    serialNumberFillConfig.presentation = m_presentation;
     serialNumberFillConfig.accessibleName = QStringLiteral("Sequence number fill color");
     serialNumberFillConfig.popupObjectName = QStringLiteral("screenshotSerialNumberFillOptions");
     serialNumberFillConfig.presetRowObjectName =
@@ -2410,6 +2436,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     const SnowCanvasWatermarkConfig& config = m_state.m_watermarkConfig;
 
     ScreenshotToolPaletteColorEditorConfig watermarkColorConfig;
+    watermarkColorConfig.presentation = m_presentation;
     watermarkColorConfig.accessibleName = QStringLiteral("Watermark color");
     watermarkColorConfig.pickerObjectName = QStringLiteral("screenshotWatermarkColorPicker");
     watermarkColorConfig.triggerObjectName = QStringLiteral("screenshotWatermarkColorTrigger");
@@ -2493,6 +2520,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     });
 
     ScreenshotToolPaletteFontEditorConfig watermarkFontConfig;
+    watermarkFontConfig.presentation = m_presentation;
     watermarkFontConfig.accessibleName = QStringLiteral("Watermark font family");
     watermarkFontConfig.summaryTooltip = QStringLiteral("Current watermark font size");
     watermarkFontConfig.summaryObjectName =
@@ -2815,6 +2843,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
                 QStringLiteral("Current pen filter stroke width"),
                 QStringLiteral("screenshotPenFilterStrokeWidthSummary"),
                 "Pen filter stroke width %1 (%2px)");
+        penFilterWidthConfig.presentation = m_presentation;
         penFilterWidthConfig.presetObjectName = [](double value) {
             return QStringLiteral("screenshotPenFilterStrokeWidth%1").arg(qRound(value));
         };

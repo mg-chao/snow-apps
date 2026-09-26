@@ -48,7 +48,11 @@
     "snow_shot::presentation::DirectCaptureController"
   ],
   "annotation": [
-    "ScreenshotToolPalette"
+    "FullscreenCanvasStylePanel",
+    "ScreenshotToolPalette",
+    "snow_shot::presentation::FullscreenCanvasController",
+    "snow_shot::presentation::FullscreenCanvasStylePanel",
+    "snow_shot::presentation::FullscreenCanvasWindow"
   ],
   "export": [
     "ScreenshotClipboardService",

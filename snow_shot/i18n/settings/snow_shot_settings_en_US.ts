@@ -1450,6 +1450,10 @@
             <translation>Draw four guide segments around the sampled center pixel</translation>
         </message>
         <message>
+            <source>Draw on a transparent canvas over the current screen</source>
+            <translation>Draw on a transparent canvas over the current screen</translation>
+        </message>
+        <message>
             <source>Drawing</source>
             <translation>Drawing</translation>
         </message>
@@ -1584,6 +1588,10 @@
         <message>
             <source>Full screen</source>
             <translation>Full screen</translation>
+        </message>
+        <message>
+            <source>Full-screen canvas</source>
+            <translation>Full-screen canvas</translation>
         </message>
         <message>
             <source>Fullscreen suppression</source>

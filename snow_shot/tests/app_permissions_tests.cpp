@@ -224,7 +224,7 @@ void routingPolicy() {
             "selected text needs Accessibility");
     for (auto action :
          {A::OpenScreenRecordingFolder, A::OpenCaptureHistory, A::OpenPinToScreenManagement,
-          A::OpenSettings, A::PinClipboardContent, A::PinSelectedFiles})
+          A::OpenSettings, A::PinClipboardContent, A::PinSelectedFiles, A::FullscreenCanvas})
         require(requiredPermissions(action, true).isEmpty(),
                 "permission-free actions must remain usable");
     using M = settings::SettingsGlobalMouseAction;

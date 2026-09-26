@@ -1450,6 +1450,10 @@
             <translation>在取样中心像素周围绘制四段辅助线</translation>
         </message>
         <message>
+            <source>Draw on a transparent canvas over the current screen</source>
+            <translation>在覆盖当前屏幕的透明画布上绘制</translation>
+        </message>
+        <message>
             <source>Drawing</source>
             <translation>绘制</translation>
         </message>
@@ -1584,6 +1588,10 @@
         <message>
             <source>Full screen</source>
             <translation>全屏</translation>
+        </message>
+        <message>
+            <source>Full-screen canvas</source>
+            <translation>全屏画布</translation>
         </message>
         <message>
             <source>Fullscreen suppression</source>

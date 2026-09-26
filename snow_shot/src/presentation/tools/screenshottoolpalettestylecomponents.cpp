@@ -374,8 +374,8 @@ void ScreenshotToolPaletteColorPresets::clear() {
     m_colors.clear();
 }
 
-QBoxLayout* ScreenshotToolPaletteStyleEditorComponent::createRoot(QBoxLayout* layout,
-                                                                  QWidget* parent) {
+QBoxLayout* ScreenshotToolPaletteStyleEditorComponent::createRoot(
+    QBoxLayout* layout, QWidget* parent, ScreenshotToolPaletteStylePresentation presentation) {
     if (layout == nullptr || parent == nullptr) {
         return nullptr;
     }
@@ -386,6 +386,19 @@ QBoxLayout* ScreenshotToolPaletteStyleEditorComponent::createRoot(QBoxLayout* la
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(kEditorItemSpacing);
     layout->addWidget(m_rootWidget);
+    if (presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        rootLayout->setDirection(QBoxLayout::TopToBottom);
+        rootLayout->setSizeConstraint(QLayout::SetMinimumSize);
+        auto* row = new QWidget(m_rootWidget);
+        row->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setSizeConstraint(QLayout::SetMinimumSize);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(kEditorItemSpacing);
+        rowLayout->setAlignment(Qt::AlignLeft);
+        rootLayout->addWidget(row);
+        return rowLayout;
+    }
     return rootLayout;
 }
 
@@ -402,10 +415,15 @@ void ScreenshotToolPaletteStyleEditorComponent::finalizeRoot() {
             continue;
         }
         const int itemWidth = screenshotToolbarReferenceWidth(item->widget());
-        referenceWidth += itemWidth > 0 ? itemWidth : item->widget()->sizeHint().width();
+        const int width = itemWidth > 0 ? itemWidth : item->widget()->sizeHint().width();
+        referenceWidth = layout->direction() == QBoxLayout::TopToBottom
+                             ? std::max(referenceWidth, width)
+                             : referenceWidth + width;
         ++visibleItems;
     }
-    referenceWidth += std::max(0, visibleItems - 1) * kEditorItemSpacing;
+    if (layout->direction() != QBoxLayout::TopToBottom) {
+        referenceWidth += std::max(0, visibleItems - 1) * kEditorItemSpacing;
+    }
     stampScreenshotToolbarReferenceWidth(m_rootWidget, referenceWidth);
 }
 
@@ -435,7 +453,7 @@ void ScreenshotToolPaletteColorEditor::build(QBoxLayout* layout, QWidget* parent
         return;
     }
 
-    layout = createRoot(layout, parent);
+    layout = createRoot(layout, parent, config.presentation);
     parent = rootWidget();
     receiver = rootWidget();
     if (layout == nullptr) {
@@ -561,7 +579,7 @@ void ScreenshotToolPaletteStrokeEditor::build(
         return;
     }
 
-    layout = createRoot(layout, parent);
+    layout = createRoot(layout, parent, config.presentation);
     parent = rootWidget();
     receiver = rootWidget();
     if (layout == nullptr) {
@@ -607,6 +625,9 @@ void ScreenshotToolPaletteStrokeEditor::build(
             }
         },
         metrics);
+    if (config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        ensurePopupContent(metrics);
+    }
     finalizeRoot();
 }
 
@@ -667,7 +688,7 @@ void ScreenshotToolPaletteStrokeEditor::rebind(
 
 void ScreenshotToolPaletteStrokeEditor::ensurePopupContent(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (m_picker == nullptr || m_picker->popupContent() != nullptr) {
+    if (m_picker == nullptr || m_picker->popupContent() != nullptr || !m_styleButtons.isEmpty()) {
         return;
     }
     ColorPickerPopupLayout popupContent =
@@ -693,7 +714,12 @@ void ScreenshotToolPaletteStrokeEditor::ensurePopupContent(
                          });
     }
     styleRow.layout->addStretch(1);
-    m_picker->setPopupContent(popupContent.widget);
+    if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        popupContent.widget->setParent(rootWidget());
+        static_cast<QBoxLayout*>(rootWidget()->layout())->addWidget(popupContent.widget);
+    } else {
+        m_picker->setPopupContent(popupContent.widget);
+    }
 }
 
 void ScreenshotToolPaletteStrokeEditor::refreshMetrics(
@@ -701,6 +727,11 @@ void ScreenshotToolPaletteStrokeEditor::refreshMetrics(
     refreshRootMetrics(metrics);
     refreshScreenshotToolPaletteColorPickerMetrics(m_picker, metrics);
     m_colorPresets.refreshMetrics(metrics);
+    if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        for (auto* button : m_styleButtons) {
+            configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+        }
+    }
 }
 
 void ScreenshotToolPaletteStrokeEditor::resetPopupMetrics(
@@ -732,7 +763,7 @@ void ScreenshotToolPaletteFillEditor::build(
         return;
     }
 
-    layout = createRoot(layout, parent);
+    layout = createRoot(layout, parent, config.presentation);
     parent = rootWidget();
     receiver = rootWidget();
     if (layout == nullptr) {
@@ -786,6 +817,9 @@ void ScreenshotToolPaletteFillEditor::build(
                                  (*callback)(style);
                              }
                          });
+    }
+    if (config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        ensurePopupContent(metrics);
     }
     finalizeRoot();
 }
@@ -847,7 +881,8 @@ void ScreenshotToolPaletteFillEditor::rebind(
 
 void ScreenshotToolPaletteFillEditor::ensurePopupContent(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (m_picker == nullptr || m_picker->popupContent() != nullptr) {
+    if (m_picker == nullptr || m_picker->popupContent() != nullptr ||
+        !m_colorPresets.buttons().isEmpty()) {
         return;
     }
     ColorPickerPopupLayout popupContent =
@@ -865,12 +900,20 @@ void ScreenshotToolPaletteFillEditor::ensurePopupContent(
         metrics);
     m_colorPresets.update(m_currentColor, m_colorMixed);
     presetRow.layout->addStretch(1);
-    m_picker->setPopupContent(popupContent.widget);
+    if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        popupContent.widget->setParent(rootWidget());
+        static_cast<QBoxLayout*>(rootWidget()->layout())->addWidget(popupContent.widget);
+    } else {
+        m_picker->setPopupContent(popupContent.widget);
+    }
 }
 
 void ScreenshotToolPaletteFillEditor::refreshMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     refreshRootMetrics(metrics);
+    if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        m_colorPresets.refreshMetrics(metrics);
+    }
     refreshScreenshotToolPaletteColorPickerMetrics(m_picker, metrics);
     for (FillStylePreviewButton* button : m_styleButtons) {
         if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
@@ -909,7 +952,7 @@ void ScreenshotToolPaletteWidthColorEditor::build(
         return;
     }
 
-    layout = createRoot(layout, parent);
+    layout = createRoot(layout, parent, config.presentation);
     parent = rootWidget();
     receiver = rootWidget();
     if (layout == nullptr) {
@@ -944,6 +987,9 @@ void ScreenshotToolPaletteWidthColorEditor::build(
                                       (*callback)(color);
                                   }
                               });
+    if (config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        ensurePopupContent(metrics);
+    }
     update(initialWidth, initialColor, false, false);
     finalizeRoot();
 }
@@ -1012,7 +1058,7 @@ void ScreenshotToolPaletteWidthColorEditor::rebind(
 
 void ScreenshotToolPaletteWidthColorEditor::ensurePopupContent(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (m_picker == nullptr || m_picker->popupContent() != nullptr) {
+    if (m_picker == nullptr || m_picker->popupContent() != nullptr || !m_widthButtons.isEmpty()) {
         return;
     }
     ColorPickerPopupLayout popupContent =
@@ -1052,12 +1098,23 @@ void ScreenshotToolPaletteWidthColorEditor::ensurePopupContent(
         metrics);
     m_colorButtons.update(m_currentColor, m_colorMixed);
     colorRow.layout->addStretch(1);
-    m_picker->setPopupContent(popupContent.widget);
+    if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        popupContent.widget->setParent(rootWidget());
+        static_cast<QBoxLayout*>(rootWidget()->layout())->addWidget(popupContent.widget);
+    } else {
+        m_picker->setPopupContent(popupContent.widget);
+    }
 }
 
 void ScreenshotToolPaletteWidthColorEditor::refreshMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     refreshRootMetrics(metrics);
+    if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        for (auto* button : m_widthButtons) {
+            configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+        }
+        m_colorButtons.refreshMetrics(metrics);
+    }
     refreshScreenshotToolPaletteColorPickerMetrics(m_picker, metrics);
 }
 
@@ -1088,7 +1145,7 @@ void ScreenshotToolPaletteNumericPresetEditor::build(
         return;
     }
 
-    layout = createRoot(layout, parent);
+    layout = createRoot(layout, parent, config.presentation);
     parent = rootWidget();
     receiver = rootWidget();
     if (layout == nullptr) {
@@ -1230,7 +1287,7 @@ void ScreenshotToolPaletteFontEditor::build(QBoxLayout* layout, QWidget* parent,
         return;
     }
 
-    layout = createRoot(layout, parent);
+    layout = createRoot(layout, parent, config.presentation);
     parent = rootWidget();
     receiver = rootWidget();
     if (layout == nullptr) {
@@ -1318,7 +1375,11 @@ void ScreenshotToolPaletteFontEditor::build(QBoxLayout* layout, QWidget* parent,
     }
     m_familySelect->setModel(fontModel);
     m_familySelect->setCurrentData(initialFamily, adqt::widgets::AdSelect::DefaultValueRole);
-    layout->addWidget(m_familySelect);
+    if (config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        static_cast<QBoxLayout*>(rootWidget()->layout())->addWidget(m_familySelect);
+    } else {
+        layout->addWidget(m_familySelect);
+    }
     QObject::connect(m_familySelect, &adqt::widgets::AdSelect::selected, receiver,
                      [callback = m_setFamily](const QVariant& value, const QString&) {
                          if (callback != nullptr && *callback &&
@@ -1444,7 +1505,7 @@ void ScreenshotToolPaletteIconOptionEditor::build(
         return;
     }
 
-    layout = createRoot(layout, parent);
+    layout = createRoot(layout, parent, config.presentation);
     parent = rootWidget();
     receiver = rootWidget();
     if (layout == nullptr) {
@@ -1456,6 +1517,15 @@ void ScreenshotToolPaletteIconOptionEditor::build(
     m_options = config.options;
     m_currentValue = initialValue;
     m_mixed = false;
+
+    if (config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+        m_config.gridColumnCount = config.gridColumnCount > 0 ? config.gridColumnCount : 3;
+        QWidget* options = createPopupContent(metrics);
+        options->setParent(rootWidget());
+        layout->addWidget(options);
+        finalizeRoot();
+        return;
+    }
 
     const auto initialOption =
         std::find_if(config.options.cbegin(), config.options.cend(),
@@ -1490,7 +1560,8 @@ void ScreenshotToolPaletteIconOptionEditor::build(
 
 QWidget* ScreenshotToolPaletteIconOptionEditor::createPopupContent(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
-    if (m_popover == nullptr) {
+    if (m_popover == nullptr &&
+        m_config.presentation != ScreenshotToolPaletteStylePresentation::Inline) {
         return nullptr;
     }
     auto* content = new QWidget();
@@ -1524,7 +1595,9 @@ QWidget* ScreenshotToolPaletteIconOptionEditor::createPopupContent(
                              if (callback != nullptr && *callback) {
                                  (*callback)(value);
                              }
-                             popover->hide();
+                             if (popover != nullptr) {
+                                 popover->hide();
+                             }
                          });
     }
     return content;
@@ -1570,7 +1643,11 @@ void ScreenshotToolPaletteIconOptionEditor::refreshMetrics(
         configureScreenshotToolPaletteIconValuePreviewTrigger(m_trigger, metrics);
     }
     for (adqt::widgets::AdButton* button : m_buttons) {
-        ensurePopupControlScope(button->parentWidget());
+        if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+            configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+        } else {
+            ensurePopupControlScope(button->parentWidget());
+        }
     }
 }
 
@@ -1578,7 +1655,11 @@ void ScreenshotToolPaletteIconOptionEditor::resetPopupMetrics(
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     static_cast<void>(metrics);
     for (adqt::widgets::AdButton* button : m_buttons) {
-        ensurePopupControlScope(button->parentWidget());
+        if (m_config.presentation == ScreenshotToolPaletteStylePresentation::Inline) {
+            configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+        } else {
+            ensurePopupControlScope(button->parentWidget());
+        }
     }
 }
 
