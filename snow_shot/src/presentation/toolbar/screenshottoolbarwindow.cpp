@@ -329,8 +329,8 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
             }
         });
     connect(&toolPalette, &ScreenshotToolPalette::textStyleChanged, this,
-            [this](const SnowCanvasTextStyle& style) {
-                m_commands.setTextStyleFromToolbar(style);
+            [this](const SnowCanvasTextStyle& style, quint32 properties) {
+                m_commands.setTextStyleFromToolbar(style, properties);
                 if (ScreenshotToolPalette* palette = this->palette()) {
                     static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
                         palette->creationStyleDefaults()));

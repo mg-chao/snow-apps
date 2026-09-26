@@ -91,7 +91,7 @@ class ScreenshotToolbarCommandSink {
     virtual void startScreenRecording() = 0;
     virtual void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                           SnowCanvasShapeKind kind) = 0;
-    virtual void setTextStyleFromToolbar(const SnowCanvasTextStyle& style) = 0;
+    virtual void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties) = 0;
     virtual void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style) = 0;
     virtual void decrementSelectedSerialNumbers() = 0;
     virtual void incrementSelectedSerialNumbers() = 0;

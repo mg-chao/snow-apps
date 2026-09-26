@@ -140,8 +140,9 @@ void ScreenshotToolCommandWorkflow::setShapeStyleFromToolbar(const SnowCanvasSha
     m_context.actions.setShapeStylePatch(style, properties, kind);
 }
 
-void ScreenshotToolCommandWorkflow::setTextStyleFromToolbar(const SnowCanvasTextStyle& style) {
-    m_context.actions.setTextStyle(style);
+void ScreenshotToolCommandWorkflow::setTextStyleFromToolbar(const SnowCanvasTextStyle& style,
+                                                            quint32 properties) {
+    m_context.actions.setTextStyle(style, properties);
 }
 
 void ScreenshotToolCommandWorkflow::setSerialNumberStyleFromToolbar(

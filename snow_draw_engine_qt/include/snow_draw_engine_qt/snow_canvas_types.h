@@ -80,6 +80,7 @@ enum SnowCanvasTextStyleMixedFlag : quint32 {
     SnowCanvasTextStyleMixedVerticalAlign = 1u << 9,
     SnowCanvasTextStyleMixedOpacity = 1u << 10,
 };
+inline constexpr quint32 SnowCanvasTextStyleAllProperties = (1u << 11) - 1u;
 
 enum SnowCanvasSerialNumberStyleMixedFlag : quint32 {
     SnowCanvasSerialNumberStyleMixedNumber = 1u << 0,

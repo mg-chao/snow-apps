@@ -74,7 +74,7 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void(const SnowCanvasShapeStyle& style, quint32 properties,
                        SnowCanvasShapeKind kind)>
         shapeStyleChanged;
-    std::function<void(const SnowCanvasTextStyle& style)> textStyleChanged;
+    std::function<void(const SnowCanvasTextStyle& style, quint32 properties)> textStyleChanged;
     std::function<void()> textStylePopupInteractionBegan;
     std::function<void()> textStylePopupInteractionEnded;
     std::function<void(const SnowCanvasSerialNumberStyle& style)> serialNumberStyleChanged;
@@ -410,7 +410,7 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] const ScreenshotToolPaletteRectangleStyleModel& activeShapeStyle() const;
     [[nodiscard]] ScreenshotToolPaletteRectangleStyleModel& activeCreationShapeStyle();
     [[nodiscard]] SnowCanvasShapeKind activeShapeKind() const;
-    void notifyTextStyleChanged() const;
+    void notifyTextStyleChanged(quint32 properties) const;
     void updateWatermarkControls();
     void refreshWatermarkOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void refreshSpotlightOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);

@@ -8930,14 +8930,18 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
     strokePicker->setPopupVisible(false);
 
     SnowCanvasTextStyle emittedStyle;
+    quint32 emittedProperties = 0;
     int changeCount = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::textStyleChanged,
-                     [&emittedStyle, &changeCount](const SnowCanvasTextStyle& style) {
+                     [&emittedStyle, &emittedProperties,
+                      &changeCount](const SnowCanvasTextStyle& style, quint32 properties) {
                          emittedStyle = style;
+                         emittedProperties = properties;
                          ++changeCount;
                      });
     clickStyleControl(palette, "Text font size XL (54px)");
-    require(changeCount == 1 && qFuzzyCompare(emittedStyle.fontSize + 1.0, 55.0),
+    require(changeCount == 1 && qFuzzyCompare(emittedStyle.fontSize + 1.0, 55.0) &&
+                emittedProperties == SnowCanvasTextStyleMixedFontSize,
             "XL text size should emit 54px once");
     auto* xlFontSizePreset = qobject_cast<adqt::widgets::AdButton*>(
         controlWithTooltip(palette, "Text font size XL (54px)"));
@@ -8947,13 +8951,15 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
             activeFontSizePreset->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
         "changing text size should move the shared style-toolbar active state to the new preset");
     clickStyleControl(palette, "Line text fill");
-    require(changeCount == 2 && emittedStyle.fillStyle == SnowCanvasFillStyle::Line,
+    require(changeCount == 2 && emittedStyle.fillStyle == SnowCanvasFillStyle::Line &&
+                emittedProperties == SnowCanvasTextStyleMixedFillStyle,
             "text fill pattern should update");
     QWidget* alignmentTrigger = controlWithAccessibleName(palette, "Text alignment");
     adqt::widgets::AdPopover* alignmentPopover = showPopoverForTrigger(alignmentTrigger);
     clickPopoverStyleControl(alignmentPopover, "Align text center");
     require(changeCount == 3 &&
-                emittedStyle.horizontalAlign == SnowCanvasTextHorizontalAlign::Center,
+                emittedStyle.horizontalAlign == SnowCanvasTextHorizontalAlign::Center &&
+                emittedProperties == SnowCanvasTextStyleMixedHorizontalAlign,
             "text alignment should update");
     require(emittedStyle.verticalAlign == SnowCanvasTextVerticalAlign::Bottom &&
                 qFuzzyCompare(emittedStyle.opacity + 1.0, 1.65),
@@ -12702,6 +12708,12 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--text-style-only"))) {
+        textStyleControlsExposeAndEmitAllRequestedProperties();
+        textStylePopupLifecyclesAreBalanced();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--original-image-only"))) {
         originalImageToggleLeadsRecognitionActions();
         imageConversionToolsExposeRecognitionActions();

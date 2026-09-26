@@ -854,7 +854,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                        SnowCanvasShapeKind kind) {
                     emit shapeStyleChanged(style, properties, kind);
                 },
-                [this](const SnowCanvasTextStyle& style) { emit textStyleChanged(style); },
+                [this](const SnowCanvasTextStyle& style, quint32 properties) {
+                    emit textStyleChanged(style, properties);
+                },
                 [this]() { emit textStylePopupInteractionBegan(); },
                 [this]() { emit textStylePopupInteractionEnded(); },
                 [this](const SnowCanvasSerialNumberStyle& style) {

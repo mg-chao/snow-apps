@@ -901,8 +901,9 @@ void ScreenshotPinnedEditController::applyShapeStyleFromPalette(const SnowCanvas
     }
 }
 
-void ScreenshotPinnedEditController::applyTextStyleFromPalette(const SnowCanvasTextStyle& style) {
-    static_cast<void>(m_canvas.setCanvasTextStyle(style));
+void ScreenshotPinnedEditController::applyTextStyleFromPalette(const SnowCanvasTextStyle& style,
+                                                               quint32 properties) {
+    static_cast<void>(m_canvas.setCanvasTextStyle(style, properties));
     if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
         static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
             m_toolbarWindow->palette()->creationStyleDefaults()));

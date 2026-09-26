@@ -54,7 +54,7 @@ class ScreenshotToolCommandWorkflow final {
     [[nodiscard]] SnowCanvasShapeStyle currentRectangleStyle() const;
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
-    void setTextStyleFromToolbar(const SnowCanvasTextStyle& style);
+    void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties);
     void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style);
     [[nodiscard]] bool stepStrokeWidth(int delta);
 

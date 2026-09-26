@@ -362,7 +362,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     std::optional<SnowCanvasAutoFilterRecord> autoFilterRegions() const;
     bool setAutoFilterRegions(const std::optional<SnowCanvasAutoFilterRecord>& record);
     bool fillAutoFilterCategory(const QString& category);
-    bool setCanvasTextStyle(const SnowCanvasTextStyle& style);
+    bool setCanvasTextStyle(const SnowCanvasTextStyle& style, quint32 properties);
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);
     SnowCanvasHistoryState canvasHistoryState() const;
     SnowCanvasSnapConfig canvasSnapConfig() const;
@@ -1078,11 +1078,12 @@ bool SnowCanvasWidget::setCanvasFilterStyle(const SnowCanvasFilterStyle& style,
     return m_impl->setCanvasFilterStyle(style, properties);
 }
 
-bool SnowCanvasWidget::Impl::setCanvasTextStyle(const SnowCanvasTextStyle& style) {
+bool SnowCanvasWidget::Impl::setCanvasTextStyle(const SnowCanvasTextStyle& style,
+                                                quint32 properties) {
     const SnowTextStyle engineStyle = snow_canvas_types::toEngineTextStyle(style);
     SnowCanvasWidgetTextInteraction::StyleChangeResult result =
         textInteraction.applyTextStyle(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
-                                       displayState.displayCache(), engineStyle);
+                                       displayState.displayCache(), engineStyle, properties);
     if (!result.success) {
         return false;
     }
@@ -1094,8 +1095,8 @@ bool SnowCanvasWidget::Impl::setCanvasTextStyle(const SnowCanvasTextStyle& style
     return true;
 }
 
-bool SnowCanvasWidget::setCanvasTextStyle(const SnowCanvasTextStyle& style) {
-    return m_impl->setCanvasTextStyle(style);
+bool SnowCanvasWidget::setCanvasTextStyle(const SnowCanvasTextStyle& style, quint32 properties) {
+    return m_impl->setCanvasTextStyle(style, properties);
 }
 
 bool SnowCanvasWidget::Impl::setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style) {

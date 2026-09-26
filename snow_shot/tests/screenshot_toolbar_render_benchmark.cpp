@@ -347,7 +347,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void startScreenRecording() override {}
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
-    void setTextStyleFromToolbar(const SnowCanvasTextStyle&) override {}
+    void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
     void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
     void decrementSelectedSerialNumbers() override {}
     void incrementSelectedSerialNumbers() override {}

@@ -67,7 +67,7 @@ class ScreenshotOverlayCanvasPresenter final {
     void previewSpotlightConfig(ScreenshotDisplaySession& displaySession,
                                 const SnowCanvasSpotlightConfig& config) const;
     void setTextStyle(const ScreenshotDisplaySession& displaySession,
-                      const SnowCanvasTextStyle& style) const;
+                      const SnowCanvasTextStyle& style, quint32 properties) const;
     void setSerialNumberStyle(const ScreenshotDisplaySession& displaySession,
                               const SnowCanvasSerialNumberStyle& style) const;
     void adjustSelectedSerialNumbers(const ScreenshotDisplaySession& displaySession,

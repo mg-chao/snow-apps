@@ -184,9 +184,26 @@ impl Engine {
         style: TextStyle,
         layouts: &[TextLayoutOverride],
     ) -> Result<MutationResult, ErrorCode> {
+        self.set_viewport_text_style_patch(
+            id,
+            style,
+            snow_draw_engine_editor::TEXT_STYLE_ALL_PROPERTIES,
+            layouts,
+        )
+    }
+
+    pub fn set_viewport_text_style_patch(
+        &mut self,
+        id: ViewportId,
+        style: TextStyle,
+        properties: u32,
+        layouts: &[TextLayoutOverride],
+    ) -> Result<MutationResult, ErrorCode> {
         self.ensure_viewport(id)?;
         let before = self.editor.snapshot();
-        let command = self.editor.set_text_style(&self.model, style, layouts)?;
+        let command = self
+            .editor
+            .set_text_style(&self.model, style, properties, layouts)?;
         if let Some(command) = command {
             self.apply_editor_command(id, command)
         } else {

@@ -57,6 +57,11 @@ std::uint64_t NaturalTextLayoutCache::measurementCount() const {
 TextLayoutOverrideMeasurement
 measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequest& request) {
     TextLayoutOverrideMeasurement result;
+    constexpr std::uint32_t fontProperties =
+        SNOW_TEXT_STYLE_MIXED_FONT_SIZE | SNOW_TEXT_STYLE_MIXED_FONT_FAMILY;
+    if ((request.properties & fontProperties) == 0) {
+        return result;
+    }
     if (request.runtime == nullptr || request.viewport == nullptr) {
         result.success = false;
         return result;
@@ -81,13 +86,14 @@ measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequ
     }
 
     return measureAutoResizeLayoutOverrides(infos.data(), qMin(count, writtenCount), request.style,
-                                            request.baseFont);
+                                            request.baseFont, request.properties);
 }
 
 TextLayoutOverrideMeasurement measureAutoResizeLayoutOverrides(const SnowTextElementInfo* infos,
                                                                std::uint32_t infoCount,
                                                                const SnowTextStyle& style,
-                                                               const QFont& baseFont) {
+                                                               const QFont& baseFont,
+                                                               std::uint32_t properties) {
     TextLayoutOverrideMeasurement result;
     if (infos == nullptr && infoCount != 0) {
         result.success = false;
@@ -98,7 +104,17 @@ TextLayoutOverrideMeasurement measureAutoResizeLayoutOverrides(const SnowTextEle
     for (std::uint32_t index = 0; index < infoCount; ++index) {
         const SnowTextElementInfo& info = infos[index];
 
-        SnowCanvasSceneItem item = previewItemForStyle(info, style);
+        SnowCanvasSceneItem item = snow_canvas_text::defaultPreviewItem(info);
+        if ((properties & SNOW_TEXT_STYLE_MIXED_FONT_SIZE) != 0) {
+            item.font_size = snow_canvas_text::resolvedTextFontSize(style.font_size);
+        }
+        if ((properties & SNOW_TEXT_STYLE_MIXED_FONT_FAMILY) != 0) {
+            item.setFontFamilyUtf8(snow_canvas_utf8::stringFromField(style.font_family_utf8,
+                                                                     style.font_family_utf8_len,
+                                                                     SNOW_FONT_FAMILY_UTF8_CAPACITY)
+                                       .trimmed()
+                                       .toUtf8());
+        }
         const QString text = snow_canvas_text::textFromSceneItem(item);
         const snow_canvas_text_layout::TextMeasuredLayout measured =
             info.auto_resize != 0

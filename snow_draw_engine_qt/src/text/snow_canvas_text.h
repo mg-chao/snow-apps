@@ -18,6 +18,8 @@ QString fontFamilyFromSceneItem(const SnowSceneDisplayItem& item);
 void copyTextToSceneItem(SnowCanvasSceneItem& item, const QString& text);
 void applyTextStyleToSceneItem(SnowCanvasSceneItem& item, const SnowTextStyle& style);
 SnowTextStyle textStyleFromSceneItem(const SnowSceneDisplayItem& item);
+SnowTextStyle patchedTextStyle(SnowTextStyle current, const SnowTextStyle& requested,
+                               std::uint32_t properties);
 
 SnowTextElementInfo newTextInfoAt(const QPointF& canvasPoint, const QFont& baseFont,
                                   const SnowTextStyle& style);

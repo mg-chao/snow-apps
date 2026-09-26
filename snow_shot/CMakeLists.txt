@@ -4208,6 +4208,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-scrolling-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --scrolling-only -platform offscreen)
+    add_test(NAME snow-shot-text-style-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --text-style-only -platform offscreen)
+    set_tests_properties(snow-shot-text-style-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-scrolling-toolbar-tests PROPERTIES LABELS "unit"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-screenshot-tool-palette-remembered-drawing-tool-tests

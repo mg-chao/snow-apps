@@ -475,7 +475,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void startScreenRecording() override;
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind) override;
-    void setTextStyleFromToolbar(const SnowCanvasTextStyle& style) override;
+    void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties) override;
     void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style) override;
     void decrementSelectedSerialNumbers() override;
     void incrementSelectedSerialNumbers() override;
@@ -1320,8 +1320,8 @@ void ScreenshotController::Impl::createToolCommandWorkflow() {
                 [this](const SnowCanvasSpotlightConfig& config) {
                     m_overlayCoordinator->setSpotlightConfig(m_displaySession, config);
                 },
-                [this](const SnowCanvasTextStyle& style) {
-                    m_overlayCoordinator->setTextStyle(m_displaySession, style);
+                [this](const SnowCanvasTextStyle& style, quint32 properties) {
+                    m_overlayCoordinator->setTextStyle(m_displaySession, style, properties);
                 },
                 [this](const SnowCanvasSerialNumberStyle& style) {
                     m_overlayCoordinator->setSerialNumberStyle(m_displaySession, style);
@@ -4407,8 +4407,9 @@ void ScreenshotController::Impl::setFilterStyleFromToolbar(const SnowCanvasFilte
     m_toolCommandWorkflow->setFilterStyleFromToolbar(style, properties);
 }
 
-void ScreenshotController::Impl::setTextStyleFromToolbar(const SnowCanvasTextStyle& style) {
-    m_toolCommandWorkflow->setTextStyleFromToolbar(style);
+void ScreenshotController::Impl::setTextStyleFromToolbar(const SnowCanvasTextStyle& style,
+                                                         quint32 properties) {
+    m_toolCommandWorkflow->setTextStyleFromToolbar(style, properties);
 }
 
 void ScreenshotController::Impl::setSerialNumberStyleFromToolbar(

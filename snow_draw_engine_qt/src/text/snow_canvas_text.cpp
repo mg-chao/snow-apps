@@ -10,6 +10,47 @@
 #include <cstring>
 
 namespace snow_canvas_text {
+SnowTextStyle patchedTextStyle(SnowTextStyle current, const SnowTextStyle& requested,
+                               std::uint32_t properties) {
+    if (properties & SNOW_TEXT_STYLE_MIXED_COLOR) {
+        current.color = requested.color;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_FONT_SIZE) {
+        current.font_size = requested.font_size;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_FONT_FAMILY) {
+        std::memcpy(current.font_family_utf8, requested.font_family_utf8,
+                    sizeof(current.font_family_utf8));
+        current.font_family_utf8_len = requested.font_family_utf8_len;
+        current.font_family_truncated = requested.font_family_truncated;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_FILL) {
+        current.fill = requested.fill;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_FILL_STYLE) {
+        current.fill_style = requested.fill_style;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_STROKE) {
+        current.stroke = requested.stroke;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_STROKE_WIDTH) {
+        current.stroke_width = requested.stroke_width;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_CORNER_RADII) {
+        current.corner_radii = requested.corner_radii;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_HORIZONTAL_ALIGN) {
+        current.horizontal_align = requested.horizontal_align;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_VERTICAL_ALIGN) {
+        current.vertical_align = requested.vertical_align;
+    }
+    if (properties & SNOW_TEXT_STYLE_MIXED_OPACITY) {
+        current.opacity = requested.opacity;
+    }
+    return current;
+}
+
 namespace text_layout = snow_canvas_text_layout;
 namespace {
 

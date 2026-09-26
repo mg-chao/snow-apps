@@ -31,11 +31,12 @@ use crate::{
     SHAPE_STYLE_PROPERTY_START_ARROWHEAD, SHAPE_STYLE_PROPERTY_STROKE,
     SHAPE_STYLE_PROPERTY_STROKE_STYLE, SHAPE_STYLE_PROPERTY_STROKE_WIDTH, SelectionArrowState,
     SelectionRectState, SerialNumberStyle, ShapeKind, ShapeStyle, ShapeStylePatch,
-    StyleToolbarSource, TEXT_STYLE_MIXED_COLOR, TEXT_STYLE_MIXED_CORNER_RADII,
-    TEXT_STYLE_MIXED_FILL, TEXT_STYLE_MIXED_FILL_STYLE, TEXT_STYLE_MIXED_FONT_FAMILY,
-    TEXT_STYLE_MIXED_FONT_SIZE, TEXT_STYLE_MIXED_HORIZONTAL_ALIGN, TEXT_STYLE_MIXED_OPACITY,
-    TEXT_STYLE_MIXED_STROKE, TEXT_STYLE_MIXED_STROKE_WIDTH, TEXT_STYLE_MIXED_VERTICAL_ALIGN,
-    TextLayoutOverride, TextStyle, arrow_with_style, selection_bounds_from_selection,
+    StyleToolbarSource, TEXT_STYLE_ALL_PROPERTIES, TEXT_STYLE_MIXED_COLOR,
+    TEXT_STYLE_MIXED_CORNER_RADII, TEXT_STYLE_MIXED_FILL, TEXT_STYLE_MIXED_FILL_STYLE,
+    TEXT_STYLE_MIXED_FONT_FAMILY, TEXT_STYLE_MIXED_FONT_SIZE, TEXT_STYLE_MIXED_HORIZONTAL_ALIGN,
+    TEXT_STYLE_MIXED_OPACITY, TEXT_STYLE_MIXED_STROKE, TEXT_STYLE_MIXED_STROKE_WIDTH,
+    TEXT_STYLE_MIXED_VERTICAL_ALIGN, TextLayoutOverride, TextStyle, arrow_with_style,
+    selection_bounds_from_selection,
     text::{text_layout_override_size, text_with_style_attributes},
 };
 
@@ -554,9 +555,14 @@ fn text_with_style(
     id: snow_draw_engine_document::ElementId,
     text: &TextData,
     style: &TextStyle,
+    properties: u32,
     layouts: &[TextLayoutOverride],
 ) -> Result<TextData, ErrorCode> {
-    let mut updated = text_with_style_attributes(text, style);
+    let mut updated =
+        text_with_style_attributes(text, &patched_text_style(text, style, properties));
+    if updated.font_size == text.font_size && updated.font_family == text.font_family {
+        return Ok(updated);
+    }
     if updated.auto_resize {
         let layout = text_layout_override_size(layouts, id)?;
         updated = text_with_auto_resize_layout(&updated, layout)?;
@@ -570,6 +576,44 @@ fn text_with_style(
         updated = text_with_wrapped_layout(&updated, layout)?;
     }
     Ok(updated)
+}
+
+fn patched_text_style(text: &TextData, style: &TextStyle, properties: u32) -> TextStyle {
+    let mut patched = TextStyle::from_text(text);
+    if properties & TEXT_STYLE_MIXED_COLOR != 0 {
+        patched.color = style.color;
+    }
+    if properties & TEXT_STYLE_MIXED_FONT_SIZE != 0 {
+        patched.font_size = style.font_size;
+    }
+    if properties & TEXT_STYLE_MIXED_FONT_FAMILY != 0 {
+        patched.font_family = style.font_family.clone();
+    }
+    if properties & TEXT_STYLE_MIXED_FILL != 0 {
+        patched.fill = style.fill;
+    }
+    if properties & TEXT_STYLE_MIXED_FILL_STYLE != 0 {
+        patched.fill_style = style.fill_style;
+    }
+    if properties & TEXT_STYLE_MIXED_STROKE != 0 {
+        patched.stroke = style.stroke;
+    }
+    if properties & TEXT_STYLE_MIXED_STROKE_WIDTH != 0 {
+        patched.stroke_width = style.stroke_width;
+    }
+    if properties & TEXT_STYLE_MIXED_CORNER_RADII != 0 {
+        patched.corner_radii = style.corner_radii;
+    }
+    if properties & TEXT_STYLE_MIXED_HORIZONTAL_ALIGN != 0 {
+        patched.horizontal_align = style.horizontal_align;
+    }
+    if properties & TEXT_STYLE_MIXED_VERTICAL_ALIGN != 0 {
+        patched.vertical_align = style.vertical_align;
+    }
+    if properties & TEXT_STYLE_MIXED_OPACITY != 0 {
+        patched.opacity = style.opacity;
+    }
+    patched
 }
 
 #[cfg(test)]
@@ -1773,10 +1817,17 @@ impl Editor {
         &mut self,
         document: &DocumentModel,
         style: TextStyle,
+        properties: u32,
         layouts: &[TextLayoutOverride],
     ) -> Result<Option<EditorCommand>, ErrorCode> {
         validate_text_style(&style)?;
-        let next_default = text_with_style_attributes(&self.state.default_text, &style);
+        if properties & !TEXT_STYLE_ALL_PROPERTIES != 0 {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        let next_default = text_with_style_attributes(
+            &self.state.default_text,
+            &patched_text_style(&self.state.default_text, &style, properties),
+        );
 
         let selected_text_ids = self
             .state
@@ -1794,7 +1845,8 @@ impl Editor {
 
             for id in self.state.selection.ids.iter().copied() {
                 if let Ok(current_text) = document.text(id) {
-                    let updated_text = text_with_style(id, current_text, &style, layouts)?;
+                    let updated_text =
+                        text_with_style(id, current_text, &style, properties, layouts)?;
                     validate_text(&updated_text)?;
                     next_selection_elements.push(SelectionRectState {
                         id,
@@ -2947,7 +2999,8 @@ mod tests {
             size: TextLayoutSize::with_content(120.0, 80.0, 88.0, 80.0),
         }];
 
-        let updated = text_with_style(id, &text, &style, &layouts).unwrap();
+        let updated =
+            text_with_style(id, &text, &style, TEXT_STYLE_ALL_PROPERTIES, &layouts).unwrap();
 
         assert_eq!(updated.font_size, 60.0);
         assert!(!updated.auto_resize);
@@ -2966,12 +3019,56 @@ mod tests {
 
         // Without a host measurement the stored geometry stays untouched.
         text.vertical_align = snow_draw_engine_document::TextVerticalAlign::Top;
-        let unchanged = text_with_style(id, &text, &style, &[]).unwrap();
+        let unchanged = text_with_style(id, &text, &style, TEXT_STYLE_ALL_PROPERTIES, &[]).unwrap();
         assert_eq!(unchanged.height(), 40.0);
         assert_eq!(
             unchanged.layout.ink(),
             snow_draw_engine_document::InkBox::new(100.0, 40.0)
         );
+    }
+
+    #[test]
+    fn stroke_width_patch_preserves_mixed_text_fonts_and_resized_layouts() {
+        let mut document = DocumentModel::new();
+        let first_id = document.allocate_element_id();
+        let second_id = document.allocate_element_id();
+        let first = TextData {
+            font_size: 24.0,
+            layout: TextLayoutSize::with_content(110.0, 42.0, 105.0, 42.0),
+            auto_resize: true,
+            ..TextData::default()
+        };
+        let second = TextData {
+            font_size: 48.0,
+            layout: TextLayoutSize::with_content(220.0, 84.0, 210.0, 84.0),
+            auto_resize: true,
+            ..TextData::default()
+        };
+        let mut insert = Transaction::new("insert text");
+        insert.insert_text(first_id, ElementMeta::default(), first.clone());
+        insert.insert_text(second_id, ElementMeta::default(), second.clone());
+        document.apply_transaction(insert).unwrap();
+
+        let mut editor = Editor::new(snow_draw_engine_core::EngineConfig::default()).unwrap();
+        editor.set_selection_state(vec![first_id, second_id], Some(first_id));
+        let mut style = TextStyle::from_text(&first);
+        style.stroke_width = 8.0;
+        let command = editor
+            .set_text_style(&document, style, TEXT_STYLE_MIXED_STROKE_WIDTH, &[])
+            .unwrap()
+            .unwrap();
+        let EditorCommand::ApplyTransaction(command) = command else {
+            panic!()
+        };
+        document.apply_transaction(command.transaction).unwrap();
+
+        for (id, original) in [(first_id, first), (second_id, second)] {
+            let updated = document.text(id).unwrap();
+            assert_eq!(updated.stroke_width, 8.0);
+            assert_eq!(updated.font_size, original.font_size);
+            assert_eq!(updated.layout, original.layout);
+            assert_eq!(updated.center, original.center);
+        }
     }
 
     #[test]

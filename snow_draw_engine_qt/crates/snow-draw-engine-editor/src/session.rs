@@ -337,9 +337,11 @@ impl EditorSession {
         &mut self,
         document: &DocumentModel,
         style: TextStyle,
+        properties: u32,
         layouts: &[TextLayoutOverride],
     ) -> Result<Option<EditorCommand>, ErrorCode> {
-        self.editor.set_text_style(document, style, layouts)
+        self.editor
+            .set_text_style(document, style, properties, layouts)
     }
 
     pub fn set_serial_number_style(

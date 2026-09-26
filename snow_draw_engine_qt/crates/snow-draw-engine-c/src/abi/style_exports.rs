@@ -345,6 +345,33 @@ pub unsafe extern "C" fn snow_viewport_set_text_style_ex(
     layout_count: u32,
     out_changed_viewports: *mut SnowChangedViewportList,
 ) -> SnowError {
+    unsafe {
+        snow_viewport_patch_text_style_ex(
+            runtime,
+            viewport,
+            style,
+            snow_draw_engine::TEXT_STYLE_ALL_PROPERTIES,
+            layouts,
+            layout_count,
+            out_changed_viewports,
+        )
+    }
+}
+
+/// # Safety
+/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
+/// `style` must point to a readable `SnowTextStyle` value.
+/// `out_changed_viewports` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_patch_text_style_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowTextStyle,
+    properties: u32,
+    layouts: *const SnowTextLayoutOverride,
+    layout_count: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
     ffi_error(|| {
         if style.is_null()
             || out_changed_viewports.is_null()
@@ -367,7 +394,12 @@ pub unsafe extern "C" fn snow_viewport_set_text_style_ex(
                 .collect::<Vec<_>>();
             let result = state
                 .runtime
-                .set_viewport_text_style(id, unsafe { (*style).into() }, &layout_overrides)
+                .set_viewport_text_style_patch(
+                    id,
+                    unsafe { (*style).into() },
+                    properties,
+                    &layout_overrides,
+                )
                 .map_err(SnowError::from)?;
             write_changed_viewports(out_changed_viewports, result.changed_viewports);
             Ok(())

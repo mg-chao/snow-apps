@@ -252,13 +252,21 @@ void SnowCanvasWidgetTextInteraction::renderEditorOverlay(
     m_session.renderEditorOverlay(painter, baseFont, displayCache.sceneInfo(), m_caretVisible);
 }
 
-SnowCanvasWidgetTextInteraction::StyleChangeResult
-SnowCanvasWidgetTextInteraction::applyTextStyle(SnowRuntime runtime, SnowViewport viewport,
-                                                SnowCanvasDisplayCache& displayCache,
-                                                const SnowTextStyle& style) {
+SnowCanvasWidgetTextInteraction::StyleChangeResult SnowCanvasWidgetTextInteraction::applyTextStyle(
+    SnowRuntime runtime, SnowViewport viewport, SnowCanvasDisplayCache& displayCache,
+    const SnowTextStyle& style, std::uint32_t properties) {
     StyleChangeResult result;
+    if ((properties & ~SNOW_TEXT_STYLE_ALL_PROPERTIES) != 0) {
+        return result;
+    }
+    if (properties == 0) {
+        result.success = true;
+        return result;
+    }
     if (m_session.isActive()) {
-        const QRegion updateRegion = applyEditorTextStyle(style, displayCache, m_widget.font());
+        const SnowTextStyle patched =
+            snow_canvas_text::patchedTextStyle(m_session.currentTextStyle(), style, properties);
+        const QRegion updateRegion = applyEditorTextStyle(patched, displayCache, m_widget.font());
         snow_canvas_widget_repaint::updateCoalesced(m_widget, updateRegion);
         snow_canvas_commands::MutationResult draftResult =
             publishActiveDraftPresentation(runtime, viewport);
@@ -275,13 +283,14 @@ SnowCanvasWidgetTextInteraction::applyTextStyle(SnowRuntime runtime, SnowViewpor
                 viewport,
                 style,
                 m_widget.font(),
+                properties,
             });
     if (!layoutOverrides.success) {
         return result;
     }
 
-    snow_canvas_commands::MutationResult mutation =
-        snow_canvas_commands::setTextStyle(runtime, viewport, style, layoutOverrides.layouts);
+    snow_canvas_commands::MutationResult mutation = snow_canvas_commands::setTextStyle(
+        runtime, viewport, style, properties, layoutOverrides.layouts);
     if (!mutation.success) {
         return result;
     }
@@ -305,7 +314,7 @@ SnowCanvasWidgetTextInteraction::stepFontSize(SnowRuntime runtime, SnowViewport 
     }
 
     style.font_size = nextFontSize;
-    return applyTextStyle(runtime, viewport, displayCache, style);
+    return applyTextStyle(runtime, viewport, displayCache, style, SNOW_TEXT_STYLE_MIXED_FONT_SIZE);
 }
 
 QRegion SnowCanvasWidgetTextInteraction::applyEditorTextStyle(

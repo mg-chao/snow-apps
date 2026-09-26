@@ -14,6 +14,9 @@ Result syncAfterEngineMutation(const Request& request) {
         return result;
     }
 
+    const bool hadActiveTextEditor = request.textEditorSession->isActive();
+    const SnowTextStyle previousTextStyle =
+        hadActiveTextEditor ? request.textEditorSession->currentTextStyle() : SnowTextStyle{};
     result.displaySyncAttempted = true;
     result.repaintRegion += request.displayState->syncDisplayCache(
         request.runtime, request.viewport, request.widgetRect, request.font,
@@ -21,6 +24,11 @@ Result syncAfterEngineMutation(const Request& request) {
 
     result.stateRefreshed =
         request.displayState->refreshState(request.runtime, request.viewport, &result.stateChanges);
+    if (result.stateRefreshed && hadActiveTextEditor && request.textEditorSession->isActive() &&
+        !snow_canvas_state::textStylesEqual(previousTextStyle,
+                                            request.textEditorSession->currentTextStyle())) {
+        result.stateChanges.styleToolbarChanged = true;
+    }
     result.shouldEmitStateSignals = request.emitStateSignals && result.stateRefreshed;
     return result;
 }

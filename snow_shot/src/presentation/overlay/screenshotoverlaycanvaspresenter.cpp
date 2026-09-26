@@ -642,12 +642,14 @@ void ScreenshotOverlayCanvasPresenter::previewSpotlightConfig(
 }
 
 void ScreenshotOverlayCanvasPresenter::setTextStyle(const ScreenshotDisplaySession& displaySession,
-                                                    const SnowCanvasTextStyle& style) const {
-    displaySession.forEachOverlay([&style](qsizetype, ScreenshotOverlayWindow* overlay) {
-        if (overlay != nullptr && overlay->canvas() != nullptr) {
-            static_cast<void>(overlay->canvas()->setCanvasTextStyle(style));
-        }
-    });
+                                                    const SnowCanvasTextStyle& style,
+                                                    quint32 properties) const {
+    displaySession.forEachOverlay(
+        [&style, properties](qsizetype, ScreenshotOverlayWindow* overlay) {
+            if (overlay != nullptr && overlay->canvas() != nullptr) {
+                static_cast<void>(overlay->canvas()->setCanvasTextStyle(style, properties));
+            }
+        });
 }
 
 void ScreenshotOverlayCanvasPresenter::setSerialNumberStyle(

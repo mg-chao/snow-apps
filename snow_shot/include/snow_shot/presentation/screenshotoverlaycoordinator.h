@@ -101,7 +101,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void previewSpotlightConfig(ScreenshotDisplaySession& displaySession,
                                 const SnowCanvasSpotlightConfig& config);
     void setTextStyle(const ScreenshotDisplaySession& displaySession,
-                      const SnowCanvasTextStyle& style);
+                      const SnowCanvasTextStyle& style, quint32 properties);
     void setSerialNumberStyle(const ScreenshotDisplaySession& displaySession,
                               const SnowCanvasSerialNumberStyle& style);
     void adjustSelectedSerialNumbers(const ScreenshotDisplaySession& displaySession, qint64 delta);

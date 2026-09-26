@@ -3716,7 +3716,7 @@ bool ScreenshotToolPaletteStyleControls::stepTextFontSize(int direction) {
         m_state.m_creationTextStyle.setFontSize(m_state.m_textStyle.textStyle().fontSize));
     m_state.m_textStyleMixed &= ~SnowCanvasTextStyleMixedFontSize;
     updateTextStyleControls();
-    notifyTextStyleChanged();
+    notifyTextStyleChanged(SnowCanvasTextStyleMixedFontSize);
     return true;
 }
 
@@ -3760,7 +3760,7 @@ bool ScreenshotToolPaletteStyleControls::handleTextStrokeWidthWheel(const QPoint
             m_state.m_textStyle.textStyle().strokeWidth));
         m_state.m_textStyleMixed &= ~SnowCanvasTextStyleMixedStrokeWidth;
         updateTextStyleControls();
-        notifyTextStyleChanged();
+        notifyTextStyleChanged(SnowCanvasTextStyleMixedStrokeWidth);
     }
     return true;
 }
@@ -4052,9 +4052,9 @@ void ScreenshotToolPaletteStyleControls::notifyWatermarkPreviewChanged() const {
     }
 }
 
-void ScreenshotToolPaletteStyleControls::notifyTextStyleChanged() const {
+void ScreenshotToolPaletteStyleControls::notifyTextStyleChanged(quint32 properties) const {
     if (m_callbacks.textStyleChanged) {
-        m_callbacks.textStyleChanged(m_state.m_textStyle.textStyle());
+        m_callbacks.textStyleChanged(m_state.m_textStyle.textStyle(), properties);
     }
 }
 
@@ -4146,7 +4146,7 @@ void ScreenshotToolPaletteStyleControls::commitTextProperty(quint32 mixedFlag, A
     mirror(m_state.m_textStyle, m_state.m_creationTextStyle);
     m_state.m_textStyleMixed &= ~mixedFlag;
     updateTextStyleControls();
-    notifyTextStyleChanged();
+    notifyTextStyleChanged(mixedFlag);
 }
 
 template <typename Apply>
@@ -4433,7 +4433,7 @@ void ScreenshotToolPaletteStyleControls::cycleTextFontSize() {
             m_state.m_creationTextStyle.setFontSize(m_state.m_textStyle.textStyle().fontSize));
         m_state.m_textStyleMixed &= ~SnowCanvasTextStyleMixedFontSize;
         updateTextStyleControls();
-        notifyTextStyleChanged();
+        notifyTextStyleChanged(SnowCanvasTextStyleMixedFontSize);
     }
 }
 

@@ -353,8 +353,9 @@ void ScreenshotOverlayCoordinator::previewWatermarkConfig(
 }
 
 void ScreenshotOverlayCoordinator::setTextStyle(const ScreenshotDisplaySession& displaySession,
-                                                const SnowCanvasTextStyle& style) {
-    m_canvasPresenter.setTextStyle(displaySession, style);
+                                                const SnowCanvasTextStyle& style,
+                                                quint32 properties) {
+    m_canvasPresenter.setTextStyle(displaySession, style, properties);
 }
 
 void ScreenshotOverlayCoordinator::setSerialNumberStyle(

@@ -20,8 +20,8 @@ pub use snow_draw_engine_editor::{
     EditorStyleDefaults, EditorUpdate, EditorViewState, EditorViewportState,
     FILTER_STYLE_PROPERTY_ALL, FilterStyle, HistoryState, RectangleShapeStyle, SelectionBounds,
     SelectionRectState, SerialNumberStyle, SerialNumberToolbarState, ShapeKind, ShapeStyle,
-    ShapeStylePatch, StyleToolbarSource, StyleToolbarState, TextCommitTarget, TextDraftCommit,
-    TextLayoutOverride, TextStyle,
+    ShapeStylePatch, StyleToolbarSource, StyleToolbarState, TEXT_STYLE_ALL_PROPERTIES,
+    TextCommitTarget, TextDraftCommit, TextLayoutOverride, TextStyle,
 };
 pub use snow_draw_engine_interaction::*;
 

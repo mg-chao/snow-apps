@@ -58,7 +58,8 @@ class SnowCanvasWidget : public QWidget {
     bool setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);
-    bool setCanvasTextStyle(const SnowCanvasTextStyle& style);
+    bool setCanvasTextStyle(const SnowCanvasTextStyle& style,
+                            quint32 properties = SnowCanvasTextStyleAllProperties);
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);
 
     SnowCanvasHistoryState canvasHistoryState() const;

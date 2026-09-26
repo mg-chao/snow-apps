@@ -351,15 +351,17 @@ MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
 }
 
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
+                            std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts) {
     MutationResult result;
     if (!hasViewport(runtime, viewport)) {
         return result;
     }
-    result.success = snow_viewport_set_text_style_ex(runtime, viewport, &style,
-                                                     layouts.empty() ? nullptr : layouts.data(),
-                                                     static_cast<std::uint32_t>(layouts.size()),
-                                                     result.changedViewports.outParam()) == SNOW_OK;
+    result.success =
+        snow_viewport_patch_text_style_ex(runtime, viewport, &style, properties,
+                                          layouts.empty() ? nullptr : layouts.data(),
+                                          static_cast<std::uint32_t>(layouts.size()),
+                                          result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 

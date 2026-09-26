@@ -599,8 +599,8 @@ struct ScreenRecordingController::Impl {
             });
         QObject::connect(
             &palette, &ScreenshotToolPalette::textStyleChanged, uiSession->connections.get(),
-            [canvas, &palette](const SnowCanvasTextStyle& style) {
-                static_cast<void>(canvas->setCanvasTextStyle(style));
+            [canvas, &palette](const SnowCanvasTextStyle& style, quint32 properties) {
+                static_cast<void>(canvas->setCanvasTextStyle(style, properties));
                 static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
                     palette.creationStyleDefaults()));
             });

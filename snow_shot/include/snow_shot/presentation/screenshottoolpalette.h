@@ -490,7 +490,7 @@ class ScreenshotToolPalette final : public QWidget,
     void watermarkPreviewChanged(const SnowCanvasWatermarkConfig& config);
     void spotlightConfigChanged(const SnowCanvasSpotlightConfig& config);
     void spotlightPreviewChanged(const SnowCanvasSpotlightConfig& config);
-    void textStyleChanged(const SnowCanvasTextStyle& style);
+    void textStyleChanged(const SnowCanvasTextStyle& style, quint32 properties);
     void textStylePopupInteractionBegan();
     void textStylePopupInteractionEnded();
     void serialNumberStyleChanged(const SnowCanvasSerialNumberStyle& style);
