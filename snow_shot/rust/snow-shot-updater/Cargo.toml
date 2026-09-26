@@ -68,6 +68,12 @@ winres = "0.1.12"
 proptest = "1.9.0"
 rand = "0.8.5"
 
+[target.'cfg(windows)'.dev-dependencies]
+windows = { version = "0.62.2", features = [
+  "Win32_System_ApplicationInstallationAndServicing",
+  "Win32_System_WindowsProgramming",
+] }
+
 [profile.release-size]
 inherits = "release"
 opt-level = "z"

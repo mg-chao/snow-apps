@@ -44,6 +44,13 @@ fn compile_windows_resources(output: &std::path::Path) {
     }
 
     let resource_path = output.join("snow-shot-updater.rc");
+    // Normal startup runs --transaction-state through CreateProcess. Declare
+    // asInvoker so Windows never guesses that this "updater" needs elevation.
+    // Protected installation writes still use the explicit runas handoff.
+    let manifest =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("windows.manifest");
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    let manifest_path = manifest.display().to_string().replace('\\', "\\\\");
     let icon = env::var_os("SNOW_SHOT_ICON_PATH").map(PathBuf::from);
     if let Some(icon) = &icon {
         println!("cargo:rerun-if-changed={}", icon.display());
@@ -59,6 +66,7 @@ fn compile_windows_resources(output: &std::path::Path) {
         .unwrap_or_default();
     let contents = format!(
         r#"#pragma code_page(65001)
+1 24 "{manifest_path}"
 {icon_line}1 VERSIONINFO
 FILEVERSION {major},{minor},{patch},0
 PRODUCTVERSION {major},{minor},{patch},0

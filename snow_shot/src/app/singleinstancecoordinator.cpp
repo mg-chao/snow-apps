@@ -150,6 +150,9 @@ void SingleInstanceCoordinator::setLaunchRequestHandler(
 bool SingleInstanceCoordinator::startServer(QString* error) {
     QLocalServer::removeServer(m_serverName);
     m_server = std::make_unique<QLocalServer>(this);
+    // A normal launch must be able to activate an elevated instance of the same
+    // user. Windows' default pipe ACL can grant access only to administrators.
+    m_server->setSocketOptions(QLocalServer::UserAccessOption);
     connect(m_server.get(), &QLocalServer::newConnection, this,
             &SingleInstanceCoordinator::acceptConnections);
     if (!m_server->listen(m_serverName)) {
@@ -178,11 +181,14 @@ bool SingleInstanceCoordinator::forwardRequest(const QStringList& arguments,
     QString lastError;
     while (timer.elapsed() < timeoutMilliseconds) {
         QLocalSocket socket;
-        socket.connectToServer(m_serverName, QIODevice::WriteOnly);
+        // Qt monitors a pending Windows pipe write with PeekNamedPipe, which
+        // requires read access even though the launch protocol only sends data.
+        socket.connectToServer(m_serverName, QIODevice::ReadWrite);
         const int remaining = timeoutMilliseconds - static_cast<int>(timer.elapsed());
         if (socket.waitForConnected(std::min(100, std::max(1, remaining)))) {
             if (socket.write(frame) == frame.size() &&
-                socket.waitForBytesWritten(std::min(500, std::max(1, remaining)))) {
+                (socket.bytesToWrite() == 0 ||
+                 socket.waitForBytesWritten(std::min(500, std::max(1, remaining))))) {
                 socket.disconnectFromServer();
                 return true;
             }

@@ -6,12 +6,18 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QLockFile>
+#include <QLocalServer>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 
 #include <cstdlib>
 #include <iostream>
+
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 namespace single_instance = snow_shot::app;
 
@@ -115,6 +121,68 @@ void liveUnreachableOwnerIsNotBypassed() {
             "live unreachable owner was bypassed or not retried for the IPC window");
     liveLock.unlock();
 }
+
+#ifdef Q_OS_WIN
+class DelayedAcceptServer final : public QLocalServer {
+  protected:
+    void incomingConnection(quintptr descriptor) override {
+        // Keep the client's write pending longer than Qt's 10 ms pipe poll.
+        QTimer::singleShot(100, this,
+                           [this, descriptor] { QLocalServer::incomingConnection(descriptor); });
+    }
+};
+
+void forwardingWaitsForSlowPrimary() {
+    single_instance::SingleInstanceCoordinator primary;
+    require(primary.acquireOrForward({QStringLiteral("snow-shot-test")}).outcome ==
+                single_instance::SingleInstanceOutcome::Primary,
+            "could not acquire the slow-primary fixture");
+    auto* originalServer = primary.findChild<QLocalServer*>();
+    require(originalServer != nullptr, "primary has no IPC server");
+    const auto name = originalServer->serverName();
+    originalServer->close();
+    DelayedAcceptServer delayed;
+    delayed.setSocketOptions(QLocalServer::UserAccessOption);
+    require(delayed.listen(name), "could not listen as the slow primary");
+    QProcess secondary;
+    secondary.start(QCoreApplication::applicationFilePath(),
+                    {QStringLiteral("--single-instance-forward"), QStringLiteral("snow-shot-test"),
+                     QStringLiteral("--show-main-window")});
+    require(secondary.waitForStarted(3000), "slow-primary client did not start");
+    require(waitUntil([&] { return secondary.state() == QProcess::NotRunning; }, 5000),
+            "slow-primary client did not finish");
+    if (secondary.exitCode() != EXIT_SUCCESS) {
+        std::cerr << secondary.readAllStandardError().constData();
+    }
+    require(secondary.exitStatus() == QProcess::NormalExit && secondary.exitCode() == EXIT_SUCCESS,
+            "launch forwarding failed while the primary was slow to accept");
+}
+
+void pipeRejectsAnonymousClients() {
+    single_instance::SingleInstanceCoordinator primary;
+    require(primary.acquireOrForward({QStringLiteral("snow-shot-test")}).outcome ==
+                single_instance::SingleInstanceOutcome::Primary,
+            "could not acquire the pipe-permissions fixture");
+    const auto* server = primary.findChild<QLocalServer*>();
+    require(server != nullptr, "primary has no IPC server");
+    const auto name = server->fullServerName().toStdWString();
+    // Unlike the default named-pipe ACL, our same-user endpoint must not grant
+    // anonymous/Everyone access. This also guards against fixing elevation by
+    // making the single-instance pipe world-accessible.
+    require(ImpersonateAnonymousToken(GetCurrentThread()),
+            "could not impersonate an anonymous pipe client");
+    const HANDLE pipe = CreateFileW(name.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
+                                    FILE_FLAG_OVERLAPPED, nullptr);
+    const DWORD error = GetLastError();
+    const BOOL reverted = RevertToSelf();
+    if (pipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(pipe);
+    }
+    require(reverted, "could not restore the test thread token");
+    require(pipe == INVALID_HANDLE_VALUE && error == ERROR_ACCESS_DENIED,
+            "single-instance pipe allowed an anonymous client");
+}
+#endif
 } // namespace
 
 int main(int argc, char** argv) {
@@ -142,6 +210,10 @@ int main(int argc, char** argv) {
         return EXIT_SUCCESS;
     }
 
+#ifdef Q_OS_WIN
+    pipeRejectsAnonymousClients();
+    forwardingWaitsForSlowPrimary();
+#endif
     firstInstanceAndQueuedForwarding();
     staleOwnerIsRecovered();
     liveUnreachableOwnerIsNotBypassed();
