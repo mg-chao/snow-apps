@@ -350,7 +350,7 @@ void mainWindowOpensWithDefaultsWhenNothingIsRemembered() {
     MainWindow window(harness.registry, harness.session);
     window.show();
     flushEvents();
-    require(window.size() == QSize(900, 556),
+    require(window.size() == QSize(900, 640),
             "a fresh configuration opens the main window at the default size");
     closeWithoutDeleting(window);
 }

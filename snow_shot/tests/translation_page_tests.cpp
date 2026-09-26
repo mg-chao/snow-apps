@@ -769,7 +769,7 @@ void navigationThemesLanguagesAndGeometry() {
     settings::SettingsRuntimeSession runtime(settings::builtInSettingsRegistry(), backend);
     MainWindow window(settings::builtInSettingsRegistry(), runtime);
     window.setAttribute(Qt::WA_DeleteOnClose, false);
-    window.resize(900, 556);
+    window.resize(900, 640);
     window.show();
     auto* card = window.findChild<ContentCardWidget*>();
     auto* sidebar = window.findChild<SidebarWidget*>();
@@ -783,9 +783,12 @@ void navigationThemesLanguagesAndGeometry() {
             translationRow = row;
         }
     }
-    require(translationRow > 0 && model->index(translationRow - 1, 0).data(role).toString() ==
-                                      QStringLiteral("/history"),
-            "Translation follows Screenshot history in navigation");
+    require(translationRow >= 2 &&
+                model->index(translationRow - 2, 0).data(role).toString() ==
+                    QStringLiteral("/history") &&
+                model->index(translationRow - 1, 0).data(role).toString() ==
+                    QStringLiteral("/pin-to-screen-management"),
+            "Translation follows Screenshot history and Pin to Screen Management in navigation");
     card->setCurrentRoute(QStringLiteral("/tools/translation"));
     auto* page = window.findChild<TranslationPageWidget*>();
     require(page != nullptr && card->currentSections().isEmpty() &&
@@ -835,7 +838,7 @@ void navigationThemesLanguagesAndGeometry() {
                         "a keyboard-layout refresh must update fixed translation shortcuts");
                 for (const bool collapsed : {false, true}) {
                     sidebar->setCollapsed(collapsed);
-                    for (const QSize size : {QSize(900, 556), QSize(512, 316), QSize(1200, 900)}) {
+                    for (const QSize size : {QSize(900, 640), QSize(512, 316), QSize(1200, 900)}) {
                         window.resize(size);
                         flushEvents();
                         flushEvents();
@@ -925,7 +928,7 @@ void navigationThemesLanguagesAndGeometry() {
             }
         }
         sidebar->setCollapsed(false);
-        window.resize(900, 556);
+        window.resize(900, 640);
         styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
         flushEvents();
     };

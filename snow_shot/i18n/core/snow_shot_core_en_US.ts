@@ -82,6 +82,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Discover more features and ways to use it</translation>
         </message>
         <message>
+            <source>Discussion and support · Group No. %1</source>
+            <translation>Discussion and support · Group No. %1</translation>
+        </message>
+        <message>
             <source>Download from website</source>
             <translation>Download from website</translation>
         </message>
@@ -148,6 +152,14 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <message>
             <source>Preview</source>
             <translation>Preview</translation>
+        </message>
+        <message>
+            <source>QQ Group 2</source>
+            <translation>QQ Group 2</translation>
+        </message>
+        <message>
+            <source>QQ Group 3</source>
+            <translation>QQ Group 3</translation>
         </message>
         <message>
             <source>Ready to install %1</source>

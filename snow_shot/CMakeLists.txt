@@ -57,6 +57,10 @@ option(SNOW_SHOT_QT_STATIC "Link Snow Shot against a static Qt build." OFF)
 set(SNOW_SHOT_WEBSITE_URL "https://snowshot.top" CACHE STRING "Public Snow Shot website URL.")
 set(SNOW_SHOT_PROJECT_URL "https://github.com/mg-chao/snow-apps" CACHE STRING
     "Public Snow Shot source repository URL.")
+set(SNOW_SHOT_QQ_GROUP_2_URL "https://qm.qq.com/q/hRIRFED9Ze" CACHE STRING
+    "QQ group 2 join URL.")
+set(SNOW_SHOT_QQ_GROUP_3_URL "https://qm.qq.com/q/Ts3cwNdykW" CACHE STRING
+    "QQ group 3 join URL.")
 unset(SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE CACHE)
 set(
     SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE
@@ -960,6 +964,8 @@ qt_add_resources(snow_shot_settings "snow_shot_about_assets"
 target_compile_definitions(snow_shot_settings PRIVATE
     SNOW_SHOT_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
     SNOW_SHOT_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
+    SNOW_SHOT_QQ_GROUP_2_URL="${SNOW_SHOT_QQ_GROUP_2_URL}"
+    SNOW_SHOT_QQ_GROUP_3_URL="${SNOW_SHOT_QQ_GROUP_3_URL}"
 )
 target_link_libraries(snow_shot_settings PRIVATE snow_shot_image_codec Qt6::Svg Qt6::Network snow_shot_administrator)
 add_library(snow_shot_global_mouse STATIC
@@ -2017,6 +2023,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}"
         SNOW_SHOT_TEST_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
         SNOW_SHOT_TEST_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
+        SNOW_SHOT_TEST_QQ_GROUP_2_URL="${SNOW_SHOT_QQ_GROUP_2_URL}"
+        SNOW_SHOT_TEST_QQ_GROUP_3_URL="${SNOW_SHOT_QQ_GROUP_3_URL}"
     )
     add_dependencies(snow-shot-about-page-tests snow_shot_release_translations)
     snow_shot_import_offscreen_platform(snow-shot-about-page-tests)

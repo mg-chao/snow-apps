@@ -148,7 +148,9 @@ void projectLinkSurfacesMatchStandardButtons() {
     for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
         manager.setThemeAppearance(appearance);
         flushEvents();
-        for (const char* name : {"aboutWebsite", "aboutSourceCode", "aboutFeedback"}) {
+        for (const char* name :
+             {"aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup2",
+              "aboutQqGroup3"}) {
             auto* button = child<AdButton>(page, name);
             require(button->buttonStyle() == AdButton::ButtonStyle::Outline &&
                         button->accentRole() == AdButton::AccentRole::Neutral,
@@ -215,11 +217,13 @@ void projectLinksAreExplicitAccessibleAndRecoverable() {
     require(opened.isEmpty(), "About does not open links or check for updates on construction");
     snapshot(page, QStringLiteral("about-actions"));
     const QString project = QStringLiteral(SNOW_SHOT_TEST_PROJECT_URL);
-    const std::array<std::pair<const char*, QUrl>, 4> links{{
+    const std::array<std::pair<const char*, QUrl>, 6> links{{
         {"aboutWebsite", QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
         {"aboutSourceCode", QUrl(project)},
         {"aboutFeedback", QUrl(project + QStringLiteral("/issues"))},
         {"aboutReleaseNotes", QUrl(project + QStringLiteral("/releases"))},
+        {"aboutQqGroup2", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_2_URL))},
+        {"aboutQqGroup3", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_3_URL))},
     }};
     for (const auto& [name, url] : links) {
         auto* button = child<QAbstractButton>(page, name);
@@ -297,7 +301,8 @@ void largerTypeKeepsEveryActionReachable() {
     require(artwork->width() <= scroll->viewport()->width() && artwork->height() > 0,
             "artwork scales down to the available width with larger fonts");
     for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction",
-                             "aboutWebsite", "aboutSourceCode", "aboutFeedback"}) {
+                             "aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup2",
+                             "aboutQqGroup3"}) {
         auto* button = child<QAbstractButton>(page, name);
         scroll->ensureWidgetVisible(button);
         flushEvents();
@@ -508,6 +513,39 @@ void updateStatesFitTheVersionPanel() {
             "blocked restarts keep their action and show the reason in the warning color");
     page.hide();
     styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
+}
+
+void updateModuleKeepsItsHeightAcrossStates() {
+    using namespace snow_shot::update;
+    UpdateService updates({});
+    auto& status = const_cast<UpdateStatus&>(updates.status());
+    QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_SHOT_TEST_VERSION));
+    AboutPageWidget page(nullptr, [](const QUrl&) { return true; }, &updates);
+    auto* panel = child<QFrame>(page, "aboutVersionPanel");
+    page.show();
+    for (const int width : {660, 360}) {
+        page.resize(width, 460);
+        flushEvents();
+        int panelHeight = -1;
+        // Unavailable is a static property of the copy and never transitions at runtime;
+        // every state the update flow can actually move through must keep one height.
+        for (const auto state : {UpdateState::Idle, UpdateState::Checking, UpdateState::Available,
+                                 UpdateState::Downloading, UpdateState::Verifying,
+                                 UpdateState::Ready, UpdateState::Applying, UpdateState::Failed}) {
+            status = {state, QStringLiteral("1.2.3"), {}, 5 * 1048576, 20 * 1048576};
+            if (state == UpdateState::Failed) {
+                status.error = QStringLiteral("network error");
+            }
+            updates.statusChanged();
+            flushEvents();
+            if (panelHeight < 0) {
+                panelHeight = panel->height();
+            }
+            require(panel->height() == panelHeight,
+                    "update state transitions never change the version panel height");
+        }
+    }
+    page.hide();
 }
 
 void dividersFollowTheComponentLibraryAndUpdatesBreathe() {
@@ -790,6 +828,28 @@ void mainNavigationSearchThemesAndLanguages() {
                             "AboutPageWidget",
                             "Screenshot selection, annotation tools, and recognized text"),
                 "resource and illustration accessibility copy follows the active language");
+        struct QqGroupCopy {
+            const char* objectName;
+            const char* title;
+            const char* number;
+        };
+        const std::array<QqGroupCopy, 2> qqGroups{{
+            {"aboutQqGroup2", "QQ Group 2", "895818102"},
+            {"aboutQqGroup3", "QQ Group 3", "1037819112"},
+        }};
+        for (const auto& group : qqGroups) {
+            const QString title = translator.translate("AboutPageWidget", group.title);
+            const QString description =
+                translator.translate("AboutPageWidget", "Discussion and support · Group No. %1")
+                    .arg(QString::fromLatin1(group.number));
+            auto* button = child<QAbstractButton>(*page, group.objectName);
+            require(button->accessibleName() == title &&
+                        button->accessibleDescription() == description,
+                    "QQ group cards retranslate their title and description");
+            const QByteArray labelName = QByteArray(group.objectName) + "Description";
+            require(child<QLabel>(*button, labelName.constData())->text() == description,
+                    "QQ group cards display the translated description with the group number");
+        }
         require(sidebar->currentRoute() == QStringLiteral("/about"),
                 "translated navigation preserves About selection");
         auto* scroll = page->findChild<adqt::widgets::AdScrollArea*>();
@@ -812,7 +872,7 @@ void mainNavigationSearchThemesAndLanguages() {
         scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
         flushEvents();
         snapshot(window, QStringLiteral("about-%1-compact-bottom").arg(locale));
-        window.resize(900, 556);
+        window.resize(900, 640);
         sidebar->setCollapsed(false);
         QCoreApplication::removeTranslator(&translator);
         flushEvents();
@@ -848,6 +908,7 @@ int main(int argc, char** argv) {
     projectLinksAreExplicitAccessibleAndRecoverable();
     updatePolicyAndUnavailableCopy();
     updateStatesFitTheVersionPanel();
+    updateModuleKeepsItsHeightAcrossStates();
     dividersFollowTheComponentLibraryAndUpdatesBreathe();
     traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();

@@ -32,7 +32,7 @@
 
 namespace {
 constexpr int MAIN_WINDOW_WIDTH = 900;
-constexpr int MAIN_WINDOW_HEIGHT = 556;
+constexpr int MAIN_WINDOW_HEIGHT = 640;
 constexpr int MAIN_WINDOW_MIN_WIDTH = 512;
 constexpr int MAIN_WINDOW_MIN_HEIGHT = 316;
 constexpr int TITLE_BAR_BOTTOM_SHADOW_HEIGHT = 6;

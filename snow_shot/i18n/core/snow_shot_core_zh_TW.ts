@@ -82,6 +82,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>探索更多功能與使用方式</translation>
         </message>
         <message>
+            <source>Discussion and support · Group No. %1</source>
+            <translation>交流與答疑 · 群號 %1</translation>
+        </message>
+        <message>
             <source>Download from website</source>
             <translation>前往官網下載</translation>
         </message>
@@ -148,6 +152,14 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Preview</source>
             <translation>預覽版</translation>
+        </message>
+        <message>
+            <source>QQ Group 2</source>
+            <translation>QQ 群組 2</translation>
+        </message>
+        <message>
+            <source>QQ Group 3</source>
+            <translation>QQ 群組 3</translation>
         </message>
         <message>
             <source>Ready to install %1</source>
