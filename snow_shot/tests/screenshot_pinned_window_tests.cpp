@@ -125,6 +125,11 @@
 
 void runPinnedOriginalImageTranslationTests();
 void runPinnedHideToTopControllerTests();
+void runFullscreenCanvasTests();
+void runFullscreenCanvasStylePanelTests();
+#ifdef Q_OS_WIN
+void runFullscreenCanvasNativeTests();
+#endif
 
 class FailingPinnedPlatform final : public snow_shot::presentation::PinnedWindowPlatform {
   public:
@@ -11797,6 +11802,23 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--fullscreen-canvas-only"))) {
+#ifdef Q_OS_WIN
+            require(QFontDatabase::addApplicationFont(
+                        QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+                    "fullscreen canvas offscreen fixture must load its UI font");
+            QApplication::setFont(QFont(QStringLiteral("Segoe UI"), 9));
+#endif
+            runFullscreenCanvasTests();
+            runFullscreenCanvasStylePanelTests();
+            return 0;
+        }
+#ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--fullscreen-canvas-native-only"))) {
+            runFullscreenCanvasNativeTests();
+            return 0;
+        }
+#endif
         const double expectedDpr = qEnvironmentVariable("SNOW_PIN_TEST_DPR").toDouble();
         if (expectedDpr > 0)
             require(

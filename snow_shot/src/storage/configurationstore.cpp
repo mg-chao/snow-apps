@@ -105,16 +105,26 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
         }
 
         QJsonValue raw = overlay.value(entry.key);
-        // Upgrade only the untouched previous tray default. A customized list keeps its order.
-        if (entry.key == QStringLiteral("tray/menu_options") && mutateDocument &&
-            !overlay.contains(QStringLiteral("global_shortcuts/restore_last_closed_windows"))) {
+        // Upgrade only untouched tray defaults from before each action was introduced.
+        // Customized menus retain their selected commands and order, including on import.
+        if (entry.key == QStringLiteral("tray/menu_options") && mutateDocument) {
             QJsonArray previousDefault = entry.defaultValue.toArray();
-            for (qsizetype i = previousDefault.size(); i > 0; --i) {
-                if (previousDefault.at(i - 1).toString() ==
-                    QStringLiteral("quick.restore-last-closed-windows"))
-                    previousDefault.removeAt(i - 1);
-            }
-            if (raw.toArray() == previousDefault) {
+            const auto removeNewAction = [&](const QString& key, const QString& action) {
+                if (overlay.contains(key) || raw.toArray().contains(action)) {
+                    return;
+                }
+                for (qsizetype i = previousDefault.size(); i > 0; --i) {
+                    if (previousDefault.at(i - 1).toString() == action) {
+                        previousDefault.removeAt(i - 1);
+                    }
+                }
+            };
+            removeNewAction(QStringLiteral("global_shortcuts/restore_last_closed_windows"),
+                            QStringLiteral("quick.restore-last-closed-windows"));
+            removeNewAction(QStringLiteral("global_shortcuts/fullscreen_canvas"),
+                            QStringLiteral("quick.fullscreen-canvas"));
+            if (previousDefault != entry.defaultValue.toArray() && raw.isArray() &&
+                raw.toArray() == previousDefault) {
                 raw = entry.defaultValue;
                 insertPath(&result.document, entry.key, raw);
                 result.dirty = true;

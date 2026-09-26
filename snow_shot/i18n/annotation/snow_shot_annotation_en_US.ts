@@ -2,6 +2,117 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
     <context>
+        <name>FullscreenCanvasStylePanel</name>
+        <message>
+            <source>Angle</source>
+            <translation>Angle</translation>
+        </message>
+        <message>
+            <source>Arrow ratio</source>
+            <translation>Arrow ratio</translation>
+        </message>
+        <message>
+            <source>Arrow shaft</source>
+            <translation>Arrow shaft</translation>
+        </message>
+        <message>
+            <source>Arrow type</source>
+            <translation>Arrow type</translation>
+        </message>
+        <message>
+            <source>Border</source>
+            <translation>Border</translation>
+        </message>
+        <message>
+            <source>Color</source>
+            <translation>Color</translation>
+        </message>
+        <message>
+            <source>Corner radius</source>
+            <translation>Corner radius</translation>
+        </message>
+        <message>
+            <source>Drag across annotations to erase.</source>
+            <translation>Drag across annotations to erase.</translation>
+        </message>
+        <message>
+            <source>End arrowhead</source>
+            <translation>End arrowhead</translation>
+        </message>
+        <message>
+            <source>Fade duration (ms)</source>
+            <translation>Fade duration (ms)</translation>
+        </message>
+        <message>
+            <source>Fill</source>
+            <translation>Fill</translation>
+        </message>
+        <message>
+            <source>Font</source>
+            <translation>Font</translation>
+        </message>
+        <message>
+            <source>Line type</source>
+            <translation>Line type</translation>
+        </message>
+        <message>
+            <source>Mask color</source>
+            <translation>Mask color</translation>
+        </message>
+        <message>
+            <source>Number</source>
+            <translation>Number</translation>
+        </message>
+        <message>
+            <source>Number shape</source>
+            <translation>Number shape</translation>
+        </message>
+        <message>
+            <source>Opacity</source>
+            <translation>Opacity</translation>
+        </message>
+        <message>
+            <source>Select an element to edit its style.</source>
+            <translation>Select an element to edit its style.</translation>
+        </message>
+        <message>
+            <source>Selection</source>
+            <translation>Selection</translation>
+        </message>
+        <message>
+            <source>Shape</source>
+            <translation>Shape</translation>
+        </message>
+        <message>
+            <source>Spacing</source>
+            <translation>Spacing</translation>
+        </message>
+        <message>
+            <source>Start arrowhead</source>
+            <translation>Start arrowhead</translation>
+        </message>
+        <message>
+            <source>Stroke</source>
+            <translation>Stroke</translation>
+        </message>
+        <message>
+            <source>Stroke width</source>
+            <translation>Stroke width</translation>
+        </message>
+        <message>
+            <source>Template</source>
+            <translation>Template</translation>
+        </message>
+        <message>
+            <source>Text alignment</source>
+            <translation>Text alignment</translation>
+        </message>
+        <message>
+            <source>Watermark text</source>
+            <translation>Watermark text</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolPalette</name>
         <message>
             <source>%1 (unavailable)</source>
@@ -138,6 +249,18 @@
         <message>
             <source>Circle</source>
             <translation>Circle</translation>
+        </message>
+        <message>
+            <source>Clear canvas</source>
+            <translation>Clear canvas</translation>
+        </message>
+        <message>
+            <source>Click-through</source>
+            <translation>Click-through</translation>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>Close</translation>
         </message>
         <message>
             <source>Close recording</source>
@@ -516,6 +639,10 @@
             <translation>Keyboard Size</translation>
         </message>
         <message>
+            <source>Laser pointer</source>
+            <translation>Laser pointer</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>Line</translation>
         </message>
@@ -774,6 +901,10 @@
         <message>
             <source>Scrolling screenshot</source>
             <translation>Scrolling screenshot</translation>
+        </message>
+        <message>
+            <source>Select</source>
+            <translation>Select</translation>
         </message>
         <message>
             <source>Select elements</source>
@@ -1146,6 +1277,51 @@
         <message>
             <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
             <translation>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::FullscreenCanvasController</name>
+        <message>
+            <source>No screen is available for the full-screen canvas.</source>
+            <translation>No screen is available for the full-screen canvas.</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::FullscreenCanvasStylePanel</name>
+        <message>
+            <source>Fade duration (ms)</source>
+            <translation>Fade duration (ms)</translation>
+        </message>
+        <message>
+            <source>Stroke width</source>
+            <translation>Stroke width</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::FullscreenCanvasWindow</name>
+        <message>
+            <source>Could not change click-through mode.</source>
+            <translation>Could not change click-through mode.</translation>
+        </message>
+        <message>
+            <source>Could not initialize the canvas window.</source>
+            <translation>Could not initialize the canvas window.</translation>
+        </message>
+        <message>
+            <source>Could not initialize the full-screen canvas.</source>
+            <translation>Could not initialize the full-screen canvas.</translation>
+        </message>
+        <message>
+            <source>Full-screen canvas</source>
+            <translation>Full-screen canvas</translation>
+        </message>
+        <message>
+            <source>Resume drawing</source>
+            <translation>Resume drawing</translation>
+        </message>
+        <message>
+            <source>Turn off click-through and resume drawing</source>
+            <translation>Turn off click-through and resume drawing</translation>
         </message>
     </context>
 </TS>

@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QJsonDocument>
 #include <QSet>
+#include <QScopedValueRollback>
 
 #include <algorithm>
 #include <array>
@@ -22,7 +23,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 20;
+constexpr std::size_t ACTION_COUNT = 21;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -38,6 +39,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenPinToScreenManagement,
+    GlobalShortcutAction::FullscreenCanvas,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
@@ -150,6 +152,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.openCaptureHistory();
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.openPinToScreenManagement();
+    case GlobalShortcutAction::FullscreenCanvas:
+        return settings.fullscreenCanvas();
     case GlobalShortcutAction::OpenSettings:
         return settings.openSettings();
     case GlobalShortcutAction::PinClipboardContent:
@@ -197,6 +201,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setOpenCaptureHistory(bindings);
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.setOpenPinToScreenManagement(bindings);
+    case GlobalShortcutAction::FullscreenCanvas:
+        return settings.setFullscreenCanvas(bindings);
     case GlobalShortcutAction::OpenSettings:
         return settings.setOpenSettings(bindings);
     case GlobalShortcutAction::PinClipboardContent:
@@ -299,6 +305,10 @@ class GlobalShortcutManager::Impl {
         QObject::connect(&storage::ApplicationStorage::instance().configuration(),
                          &storage::ConfigurationStore::valueChanged, &q,
                          [this](const QString& key, const QJsonValue&) {
+                             if (m_initialized && !m_persistingShortcuts &&
+                                 key.startsWith(QStringLiteral("global_shortcuts/"))) {
+                                 schedulePersistedShortcutRefresh();
+                             }
                              if (m_initialized &&
                                  key ==
                                      QStringLiteral("extended_features/translation_page_enabled")) {
@@ -309,14 +319,50 @@ class GlobalShortcutManager::Impl {
         reconcile();
     }
 
+    void schedulePersistedShortcutRefresh() {
+        if (m_persistedRefreshScheduled) {
+            return;
+        }
+        m_persistedRefreshScheduled = true;
+        // Configuration observers and stateChanged observers may write another
+        // shortcut synchronously. Refresh after that transaction and never enter
+        // reconcile recursively while it is publishing its state snapshot.
+        QMetaObject::invokeMethod(
+            &q,
+            [this] {
+                m_persistedRefreshScheduled = false;
+                const storage::ShortcutSettings settings;
+                bool changed = false;
+                for (GlobalShortcutAction action : ALL_ACTIONS) {
+                    auto& current = m_shortcuts[actionIndex(action)];
+                    const auto persisted = canonicalBindings(persistedShortcuts(settings, action));
+                    if (current != persisted) {
+                        current = persisted;
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    reconcile();
+                }
+            },
+            Qt::QueuedConnection);
+    }
+
     bool setShortcuts(GlobalShortcutAction action, const shortcuts::ShortcutBindingList& bindings) {
         if (!m_initialized) {
             initialize();
         }
         const auto canonical = canonicalBindings(bindings);
-        if (!persistShortcuts(storage::ShortcutSettings(), action, canonical)) {
-            return false;
+        bool persisted = false;
+        {
+            const QScopedValueRollback<bool> persisting(m_persistingShortcuts, true);
+            persisted = persistShortcuts(storage::ShortcutSettings(), action, canonical);
         }
+        // A synchronous storage observer may have changed a different key while
+        // our own write was guarded. The queued refresh also reconciles that edit.
+        schedulePersistedShortcutRefresh();
+        if (!persisted)
+            return false;
         m_shortcuts[actionIndex(action)] = canonical;
         reconcile();
         return true;
@@ -507,6 +553,8 @@ class GlobalShortcutManager::Impl {
     int m_nextRegistrationId = FIRST_REGISTRATION_ID;
     RegistrationSuspensionHandle m_nextSuspensionHandle = 1;
     bool m_initialized = false;
+    bool m_persistingShortcuts = false;
+    bool m_persistedRefreshScheduled = false;
     bool m_globalHotkeysEnabled = true;
 };
 

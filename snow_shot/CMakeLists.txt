@@ -1173,6 +1173,13 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/directcapturehistory.cpp
     src/presentation/capture/camerashuttersound.cpp
     src/app/applicationcontroller.cpp
+    include/snow_shot/presentation/fullscreencanvascontroller.h
+    include/snow_shot/presentation/fullscreencanvaswindow.h
+    include/snow_shot/presentation/fullscreencanvasstylepanel.h
+    src/presentation/canvas/fullscreencanvascontroller.cpp
+    src/presentation/canvas/fullscreencanvaswindow.cpp
+    src/presentation/canvas/fullscreencanvasstylepanel.cpp
+    src/presentation/canvas/fullscreencanvaslaser.cpp
     src/app/applicationrestart.cpp
     src/app/featureavailability.cpp
     src/app/main.cpp
@@ -1494,6 +1501,17 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     enable_testing()
+
+    add_executable(snow-shot-fullscreen-canvas-laser-tests
+        tests/fullscreen_canvas_laser_tests.cpp
+        src/presentation/canvas/fullscreencanvaslaser.cpp)
+    target_link_libraries(snow-shot-fullscreen-canvas-laser-tests PRIVATE
+        Qt6::Widgets snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-shot-fullscreen-canvas-laser-tests)
+    add_test(NAME snow-shot-fullscreen-canvas-laser-tests
+        COMMAND snow-shot-fullscreen-canvas-laser-tests -platform offscreen)
+    set_tests_properties(snow-shot-fullscreen-canvas-laser-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30)
 
     add_executable(snow-shot-recognition-image-tests tests/screenshot_recognition_image_tests.cpp
         ${SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES})
@@ -3397,6 +3415,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     add_executable(snow-shot-pinned-window-tests
+        tests/fullscreen_canvas_tests.cpp
+        tests/fullscreen_canvas_style_tests.cpp
+        include/snow_shot/presentation/fullscreencanvascontroller.h
+        include/snow_shot/presentation/fullscreencanvaswindow.h
+        include/snow_shot/presentation/fullscreencanvasstylepanel.h
+        src/presentation/canvas/fullscreencanvascontroller.cpp
+        src/presentation/canvas/fullscreencanvaswindow.cpp
+        src/presentation/canvas/fullscreencanvasstylepanel.cpp
+        src/presentation/canvas/fullscreencanvaslaser.cpp
         tests/screenshot_pinned_hide_to_top_tests.cpp
         src/presentation/services/screenshotfilepinbatch.cpp
         tests/screenshot_pinned_window_tests.cpp
@@ -3518,6 +3545,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 180
         ENVIRONMENT "QT_QPA_PLATFORM=windows")
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-fullscreen-canvas-tests
+        COMMAND snow-shot-pinned-window-tests --fullscreen-canvas-only -platform offscreen)
+    add_test(NAME snow-shot-fullscreen-canvas-dpi-tests
+        COMMAND snow-shot-pinned-window-tests --fullscreen-canvas-only -platform offscreen)
+    set_tests_properties(snow-shot-fullscreen-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90)
+    set_tests_properties(snow-shot-fullscreen-canvas-dpi-tests PROPERTIES LABELS "unit" TIMEOUT 90
+        ENVIRONMENT "QT_SCALE_FACTOR=1.5")
+    if(WIN32)
+        add_test(NAME snow-shot-fullscreen-canvas-native-tests
+            COMMAND snow-shot-pinned-window-tests --fullscreen-canvas-native-only -platform windows)
+        set_tests_properties(snow-shot-fullscreen-canvas-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     add_test(NAME snow-shot-pinned-restored-text-theme-tests
         COMMAND snow-shot-pinned-window-tests --restored-text-theme-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-restored-text-theme-tests PROPERTIES
@@ -6640,6 +6680,14 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
 endif()
 
+target_include_directories(snow_shot PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/tools")
+if(TARGET snow-shot-pinned-window-tests)
+    target_include_directories(snow-shot-pinned-window-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/tools")
+    add_test(NAME snow-shot-fullscreen-canvas-settings-tests
+        COMMAND snow-shot-application-storage-tests --fullscreen-canvas-only)
+    set_tests_properties(snow-shot-fullscreen-canvas-settings-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()
 snow_shot_add_translations(snow_shot)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotUpdateUiTests.cmake")
 

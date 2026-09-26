@@ -36,7 +36,7 @@ using PinnedPlacement = storage::PinnedWindowPlacement;
 
 class PinnedWindowPlatform : public QObject {
   public:
-    enum class Role { Image, Auxiliary };
+    enum class Role { Image, Auxiliary, Canvas };
     enum class GeometryUpdate { PreserveContents, DiscardContents };
     explicit PinnedWindowPlatform(QWidget* window, Role role);
     ~PinnedWindowPlatform() override;

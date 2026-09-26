@@ -618,6 +618,11 @@ void mainToolbarSpacingUsesReferenceItemMetrics() {
         QLayoutItem* item = layout->itemAt(index);
         require(item != nullptr, "reference toolbar layout contains an empty item");
         referenceWidths.append(item->geometry().width());
+        if (item->spacerItem() != nullptr) {
+            require(referenceWidths.constLast() == 8 || referenceWidths.constLast() == 12,
+                    "reference toolbar gaps must use 8 pixels between items or 12 beside group "
+                    "separators");
+        }
     }
     referenceWidths.append(referenceMargins.right());
 
@@ -642,8 +647,11 @@ void mainToolbarSpacingUsesReferenceItemMetrics() {
         }
         if (item->spacerItem() != nullptr) {
             ++spacerCount;
-            require(item->geometry().width() == qRound(8.0 * exactMetricScale),
-                    "main toolbar item spacing should remain 8 reference pixels at 1.5x");
+            const int referenceWidth = referenceWidths.at(index + 1);
+            require(item->geometry().width() == qRound(referenceWidth * exactMetricScale),
+                    referenceWidth == 8
+                        ? "main toolbar item spacing should remain 8 reference pixels at 1.5x"
+                        : "main toolbar group spacing should remain 12 reference pixels at 1.5x");
             continue;
         }
         if (qobject_cast<adqt::widgets::AdButton*>(item->widget()) != nullptr) {

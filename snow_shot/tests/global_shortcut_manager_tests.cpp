@@ -1,9 +1,11 @@
 #include "snow_shot/platform/focusedfullscreenwindow.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationschema.h"
 
 #include <QCoreApplication>
 #include <QHash>
+#include <QJsonArray>
 #include <QTemporaryDir>
 
 #ifdef Q_OS_MACOS
@@ -38,6 +40,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenPinToScreenManagement,
+    GlobalShortcutAction::FullscreenCanvas,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
@@ -132,6 +135,99 @@ void pinnedManagementShortcutCanBeAssignedAndRestored() {
                 restored.state(action).shortcuts == shortcuts::ShortcutBindingList{binding},
             "pinned management hotkey must survive manager recreation");
     require(restored.setShortcuts(action, {}), "clear pinned management hotkey fixture");
+}
+
+void fullscreenCanvasShortcutFollowsStorageChanges() {
+    constexpr auto action = GlobalShortcutAction::FullscreenCanvas;
+    const QString key = QStringLiteral("global_shortcuts/fullscreen_canvas");
+    auto backend = std::make_unique<FakeBackend>();
+    auto* input = backend.get();
+    GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+    manager.initialize();
+    require(manager.state(action).status == GlobalShortcutStatus::Unset &&
+                manager.state(action).shortcuts.isEmpty(),
+            "full-screen canvas must have no default global hotkey");
+    clearAll(manager);
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    require(configuration.setValue(key, QJsonArray{QStringLiteral("Ctrl+F9")}),
+            "write the canvas shortcut through configuration");
+    QCoreApplication::processEvents();
+    require(manager.state(action).status == GlobalShortcutStatus::Registered &&
+                input->registrations.size() == 1,
+            "full-screen canvas must register a binding written through configuration");
+    bool activated = false;
+    QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                     [&](GlobalShortcutAction received) { activated = received == action; });
+    input->handler(input->registrations.constBegin().key());
+    require(activated, "full-screen canvas shortcut must dispatch its own action");
+    require(
+        configuration.applySnapshot({}, snow_shot::storage::ConfigurationSchema::currentVersion()),
+        "import a configuration without a canvas binding");
+    QCoreApplication::processEvents();
+    require(manager.state(action).status == GlobalShortcutStatus::Unset &&
+                manager.state(action).shortcuts.isEmpty(),
+            "importing a configuration without a canvas binding must clear its registration");
+    require(manager.setShortcuts(action, {QStringLiteral("Ctrl+F9")}),
+            "full-screen canvas shortcut must accept a new assignment after import");
+    auto restoredBackend = std::make_unique<FakeBackend>();
+    GlobalShortcutManager restored(std::move(restoredBackend), nullptr, [] { return false; });
+    restored.initialize();
+    require(restored.state(action).status == GlobalShortcutStatus::Registered &&
+                restored.state(action).shortcuts == manager.state(action).shortcuts,
+            "full-screen canvas shortcut must survive manager recreation");
+    require(manager.setShortcuts(action, {}), "reset the canvas shortcut");
+    QCoreApplication::processEvents();
+    require(restored.state(action).status == GlobalShortcutStatus::Unset,
+            "resetting the canvas shortcut must update every live manager");
+}
+
+void persistedShortcutRefreshDoesNotReenterStatePublication() {
+    constexpr auto canvasAction = GlobalShortcutAction::FullscreenCanvas;
+    constexpr auto toggleAction = GlobalShortcutAction::ToggleGlobalHotkeys;
+    const QString canvasKey = QStringLiteral("global_shortcuts/fullscreen_canvas");
+    const QString toggleKey = QStringLiteral("global_shortcuts/toggle_global_hotkeys");
+    auto backend = std::make_unique<FakeBackend>();
+    auto* input = backend.get();
+    GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+    manager.initialize();
+    clearAll(manager);
+    QCoreApplication::processEvents();
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const QString toggleBinding = QStringLiteral("Ctrl+F10");
+    int observerWrites = 0;
+    QObject::connect(
+        &manager, &GlobalShortcutManager::stateChanged, &manager,
+        [&](GlobalShortcutAction action, const GlobalShortcutRegistrationState& state) {
+            if (action == canvasAction && state.status == GlobalShortcutStatus::Registered) {
+                require(configuration.setValue(toggleKey, QJsonArray{toggleBinding}),
+                        "state observers must be able to update another shortcut");
+                ++observerWrites;
+            }
+        });
+    const auto requireConsistent = [&] {
+        // The canvas refresh may queue the observer's second refresh. Deliver
+        // both turns without a timing-dependent sleep or a nested signal loop.
+        QCoreApplication::processEvents();
+        QCoreApplication::processEvents();
+        require(manager.state(canvasAction).status == GlobalShortcutStatus::Registered &&
+                    manager.state(toggleAction).status == GlobalShortcutStatus::Registered &&
+                    manager.state(toggleAction).shortcuts ==
+                        shortcuts::ShortcutBindingList{toggleBinding} &&
+                    input->registrations.size() == 2,
+                "observer edits must leave both published state and native registrations current");
+    };
+    require(manager.setShortcuts(canvasAction, {QStringLiteral("Ctrl+F9")}),
+            "canvas assignment must trigger the synchronous state observer");
+    requireConsistent();
+    require(observerWrites == 1, "the initial assignment must publish once");
+    require(manager.setShortcuts(canvasAction, {}) && manager.setShortcuts(toggleAction, {}),
+            "reset the reentrant refresh fixture");
+    QCoreApplication::processEvents();
+    require(configuration.setValue(canvasKey, QJsonArray{QStringLiteral("Ctrl+F11")}),
+            "configuration import must trigger a queued canvas refresh");
+    requireConsistent();
+    require(observerWrites == 2,
+            "storage refresh must publish once without recursive reconciliation");
 }
 
 void backendAvailabilityInvalidatesOwnershipAndRecovers() {
@@ -812,6 +908,8 @@ int main(int argc, char** argv) {
             "initialize shortcut test storage");
     validationCoversSupportedAndRejectedKeys();
     pinnedManagementShortcutCanBeAssignedAndRestored();
+    fullscreenCanvasShortcutFollowsStorageChanges();
+    persistedShortcutRefreshDoesNotReenterStatePublication();
     backendAvailabilityInvalidatesOwnershipAndRecovers();
 #ifdef Q_OS_MACOS
     disabledMacOSSystemReservationsRemainUsable();

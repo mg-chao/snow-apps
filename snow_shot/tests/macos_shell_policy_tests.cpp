@@ -34,6 +34,7 @@ void shortcutFamiliesAreComplete() {
         {GlobalShortcutAction::OpenScreenRecordingFolder, std::nullopt},
         {GlobalShortcutAction::OpenCaptureHistory, std::nullopt},
         {GlobalShortcutAction::OpenPinToScreenManagement, std::nullopt},
+        {GlobalShortcutAction::FullscreenCanvas, std::nullopt},
         {GlobalShortcutAction::OpenSettings, std::nullopt},
         {GlobalShortcutAction::PinClipboardContent, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::TranslateSelectedText, std::nullopt},

@@ -2,6 +2,117 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
     <context>
+        <name>FullscreenCanvasStylePanel</name>
+        <message>
+            <source>Angle</source>
+            <translation>角度</translation>
+        </message>
+        <message>
+            <source>Arrow ratio</source>
+            <translation>箭頭比例</translation>
+        </message>
+        <message>
+            <source>Arrow shaft</source>
+            <translation>箭桿</translation>
+        </message>
+        <message>
+            <source>Arrow type</source>
+            <translation>箭頭類型</translation>
+        </message>
+        <message>
+            <source>Border</source>
+            <translation>邊框</translation>
+        </message>
+        <message>
+            <source>Color</source>
+            <translation>色彩</translation>
+        </message>
+        <message>
+            <source>Corner radius</source>
+            <translation>圓角半徑</translation>
+        </message>
+        <message>
+            <source>Drag across annotations to erase.</source>
+            <translation>在標註上拖曳即可擦除。</translation>
+        </message>
+        <message>
+            <source>End arrowhead</source>
+            <translation>末端箭頭</translation>
+        </message>
+        <message>
+            <source>Fade duration (ms)</source>
+            <translation>消退時間（毫秒）</translation>
+        </message>
+        <message>
+            <source>Fill</source>
+            <translation>填滿</translation>
+        </message>
+        <message>
+            <source>Font</source>
+            <translation>字型</translation>
+        </message>
+        <message>
+            <source>Line type</source>
+            <translation>線條類型</translation>
+        </message>
+        <message>
+            <source>Mask color</source>
+            <translation>遮罩顏色</translation>
+        </message>
+        <message>
+            <source>Number</source>
+            <translation>序號</translation>
+        </message>
+        <message>
+            <source>Number shape</source>
+            <translation>序號形狀</translation>
+        </message>
+        <message>
+            <source>Opacity</source>
+            <translation>透明度</translation>
+        </message>
+        <message>
+            <source>Select an element to edit its style.</source>
+            <translation>選取一個元素以編輯其樣式。</translation>
+        </message>
+        <message>
+            <source>Selection</source>
+            <translation>選取範圍</translation>
+        </message>
+        <message>
+            <source>Shape</source>
+            <translation>圖形</translation>
+        </message>
+        <message>
+            <source>Spacing</source>
+            <translation>間距</translation>
+        </message>
+        <message>
+            <source>Start arrowhead</source>
+            <translation>起始箭頭</translation>
+        </message>
+        <message>
+            <source>Stroke</source>
+            <translation>筆畫</translation>
+        </message>
+        <message>
+            <source>Stroke width</source>
+            <translation>筆畫寬度</translation>
+        </message>
+        <message>
+            <source>Template</source>
+            <translation>範本</translation>
+        </message>
+        <message>
+            <source>Text alignment</source>
+            <translation>文字對齊</translation>
+        </message>
+        <message>
+            <source>Watermark text</source>
+            <translation>浮水印文字</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotToolPalette</name>
         <message>
             <source>%1 (unavailable)</source>
@@ -138,6 +249,18 @@
         <message>
             <source>Circle</source>
             <translation>圓形</translation>
+        </message>
+        <message>
+            <source>Clear canvas</source>
+            <translation>清空畫布</translation>
+        </message>
+        <message>
+            <source>Click-through</source>
+            <translation>滑鼠穿透</translation>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>關閉</translation>
         </message>
         <message>
             <source>Close recording</source>
@@ -516,6 +639,10 @@
             <translation>鍵盤大小</translation>
         </message>
         <message>
+            <source>Laser pointer</source>
+            <translation>雷射筆</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直線</translation>
         </message>
@@ -774,6 +901,10 @@
         <message>
             <source>Scrolling screenshot</source>
             <translation>捲動截圖</translation>
+        </message>
+        <message>
+            <source>Select</source>
+            <translation>選取</translation>
         </message>
         <message>
             <source>Select elements</source>
@@ -1146,6 +1277,51 @@
         <message>
             <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
             <translation>{text} 代表目前的浮水印文字；支援 {YYYY-MM-DD_HH-mm-ss} 等時間戳記格式</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::FullscreenCanvasController</name>
+        <message>
+            <source>No screen is available for the full-screen canvas.</source>
+            <translation>沒有可供全螢幕畫布使用的螢幕。</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::FullscreenCanvasStylePanel</name>
+        <message>
+            <source>Fade duration (ms)</source>
+            <translation>消退時間（毫秒）</translation>
+        </message>
+        <message>
+            <source>Stroke width</source>
+            <translation>筆畫寬度</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::FullscreenCanvasWindow</name>
+        <message>
+            <source>Could not change click-through mode.</source>
+            <translation>無法切換滑鼠穿透模式。</translation>
+        </message>
+        <message>
+            <source>Could not initialize the canvas window.</source>
+            <translation>無法初始化畫布視窗。</translation>
+        </message>
+        <message>
+            <source>Could not initialize the full-screen canvas.</source>
+            <translation>無法初始化全螢幕畫布。</translation>
+        </message>
+        <message>
+            <source>Full-screen canvas</source>
+            <translation>全螢幕畫布</translation>
+        </message>
+        <message>
+            <source>Resume drawing</source>
+            <translation>繼續繪製</translation>
+        </message>
+        <message>
+            <source>Turn off click-through and resume drawing</source>
+            <translation>關閉滑鼠穿透並繼續繪製</translation>
         </message>
     </context>
 </TS>

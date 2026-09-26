@@ -21,6 +21,7 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
+#include "snow_shot/presentation/fullscreencanvascontroller.h"
 #include "snow_shot/presentation/selectedtexttranslationcoordinator.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
@@ -681,6 +682,9 @@ class ApplicationController::Impl {
         case presentation::GlobalShortcutAction::OpenPinToScreenManagement:
             ensureMainWindow().showPinToScreenManagement();
             break;
+        case presentation::GlobalShortcutAction::FullscreenCanvas:
+            ensureFullscreenCanvasController().activate();
+            break;
         case presentation::GlobalShortcutAction::OpenSettings:
             showInterfaceSettings();
             break;
@@ -737,6 +741,21 @@ class ApplicationController::Impl {
                              &presentation::SelectedTextTranslationCoordinator::shutdown);
         }
         return *selectedTextTranslationCoordinator;
+    }
+
+    presentation::FullscreenCanvasController& ensureFullscreenCanvasController() {
+        if (!fullscreenCanvasController) {
+            fullscreenCanvasController =
+                std::make_unique<presentation::FullscreenCanvasController>(&q);
+            QObject::connect(fullscreenCanvasController.get(),
+                             &presentation::FullscreenCanvasController::operationFailed, &q,
+                             [this](const QString& message, bool warning) {
+                                 systemTray.showCaptureMessage(message, warning);
+                             });
+            QObject::connect(&app, &QCoreApplication::aboutToQuit, fullscreenCanvasController.get(),
+                             &presentation::FullscreenCanvasController::shutdown);
+        }
+        return *fullscreenCanvasController;
     }
 
     presentation::DirectCaptureController& ensureDirectCaptureController() {
@@ -846,6 +865,7 @@ class ApplicationController::Impl {
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
     std::unique_ptr<presentation::DirectCaptureController> directCaptureController;
+    std::unique_ptr<presentation::FullscreenCanvasController> fullscreenCanvasController;
     std::unique_ptr<presentation::SelectedTextTranslationCoordinator>
         selectedTextTranslationCoordinator;
     QPointer<MainWindow> mainWindow;

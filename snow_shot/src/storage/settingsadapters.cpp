@@ -398,6 +398,14 @@ bool ShortcutSettings::setOpenCaptureHistory(const shortcuts::ShortcutBindingLis
     return setShortcutValue(QStringLiteral("global_shortcuts/open_capture_history"), bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::fullscreenCanvas() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/fullscreen_canvas"));
+}
+
+bool ShortcutSettings::setFullscreenCanvas(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/fullscreen_canvas"), bindings);
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::openPinToScreenManagement() const {
     return shortcutValue(QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
 }

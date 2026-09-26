@@ -330,6 +330,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                     QStringLiteral("quick.restore-last-closed-windows"),
                     QStringLiteral("quick.screen-record"),
                     QStringLiteral("quick.toggle-global-hotkeys"),
+                    QStringLiteral("quick.fullscreen-canvas"),
                     QStringLiteral("tray.window-grouping"), QStringLiteral("tray.show-main-window"),
                     QStringLiteral("tray.exit")},
         "new settings defaults do not match the requested contract");
@@ -2376,6 +2377,72 @@ void pinnedManagementConfigurationAndTrayMigration() {
 #endif
 }
 
+void fullscreenCanvasConfigurationAndTrayMigration() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "full-screen canvas configuration fixture must have a directory");
+    const QString canvasShortcutKey = QStringLiteral("global_shortcuts/fullscreen_canvas");
+    const QString colorKey = QStringLiteral("fullscreen_canvas/laser_color");
+    const QString widthKey = QStringLiteral("fullscreen_canvas/laser_width");
+    const QString durationKey = QStringLiteral("fullscreen_canvas/laser_duration_ms");
+    const QString trayKey = QStringLiteral("tray/menu_options");
+    const QString canvasAction = QStringLiteral("quick.fullscreen-canvas");
+    const auto defaults = storage::ConfigurationSchema::defaultValue(trayKey).toArray();
+    require(defaults.contains(canvasAction) &&
+                storage::ConfigurationSchema::defaultValue(canvasShortcutKey).toArray().isEmpty(),
+            "canvas is present in the default tray without reserving a global shortcut");
+    auto previous = defaults;
+    const auto removeAction = [](QJsonArray& menu, const QString& action) {
+        for (qsizetype i = menu.size(); i > 0; --i) {
+            if (menu.at(i - 1).toString() == action) {
+                menu.removeAt(i - 1);
+            }
+        }
+    };
+    removeAction(previous, canvasAction);
+    const QString configPath = directory.filePath(QStringLiteral("canvas.json"));
+    {
+        storage::ConfigurationStore store(configPath, true, true, 30000);
+        require(store.value(colorKey).toString() == QStringLiteral("#ff0000") &&
+                    store.value(widthKey).toInt() == 4 && store.value(durationKey).toInt() == 1000,
+                "laser preferences must have the specified defaults");
+        require(store.setValue(colorKey, QStringLiteral(" #Aa11Bb ")) &&
+                    store.value(colorKey).toString() == QStringLiteral("#aa11bb") &&
+                    !store.setValue(colorKey, QStringLiteral("red")) &&
+                    !store.setValue(colorKey, QStringLiteral("#12345678")),
+                "laser colors must normalize six-digit RGB and reject invalid colors");
+        require(store.setValue(widthKey, 1) && store.setValue(widthKey, 20) &&
+                    !store.setValue(widthKey, 0) && !store.setValue(widthKey, 21) &&
+                    !store.setValue(widthKey, 2.5) && store.setValue(durationKey, 100) &&
+                    store.setValue(durationKey, 5000) && !store.setValue(durationKey, 99) &&
+                    !store.setValue(durationKey, 5001) && store.flushNow().success,
+                "laser width and duration must persist only values inside their integer ranges");
+    }
+    storage::ConfigurationStore reloaded(configPath, true, true, 30000);
+    require(reloaded.value(colorKey).toString() == QStringLiteral("#aa11bb") &&
+                reloaded.value(widthKey).toInt() == 20 &&
+                reloaded.value(durationKey).toInt() == 5000,
+            "laser preferences must survive configuration reload");
+    require(reloaded.applySnapshot({{trayKey, previous}}) &&
+                reloaded.value(trayKey).toArray() == defaults,
+            "an untouched old tray default gains canvas during configuration import");
+    auto customized = previous;
+    customized.removeAt(0);
+    require(reloaded.applySnapshot({{trayKey, customized}}) &&
+                reloaded.value(trayKey).toArray() == customized,
+            "customized older tray menus keep their selected commands and ordering");
+    require(reloaded.applySnapshot({{trayKey, previous}, {canvasShortcutKey, QJsonArray{}}}) &&
+                reloaded.value(trayKey).toArray() == previous,
+            "a current configuration that deselects canvas must retain that choice");
+    auto oldestDefault = previous;
+    removeAction(oldestDefault, QStringLiteral("quick.restore-last-closed-windows"));
+    require(reloaded.applySnapshot({{trayKey, oldestDefault}}) &&
+                reloaded.value(trayKey).toArray() == defaults && reloaded.flushNow().success,
+            "untouched tray defaults from before pinned restoration gain both new commands");
+    storage::ConfigurationStore migrated(configPath, true, true, 30000);
+    require(migrated.value(trayKey).toArray() == defaults,
+            "the migrated tray selection must survive reload");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--global-mouse-only"))) {
@@ -2384,6 +2451,11 @@ int main(int argc, char** argv) {
     }
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
+    if (application.arguments().contains(QStringLiteral("--fullscreen-canvas-only"))) {
+        fullscreenCanvasConfigurationAndTrayMigration();
+        pinnedManagementConfigurationAndTrayMigration();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--shortcut-settings-only"))) {
         settingsSchemaDefaultsAndValidationAreComplete();
         settingsAdaptersRoundTripAndRejectInvalidValues();
@@ -2420,6 +2492,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     pinnedManagementConfigurationAndTrayMigration();
+    fullscreenCanvasConfigurationAndTrayMigration();
     markerResolutionAndStatus();
     defaultsAndTypedRoundTrip();
     settingsSchemaDefaultsAndValidationAreComplete();

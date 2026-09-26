@@ -40,6 +40,8 @@ class AdModal;
 
 // The shared editor components live in snow_shot::presentation; surface them
 // unqualified for this palette-internal header.
+using ScreenshotToolPaletteStylePresentation =
+    snow_shot::presentation::ScreenshotToolPaletteStylePresentation;
 using ScreenshotToolPaletteStyleEditorComponent =
     snow_shot::presentation::ScreenshotToolPaletteStyleEditorComponent;
 using ScreenshotToolPaletteEditorServices =
@@ -177,7 +179,9 @@ class ScreenshotToolPaletteStyleControls final {
   public:
     explicit ScreenshotToolPaletteStyleControls(
         ScreenshotToolPaletteStyleControlCallbacks callbacks,
-        const SnowCanvasStyleDefaults& defaults, std::function<QDateTime()> watermarkTemplateClock);
+        const SnowCanvasStyleDefaults& defaults, std::function<QDateTime()> watermarkTemplateClock,
+        ScreenshotToolPaletteStylePresentation presentation =
+            ScreenshotToolPaletteStylePresentation::Compact);
 
     [[nodiscard]] ScreenshotToolPaletteStyleState& styleState();
     [[nodiscard]] const ScreenshotToolPaletteStyleState& styleState() const;
@@ -437,6 +441,7 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] QWidget* editorRootForRole(QWidget* controls, const char* role) const;
     void rebuildRegisteredComponents();
 
+    ScreenshotToolPaletteStylePresentation m_presentation;
     ScreenshotToolPaletteStyleState m_state;
     ScreenshotToolPaletteStyleControlCallbacks m_callbacks;
     const SnowCanvasStyleDefaults m_defaults;
