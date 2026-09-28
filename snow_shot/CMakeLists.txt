@@ -2200,6 +2200,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     snow_shot_import_offscreen_platform(snow-shot-settings-color-commit-tests)
 
+    add_executable(snow-shot-settings-page-loading-tests
+        tests/settings_page_loading_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-settings-page-loading-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-settings-page-loading-tests)
+    add_test(NAME snow-shot-settings-page-loading-tests
+        COMMAND snow-shot-settings-page-loading-tests)
+    set_tests_properties(snow-shot-settings-page-loading-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-screen-recording-shortcut-settings-tests
         tests/screen_recording_shortcut_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
@@ -6238,6 +6251,13 @@ if(APPLE AND SNOW_SHOT_BUILD_BENCHMARKS)
 endif()
 
 if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-settings-page-performance-benchmark
+        tests/settings_page_performance_benchmark.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-settings-page-performance-benchmark PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-settings-page-performance-benchmark)
+
     add_executable(snow-shot-pinned-window-management-performance-benchmark
         tests/pinned_window_management_performance_benchmark.cpp)
     target_link_libraries(snow-shot-pinned-window-management-performance-benchmark PRIVATE

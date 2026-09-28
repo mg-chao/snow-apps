@@ -7,6 +7,7 @@
 
 #include <QMetaType>
 #include <QJsonObject>
+#include <QTimer>
 
 #include <utility>
 
@@ -88,9 +89,19 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
             &SettingsRuntimeSession::operationMessage);
     connect(&m_backend, &SettingsBackend::actionFinished, this,
             &SettingsRuntimeSession::actionFinished);
-    connect(
-        &m_backend, &SettingsBackend::synchronized, this, [this]() { refreshAll(); },
-        Qt::QueuedConnection);
+    connect(&m_backend, &SettingsBackend::synchronized, this, [this] {
+        // A reset/import may notify once per key. Read the final backend snapshot once
+        // after the burst, without reentering the write that emitted the notification.
+        if (m_refreshPending) {
+            return;
+        }
+        m_refreshPending = true;
+        QTimer::singleShot(0, this, [this] {
+            if (m_refreshPending) {
+                refreshAll();
+            }
+        });
+    });
     connect(
         &m_backend, &SettingsBackend::shortcutStateChanged, this,
         [this](GlobalShortcutAction action, const GlobalShortcutRegistrationState&) {
@@ -770,6 +781,7 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
 }
 
 void SettingsRuntimeSession::refreshAll() {
+    m_refreshPending = false;
     for (const SettingsFieldDescriptor& descriptor : m_registry.fields()) {
         refreshField(descriptor.id);
         refreshOptions(descriptor);

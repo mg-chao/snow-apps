@@ -263,6 +263,7 @@ class SettingsRuntimeSession final : public QObject {
     QHash<int, int> m_auxiliaryIntegerValues;
     storage::StorageStatus m_lastStorageStatus;
     bool m_hasStorageStatus = false;
+    bool m_refreshPending = false;
 };
 
 } // namespace snow_shot::presentation::settings

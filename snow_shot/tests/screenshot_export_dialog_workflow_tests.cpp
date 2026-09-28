@@ -149,6 +149,7 @@ void reusablePathInputsAndSettings() {
     const auto& registry = settings::builtInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
     SettingsPageWidget storagePage(registry, QStringLiteral("storage-and-privacy"), session);
+    storagePage.reveal({storagePage.pageId(), QStringLiteral("screen-recording-output"), {}});
     const auto directoryControls = storagePage.findChildren<DirectoryPathInput*>();
     require(directoryControls.size() == 2,
             "all screenshot and recording directory settings must use DirectoryPathInput");
@@ -160,6 +161,7 @@ void reusablePathInputsAndSettings() {
     }
 
     SettingsPageWidget interfacePage(registry, QStringLiteral("interface-settings"), session);
+    interfacePage.reveal({interfacePage.pageId(), QStringLiteral("tray"), {}});
     const auto fileControls = interfacePage.findChildren<FilePathInput*>();
     require(fileControls.size() == 1 &&
                 adqt::icons::describeIcon(fileControls.constFirst()->browseButton()->iconRef())

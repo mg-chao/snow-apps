@@ -631,6 +631,35 @@ settings::SettingsRegistry registryWithoutStandaloneDelay() {
         QStringLiteral("test-provider"));
 }
 
+void notificationBurstsAreCoalesced() {
+    const auto registry = testRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+    int refreshes = 0;
+    QObject::connect(&session, &settings::SettingsRuntimeSession::refreshed, &session,
+                     [&] { ++refreshes; });
+    for (int i = 0; i < 25; ++i) {
+        backend.notify();
+    }
+    require(refreshes == 0, "backend notifications must not refresh reentrantly");
+    flushEvents();
+    require(refreshes == 1, "a notification burst should perform one complete refresh");
+    backend.notify();
+    flushEvents();
+    require(refreshes == 2, "later changes must schedule another refresh");
+    bool notifiedDuringRefresh = false;
+    QObject::connect(&session, &settings::SettingsRuntimeSession::refreshed, &session, [&] {
+        if (!notifiedDuringRefresh) {
+            notifiedDuringRefresh = true;
+            backend.notify();
+        }
+    });
+    backend.notify();
+    flushEvents();
+    flushEvents();
+    require(refreshes == 4, "a notification during refresh must not be lost");
+}
+
 void initialStateAndNoOp() {
     const settings::SettingsRegistry registry = testRegistry();
     FakeSettingsBackend backend;
@@ -1435,6 +1464,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     customModelsPreserveAcceptedStateOnRejectedWrites();
+    notificationBurstsAreCoalesced();
     categoryResetFailuresRetainAcceptedValues();
     initialStateAndNoOp();
     permanentHistoryDisablesOnlyLimitControls();
