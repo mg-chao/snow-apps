@@ -334,9 +334,9 @@ struct AboutPageWidget::Ui {
     std::array<QLabel*, 6> featureLabels{};
     std::array<AdDivider*, 6> featureSeparators{};
     std::array<adqt::icons::IconRef, 6> featureRefs{
-        custom::twotone::ScreenshotFeature(),  custom::outlined::ToolFreeDraw(),
+        custom::twotone::ScreenshotFeature(), custom::outlined::ToolFreeDraw(),
         custom::outlined::TextRecognition(),  custom::outlined::RecordScreen(),
-        custom::outlined::PinToScreen(),       outlined::History()};
+        custom::outlined::PinToScreen(),      outlined::History()};
     AdDivider* featureDivider = nullptr;
     QFrame* versionPanel = nullptr;
     QVBoxLayout* versionPanelLayout = nullptr;
@@ -557,7 +557,9 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
             switch (m_ui->updates->status().state) {
             case UpdateState::Available:
 #ifdef Q_OS_MACOS
-                openProjectLink(QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL)));
+                openProjectLink(m_ui->updates->status().downloadUrl.isEmpty()
+                                    ? QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL))
+                                    : m_ui->updates->status().downloadUrl);
 #else
                 m_ui->updates->download();
 #endif
@@ -806,14 +808,14 @@ void AboutPageWidget::retranslateUi() {
     m_ui->resources[2]->setCopy(tr("Feedback and suggestions"),
                                 tr("Make the next experience better"),
                                 aboutProjectUrl(QStringLiteral("/issues")));
-    m_ui->resources[3]->setCopy(tr("QQ Group 2"),
-                                tr("Discussion and support · Group No. %1")
-                                    .arg(QStringLiteral("895818102")),
-                                QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_2_URL)));
-    m_ui->resources[4]->setCopy(tr("QQ Group 3"),
-                                tr("Discussion and support · Group No. %1")
-                                    .arg(QStringLiteral("1037819112")),
-                                QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_3_URL)));
+    m_ui->resources[3]->setCopy(
+        tr("QQ Group 2"),
+        tr("Discussion and support · Group No. %1").arg(QStringLiteral("895818102")),
+        QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_2_URL)));
+    m_ui->resources[4]->setCopy(
+        tr("QQ Group 3"),
+        tr("Discussion and support · Group No. %1").arg(QStringLiteral("1037819112")),
+        QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_3_URL)));
     m_ui->community->setText(tr("Built for daily work, and growing with the community."));
     m_ui->license->setText(
         tr("%1 · %2").arg(tr("GNU General Public License v3.0 or later"),
@@ -972,7 +974,8 @@ void AboutPageWidget::refreshUpdateStatus() {
     case UpdateState::Available:
         text = tr("Update available: %1").arg(status.version);
 #ifdef Q_OS_MACOS
-        action = tr("Download from website");
+        action =
+            status.downloadUrl.isEmpty() ? tr("Download from website") : tr("Download from GitHub");
 #else
         action = tr("Download update");
 #endif

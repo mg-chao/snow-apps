@@ -3,6 +3,9 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
 #include <QPointer>
@@ -78,6 +81,8 @@ struct Server {
         UpdateService::Options result;
         result.baseUrl =
             QUrl(QStringLiteral("http://127.0.0.1:%1/ignored/").arg(server.serverPort()));
+        result.githubApiUrl =
+            QUrl(QStringLiteral("http://127.0.0.1:%1/releases").arg(server.serverPort()));
         result.allowLocalHttp = true;
         result.installedVersion = QStringLiteral("1.0.0");
         result.startupCheckDelay = 10ms;
@@ -107,7 +112,9 @@ void versionsAndTransport() {
         service.check();
         waitFor([&] { return service.status().state != UpdateState::Checking; });
         require(service.status().state == pair.second, pair.first);
-        require(server.request.startsWith("GET /latest-version.txt HTTP/1.1"),
+        require(server.request.startsWith(pair.second == UpdateState::Failed
+                                              ? "GET /releases?"
+                                              : "GET /latest-version.txt HTTP/1.1"),
                 "uses root version endpoint");
     }
     for (const auto& pair : {std::pair{"1.0.0-beta.2", "1.0.0-beta.11"},
@@ -156,6 +163,80 @@ void versionsAndTransport() {
     remoteHttp.check();
     require(remoteHttp.status().state == UpdateState::Failed,
             "test HTTP permission is loopback only");
+}
+
+QJsonObject releaseFixture(const QString& version) {
+#if defined(Q_PROCESSOR_ARM_64)
+    const QString arch = QStringLiteral("arm64");
+#else
+    const QString arch = QStringLiteral("x64");
+#endif
+    const QString tag = QStringLiteral("v%1_snow-shot").arg(version);
+    const QString name = QStringLiteral("snow-shot-%1-macos-%2.dmg").arg(version, arch);
+    QJsonArray assets;
+    for (const QString& asset : {name, name + QStringLiteral(".sha256")})
+        assets.append(QJsonObject{
+            {QStringLiteral("name"), asset},
+            {QStringLiteral("browser_download_url"),
+             QStringLiteral("https://github.com/mg-chao/snow-apps/releases/download/%1/%2")
+                 .arg(tag, asset)}});
+    return {{QStringLiteral("tag_name"), tag},
+            {QStringLiteral("draft"), false},
+            {QStringLiteral("prerelease"), false},
+            {QStringLiteral("assets"), assets}};
+}
+
+void githubFallback() {
+    Server website;
+    Server github;
+    auto options = website.options();
+    options.githubApiUrl = github.options().githubApiUrl;
+    auto stable = releaseFixture(QStringLiteral("2.0.0"));
+    auto draft = releaseFixture(QStringLiteral("9.0.0"));
+    draft[QStringLiteral("draft")] = true;
+    auto beta = releaseFixture(QStringLiteral("8.0.0-beta"));
+    beta[QStringLiteral("prerelease")] = true;
+    github.body = QJsonDocument(QJsonArray{draft, stable, beta}).toJson();
+    UpdateService service(options);
+    service.check();
+    waitFor([&] { return service.status().state == UpdateState::Available; });
+    require(github.count == 0, "valid website response never contacts GitHub");
+    website.status = 503;
+    service.check();
+    waitFor([&] { return service.status().state == UpdateState::Available; });
+    require(github.count == 1 && service.status().version == u"2.0.0",
+            "fallback selects stable release");
+    require(service.status().downloadUrl ==
+                QUrl(QStringLiteral(
+                    "https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot")),
+            "fallback links to exact release");
+    website.status = 200;
+    website.body = "<html>Suspended</html>";
+    service.check();
+    waitFor([&] { return service.status().state == UpdateState::Available; });
+    require(github.count == 2, "invalid website metadata falls back");
+    stable[QStringLiteral("assets")] = QJsonArray{};
+    github.body = QJsonDocument(QJsonArray{stable}).toJson();
+    service.check();
+    waitFor([&] { return service.status().state == UpdateState::Failed; });
+    require(service.status().downloadUrl.isEmpty() ||
+                service.status().downloadUrl.host() == u"github.com",
+            "missing platform assets are never announced");
+    github.body = QJsonDocument(QJsonArray{releaseFixture(QStringLiteral("2.0.0"))}).toJson();
+    website.delay = 100;
+    const int requests = github.count;
+    service.check();
+    service.cancel();
+    pump(120);
+    require(github.count == requests, "cancellation does not trigger fallback");
+    website.delay = 0;
+    QJsonArray full;
+    for (int i = 0; i < 100; ++i)
+        full.append(releaseFixture(QStringLiteral("2.0.0")));
+    github.body = QJsonDocument(full).toJson();
+    service.check();
+    waitFor([&] { return service.status().state == UpdateState::Failed; });
+    require(github.count == requests + 10, "release pagination stops at ten full pages");
 }
 
 void scheduling() {
@@ -238,6 +319,7 @@ void failuresAndProxy() {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     versionsAndTransport();
+    githubFallback();
     scheduling();
     failuresAndProxy();
     return 0;

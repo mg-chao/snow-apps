@@ -86,6 +86,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>交流與答疑 · 群號 %1</translation>
         </message>
         <message>
+            <source>Download from GitHub</source>
+            <translation>從 GitHub 下載</translation>
+        </message>
+        <message>
             <source>Download from website</source>
             <translation>前往官網下載</translation>
         </message>

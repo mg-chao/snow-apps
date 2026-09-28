@@ -86,6 +86,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Discussion and support · Group No. %1</translation>
         </message>
         <message>
+            <source>Download from GitHub</source>
+            <translation>Download from GitHub</translation>
+        </message>
+        <message>
             <source>Download from website</source>
             <translation>Download from website</translation>
         </message>
