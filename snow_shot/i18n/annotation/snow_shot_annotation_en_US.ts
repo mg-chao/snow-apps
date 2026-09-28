@@ -108,6 +108,10 @@
             <translation>Blue</translation>
         </message>
         <message>
+            <source>Brightness</source>
+            <translation>Brightness</translation>
+        </message>
+        <message>
             <source>Bring forward</source>
             <translation>Bring forward</translation>
         </message>

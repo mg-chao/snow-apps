@@ -353,6 +353,57 @@ inline QRgb transformedColor(QRgb pixel, std::uint32_t type) {
     return pixel;
 }
 
+// Resolve the intensity once per dispatch. Neutral brightness returns before detaching
+// shared images; other values operate directly on the requested pixels with no scratch image.
+void brightnessRect(const QImage& source, QImage& destination, AlphaView mask,
+                    const QPoint& maskOrigin, const QRect& pixels, double strength, int coverage,
+                    RenderWorkspace* workspace, const ExecutionOptions& options) {
+    const int scale = qRound(normalizedStrength(strength) * 131072.0);
+    if (scale == 65536 || coverage == 0 || pixels.isEmpty()) {
+        return;
+    }
+    const ImageView destinationView = view(destination);
+    const ConstImageView sourceView = view(source);
+    std::atomic_bool usedSimd{false};
+    const std::size_t jobs = parallelRows(
+        pixels.height(), pixels.width(), options.singleThreaded, [&](int begin, int end) {
+            const QRect rows(pixels.left(), pixels.top() + begin, pixels.width(), end - begin);
+            if (!options.forceScalar && selectedSimdBackend() == SimdBackend::Avx2 &&
+                detail::brightnessRectAvx2(sourceView, destinationView, mask, maskOrigin, rows,
+                                           scale, coverage)) {
+                usedSimd.store(true, std::memory_order_relaxed);
+                return;
+            }
+            for (int y = rows.top(); y <= rows.bottom(); ++y) {
+                const auto* from = reinterpret_cast<const QRgb*>(
+                    sourceView.data + static_cast<qsizetype>(y) * sourceView.stride);
+                auto* to = reinterpret_cast<QRgb*>(
+                    destinationView.data + static_cast<qsizetype>(y) * destinationView.stride);
+                const auto* alpha =
+                    mask.data == nullptr
+                        ? nullptr
+                        : mask.data + static_cast<qsizetype>(y - maskOrigin.y()) * mask.stride;
+                for (int x = pixels.left(); x <= pixels.right(); ++x) {
+                    const int mix = alpha == nullptr
+                                        ? coverage
+                                        : combineCoverage(alpha[x - maskOrigin.x()], coverage);
+                    if (mix == 0) {
+                        continue;
+                    }
+                    const QRgb result = detail::brightnessPixel(from[x], scale);
+                    to[x] = mix == 255 ? result : blendPremultiplied(to[x], result, mix);
+                }
+            }
+        });
+    if (workspace != nullptr) {
+        auto& diagnostics = const_cast<KernelDiagnostics&>(workspace->diagnostics());
+        diagnostics.parallelJobs += jobs;
+        if (usedSimd.load(std::memory_order_relaxed)) {
+            diagnostics.backend = SimdBackend::Avx2;
+        }
+    }
+}
+
 int embossSamplingRadius(const Parameters& parameters) {
     return qMax(1, qCeil(qMax(0.0, parameters.logicalSamplingRadius) *
                          qMax<qreal>(1.0, parameters.devicePixelRatio)));
@@ -1445,7 +1496,8 @@ GaussianBlurPlan gaussianBlurPlan(const Parameters& parameters) {
 
 void apply(QImage& image, const Parameters& parameters, RenderWorkspace* workspace,
            const ExecutionOptions& options) {
-    if (image.isNull()) {
+    if (image.isNull() ||
+        (parameters.type == 6 && normalizedStrength(parameters.strength) == 0.5)) {
         return;
     }
     if ((parameters.type == 2 || parameters.type == 3) &&
@@ -1460,6 +1512,10 @@ void apply(QImage& image, const Parameters& parameters, RenderWorkspace* workspa
     RenderWorkspace& activeWorkspace = workspace != nullptr ? *workspace : localWorkspace;
     KernelDiagnostics& diagnostics = const_cast<KernelDiagnostics&>(activeWorkspace.diagnostics());
     switch (parameters.type) {
+    case 6:
+        brightnessRect(image, image, {}, {}, image.rect(), parameters.strength, 255, workspace,
+                       options);
+        break;
     case 0:
         diagnostics.parallelJobs +=
             mosaic(image, parameters, activeWorkspace, options.singleThreaded);
@@ -1516,6 +1572,11 @@ bool applyMasked(const QImage& source, QImage& destination, const QImage& mask,
     }
     if (!QRect(maskOriginPixels, mask.size()).contains(pixels)) {
         return false;
+    }
+    if (parameters.type == 6) {
+        brightnessRect(source, destination, alphaView(mask), maskOriginPixels, pixels,
+                       parameters.strength, 255, workspace, options);
+        return true;
     }
     const bool colorEffectType = parameters.type == 2 || parameters.type == 3;
     const int strengthMix = colorEffectType ? normalizedStrengthMix(parameters.strength) : 255;
@@ -1681,6 +1742,15 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
     }
     if (!QRect(maskOriginPixels, mask.size()).contains(pixels)) {
         return false;
+    }
+    if (parameters.type == 6) {
+        for (const MaskSpan& span : spans) {
+            const QRect row =
+                QRect(span.beginX, span.y, span.endX - span.beginX, 1).intersected(pixels);
+            brightnessRect(source, destination, alphaView(mask), maskOriginPixels, row,
+                           parameters.strength, 255, workspace, options);
+        }
+        return true;
     }
     const bool colorEffectType = parameters.type == 2 || parameters.type == 3;
     const int strengthMix = colorEffectType ? normalizedStrengthMix(parameters.strength) : 255;
@@ -1899,7 +1969,7 @@ bool applyRect(const QImage& source, QImage& destination, const QRect& destinati
                double opacity, const Parameters& parameters, RenderWorkspace* workspace,
                const ExecutionOptions& options) {
     const bool supported = parameters.type == 1 || parameters.type == 2 || parameters.type == 3 ||
-                           parameters.type == 4;
+                           parameters.type == 4 || parameters.type == 6;
     if (!supported || source.size() != destination.size() ||
         source.format() != QImage::Format_ARGB32_Premultiplied ||
         destination.format() != QImage::Format_ARGB32_Premultiplied) {
@@ -1911,6 +1981,11 @@ bool applyRect(const QImage& source, QImage& destination, const QRect& destinati
         mix = combineCoverage(mix, normalizedStrengthMix(parameters.strength));
     }
     if (pixels.isEmpty() || mix == 0) {
+        return true;
+    }
+    if (parameters.type == 6) {
+        brightnessRect(source, destination, {}, {}, pixels, parameters.strength, mix, workspace,
+                       options);
         return true;
     }
     QImage embossSource;
@@ -1951,7 +2026,7 @@ bool applyRegion(const QImage& source, QImage& destination, const QRegion& desti
                  const Parameters& parameters, RenderWorkspace* workspace,
                  const ExecutionOptions& options) {
     const bool supported = parameters.type == 1 || parameters.type == 2 || parameters.type == 3 ||
-                           parameters.type == 4;
+                           parameters.type == 4 || parameters.type == 6;
     if (!supported || source.size() != destination.size() ||
         source.format() != QImage::Format_ARGB32_Premultiplied ||
         destination.format() != QImage::Format_ARGB32_Premultiplied) {
@@ -1965,6 +2040,13 @@ bool applyRegion(const QImage& source, QImage& destination, const QRegion& desti
                              ? normalizedStrengthMix(parameters.strength)
                              : 255;
     if (colorMix == 0) {
+        return true;
+    }
+    if (parameters.type == 6) {
+        for (const QRect& rect : pixels) {
+            brightnessRect(source, destination, {}, {}, rect, parameters.strength, 255, workspace,
+                           options);
+        }
         return true;
     }
     QImage embossSource;

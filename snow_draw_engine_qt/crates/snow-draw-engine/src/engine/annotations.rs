@@ -144,6 +144,7 @@ enum Filter {
     Grayscale,
     Inversion,
     Emboss,
+    Brightness,
 }
 impl Default for Style {
     fn default() -> Self {
@@ -201,6 +202,7 @@ impl Style {
             Filter::Grayscale => crate::CanvasFilterType::Grayscale,
             Filter::Inversion => crate::CanvasFilterType::Inversion,
             Filter::Emboss => crate::CanvasFilterType::Emboss,
+            Filter::Brightness => crate::CanvasFilterType::Brightness,
         }
     }
 }

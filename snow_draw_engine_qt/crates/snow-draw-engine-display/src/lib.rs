@@ -183,6 +183,7 @@ pub enum DisplayFilterType {
     Inversion,
     Emboss = 4,
     SmartErase = 5,
+    Brightness = 6,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -212,7 +213,8 @@ impl FilterRenderSpec {
             DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 1.0,
             DisplayFilterType::Mosaic
             | DisplayFilterType::GaussianBlur
-            | DisplayFilterType::Emboss => normalized_strength,
+            | DisplayFilterType::Emboss
+            | DisplayFilterType::Brightness => normalized_strength,
         };
         let mosaic_block_size = 2.0 + 10.0 * strength;
         let blur_sigma = 0.5 + 18.0 * strength;
@@ -221,7 +223,7 @@ impl FilterRenderSpec {
             DisplayFilterType::GaussianBlur => 3.0 * blur_sigma + 1.0,
             DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 0.0,
             DisplayFilterType::Emboss => 1.0,
-            DisplayFilterType::SmartErase => 0.0,
+            DisplayFilterType::SmartErase | DisplayFilterType::Brightness => 0.0,
         };
         Self {
             render_phase: 0,
@@ -271,6 +273,11 @@ mod filter_render_spec_tests {
         assert_eq!(blur.blur_sigma, 18.5);
         assert_eq!(blur.sampling_radius, 56.5);
 
+        let brightness = FilterRenderSpec::resolve(DisplayFilterType::Brightness, 0.5);
+        assert_eq!(DisplayFilterType::Brightness as u32, 6);
+        assert_eq!(brightness.strength, 0.5);
+        assert_eq!(brightness.sampling_radius, 0.0);
+
         let emboss = FilterRenderSpec::resolve(DisplayFilterType::Emboss, 0.5);
         assert_eq!(DisplayFilterType::Emboss as u32, 4);
         assert_eq!(emboss.strength, 0.5);
@@ -283,6 +290,7 @@ mod filter_render_spec_tests {
             DisplayFilterType::Mosaic,
             DisplayFilterType::GaussianBlur,
             DisplayFilterType::Emboss,
+            DisplayFilterType::Brightness,
         ] {
             assert_eq!(
                 FilterRenderSpec::resolve(filter_type, f64::NAN).strength,

@@ -168,7 +168,7 @@ void renderingAndExport() {
     require(render() == source, "identification flash is excluded from export");
     for (const auto type : {SnowCanvasFilterType::Mosaic, SnowCanvasFilterType::GaussianBlur,
                             SnowCanvasFilterType::Grayscale, SnowCanvasFilterType::Inversion,
-                            SnowCanvasFilterType::Emboss}) {
+                            SnowCanvasFilterType::Emboss, SnowCanvasFilterType::Brightness}) {
         auto style = f.canvas.canvasStyleToolbarState().filterStyle;
         style.type = type;
         style.strength = 0.6;

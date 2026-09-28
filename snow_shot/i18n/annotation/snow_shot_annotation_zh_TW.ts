@@ -108,6 +108,10 @@
             <translation>藍色</translation>
         </message>
         <message>
+            <source>Brightness</source>
+            <translation>亮度</translation>
+        </message>
+        <message>
             <source>Bring forward</source>
             <translation>上移一層</translation>
         </message>

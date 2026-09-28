@@ -111,6 +111,8 @@ std::string_view effectName(std::uint32_t type) {
         return "inversion";
     case 4:
         return "emboss";
+    case 6:
+        return "brightness";
     }
     return "unknown";
 }
@@ -330,8 +332,10 @@ Runner makeKernelRunner(std::string scenario, std::uint32_t type, int width, int
         result.height = height;
         result.strength = strength;
         result.checksum = imageChecksum(working);
-        if (samples.empty() || result.checksum == imageChecksum(source)) {
-            error = "kernel scenario did not transform its input: " + scenario;
+        const bool neutralBrightness = !blend && type == 6 && strength == 0.5;
+        const bool unchanged = result.checksum == imageChecksum(source);
+        if (samples.empty() || unchanged != neutralBrightness) {
+            error = "kernel scenario produced an unexpected change/no-change result: " + scenario;
             return std::nullopt;
         }
         return finishResult(std::move(result), samples, static_cast<std::uint64_t>(width) * height);
@@ -805,6 +809,11 @@ std::vector<Scenario> makeScenarios() {
         addKernel("kernel_inversion_" + std::string(sizeName), 3, width, height, 0.5);
         addKernel("kernel_blend_" + std::string(sizeName), 3, width, height, 0.55, true);
     }
+    addKernel("kernel_brightness_1920x1080", 6, 1920, 1080, 0.75);
+    addKernel("kernel_brightness_3840x2160", 6, 3840, 2160, 0.75);
+    addKernel("kernel_brightness_neutral_3840x2160", 6, 3840, 2160, 0.5);
+    addKernel("kernel_brightness_scalar_1920x1080", 6, 1920, 1080, 0.75, false,
+              snow_canvas_filter_render::ExecutionOptions{true, false});
     addKernel("kernel_emboss_3840x2160", 4, 3840, 2160, 0.5);
     addKernel("kernel_emboss_one_thread_1920x1080", 4, 1920, 1080, 0.5, false,
               snow_canvas_filter_render::ExecutionOptions{true, true});

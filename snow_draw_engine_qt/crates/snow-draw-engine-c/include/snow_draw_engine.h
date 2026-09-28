@@ -122,7 +122,8 @@ typedef enum SnowFilterType {
     SNOW_FILTER_TYPE_GRAYSCALE = 2,
     SNOW_FILTER_TYPE_INVERSION = 3,
     SNOW_FILTER_TYPE_EMBOSS = 4,
-    SNOW_FILTER_TYPE_SMART_ERASE = 5
+    SNOW_FILTER_TYPE_SMART_ERASE = 5,
+    SNOW_FILTER_TYPE_BRIGHTNESS = 6
 } SnowFilterType;
 
 typedef struct SnowFilterStyle {

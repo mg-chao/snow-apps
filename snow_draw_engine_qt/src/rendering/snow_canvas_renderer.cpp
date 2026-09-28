@@ -1475,7 +1475,7 @@ bool nearlyEqual(double first, double second) {
 }
 
 bool isColorEffect(std::uint32_t type) {
-    return type == 2 || type == 3;
+    return type == 2 || type == 3 || type == 6;
 }
 
 bool isEmbossEffect(std::uint32_t type) {
@@ -1864,7 +1864,7 @@ bool sameResolvedEffect(const SnowCanvasSceneItem& a, const SnowCanvasSceneItem&
                left.physicalSupportRadius == right.physicalSupportRadius &&
                std::equal(std::begin(left.radii), std::end(left.radii), std::begin(right.radii));
     }
-    if (isColorEffect(a.filter.filter_type)) {
+    if (a.filter.filter_type == 2 || a.filter.filter_type == 3) {
         return true;
     }
     return sameEffect(a.filter, b.filter);
@@ -2741,7 +2741,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     directParameters.logicalSamplingRadius =
                         sceneItems[group.indices.front()].filter.sampling_radius *
                         snow_canvas_render_geometry::sceneProjection(displayInfo).cameraZoom;
-                    if (isColorEffect(group.type)) {
+                    if (group.type == 2 || group.type == 3) {
                         // Grayscale and inversion are full-strength effects; opacity controls
                         // coverage.
                         directParameters.strength = 1.0;

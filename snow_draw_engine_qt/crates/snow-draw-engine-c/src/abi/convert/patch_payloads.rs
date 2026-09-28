@@ -231,6 +231,7 @@ pub(crate) fn snow_scene_display_item_from_rust(
                 snow_draw_engine::DisplayFilterType::Grayscale => 2,
                 snow_draw_engine::DisplayFilterType::Inversion => 3,
                 snow_draw_engine::DisplayFilterType::Emboss => 4,
+                snow_draw_engine::DisplayFilterType::Brightness => 6,
                 snow_draw_engine::DisplayFilterType::SmartErase => 5,
             };
             out.filter.strength = item.filter.strength;

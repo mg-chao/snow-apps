@@ -181,6 +181,7 @@ enum class SnowCanvasFilterType {
     Inversion,
     Emboss = 4,
     SmartErase = 5,
+    Brightness = 6,
 };
 
 // Capability flag returned alongside filterStyleMixed property bits.

@@ -6411,8 +6411,8 @@ void filterToolExposesTypeAndIntensityControls() {
             "Filter type select should match the font-family select style");
     require(palette.findChild<QSlider*>(QStringLiteral("screenshotFilterOpacitySlider")) == nullptr,
             "Filter should not expose an opacity style editor");
-    require(typeSelect->model() != nullptr && typeSelect->model()->rowCount() == 6,
-            "Filter type select should expose all six filter types");
+    require(typeSelect->model() != nullptr && typeSelect->model()->rowCount() == 7,
+            "Filter type select should expose all seven filter types");
     struct FilterTypeRow {
         int row;
         SnowCanvasFilterType type;
@@ -6425,6 +6425,7 @@ void filterToolExposesTypeAndIntensityControls() {
         {3, SnowCanvasFilterType::Grayscale, QStringLiteral("Grayscale")},
         {4, SnowCanvasFilterType::Inversion, QStringLiteral("Inversion")},
         {5, SnowCanvasFilterType::Emboss, QStringLiteral("Emboss")},
+        {6, SnowCanvasFilterType::Brightness, QStringLiteral("Brightness")},
     };
     for (const FilterTypeRow& expected : filterTypeRows) {
         const QModelIndex row = typeSelect->model()->index(expected.row, 0);
@@ -9911,7 +9912,7 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
                 fontSelect->toolTip().isEmpty() &&
                 filterSelect->toolTip() == QStringLiteral("Filter type") &&
                 fontSelect->model() != filterSelect->model() &&
-                filterSelect->model()->rowCount() == 6,
+                filterSelect->model()->rowCount() == 7,
             "select configuration should preserve search, tooltip, and model differences");
     const QSize selectReferenceSize = fontSelect->size();
     require(selectReferenceSize == filterSelect->size(),
@@ -11735,7 +11736,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.rectangleHighlight.fill = QColor(9, 10, 11, 12);
     styles.penHighlight.strokeWidth = 7.0;
     styles.rectangleFilter = {SnowCanvasFilterType::GaussianBlur, 0.25, 0.8, 8.0};
-    styles.penFilter = {SnowCanvasFilterType::Emboss, 0.75, 0.6, 44.0};
+    styles.penFilter = {SnowCanvasFilterType::Brightness, 0.75, 0.6, 44.0};
     styles.text.color = QColor(13, 14, 15, 16);
     styles.text.fontFamily = QStringLiteral("Persisted text font");
     styles.text.fontSize = 36.0;
@@ -12083,7 +12084,7 @@ void filterEditorsRestoreValuesAfterToolSwitch() {
         QObject::connect(&palette, &ScreenshotToolPalette::filterStyleChanged, [&]() { ++edits; });
         for (const auto type : {SnowCanvasFilterType::Mosaic, SnowCanvasFilterType::GaussianBlur,
                                 SnowCanvasFilterType::Grayscale, SnowCanvasFilterType::Inversion,
-                                SnowCanvasFilterType::Emboss}) {
+                                SnowCanvasFilterType::Emboss, SnowCanvasFilterType::Brightness}) {
             state.filterStyle.type = type;
             state.filterStyle.strength = 0.37;
             palette.setStyleToolbarState(state);
@@ -12104,9 +12105,10 @@ void filterEditorsRestoreValuesAfterToolSwitch() {
                         "returning to a filter tool restores the unchanged filter type");
                 require(slider && slider->value() == 37,
                         "returning to a filter tool restores the unchanged intensity");
-                if (type == SnowCanvasFilterType::Emboss) {
-                    require(slider->isEnabled(),
-                            "Emboss intensity remains enabled for every filter tool mode");
+                if (type == SnowCanvasFilterType::Emboss ||
+                    type == SnowCanvasFilterType::Brightness) {
+                    require(slider->isEnabled(), "Strength-based filter intensity remains enabled "
+                                                 "for every filter tool mode");
                 }
             }
         }
@@ -12147,13 +12149,13 @@ void filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches() {
     auto* autoType = palette.findChild<adqt::widgets::AdSelect*>(
         QStringLiteral("screenshotAutoFilterTypeSelect"));
     require(autoType != nullptr && autoType->model() != nullptr &&
-                autoType->model()->rowCount() == 5,
-            "Auto Filter exposes its five filter types without Smart Erase");
+                autoType->model()->rowCount() == 6,
+            "Auto Filter exposes its six filter types without Smart Erase");
 
     const auto requireSmartErase = [&palette](const QString& objectName) {
         auto* select = palette.findChild<adqt::widgets::AdSelect*>(objectName);
-        require(select != nullptr && select->model() != nullptr && select->model()->rowCount() == 6,
-                "leaving Auto Filter keeps all six filter types");
+        require(select != nullptr && select->model() != nullptr && select->model()->rowCount() == 7,
+                "leaving Auto Filter keeps all seven filter types");
         const QModelIndex smartEraseRow = select->model()->index(2, 0);
         require(smartEraseRow.data(adqt::widgets::AdSelect::DefaultValueRole).toInt() ==
                     static_cast<int>(SnowCanvasFilterType::SmartErase),
@@ -12179,7 +12181,7 @@ void filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches() {
     autoType = palette.findChild<adqt::widgets::AdSelect*>(
         QStringLiteral("screenshotAutoFilterTypeSelect"));
     require(autoType != nullptr && autoType->model() != nullptr &&
-                autoType->model()->rowCount() == 5,
+                autoType->model()->rowCount() == 6,
             "returning to Auto Filter restores its Smart-Erase-free type model");
     palette.setActiveTool(Tool::RectangleFilter);
     requireSmartErase(QStringLiteral("screenshotFilterTypeSelect"));
