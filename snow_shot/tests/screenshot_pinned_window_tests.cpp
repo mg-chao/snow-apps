@@ -4153,8 +4153,8 @@ void pinnedImageProcessingShortcuts() {
     } commands[] = {
         {"increase_opacity", "screenshotPinnedIncreaseOpacityAction", Qt::Key_BracketRight, "]"},
         {"decrease_opacity", "screenshotPinnedDecreaseOpacityAction", Qt::Key_BracketLeft, "["},
-        {"increase_scale", "screenshotPinnedIncreaseScaleAction", Qt::Key_Comma, ","},
-        {"decrease_scale", "screenshotPinnedDecreaseScaleAction", Qt::Key_Period, "."},
+        {"increase_scale", "screenshotPinnedIncreaseScaleAction", Qt::Key_Period, "."},
+        {"decrease_scale", "screenshotPinnedDecreaseScaleAction", Qt::Key_Comma, ","},
         {"rotate_clockwise", "screenshotPinnedRotateClockwiseAction", Qt::Key_1, "1"},
         {"rotate_counterclockwise", "screenshotPinnedRotateCounterClockwiseAction", Qt::Key_2, "2"},
         {"flip_horizontal", "screenshotPinnedFlipHorizontalAction", Qt::Key_3, "3"},
@@ -4218,20 +4218,20 @@ void pinnedImageProcessingShortcuts() {
     sendShortcut(*canvas, Qt::Key_BracketRight);
     require(Access::opacity(window) == 100, "opacity must clamp at 100 percent");
     Access::scaleBorderFixture(window, 55);
-    sendShortcut(*canvas, Qt::Key_Comma);
-    require(Access::scale(window) == 65, "scale increase must add ten percentage points");
     sendShortcut(*canvas, Qt::Key_Period);
+    require(Access::scale(window) == 65, "scale increase must add ten percentage points");
+    sendShortcut(*canvas, Qt::Key_Comma);
     require(Access::scale(window) == 55, "scale decrease must subtract ten percentage points");
     Access::setFractionalScale(window, 55.6);
-    sendShortcut(*canvas, Qt::Key_Comma);
+    sendShortcut(*canvas, Qt::Key_Period);
     require(Access::scale(window) == 66, "scale commands must round before stepping");
     Access::scaleBorderFixture(window, 15);
-    sendShortcut(*canvas, Qt::Key_Period);
-    sendShortcut(*canvas, Qt::Key_Period);
+    sendShortcut(*canvas, Qt::Key_Comma);
+    sendShortcut(*canvas, Qt::Key_Comma);
     require(Access::scale(window) == 10, "scale must clamp at ten percent");
     Access::scaleBorderFixture(window, 495);
-    sendShortcut(*canvas, Qt::Key_Comma);
-    sendShortcut(*canvas, Qt::Key_Comma);
+    sendShortcut(*canvas, Qt::Key_Period);
+    sendShortcut(*canvas, Qt::Key_Period);
     require(Access::scale(window) == 500, "scale must clamp at 500 percent");
     Access::scaleBorderFixture(window, 100);
     QLineEdit textInput(&window);
@@ -4268,7 +4268,7 @@ void pinnedImageProcessingShortcuts() {
     auto* scaleMenu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedScaleMenu"));
     require(!scaleMenu->menuAction()->isEnabled(), "OCR must disable scale commands");
-    sendShortcut(*canvas, Qt::Key_Comma);
+    sendShortcut(*canvas, Qt::Key_Period);
     action("screenshotPinnedIncreaseScaleAction")->trigger();
     require(Access::scale(window) == 100, "neither shortcut nor menu may bypass OCR restrictions");
 }

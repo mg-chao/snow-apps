@@ -1122,10 +1122,10 @@ void verifyPinToScreenShortcutSettings() {
                 QStringList{QStringLiteral("[")},
             "decrease_opacity must have its default binding");
     require(portable(defaults.value(QStringLiteral("increase_scale"))) ==
-                QStringList{QStringLiteral(",")},
+                QStringList{QStringLiteral(".")},
             "increase_scale must have its default binding");
     require(portable(defaults.value(QStringLiteral("decrease_scale"))) ==
-                QStringList{QStringLiteral(".")},
+                QStringList{QStringLiteral(",")},
             "decrease_scale must have its default binding");
     require(portable(defaults.value(QStringLiteral("rotate_clockwise"))) ==
                 QStringList{QStringLiteral("1")},
