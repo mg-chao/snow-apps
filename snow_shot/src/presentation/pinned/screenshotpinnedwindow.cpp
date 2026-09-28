@@ -6427,12 +6427,6 @@ void ScreenshotPinnedWindow::confirmDestroy() {
     m_destroyConfirmation = modal;
     modal->setObjectName(QStringLiteral("screenshotPinnedDestroyConfirmation"));
     modal->setOwnerWindow(this);
-    // A pin can sit off-screen; a transient (parented) modal is anchored to it by AppKit and
-    // slides off-screen too, leaving the confirmation partly undismissable. Detach it into an
-    // independent top-level window and center it on the pin's display so it stays fully usable.
-    modal->setWindowScreen(screen() ? screen() : QGuiApplication::primaryScreen());
-    modal->setCentered(true);
-    modal->setWindowModeDetached(true);
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::WindowModal);
     modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
