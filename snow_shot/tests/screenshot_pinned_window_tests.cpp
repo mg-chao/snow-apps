@@ -2459,6 +2459,81 @@ void cachedPinnedOcrAvailableWithoutRecognitionProvider() {
             "invalidated results must not leave provider-free recognition controls enabled");
 }
 
+void pinnedTransformGeometryIsAtomic() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QImage image(317, 173, QImage::Format_RGB32);
+    image.fill(QColor(42, 84, 126));
+    ScreenshotPinnedWindow::Config config;
+    config.canvasSourceRect = QRectF(QPointF(), image.size());
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.initialWindowSize = image.size();
+    config.nativeGeometry = QRect(QPoint(100, 100), image.size());
+    ScreenshotPinnedWindow window;
+    Access::restoreOffscreen(window, config);
+    auto* platform = Access::installObservedPlatform(window);
+    platform->observed = config.nativeGeometry;
+    auto* clockwise =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    auto* counterclockwise =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateCounterClockwiseAction"));
+    auto* flip = window.findChild<QAction*>(QStringLiteral("screenshotPinnedFlipHorizontalAction"));
+    auto* flipVertical =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedFlipVerticalAction"));
+    auto* reset =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedResetTransformAction"));
+    require(clockwise && counterclockwise && flip && flipVertical && reset,
+            "image actions must exist");
+    const auto verifyFit = [&] {
+        Access::settle(window);
+        const auto state = window.persistenceSnapshot();
+        const QSize expected = state.quarterTurns % 2 ? image.size().transposed() : image.size();
+        require(state.nativeGeometry.size() == expected &&
+                    state.contentCanvasRect.size() == QSizeF(expected),
+                "mixed transforms must keep window and canvas extents aligned");
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        const QRectF mapped = canvas->canvasToViewTransform().mapRect(state.contentCanvasRect);
+        require(qAbs(mapped.width() * canvas->devicePixelRatioF() - expected.width()) < .01 &&
+                    qAbs(mapped.height() * canvas->devicePixelRatioF() - expected.height()) < .01,
+                "transformed content must fill the viewport without transparent bands");
+    };
+    for (int i = 0; i < 8; ++i) {
+        for (auto* action : {clockwise, flip, counterclockwise, flipVertical, clockwise, reset}) {
+            action->trigger();
+            verifyFit();
+        }
+    }
+    // A native transaction can reject a resize while a move/resize is pending,
+    // or the platform can fail after accepting the proposed geometry.
+    for (auto* action : {clockwise, counterclockwise, reset}) {
+        reset->trigger();
+        if (action == reset)
+            clockwise->trigger();
+        for (int failure = 0; failure < 3; ++failure) {
+            const auto before = window.persistenceSnapshot();
+            if (failure == 0) {
+                require(Access::nativeController(window).beginMove(QPoint(120, 120)),
+                        "pending move must begin");
+            } else if (failure == 1) {
+                platform->rejectNext = true;
+            } else {
+                platform->biasNext = true;
+            }
+            action->trigger();
+            if (failure == 0)
+                Access::nativeController(window).cancelPendingInteraction();
+            const auto after = window.persistenceSnapshot();
+            require(after.imageTransform == before.imageTransform &&
+                        after.quarterTurns == before.quarterTurns &&
+                        after.nativeGeometry == before.nativeGeometry &&
+                        after.contentCanvasRect == before.contentCanvasRect,
+                    "rejected transform geometry must retain the image, orientation and canvas");
+            verifyFit();
+        }
+        action->trigger();
+        verifyFit();
+    }
+}
+
 void pinnedTransformResetPersistsWithoutResize() {
     auto config = cachedOcrPinConfig(nullptr);
     snow_shot::storage::PinnedWindowRecord lastWritten;
@@ -12879,6 +12954,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--cached-ocr-provider-only"))) {
             cachedPinnedOcrAvailableWithoutRecognitionProvider();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--transform-geometry-only"))) {
+            pinnedTransformGeometryIsAtomic();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--transformed-ocr-only"))) {

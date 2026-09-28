@@ -5304,8 +5304,6 @@ void ScreenshotPinnedWindow::applyImageOperation(const QTransform& operation,
         return;
     }
     restoreFromThumbnailImmediately();
-    const QPoint nativeCenter = authoritativeNativeGeometry().center();
-    const QPoint nativeTopLeft = authoritativeNativeGeometry().topLeft();
     const QPolygonF sourceQuad({
         QPointF(0.0, 0.0),
         QPointF(m_originalImage.width(), 0.0),
@@ -5321,32 +5319,8 @@ void ScreenshotPinnedWindow::applyImageOperation(const QTransform& operation,
     if (!QTransform::quadToQuad(sourceQuad, targetQuad, combined)) {
         return;
     }
-    m_imageTransform = normalizedImageTransform(combined, m_originalImage.size());
-    m_quarterTurns = (m_quarterTurns + quarterTurnDelta) % 4;
-    if (m_quarterTurns < 0) {
-        m_quarterTurns += 4;
-    }
-    rebuildTransformedImage();
-
-    if (quarterTurnDelta != 0) {
-        QSize nativeSize = orientedInitialWindowSize();
-        nativeSize = QSize(std::max(1, qRound(nativeSize.width() * m_scalePercent / 100.0)),
-                           std::max(1, qRound(nativeSize.height() * m_scalePercent / 100.0)));
-        QRect nativeTarget(QPoint(), nativeSize);
-        if (hideToTopActive()) {
-            nativeTarget.moveTopLeft(nativeTopLeft);
-        } else {
-            nativeTarget.moveCenter(nativeCenter);
-        }
-        m_preserveScaleForSettledGeometry = true;
-        static_cast<void>(applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform));
-    }
-    updateCanvasViewport();
-    updateControlsGeometry();
-    if (m_editController != nullptr) {
-        m_editController->updatePlacement();
-    }
-    schedulePersistence();
+    const int quarterTurns = ((m_quarterTurns + quarterTurnDelta) % 4 + 4) % 4;
+    applyImageTransform(normalizedImageTransform(combined, m_originalImage.size()), quarterTurns);
 }
 
 void ScreenshotPinnedWindow::resetImageTransform() {
@@ -5362,26 +5336,40 @@ void ScreenshotPinnedWindow::resetImageTransform() {
         return;
     }
     restoreFromThumbnailImmediately();
-    const QPoint nativeCenter = authoritativeNativeGeometry().center();
-    const QPoint nativeTopLeft = authoritativeNativeGeometry().topLeft();
-    const bool dimensionsChange = (m_quarterTurns % 2) != 0;
-    m_imageTransform.reset();
-    m_quarterTurns = 0;
-    rebuildTransformedImage();
+    applyImageTransform(QTransform(), 0);
+}
+
+void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, int quarterTurns) {
+    const QRect currentGeometry = authoritativeNativeGeometry();
+    const bool dimensionsChange = (m_quarterTurns % 2) != (quarterTurns % 2);
+    // Native size constraints need the proposed orientation during SetWindowPos.
+    // Keep the rendered image unchanged until that geometry transaction succeeds.
+    QScopedValueRollback<int> orientation(m_quarterTurns, quarterTurns);
+    QScopedValueRollback<bool> preserveScale(m_preserveScaleForSettledGeometry);
     if (dimensionsChange) {
-        QSize nativeSize(
-            std::max(1, qRound(m_initialWindowSize.width() * m_scalePercent / 100.0)),
-            std::max(1, qRound(m_initialWindowSize.height() * m_scalePercent / 100.0)));
+        const QSize baseline = orientedInitialWindowSize();
+        const QSize nativeSize(std::max(1, qRound(baseline.width() * m_scalePercent / 100.0)),
+                               std::max(1, qRound(baseline.height() * m_scalePercent / 100.0)));
         QRect nativeTarget(QPoint(), nativeSize);
         if (hideToTopActive()) {
-            nativeTarget.moveTopLeft(nativeTopLeft);
+            nativeTarget.moveTopLeft(currentGeometry.topLeft());
         } else {
-            nativeTarget.moveCenter(nativeCenter);
+            nativeTarget.moveCenter(currentGeometry.center());
         }
         m_preserveScaleForSettledGeometry = true;
-        static_cast<void>(applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform));
+        if (!applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform)) {
+            return;
+        }
     }
+    orientation.commit();
+    preserveScale.commit();
+    m_imageTransform = transform;
+    rebuildTransformedImage();
     updateCanvasViewport();
+    updateControlsGeometry();
+    if (m_editController != nullptr) {
+        m_editController->updatePlacement();
+    }
     schedulePersistence();
 }
 

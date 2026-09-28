@@ -4093,6 +4093,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-transformed-ocr-tests
         COMMAND snow-shot-pinned-window-tests --transformed-ocr-only)
+    add_test(NAME snow-shot-pinned-transform-geometry-tests
+        COMMAND snow-shot-pinned-window-tests --transform-geometry-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-transform-geometry-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-selection-restore-tests
         COMMAND snow-shot-pinned-window-tests --selection-restore-only -platform offscreen)
     add_test(
