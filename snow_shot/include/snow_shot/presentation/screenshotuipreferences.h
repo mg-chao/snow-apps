@@ -87,7 +87,7 @@ screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode mode,
         return state.intelligentSelecting || state.manualSelecting ? 1.0 : 0.0;
     }
     if (mode == ScreenshotColorPickerDisplayMode::HideOutsideSelection &&
-        !state.pointInsideSelection) {
+        !state.intelligentSelecting && !state.pointInsideSelection) {
         return 0.0;
     }
     if (state.manualSelecting || state.movingSelection) {

@@ -26,6 +26,7 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     explicit ScreenshotScrollingThumbnailWidget(QWidget& parent);
 
     void reset();
+    void releaseNativeSurface();
     void setTrimModel(std::shared_ptr<ScreenshotScrollingTrimRange> trim);
     void setRecognitionMode(ScreenshotScrollingRecognitionMode mode);
     void setMaximumPreviewHeight(int height);

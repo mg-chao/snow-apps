@@ -25,6 +25,8 @@
 #include "theme/theme_manager.h"
 #include "widgets/checkerboard.h"
 #include "widgets/message.h"
+#include "widgets/popover.h"
+#include "widgets/tooltip.h"
 
 #include <QApplication>
 #include <QColor>
@@ -1173,6 +1175,20 @@ void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
     require(screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode::AlwaysShow, state) ==
                 1.0,
             "always-show mode must keep the picker visible outside the selection");
+
+    state.manualSelecting = false;
+    state.intelligentSelecting = true;
+    require(screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode::HideOutsideSelection,
+                                         state) == 1.0,
+            "intelligent box selection must keep the magnifier visible outside the live box");
+    require(screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode::AlwaysHide, state) ==
+                0.0,
+            "always-hide mode must keep the magnifier hidden during intelligent selection");
+    state.intelligentSelecting = false;
+    state.movingSelection = true;
+    require(screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode::HideOutsideSelection,
+                                         state) == 0.0,
+            "confirmed selections must still hide the magnifier outside their bounds");
 
     state.dragging = true;
     state.selectionDrag = true;
@@ -3570,6 +3586,81 @@ void scrollingThumbnailHasAnIndependentInputWindow() {
             "leaving scrolling mode should clear thumbnail trim state");
 }
 
+void scrollingThumbnailKeepsOwnerAcrossPopupAndSurfaceLifecycles() {
+    NoopOverlayEventSink eventSink;
+    ScreenshotOverlayWindow overlay(eventSink, new SnowCanvasWidget);
+    overlay.setCaptureGeometry(QRect(60, 70, 400, 400));
+    QPushButton trigger(QStringLiteral("Tools"), &overlay);
+    trigger.setGeometry(20, 320, 80, 30);
+    adqt::widgets::AdPopover popover;
+    popover.setSourceWidget(&trigger);
+    popover.setText(QStringLiteral("Options"));
+    popover.setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    adqt::widgets::AdTooltip tooltip;
+    tooltip.setTargetWidget(&trigger);
+    tooltip.setText(QStringLiteral("Tip"));
+    tooltip.setLayerMode(adqt::widgets::AdTooltip::LayerMode::TopLevelTransient);
+    QImage preview(128, 256, QImage::Format_RGBA8888);
+    preview.fill(Qt::blue);
+    for (int session = 0; session < 3; ++session) {
+        overlay.show();
+        trigger.show();
+        overlay.setScrollingCaptureMode(true);
+        overlay.beginScrollingThumbnail(QRect(20, 20, 180, 240));
+        overlay.updateScrollingThumbnail(preview, preview.size(),
+                                         ScreenshotScrollingStitchChange::Initial, 256);
+        auto* thumbnail = overlay.scrollingThumbnailWindow();
+        const auto check = [&]() {
+            QApplication::processEvents();
+            require(thumbnail->isVisible() && thumbnail->windowHandle() != nullptr,
+                    "active scrolling preview must have a visible native surface");
+            require(thumbnail->windowHandle()->transientParent() == overlay.windowHandle(),
+                    "preview must retain its current overlay as transient owner");
+#ifdef Q_OS_WIN
+            if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+                const auto previewHwnd = reinterpret_cast<HWND>(thumbnail->internalWinId());
+                const auto overlayHwnd = reinterpret_cast<HWND>(overlay.internalWinId());
+                require(GetWindow(previewHwnd, GW_OWNER) == overlayHwnd,
+                        "preview native owner must be the current overlay");
+                bool above = false;
+                for (HWND window = GetTopWindow(nullptr); window;
+                     window = GetWindow(window, GW_HWNDNEXT)) {
+                    if (window == previewHwnd) {
+                        above = true;
+                        break;
+                    }
+                    if (window == overlayHwnd)
+                        break;
+                }
+                require(above, "preview must remain above the overlay after popup activity");
+            }
+#endif
+        };
+        check();
+        popover.show();
+        require(popover.isVisible(), "toolbar popover must open during the stacking check");
+        check();
+        popover.hide();
+        check();
+        tooltip.setVisible(true);
+        require(tooltip.isVisible(), "toolbar tooltip must open during the stacking check");
+        check();
+        tooltip.setVisible(false);
+        check();
+        overlay.raise();
+        check();
+        overlay.hide();
+        require(thumbnail->isHidden(), "hiding the owner must hide its preview");
+        overlay.show();
+        check();
+        overlay.setScrollingCaptureMode(false);
+        overlay.releaseNativeSurface();
+        require(thumbnail->internalWinId() == 0 && thumbnail->windowHandle() == nullptr,
+                "overlay teardown must release the owned preview surface as well");
+        overlay.restoreNativeSurface();
+    }
+}
+
 void scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
@@ -5235,6 +5326,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--scrolling-overlay"))) {
+        scrollingThumbnailKeepsOwnerAcrossPopupAndSurfaceLifecycles();
         scrollingModeClearsVisualMaskBeforeRestoringRenderer();
         scrollingThumbnailHasAnIndependentInputWindow();
         scrollingInputModeKeepsNativeSurfacesStable();

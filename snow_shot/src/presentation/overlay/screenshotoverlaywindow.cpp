@@ -534,6 +534,13 @@ void ScreenshotOverlayWindow::releaseNativeSurface() {
         m_canvas->setUpdatesEnabled(false);
     }
 
+    // A child top-level QWidget is not necessarily WA_NativeWindow, so destroy()
+    // does not recursively release it. Release the preview before its owner;
+    // otherwise it survives with a null transient parent when this overlay is reused.
+    if (m_scrollingThumbnail != nullptr) {
+        m_scrollingThumbnail->releaseNativeSurface();
+    }
+
     // QWidget::destroy() keeps this QObject and its renderer/model alive while
     // releasing the native window, child native windows, and backing store.
     // Calling the Qt API also keeps QWidget's internal platform state coherent.

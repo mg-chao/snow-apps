@@ -72,6 +72,11 @@ ScreenshotScrollingThumbnailWidget::ScreenshotScrollingThumbnailWidget(QWidget& 
     updateWidgetMetrics();
 }
 
+void ScreenshotScrollingThumbnailWidget::releaseNativeSurface() {
+    hide();
+    destroy(true, true);
+}
+
 void ScreenshotScrollingThumbnailWidget::reset() {
     cancelDrag();
     m_previewTiles.clear();
