@@ -133,7 +133,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<Work>, tx: mpsc::Sender<WorkResult>
     let mut session = crate::session::Session::empty();
     let mut backend = "cpu";
     let mut config = None;
-    let thread_budget = (num_cpus::get_physical().max(1) / 2).max(1);
+    let thread_budget = num_cpus::get_physical().max(1);
     for work in rx {
         let result = match work {
             Work::Prepare(id, next) => {
