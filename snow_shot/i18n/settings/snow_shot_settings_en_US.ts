@@ -1693,6 +1693,10 @@
             <translation>Full screen</translation>
         </message>
         <message>
+            <source>Full-screen canvas (enable/disable click-through)</source>
+            <translation>Full-screen canvas (enable/disable click-through)</translation>
+        </message>
+        <message>
             <source>Fullscreen suppression</source>
             <translation>Fullscreen suppression</translation>
         </message>
@@ -1715,6 +1719,10 @@
         <message>
             <source>General system integration settings</source>
             <translation>General system integration settings</translation>
+        </message>
+        <message>
+            <source>Global Canvas</source>
+            <translation>Global Canvas</translation>
         </message>
         <message>
             <source>Global hotkey activation behavior</source>
@@ -2123,6 +2131,10 @@
         <message>
             <source>Open Login Items Settings</source>
             <translation>Open Login Items Settings</translation>
+        </message>
+        <message>
+            <source>Open a canvas on the current display or toggle click-through</source>
+            <translation>Open a canvas on the current display or toggle click-through</translation>
         </message>
         <message>
             <source>Open selected text translation in a standalone window.</source>

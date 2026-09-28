@@ -241,6 +241,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showQrTool = false;
         bool showImageConversionTools = false;
         bool showScrollingScreenshotTool = false;
+        bool showGlobalCanvasActions = false;
         bool showSaveButton = false;
         bool saveButtonWithResultActions = false;
         bool copyButtonWithNeutralIcon = false;
@@ -313,6 +314,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setActiveTool(Tool tool);
     void refreshConfirmShortcutHint();
     void refreshShortcutTooltips();
+    void setGlobalCanvasClickThrough(bool enabled);
     [[nodiscard]] bool canActivateDrawingShortcut(const QString& toolId) const;
     [[nodiscard]] bool canActivateScreenshotShortcut(const QString& actionId);
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
@@ -427,6 +429,8 @@ class ScreenshotToolPalette final : public QWidget,
 #endif
 
   signals:
+    void globalCanvasClickThroughRequested();
+    void globalCanvasExitRequested();
     void undoRequested();
     void redoRequested();
     void moveRequested();
@@ -921,6 +925,8 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_cancelButton = nullptr;
     adqt::widgets::AdButton* m_copyButton = nullptr;
     adqt::widgets::AdButton* m_confirmButton = nullptr;
+    adqt::widgets::AdButton* m_globalCanvasClickThroughButton = nullptr;
+    adqt::widgets::AdButton* m_globalCanvasExitButton = nullptr;
     QLabel* m_selectionOpacityIcon = nullptr;
     adqt::widgets::AdSlider* m_selectionOpacitySlider = nullptr;
     adqt::widgets::AdSelect* m_drawTemplateSelect = nullptr;

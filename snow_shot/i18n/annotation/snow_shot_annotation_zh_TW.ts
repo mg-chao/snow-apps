@@ -140,6 +140,10 @@
             <translation>圓形</translation>
         </message>
         <message>
+            <source>Click-through</source>
+            <translation>滑鼠穿透</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>關閉錄製</translation>
         </message>
@@ -386,6 +390,10 @@
         <message>
             <source>Eraser</source>
             <translation>橡皮擦</translation>
+        </message>
+        <message>
+            <source>Exit</source>
+            <translation>結束</translation>
         </message>
         <message>
             <source>Export Settings</source>
@@ -1154,6 +1162,13 @@
         <message>
             <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
             <translation>{text} 代表目前的浮水印文字；支援 {YYYY-MM-DD_HH-mm-ss} 等時間戳記格式</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::GlobalCanvasController</name>
+        <message>
+            <source>Could not change canvas click-through.</source>
+            <translation>無法切換畫布的滑鼠穿透狀態。</translation>
         </message>
     </context>
 </TS>

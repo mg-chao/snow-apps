@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 20;
+constexpr std::size_t ACTION_COUNT = 21;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -38,6 +38,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenPinToScreenManagement,
+    GlobalShortcutAction::GlobalCanvas,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
@@ -148,6 +149,8 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.openScreenRecordingFolder();
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.openCaptureHistory();
+    case GlobalShortcutAction::GlobalCanvas:
+        return settings.globalCanvas();
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.openPinToScreenManagement();
     case GlobalShortcutAction::OpenSettings:
@@ -195,6 +198,8 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setOpenScreenRecordingFolder(bindings);
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.setOpenCaptureHistory(bindings);
+    case GlobalShortcutAction::GlobalCanvas:
+        return settings.setGlobalCanvas(bindings);
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.setOpenPinToScreenManagement(bindings);
     case GlobalShortcutAction::OpenSettings:
@@ -262,6 +267,7 @@ class GlobalShortcutManager::Impl {
                 return;
             }
             if (gateControl ||
+                (active->action == GlobalShortcutAction::GlobalCanvas && m_globalCanvasActive) ||
                 !storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow() ||
                 !m_focusedFullscreenDetector || !m_focusedFullscreenDetector()) {
                 emit q.activated(active->action);
@@ -508,6 +514,7 @@ class GlobalShortcutManager::Impl {
     RegistrationSuspensionHandle m_nextSuspensionHandle = 1;
     bool m_initialized = false;
     bool m_globalHotkeysEnabled = true;
+    bool m_globalCanvasActive = false;
 };
 
 GlobalShortcutManager::GlobalShortcutManager(QObject* parent)
@@ -551,6 +558,10 @@ GlobalShortcutManager::RegistrationSuspensionHandle GlobalShortcutManager::suspe
 
 void GlobalShortcutManager::resumeRegistrations(RegistrationSuspensionHandle handle) {
     m_impl->resumeRegistrations(handle);
+}
+
+void GlobalShortcutManager::setGlobalCanvasActive(bool active) {
+    m_impl->m_globalCanvasActive = active;
 }
 
 void GlobalShortcutManager::setGlobalHotkeysEnabled(bool enabled) {

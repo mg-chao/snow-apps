@@ -140,6 +140,10 @@
             <translation>Circle</translation>
         </message>
         <message>
+            <source>Click-through</source>
+            <translation>Click-through</translation>
+        </message>
+        <message>
             <source>Close recording</source>
             <translation>Close recording</translation>
         </message>
@@ -386,6 +390,10 @@
         <message>
             <source>Eraser</source>
             <translation>Eraser</translation>
+        </message>
+        <message>
+            <source>Exit</source>
+            <translation>Exit</translation>
         </message>
         <message>
             <source>Export Settings</source>
@@ -1154,6 +1162,13 @@
         <message>
             <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
             <translation>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::GlobalCanvasController</name>
+        <message>
+            <source>Could not change canvas click-through.</source>
+            <translation>Could not change canvas click-through.</translation>
         </message>
     </context>
 </TS>

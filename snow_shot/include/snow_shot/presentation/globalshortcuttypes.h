@@ -30,6 +30,7 @@ enum class GlobalShortcutAction {
     ToggleGlobalHotkeys,
     ToggleDisableOnFocusedFullscreenWindow,
     OpenPinToScreenManagement,
+    GlobalCanvas,
 };
 
 [[nodiscard]] constexpr bool controlsGlobalHotkeyGates(GlobalShortcutAction action) {

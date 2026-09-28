@@ -59,6 +59,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
         return {P::Accessibility};
     case Action::OpenScreenRecordingFolder:
     case Action::OpenCaptureHistory:
+    case Action::GlobalCanvas:
     case Action::OpenPinToScreenManagement:
     case Action::OpenSettings:
     case Action::PinClipboardContent:

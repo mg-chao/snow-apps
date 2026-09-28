@@ -55,6 +55,7 @@
     "snow_shot::presentation::DirectCaptureController"
   ],
   "annotation": [
+    "snow_shot::presentation::GlobalCanvasController",
     "ScreenshotToolPalette"
   ],
   "export": [

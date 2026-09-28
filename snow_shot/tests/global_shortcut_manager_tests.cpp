@@ -38,6 +38,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenPinToScreenManagement,
+    GlobalShortcutAction::GlobalCanvas,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
@@ -132,6 +133,68 @@ void pinnedManagementShortcutCanBeAssignedAndRestored() {
                 restored.state(action).shortcuts == shortcuts::ShortcutBindingList{binding},
             "pinned management hotkey must survive manager recreation");
     require(restored.setShortcuts(action, {}), "clear pinned management hotkey fixture");
+}
+
+void globalCanvasShortcutCanBeAssignedAndRestored() {
+    constexpr auto action = GlobalShortcutAction::GlobalCanvas;
+    const shortcuts::ShortcutBinding binding{QStringLiteral("Ctrl+F8")};
+    {
+        auto backend = std::make_unique<FakeBackend>();
+        auto* input = backend.get();
+        GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+        manager.initialize();
+        require(manager.state(action).status == GlobalShortcutStatus::Unset &&
+                    manager.state(action).shortcuts.isEmpty(),
+                "global canvas must have no default global hotkey");
+        clearAll(manager);
+        require(manager.setShortcuts(action, {binding}) &&
+                    manager.state(action).status == GlobalShortcutStatus::Registered &&
+                    input->registrations.size() == 1,
+                "global canvas must register an assigned global hotkey");
+        bool activated = false;
+        QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                         [&](GlobalShortcutAction received) { activated = received == action; });
+        input->handler(input->registrations.constBegin().key());
+        require(activated, "global canvas hotkey must dispatch its action");
+    }
+    auto backend = std::make_unique<FakeBackend>();
+    GlobalShortcutManager restored(std::move(backend), nullptr, [] { return false; });
+    restored.initialize();
+    require(restored.state(action).status == GlobalShortcutStatus::Registered &&
+                restored.state(action).shortcuts == shortcuts::ShortcutBindingList{binding},
+            "global canvas hotkey must survive manager recreation");
+    require(restored.setShortcuts(action, {}), "clear global canvas hotkey fixture");
+}
+
+void globalCanvasFullscreenGateTracksSession() {
+    auto backend = std::make_unique<FakeBackend>();
+    auto* input = backend.get();
+    GlobalShortcutManager manager(std::move(backend), nullptr, [] { return true; });
+    manager.initialize();
+    clearAll(manager);
+    require(manager.setShortcuts(GlobalShortcutAction::GlobalCanvas, {QStringLiteral("Ctrl+F8")}),
+            "assign canvas");
+    auto& store = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const QString key = QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
+    const auto previous = store.value(key);
+    require(store.setValue(key, true), "enable fullscreen suppression");
+    int activations = 0;
+    QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                     [&](GlobalShortcutAction) { ++activations; });
+    const int id = input->registrations.constBegin().key();
+    input->handler(id);
+    require(activations == 0, "creation respects fullscreen suppression");
+    manager.setGlobalCanvasActive(true);
+    input->handler(id);
+    require(activations == 1, "active canvas can toggle over fullscreen windows");
+    manager.setGlobalHotkeysEnabled(false);
+    input->handler(id);
+    require(activations == 1, "explicit disablement still applies");
+    manager.setGlobalHotkeysEnabled(true);
+    manager.setGlobalCanvasActive(false);
+    input->handler(id);
+    require(activations == 1, "closed canvas restores suppression");
+    require(store.setValue(key, previous), "restore suppression");
 }
 
 void backendAvailabilityInvalidatesOwnershipAndRecovers() {
@@ -812,6 +875,8 @@ int main(int argc, char** argv) {
             "initialize shortcut test storage");
     validationCoversSupportedAndRejectedKeys();
     pinnedManagementShortcutCanBeAssignedAndRestored();
+    globalCanvasShortcutCanBeAssignedAndRestored();
+    globalCanvasFullscreenGateTracksSession();
     backendAvailabilityInvalidatesOwnershipAndRecovers();
 #ifdef Q_OS_MACOS
     disabledMacOSSystemReservationsRemainUsable();

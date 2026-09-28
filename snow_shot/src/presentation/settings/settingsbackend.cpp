@@ -1597,6 +1597,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         };
         resetShortcut(GlobalShortcutAction::OpenCaptureHistory,
                       QStringLiteral("global_shortcuts/open_capture_history"));
+        resetShortcut(GlobalShortcutAction::GlobalCanvas,
+                      QStringLiteral("global_shortcuts/global_canvas"));
         resetShortcut(GlobalShortcutAction::OpenPinToScreenManagement,
                       QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
         resetShortcut(GlobalShortcutAction::TranslateSelectedText,

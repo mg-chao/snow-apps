@@ -287,7 +287,7 @@ void routingPolicy() {
             "selected text needs Accessibility");
     for (auto action :
          {A::OpenScreenRecordingFolder, A::OpenCaptureHistory, A::OpenPinToScreenManagement,
-          A::OpenSettings, A::PinClipboardContent, A::PinSelectedFiles})
+          A::GlobalCanvas, A::OpenSettings, A::PinClipboardContent, A::PinSelectedFiles})
         require(requiredPermissions(action, true).isEmpty(),
                 "permission-free actions must remain usable");
     using M = settings::SettingsGlobalMouseAction;
@@ -480,7 +480,7 @@ void pageAndAlerts() {
             native->value.statuses[0] = S::Checking;
             service.refresh();
             flush();
-            require(screen->text() == u"Checking…" &&
+            require(screen->text() == u"Checkingâ€¦" &&
                         screen->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral,
                     "checking permissions use a neutral status button");
             screen->click();

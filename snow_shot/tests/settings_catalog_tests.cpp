@@ -284,7 +284,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 186, "catalog must contain 186 shared settings on every platform");
+    require(itemIds.size() == 187, "catalog must contain 187 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -1404,6 +1404,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::OpenPinToScreenManagement, "other", "quick.open-pin-to-screen-management",
          "global_shortcuts/open_pin_to_screen_management",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::GlobalCanvas, "other", "quick.global-canvas", "global_shortcuts/global_canvas",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::TranslateSelectedText, "other", "quick.translate-selected-text",
          "global_shortcuts/translate_selected_text",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -1456,8 +1458,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 19,
-            "the global-hotkeys catalog must expose all nineteen shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 20,
+            "the global-hotkeys catalog must expose all twenty shortcut actions exactly once");
     const auto* pinnedManagementShortcut =
         catalog.itemForShortcut(Action::OpenPinToScreenManagement);
     const auto* pinnedManagementSchema = storage::ConfigurationSchema::entry(
@@ -1468,6 +1470,13 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 pinnedManagementSchema != nullptr &&
                 pinnedManagementSchema->defaultValue.toArray().isEmpty(),
             "Pin to Screen Management must start without an assigned global hotkey");
+    const auto* canvasItem = catalog.itemForShortcut(Action::GlobalCanvas);
+    const auto* canvasSchema =
+        storage::ConfigurationSchema::entry(QStringLiteral("global_shortcuts/global_canvas"));
+    require(canvasItem && canvasSchema && canvasSchema->defaultValue.toArray().isEmpty() &&
+                canvasItem->title.translated() ==
+                    QStringLiteral("Full-screen canvas (enable/disable click-through)"),
+            "global canvas label and empty default");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
             "Open Interface settings must not appear in Global hotkeys");
 
@@ -1476,6 +1485,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
     QStringList checkableOptionIds;
     for (const auto& group : trayGroups) {
         for (const auto& option : group.options) {
+            require(option.shortcutAction != Action::GlobalCanvas,
+                    "global canvas excluded from tray");
             require(option.shortcutAction != Action::OpenPinToScreenManagement,
                     "Pin to Screen Management must not appear in the tray menu");
             trayOptionIds.push_back(option.id);
@@ -1653,16 +1664,17 @@ void globalHotkeyShortcutsHaveStableContracts() {
                       QStringLiteral("quick.pin-selected-files")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
-    require(
-        otherShortcuts != nullptr && otherShortcuts->items.size() == 5 &&
-            otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
-            otherShortcuts->items.at(1).id ==
-                QStringLiteral("quick.open-pin-to-screen-management") &&
-            otherShortcuts->items.at(2).id == QStringLiteral("quick.translate-selected-text") &&
-            otherShortcuts->items.at(3).id == QStringLiteral("quick.toggle-global-hotkeys") &&
-            otherShortcuts->items.at(4).id ==
-                QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
-        "Other quick actions expose history, pinned management, translation, and hotkey toggles");
+    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 6 &&
+                otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
+                otherShortcuts->items.at(1).id ==
+                    QStringLiteral("quick.open-pin-to-screen-management") &&
+                otherShortcuts->items.at(2).id == QStringLiteral("quick.global-canvas") &&
+                otherShortcuts->items.at(3).id == QStringLiteral("quick.translate-selected-text") &&
+                otherShortcuts->items.at(4).id == QStringLiteral("quick.toggle-global-hotkeys") &&
+                otherShortcuts->items.at(5).id ==
+                    QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window"),
+            "Other quick actions expose history, pinned management, canvas, translation, and "
+            "hotkey toggles");
     const auto* pinSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"));
     require(pinSection != nullptr && pinSection->title.source != nullptr &&

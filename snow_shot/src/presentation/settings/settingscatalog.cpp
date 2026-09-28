@@ -227,6 +227,19 @@ SettingsItemDefinition openPinToScreenManagementItem() {
     return item;
 }
 
+SettingsItemDefinition globalCanvasItem() {
+    SettingsItemDefinition item = quickActionItem(
+        QStringLiteral("quick.global-canvas"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Full-screen canvas (enable/disable click-through)"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Open a canvas on the current display or toggle click-through"),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global Canvas"))},
+        GlobalShortcutAction::GlobalCanvas, QStringLiteral("global_shortcuts/global_canvas"),
+        []() { return outlined_icons::Edit(); });
+    std::get<SettingsShortcutActionDefinition>(item.payload).showInTrayMenu = false;
+    return item;
+}
+
 SettingsItemDefinition themeItem() {
     SettingsSelectDefinition payload;
     payload.options = {
@@ -2090,6 +2103,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {
                         openCaptureHistoryItem(),
                         openPinToScreenManagementItem(),
+                        globalCanvasItem(),
                         translateSelectedTextItem(),
                         toggleGlobalHotkeysItem(),
                         toggleDisableOnFocusedFullscreenWindowItem(),
@@ -2938,6 +2952,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/open_screen_recording_folder");
     case GlobalShortcutAction::OpenCaptureHistory:
         return QStringLiteral("global_shortcuts/open_capture_history");
+    case GlobalShortcutAction::GlobalCanvas:
+        return QStringLiteral("global_shortcuts/global_canvas");
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return QStringLiteral("global_shortcuts/open_pin_to_screen_management");
     case GlobalShortcutAction::OpenSettings:

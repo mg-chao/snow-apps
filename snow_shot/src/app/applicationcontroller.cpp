@@ -17,6 +17,7 @@
 #include <QCryptographicHash>
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/globalcanvascontroller.h"
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
@@ -1423,6 +1424,21 @@ class ApplicationController::Impl {
         case presentation::GlobalShortcutAction::OpenCaptureHistory:
             ensureMainWindow().showScreenshotHistory();
             break;
+        case presentation::GlobalShortcutAction::GlobalCanvas:
+            if (!globalCanvasController) {
+                globalCanvasController = std::make_unique<presentation::GlobalCanvasController>();
+                QObject::connect(globalCanvasController.get(),
+                                 &presentation::GlobalCanvasController::activeChanged,
+                                 &globalShortcutManager,
+                                 &presentation::GlobalShortcutManager::setGlobalCanvasActive);
+                QObject::connect(globalCanvasController.get(),
+                                 &presentation::GlobalCanvasController::errorOccurred, &q,
+                                 [](const QString& message) {
+                                     adqt::widgets::AdMessageService::error(message);
+                                 });
+            }
+            globalCanvasController->activate();
+            break;
         case presentation::GlobalShortcutAction::OpenPinToScreenManagement:
             ensureMainWindow().showPinToScreenManagement();
             break;
@@ -1590,6 +1606,7 @@ class ApplicationController::Impl {
     translation::TranslationService* translationService = nullptr;
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
+    std::unique_ptr<presentation::GlobalCanvasController> globalCanvasController;
     std::unique_ptr<mcp::ScreenshotMcpServer> mcpServer;
     std::unique_ptr<mcp::ScreenshotMcpSession> mcpSession;
     std::unique_ptr<mcp::McpJobRegistry> mcpJobs;

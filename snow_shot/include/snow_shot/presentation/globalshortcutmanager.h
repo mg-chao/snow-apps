@@ -51,6 +51,7 @@ class GlobalShortcutManager final : public QObject {
     [[nodiscard]] RegistrationSuspensionHandle suspendRegistrations();
     void resumeRegistrations(RegistrationSuspensionHandle handle);
     void setGlobalHotkeysEnabled(bool enabled);
+    void setGlobalCanvasActive(bool active);
     [[nodiscard]] bool globalHotkeysEnabled() const;
 
   signals:

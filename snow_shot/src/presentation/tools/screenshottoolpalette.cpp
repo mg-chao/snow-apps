@@ -956,7 +956,8 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                     if (key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
                         key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
                         key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) ||
-                        key.startsWith(QStringLiteral("screen_recording_shortcuts/"))) {
+                        key.startsWith(QStringLiteral("screen_recording_shortcuts/")) ||
+                        key == QStringLiteral("global_shortcuts/global_canvas")) {
                         refreshShortcutTooltips();
                     } else if (key == QStringLiteral("screenshot_toolbar/last_filter_tool")) {
                         m_lastFilterTool = filterToolFromSetting(value.toString());
@@ -3835,7 +3836,31 @@ void ScreenshotToolPalette::retranslateUi() {
     setQrCodeState(m_qrCodeAvailable, m_qrCodeVisible, m_qrCodeError);
 }
 
+void ScreenshotToolPalette::setGlobalCanvasClickThrough(bool enabled) {
+    if (m_globalCanvasClickThroughButton != nullptr) {
+        m_globalCanvasClickThroughButton->setChecked(enabled);
+    }
+}
+
 void ScreenshotToolPalette::refreshShortcutTooltips() {
+    if (m_globalCanvasExitButton != nullptr) {
+        const QString title = tr("Exit");
+        const QString hint =
+            snow_shot::presentation::formatShortcutListDisplayText({QStringLiteral("Esc")});
+        configureScreenshotToolPaletteTooltip(
+            m_globalCanvasExitButton,
+            ScreenshotToolPaletteTranslationText(QStringLiteral("%1 (%2)")).arg(title).arg(hint));
+        setScreenshotToolPaletteAccessibleNameSource(m_globalCanvasExitButton, "Exit");
+        m_globalCanvasExitButton->setAccessibleName(title);
+    }
+    if (m_globalCanvasClickThroughButton != nullptr) {
+        const QString hint = snow_shot::presentation::formatShortcutListDisplayText(
+            snow_shot::storage::ShortcutSettings().globalCanvas());
+        const QString title = tr("Click-through");
+        m_globalCanvasClickThroughButton->setToolTip(
+            hint.isEmpty() ? title : QStringLiteral("%1 (%2)").arg(title, hint));
+        m_globalCanvasClickThroughButton->setAccessibleName(title);
+    }
     if (m_mainPanel != nullptr) {
         for (adqt::widgets::AdButton* button :
              m_mainPanel->findChildren<adqt::widgets::AdButton*>()) {
@@ -3956,6 +3981,7 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
         addRecordingControls(panelLayout);
     } else {
         const bool hasResultActions =
+            options.showGlobalCanvasActions ||
             (options.actions & (CancelAction | CopyAction)) != 0 ||
             (options.showSaveButton && options.saveButtonWithResultActions) ||
             ((options.actions & ConfirmAction) != 0 &&
@@ -5049,6 +5075,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
             : nullptr,
         m_copyButton,
         m_confirmButton,
+        m_globalCanvasClickThroughButton,
+        m_globalCanvasExitButton,
     };
     resultActions.erase(std::remove(resultActions.begin(), resultActions.end(), nullptr),
                         resultActions.end());
@@ -5604,6 +5632,23 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
         hasButton = true;
         separated = false;
     };
+
+    if (options.showGlobalCanvasActions) {
+        m_globalCanvasClickThroughButton =
+            addActionButton("Click-through", custom_outlined_icons::Mouse());
+        m_globalCanvasClickThroughButton->setObjectName(
+            QStringLiteral("globalCanvasClickThroughButton"));
+        m_globalCanvasClickThroughButton->setCheckable(true);
+        addButton(m_globalCanvasClickThroughButton);
+        connect(m_globalCanvasClickThroughButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::globalCanvasClickThroughRequested);
+        m_globalCanvasExitButton = addActionButton("Exit", outlined_icons::Close(), true);
+        m_globalCanvasExitButton->setObjectName(QStringLiteral("globalCanvasExitButton"));
+        addButton(m_globalCanvasExitButton);
+        connect(m_globalCanvasExitButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::globalCanvasExitRequested);
+        refreshShortcutTooltips();
+    }
 
     if ((options.actions & CancelAction) != 0) {
         m_cancelButton = addActionButton("Cancel screenshot", outlined_icons::Close(), true);
