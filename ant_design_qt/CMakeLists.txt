@@ -21,6 +21,14 @@ if(NOT TARGET snow_image::snow_image)
 endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowTestCliGuard.cmake")
 
+# Platform adapters can consume the header-only window creation contract without
+# linking the widget implementation and its image/icon dependencies.
+add_library(adqt_window_context INTERFACE)
+add_library(adqt::window_context ALIAS adqt_window_context)
+target_include_directories(adqt_window_context INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src")
+target_link_libraries(adqt_window_context INTERFACE Qt6::Widgets)
+
 file(GLOB ADQT_ICON_CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/adqt_icon_core/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/adqt_icon_core/src/*.h"
@@ -82,7 +90,7 @@ add_library(adqt::widgets ALIAS ant_design_qt)
 target_include_directories(ant_design_qt SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src"
 )
-target_link_libraries(ant_design_qt PUBLIC adqt::icon_core adqt::icons
+target_link_libraries(ant_design_qt PUBLIC adqt::window_context adqt::icon_core adqt::icons
     Qt6::Widgets Qt6::Svg Qt6::Network snow_image::snow_image_static)
 target_precompile_headers(ant_design_qt PRIVATE
     <algorithm>

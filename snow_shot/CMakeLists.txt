@@ -92,8 +92,8 @@ if(APPLE)
         src/platform/macos/pinnedwindowplatform.mm
         src/presentation/pinned/pinnedwindowplatform.cpp)
     target_include_directories(snow_shot_macos_window_platform PRIVATE include)
-    target_link_libraries(snow_shot_macos_window_platform PUBLIC Qt6::Widgets
-        PRIVATE snow_shot_macos_cursor "-framework AppKit" "-framework ApplicationServices")
+    target_link_libraries(snow_shot_macos_window_platform PUBLIC Qt6::Widgets adqt::window_context
+        PRIVATE Qt6::GuiPrivate snow_shot_macos_cursor "-framework AppKit" "-framework ApplicationServices")
 endif()
 
 function(snow_shot_link_macos_window_platform target)
@@ -7570,6 +7570,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         SNOW_SHOT_MACOS_INFO_PLIST="${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in")
     target_link_libraries(snow-shot-macos-shell-native-tests PRIVATE
         snow_shot_login_item Qt6::Widgets "-framework AppKit")
+    snow_shot_link_macos_window_platform(snow-shot-macos-shell-native-tests)
     add_test(NAME snow-shot-macos-shell-native-tests
         COMMAND snow-shot-macos-shell-native-tests -platform cocoa)
     set_tests_properties(snow-shot-macos-shell-native-tests PROPERTIES
@@ -7769,6 +7770,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-macos-recapture-native-tests PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-macos-recapture-native-tests PRIVATE Qt6::Widgets snow_capture_c
+        snow_shot_login_item
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-recapture-native-tests COMMAND snow-shot-macos-recapture-native-tests)
     set_tests_properties(snow-shot-macos-recapture-native-tests PROPERTIES
@@ -7825,6 +7827,21 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-macos-screenshot-stacking-native-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
         RUN_SERIAL TRUE TIMEOUT 60)
+
+    add_executable(snow-shot-macos-screenshot-activation-tests
+        tests/macos_screenshot_activation_tests.mm
+        src/platform/macos/applicationactivation.mm
+        ../cmake/test-support/macos_native_input.mm)
+    snow_shot_link_macos_window_platform(snow-shot-macos-screenshot-activation-tests)
+    target_link_libraries(snow-shot-macos-screenshot-activation-tests PRIVATE snow_shot_login_item)
+    target_include_directories(snow-shot-macos-screenshot-activation-tests PRIVATE include src)
+    add_test(NAME snow-shot-macos-screenshot-activation-tests
+        COMMAND snow-shot-macos-screenshot-activation-tests -platform offscreen)
+    set_tests_properties(snow-shot-macos-screenshot-activation-tests PROPERTIES LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-screenshot-activation-native-tests
+        COMMAND snow-shot-macos-screenshot-activation-tests -platform cocoa)
+    set_tests_properties(snow-shot-macos-screenshot-activation-native-tests PROPERTIES
+        LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 45)
 endif()
 
 # Physical cursor warps enter Qt's platform input path so Qt's pointer state and

@@ -1,6 +1,7 @@
 #include "presentation/pinned/pinnedwindowplatform.h"
 #include "platform/macos/capturewindowlayers_p.h"
 #include "snow_shot/presentation/mousereleaseactioncontroller.h"
+#include "snow_shot/platform/screenshotnative.h"
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #include <QApplication>
@@ -420,6 +421,7 @@ int delivery() {
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    snow_shot::platform::initializeScreenshotWindowPolicy();
     QApplication::setQuitOnLastWindowClosed(false);
     if (app.arguments().contains(QStringLiteral("--receiver"))) {
         Receiver receiver;

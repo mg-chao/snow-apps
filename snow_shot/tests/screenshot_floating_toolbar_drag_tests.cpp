@@ -59,6 +59,7 @@
 #if defined(Q_OS_MACOS)
 #include "macos_native_input.h"
 #include "snow_shot/platform/screenshotnative.h"
+#include "../src/platform/macos/capturewindowlayers_p.h"
 #endif
 
 class ScreenshotFloatingToolPaletteWindowTestAccess {
@@ -2125,6 +2126,11 @@ void toolbarNativeSurfaceCanBeRetiredAndRestored() {
     settleQueuedRefreshes();
 
     ScreenshotToolbarWindow window(commands);
+#ifdef Q_OS_MACOS
+    using namespace snow_shot::platform::detail;
+    require(!window.internalWinId() && widgetCaptureLayer(&window).layer == kToolbarLayer,
+            "a screenshot toolbar must declare its permanent role before native creation");
+#endif
     window.setOwnerWindow(&owner);
     window.prepareForDisplay();
     window.show();
@@ -2140,6 +2146,10 @@ void toolbarNativeSurfaceCanBeRetiredAndRestored() {
             "retiring a toolbar must synchronously release its native surface");
     window.releaseNativeSurface();
     require(window.internalWinId() == 0, "retiring an already retired toolbar must be idempotent");
+#ifdef Q_OS_MACOS
+    require(widgetCaptureLayer(&window).layer == kToolbarLayer,
+            "retiring the native toolbar must preserve its screenshot role");
+#endif
 
     window.restoreNativeSurface();
     window.restoreNativeSurface();
@@ -2970,6 +2980,9 @@ void borderCursorSurvivesToolRestoration() {
 int main(int argc, char* argv[]) {
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QApplication app(argc, argv);
+#ifdef Q_OS_MACOS
+    snow_shot::platform::initializeScreenshotWindowPolicy();
+#endif
     try {
         if (app.arguments().contains(QStringLiteral("--stable-tool-frame-only"))) {
             toolSwitchPreservesNativeFrame();

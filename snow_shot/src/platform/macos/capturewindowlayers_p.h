@@ -4,6 +4,8 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <QVariant>
 #include <QWindow>
+#include <QWidget>
+#include "widgets/window_creation_context.h"
 #include <algorithm>
 #include <array>
 
@@ -63,6 +65,34 @@ inline CaptureLayer captureLayer(QWindow* window, const ModalFloors& floors = {}
         result.layer = std::max(kPopupLayer, result.layer + 1);
     }
     if (window->modality() != Qt::NonModal)
+        result.layer = std::max(result.layer, floors[result.index()]);
+    return result;
+}
+
+// QWidget owns explicit roles before its first QWindow/native surface exists.
+// A live transient owner takes precedence over a QObject parent used for pooling.
+inline CaptureLayer widgetCaptureLayer(QWidget* widget, const ModalFloors& floors = {}) {
+    if (!widget)
+        return {};
+    CaptureLayer result;
+    const QVariant role = widget->property(kScreenshotLayer);
+    if (role.isValid()) {
+        result = {static_cast<CaptureFamily>(widget->property(kCaptureFamily).toInt()),
+                  role.toInt()};
+    } else if (const auto owner = adqt::widgets::ScopedWindowCreationOwner::ownerFor(widget)) {
+        result = widgetCaptureLayer(owner->data(), floors);
+        if (result.valid())
+            result.layer = std::max(kPopupLayer, result.layer + 1);
+    } else {
+        QWindow* handle = widget->windowHandle();
+        result = captureLayer(handle, floors);
+        if (!result.valid() && (!handle || !handle->transientParent()) && widget->parentWidget()) {
+            result = widgetCaptureLayer(widget->parentWidget()->window(), floors);
+            if (result.valid())
+                result.layer = std::max(kPopupLayer, result.layer + 1);
+        }
+    }
+    if (result.valid() && widget->windowModality() != Qt::NonModal)
         result.layer = std::max(result.layer, floors[result.index()]);
     return result;
 }

@@ -78,9 +78,9 @@ void nativeRegionRoutesToUnderlyingWindow() {
         overlay.show();
         overlay.raise();
         QApplication::processEvents();
+        snow_shot::platform::configureScreenshotOverlayWindow(&overlay);
         NSWindow* native = reinterpret_cast<NSView*>(overlay.winId()).window;
         NSWindow* target = reinterpret_cast<NSView*>(underlying.winId()).window;
-        snow_shot::platform::configureScreenshotOverlayWindow(&overlay);
         target.level = native.level - 1;
         [target orderFrontRegardless];
         [native orderFrontRegardless];
@@ -169,6 +169,7 @@ void nativeRegionRoutesToUnderlyingWindow() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    snow_shot::platform::initializeScreenshotWindowPolicy();
     inputRegionRetainsOverlayInteractions();
     if (QApplication::platformName() == QStringLiteral("cocoa")) {
         if (!CGPreflightPostEventAccess()) {
