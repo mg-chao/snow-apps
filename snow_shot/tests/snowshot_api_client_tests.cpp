@@ -1,4 +1,5 @@
 #include "snow_shot/network/snowshotapiclient.h"
+#include "translation_test_support.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snowimageqtcodec.h"
 
@@ -1276,6 +1277,139 @@ void latexResponseContracts() {
     }
 }
 
+void customServerDefaultsAndValidation() {
+    const QByteArray previous = qgetenv("SNOW_SHOT_API_BASE_URL");
+    const bool wasSet = qEnvironmentVariableIsSet("SNOW_SHOT_API_BASE_URL");
+    qunsetenv("SNOW_SHOT_API_BASE_URL");
+    const QString buildDefault = SnowShotApiClient::configuredBaseUrl();
+    require(!buildDefault.isEmpty(), "build provides a server default");
+    qputenv("SNOW_SHOT_API_BASE_URL", " http://localhost:9876/dev/// ");
+    require(SnowShotApiClient::configuredBaseUrl() == QStringLiteral("http://localhost:9876/dev"),
+            "environment overrides build default and normalizes it");
+    require(SnowShotApiClient::configuredBaseUrl(QStringLiteral("https://example.test/service/")) ==
+                QStringLiteral("https://example.test/service"),
+            "saved server takes precedence");
+    SnowShotApiClient client(buildDefault);
+    int changes = 0;
+    QObject::connect(&client, &SnowShotApiClient::baseUrlChanged, &client, [&] { ++changes; });
+    require(!client.setBaseUrl(QStringLiteral("https://user@example.test")) &&
+                client.baseUrl() == buildDefault && changes == 0,
+            "invalid setter preserves server");
+    require(client.setBaseUrl(QStringLiteral(" https://example.test/prefix/// ")) &&
+                client.baseUrl() == QStringLiteral("https://example.test/prefix") && changes == 1,
+            "valid server is normalized and notified");
+    require(client.setBaseUrl(QStringLiteral("https://example.test/prefix/")) && changes == 1,
+            "equivalent server does not invalidate models");
+    if (wasSet)
+        qputenv("SNOW_SHOT_API_BASE_URL", previous);
+    else
+        qunsetenv("SNOW_SHOT_API_BASE_URL");
+}
+
+void requestsKeepTheirOriginalServer() {
+    const QByteArray response = "HTTP/1.1 503 Unavailable\r\nContent-Type: application/json\r\n"
+                                "Content-Length: 2\r\nConnection: close\r\n\r\n{}";
+    const QList<QByteArray> routes{"/api/v1/table/extract", "/api/v1/latex/extract",
+                                   "/api/v1/chat/completions", "/api/v1/chat/completions",
+                                   "/api/v2/chat/models"};
+    for (int kind = 0; kind < routes.size(); ++kind) {
+        QTcpServer original, replacement;
+        require(original.listen(QHostAddress::LocalHost) &&
+                    replacement.listen(QHostAddress::LocalHost),
+                "both routing fixtures listen");
+        const QString first = QStringLiteral("http://127.0.0.1:%1/old").arg(original.serverPort());
+        const QString second =
+            QStringLiteral("http://127.0.0.1:%1/new").arg(replacement.serverPort());
+        SnowShotApiClient client(first);
+        QObject receiver;
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QSemaphore entered, release;
+        if (kind == 0) {
+            SnowShotApiClientTestAccess::prepare(client, [&](const QImage& source) {
+                entered.release();
+                release.acquire();
+                return SnowShotApiClient::encodeWebp(source);
+            });
+        }
+        int completed = 0;
+        auto start = [&]() -> SnowShotApiClient::RequestToken {
+            if (kind == 0)
+                return client.extractTable(image, &receiver, [&](auto) { ++completed; });
+            if (kind == 1)
+                return client.extractLatex(image, &receiver, [&](auto) { ++completed; });
+            if (kind == 2) {
+                SnowShotTranslationRequest input;
+                input.model = QStringLiteral("general");
+                input.text = QStringLiteral("hello");
+                return client.streamTranslation(
+                    input, &receiver, [](const QString&) {}, [&](auto) { ++completed; });
+            }
+            if (kind == 3) {
+                SnowShotImageConversionRequest input;
+                input.model = QStringLiteral("vision");
+                input.image = image;
+                input.format = SnowShotImageConversionFormat::Markdown;
+                return client.streamImageConversion(
+                    input, &receiver, [](const QString&) {}, [&](auto) { ++completed; });
+            }
+            return client.fetchChatModels(QStringLiteral("en_US"), &receiver,
+                                          [&](auto) { ++completed; });
+        };
+        require(start() != 0, "original request accepted");
+        if (kind == 0)
+            require(entered.tryAcquire(1, 5000), "table preparation is pending before switch");
+        require(client.setBaseUrl(second), "server switches immediately");
+        release.release();
+        const QByteArray oldRequest = waitForHttpRequest(original, response);
+        require(oldRequest.startsWith((kind == 4 ? QByteArray("GET ") : QByteArray("POST ")) +
+                                      "/old" + routes[kind] + " "),
+                "in-flight requests preserve original server and path prefix");
+        translation_tests::waitUntil([&] { return completed == 1; }, "old request finishes");
+        require(start() != 0, "new request accepted");
+        release.release();
+        const QByteArray newRequest = waitForHttpRequest(replacement, response);
+        require(newRequest.startsWith((kind == 4 ? QByteArray("GET ") : QByteArray("POST ")) +
+                                      "/new" + routes[kind] + " "),
+                "subsequent requests use new server and path prefix");
+        translation_tests::waitUntil([&] { return completed == 2; },
+                                     "new request finishes without fallback");
+    }
+}
+
+void oldCatalogCannotReplaceNewServerModels() {
+    translation_tests::Server oldServer, newServer;
+    oldServer.holdModels = true;
+    newServer.models =
+        QJsonArray{QJsonObject{{QStringLiteral("model"), QStringLiteral("new-model")},
+                               {QStringLiteral("name"), QStringLiteral("New model")}}};
+    SnowShotApiClient client(oldServer.url());
+    QObject receiver;
+    bool oldDone = false, newDone = false;
+    SnowShotChatModelsResult lateResult;
+    require(client.fetchChatModels(QStringLiteral("en_US"), &receiver,
+                                   [&](auto result) {
+                                       lateResult = result;
+                                       oldDone = true;
+                                   }) != 0,
+            "start held catalog");
+    translation_tests::waitUntil([&] { return oldServer.modelRequests == 1; },
+                                 "old catalog pending");
+    require(client.setBaseUrl(newServer.url()), "switch to new catalog server");
+    require(client.fetchChatModels(QStringLiteral("en_US"), &receiver,
+                                   [&](auto) { newDone = true; }) != 0,
+            "start new catalog");
+    translation_tests::waitUntil([&] { return newDone; }, "new catalog loaded");
+    oldServer.respondModels();
+    translation_tests::waitUntil([&] { return oldDone; }, "old catalog completes late");
+    require(client.cachedChatModels().size() == 1 &&
+                client.cachedChatModels().first().id == QStringLiteral("new-model"),
+            "late response cannot repopulate current server cache");
+    require(lateResult.models.size() == 1 &&
+                lateResult.models.first().id == QStringLiteral("new-model"),
+            "late completion cannot publish an obsolete catalog to other consumers");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
 
@@ -1306,6 +1440,9 @@ int main(int argc, char** argv) {
     require(SnowShotApiClient::formatFailure(0, {}, QStringLiteral("  Connection\nfailed ")) ==
                 QStringLiteral("Connection failed"),
             "transport failures without a code should remain concise");
+    customServerDefaultsAndValidation();
+    requestsKeepTheirOriginalServer();
+    oldCatalogCannotReplaceNewServerModels();
     tablePreparationIsAsynchronousAndLifetimeSafe();
     latexPreparationIsAsynchronousAndLifetimeSafe();
     latexUploadDimensions();

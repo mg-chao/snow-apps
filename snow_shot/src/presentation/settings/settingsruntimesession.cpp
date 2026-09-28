@@ -1,10 +1,12 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#include "snow_shot/serverconfiguration.h"
 
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/presentation/globalmousegesture.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
+#include <QCoreApplication>
 #include <QMetaType>
 #include <QJsonObject>
 #include <QTimer>
@@ -1082,6 +1084,12 @@ bool SettingsRuntimeSession::isPending(const SettingsFieldDescriptor& descriptor
 }
 
 QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descriptor) const {
+    if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url") &&
+        !normalizedServerUrl(state(descriptor.id).draftValue.toString())) {
+        return QCoreApplication::translate("SettingsBackend",
+                                           "Enter a valid HTTP or HTTPS server address without "
+                                           "credentials, a query, or a fragment.");
+    }
     const QString currentError = backendError(descriptor);
     if (!currentError.isEmpty()) {
         return currentError;
@@ -1091,6 +1099,11 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,
                                          const QVariant& first, const QVariant& second) const {
+    if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url")) {
+        const auto a = normalizedServerUrl(first.toString());
+        const auto b = normalizedServerUrl(second.toString());
+        return a && b && *a == *b;
+    }
     if (descriptor.definition == nullptr) {
         return first == second;
     }

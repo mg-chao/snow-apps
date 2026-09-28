@@ -2536,7 +2536,20 @@ QVector<SettingsPageDefinition> builtInPages() {
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Configuration")),
             settingsText(QT_TRANSLATE_NOOP(
                 "SettingsCatalog", "Configure custom AI models and text translation services")),
-            {{QStringLiteral("ai-model"),
+            {{QStringLiteral("snow-shot-server"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Snow Shot server")),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                             "Choose the server for built-in online services. "
+                                             "Application updates are not affected.")),
+              SettingsSectionReset::Server,
+              {textFormatItem(QStringLiteral("api.server-url"),
+                              QT_TRANSLATE_NOOP("SettingsCatalog", "Server address"),
+                              QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                "Enter an HTTP or HTTPS address. Changes apply "
+                                                "immediately. Clear to use the default server."),
+                              QStringLiteral("api_configuration/server_url"),
+                              SettingsTextBinding::ServerUrl)}},
+             {QStringLiteral("ai-model"),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AI Model")),
               settingsText(QT_TRANSLATE_NOOP(
                   "SettingsCatalog",
@@ -3963,6 +3976,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         std::get_if<SettingsTextDefinition>(&itemDefinition.payload)) {
                     QString expectedKey;
                     switch (text->binding) {
+                    case SettingsTextBinding::ServerUrl:
+                        expectedKey = QStringLiteral("api_configuration/server_url");
+                        break;
                     case SettingsTextBinding::ScreenshotManualFilenameFormat:
                         expectedKey = QStringLiteral("screenshot/manual_save_filename_format");
                         break;

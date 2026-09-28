@@ -99,7 +99,11 @@ class SnowShotApiClient final : public QObject {
     explicit SnowShotApiClient(QString baseUrl, QObject* parent = nullptr);
     ~SnowShotApiClient() override;
 
-    [[nodiscard]] static QString configuredBaseUrl();
+    [[nodiscard]] static QString configuredBaseUrl(const QString& savedUrl = {});
+    [[nodiscard]] QString baseUrl() const {
+        return m_baseUrl;
+    }
+    [[nodiscard]] bool setBaseUrl(const QString& baseUrl);
 
     [[nodiscard]] bool usesSystemProxy() const;
     void setUseSystemProxy(bool enabled);
@@ -131,6 +135,7 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] QString modelFingerprint(const QString& id) const;
 
   signals:
+    void baseUrlChanged();
     void chatModelsChanged();
     void customModelInvalidated(const QString& id, bool translation, bool vision);
 
@@ -169,6 +174,7 @@ class SnowShotApiClient final : public QObject {
     void rebuildAvailableModels();
     const snow_shot::CustomAiModelConfiguration* customModel(const QString& id) const;
     QString m_baseUrl;
+    quint64 m_serverGeneration = 0;
     snow_shot::CustomAiModels m_customModels;
     QVector<SnowShotChatModel> m_availableModels;
 

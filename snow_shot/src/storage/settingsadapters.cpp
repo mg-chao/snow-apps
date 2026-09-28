@@ -246,6 +246,14 @@ QString colorToRgbaString(const QColor& color) {
         .toUpper();
 }
 
+QString ApiConfigurationSettings::serverUrl() const {
+    return cache().value(QStringLiteral("api_configuration/server_url")).toString();
+}
+
+bool ApiConfigurationSettings::setServerUrl(const QString& value) const {
+    return cache().setValue(QStringLiteral("api_configuration/server_url"), value);
+}
+
 CustomAiModels ApiConfigurationSettings::customModels() const {
     return customAiModelsFromJson(cache().value(QStringLiteral("api_configuration/custom_models")));
 }

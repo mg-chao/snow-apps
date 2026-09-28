@@ -234,9 +234,9 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 43, "macOS adds one permissions section");
+    require(sectionCount == 44, "macOS adds one permissions section");
 #else
-    require(sectionCount == 42, "catalog must contain forty-two sections");
+    require(sectionCount == 43, "catalog must contain forty-three sections");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
     // Explicit platform membership also catches substitutions that a total alone would miss.
@@ -266,7 +266,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 184, "catalog must contain 184 shared settings on every platform");
+    require(itemIds.size() == 185, "catalog must contain 185 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),

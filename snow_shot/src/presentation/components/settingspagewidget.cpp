@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
+#include "snow_shot/network/snowshotapiclient.h"
 
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/apppermissionservice.h"
@@ -736,7 +737,10 @@ class SettingsPageWidget::Impl {
                 } else if constexpr (std::is_same_v<Payload, settings::SettingsTextDefinition>) {
                     auto* control = new adqt::widgets::AdLineEdit(list);
                     control->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Medium);
-                    control->setAllowClear(false);
+                    control->setAllowClear(payload.binding ==
+                                           settings::SettingsTextBinding::ServerUrl);
+                    if (payload.binding == settings::SettingsTextBinding::ServerUrl)
+                        control->setPlaceholderText(SnowShotApiClient::configuredBaseUrl());
                     control->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
                     runtime.textControl = control;
@@ -751,6 +755,14 @@ class SettingsPageWidget::Impl {
                             [this, control, binding = payload.binding]() {
                                 if (!synchronizingValues &&
                                     !runtimeSession.applyTextValue(binding, control->text())) {
+                                    if (binding == settings::SettingsTextBinding::ServerUrl) {
+                                        adqt::widgets::AdMessage::Request request;
+                                        request.content =
+                                            runtimeSession.state(QStringLiteral("api.server-url"))
+                                                .error;
+                                        adqt::widgets::AdMessageService::error(std::move(request),
+                                                                               &q);
+                                    }
                                     syncValues();
                                 }
                             });

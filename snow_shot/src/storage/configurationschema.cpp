@@ -1,5 +1,6 @@
 #include "snow_shot/globalmouseactivationkeys.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/serverconfiguration.h"
 #include "snow_shot/customaimodelconfiguration.h"
 #include "snow_shot/texttranslationconfiguration.h"
 
@@ -114,6 +115,7 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 }
 
 const QVector<ConfigurationSchemaEntry> kRawEntries = {
+    {QStringLiteral("api_configuration/server_url"), QString(), ConfigurationValueKind::String},
     {QStringLiteral("api_configuration/text_translation"), QJsonArray(),
      ConfigurationValueKind::Structured},
     {QStringLiteral("api_configuration/custom_models"), QJsonArray(),
@@ -1803,6 +1805,11 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return {QStringLiteral("check"), true, true};
     }
 #endif
+    if (key == QStringLiteral("api_configuration/server_url")) {
+        const auto normalized = normalizedServerUrl(value.toString());
+        return {normalized.value_or(QString()), value.isString() && normalized.has_value(),
+                normalized.has_value() && *normalized != value};
+    }
     if (key == QStringLiteral("api_configuration/custom_models")) {
         bool valid = false;
         const auto models = customAiModelsFromJson(value, &valid);

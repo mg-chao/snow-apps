@@ -1029,6 +1029,8 @@ bool BuiltInSettingsBackend::applyDirectoryPathValue(SettingsDirectoryPathBindin
 
 QString BuiltInSettingsBackend::textValue(SettingsTextBinding binding) const {
     switch (binding) {
+    case SettingsTextBinding::ServerUrl:
+        return storage::ApiConfigurationSettings().serverUrl();
     case SettingsTextBinding::ScreenshotManualFilenameFormat:
         return storage::ScreenshotSettings().manualSaveFilenameFormat();
     case SettingsTextBinding::ScreenshotAutoFilenameFormat:
@@ -1041,6 +1043,8 @@ QString BuiltInSettingsBackend::textValue(SettingsTextBinding binding) const {
 
 bool BuiltInSettingsBackend::applyTextValue(SettingsTextBinding binding, const QString& value) {
     switch (binding) {
+    case SettingsTextBinding::ServerUrl:
+        return storage::ApiConfigurationSettings().setServerUrl(value);
     case SettingsTextBinding::ScreenshotManualFilenameFormat:
         return storage::ScreenshotSettings().setManualSaveFilenameFormat(value);
     case SettingsTextBinding::ScreenshotAutoFilenameFormat:
@@ -1889,6 +1893,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_translation/layout_processing"))},
         });
+    case SettingsSectionReset::Server:
     case SettingsSectionReset::TextTranslationConfigurations:
     case SettingsSectionReset::CustomAiModels:
     case SettingsSectionReset::ExtendedTranslation: {

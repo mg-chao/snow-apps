@@ -15,6 +15,7 @@ const QString modelKey = QStringLiteral("screenshot_translation/model");
 const QString customKey = QStringLiteral("api_configuration/custom_models");
 const QString textKey = QStringLiteral("api_configuration/text_translation");
 const QString proxyKey = QStringLiteral("network/proxy");
+const QString serverKey = QStringLiteral("api_configuration/server_url");
 } // namespace
 
 TranslationService& TranslationService::forClient(SnowShotApiClient& client,
@@ -42,7 +43,10 @@ TranslationService::TranslationService(SnowShotApiClient& client,
             [this](const QString& key, const QJsonValue&) {
                 if (m_client == nullptr || m_settings == nullptr)
                     return;
-                if (key == customKey) {
+                if (key == serverKey) {
+                    static_cast<void>(m_client->setBaseUrl(SnowShotApiClient::configuredBaseUrl(
+                        m_settings->value(serverKey).toString())));
+                } else if (key == customKey) {
                     m_client->setCustomModels(customAiModelsFromJson(m_settings->value(customKey)));
                 } else if (key == textKey) {
                     m_client->setTextTranslationConfigurations(
@@ -61,6 +65,10 @@ TranslationService::TranslationService(SnowShotApiClient& client,
                     emit modelInvalidated(id);
                 }
             });
+    connect(&client, &SnowShotApiClient::baseUrlChanged, this, [this] {
+        m_client->cancel(std::exchange(m_modelsToken, 0));
+        refreshModels(true);
+    });
     connect(&client, &SnowShotApiClient::chatModelsChanged, this,
             [this] { publishModels(!loadingModels()); });
     connect(&client, &QObject::destroyed, this, [this] {

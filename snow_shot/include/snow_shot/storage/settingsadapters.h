@@ -66,6 +66,8 @@ enum class ScreenshotToolbarLayoutKind {
 
 class ApiConfigurationSettings final {
   public:
+    [[nodiscard]] QString serverUrl() const;
+    bool setServerUrl(const QString& value) const;
     [[nodiscard]] CustomAiModels customModels() const;
     bool setCustomModels(const CustomAiModels& models) const;
     [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;

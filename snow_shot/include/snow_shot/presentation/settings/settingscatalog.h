@@ -244,6 +244,7 @@ struct SettingsDirectoryPathDefinition {
 };
 
 enum class SettingsTextBinding {
+    ServerUrl,
     ScreenshotManualFilenameFormat,
     ScreenshotAutoFilenameFormat,
     ScreenRecordingVideoFilenameFormat,
@@ -399,6 +400,7 @@ struct SettingsItemDefinition {
 };
 
 enum class SettingsSectionReset {
+    Server,
     None,
     ScreenshotShortcuts,
     GlobalMouse,

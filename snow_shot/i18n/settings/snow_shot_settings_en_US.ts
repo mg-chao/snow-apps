@@ -702,6 +702,10 @@
     <context>
         <name>SettingsBackend</name>
         <message>
+            <source>Enter a valid HTTP or HTTPS server address without credentials, a query, or a fragment.</source>
+            <translation>Enter a valid HTTP or HTTPS server address without credentials, a query, or a fragment.</translation>
+        </message>
+        <message>
             <source>The clipboard is unavailable.</source>
             <translation>The clipboard is unavailable.</translation>
         </message>
@@ -1131,6 +1135,10 @@
         <message>
             <source>Choose the primary color used throughout the theme</source>
             <translation>Choose the primary color used throughout the theme</translation>
+        </message>
+        <message>
+            <source>Choose the server for built-in online services. Application updates are not affected.</source>
+            <translation>Choose the server for built-in online services. Application updates are not affected.</translation>
         </message>
         <message>
             <source>Choose the size of the screenshot, pinned, and recording toolbars</source>
@@ -1583,6 +1591,10 @@
         <message>
             <source>Enlarge short side (more detail)</source>
             <translation>Enlarge short side (more detail)</translation>
+        </message>
+        <message>
+            <source>Enter an HTTP or HTTPS address. Changes apply immediately. Clear to use the default server.</source>
+            <translation>Enter an HTTP or HTTPS address. Changes apply immediately. Clear to use the default server.</translation>
         </message>
         <message>
             <source>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</source>
@@ -2649,6 +2661,10 @@
             <translation>Serial number</translation>
         </message>
         <message>
+            <source>Server address</source>
+            <translation>Server address</translation>
+        </message>
+        <message>
             <source>Set quality for image files saved outside the Snow Shot dialog</source>
             <translation>Set quality for image files saved outside the Snow Shot dialog</translation>
         </message>
@@ -2803,6 +2819,10 @@
         <message>
             <source>Snow Shot</source>
             <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot server</source>
+            <translation>Snow Shot server</translation>
         </message>
         <message>
             <source>Snowflake</source>

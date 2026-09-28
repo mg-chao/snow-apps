@@ -1,4 +1,5 @@
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/serverconfiguration.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include <QElapsedTimer>
 #include <QDateTime>
@@ -271,10 +272,14 @@ struct SnowShotApiClient::Request {
     QString format;
 };
 
-QString SnowShotApiClient::configuredBaseUrl() {
+QString SnowShotApiClient::configuredBaseUrl(const QString& savedUrl) {
+    if (const auto url = snow_shot::normalizedServerUrl(savedUrl); url && !url->isEmpty())
+        return *url;
     const QString overrideUrl =
         QProcessEnvironment::systemEnvironment().value(QStringLiteral("SNOW_SHOT_API_BASE_URL"));
-    return overrideUrl.trimmed().isEmpty() ? QStringLiteral(SNOW_SHOT_API_BASE_URL) : overrideUrl;
+    if (const auto url = snow_shot::normalizedServerUrl(overrideUrl); url && !url->isEmpty())
+        return *url;
+    return normalizedBaseUrl(QStringLiteral(SNOW_SHOT_API_BASE_URL));
 }
 
 SnowShotApiClient::SnowShotApiClient(QString baseUrl, QObject* parent)
@@ -291,6 +296,22 @@ SnowShotApiClient::~SnowShotApiClient() {
         manager->setParent(nullptr);
         manager->deleteLater();
     }
+}
+
+bool SnowShotApiClient::setBaseUrl(const QString& baseUrl) {
+    const auto normalized = snow_shot::normalizedServerUrl(baseUrl);
+    if (!normalized || normalized->isEmpty())
+        return false;
+    if (m_baseUrl == *normalized)
+        return true;
+    m_baseUrl = *normalized;
+    ++m_serverGeneration;
+    m_cachedChatModels.clear();
+    m_cachedChatModelsLocale.clear();
+    rebuildAvailableModels();
+    emit baseUrlChanged();
+    emit chatModelsChanged();
+    return true;
 }
 
 bool SnowShotApiClient::usesSystemProxy() const {
@@ -353,6 +374,7 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
 
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::TableExtract);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/table/extract");
     state->receiver = receiver;
     state->completion = std::move(completion);
     m_requests.insert(token, state);
@@ -416,7 +438,7 @@ void SnowShotApiClient::startTableUpload(RequestToken token, const QByteArray& w
     }
     auto* manager = networkAccessManager();
     requestState->transport.start();
-    QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/table/extract")));
+    QNetworkRequest request(QUrl(requestState->endpoint));
     request.setRawHeader("X-Request-ID",
                          QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     request.setTransferTimeout(static_cast<int>(remaining));
@@ -496,6 +518,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::extractLatex(const QImage& so
 
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::LatexExtract);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/latex/extract");
     state->receiver = receiver;
     state->latexCompletion = std::move(completion);
     m_requests.insert(token, state);
@@ -559,7 +582,7 @@ void SnowShotApiClient::startLatexUpload(RequestToken token, const QByteArray& w
     }
     auto* manager = networkAccessManager();
     requestState->transport.start();
-    QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/latex/extract")));
+    QNetworkRequest request(QUrl(requestState->endpoint));
     request.setRawHeader("X-Request-ID",
                          QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     request.setTransferTimeout(static_cast<int>(remaining));
@@ -758,7 +781,8 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
     request.setTransferTimeout(kRequestTimeoutMs);
     QNetworkReply* reply = manager->get(request);
     state->reply = reply;
-    connect(reply, &QNetworkReply::finished, this, [this, token, reply, locale]() {
+    const auto generation = m_serverGeneration;
+    connect(reply, &QNetworkReply::finished, this, [this, token, reply, locale, generation]() {
         if (!m_requests.contains(token)) {
             reply->deleteLater();
             return;
@@ -798,17 +822,25 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
             }
             if (result.models.isEmpty()) {
                 result.error = tr("No translation services are available");
-            } else {
+            } else if (generation == m_serverGeneration) {
                 m_cachedChatModels = result.models;
                 m_cachedChatModelsLocale = locale;
             }
         }
         rebuildAvailableModels();
-        if (!m_customModels.isEmpty()) {
+        // Other consumers also use the completion's models directly. Never deliver
+        // an obsolete server catalog after a switch, even when its request finishes last.
+        if (generation != m_serverGeneration) {
+            result = {};
+            result.models = m_availableModels;
+            if (result.models.isEmpty())
+                result.error = tr("No translation services are available");
+        } else if (!m_customModels.isEmpty()) {
             result.models = m_availableModels;
             result.error.clear();
         }
-        emit chatModelsChanged();
+        if (generation == m_serverGeneration)
+            emit chatModelsChanged();
         finishChatModels(token, std::move(result));
         reply->deleteLater();
     });
@@ -870,6 +902,7 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     }
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::Translation);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/chat/completions");
     state->model = input.model;
     if (custom != nullptr) {
         state->custom = true;
@@ -903,6 +936,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
         return 0;
     }
     auto* state = new Request(Request::Kind::ImageConversion);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/chat/completions");
     if (custom != nullptr) {
         state->custom = true;
         state->endpoint = custom->baseUrl + QStringLiteral("/chat/completions");
@@ -1020,8 +1054,7 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     if (state == nullptr) {
         return;
     }
-    QNetworkRequest request(QUrl(
-        state->custom ? state->endpoint : m_baseUrl + QStringLiteral("/api/v1/chat/completions")));
+    QNetworkRequest request(QUrl(state->endpoint));
     if (state->custom) {
         QHttp1Configuration http1;
         http1.setNumberOfConnectionsPerHost(16);

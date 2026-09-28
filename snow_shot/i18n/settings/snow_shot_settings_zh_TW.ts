@@ -702,6 +702,10 @@
     <context>
         <name>SettingsBackend</name>
         <message>
+            <source>Enter a valid HTTP or HTTPS server address without credentials, a query, or a fragment.</source>
+            <translation>請輸入有效的 HTTP 或 HTTPS 伺服器位址，不包含認證資訊、查詢參數或片段。</translation>
+        </message>
+        <message>
             <source>The clipboard is unavailable.</source>
             <translation>剪貼簿無法使用。</translation>
         </message>
@@ -1131,6 +1135,10 @@
         <message>
             <source>Choose the primary color used throughout the theme</source>
             <translation>選擇整個主題使用的主色</translation>
+        </message>
+        <message>
+            <source>Choose the server for built-in online services. Application updates are not affected.</source>
+            <translation>選擇內建線上服務使用的伺服器。此設定不影響應用程式更新。</translation>
         </message>
         <message>
             <source>Choose the size of the screenshot, pinned, and recording toolbars</source>
@@ -1583,6 +1591,10 @@
         <message>
             <source>Enlarge short side (more detail)</source>
             <translation>放大短邊（更多細節）</translation>
+        </message>
+        <message>
+            <source>Enter an HTTP or HTTPS address. Changes apply immediately. Clear to use the default server.</source>
+            <translation>輸入 HTTP 或 HTTPS 位址。變更立即生效。清空可使用預設伺服器。</translation>
         </message>
         <message>
             <source>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</source>
@@ -2649,6 +2661,10 @@
             <translation>序號</translation>
         </message>
         <message>
+            <source>Server address</source>
+            <translation>伺服器位址</translation>
+        </message>
+        <message>
             <source>Set quality for image files saved outside the Snow Shot dialog</source>
             <translation>設定在 Snow Shot 對話框以外儲存的影像檔案品質</translation>
         </message>
@@ -2803,6 +2819,10 @@
         <message>
             <source>Snow Shot</source>
             <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot server</source>
+            <translation>Snow Shot 伺服器</translation>
         </message>
         <message>
             <source>Snowflake</source>
