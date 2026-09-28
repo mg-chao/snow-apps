@@ -1,5 +1,6 @@
 #include "../../presentation/pinned/pinnedwindowplatform.h"
 #include "capturewindowlayers_p.h"
+#include "windowcursorcoordinator.h"
 
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -23,7 +24,10 @@ QRectF desktopRect(NSRect rect) {
 }
 class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
   public:
-    CocoaPinnedWindowPlatform(QWidget* window, Role role) : PinnedWindowPlatform(window, role) {}
+    CocoaPinnedWindowPlatform(QWidget* window, Role role) : PinnedWindowPlatform(window, role) {
+        if (role == Role::Image)
+            snow_shot::platform::macos::configureWindowCursorUpdates(window);
+    }
     ~CocoaPinnedWindowPlatform() override {
         detach();
     }

@@ -2,6 +2,7 @@
 #include "screenshotwindowtarget_p.h"
 #include "screenshotinputregion_p.h"
 #include "capturewindowlayers_p.h"
+#include "windowcursorcoordinator.h"
 #include <QCursor>
 #include <QTimer>
 #include "snow_shot/platform/macos/recapturefocus.h"
@@ -527,21 +528,25 @@ void configureControlledWindowDragging(QWidget* widget, bool controlResizing) {
 }
 
 void configureScreenshotOverlayWindow(QWidget* widget) {
+    macos::configureWindowCursorUpdates(widget);
     registerScreenshotLayer(widget, kOverlayLayer);
     configureControlledWindowDragging(widget, true);
 }
 
 void configureScreenRecordingAreaWindow(QWidget* widget) {
+    macos::configureWindowCursorUpdates(widget);
     configureControlledWindowDragging(widget);
     registerScreenshotLayer(widget, kOverlayLayer, CaptureFamily::Recording);
 }
 
 void configureScreenRecordingToolbarWindow(QWidget* widget) {
+    macos::configureWindowCursorUpdates(widget);
     configureControlledWindowDragging(widget);
     registerScreenshotLayer(widget, kToolbarLayer, CaptureFamily::Recording);
 }
 
 void configureScreenshotRecognitionWindow(QWidget* widget) {
+    macos::configureWindowCursorUpdates(widget);
     registerScreenshotLayer(widget, kRecognitionLayer);
 }
 
@@ -560,6 +565,7 @@ void setScreenshotInputPassThroughRegion(QWidget* widget, const QRegion& region)
 }
 
 void configureScreenshotToolbarWindow(QWidget* widget) {
+    macos::configureWindowCursorUpdates(widget);
     configureControlledWindowDragging(widget);
     registerScreenshotLayer(widget, kToolbarLayer);
 }

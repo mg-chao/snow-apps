@@ -547,6 +547,10 @@ permission recovery, targeted checks and native hardware acceptance steps.
 Screenshot capture uses ScreenCaptureKit; Windows-only backend preferences remain
 stored but are not used on macOS.
 
+See [macOS cursor coordination](snow_shot/tests/macos_cursors.md) for the shared
+screenshot, recording and pinned-window cursor contract and the native checks
+required when upgrading Qt or macOS.
+
 ## Pin to Screen
 
 See [macOS pinned-window validation](snow_shot/tests/macos_pinned_windows.md) for

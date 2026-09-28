@@ -34,16 +34,15 @@ else()
     set(SNOW_SELECTED_FILES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/selectedfiles.cpp)
 endif()
 
-set(SNOW_PINNED_PLATFORM_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowplatform.cpp)
+set(SNOW_PINNED_PLATFORM_SOURCES)
+if(NOT APPLE)
+    list(APPEND SNOW_PINNED_PLATFORM_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned/pinnedwindowplatform.cpp)
+endif()
 if(WIN32)
     list(APPEND SNOW_PINNED_PLATFORM_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedwindowevents.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/pinnedwindownative.cpp)
-endif()
-if(APPLE)
-    list(APPEND SNOW_PINNED_PLATFORM_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/pinnedwindowplatform.mm)
 endif()
 
 option(SNOW_SHOT_ENABLE_STRICT_COMPILE "Enable strict compiler warnings and treat warnings as errors." ON)
@@ -80,6 +79,28 @@ endif()
 snow_enable_clang_tidy()
 
 find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
+if(APPLE)
+    add_library(snow_shot_macos_cursor STATIC
+        src/platform/macos/windowcursorcoordinator.cpp
+        src/platform/macos/windowcursorcoordinator.mm)
+    target_link_libraries(snow_shot_macos_cursor PUBLIC Qt6::Widgets PRIVATE "-framework AppKit")
+
+    # Window adapters own their shared cursor dependency. Link this target instead
+    # of compiling adapter sources in each executable.
+    add_library(snow_shot_macos_window_platform STATIC
+        src/platform/macos/screenshotnative.mm
+        src/platform/macos/pinnedwindowplatform.mm
+        src/presentation/pinned/pinnedwindowplatform.cpp)
+    target_include_directories(snow_shot_macos_window_platform PRIVATE include)
+    target_link_libraries(snow_shot_macos_window_platform PUBLIC Qt6::Widgets
+        PRIVATE snow_shot_macos_cursor "-framework AppKit" "-framework ApplicationServices")
+endif()
+
+function(snow_shot_link_macos_window_platform target)
+    if(APPLE)
+        target_link_libraries(${target} PRIVATE snow_shot_macos_window_platform)
+    endif()
+endfunction()
 include(SnowTestCliGuard)
 include(SnowQtOffscreenTest)
 
@@ -1354,7 +1375,6 @@ if(APPLE)
     list(APPEND PROJECT_CXX_SOURCES
         src/platform/macos/applicationactivation.mm
         src/platform/macos/systemtraymenu.mm
-        src/platform/macos/screenshotnative.mm
         src/platform/macos/windowcaptureexclusion.mm)
     list(APPEND PROJECT_HEADERS include/snow_shot/platform/macos/applicationactivation.h)
 endif()
@@ -1380,6 +1400,7 @@ qt_add_executable(snow_shot
     MANUAL_FINALIZATION
     ${PROJECT_SOURCES}
 )
+snow_shot_link_macos_window_platform(snow_shot)
 if(SNOW_SHOT_BUILD_TESTS)
     target_compile_definitions(snow_shot PRIVATE SNOW_SHOT_MCP_TEST_FIXTURE=1)
     snow_shot_import_offscreen_platform(snow_shot)
@@ -3054,6 +3075,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-screenshot-color-picker-tests)
     target_include_directories(snow-shot-screenshot-color-picker-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
@@ -3064,8 +3086,6 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(APPLE)
         set_source_files_properties(tests/screenshot_color_picker_tests.cpp
             PROPERTIES LANGUAGE OBJCXX)
-        target_sources(snow-shot-screenshot-color-picker-tests PRIVATE
-            ${SNOW_PINNED_PLATFORM_SOURCES})
         target_link_libraries(snow-shot-screenshot-color-picker-tests PRIVATE "-framework AppKit")
     endif()
     add_test(NAME snow-shot-screenshot-color-picker-tests
@@ -3282,6 +3302,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-screenshot-canvas-renderer-tests)
     target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
@@ -3554,6 +3575,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-pinned-window-tests)
     target_include_directories(snow-shot-pinned-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
@@ -4478,6 +4500,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-screenshot-toolbar-remembered-tool-tests)
     target_include_directories(snow-shot-screenshot-toolbar-remembered-tool-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
@@ -4649,6 +4672,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-screen-recording-shortcut-tests)
     target_compile_definitions(snow-shot-screen-recording-shortcut-tests PRIVATE
         SNOW_SHOT_TEST_HOOKS=1
     )
@@ -4724,6 +4748,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalette.cpp
         src/presentation/toolbar/screenshottoolbarwindow.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-floating-toolbar-drag-tests)
     target_compile_definitions(snow-shot-floating-toolbar-drag-tests PRIVATE
         SNOW_SHOT_TEST_HOOKS=1
     )
@@ -4744,8 +4769,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     if(APPLE)
         target_sources(snow-shot-floating-toolbar-drag-tests PRIVATE
-            ../cmake/test-support/macos_native_input.mm
-            src/platform/macos/screenshotnative.mm)
+            ../cmake/test-support/macos_native_input.mm)
         target_link_libraries(snow-shot-floating-toolbar-drag-tests PRIVATE "-framework AppKit")
         target_include_directories(snow-shot-floating-toolbar-drag-tests PRIVATE ../cmake/test-support)
         add_test(NAME snow-shot-macos-toolbar-shadow-input-tests
@@ -4783,6 +4807,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selection/screenshotselectiontoolbarwidgets.h
         src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-color-picker-lifecycle-tests)
     target_include_directories(snow-shot-color-picker-lifecycle-tests PRIVATE include)
     target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
         snow_shot_diagnostics snow_shot_storage snow_shot_window_shortcuts
@@ -4791,7 +4816,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE comctl32)
     elseif(APPLE)
         target_sources(snow-shot-color-picker-lifecycle-tests PRIVATE
-            src/platform/macos/screenshotnative.mm
             src/platform/macos/windowcaptureexclusion.mm)
         target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
             "-framework AppKit" "-framework CoreGraphics")
@@ -5301,6 +5325,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotpdfexport.cpp
         src/platform/windows/windowchrome.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-screen-recording-controller-tests)
     target_include_directories(snow-shot-screen-recording-controller-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
@@ -5422,6 +5447,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/recording/recordingcountdownoverlay.cpp
         src/presentation/recording/recordingcountdownoverlay.h
     )
+    snow_shot_link_macos_window_platform(snow-shot-screen-recording-area-window-tests)
     target_include_directories(snow-shot-screen-recording-area-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -5528,6 +5554,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/styles/buttonborder.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-recognition-window-tests)
     target_include_directories(snow-shot-recognition-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
@@ -5701,6 +5728,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/languagemanager.cpp
         src/presentation/styles/buttonborder.cpp
     )
+    snow_shot_link_macos_window_platform(snow-shot-recognition-session-controller-tests)
     target_include_directories(snow-shot-recognition-session-controller-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${SNOW_DRAW_ENGINE_SOURCE_DIR}/include"
@@ -5810,6 +5838,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/app/mcp/mcpdocumentservice.h
         include/snow_shot/app/mcp/mcpjobregistry.h
         src/app/mcp/mcpdocumentservice.cpp src/app/mcp/mcpjobregistry.cpp)
+    snow_shot_link_macos_window_platform(snow-shot-mcp-document-tests)
     target_include_directories(snow-shot-mcp-document-tests PRIVATE include src/image)
     target_link_libraries(snow-shot-mcp-document-tests PRIVATE snow_shot_translation
         snow_shot_settings snow_shot_updates
@@ -7524,6 +7553,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         tests/macos_pinned_window_tests.mm
         ${SNOW_PINNED_PLATFORM_SOURCES}
         src/presentation/services/mousereleaseactioncontroller.cpp)
+    snow_shot_link_macos_window_platform(snow-shot-macos-pinned-window-tests)
     set_target_properties(snow-shot-macos-pinned-window-tests PROPERTIES
         MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "top.snowshot.tests.pinned")
     target_include_directories(snow-shot-macos-pinned-window-tests PRIVATE include src)
@@ -7670,19 +7700,6 @@ foreach(_target IN LISTS _region_switcher_targets)
     endif()
 endforeach()
 
-if(APPLE)
-    get_property(_screenshot_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-    foreach(_target IN LISTS _screenshot_targets)
-        get_target_property(_sources ${_target} SOURCES)
-        if(_sources MATCHES "screenshotscrollingcapturecontroller.cpp|directcapturecontroller.cpp|screenshotoverlaywindow.cpp|screenshotrecognitionwindow.cpp|screenrecordingareawindow.cpp|screenrecordingtoolbarwindow.cpp|screenshotfloatingtoolpalettewindow.cpp")
-            if(NOT _sources MATCHES "platform/macos/screenshotnative.mm")
-                target_sources(${_target} PRIVATE src/platform/macos/screenshotnative.mm)
-            endif()
-            target_link_libraries(${_target} PRIVATE "-framework AppKit" "-framework ApplicationServices")
-        endif()
-    endforeach()
-endif()
-
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-macos-screenshot-window-target-tests
         tests/macos_screenshot_window_target_tests.mm)
@@ -7695,9 +7712,9 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-macos-screenshot-native-smoke
         tests/macos_screenshot_native_smoke.mm
         src/presentation/capture/directcapturenative.cpp
-        src/platform/macos/screenshotnative.mm
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/services/screenshotsourceimagecomposer.cpp)
+    snow_shot_link_macos_window_platform(snow-shot-macos-screenshot-native-smoke)
     target_include_directories(snow-shot-macos-screenshot-native-smoke PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-macos-screenshot-native-smoke PRIVATE Qt6::Widgets snow_capture_c
@@ -7721,8 +7738,8 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-macos-recapture-native-tests
         tests/macos_recapture_native_tests.mm
-        src/platform/macos/screenshotnative.mm
         src/platform/macos/applicationactivation.mm)
+    snow_shot_link_macos_window_platform(snow-shot-macos-recapture-native-tests)
     target_include_directories(snow-shot-macos-recapture-native-tests PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-macos-recapture-native-tests PRIVATE Qt6::Widgets snow_capture_c
@@ -7746,8 +7763,8 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-macos-recapture-focus-tests PROPERTIES LABELS "unit;macos")
 
     add_executable(snow-shot-macos-scrolling-input-tests
-        tests/macos_scrolling_input_tests.mm
-        src/platform/macos/screenshotnative.mm)
+        tests/macos_scrolling_input_tests.mm)
+    snow_shot_link_macos_window_platform(snow-shot-macos-scrolling-input-tests)
     target_include_directories(snow-shot-macos-scrolling-input-tests PRIVATE include)
     target_link_libraries(snow-shot-macos-scrolling-input-tests PRIVATE Qt6::Widgets
         "-framework AppKit" "-framework ApplicationServices")
@@ -7763,8 +7780,8 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-macos-overlay-initialization-tests
         tests/macos_overlay_initialization_tests.mm
         ${SNOW_PINNED_PLATFORM_SOURCES}
-        src/platform/macos/screenshotnative.mm
         src/presentation/core/screenshotgeometry.cpp)
+    snow_shot_link_macos_window_platform(snow-shot-macos-overlay-initialization-tests)
     target_include_directories(snow-shot-macos-overlay-initialization-tests PRIVATE include src)
     target_link_libraries(snow-shot-macos-overlay-initialization-tests PRIVATE ant_design_qt Qt6::Widgets
         "-framework AppKit" "-framework ApplicationServices")
@@ -7833,4 +7850,23 @@ endif()
 if(TARGET snow-shot-pinned-window-tests)
     add_test(NAME snow-shot-pinned-latex-tests COMMAND snow-shot-pinned-window-tests --latex-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-latex-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()
+
+if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-cursor-tests tests/macos_cursor_tests.cpp)
+    target_link_libraries(snow-shot-macos-cursor-tests PRIVATE snow_shot_macos_cursor)
+    snow_shot_import_offscreen_platform(snow-shot-macos-cursor-tests)
+    add_test(NAME snow-shot-macos-cursor-tests COMMAND snow-shot-macos-cursor-tests -platform offscreen)
+    set_tests_properties(snow-shot-macos-cursor-tests PROPERTIES LABELS "unit;macos")
+
+    add_executable(snow-shot-macos-cursor-native-tests tests/macos_cursor_native_tests.mm
+        ../cmake/test-support/macos_native_input.mm)
+    snow_shot_link_macos_window_platform(snow-shot-macos-cursor-native-tests)
+    target_include_directories(snow-shot-macos-cursor-native-tests PRIVATE include src)
+    target_link_libraries(snow-shot-macos-cursor-native-tests PRIVATE snow_shot_macos_cursor
+        "-framework AppKit" "-framework ApplicationServices")
+    add_test(NAME snow-shot-macos-cursor-native-tests
+        COMMAND snow-shot-macos-cursor-native-tests -platform cocoa)
+    set_tests_properties(snow-shot-macos-cursor-native-tests PROPERTIES
+        LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 60)
 endif()
