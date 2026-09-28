@@ -614,8 +614,18 @@ void strokeCursorsUseNativeBitmapsAndRefreshWithStyle() {
         if (tool != SnowCanvasTool::PenFilter) {
             const QPixmap pixmap = canvas.cursor().pixmap();
             const int center = qRound(22 * pixmap.devicePixelRatio());
-            require(pixmap.toImage().pixelColor(center, center) == color,
-                    "style changes must immediately refresh the native cursor color");
+            const QColor cursorColor = pixmap.toImage().pixelColor(center, center);
+            if (tool == SnowCanvasTool::PenHighlight) {
+                require(cursorColor.alpha() == 128,
+                        "highlighter cursor fill must be half transparent");
+                require(std::abs(cursorColor.red() - color.red()) <= 1 &&
+                            std::abs(cursorColor.green() - color.green()) <= 1 &&
+                            std::abs(cursorColor.blue() - color.blue()) <= 1,
+                        "highlighter cursor must retain the selected color");
+            } else {
+                require(cursorColor == color,
+                        "style changes must immediately refresh the native cursor color");
+            }
         }
         const QCursor previous = canvas.cursor();
         QMouseEvent move(QEvent::MouseMove, QPointF(170, 170), QPointF(170, 170), Qt::NoButton,
@@ -827,6 +837,10 @@ void rotationHandleCursorMatchesTheReferencePlatformBehavior() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--stroke-cursor-only"))) {
+        strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--document-reset-only"))) {
         documentResetClearsElementsAndPreservesViews();
         return 0;

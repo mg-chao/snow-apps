@@ -2050,12 +2050,15 @@ void SnowCanvasWidget::Impl::refreshToolCursorStyle() {
     const auto& cursorStyle = displayState.snapshot().styleToolbarState;
     const bool filterCursor = displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_PEN_FILTER;
     const auto& stroke = cursorStyle.shape_style.stroke;
-    cursorController.configureStrokeCursor(
-        (filterCursor ? cursorStyle.filter_style.stroke_width
-                      : cursorStyle.shape_style.stroke_width) *
-            displayState.displayCache().sceneInfo().camera_zoom,
-        filterCursor ? std::nullopt
-                     : std::optional<QColor>(QColor(stroke.r, stroke.g, stroke.b, stroke.a)));
+    QColor cursorColor(stroke.r, stroke.g, stroke.b, stroke.a);
+    if (displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_PEN_HIGHLIGHT) {
+        cursorColor.setAlphaF(cursorColor.alphaF() * 0.5);
+    }
+    cursorController.configureStrokeCursor((filterCursor ? cursorStyle.filter_style.stroke_width
+                                                         : cursorStyle.shape_style.stroke_width) *
+                                               displayState.displayCache().sceneInfo().camera_zoom,
+                                           filterCursor ? std::nullopt
+                                                        : std::optional<QColor>(cursorColor));
 }
 
 void SnowCanvasWidget::Impl::applyCanvasToolCursor(SnowCanvasTool tool) {
