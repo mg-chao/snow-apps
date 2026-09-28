@@ -5568,10 +5568,8 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
         applyScreenshotShortcutTooltip(m_cancelButton, QStringLiteral("Cancel screenshot"),
                                        QStringLiteral("cancel_screenshot"));
         addButton(m_cancelButton);
-        connect(m_cancelButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            clearActiveTool();
-            emit cancelRequested();
-        });
+        connect(m_cancelButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::cancelRequested);
     }
 
     if (options.showSaveButton && options.saveButtonWithResultActions) {

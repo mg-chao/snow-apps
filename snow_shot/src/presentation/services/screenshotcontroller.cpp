@@ -325,7 +325,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] bool imageExportCurrent(quint64 generation) const;
     [[nodiscard]] bool imageExportNotificationCurrent(quint64 generation) const;
     [[nodiscard]] bool finishImageExport(quint64 generation);
-    void hideImageExportPresentation();
+    void hideCapturePresentationImmediately();
     void detachCaptureForExport(ExportDetachMode mode = ExportDetachMode::Immediate);
     void scheduleDeferredExportCleanup();
     void trackExportJob(const ScreenshotExportJobHandle& handle);
@@ -2623,7 +2623,7 @@ bool ScreenshotController::Impl::imageExportNotificationCurrent(quint64 generati
     return epoch != m_imageExportCaptureEpochs.cend() && epoch.value() == m_captureEpoch;
 }
 
-void ScreenshotController::Impl::hideImageExportPresentation() {
+void ScreenshotController::Impl::hideCapturePresentationImmediately() {
     SNOW_SHOT_PIN_PERF_SCOPE("controller.hide_presentation");
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.hide_presentation.enter");
     if (m_colorPickerController != nullptr) {
@@ -2642,7 +2642,7 @@ void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
     SNOW_SHOT_PIN_PERF_SCOPE("controller.detach_capture");
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.detach_capture.enter");
     if (mode == ExportDetachMode::Immediate) {
-        hideImageExportPresentation();
+        hideCapturePresentationImmediately();
     }
     if (m_scrollingCaptureController != nullptr) {
         m_scrollingCaptureController->detachPendingResultRequest();
@@ -2868,7 +2868,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
             return;
         }
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.snapshot_requested");
-        hideImageExportPresentation();
+        hideCapturePresentationImmediately();
         detachCaptureForExport(ExportDetachMode::DeferredPresentation);
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
         return;
@@ -2989,7 +2989,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         return;
     }
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.export_scheduled");
-    hideImageExportPresentation();
+    hideCapturePresentationImmediately();
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
     detachCaptureForExport(ExportDetachMode::DeferredPresentation);
 }
@@ -4076,6 +4076,7 @@ void ScreenshotController::Impl::publishHistoryResult(
 }
 
 void ScreenshotController::Impl::cancelCapture() {
+    hideCapturePresentationImmediately();
     if (m_shortcutExitConfirmation != nullptr) {
         m_shortcutExitConfirmation->dismiss();
     }

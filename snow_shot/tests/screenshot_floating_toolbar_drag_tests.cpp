@@ -41,6 +41,7 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -248,7 +249,10 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void pinSelectionToScreen() override {
         ++pinSelectionCount;
     }
-    void cancelCapture() override {}
+    void cancelCapture() override {
+        if (onCancelCapture)
+            onCancelCapture();
+    }
     void copySelectionToClipboard() override {}
     void startScreenRecording() override {}
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
@@ -267,6 +271,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void hideColorPickersForScreenshotUi() override {}
 
     int repositionCount = 0;
+    std::function<void()> onCancelCapture;
     int pinSelectionCount = 0;
     int deleteAllElementsCount = 0;
     int presentationRepositionCount = 0;
@@ -2971,6 +2976,47 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--cancel-ordering-only"))) {
+            for (const bool clickButton : {true, false}) {
+                NoOpToolbarCommands commands;
+                ScreenshotToolbarWindow window(commands);
+                auto* palette = window.palette();
+                window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+                window.show();
+                settleQueuedRefreshes();
+                int visibleChanges = 0;
+                QObject::connect(palette, &ScreenshotToolPalette::visibleContentChanged, &window,
+                                 [&]() {
+                                     if (window.isVisible())
+                                         ++visibleChanges;
+                                 });
+                int cancellations = 0;
+                commands.onCancelCapture = [&]() {
+                    ++cancellations;
+                    require(visibleChanges == 0 &&
+                                palette->activeTool() == ScreenshotToolPalette::Tool::Shape,
+                            "cancel must reach the session owner before changing visible tools");
+                    window.hide();
+                    window.resetForNewCapture();
+                };
+                if (clickButton) {
+                    adqt::widgets::AdButton* cancel = nullptr;
+                    for (auto* button : palette->findChildren<adqt::widgets::AdButton*>()) {
+                        if (button->accessibleName() == QStringLiteral("Cancel screenshot"))
+                            cancel = button;
+                    }
+                    require(cancel != nullptr, "cancel button must exist");
+                    cancel->click();
+                } else {
+                    palette->cancelRequested();
+                }
+                require(cancellations == 1 && !window.isVisible() && visibleChanges == 0,
+                        "cancel must hide once without presenting an intermediate toolbar state");
+                require(palette->activeTool() == ScreenshotToolPalette::Tool::Move,
+                        "session cleanup must still reset the tool for the next capture");
+            }
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--stable-tool-frame-only"))) {
             toolSwitchPreservesNativeFrame();
             return 0;

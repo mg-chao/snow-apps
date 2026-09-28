@@ -431,8 +431,20 @@ void cancelConcealsOverlayBeforeClearingVisibleFrame() {
     ScreenshotIntelligentSelectionModel intelligentSelection;
     CaptureRuntime runtime;
 
-    auto workflow = makeWorkflow(state, displaySession, geometry, interaction, selection,
-                                 intelligentSelection, runtime);
+    ScreenshotCaptureWorkflow workflow({
+        state,
+        runtime,
+        geometry,
+        displaySession,
+        interaction,
+        selection,
+        intelligentSelection,
+        {},
+        [&]() {
+            require(runtime.hideOverlayImmediatelyCalls == 1,
+                    "cancel must conceal overlays before capture termination callbacks run");
+        },
+    });
     workflow.cancelCapture();
 
     const qsizetype concealIndex =

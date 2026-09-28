@@ -1637,7 +1637,7 @@ void selectionResizeModeAdjustsGrabOffsetAtPress() {
             "follow-movement resize must keep the press-time grab offset on the dragged border");
 }
 
-void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
+void completionGesturesUseSharedEligibilityAcrossTools() {
     const storage::ScreenshotSettings settings;
     const QString originalDoubleClick = settings.doubleClickAction();
     const QString originalMiddleClick = settings.middleMouseButtonAction();
@@ -1691,16 +1691,6 @@ void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
                 QStringList{QStringLiteral("copy_to_clipboard"), QStringLiteral("save_as_file")},
             "middle-click must use its configured toolbar command for a drawing tool");
 
-    dispatched.clear();
-    for (const auto tool : {ScreenshotActiveTool::Select, ScreenshotActiveTool::Ocr,
-                            ScreenshotActiveTool::Table, ScreenshotActiveTool::Qr}) {
-        interaction.setCanvasTool(tool);
-        handler.handleUnhandledLeftDoubleClick();
-        handler.handleUnhandledMiddleClick();
-        require(dispatched.isEmpty(),
-                "completion gestures must leave Select and recognition input unchanged");
-    }
-
     const std::pair<QString, QString> commands[] = {
         {QStringLiteral("copy"), QStringLiteral("copy_to_clipboard")},
         {QStringLiteral("save"), QStringLiteral("save_as_file")},
@@ -1712,13 +1702,37 @@ void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
         require(settings.setDoubleClickAction(setting) &&
                     settings.setMiddleMouseButtonAction(setting),
                 "failed to configure toolbar completion action");
-        for (int mode = 0; mode < 3; ++mode) {
-            if (mode == 0) {
-                interaction.setMoveTool(true, false);
-            } else if (mode == 1) {
-                interaction.setCanvasTool(ScreenshotActiveTool::Shape);
-            } else {
+        const ScreenshotActiveTool tools[] = {
+            ScreenshotActiveTool::Move,
+            ScreenshotActiveTool::Select,
+            ScreenshotActiveTool::Shape,
+            ScreenshotActiveTool::Arrow,
+            ScreenshotActiveTool::Line,
+            ScreenshotActiveTool::FreeDraw,
+            ScreenshotActiveTool::RectangleHighlight,
+            ScreenshotActiveTool::PenHighlight,
+            ScreenshotActiveTool::Eraser,
+            ScreenshotActiveTool::RectangleFilter,
+            ScreenshotActiveTool::Watermark,
+            ScreenshotActiveTool::Text,
+            ScreenshotActiveTool::SerialNumber,
+            ScreenshotActiveTool::Ocr,
+            ScreenshotActiveTool::Table,
+            ScreenshotActiveTool::Qr,
+            ScreenshotActiveTool::PenFilter,
+            ScreenshotActiveTool::Spotlight,
+            ScreenshotActiveTool::Markdown,
+            ScreenshotActiveTool::Html,
+            ScreenshotActiveTool::AutoFilter,
+            ScreenshotActiveTool::Latex,
+        };
+        for (int mode = 0; mode <= static_cast<int>(std::size(tools)); ++mode) {
+            if (mode == static_cast<int>(std::size(tools))) {
                 interaction.enterScrollingCapture();
+            } else if (tools[mode] == ScreenshotActiveTool::Move) {
+                interaction.setMoveTool(true, false);
+            } else {
+                interaction.setCanvasTool(tools[mode]);
             }
             for (const bool middleClick : {false, true}) {
                 const auto trigger = [&]() {
@@ -1747,6 +1761,33 @@ void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
             }
         }
     }
+
+    require(settings.setDoubleClickAction(QStringLiteral("copy")) &&
+                settings.setMiddleMouseButtonAction(QStringLiteral("copy")),
+            "failed to configure selection transaction regression");
+    dispatched.clear();
+    interaction.setCanvasTool(ScreenshotActiveTool::Ocr);
+    require(interaction.enterSelectionDrag(ScreenshotSelectionDragMode::All),
+            "begin a selection drag with a non-drawing tool");
+    handler.handleUnhandledLeftDoubleClick();
+    handler.handleUnhandledMiddleClick();
+    require(dispatched.isEmpty(), "neither gesture may complete an unfinished selection drag");
+    interaction.finishDrag();
+    interaction.confirmSelection();
+
+    selection.setRegionType(ScreenshotRegionType::Polyline);
+    selection.beginRegionOperation(ScreenshotSelectionModel::RegionOperation::Add);
+    handler.handleUnhandledLeftDoubleClick();
+    handler.handleUnhandledMiddleClick();
+    require(dispatched.isEmpty(), "both completion gestures must defer to region construction");
+    selection.cancelRegionOperation();
+    handler.handleUnhandledLeftDoubleClick();
+    handler.handleUnhandledMiddleClick();
+    require(dispatched == QStringList{QStringLiteral("copy_to_clipboard"),
+                                      QStringLiteral("copy_to_clipboard")},
+            "both gestures resume after the region transaction ends");
+    dispatched.clear();
+    interaction.enterScrollingCapture();
 
     require(settings.setDoubleClickAction(QStringLiteral("copy")) &&
                 settings.setMiddleMouseButtonAction(QStringLiteral("copy")),
@@ -3826,7 +3867,7 @@ int main(int argc, char** argv) {
     }
     regionOperationsUseMarqueeAndRestoreOnCancel();
     if (QCoreApplication::arguments().contains(QStringLiteral("--completion-gestures-only"))) {
-        completionGesturesRequireAConfirmedSelectionAndSupportedTool();
+        completionGesturesUseSharedEligibilityAcrossTools();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -3906,7 +3947,7 @@ int main(int argc, char** argv) {
     nonMoveToolPermanentlySwitchesForSelectionResize();
     recognitionAndScrollingToolsResizeSelectionBorder();
     selectionResizeModeAdjustsGrabOffsetAtPress();
-    completionGesturesRequireAConfirmedSelectionAndSupportedTool();
+    completionGesturesUseSharedEligibilityAcrossTools();
     externalSelectionSupportsHeldShortcuts();
     colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
     sharedShiftShortcutChoosesResizeOrColorFormat();

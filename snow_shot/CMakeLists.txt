@@ -5001,6 +5001,15 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     add_test(
+        NAME snow-shot-screenshot-cancel-ordering-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --cancel-ordering-only -platform offscreen
+    )
+    set_tests_properties(snow-shot-screenshot-cancel-ordering-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    add_test(
         NAME snow-shot-jump-to-translation-page-toolbar-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --jump-to-translation-page-only
             -platform offscreen

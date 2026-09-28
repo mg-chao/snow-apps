@@ -41,10 +41,6 @@ bool recognitionTool(ScreenshotActiveTool tool) {
     return isScreenshotRecognitionTool(tool);
 }
 
-bool screenshotCompletionGestureTool(ScreenshotActiveTool tool) {
-    return tool != ScreenshotActiveTool::Select && !isScreenshotRecognitionTool(tool);
-}
-
 } // namespace
 
 ScreenshotOverlayInputHandler::ScreenshotOverlayInputHandler(
@@ -846,8 +842,6 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
-    if (customRegionInputActive() || m_consumeRegionRelease)
-        return;
     executeConfiguredCompletionAction(snow_shot::storage::ScreenshotSettings().doubleClickAction());
 }
 
@@ -857,12 +851,13 @@ void ScreenshotOverlayInputHandler::handleUnhandledMiddleClick() {
 }
 
 void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QString& action) {
-    if (m_externalDragActive)
+    // Unhandled completion gestures share capture-state eligibility across all tools.
+    // Region construction retains ownership until its final release is consumed.
+    if (m_externalDragActive || customRegionInputActive() || m_consumeRegionRelease)
         return;
     if (!(m_context.interaction.movingSelection() || m_context.interaction.editing() ||
           m_context.interaction.scrollingCapture()) ||
-        !m_context.selection.hasPixelSelection() ||
-        !screenshotCompletionGestureTool(m_context.interaction.activeTool())) {
+        !m_context.selection.hasPixelSelection()) {
         return;
     }
 

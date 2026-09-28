@@ -259,10 +259,7 @@ void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolP
     connect(&toolPalette, &ScreenshotToolPalette::saveRequested, this,
             [this]() { m_commands.saveSelectionToFile(); });
     connect(&toolPalette, &ScreenshotToolPalette::cancelRequested, this,
-            [this, palette = &toolPalette]() {
-                palette->clearActiveTool();
-                m_commands.cancelCapture();
-            });
+            [this]() { m_commands.cancelCapture(); });
     connect(&toolPalette, &ScreenshotToolPalette::copyRequested, this,
             [this]() { m_commands.copySelectionToClipboard(); });
 }

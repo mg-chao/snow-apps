@@ -141,7 +141,7 @@ void ScreenshotOverlayCoordinator::showOverlayWindows(
 
 void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
     const ScreenshotDisplaySession& displaySession) {
-    // This path is on the first-frame critical path of an export. Hide the
+    // This path is on the first-frame critical path of ending a capture. Hide the
     // interaction surfaces and leave renderer/native-surface retirement to the
     // deferred maintenance pass.
     m_uiHost.hideToolbar();

@@ -151,6 +151,9 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     const bool refreshAfterCancel = m_refreshAfterCapture || m_state.layoutDirty;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.cancel_requested");
     SNOW_SHOT_CAPTURE_PERF_FINISH(false);
+    // Termination callbacks can reset visible tools and recognition UI. Conceal the
+    // session before any teardown, not just before the canvas document is cleared.
+    m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
     m_context.runtime.cancelActiveCapture();
     completeRecapture(false);
     if (m_context.captureTerminated) {
@@ -160,9 +163,6 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     m_state.sessionState = ScreenshotSessionState::Releasing;
     m_state.captureInProgress = false;
     m_refreshAfterCapture = false;
-    // Renderer and canvas resets queue full-surface paints. Conceal the overlay first so the
-    // compositor cannot publish the canvas fallback color between reset and native teardown.
-    m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
     resetCaptureModels();
     resetCanvasRuntimeState();
     finishCaptureSession();
