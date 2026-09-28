@@ -2445,10 +2445,6 @@
             <translation>在截图中还原受支持的全屏颜色滤镜效果。</translation>
         </message>
         <message>
-            <source>Save a PNG file automatically whenever a screenshot is copied</source>
-            <translation>每次复制截图时自动保存 PNG 文件</translation>
-        </message>
-        <message>
             <source>Save as file</source>
             <translation>保存为文件</translation>
         </message>
@@ -3091,6 +3087,10 @@
         <message>
             <source>WebP</source>
             <translation>WebP</translation>
+        </message>
+        <message>
+            <source>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</source>
+            <translation>将截图复制到剪贴板时，同时按所选图像格式保存到图像保存目录</translation>
         </message>
         <message>
             <source>Window Element API</source>

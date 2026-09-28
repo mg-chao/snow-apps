@@ -846,8 +846,32 @@ SettingsItemDefinition screenshotSaveAsFileDialogItem() {
           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Snow Shot"))}});
 }
 
+SettingsItemDefinition screenshotAutoSaveAfterCopyItem() {
+    return switchItem(
+        QStringLiteral("screenshot.auto-save-after-copy"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Auto save after copy"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "When copying a screenshot image to the clipboard, also save it in the "
+                          "selected image format and save directory"),
+        QStringLiteral("screenshot/auto_save_after_copy"),
+        SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy);
+}
+
+SettingsItemDefinition screenshotCopyFileItem() {
+    return switchItem(
+        QStringLiteral("screenshot.copy-image-file-to-clipboard"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Copy image file to clipboard"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Write the screenshot to a file and copy that file to the clipboard"),
+        QStringLiteral("screenshot/copy_image_file_to_clipboard"),
+        SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard);
+}
+
 QVector<SettingsItemDefinition> screenshotOutputItems() {
     return {
+        screenshotAutoSaveAfterCopyItem(),
+        screenshotCopyFileItem(),
+        screenshotSaveAsFileDialogItem(),
         directoryPathItem(
             QStringLiteral("screenshot-output.image-save-directory"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Image save directory"),
@@ -1050,26 +1074,6 @@ SettingsItemDefinition screenshotConfirmBeforeExitingViaShortcutItem() {
                           "Ask for confirmation when using the Cancel screenshot shortcut."),
         QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"),
         SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut);
-}
-
-SettingsItemDefinition screenshotAutoSaveAfterCopyItem() {
-    return switchItem(
-        QStringLiteral("screenshot.auto-save-after-copy"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Auto save after copy"),
-        QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Save a PNG file automatically whenever a screenshot is copied"),
-        QStringLiteral("screenshot/auto_save_after_copy"),
-        SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy);
-}
-
-SettingsItemDefinition screenshotCopyFileItem() {
-    return switchItem(
-        QStringLiteral("screenshot.copy-image-file-to-clipboard"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Copy image file to clipboard"),
-        QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Write the screenshot to a file and copy that file to the clipboard"),
-        QStringLiteral("screenshot/copy_image_file_to_clipboard"),
-        SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard);
 }
 
 SettingsItemDefinition drawingQuickSelectionItem() {
@@ -2163,8 +2167,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::ScreenshotSettings,
                     {smartSelectionItem(), selectionResizeModeItem(), screenshotOcrActionItem(),
                      screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
-                     screenshotAutoSaveAfterCopyItem(), screenshotCopyFileItem(),
-                     screenshotSaveAsFileDialogItem(), screenshotShutterSoundNotificationItem(),
+                     screenshotShutterSoundNotificationItem(),
                      screenshotConfirmBeforeExitingViaShortcutItem(),
                      screenshotAutoRecognizeQrCodeItem()},
                 },

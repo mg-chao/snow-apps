@@ -2445,10 +2445,6 @@
             <translation>在螢幕擷取中還原支援的全螢幕色彩濾鏡效果。</translation>
         </message>
         <message>
-            <source>Save a PNG file automatically whenever a screenshot is copied</source>
-            <translation>每次複製截圖時自動儲存 PNG 檔案</translation>
-        </message>
-        <message>
             <source>Save as file</source>
             <translation>另存為檔案</translation>
         </message>
@@ -3091,6 +3087,10 @@
         <message>
             <source>WebP</source>
             <translation>WebP</translation>
+        </message>
+        <message>
+            <source>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</source>
+            <translation>將螢幕擷取影像複製到剪貼簿時，同時以所選影像格式儲存至影像儲存目錄</translation>
         </message>
         <message>
             <source>Window Element API</source>

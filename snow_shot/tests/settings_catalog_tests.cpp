@@ -319,11 +319,11 @@ void builtInCatalogIsCompleteAndValid() {
                     QStringLiteral("background_fill"),
             "OCR Fill Style must offer Blur and Background Fill, defaulting to Background Fill");
     const auto* saveDialog =
-        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
                       QStringLiteral("screenshot.save-as-file-dialog")});
     require(saveDialog &&
                 saveDialog->configurationKey == QStringLiteral("screenshot/save_as_file_dialog"),
-            "Save as file dialog must be in Function screenshot settings");
+            "Save as file dialog must be in screenshot output settings");
     const auto& saveSelect = std::get<settings::SettingsSelectDefinition>(saveDialog->payload);
     require(saveSelect.binding == settings::SettingsSelectBinding::ScreenshotSaveAsFileDialog &&
                 saveSelect.options.size() == 2 &&
@@ -704,6 +704,12 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* imageDirectory =
         catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
                       QStringLiteral("screenshot-output.image-save-directory")});
+    const auto* autoSaveAfterCopy =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
+                      QStringLiteral("screenshot.auto-save-after-copy")});
+    const auto* copyImageFile =
+        catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
+                      QStringLiteral("screenshot.copy-image-file-to-clipboard")});
     const auto* videoFilename = catalog.item(
         {QStringLiteral("storage-and-privacy"), QStringLiteral("screen-recording-output"),
          QStringLiteral("screen-recording-output.video-filename-format")});
@@ -718,7 +724,19 @@ void builtInCatalogIsCompleteAndValid() {
             storagePage->sections.at(3).id == QStringLiteral("pinned-history") &&
             storagePage->sections.at(4).id == QStringLiteral("configuration") &&
             storagePage->sections.at(5).id == QStringLiteral("storage-status") &&
-            imageFormat != nullptr && imageDirectory != nullptr && videoFilename != nullptr &&
+            imageFormat != nullptr && imageDirectory != nullptr && autoSaveAfterCopy != nullptr &&
+            copyImageFile != nullptr && saveDialog != nullptr && videoFilename != nullptr &&
+            storagePage->sections.at(0).items.at(0).id == autoSaveAfterCopy->id &&
+            storagePage->sections.at(0).items.at(1).id == copyImageFile->id &&
+            storagePage->sections.at(0).items.at(2).id == saveDialog->id &&
+            storagePage->sections.at(0).items.at(3).id == imageDirectory->id &&
+            autoSaveAfterCopy->description.translated() ==
+                QStringLiteral("When copying a screenshot image to the clipboard, also save it in "
+                               "the selected image format and save directory") &&
+            std::get<settings::SettingsSwitchDefinition>(autoSaveAfterCopy->payload).binding ==
+                settings::SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy &&
+            std::get<settings::SettingsSwitchDefinition>(copyImageFile->payload).binding ==
+                settings::SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
                 7 &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload)
@@ -775,9 +793,9 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"),
                       QStringLiteral("screenshot-output.image-quality")});
     require(compressionLevel != nullptr && imageQuality != nullptr && pdfPageSize != nullptr &&
-                storagePage->sections.at(0).items.at(2).id == compressionLevel->id &&
-                storagePage->sections.at(0).items.at(3).id == imageQuality->id &&
-                storagePage->sections.at(0).items.at(4).id == pdfPageSize->id,
+                storagePage->sections.at(0).items.at(5).id == compressionLevel->id &&
+                storagePage->sections.at(0).items.at(6).id == imageQuality->id &&
+                storagePage->sections.at(0).items.at(7).id == pdfPageSize->id,
             "compression and quality must follow image format before PDF page size");
     const auto& compression =
         std::get<settings::SettingsSelectDefinition>(compressionLevel->payload);

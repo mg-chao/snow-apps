@@ -1614,9 +1614,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                        QStringLiteral("screenshot_selection/smart_selection"))
                        .toBool()) &&
                storage::ApplicationStorage::instance().configuration().setValues({
-                   {QStringLiteral("screenshot/save_as_file_dialog"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/save_as_file_dialog"))},
                    {QStringLiteral("screenshot/shutter_sound_notification"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/shutter_sound_notification"))},
@@ -1638,15 +1635,18 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    {QStringLiteral("screenshot/selection_resize_mode"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/selection_resize_mode"))},
-                   {QStringLiteral("screenshot/auto_save_after_copy"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/auto_save_after_copy"))},
-                   {QStringLiteral("screenshot/copy_image_file_to_clipboard"),
-                    storage::ConfigurationSchema::defaultValue(
-                        QStringLiteral("screenshot/copy_image_file_to_clipboard"))},
                });
     case SettingsSectionReset::ScreenshotOutput:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screenshot/auto_save_after_copy"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/auto_save_after_copy"))},
+            {QStringLiteral("screenshot/copy_image_file_to_clipboard"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/copy_image_file_to_clipboard"))},
+            {QStringLiteral("screenshot/save_as_file_dialog"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/save_as_file_dialog"))},
             {QStringLiteral("screenshot/image_save_directory"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/image_save_directory"))},

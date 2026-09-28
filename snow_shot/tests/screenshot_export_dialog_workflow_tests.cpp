@@ -311,12 +311,21 @@ void persistence(const QTemporaryDir& temp) {
     require(backend.selectValue(settings::SettingsSelectBinding::ScreenshotSaveAsFileDialog) ==
                 QStringLiteral("snow_shot"),
             "settings backend failed to read dialog selection");
-    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotOutput) &&
                 adapter.saveAsFileDialog() == QStringLiteral("system"),
-            "reset must restore system dialog");
+            "screenshot output reset must restore the system dialog");
     require(backend.applySelectValue(settings::SettingsSelectBinding::ScreenshotSaveAsFileDialog,
                                      QStringLiteral("snow_shot")),
             "settings backend failed to write dialog selection");
+    require(adapter.setAutoSaveAfterCopy(true) && adapter.setCopyImageFileToClipboard(true) &&
+                backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                adapter.autoSaveAfterCopy() && adapter.copyImageFileToClipboard() &&
+                adapter.saveAsFileDialog() == QStringLiteral("snow_shot"),
+            "function reset must preserve screenshot output settings");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotOutput) &&
+                !adapter.autoSaveAfterCopy() && !adapter.copyImageFileToClipboard() &&
+                adapter.saveAsFileDialog() == QStringLiteral("system"),
+            "output reset must restore all moved screenshot settings");
 
     const QString pathKey = QStringLiteral("screenshot/save_path_shortcuts");
     const auto malformed =

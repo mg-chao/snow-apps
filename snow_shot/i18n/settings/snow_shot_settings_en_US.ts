@@ -2445,10 +2445,6 @@
             <translation>Reverse supported full-screen color filters in screenshots.</translation>
         </message>
         <message>
-            <source>Save a PNG file automatically whenever a screenshot is copied</source>
-            <translation>Save a PNG file automatically whenever a screenshot is copied</translation>
-        </message>
-        <message>
             <source>Save as file</source>
             <translation>Save as file</translation>
         </message>
@@ -3091,6 +3087,10 @@
         <message>
             <source>WebP</source>
             <translation>WebP</translation>
+        </message>
+        <message>
+            <source>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</source>
+            <translation>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</translation>
         </message>
         <message>
             <source>Window Element API</source>
