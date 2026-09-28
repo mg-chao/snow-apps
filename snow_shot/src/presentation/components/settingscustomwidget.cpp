@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
+#include "snow_shot/presentation/components/texttranslationsettingswidget.h"
 
 #include "snow_shot/presentation/components/toolbareditorsettingswidget.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
@@ -1322,6 +1323,8 @@ SettingsCustomWidget* createSettingsCustomWidget(
     case SettingsCustomRenderer::PermissionInputMonitoring:
     case SettingsCustomRenderer::PermissionMicrophone:
         return nullptr;
+    case SettingsCustomRenderer::TextTranslationConfigurations:
+        return new TextTranslationSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::CustomAiModels:
         return new CustomAiModelsSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::StorageStatus:

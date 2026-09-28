@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
 #include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/storage/persistedwindowgeometry.h"
 
@@ -67,6 +68,8 @@ class ApiConfigurationSettings final {
   public:
     [[nodiscard]] CustomAiModels customModels() const;
     bool setCustomModels(const CustomAiModels& models) const;
+    [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
+    bool setTextTranslationConfigurations(const TextTranslationConfigurations& values) const;
 };
 
 class InterfaceSettings final {

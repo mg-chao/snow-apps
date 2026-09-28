@@ -116,16 +116,21 @@ QString ConfigurationArchive::write(const QString& archivePath,
     }
     QJsonObject manifest;
     if (redactCredentials) {
-        const auto key = QStringLiteral("api_configuration/custom_models");
-        auto models = configuration.value(key).toArray();
         QJsonArray omitted;
-        for (qsizetype index = 0; index < models.size(); ++index) {
-            auto model = models[index].toObject();
-            omitted.append(model.value(QStringLiteral("id")));
-            model.insert(QStringLiteral("api_key"), QString());
-            models[index] = model;
+        for (const auto& key : {QStringLiteral("api_configuration/custom_models"),
+                                QStringLiteral("api_configuration/text_translation")}) {
+            auto models = configuration.value(key).toArray();
+            for (qsizetype index = 0; index < models.size(); ++index) {
+                auto model = models[index].toObject();
+                omitted.append((key.endsWith(QStringLiteral("text_translation"))
+                                    ? QStringLiteral("translation:")
+                                    : QString()) +
+                               model.value(QStringLiteral("id")).toString());
+                model.insert(QStringLiteral("api_key"), QString());
+                models[index] = model;
+            }
+            configuration.insert(key, models);
         }
-        configuration.insert(key, models);
         manifest.insert(QStringLiteral("redacted_credentials"), omitted);
     }
     manifest.insert(QStringLiteral("format"), QStringLiteral("snow-shot-configuration"));
@@ -313,27 +318,38 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
 
 void ConfigurationArchiveReadResult::preserveOmittedCredentials(
     const QMap<QString, QJsonValue>& current) {
-    const auto key = QStringLiteral("api_configuration/custom_models");
-    auto models = values.value(key).toArray();
-    const auto existing = current.value(key).toArray();
-    for (qsizetype index = 0; index < models.size(); ++index) {
-        auto model = models[index].toObject();
-        const auto id = model.value(QStringLiteral("id")).toString();
-        if (!redactedCredentialIds.contains(id))
-            continue;
-        for (const auto& item : existing) {
-            const auto previous = item.toObject();
-            if (previous.value(QStringLiteral("id")).toString() == id &&
-                previous.value(QStringLiteral("base_url")) ==
-                    model.value(QStringLiteral("base_url"))) {
-                model.insert(QStringLiteral("api_key"), previous.value(QStringLiteral("api_key")));
-                break;
+    for (const auto& key : {QStringLiteral("api_configuration/custom_models"),
+                            QStringLiteral("api_configuration/text_translation")}) {
+        const bool translation = key.endsWith(QStringLiteral("text_translation"));
+        auto models = values.value(key).toArray();
+        const auto existing = current.value(key).toArray();
+        for (qsizetype index = 0; index < models.size(); ++index) {
+            auto model = models[index].toObject();
+            const auto id = model.value(QStringLiteral("id")).toString();
+            if (!redactedCredentialIds.contains(
+                    (translation ? QStringLiteral("translation:") : QString()) + id))
+                continue;
+            for (const auto& item : existing) {
+                const auto previous = item.toObject();
+                if (previous.value(QStringLiteral("id")).toString() == id &&
+                    previous.value(translation ? QStringLiteral("endpoint")
+                                               : QStringLiteral("base_url")) ==
+                        model.value(translation ? QStringLiteral("endpoint")
+                                                : QStringLiteral("base_url")) &&
+                    (!translation || (previous.value(QStringLiteral("provider")) ==
+                                          model.value(QStringLiteral("provider")) &&
+                                      previous.value(QStringLiteral("application_id")) ==
+                                          model.value(QStringLiteral("application_id"))))) {
+                    model.insert(QStringLiteral("api_key"),
+                                 previous.value(QStringLiteral("api_key")));
+                    break;
+                }
             }
+            models[index] = model;
         }
-        models[index] = model;
+        if (values.contains(key))
+            values.insert(key, models);
     }
-    if (values.contains(key))
-        values.insert(key, models);
 }
 
 } // namespace snow_shot::storage

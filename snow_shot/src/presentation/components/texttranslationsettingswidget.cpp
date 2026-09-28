@@ -1,4 +1,4 @@
-#include "snow_shot/presentation/components/customaimodelssettingswidget.h"
+#include "snow_shot/presentation/components/texttranslationsettingswidget.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "widgets/alert.h"
@@ -6,16 +6,11 @@
 #include "widgets/form.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/input_password_edit.h"
-#include "widgets/input_number.h"
 #include "widgets/modal.h"
-#include "widgets/switch.h"
+#include "widgets/input_number.h"
 #include "widgets/tag.h"
 #include "widgets/combo_box.h"
-#include "widgets/spin.h"
-#include <QLineEdit>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <memory>
+#include <QSignalBlocker>
 #include <QEvent>
 #include <QApplication>
 #include "antd_icons.h"
@@ -31,9 +26,9 @@ using namespace snow_shot;
 namespace settings = snow_shot::presentation::settings;
 
 namespace {
-class ModelRow final : public QWidget {
+class ConfigurationRow final : public QWidget {
   public:
-    ModelRow(const presentation::styles::ThemeColorScheme& scheme, QWidget* parent)
+    ConfigurationRow(const presentation::styles::ThemeColorScheme& scheme, QWidget* parent)
         : QWidget(parent), m_scheme(scheme) {}
 
   protected:
@@ -54,9 +49,9 @@ class ModelRow final : public QWidget {
     presentation::styles::ThemeColorScheme m_scheme;
 };
 
-class ModelNameLabel final : public QLabel {
+class ConfigurationNameLabel final : public QLabel {
   public:
-    explicit ModelNameLabel(const QString& name, QWidget* parent) : QLabel(name, parent) {
+    explicit ConfigurationNameLabel(const QString& name, QWidget* parent) : QLabel(name, parent) {
         setTextFormat(Qt::PlainText);
         setToolTip(name);
         setAccessibleName(name);
@@ -74,10 +69,10 @@ class ModelNameLabel final : public QLabel {
 };
 } // namespace
 
-CustomAiModelsSettingsWidget::CustomAiModelsSettingsWidget(
+TextTranslationSettingsWidget::TextTranslationSettingsWidget(
     settings::SettingsRuntimeSession& session, QWidget* parent)
     : SettingsCustomWidget(parent), m_session(session) {
-    setObjectName(QStringLiteral("customAiModelsSettings"));
+    setObjectName(QStringLiteral("textTranslationConfigurationsSettings"));
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     m_title = new QLabel(this);
@@ -90,7 +85,7 @@ CustomAiModelsSettingsWidget::CustomAiModelsSettingsWidget(
     m_rows->setContentsMargins(0, 0, 0, 0);
     layout->addLayout(m_rows);
     m_add = new AdButton(this);
-    m_add->setObjectName(QStringLiteral("customAiModelAdd"));
+    m_add->setObjectName(QStringLiteral("textTranslationAdd"));
     m_add->setIconRef(adqt::icons::antd::outlined::Plus());
     m_add->setButtonStyle(AdButton::ButtonStyle::Dashed);
     m_add->setShape(AdButton::Shape::Rounded);
@@ -103,14 +98,14 @@ CustomAiModelsSettingsWidget::CustomAiModelsSettingsWidget(
     connect(m_add, &AdButton::clicked, this, [this]() { openEditor(); });
     connect(&session, &settings::SettingsRuntimeSession::fieldChanged, this,
             [this](const QString& id, const settings::SettingsFieldState&) {
-                if (id == QStringLiteral("api.custom-models")) {
+                if (id == QStringLiteral("api.text-translation")) {
                     QTimer::singleShot(0, this, [this]() { rebuild(); });
                 }
             });
     retranslateUi();
 }
 
-void CustomAiModelsSettingsWidget::applyTheme(
+void TextTranslationSettingsWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     m_scheme = scheme;
     layout()->setSpacing(scheme.metricAlias.margin);
@@ -129,7 +124,7 @@ void CustomAiModelsSettingsWidget::applyTheme(
     update();
 }
 
-void CustomAiModelsSettingsWidget::rebuild() {
+void TextTranslationSettingsWidget::rebuild() {
     const QString focusedName =
         QApplication::focusWidget() != nullptr && isAncestorOf(QApplication::focusWidget())
             ? QApplication::focusWidget()->objectName()
@@ -138,26 +133,25 @@ void CustomAiModelsSettingsWidget::rebuild() {
         delete item->widget();
         delete item;
     }
-    const auto models = m_session.customAiModels();
+    const auto models = m_session.textTranslationConfigurations();
     if (models.isEmpty()) {
-        auto* empty = new QLabel(tr("No custom models configured"), this);
-        empty->setObjectName(QStringLiteral("customAiModelsEmpty"));
+        auto* empty = new QLabel(tr("No translation configurations added"), this);
+        empty->setObjectName(QStringLiteral("textTranslationConfigurationsEmpty"));
         empty->setMargin(12);
         m_rows->addWidget(empty);
     }
     for (const auto& model : models) {
-        auto* row = new ModelRow(m_scheme, this);
-        row->setObjectName(QStringLiteral("customAiModelRow:") + model.id);
+        auto* row = new ConfigurationRow(m_scheme, this);
+        row->setObjectName(QStringLiteral("textTranslationRow:") + model.id);
         auto* layout = new QHBoxLayout(row);
         layout->setContentsMargins(12, 8, 12, 8);
         layout->setSpacing(4);
-        layout->addWidget(new ModelNameLabel(model.name, row));
-        if (model.supportsVision) {
-            auto* tag = new AdTag(tr("Vision"), row);
-            tag->setObjectName(QStringLiteral("customAiModelVision:") + model.id);
-            tag->setColorScheme(AdTag::ColorScheme::Blue);
-            layout->addWidget(tag);
-        }
+        layout->addWidget(new ConfigurationNameLabel(model.name, row));
+        auto* tag = new AdTag(model.provider == QStringLiteral("deepl")   ? tr("DeepL")
+                              : model.provider == QStringLiteral("baidu") ? tr("Baidu")
+                                                                          : tr("Youdao"),
+                              row);
+        layout->addWidget(tag);
         layout->addStretch(1);
         const QStringList labels{tr("Edit"), tr("Delete"), tr("Copy")};
         const QStringList actions{QStringLiteral("edit"), QStringLiteral("delete"),
@@ -171,7 +165,7 @@ void CustomAiModelsSettingsWidget::rebuild() {
             button->setSizeClass(AdButton::SizeClass::Small);
             button->setToolTip(labels[i]);
             button->setObjectName(actions[i] + u':' + model.id);
-            button->setAccessibleName(tr("%1 model %2").arg(labels[i], model.name));
+            button->setAccessibleName(tr("%1 configuration %2").arg(labels[i], model.name));
             button->setButtonStyle(AdButton::ButtonStyle::Text);
             button->setAccentRole(i == 1 ? AdButton::AccentRole::Danger
                                          : AdButton::AccentRole::Primary);
@@ -195,18 +189,18 @@ void CustomAiModelsSettingsWidget::rebuild() {
     }
 }
 
-bool CustomAiModelsSettingsWidget::save(const CustomAiModels& models) {
-    const bool success = m_session.applyCustomAiModels(models);
+bool TextTranslationSettingsWidget::save(const TextTranslationConfigurations& models) {
+    const bool success = m_session.applyTextTranslationConfigurations(models);
     m_error->setVisible(!success);
     if (!success) {
-        m_error->setText(tr(
-            "Unable to save models. Check that configuration storage is writable and try again."));
+        m_error->setText(tr("Unable to save configurations. Check that configuration storage is "
+                            "writable and try again."));
     }
     return success;
 }
 
-void CustomAiModelsSettingsWidget::copyModel(const QString& id) {
-    auto models = m_session.customAiModels();
+void TextTranslationSettingsWidget::copyModel(const QString& id) {
+    auto models = m_session.textTranslationConfigurations();
     const auto it = std::find_if(models.cbegin(), models.cend(),
                                  [&id](const auto& model) { return model.id == id; });
     if (it == models.cend()) {
@@ -226,14 +220,14 @@ void CustomAiModelsSettingsWidget::copyModel(const QString& id) {
     save(models);
 }
 
-void CustomAiModelsSettingsWidget::deleteModel(const QString& id) {
+void TextTranslationSettingsWidget::deleteModel(const QString& id) {
     if (m_deleteModal != nullptr) {
         return;
     }
     m_deleteId = id;
     auto* modal = new AdModal(this);
     m_deleteModal = modal;
-    modal->setObjectName(QStringLiteral("customAiModelDeleteModal"));
+    modal->setObjectName(QStringLiteral("textTranslationDeleteModal"));
     modal->setAcceptAccentRole(AdButton::AccentRole::Danger);
     modal->setOwnerWindow(window());
     modal->setCentered(true);
@@ -246,7 +240,7 @@ void CustomAiModelsSettingsWidget::deleteModel(const QString& id) {
             modal->reject();
             return;
         }
-        auto models = m_session.customAiModels();
+        auto models = m_session.textTranslationConfigurations();
         models.removeIf([&id](const auto& model) { return model.id == id; });
         if (save(models)) {
             modal->accept();
@@ -262,14 +256,14 @@ void CustomAiModelsSettingsWidget::deleteModel(const QString& id) {
     modal->open();
 }
 
-void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
+void TextTranslationSettingsWidget::openEditor(const QString& id) {
     if (m_modal != nullptr) {
         return;
     }
-    CustomAiModelConfiguration value;
+    TextTranslationConfiguration value;
     m_editing = !id.isEmpty();
     if (m_editing) {
-        const auto models = m_session.customAiModels();
+        const auto models = m_session.textTranslationConfigurations();
         const auto it = std::find_if(models.cbegin(), models.cend(),
                                      [&id](const auto& model) { return model.id == id; });
         if (it == models.cend()) {
@@ -282,7 +276,7 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     m_editId = value.id;
     auto* modal = new AdModal(this);
     m_modal = modal;
-    modal->setObjectName(QStringLiteral("customAiModelEditor"));
+    modal->setObjectName(QStringLiteral("textTranslationEditor"));
     modal->setOwnerWindow(window());
     modal->setCentered(true);
     modal->setPreferredWidth(760);
@@ -300,8 +294,8 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     grid->setColumnStretch(0, 1);
     grid->setColumnStretch(1, 1);
     const QStringList names{QStringLiteral("modelName"), QStringLiteral("apiUrl"),
-                            QStringLiteral("apiKey"), QStringLiteral("apiModel")};
-    const QStringList values{value.name, value.baseUrl, value.apiKey, value.model};
+                            QStringLiteral("apiKey"), QStringLiteral("applicationId")};
+    const QStringList values{value.name, value.endpoint, value.apiKey, value.applicationId};
     for (size_t i = 0; i < m_inputs.size(); ++i) {
         m_inputs[i] = i == 2 ? new AdPasswordEdit(form) : new AdLineEdit(form);
         m_inputs[i]->setObjectName(names[static_cast<qsizetype>(i)]);
@@ -312,146 +306,29 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
         m_fields[i]->setItemLayout(AdFormItem::ItemLayout::Vertical);
         grid->addWidget(m_fields[i], static_cast<int>(i / 2), static_cast<int>(i % 2),
                         Qt::AlignTop);
-        m_fields[i]->setRequired(i != 2);
+        m_fields[i]->setRequired(i < 2);
         m_fields[i]->setValidateOnChange(false);
     }
-    m_modelSelect = new AdComboBox(form);
-    m_modelSelect->setObjectName(QStringLiteral("apiModel"));
-    m_modelSelect->setEditable(true);
-    m_modelSelect->setPopupLayerMode(AdComboBox::PopupLayerMode::QtTool);
-    m_modelSelect->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_modelSelect->setCurrentValue(value.model);
-    // Commit typed IDs independently of the select's transient search text.
-    connect(m_modelSelect->lineEdit(), &QLineEdit::textEdited, m_modelSelect,
-            [select = m_modelSelect](const QString& text) { select->setCurrentValue(text); });
-    m_fields[3] = new AdFormItem(QString(), m_modelSelect, QStringLiteral("apiModel"), form);
-    m_fields[3]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    m_fields[3]->setRequired(true);
-    m_fields[3]->setValidateOnChange(false);
-    grid->addWidget(m_fields[3], 1, 1, Qt::AlignTop);
-    m_modelFetchStatus = new QLabel(m_modelSelect);
-    m_modelFetchStatus->setObjectName(QStringLiteral("modelFetchStatus"));
-    m_modelFetchStatus->setWordWrap(true);
-    m_modelFetchStatus->setMargin(8);
-    m_modelFetchStatus->hide();
-    auto* fetchContent = new QWidget(m_modelSelect);
-    auto* fetchLayout = new QHBoxLayout(fetchContent);
-    fetchLayout->setContentsMargins(m_scheme.metricAlias.paddingSM, 0,
-                                    m_scheme.metricAlias.paddingSM, 0);
-    auto* fetchSpin = new AdSpin(fetchContent);
-    fetchLayout->addWidget(fetchSpin, 0, Qt::AlignLeft | Qt::AlignVCenter);
-    fetchLayout->addStretch();
-    fetchSpin->setObjectName(QStringLiteral("modelFetchSpin"));
-    fetchSpin->setSizeClass(AdSpin::SizeClass::Small);
-    fetchSpin->setSpinning(false);
-    fetchContent->hide();
-    connect(m_modelSelect, &AdComboBox::loadingChanged, m_modelSelect,
-            [select = m_modelSelect, fetchSpin, fetchContent](bool loading) {
-                fetchSpin->setSpinning(loading);
-                select->setNotFoundContentWidget(loading ? fetchContent : nullptr);
-            });
-    auto* network = new QNetworkAccessManager(body);
-    auto pending = std::make_shared<QPointer<QNetworkReply>>();
-    // Successful results belong to this editor and its current connection, even when empty.
-    auto fetched = std::make_shared<bool>(false);
-    const auto invalidate = [select = m_modelSelect, pending, fetched,
-                             status = m_modelFetchStatus]() {
-        *fetched = false;
-        if (*pending) {
-            auto* reply = pending->data();
-            *pending = nullptr;
-            reply->abort();
-        }
-        select->setLoading(false);
-        select->clearOptions();
-        status->setProperty("fetchFailed", false);
-        status->clear();
-        select->setPopupFooterWidget(nullptr);
-    };
-    connect(m_inputs[1], &AdLineEdit::textChanged, body, invalidate);
-    connect(m_inputs[2], &AdLineEdit::textChanged, body, invalidate);
-    connect(modal, &AdModal::finished, body, invalidate);
-    connect(m_modelSelect, &AdComboBox::popupVisibleChanged, body,
-            [this, network, pending, fetched, body](bool visible) {
-                if (!visible || *pending || *fetched) {
-                    return;
-                }
-                const auto connection = normalizeCustomAiModel(
-                    {{}, {}, m_inputs[1]->text(), m_inputs[2]->text(), {}, false});
-                if (customAiModelUrlError(connection.baseUrl) != CustomAiModelUrlError::None ||
-                    connection.apiKey.contains(u'\r') || connection.apiKey.contains(u'\n')) {
-                    return;
-                }
-                QNetworkRequest request(QUrl(connection.baseUrl + QStringLiteral("/models")));
-                request.setTransferTimeout(15000);
-                request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                                     QNetworkRequest::SameOriginRedirectPolicy);
-                request.setRawHeader("Accept", "application/json");
-                if (!connection.apiKey.isEmpty()) {
-                    request.setRawHeader("Authorization", "Bearer " + connection.apiKey.toUtf8());
-                }
-                m_modelFetchStatus->setProperty("fetchFailed", false);
-                m_modelFetchStatus->clear();
-                m_modelSelect->setPopupFooterWidget(nullptr);
-                m_modelSelect->clearOptions();
-                m_modelSelect->setLoading(true);
-                auto* reply = network->get(request);
-                *pending = reply;
-                connect(reply, &QNetworkReply::finished, body, [this, reply, pending, fetched]() {
-                    reply->deleteLater();
-                    if (pending->data() != reply) {
-                        return;
-                    }
-                    *pending = nullptr;
-                    const auto document = QJsonDocument::fromJson(reply->readAll());
-                    const auto data = document.object().value(QStringLiteral("data"));
-                    const bool failed = reply->error() != QNetworkReply::NoError || !data.isArray();
-                    *fetched = !failed;
-                    QVector<AdComboBox::Option> options;
-                    QSet<QString> seen;
-                    if (!failed) {
-                        for (const auto& entry : data.toArray()) {
-                            const auto id =
-                                entry.toObject().value(QStringLiteral("id")).toString().trimmed();
-                            if (id.isEmpty() || seen.contains(id)) {
-                                continue;
-                            }
-                            seen.insert(id);
-                            AdComboBox::Option option;
-                            option.value = id;
-                            option.label = id;
-                            options.append(option);
-                        }
-                    }
-                    m_modelSelect->setOptions(options);
-                    m_modelSelect->setLoading(false);
-                    m_modelFetchStatus->setProperty("fetchFailed", failed);
-                    translateModal();
-                });
-            });
-    m_inputs[1]->setPlaceholderText(QStringLiteral("https://api.openai.com/v1"));
-    m_vision = new AdSwitch(form);
-    m_vision->setObjectName(QStringLiteral("visionSupport"));
-    m_vision->setChecked(value.supportsVision);
-    m_fields[4] = new AdFormItem(QString(), m_vision, QStringLiteral("visionSupport"), form);
+    m_provider = new AdComboBox(form);
+    m_provider->setObjectName(QStringLiteral("translationProvider"));
+    m_provider->setPopupLayerMode(AdComboBox::PopupLayerMode::QtTool);
+    m_fields[4] =
+        new AdFormItem(QString(), m_provider, QStringLiteral("translationProvider"), form);
     m_fields[4]->setItemLayout(AdFormItem::ItemLayout::Vertical);
     grid->addWidget(m_fields[4], 2, 0);
-    m_reasoning = new AdSwitch(form);
-    m_reasoning->setObjectName(QStringLiteral("reasoningSupport"));
-    m_reasoning->setChecked(value.supportsReasoning);
-    m_fields[5] = new AdFormItem(QString(), m_reasoning, QStringLiteral("reasoningSupport"), form);
-    m_fields[5]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    grid->addWidget(m_fields[5], 2, 1);
     m_concurrency = new AdInputNumber(form);
-    m_concurrency->setObjectName(QStringLiteral("customAiModelConcurrency"));
+    m_concurrency->setObjectName(QStringLiteral("translationConcurrency"));
     m_concurrency->setMinimum(1);
     m_concurrency->setMaximum(16);
     m_concurrency->setDecimals(0);
     m_concurrency->setValue(value.concurrency);
-    m_fields[6] =
-        new AdFormItem(QString(), m_concurrency, QStringLiteral("customAiModelConcurrency"), form);
-    m_fields[6]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    grid->addWidget(m_fields[6], 3, 0);
+    m_fields[5] =
+        new AdFormItem(QString(), m_concurrency, QStringLiteral("translationConcurrency"), form);
+    m_fields[5]->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    grid->addWidget(m_fields[5], 2, 1);
+    translateModal();
+    m_provider->setCurrentValue(value.provider);
+    connect(m_provider, &AdComboBox::currentValueChanged, this, [this]() { translateModal(); });
     layout->addWidget(form);
     m_modalError = new AdAlert(body);
     m_modalError->setSeverity(AdAlert::Severity::Error);
@@ -490,33 +367,30 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     modal->open();
 }
 
-void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
-    auto value = normalizeCustomAiModel(
-        {m_editId, m_inputs[0]->text(), m_inputs[1]->text(), m_inputs[2]->text(),
-         m_modelSelect->currentValue().toString(), m_vision->isChecked(), m_reasoning->isChecked(),
-         static_cast<int>(m_concurrency->value())});
-    auto models = m_session.customAiModels();
+void TextTranslationSettingsWidget::submitEditor(bool saveChanges) {
+    TextTranslationConfiguration value{m_editId,
+                                       m_inputs[0]->text().trimmed(),
+                                       m_provider->currentValue().toString(),
+                                       m_inputs[1]->text().trimmed(),
+                                       m_inputs[2]->text().trimmed(),
+                                       m_inputs[3]->text().trimmed(),
+                                       static_cast<int>(m_concurrency->value())};
+    auto models = m_session.textTranslationConfigurations();
     std::array<QString, 4> errors;
     if (value.name.isEmpty()) {
-        errors[0] = tr("Enter a model name.");
+        errors[0] = tr("Enter a configuration name.");
     } else if (std::any_of(models.cbegin(), models.cend(), [&value](const auto& model) {
                    return model.id != value.id &&
                           model.name.compare(value.name, Qt::CaseInsensitive) == 0;
                })) {
-        errors[0] = tr("A model with this name already exists.");
+        errors[0] = tr("A configuration with this name already exists.");
     }
-    const auto urlError = customAiModelUrlError(value.baseUrl);
-    if (urlError == CustomAiModelUrlError::FullEndpoint) {
-        errors[1] = tr("Enter the base URL without /chat/completions.");
-    } else if (urlError != CustomAiModelUrlError::None) {
+    if (!validTranslationEndpoint(value.endpoint)) {
         errors[1] =
-            tr("Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment.");
+            tr("Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment.");
     }
     if (value.apiKey.contains(u'\r') || value.apiKey.contains(u'\n')) {
         errors[2] = tr("The API key must not contain line breaks.");
-    }
-    if (value.model.isEmpty()) {
-        errors[3] = tr("Enter the API model ID.");
     }
     QWidget* firstInvalid = nullptr;
     for (size_t i = 0; i < errors.size(); ++i) {
@@ -524,7 +398,7 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
         m_fields[i]->setValidateStatus(errors[i].isEmpty() ? AdFormItem::ValidateStatus::None
                                                            : AdFormItem::ValidateStatus::Error);
         if (!errors[i].isEmpty() && firstInvalid == nullptr) {
-            firstInvalid = i == 3 ? static_cast<QWidget*>(m_modelSelect) : m_inputs[i];
+            firstInvalid = m_inputs[i];
         }
     }
     if (firstInvalid != nullptr) {
@@ -539,7 +413,7 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
     if (m_editing && it == models.end()) {
         m_modalError->setProperty("deletedModel", true);
         m_modalError->setText(
-            tr("This model was deleted. Close this form and create a new model."));
+            tr("This configuration was deleted. Close this form and create a new configuration."));
         m_modalError->show();
         return;
     }
@@ -557,71 +431,73 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
     }
 }
 
-void CustomAiModelsSettingsWidget::translateModal() {
+void TextTranslationSettingsWidget::translateModal() {
     if (m_modal != nullptr) {
-        m_modal->setWindowTitle(m_editing ? tr("Edit Model") : tr("Add Model"));
+        m_modal->setWindowTitle(m_editing ? tr("Edit Configuration") : tr("Add Configuration"));
         m_modal->setAcceptText(tr("Save"));
         m_modal->setRejectText(tr("Cancel"));
         if (m_modalError != nullptr && !m_modalError->isHidden()) {
-            m_modalError->setText(
-                m_modalError->property("deletedModel").toBool()
-                    ? tr("This model was deleted. Close this form and create a new model.")
-                    : tr("Unable to save models. Check that configuration storage is writable and "
-                         "try again."));
+            m_modalError->setText(m_modalError->property("deletedModel").toBool()
+                                      ? tr("This configuration was deleted. Close this form and "
+                                           "create a new configuration.")
+                                      : tr("Unable to save configurations. Check that "
+                                           "configuration storage is writable and "
+                                           "try again."));
         }
-        const QStringList labels{tr("Model Name"), tr("API URL"),        tr("API Key"),
-                                 tr("API Model"),  tr("Vision Support"), tr("Reasoning Support"),
+        const QString provider = m_provider->currentValue().toString();
+        const bool deepL = provider.isEmpty() || provider == QStringLiteral("deepl");
+        const QStringList labels{tr("Configuration Name"),
+                                 tr("API URL"),
+                                 deepL ? tr("API Key") : tr("Application Secret"),
+                                 tr("Application ID"),
+                                 tr("Service Format"),
                                  tr("Concurrency")};
         for (size_t i = 0; i < m_fields.size(); ++i) {
             m_fields[i]->setLabel(labels[static_cast<qsizetype>(i)]);
-            if (i < m_inputs.size()) {
+            if (i < m_inputs.size())
                 m_inputs[i]->setAccessibleName(labels[static_cast<qsizetype>(i)]);
-            }
         }
-        m_modelSelect->setAccessibleName(tr("API Model"));
-        m_modelSelect->setPlaceholder(tr("Enter or select a model ID"));
-        m_modelFetchStatus->setText(
-            m_modelFetchStatus->property("fetchFailed").toBool()
-                ? tr("Unable to fetch models. Enter a model ID or reopen the list to retry.")
-                : QString());
-        // An attached footer contributes its size even when its label is empty.
-        m_modelSelect->setPopupFooterWidget(
-            m_modelFetchStatus->property("fetchFailed").toBool() ? m_modelFetchStatus : nullptr);
-        m_vision->setAccessibleName(tr("Vision Support"));
-        m_reasoning->setAccessibleName(tr("Reasoning Support"));
+        m_fields[3]->setItemHidden(deepL);
+        const QSignalBlocker blocker(m_provider);
+        QVector<AdComboBox::Option> options;
+        const QStringList ids{QStringLiteral("deepl"), QStringLiteral("baidu"),
+                              QStringLiteral("youdao")};
+        const QStringList names{tr("DeepL"), tr("Baidu"), tr("Youdao")};
+        for (int i = 0; i < ids.size(); ++i) {
+            AdComboBox::Option option;
+            option.value = ids[i];
+            option.label = names[i];
+            options.append(option);
+        }
+        m_provider->setOptions(options);
+        m_provider->setCurrentValue(deepL ? QStringLiteral("deepl") : provider);
+        m_provider->setAccessibleName(tr("Service Format"));
         m_concurrency->setAccessibleName(tr("Concurrency"));
-        m_fields[0]->setTooltipText(tr("The model name displayed in Snow Shot."));
-        m_fields[1]->setTooltipText(tr(
-            "OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL."));
+        m_fields[1]->setTooltipText(
+            tr("The full translation endpoint. Its path and query are used as entered."));
         m_fields[2]->setTooltipText(tr("Optional for servers that do not require authentication."));
-        m_fields[3]->setTooltipText(
-            tr("Enter a custom model ID or open the list to fetch models from the API URL."));
-        m_fields[4]->setTooltipText(tr("Allow this model to convert images to Markdown and HTML."));
-        m_fields[5]->setTooltipText(
-            tr("Explicitly enable or disable reasoning in model requests."));
-        m_fields[6]->setTooltipText(
-            tr("Maximum simultaneous translation and image conversion requests for this model "
-               "(1-16)."));
+        m_fields[5]->setTooltipText(tr("Maximum simultaneous requests for this configuration "
+                                       "across translation jobs (1-16)."));
     }
     if (m_deleteModal != nullptr) {
-        m_deleteModal->setWindowTitle(tr("Delete Model"));
+        m_deleteModal->setWindowTitle(tr("Delete Configuration"));
         m_deleteModal->setAcceptText(tr("Delete"));
         m_deleteModal->setRejectText(tr("Cancel"));
-        for (const auto& model : m_session.customAiModels()) {
+        for (const auto& model : m_session.textTranslationConfigurations()) {
             if (model.id == m_deleteId) {
-                m_deleteModal->setText(
-                    tr("Delete model \"%1\"? If selected, another available model will be used.")
-                        .arg(model.name));
+                m_deleteModal->setText(tr("Delete configuration \"%1\"? If selected, another "
+                                          "available service will be used.")
+                                           .arg(model.name));
             }
         }
     }
 }
 
-void CustomAiModelsSettingsWidget::retranslateUi() {
-    m_error->setText(
-        tr("Unable to save models. Check that configuration storage is writable and try again."));
-    m_add->setText(tr("Add Model"));
-    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Custom Models"));
+void TextTranslationSettingsWidget::retranslateUi() {
+    m_error->setText(tr("Unable to save configurations. Check that configuration storage is "
+                        "writable and try again."));
+    m_add->setText(tr("Add Configuration"));
+    m_title->setText(QCoreApplication::translate("SettingsCatalog", "Translation Configurations"));
     rebuild();
     translateModal();
     if (m_modal != nullptr &&
@@ -631,7 +507,7 @@ void CustomAiModelsSettingsWidget::retranslateUi() {
     }
 }
 
-void CustomAiModelsSettingsWidget::changeEvent(QEvent* event) {
+void TextTranslationSettingsWidget::changeEvent(QEvent* event) {
     SettingsCustomWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();

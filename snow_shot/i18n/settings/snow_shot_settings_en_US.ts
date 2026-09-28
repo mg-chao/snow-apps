@@ -174,6 +174,10 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Concurrency</source>
+            <translation>Concurrency</translation>
+        </message>
+        <message>
             <source>Copy</source>
             <translation>Copy</translation>
         </message>
@@ -224,6 +228,10 @@
         <message>
             <source>Explicitly enable or disable reasoning in model requests.</source>
             <translation>Explicitly enable or disable reasoning in model requests.</translation>
+        </message>
+        <message>
+            <source>Maximum simultaneous translation and image conversion requests for this model (1-16).</source>
+            <translation>Maximum simultaneous translation and image conversion requests for this model (1-16).</translation>
         </message>
         <message>
             <source>Model Name</source>
@@ -1245,8 +1253,8 @@
             <translation>Configure application process behavior</translation>
         </message>
         <message>
-            <source>Configure custom AI model connections</source>
-            <translation>Configure custom AI model connections</translation>
+            <source>Configure custom AI models and text translation services</source>
+            <translation>Configure custom AI models and text translation services</translation>
         </message>
         <message>
             <source>Configure drawing tools and the screenshot drawing toolbar</source>
@@ -1357,6 +1365,10 @@
             <translation>Cursor guide line color</translation>
         </message>
         <message>
+            <source>Custom DeepL, Baidu, and Youdao-compatible services</source>
+            <translation>Custom DeepL, Baidu, and Youdao-compatible services</translation>
+        </message>
+        <message>
             <source>Custom Models</source>
             <translation>Custom Models</translation>
         </message>
@@ -1375,6 +1387,10 @@
         <message>
             <source>Custom screenshot toolbar</source>
             <translation>Custom screenshot toolbar</translation>
+        </message>
+        <message>
+            <source>Custom translation endpoints and concurrency</source>
+            <translation>Custom translation endpoints and concurrency</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -2901,6 +2917,10 @@
             <translation>Text Recognition</translation>
         </message>
         <message>
+            <source>Text Translation</source>
+            <translation>Text Translation</translation>
+        </message>
+        <message>
             <source>Text detection scaling</source>
             <translation>Text detection scaling</translation>
         </message>
@@ -2987,6 +3007,10 @@
         <message>
             <source>Translation</source>
             <translation>Translation</translation>
+        </message>
+        <message>
+            <source>Translation Configurations</source>
+            <translation>Translation Configurations</translation>
         </message>
         <message>
             <source>Translation Page</source>
@@ -3427,6 +3451,137 @@ Unavailable: %2</translation>
         </message>
     </context>
     <context>
+        <name>TextTranslationSettingsWidget</name>
+        <message>
+            <source>%1 (Copy %2)</source>
+            <translation>%1 (Copy %2)</translation>
+        </message>
+        <message>
+            <source>%1 (Copy)</source>
+            <translation>%1 (Copy)</translation>
+        </message>
+        <message>
+            <source>%1 configuration %2</source>
+            <translation>%1 configuration %2</translation>
+        </message>
+        <message>
+            <source>A configuration with this name already exists.</source>
+            <translation>A configuration with this name already exists.</translation>
+        </message>
+        <message>
+            <source>API Key</source>
+            <translation>API Key</translation>
+        </message>
+        <message>
+            <source>API URL</source>
+            <translation>API URL</translation>
+        </message>
+        <message>
+            <source>Add Configuration</source>
+            <translation>Add Configuration</translation>
+        </message>
+        <message>
+            <source>Application ID</source>
+            <translation>Application ID</translation>
+        </message>
+        <message>
+            <source>Application Secret</source>
+            <translation>Application Secret</translation>
+        </message>
+        <message>
+            <source>Baidu</source>
+            <translation>Baidu</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Concurrency</source>
+            <translation>Concurrency</translation>
+        </message>
+        <message>
+            <source>Configuration Name</source>
+            <translation>Configuration Name</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
+            <source>DeepL</source>
+            <translation>DeepL</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Delete Configuration</source>
+            <translation>Delete Configuration</translation>
+        </message>
+        <message>
+            <source>Delete configuration "%1"? If selected, another available service will be used.</source>
+            <translation>Delete configuration "%1"? If selected, another available service will be used.</translation>
+        </message>
+        <message>
+            <source>Edit</source>
+            <translation>Edit</translation>
+        </message>
+        <message>
+            <source>Edit Configuration</source>
+            <translation>Edit Configuration</translation>
+        </message>
+        <message>
+            <source>Enter a configuration name.</source>
+            <translation>Enter a configuration name.</translation>
+        </message>
+        <message>
+            <source>Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment.</source>
+            <translation>Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment.</translation>
+        </message>
+        <message>
+            <source>Maximum simultaneous requests for this configuration across translation jobs (1-16).</source>
+            <translation>Maximum simultaneous requests for this configuration across translation jobs (1-16).</translation>
+        </message>
+        <message>
+            <source>No translation configurations added</source>
+            <translation>No translation configurations added</translation>
+        </message>
+        <message>
+            <source>Optional for servers that do not require authentication.</source>
+            <translation>Optional for servers that do not require authentication.</translation>
+        </message>
+        <message>
+            <source>Save</source>
+            <translation>Save</translation>
+        </message>
+        <message>
+            <source>Service Format</source>
+            <translation>Service Format</translation>
+        </message>
+        <message>
+            <source>The API key must not contain line breaks.</source>
+            <translation>The API key must not contain line breaks.</translation>
+        </message>
+        <message>
+            <source>The full translation endpoint. Its path and query are used as entered.</source>
+            <translation>The full translation endpoint. Its path and query are used as entered.</translation>
+        </message>
+        <message>
+            <source>This configuration was deleted. Close this form and create a new configuration.</source>
+            <translation>This configuration was deleted. Close this form and create a new configuration.</translation>
+        </message>
+        <message>
+            <source>Unable to save configurations. Check that configuration storage is writable and try again.</source>
+            <translation>Unable to save configurations. Check that configuration storage is writable and try again.</translation>
+        </message>
+        <message>
+            <source>Youdao</source>
+            <translation>Youdao</translation>
+        </message>
+    </context>
+    <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
             <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
@@ -3483,8 +3638,8 @@ Unavailable: %2</translation>
     <context>
         <name>snow_shot::storage::ConfigurationStore</name>
         <message>
-            <source>Some custom AI model configurations are invalid and were ignored</source>
-            <translation>Some custom AI model configurations are invalid and were ignored</translation>
+            <source>Some custom API configurations are invalid and were ignored</source>
+            <translation>Some custom API configurations are invalid and were ignored</translation>
         </message>
     </context>
 </TS>

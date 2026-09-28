@@ -108,6 +108,12 @@ class SettingsBackend : public QObject {
     virtual bool applyCustomAiModels(const CustomAiModels&) {
         return false;
     }
+    [[nodiscard]] virtual TextTranslationConfigurations textTranslationConfigurations() const {
+        return {};
+    }
+    virtual bool applyTextTranslationConfigurations(const TextTranslationConfigurations&) {
+        return false;
+    }
     virtual bool
     importConfigurationSnapshot(const QMap<QString, QJsonValue>&, int,
                                 std::shared_future<storage::StorageResult>* completion = nullptr) {
@@ -269,6 +275,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
                                      const QString& filePath = {}) override;
     [[nodiscard]] CustomAiModels customAiModels() const override;
     bool applyCustomAiModels(const CustomAiModels& models) override;
+    [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const override;
+    bool applyTextTranslationConfigurations(const TextTranslationConfigurations& values) override;
     bool importConfigurationSnapshot(
         const QMap<QString, QJsonValue>& values, int schemaVersion,
         std::shared_future<storage::StorageResult>* completion = nullptr) override;

@@ -945,6 +945,8 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                     return m_backend.multiSelectValue(SettingsMultiSelectBinding::TrayMenuOptions);
                 case SettingsCustomRenderer::CustomAiModels:
                     return QVariant::fromValue(m_backend.customAiModels());
+                case SettingsCustomRenderer::TextTranslationConfigurations:
+                    return QVariant::fromValue(m_backend.textTranslationConfigurations());
                 case SettingsCustomRenderer::StorageStatus:
                     return QVariant::fromValue(m_backend.storageStatus());
                 }
@@ -1024,6 +1026,10 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                 case SettingsCustomRenderer::CustomAiModels:
                     return value.canConvert<CustomAiModels>() &&
                            m_backend.applyCustomAiModels(value.value<CustomAiModels>());
+                case SettingsCustomRenderer::TextTranslationConfigurations:
+                    return value.canConvert<TextTranslationConfigurations>() &&
+                           m_backend.applyTextTranslationConfigurations(
+                               value.value<TextTranslationConfigurations>());
                 case SettingsCustomRenderer::StorageStatus:
                     return false;
                 }
@@ -1475,6 +1481,19 @@ bool SettingsRuntimeSession::applyCustomAiModels(const CustomAiModels& models) {
     bool valid = false;
     const auto normalized = customAiModelsFromJson(customAiModelsToJson(models), &valid);
     return submitDraft(QStringLiteral("api.custom-models"),
+                       QVariant::fromValue(valid ? normalized : models));
+}
+
+TextTranslationConfigurations SettingsRuntimeSession::textTranslationConfigurations() const {
+    return state(QStringLiteral("api.text-translation"))
+        .acceptedValue.value<TextTranslationConfigurations>();
+}
+bool SettingsRuntimeSession::applyTextTranslationConfigurations(
+    const TextTranslationConfigurations& models) {
+    bool valid = false;
+    const auto normalized =
+        textTranslationConfigurationsFromJson(textTranslationConfigurationsToJson(models), &valid);
+    return submitDraft(QStringLiteral("api.text-translation"),
                        QVariant::fromValue(valid ? normalized : models));
 }
 

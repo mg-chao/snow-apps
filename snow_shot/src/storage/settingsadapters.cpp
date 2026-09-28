@@ -255,6 +255,17 @@ bool ApiConfigurationSettings::setCustomModels(const CustomAiModels& models) con
                             customAiModelsToJson(models));
 }
 
+TextTranslationConfigurations ApiConfigurationSettings::textTranslationConfigurations() const {
+    return textTranslationConfigurationsFromJson(
+        cache().value(QStringLiteral("api_configuration/text_translation")));
+}
+
+bool ApiConfigurationSettings::setTextTranslationConfigurations(
+    const TextTranslationConfigurations& models) const {
+    return cache().setValue(QStringLiteral("api_configuration/text_translation"),
+                            textTranslationConfigurationsToJson(models));
+}
+
 QColor InterfaceSettings::themePrimaryColor() const {
     return colorValue(QStringLiteral("interface/theme_primary_color"));
 }

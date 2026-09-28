@@ -174,6 +174,10 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Concurrency</source>
+            <translation>並行數</translation>
+        </message>
+        <message>
             <source>Copy</source>
             <translation>複製</translation>
         </message>
@@ -224,6 +228,10 @@
         <message>
             <source>Explicitly enable or disable reasoning in model requests.</source>
             <translation>在模型請求中明確啟用或停用推理。</translation>
+        </message>
+        <message>
+            <source>Maximum simultaneous translation and image conversion requests for this model (1-16).</source>
+            <translation>此模型同時進行的翻譯與影像轉換請求數上限（1-16）。</translation>
         </message>
         <message>
             <source>Model Name</source>
@@ -1245,8 +1253,8 @@
             <translation>設定應用程式處理程序行為</translation>
         </message>
         <message>
-            <source>Configure custom AI model connections</source>
-            <translation>設定自訂 AI 模型連線</translation>
+            <source>Configure custom AI models and text translation services</source>
+            <translation>設定自訂 AI 模型與文字翻譯服務</translation>
         </message>
         <message>
             <source>Configure drawing tools and the screenshot drawing toolbar</source>
@@ -1357,6 +1365,10 @@
             <translation>游標輔助線色彩</translation>
         </message>
         <message>
+            <source>Custom DeepL, Baidu, and Youdao-compatible services</source>
+            <translation>自訂相容 DeepL、百度和有道的服務</translation>
+        </message>
+        <message>
             <source>Custom Models</source>
             <translation>自訂模型</translation>
         </message>
@@ -1375,6 +1387,10 @@
         <message>
             <source>Custom screenshot toolbar</source>
             <translation>自訂截圖工具列</translation>
+        </message>
+        <message>
+            <source>Custom translation endpoints and concurrency</source>
+            <translation>自訂翻譯端點與並行數</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -2901,6 +2917,10 @@
             <translation>文字辨識</translation>
         </message>
         <message>
+            <source>Text Translation</source>
+            <translation>文字翻譯</translation>
+        </message>
+        <message>
             <source>Text detection scaling</source>
             <translation>文字偵測縮放</translation>
         </message>
@@ -2987,6 +3007,10 @@
         <message>
             <source>Translation</source>
             <translation>翻譯</translation>
+        </message>
+        <message>
+            <source>Translation Configurations</source>
+            <translation>翻譯設定</translation>
         </message>
         <message>
             <source>Translation Page</source>
@@ -3427,6 +3451,137 @@ Unavailable: %2</source>
         </message>
     </context>
     <context>
+        <name>TextTranslationSettingsWidget</name>
+        <message>
+            <source>%1 (Copy %2)</source>
+            <translation>%1（複本 %2）</translation>
+        </message>
+        <message>
+            <source>%1 (Copy)</source>
+            <translation>%1（複本）</translation>
+        </message>
+        <message>
+            <source>%1 configuration %2</source>
+            <translation>%1設定 %2</translation>
+        </message>
+        <message>
+            <source>A configuration with this name already exists.</source>
+            <translation>已存在同名設定。</translation>
+        </message>
+        <message>
+            <source>API Key</source>
+            <translation>API 金鑰</translation>
+        </message>
+        <message>
+            <source>API URL</source>
+            <translation>API URL</translation>
+        </message>
+        <message>
+            <source>Add Configuration</source>
+            <translation>新增設定</translation>
+        </message>
+        <message>
+            <source>Application ID</source>
+            <translation>應用程式 ID</translation>
+        </message>
+        <message>
+            <source>Application Secret</source>
+            <translation>應用程式密鑰</translation>
+        </message>
+        <message>
+            <source>Baidu</source>
+            <translation>百度</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Concurrency</source>
+            <translation>並行數</translation>
+        </message>
+        <message>
+            <source>Configuration Name</source>
+            <translation>設定名稱</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>複製</translation>
+        </message>
+        <message>
+            <source>DeepL</source>
+            <translation>DeepL</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>刪除</translation>
+        </message>
+        <message>
+            <source>Delete Configuration</source>
+            <translation>刪除設定</translation>
+        </message>
+        <message>
+            <source>Delete configuration "%1"? If selected, another available service will be used.</source>
+            <translation>刪除設定「%1」？若目前已選用此設定，將改用其他可用服務。</translation>
+        </message>
+        <message>
+            <source>Edit</source>
+            <translation>編輯</translation>
+        </message>
+        <message>
+            <source>Edit Configuration</source>
+            <translation>編輯設定</translation>
+        </message>
+        <message>
+            <source>Enter a configuration name.</source>
+            <translation>請輸入設定名稱。</translation>
+        </message>
+        <message>
+            <source>Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment.</source>
+            <translation>請輸入完整的 HTTP 或 HTTPS 端點，不含嵌入式認證資訊或片段。</translation>
+        </message>
+        <message>
+            <source>Maximum simultaneous requests for this configuration across translation jobs (1-16).</source>
+            <translation>此設定在所有翻譯工作中的最大同時請求數（1-16）。</translation>
+        </message>
+        <message>
+            <source>No translation configurations added</source>
+            <translation>尚未新增翻譯設定</translation>
+        </message>
+        <message>
+            <source>Optional for servers that do not require authentication.</source>
+            <translation>不需要身分驗證的伺服器可留空。</translation>
+        </message>
+        <message>
+            <source>Save</source>
+            <translation>儲存</translation>
+        </message>
+        <message>
+            <source>Service Format</source>
+            <translation>服務格式</translation>
+        </message>
+        <message>
+            <source>The API key must not contain line breaks.</source>
+            <translation>API 金鑰不能包含換行符。</translation>
+        </message>
+        <message>
+            <source>The full translation endpoint. Its path and query are used as entered.</source>
+            <translation>完整的翻譯端點。路徑與查詢參數將依輸入內容使用。</translation>
+        </message>
+        <message>
+            <source>This configuration was deleted. Close this form and create a new configuration.</source>
+            <translation>此設定已被刪除。請關閉此表單並建立新設定。</translation>
+        </message>
+        <message>
+            <source>Unable to save configurations. Check that configuration storage is writable and try again.</source>
+            <translation>無法儲存設定。請檢查設定儲存空間是否可寫入，然後重試。</translation>
+        </message>
+        <message>
+            <source>Youdao</source>
+            <translation>有道</translation>
+        </message>
+    </context>
+    <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
             <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
@@ -3483,8 +3638,8 @@ Unavailable: %2</source>
     <context>
         <name>snow_shot::storage::ConfigurationStore</name>
         <message>
-            <source>Some custom AI model configurations are invalid and were ignored</source>
-            <translation>部分自訂 AI 模型設定無效，已忽略。</translation>
+            <source>Some custom API configurations are invalid and were ignored</source>
+            <translation>部分自訂 API 設定無效，已被忽略</translation>
         </message>
     </context>
 </TS>

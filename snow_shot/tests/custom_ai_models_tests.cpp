@@ -14,6 +14,7 @@
 #include "widgets/form.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/input_password_edit.h"
+#include "widgets/input_number.h"
 #include "widgets/modal.h"
 #include "widgets/popconfirm.h"
 #include "widgets/switch.h"
@@ -99,12 +100,20 @@ void storageContracts() {
     require(!model.supportsReasoning, "custom models disable reasoning by default");
     auto legacy = customAiModelsToJson({model}).first().toObject();
     legacy.remove(QStringLiteral("supports_reasoning"));
+    legacy.remove(QStringLiteral("concurrency"));
     bool valid = false;
     require(customAiModelsFromJson(QJsonArray{legacy}, &valid) == CustomAiModels{model} && valid,
-            "existing models without a reasoning setting default to disabled");
+            "existing models default to disabled reasoning and four concurrent requests");
     legacy.insert(QStringLiteral("supports_reasoning"), QStringLiteral("yes"));
     require(!storage::ConfigurationSchema::normalize(key, QJsonArray{legacy}).valid,
             "reasoning setting requires a boolean");
+    legacy.insert(QStringLiteral("supports_reasoning"), false);
+    for (const QJsonValue invalid :
+         {QJsonValue(0), QJsonValue(17), QJsonValue(1.5), QJsonValue(QStringLiteral("4"))}) {
+        legacy.insert(QStringLiteral("concurrency"), invalid);
+        require(!storage::ConfigurationSchema::normalize(key, QJsonArray{legacy}).valid,
+                "concurrency requires an integer from 1 to 16");
+    }
     {
         storage::ConfigurationStore store(path, true, true, 8000);
         require(store.value(key).toArray().isEmpty(), "custom models default to empty");
@@ -128,13 +137,14 @@ void storageContracts() {
         require(customAiModelsFromJson(store.value(key)) == CustomAiModels{model},
                 "models survive reopening");
         model.supportsReasoning = true;
+        model.concurrency = 16;
         require(store.setValue(key, customAiModelsToJson({model})) && store.flushNow().success,
-                "reasoning support saves");
+                "reasoning support and concurrency save");
     }
     {
         storage::ConfigurationStore store(path, true, true, 8000);
         require(customAiModelsFromJson(store.value(key)) == CustomAiModels{model},
-                "reasoning support survives reopening");
+                "reasoning support and concurrency survive reopening");
     }
     {
         storage::ConfigurationStore store(path, true, false, 8000);
@@ -248,11 +258,16 @@ void widgetContracts(QApplication& application) {
                     position(key).y() > position(name).y(),
                 "editor arranges fields in two columns in reading order");
         const auto fields = modal->contentWidget()->findChildren<AdFormItem*>();
-        require(fields.size() == 6, "editor has six labeled fields");
+        require(fields.size() == 7, "editor has seven labeled fields");
         auto* reasoning =
             modal->contentWidget()->findChild<AdSwitch*>(QStringLiteral("reasoningSupport"));
+        auto* concurrency = modal->contentWidget()->findChild<AdInputNumber*>(
+            QStringLiteral("customAiModelConcurrency"));
         require(reasoning != nullptr && !reasoning->isChecked(),
                 "reasoning support starts disabled");
+        require(concurrency != nullptr && concurrency->value() == 4 &&
+                    concurrency->minimum() == 1 && concurrency->maximum() == 16,
+                "model concurrency defaults to four within the supported range");
         for (auto* field : fields) {
             auto* tooltip = field->findChild<QLabel*>(QStringLiteral("ad-form-item-label-tooltip"));
             require(!field->tooltipText().isEmpty() && field->extraText().isEmpty() &&
@@ -385,6 +400,7 @@ void widgetContracts(QApplication& application) {
             ->findChild<AdSwitch*>(QStringLiteral("visionSupport"))
             ->setChecked(true);
         reasoning->setChecked(true);
+        concurrency->setValue(2);
         modal->acceptButton()->click();
         flush();
         require(session.customAiModels().size() == 1, "create persists one model");
@@ -419,8 +435,9 @@ void widgetContracts(QApplication& application) {
                     "model actions are small labeled accessible icon buttons");
         }
         require(original.apiKey == QStringLiteral("portable-secret") && original.supportsVision &&
-                    original.supportsReasoning && original.model == QStringLiteral("local-id"),
-                "key, vision, and reasoning persist");
+                    original.supportsReasoning && original.model == QStringLiteral("local-id") &&
+                    original.concurrency == 2,
+                "key, capabilities, and concurrency persist");
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
         flush();
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
@@ -428,6 +445,7 @@ void widgetContracts(QApplication& application) {
         const auto copied = session.customAiModels();
         require(copied.size() == 3 && copied[1].id != original.id &&
                     copied[1].apiKey == original.apiKey && copied[1].supportsReasoning &&
+                    copied[1].concurrency == original.concurrency &&
                     copied[1].name == QStringLiteral("Personal model (Copy)") &&
                     copied[2].name == QStringLiteral("Personal model (Copy 2)"),
                 "copy duplicates immediately with independent identity and name");
@@ -462,14 +480,19 @@ void widgetContracts(QApplication& application) {
             ->setChecked(false);
         reasoning =
             modal->contentWidget()->findChild<AdSwitch*>(QStringLiteral("reasoningSupport"));
+        concurrency = modal->contentWidget()->findChild<AdInputNumber*>(
+            QStringLiteral("customAiModelConcurrency"));
         require(reasoning != nullptr && reasoning->isChecked(),
                 "editor restores reasoning support");
+        require(concurrency != nullptr && concurrency->value() == 2, "editor restores concurrency");
         reasoning->setChecked(false);
+        concurrency->setValue(1);
         modal->acceptButton()->click();
         flush();
         require(session.customAiModels().first().id == original.id &&
                     session.customAiModels().first().name == QStringLiteral("Renamed model") &&
-                    !session.customAiModels().first().supportsReasoning,
+                    !session.customAiModels().first().supportsReasoning &&
+                    session.customAiModels().first().concurrency == 1,
                 "rename preserves identity");
         require(widget->findChild<QWidget*>(QStringLiteral("customAiModelRow:") + original.id)
                         ->findChild<AdTag*>() == nullptr,

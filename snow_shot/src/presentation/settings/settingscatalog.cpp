@@ -2518,8 +2518,8 @@ QVector<SettingsPageDefinition> builtInPages() {
             QStringLiteral("api-configuration"),
             QStringLiteral("/settings/apiConfiguration"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Configuration")),
-            settingsText(
-                QT_TRANSLATE_NOOP("SettingsCatalog", "Configure custom AI model connections")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog", "Configure custom AI models and text translation services")),
             {{QStringLiteral("ai-model"),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AI Model")),
               settingsText(QT_TRANSLATE_NOOP(
@@ -2534,7 +2534,19 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Key")),
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Vision Support"))},
                 QStringLiteral("api_configuration/custom_models"),
-                SettingsCustomDefinition{SettingsCustomRenderer::CustomAiModels}}}}},
+                SettingsCustomDefinition{SettingsCustomRenderer::CustomAiModels}}}},
+             {QStringLiteral("text-translation"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text Translation")),
+              settingsText(QT_TRANSLATE_NOOP(
+                  "SettingsCatalog", "Custom DeepL, Baidu, and Youdao-compatible services")),
+              SettingsSectionReset::TextTranslationConfigurations,
+              {{QStringLiteral("api.text-translation"),
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Configurations")),
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                               "Custom translation endpoints and concurrency")),
+                {},
+                QStringLiteral("api_configuration/text_translation"),
+                SettingsCustomDefinition{SettingsCustomRenderer::TextTranslationConfigurations}}}}},
         },
         {
             QStringLiteral("extended-features"),
@@ -3979,6 +3991,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     storage::ConfigurationValueKind expectedKind =
                         storage::ConfigurationValueKind::Structured;
                     switch (custom->renderer) {
+                    case SettingsCustomRenderer::TextTranslationConfigurations:
+                        rendererSupported = true;
+                        expectedKey = QStringLiteral("api_configuration/text_translation");
+                        break;
                     case SettingsCustomRenderer::CustomAiModels:
                         rendererSupported = true;
                         expectedKey = QStringLiteral("api_configuration/custom_models");

@@ -140,6 +140,8 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {});
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);
+    [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
+    bool applyTextTranslationConfigurations(const TextTranslationConfigurations& values);
     bool
     importConfigurationSnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion,
                                 std::shared_future<storage::StorageResult>* completion = nullptr) {

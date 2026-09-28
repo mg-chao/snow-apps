@@ -1,8 +1,8 @@
-#ifndef SNOW_SHOT_CUSTOMAIMODELSSETTINGSWIDGET_H
-#define SNOW_SHOT_CUSTOMAIMODELSSETTINGSWIDGET_H
+#ifndef SNOW_SHOT_TEXTTRANSLATIONSETTINGSWIDGET_H
+#define SNOW_SHOT_TEXTTRANSLATIONSETTINGSWIDGET_H
 
 #include "snow_shot/presentation/components/settingscustomwidget.h"
-#include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
 #include <QPointer>
 #include <array>
 
@@ -15,14 +15,13 @@ class AdModal;
 class AdFormItem;
 class AdLineEdit;
 class AdInputNumber;
-class AdSwitch;
 class AdComboBox;
 } // namespace adqt::widgets
 
-class CustomAiModelsSettingsWidget final : public SettingsCustomWidget {
+class TextTranslationSettingsWidget final : public SettingsCustomWidget {
     Q_OBJECT
   public:
-    explicit CustomAiModelsSettingsWidget(
+    explicit TextTranslationSettingsWidget(
         snow_shot::presentation::settings::SettingsRuntimeSession& session,
         QWidget* parent = nullptr);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) override;
@@ -36,7 +35,7 @@ class CustomAiModelsSettingsWidget final : public SettingsCustomWidget {
     void openEditor(const QString& id = {});
     void copyModel(const QString& id);
     void deleteModel(const QString& id);
-    bool save(const snow_shot::CustomAiModels& models);
+    bool save(const snow_shot::TextTranslationConfigurations& models);
     void submitEditor(bool saveChanges = true);
     void translateModal();
     snow_shot::presentation::settings::SettingsRuntimeSession& m_session;
@@ -48,13 +47,10 @@ class CustomAiModelsSettingsWidget final : public SettingsCustomWidget {
     QPointer<adqt::widgets::AdModal> m_modal;
     QPointer<adqt::widgets::AdModal> m_deleteModal;
     adqt::widgets::AdAlert* m_modalError = nullptr;
-    std::array<adqt::widgets::AdLineEdit*, 3> m_inputs{};
-    std::array<adqt::widgets::AdFormItem*, 7> m_fields{};
-    adqt::widgets::AdSwitch* m_vision = nullptr;
-    adqt::widgets::AdSwitch* m_reasoning = nullptr;
+    std::array<adqt::widgets::AdLineEdit*, 4> m_inputs{};
+    std::array<adqt::widgets::AdFormItem*, 6> m_fields{};
+    adqt::widgets::AdComboBox* m_provider = nullptr;
     adqt::widgets::AdInputNumber* m_concurrency = nullptr;
-    adqt::widgets::AdComboBox* m_modelSelect = nullptr;
-    QLabel* m_modelFetchStatus = nullptr;
     QString m_editId;
     QString m_deleteId;
     bool m_editing = false;
