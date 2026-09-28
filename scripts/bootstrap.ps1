@@ -102,7 +102,12 @@ if (-not (Test-Path -LiteralPath $vcpkgExe) -and
 if (-not (Test-Path -LiteralPath $vcpkgGitDirectory)) {
     throw "Repository-local vcpkg must be a Git checkout so the pinned baseline can be enforced: $vcpkgRoot. Rerun with -Reset."
 }
-if (Test-Path -LiteralPath $vcpkgGitDirectory) {
+$vcpkgHead = & $git.Source -C $vcpkgRoot rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or @($vcpkgHead).Count -ne 1) {
+    throw "Unable to determine the repository-local vcpkg revision: $vcpkgRoot"
+}
+$vcpkgHead = $vcpkgHead.Trim()
+if ($vcpkgHead -ne $vcpkgBaseline) {
     Invoke-Checked -Command $git.Source -Arguments @(
         "fetch", "origin", $vcpkgBaseline, "--depth=1"
     ) -WorkingDirectory $vcpkgRoot

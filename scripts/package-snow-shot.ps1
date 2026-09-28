@@ -230,7 +230,9 @@ $qtStamp = Get-ValidatedStaticQtStamp -Prefix $qtPrefix `
 
 $cachePath = Join-Path $buildDirectory "CMakeCache.txt"
 if (-not $SkipBuild) {
-    & cmake --fresh --preset snow-shot-msvc-release
+    $configureArguments = @(Get-SnowConfigureArguments -Preset "snow-shot-msvc-release" `
+        -BuildDirectory $buildDirectory)
+    & cmake @configureArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release configuration failed."
     }
@@ -256,17 +258,17 @@ foreach ($entry in $requiredCacheEntries) {
 }
 
 if (-not $SkipBuild) {
-    & cmake --build --preset build-snow-shot-msvc-release --parallel $Parallelism
+    & cmake --build $buildDirectory --config Release --target snow_shot --parallel $Parallelism
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release build failed."
     }
 }
 
 $updaterSizeReporter = Join-Path $PSScriptRoot 'report-snow-shot-updater-size.ps1'
-$updaterBuildExecutable = Join-Path $BuildDirectory 'snow_shot\Release\snow-shot-updater.exe'
+$updaterBuildExecutable = Join-Path $buildDirectory 'snow_shot\Release\snow-shot-updater.exe'
 $updaterCargoProfileDirectory =
-    Join-Path $BuildDirectory 'cargo\x86_64-pc-windows-msvc\release-size'
-$updaterSizeEvidence = Join-Path $BuildDirectory 'release-evidence\snow-shot-updater-size.json'
+    Join-Path $buildDirectory 'cargo\x86_64-pc-windows-msvc\release-size'
+$updaterSizeEvidence = Join-Path $buildDirectory 'release-evidence\snow-shot-updater-size.json'
 & $updaterSizeReporter -Executable $updaterBuildExecutable `
     -CargoProfileDirectory $updaterCargoProfileDirectory -Output $updaterSizeEvidence
 if ($LASTEXITCODE -ne 0) {
@@ -1139,22 +1141,8 @@ if ($manifestDrift) {
           "in the same change."
 }
 
-$publishedRuntime = Join-Path $artifactRoot "$ocrRuntimeArchiveName.remote"
-try {
-    Invoke-WebRequest -Uri $ocrRuntimeUrl -OutFile $publishedRuntime -MaximumRedirection 5
-    Assert-ReleaseFile -Path $publishedRuntime -Bytes $runtimeArchive.size `
-        -Sha256 $runtimeArchive.sha256
-}
-catch {
-    throw "OCR runtime $ocrRuntimeVersion has not been published at $ocrRuntimeUrl with the " +
-          "generated size and SHA-256. Run with -PrepareOcrRuntimeOnly, upload the emitted " +
-          "artifact, then rerun packaging. $($_.Exception.Message)"
-}
-finally {
-    if (Test-Path -LiteralPath $publishedRuntime) {
-        Remove-Item -LiteralPath $publishedRuntime -Force
-    }
-}
+# The archive came from the pinned publication URL and Expand-PinnedSnowOcrRuntime
+# already verified its size, hash, and complete file inventory.
 $runtimeArchive.sha256 | Set-Content -LiteralPath $runtimePublishedMarker -Encoding ascii
 
 $variantStages = [ordered]@{

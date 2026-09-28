@@ -16,12 +16,8 @@ $buildRoot = if ([IO.Path]::IsPathRooted($BuildDirectory)) {
 }
 $artifactRoot = Join-Path $repoRoot 'artifacts'
 if (-not $SkipBuild) {
-    $cachePath = Join-Path $buildRoot 'CMakeCache.txt'
-    $configureArguments = @('--preset', 'snow-shot-msvc-release', '-S', $repoRoot, '-B', $buildRoot)
-    if ((Test-Path -LiteralPath $cachePath -PathType Leaf) -and
-        -not (Test-SnowCacheAlignment -CachePath $cachePath -Preset snow-shot-msvc-release)) {
-        $configureArguments = @('--fresh') + $configureArguments
-    }
+    $configureArguments = @(Get-SnowConfigureArguments -Preset snow-shot-msvc-release `
+        -BuildDirectory $buildRoot)
     & cmake @configureArguments
     if ($LASTEXITCODE -ne 0) { throw 'OCR Release configuration failed.' }
     & cmake --build $buildRoot --config Release --target snow_ocr_process_build --parallel $Parallelism

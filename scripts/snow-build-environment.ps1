@@ -320,6 +320,24 @@ function Test-SnowCacheAlignment {
         $cache -match "(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=$repoNeedle$lineEnd"
 }
 
+function Get-SnowConfigureArguments {
+    param(
+        [Parameter(Mandatory = $true)][string]$Preset,
+        [Parameter(Mandatory = $true)][string]$BuildDirectory
+    )
+
+    $cachePath = Join-Path $BuildDirectory "CMakeCache.txt"
+    $arguments = @("--preset", $Preset, "-S", $script:SnowRepoRoot, "-B", $BuildDirectory)
+    if (Test-Path -LiteralPath $cachePath -PathType Leaf) {
+        if (-not (Test-SnowCacheAlignment -CachePath $cachePath -Preset $Preset)) {
+            Write-Host "The existing CMake cache does not match preset $Preset; configuring from a fresh cache."
+            return @("--fresh") + $arguments
+        }
+        Write-Host "Reusing the existing CMake cache for preset $Preset."
+    }
+    return $arguments
+}
+
 function Resolve-SnowExecutable {
     param(
         [Parameter(Mandatory = $true)][string]$Preset,
