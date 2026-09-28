@@ -318,6 +318,15 @@ struct Fixture {
         }
         require(false, "backend state transition timed out");
     }
+    void awaitTap(bool available) {
+        for (int i = 0; i < 20; ++i) {
+            const auto state = backend->permissionState();
+            if (state.status == Status::Ready && state.tapAvailable == available)
+                return;
+            static_cast<void>(changed.tryAcquire(1, 500));
+        }
+        require(false, "tap availability transition timed out");
+    }
     void onWorker(std::function<void()> scenario) {
         QSemaphore completed;
         auto* done = &completed;
@@ -329,6 +338,58 @@ struct Fixture {
         require(completed.tryAcquire(1, 5000), "worker scenario must complete");
     }
 };
+void listeningFollowsBindings() {
+    Fixture f;
+    f.backend->configure({{}, true});
+    f.backend->usePermissionSnapshot(true, true);
+    f.start();
+    f.awaitTap(false);
+    require(f.installs == 0, "empty bindings must not install a native listener");
+    f.backend->configure(config());
+    f.awaitTap(true);
+    require(f.installs == 1, "adding the first binding installs the listener");
+    f.backend->configure({{}, true});
+    f.awaitTap(false);
+    require(!f.enabled && f.removals == 1, "removing the last binding retires the listener");
+    f.backend->refreshPermission();
+    f.backend->configure(config());
+    f.awaitTap(true);
+    quint64 id = 0;
+    f.onWorker([&] {
+        Event down(kCGEventLeftMouseDown);
+        f.callback(nullptr, kCGEventLeftMouseDown, down.value, f.context);
+        std::lock_guard lock(f.mutex);
+        id = f.events.back().id;
+    });
+    f.backend->configure({{}, true});
+    f.backend->cancel(id);
+    f.onWorker([&] {
+        require(f.enabled, "a swallowed press must retain its listener until release");
+        Event up(kCGEventLeftMouseUp, 0);
+        require(f.callback(nullptr, kCGEventLeftMouseUp, up.value, f.context) == nullptr,
+                "clearing bindings must still consume the matching release");
+    });
+    f.awaitTap(false);
+
+    f.heldButtons = Qt::LeftButton;
+    f.backend->beginButtonDrag(Action::ScreenshotCopy);
+    f.awaitTap(true);
+    f.onWorker([&] {
+        {
+            std::lock_guard lock(f.mutex);
+            require(f.events.back().kind == Kind::Begin,
+                    "explicit button drags must start without configured bindings");
+            id = f.events.back().id;
+        }
+        Event up(kCGEventLeftMouseUp, 0);
+        require(f.callback(nullptr, kCGEventLeftMouseUp, up.value, f.context) == up.value,
+                "explicit button drags preserve the Qt release");
+    });
+    f.backend->cancel(id);
+    f.awaitTap(false);
+    require(f.permissionQueries == 0, "idle and temporary listeners use shared permissions");
+}
+
 void sharedPermissionSnapshot() {
     Fixture f;
     std::atomic_int refreshes{0};
@@ -537,5 +598,6 @@ int main(int argc, char** argv) {
     inputMappingAndOwnership();
     lifecycleAndRecovery();
     sharedPermissionSnapshot();
+    listeningFollowsBindings();
     return 0;
 }

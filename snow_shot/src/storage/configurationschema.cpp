@@ -343,27 +343,27 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Boolean},
     {QStringLiteral("global_mouse/screenshot_copy"),
 #ifdef Q_OS_MACOS
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("command")}},
+     QJsonObject(),
 #else
      QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
-#endif
                  {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+#endif
      ConfigurationValueKind::Structured},
     {QStringLiteral("global_mouse/screenshot_fixed"),
 #ifdef Q_OS_MACOS
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("command")}},
+     QJsonObject(),
 #else
      QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
-#endif
                  {QStringLiteral("mouse_button"), QStringLiteral("wheel_drag")}},
+#endif
      ConfigurationValueKind::Structured},
     {QStringLiteral("global_mouse/screenshot_ocr"),
 #ifdef Q_OS_MACOS
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("command")}},
+     QJsonObject(),
 #else
      QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
-#endif
                  {QStringLiteral("mouse_button"), QStringLiteral("right_drag")}},
+#endif
      ConfigurationValueKind::Structured},
     {QStringLiteral("global_mouse/screenshot_translation"), QJsonObject(),
      ConfigurationValueKind::Structured},

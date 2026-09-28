@@ -624,6 +624,7 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
         QStringLiteral("global_mouse/screenshot_translation"),
         QStringLiteral("global_mouse/screenshot_save"),
         QStringLiteral("global_mouse/screenshot_quick_save"),
+        QStringLiteral("global_mouse/screen_recording"),
     };
     const QStringList activationKeys{snow_shot::presentation::globalMouseActivationKeys().at(0),
                                      snow_shot::presentation::globalMouseActivationKeys().at(1),
@@ -638,6 +639,10 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
         const auto* entry = storage::ConfigurationSchema::entry(key);
         require(entry != nullptr && entry->valueKind == storage::ConfigurationValueKind::Structured,
                 "global mouse fields must be structured values");
+#ifdef Q_OS_MACOS
+        require(entry->defaultValue == QJsonObject{},
+                "macOS global mouse bindings must be unset by default");
+#else
         const QString button =
             key.endsWith(QStringLiteral("screenshot_copy"))    ? QStringLiteral("left_drag")
             : key.endsWith(QStringLiteral("screenshot_fixed")) ? QStringLiteral("wheel_drag")
@@ -652,6 +657,7 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
                       {QStringLiteral("mouse_button"), button}};
         require(entry->defaultValue == expected,
                 "copy, pin, and OCR must default to Windows plus left, middle, and right drag");
+#endif
         const auto unset = storage::ConfigurationSchema::normalize(key, QJsonObject());
         require(unset.valid && !unset.changed && unset.value == QJsonObject(),
                 "an empty global mouse object must normalize as Unset");

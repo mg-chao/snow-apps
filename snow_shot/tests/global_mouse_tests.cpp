@@ -345,6 +345,12 @@ void hotkeySuppressionNeverDisablesMouseGestures() {
     const QString fullscreenKey =
         QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
     require(store.setValue(fullscreenKey, true), "initial fullscreen suppression must persist");
+    require(
+        store.setValue(QStringLiteral("global_mouse/screenshot_copy"),
+                       QJsonObject{{QStringLiteral("activation_key"),
+                                    QJsonArray{globalMouseActivationKeys().at(0)}},
+                                   {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}}),
+        "configure a mouse binding independently of platform defaults");
     {
         bool fullscreen = true;
         auto hotkeyBackend = std::make_unique<FakeHotkeyBackend>();
@@ -423,6 +429,10 @@ void managerLoadsLiveSettingsAndCoalescesOnlyMovement() {
     manager.setCaptureAvailable(true);
     manager.initialize();
     manager.initialize();
+#ifdef Q_OS_MACOS
+    require(input->starts == 1 && input->configuration.bindings.isEmpty(),
+            "macOS initialization must be idempotent with no default mouse bindings");
+#else
     require(input->starts == 1 && input->configuration.bindings.size() == 3,
             "initialization must be idempotent and load three default bindings");
     const std::array defaultActions{Action::ScreenshotCopy, Action::ScreenshotFixed,
@@ -430,17 +440,12 @@ void managerLoadsLiveSettingsAndCoalescesOnlyMovement() {
     const std::array defaultButtons{Qt::LeftButton, Qt::MiddleButton, Qt::RightButton};
     for (qsizetype index = 0; index < 3; ++index) {
         const auto& binding = input->configuration.bindings[index];
-#ifdef Q_OS_MACOS
-        require(binding.action == defaultActions.at(static_cast<std::size_t>(index)) &&
-                    binding.modifiers == GlobalMouseModifier::Command &&
-                    binding.button == defaultButtons.at(static_cast<std::size_t>(index)),
-#else
         require(binding.action == defaultActions.at(static_cast<std::size_t>(index)) &&
                     binding.modifiers == GlobalMouseModifier::Super &&
                     binding.button == defaultButtons.at(static_cast<std::size_t>(index)),
-#endif
                 "default bindings must reach the backend as Windows plus left, middle, and right");
     }
+#endif
     for (const auto* key : {"global_mouse/screenshot_copy", "global_mouse/screenshot_fixed",
                             "global_mouse/screenshot_ocr"}) {
         require(storage.configuration().setValue(QString::fromLatin1(key), QJsonObject{}),
