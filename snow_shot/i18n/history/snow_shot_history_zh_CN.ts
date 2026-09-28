@@ -465,6 +465,10 @@
             <translation>当前：%1%</translation>
         </message>
         <message>
+            <source>Decrease 10%</source>
+            <translation>减少 10%</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>默认</translation>
         </message>
@@ -539,6 +543,10 @@
         <message>
             <source>Image size is too large.</source>
             <translation>图像尺寸过大。</translation>
+        </message>
+        <message>
+            <source>Increase 10%</source>
+            <translation>增加 10%</translation>
         </message>
         <message>
             <source>Load new content</source>

@@ -1421,6 +1421,14 @@
             <translation>Dark</translation>
         </message>
         <message>
+            <source>Decrease opacity by 10%</source>
+            <translation>Decrease opacity by 10%</translation>
+        </message>
+        <message>
+            <source>Decrease scale by 10%</source>
+            <translation>Decrease scale by 10%</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>Default</translation>
         </message>
@@ -1669,6 +1677,14 @@
             <translation>Fixed screenshot</translation>
         </message>
         <message>
+            <source>Flip horizontally</source>
+            <translation>Flip horizontally</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>Flip vertically</translation>
+        </message>
+        <message>
             <source>Focused window</source>
             <translation>Focused window</translation>
         </message>
@@ -1835,6 +1851,14 @@
         <message>
             <source>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</source>
             <translation>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</translation>
+        </message>
+        <message>
+            <source>Increase opacity by 10%</source>
+            <translation>Increase opacity by 10%</translation>
+        </message>
+        <message>
+            <source>Increase scale by 10%</source>
+            <translation>Increase scale by 10%</translation>
         </message>
         <message>
             <source>Input Monitoring</source>
@@ -2429,6 +2453,10 @@
             <translation>Reset Zoom</translation>
         </message>
         <message>
+            <source>Reset transform</source>
+            <translation>Reset transform</translation>
+        </message>
+        <message>
             <source>Resident Recognition Process</source>
             <translation>Resident Recognition Process</translation>
         </message>
@@ -2491,6 +2519,14 @@
         <message>
             <source>Reverse supported full-screen color filters in screenshots.</source>
             <translation>Reverse supported full-screen color filters in screenshots.</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise</source>
+            <translation>Rotate clockwise</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise</source>
+            <translation>Rotate counterclockwise</translation>
         </message>
         <message>
             <source>Save as file</source>

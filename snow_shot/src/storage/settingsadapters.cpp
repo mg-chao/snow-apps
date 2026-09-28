@@ -94,14 +94,30 @@ const QStringList& screenshotShortcutActionIds() {
 
 const QStringList& pinToScreenShortcutActionIds() {
     static const QStringList ids = {
-        QStringLiteral("copy_to_clipboard"),    QStringLiteral("copy_original_content"),
-        QStringLiteral("save_as_file"),         QStringLiteral("show_text_recognition_results"),
-        QStringLiteral("drawing_mode"),         QStringLiteral("resize_window"),
-        QStringLiteral("thumbnail_mode"),       QStringLiteral("hide_to_top"),
-        QStringLiteral("toggle_click_through"), QStringLiteral("close_window"),
-        QStringLiteral("destroy_window"),       QStringLiteral("move_cursor_up"),
-        QStringLiteral("move_cursor_down"),     QStringLiteral("move_cursor_left"),
+        QStringLiteral("copy_to_clipboard"),
+        QStringLiteral("copy_original_content"),
+        QStringLiteral("save_as_file"),
+        QStringLiteral("show_text_recognition_results"),
+        QStringLiteral("drawing_mode"),
+        QStringLiteral("resize_window"),
+        QStringLiteral("thumbnail_mode"),
+        QStringLiteral("hide_to_top"),
+        QStringLiteral("toggle_click_through"),
+        QStringLiteral("close_window"),
+        QStringLiteral("destroy_window"),
+        QStringLiteral("move_cursor_up"),
+        QStringLiteral("move_cursor_down"),
+        QStringLiteral("move_cursor_left"),
         QStringLiteral("move_cursor_right"),
+        QStringLiteral("increase_opacity"),
+        QStringLiteral("decrease_opacity"),
+        QStringLiteral("increase_scale"),
+        QStringLiteral("decrease_scale"),
+        QStringLiteral("rotate_clockwise"),
+        QStringLiteral("rotate_counterclockwise"),
+        QStringLiteral("flip_horizontal"),
+        QStringLiteral("flip_vertical"),
+        QStringLiteral("reset_transform"),
     };
     return ids;
 }

@@ -284,7 +284,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 186, "catalog must contain 186 shared settings on every platform");
+    require(itemIds.size() == 195, "catalog must contain 195 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -1086,7 +1086,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 15 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 24 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -1141,6 +1141,25 @@ void builtInCatalogIsCompleteAndValid() {
             drawingShortcuts->items.constFirst().id == QStringLiteral("drawing-shortcut.select") &&
             drawingShortcuts->items.at(1).id == QStringLiteral("drawing-shortcut.shape"),
         "Application shortcuts must expose Screenshot before Drawing with stable local shortcuts");
+
+    for (const QString& id :
+         {QStringLiteral("increase_opacity"), QStringLiteral("decrease_opacity"),
+          QStringLiteral("increase_scale"), QStringLiteral("decrease_scale"),
+          QStringLiteral("rotate_clockwise"), QStringLiteral("rotate_counterclockwise"),
+          QStringLiteral("flip_horizontal"), QStringLiteral("flip_vertical"),
+          QStringLiteral("reset_transform")}) {
+        const auto item =
+            std::find_if(pinToScreenShortcuts->items.cbegin(), pinToScreenShortcuts->items.cend(),
+                         [&](const auto& candidate) {
+                             return candidate.configurationKey ==
+                                    QStringLiteral("pin_to_screen_shortcuts/") + id;
+                         });
+        require(item != pinToScreenShortcuts->items.cend() &&
+                    item->id == QStringLiteral("pin-to-screen-shortcut.") + id &&
+                    std::get<settings::SettingsLocalShortcutDefinition>(item->payload).scope ==
+                        settings::SettingsLocalShortcutScope::PinToScreen,
+                "image processing shortcuts must expose configurable settings in the pinned scope");
+    }
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
     require(interfacePage != nullptr && interfacePage->sections.size() == 7 &&

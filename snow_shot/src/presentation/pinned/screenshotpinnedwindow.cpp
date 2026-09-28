@@ -1155,6 +1155,40 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
 
     const struct {
         const char* id;
+        const char* actionObjectName;
+    } imageCommands[] = {
+        {"increase_opacity", "screenshotPinnedIncreaseOpacityAction"},
+        {"decrease_opacity", "screenshotPinnedDecreaseOpacityAction"},
+        {"increase_scale", "screenshotPinnedIncreaseScaleAction"},
+        {"decrease_scale", "screenshotPinnedDecreaseScaleAction"},
+        {"rotate_clockwise", "screenshotPinnedRotateClockwiseAction"},
+        {"rotate_counterclockwise", "screenshotPinnedRotateCounterClockwiseAction"},
+        {"flip_horizontal", "screenshotPinnedFlipHorizontalAction"},
+        {"flip_vertical", "screenshotPinnedFlipVerticalAction"},
+        {"reset_transform", "screenshotPinnedResetTransformAction"},
+    };
+    for (const auto& command : imageCommands) {
+        const QString actionId = QString::fromLatin1(command.id);
+        QAction* action = findChild<QAction*>(QString::fromLatin1(command.actionObjectName));
+        ShortcutManager::Binding binding;
+        binding.id = QStringLiteral("pinned.") + actionId;
+        // Drawing tools keep their configured keys while the editor is active.
+        binding.priority = ShortcutManager::StandardPriority::ContextualFallback;
+        binding.canActivate = [this, localCommandsAllowed, action, actionId](const auto& context) {
+            return localCommandsAllowed(context) && action != nullptr && action->isEnabled() &&
+                   (!actionId.endsWith(QStringLiteral("_scale")) ||
+                    (m_scaleMenuAction != nullptr && m_scaleMenuAction->isEnabled()));
+        };
+        binding.activate = [action](const auto&) {
+            action->trigger();
+            return true;
+        };
+        m_pinnedShortcutBindings.insert(actionId,
+                                        m_shortcutManager->addBinding(this, std::move(binding)));
+    }
+
+    const struct {
+        const char* id;
         snow_shot::platform::PhysicalCursorDirection direction;
         QPoint delta;
     } cursorMovements[] = {
@@ -1251,6 +1285,15 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"toggle_click_through", "screenshotPinnedClickThroughAction"},
         {"close_window", "screenshotPinnedCloseAction"},
         {"destroy_window", "screenshotPinnedDestroyAction"},
+        {"increase_opacity", "screenshotPinnedIncreaseOpacityAction"},
+        {"decrease_opacity", "screenshotPinnedDecreaseOpacityAction"},
+        {"increase_scale", "screenshotPinnedIncreaseScaleAction"},
+        {"decrease_scale", "screenshotPinnedDecreaseScaleAction"},
+        {"rotate_clockwise", "screenshotPinnedRotateClockwiseAction"},
+        {"rotate_counterclockwise", "screenshotPinnedRotateCounterClockwiseAction"},
+        {"flip_horizontal", "screenshotPinnedFlipHorizontalAction"},
+        {"flip_vertical", "screenshotPinnedFlipVerticalAction"},
+        {"reset_transform", "screenshotPinnedResetTransformAction"},
         {"move_cursor_up", nullptr},
         {"move_cursor_down", nullptr},
         {"move_cursor_left", nullptr},
@@ -2613,6 +2656,21 @@ void ScreenshotPinnedWindow::createContextMenu() {
     auto* opacityMenu = processMenu->addSubMenu(tr("Opacity"), outlined_icons::BgColors());
     setActionTranslationSource(opacityMenu->menuAction(), "Opacity");
     opacityMenu->setObjectName(QStringLiteral("screenshotPinnedOpacityMenu"));
+    QAction* increaseOpacity = opacityMenu->addItem(tr("Increase 10%"));
+    setActionTranslationSource(increaseOpacity, "Increase 10%");
+    increaseOpacity->setObjectName(QStringLiteral("screenshotPinnedIncreaseOpacityAction"));
+    connect(increaseOpacity, &QAction::triggered, this, [this]() {
+        setOpacityPercent(
+            qBound(kMinimumOpacityPercent, m_opacityPercent + 10, kMaximumOpacityPercent));
+    });
+    QAction* decreaseOpacity = opacityMenu->addItem(tr("Decrease 10%"));
+    setActionTranslationSource(decreaseOpacity, "Decrease 10%");
+    decreaseOpacity->setObjectName(QStringLiteral("screenshotPinnedDecreaseOpacityAction"));
+    connect(decreaseOpacity, &QAction::triggered, this, [this]() {
+        setOpacityPercent(
+            qBound(kMinimumOpacityPercent, m_opacityPercent - 10, kMaximumOpacityPercent));
+    });
+    opacityMenu->addSeparator();
     m_opacityActions = new QActionGroup(opacityMenu);
     m_opacityActions->setExclusive(true);
     for (int percent : {25, 50, 75, 100}) {
@@ -2635,6 +2693,19 @@ void ScreenshotPinnedWindow::createContextMenu() {
     setActionTranslationSource(scaleMenu->menuAction(), "Scale");
     scaleMenu->setObjectName(QStringLiteral("screenshotPinnedScaleMenu"));
     m_scaleMenuAction = scaleMenu->menuAction();
+    QAction* increaseScale = scaleMenu->addItem(tr("Increase 10%"));
+    setActionTranslationSource(increaseScale, "Increase 10%");
+    increaseScale->setObjectName(QStringLiteral("screenshotPinnedIncreaseScaleAction"));
+    connect(increaseScale, &QAction::triggered, this, [this]() {
+        applyScale(qBound(kMinimumScalePercent, qRound(m_scalePercent) + 10, kMaximumScalePercent));
+    });
+    QAction* decreaseScale = scaleMenu->addItem(tr("Decrease 10%"));
+    setActionTranslationSource(decreaseScale, "Decrease 10%");
+    decreaseScale->setObjectName(QStringLiteral("screenshotPinnedDecreaseScaleAction"));
+    connect(decreaseScale, &QAction::triggered, this, [this]() {
+        applyScale(qBound(kMinimumScalePercent, qRound(m_scalePercent) - 10, kMaximumScalePercent));
+    });
+    scaleMenu->addSeparator();
     m_scaleActions = new QActionGroup(scaleMenu);
     m_scaleActions->setExclusive(true);
     for (int percent : {25, 50, 75, 100}) {

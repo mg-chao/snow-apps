@@ -1082,7 +1082,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcutSettings;
     const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
     require(
-        defaults.size() == 15 &&
+        defaults.size() == 24 &&
             portable(defaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             portable(defaults.value(QStringLiteral("copy_original_content"))) ==
@@ -1114,7 +1114,34 @@ void verifyPinToScreenShortcutSettings() {
                                            {QStringLiteral("M")}) &&
             shortcutSettings.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !shortcutSettings.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "pinned-window shortcut adapter must expose fifteen stable actions and defaults");
+        "pinned-window shortcut adapter must expose twenty-four stable actions and defaults");
+    require(portable(defaults.value(QStringLiteral("increase_opacity"))) ==
+                QStringList{QStringLiteral("]")},
+            "increase_opacity must have its default binding");
+    require(portable(defaults.value(QStringLiteral("decrease_opacity"))) ==
+                QStringList{QStringLiteral("[")},
+            "decrease_opacity must have its default binding");
+    require(portable(defaults.value(QStringLiteral("increase_scale"))) ==
+                QStringList{QStringLiteral(",")},
+            "increase_scale must have its default binding");
+    require(portable(defaults.value(QStringLiteral("decrease_scale"))) ==
+                QStringList{QStringLiteral(".")},
+            "decrease_scale must have its default binding");
+    require(portable(defaults.value(QStringLiteral("rotate_clockwise"))) ==
+                QStringList{QStringLiteral("1")},
+            "rotate_clockwise must have its default binding");
+    require(portable(defaults.value(QStringLiteral("rotate_counterclockwise"))) ==
+                QStringList{QStringLiteral("2")},
+            "rotate_counterclockwise must have its default binding");
+    require(portable(defaults.value(QStringLiteral("flip_horizontal"))) ==
+                QStringList{QStringLiteral("3")},
+            "flip_horizontal must have its default binding");
+    require(portable(defaults.value(QStringLiteral("flip_vertical"))) ==
+                QStringList{QStringLiteral("4")},
+            "flip_vertical must have its default binding");
+    require(portable(defaults.value(QStringLiteral("reset_transform"))) ==
+                QStringList{QStringLiteral("0")},
+            "reset_transform must have its default binding");
     require(
         shortcutSettings.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Alt+E")}) &&
             portable(shortcutSettings.shortcuts(QStringLiteral("drawing_mode"))) ==
@@ -1124,6 +1151,9 @@ void verifyPinToScreenShortcutSettings() {
     duplicates.insert(QStringLiteral("thumbnail_mode"), {QStringLiteral("Ctrl+C")});
     require(!shortcutSettings.setAllShortcutsAtomic(duplicates),
             "pinned-window shortcuts must reject duplicate bindings atomically");
+    require(shortcutSettings.setAllShortcutsAtomic(defaults) &&
+                shortcutSettings.allShortcuts() == defaults,
+            "resetting the complete pinned shortcut map must restore all image commands");
 }
 
 void pinToScreenShortcutSettingsRoundTrip() {

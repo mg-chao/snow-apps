@@ -58,6 +58,11 @@ int main(int argc, char** argv) {
             "Ant Design Qt should follow the English application locale");
 
     require(manager.setLanguage(QStringLiteral("zh_CN")), "Simplified Chinese should load");
+    require(QCoreApplication::translate("ScreenshotPinnedWindow", "Decrease 10%") ==
+                    QString::fromUtf8("减少 10%") &&
+                QCoreApplication::translate("SettingsCatalog", "Increase scale by 10%") ==
+                    QString::fromUtf8("缩放比例增加 10%"),
+            "Simplified Chinese must translate pinned image adjustment commands");
     require(manager.languagePreference() == QStringLiteral("zh_CN") &&
                 manager.currentLocale().name() == QStringLiteral("zh_CN"),
             "the selected locale should become active immediately");
@@ -77,6 +82,11 @@ int main(int argc, char** argv) {
             "Simplified Chinese management should use the same window terminology");
 
     require(manager.setLanguage(QStringLiteral("zh_TW")), "Traditional Chinese should load");
+    require(QCoreApplication::translate("ScreenshotPinnedWindow", "Decrease 10%") ==
+                    QString::fromUtf8("減少 10%") &&
+                QCoreApplication::translate("SettingsCatalog", "Increase scale by 10%") ==
+                    QString::fromUtf8("縮放比例增加 10%"),
+            "Traditional Chinese must translate pinned image adjustment commands");
     require(QCoreApplication::translate("PinnedWindowManagementPageWidget",
                                         "Pin to Screen Management") ==
                 QString::fromUtf8("固定到螢幕管理"),
