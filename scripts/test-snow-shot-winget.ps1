@@ -57,6 +57,8 @@ function Set-FixtureRelease([string]$Tag) {
     $name = "snow-shot-$version-windows-x64-offline.exe"
     $script:release = @{
         tag_name = $Tag; draft = $false; prerelease = $true
+        published_at = '2026-09-28T01:30:00+02:00'
+        body = "## Changes`r`n`r`n- Fix: screenshot capture`r`n  Nested text`r`n---`r`n雪`r`n"
         assets = @(@{ name = $name; size = 4
             browser_download_url = "https://github.com/mg-chao/snow-apps/releases/download/$Tag/$name" })
     }
@@ -78,6 +80,19 @@ try {
         Require ($installer.Contains("InstallerSha256: $hash")) 'Incorrect SHA-256'
         Require ($installer.Contains("/$tag/")) 'Wrong release URL'
         Require ($installer.Contains('ReturnResponse: packageInUse')) 'Missing running-app response'
+        Require ($installer.Contains('InstallerLocale: en-US')) 'Missing installer locale'
+        Require ($installer.Contains('ReleaseDate: 2026-09-27')) 'Release date must use the publication date in UTC'
+        Require ($installer.Contains("InstallationMetadata:`n  DefaultInstallLocation: '%ProgramFiles%\SnowShot'")) 'Incorrect default install location'
+        $locale = Get-Content -LiteralPath (Join-Path $directory 'mg-chao.snow-shot.locale.en-US.yaml') -Raw
+        foreach ($keyword in @('chatbot', 'ocr', 'screen-capture', 'screenshot', 'snowshot', 'translate', 'annotation')) {
+            Require ($locale.Contains("  - $keyword`n")) "Missing package tag: $keyword"
+        }
+        Require ($locale.Contains("ReleaseNotes: |2-`n  ## Changes`n  `n  - Fix: screenshot capture`n    Nested text`n  ---`n  雪`nReleaseNotesUrl:")) 'Release notes must retain literal multiline content'
+    }
+    foreach ($body in @('', '   ', ('x' * 10001))) {
+        Set-FixtureRelease 'v1.1.5-beta'
+        $script:release.body = $body
+        Expect-Failure { New-SnowShotWingetManifest 'v1.1.5-beta' $root } 'release notes must contain'
     }
     foreach ($tag in @('v1.2.0_viewer', '1.2.0', 'v01.2.0', 'v1.2.0-beta..1', "v1.2.0`nextra", "v1.2.0`n")) {
         Expect-Failure { Get-SnowShotWingetVersion $tag } 'Not a Snow Shot release'

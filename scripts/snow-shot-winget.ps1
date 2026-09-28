@@ -20,6 +20,13 @@ function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory) {
     $repository = 'mg-chao/snow-apps'
     $release = Invoke-SnowShotWingetApi "repos/$repository/releases/tags/$Tag"
     if ($release.draft -or $release.tag_name -cne $Tag) { throw 'Expected the requested published release.' }
+    $releaseDate = ([DateTimeOffset]$release.published_at).UtcDateTime.ToString('yyyy-MM-dd')
+    $notes = ([string]$release.body).Replace("`r`n", "`n").Replace("`r", "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($notes) -or $notes.Length -gt 10000) {
+        throw 'Published release notes must contain 1 to 10000 characters for WinGet.'
+    }
+    # Explicit indentation keeps Markdown, YAML-looking text and leading spaces literal.
+    $releaseNotes = ($notes.Split("`n") | ForEach-Object { "  $_" }) -join "`n"
     $name = "snow-shot-$version-windows-x64-offline.exe"
     $assets = @($release.assets | Where-Object { $_.name -ceq $name })
     if ($assets.Count -ne 1) { throw "Expected exactly one release asset named $name." }
@@ -50,6 +57,7 @@ ManifestVersion: 1.12.0
         'mg-chao.snow-shot.installer.yaml' = @"
 # yaml-language-server: `$schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
 $common
+InstallerLocale: en-US
 InstallerType: nullsoft
 Scope: machine
 InstallModes:
@@ -62,6 +70,9 @@ InstallerSwitches:
 UpgradeBehavior: install
 ElevationRequirement: elevationRequired
 ProductCode: SnowShot
+ReleaseDate: $releaseDate
+InstallationMetadata:
+  DefaultInstallLocation: '%ProgramFiles%\SnowShot'
 AppsAndFeaturesEntries:
   - DisplayName: Snow Shot
     Publisher: Snow Apps
@@ -90,9 +101,15 @@ LicenseUrl: https://github.com/$repository/blob/$Tag/snow_shot/COPYRIGHT
 ShortDescription: A screenshot utility for capturing, annotating, pinning, and recognizing screen content.
 Moniker: snowshot
 Tags:
+  - chatbot
+  - screen-capture
   - screenshot
+  - snowshot
+  - translate
   - annotation
   - ocr
+ReleaseNotes: |2-
+$releaseNotes
 ReleaseNotesUrl: https://github.com/$repository/releases/tag/$Tag
 ManifestType: defaultLocale
 ManifestVersion: 1.12.0
