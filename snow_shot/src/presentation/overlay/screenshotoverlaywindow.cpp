@@ -68,14 +68,6 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
 
     m_regionTypeControl = new ScreenshotRegionTypeControl(this, true);
     m_regionTypeControl->hide();
-    m_scrollingThumbnail = new ScreenshotScrollingThumbnailWidget(*this);
-    // Configure once, before creating the native surface. Reparenting or changing
-    // QWidget window flags during capture would hide/recreate visible windows.
-    m_scrollingThumbnail->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
-                                         Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
-    m_scrollingThumbnail->setAttribute(Qt::WA_ShowWithoutActivating);
-    m_scrollingThumbnail->setAttribute(Qt::WA_TranslucentBackground);
-    m_scrollingThumbnail->hide();
     m_framePresenter = std::make_unique<ScreenshotOverlayFramePresenter>(*this);
 
     if (m_canvas != nullptr) {
@@ -419,11 +411,17 @@ void ScreenshotOverlayWindow::setScrollingCaptureMode(bool enabled) {
 void ScreenshotOverlayWindow::beginScrollingThumbnail(const QRect& localSelection,
                                                       ScreenshotScrollingRecognitionMode mode) {
     if (m_scrollingThumbnail == nullptr) {
-        return;
+        m_scrollingThumbnail = new ScreenshotScrollingThumbnailWidget(*this);
+        // Configure once, before creating the native surface. Reparenting or changing
+        // QWidget window flags during capture would hide/recreate visible windows.
+        m_scrollingThumbnail->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
+                                             Qt::WindowStaysOnTopHint |
+                                             Qt::WindowDoesNotAcceptFocus);
+        m_scrollingThumbnail->setAttribute(Qt::WA_ShowWithoutActivating);
+        m_scrollingThumbnail->setAttribute(Qt::WA_TranslucentBackground);
+        m_scrollingThumbnail->hide();
     }
 
-    m_scrollingThumbnailSessionActive = true;
-    m_scrollingThumbnailHasPreview = false;
     m_scrollingThumbnailAnchor = localSelection.normalized();
     m_scrollingThumbnailMode = mode;
     m_scrollingThumbnail->setRecognitionMode(mode);
@@ -437,13 +435,12 @@ void ScreenshotOverlayWindow::updateScrollingThumbnail(const QImage& previewImag
                                                        ScreenshotScrollingStitchChange change,
                                                        int addedRows, bool replacePreview,
                                                        int replacedPreviewRows) {
-    if (!m_scrollingThumbnailSessionActive || m_scrollingThumbnail == nullptr) {
+    if (m_scrollingThumbnail == nullptr) {
         return;
     }
 
     m_scrollingThumbnail->setStitchedImage(previewImage, sourceSize, change, addedRows,
                                            replacePreview, replacedPreviewRows);
-    m_scrollingThumbnailHasPreview = true;
     layoutScrollingThumbnail();
     if (isVisible() && !m_scrollingThumbnail->isVisible()) {
 #ifdef Q_OS_MACOS
@@ -459,16 +456,9 @@ void ScreenshotOverlayWindow::reanchorScrollingThumbnail(const QRect& localSelec
 }
 
 void ScreenshotOverlayWindow::clearScrollingThumbnail() {
-    m_scrollingThumbnailSessionActive = false;
-    m_scrollingThumbnailHasPreview = false;
+    delete std::exchange(m_scrollingThumbnail, nullptr);
     m_scrollingThumbnailAnchor = {};
     m_scrollingThumbnailMode = ScreenshotScrollingRecognitionMode::Vertical;
-    if (m_scrollingThumbnail == nullptr) {
-        return;
-    }
-
-    m_scrollingThumbnail->hide();
-    m_scrollingThumbnail->reset();
 }
 
 QWidget* ScreenshotOverlayWindow::scrollingThumbnailWindow() const {
@@ -487,7 +477,7 @@ void ScreenshotOverlayWindow::updateScrollingInputTransparency() {
 }
 
 ScreenshotScrollingTrimRange ScreenshotOverlayWindow::scrollingThumbnailTrim() const {
-    if (!m_scrollingThumbnailSessionActive || m_scrollingThumbnail == nullptr) {
+    if (m_scrollingThumbnail == nullptr) {
         return {};
     }
     return {
@@ -579,15 +569,17 @@ void ScreenshotOverlayWindow::initializeScreenshotSurface() {
 }
 
 bool ScreenshotOverlayWindow::event(QEvent* event) {
+    if (event != nullptr && event->type() == QEvent::Show) {
+        updateScrollingInputTransparency();
+    }
     if (event != nullptr && m_scrollingThumbnail != nullptr) {
         if (event->type() == QEvent::Hide) {
             m_scrollingThumbnail->hide();
         } else if (event->type() == QEvent::Move) {
             layoutScrollingThumbnail();
         } else if (event->type() == QEvent::Show) {
-            updateScrollingInputTransparency();
             layoutScrollingThumbnail();
-            if (m_scrollingThumbnailSessionActive && m_scrollingThumbnailHasPreview) {
+            if (m_scrollingThumbnail->hasPreview()) {
 #ifdef Q_OS_MACOS
                 snow_shot::platform::configureScreenshotToolbarWindow(m_scrollingThumbnail);
 #endif
@@ -715,7 +707,7 @@ void ScreenshotOverlayWindow::resizeEvent(QResizeEvent* event) {
 }
 
 void ScreenshotOverlayWindow::layoutScrollingThumbnail() {
-    if (!m_scrollingThumbnailSessionActive || m_scrollingThumbnail == nullptr) {
+    if (m_scrollingThumbnail == nullptr) {
         return;
     }
 

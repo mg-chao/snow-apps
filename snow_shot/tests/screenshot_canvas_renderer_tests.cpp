@@ -3527,9 +3527,16 @@ void scrollingThumbnailHasAnIndependentInputWindow() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
     ScreenshotOverlayWindow overlay(eventSink, canvas);
+    require(overlay.scrollingThumbnailWindow() == nullptr,
+            "ordinary screenshots should not create a scrolling thumbnail");
     overlay.resize(180, 240);
     overlay.show();
     QApplication::processEvents();
+
+    const QRect selection(8, 20, 20, 160);
+    overlay.setScrollingVisualHole(selection);
+    overlay.setScrollingCaptureMode(true);
+    overlay.beginScrollingThumbnail(selection);
 
     auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
         QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
@@ -3539,12 +3546,10 @@ void scrollingThumbnailHasAnIndependentInputWindow() {
     require(thumbnail->isWindow() && thumbnail->window() == thumbnail,
             "thumbnail must own an input surface independent of the click-through overlay");
     require(overlay.scrollingThumbnailWindow() == thumbnail,
-            "capture exclusion must use the persistent preview window");
+            "capture exclusion must use the active preview window");
 
-    const QRect selection(8, 20, 20, 160);
-    overlay.setScrollingVisualHole(selection);
-    overlay.setScrollingCaptureMode(true);
-    overlay.beginScrollingThumbnail(selection);
+    auto trim = std::make_shared<ScreenshotScrollingTrimRange>();
+    overlay.setScrollingTrimModel(trim);
 
     QImage preview(128, 384, QImage::Format_RGBA8888);
     preview.fill(QColor(30, 90, 180));
@@ -3552,6 +3557,8 @@ void scrollingThumbnailHasAnIndependentInputWindow() {
                                      ScreenshotScrollingStitchChange::Initial, 300);
     QApplication::processEvents();
 
+    require(trim->top == 0 && trim->bottom == 300,
+            "the session thumbnail should update the shared trim model");
     require(thumbnail->isVisible(), "thumbnail should become visible after a frame");
     require(overlay.captureGeometry().contains(thumbnail->geometry()),
             "thumbnail should stay within the screenshot display");
@@ -3564,10 +3571,32 @@ void scrollingThumbnailHasAnIndependentInputWindow() {
     overlay.show();
     require(thumbnail->isVisible(), "showing an active session must restore its preview");
 
+    const WId thumbnailId = thumbnail->winId();
+    overlay.beginScrollingThumbnail(selection, ScreenshotScrollingRecognitionMode::Horizontal);
+    require(overlay.scrollingThumbnailWindow() == thumbnail && thumbnail->winId() == thumbnailId,
+            "direction changes should retain the session window and its capture exclusion");
+    require(!trim->isValid(), "direction changes should reset the shared trim model");
+
+    QPointer<QWidget> previousThumbnail(thumbnail);
     overlay.setScrollingCaptureMode(false);
-    require(thumbnail->isHidden(), "leaving scrolling mode should hide the thumbnail");
+    require(previousThumbnail.isNull() && overlay.scrollingThumbnailWindow() == nullptr,
+            "leaving scrolling mode should destroy the thumbnail");
     require(!overlay.scrollingThumbnailTrim().isValid(),
             "leaving scrolling mode should clear thumbnail trim state");
+    overlay.updateScrollingThumbnail(preview, QSize(100, 300),
+                                     ScreenshotScrollingStitchChange::Initial, 300);
+    require(overlay.scrollingThumbnailWindow() == nullptr,
+            "late previews must not recreate a thumbnail after scrolling exits");
+    overlay.setScrollingCaptureMode(true);
+    overlay.beginScrollingThumbnail(selection);
+    require(overlay.scrollingThumbnailWindow() != nullptr,
+            "entering scrolling again should create a thumbnail");
+    require(!overlay.scrollingThumbnailTrim().isValid(),
+            "a new thumbnail should start without stale trim state");
+    overlay.clearScrollingThumbnail();
+    overlay.clearScrollingThumbnail();
+    require(overlay.scrollingThumbnailWindow() == nullptr,
+            "clearing the thumbnail should be safe when already cleared");
 }
 
 void scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits() {
@@ -3578,14 +3607,14 @@ void scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits() {
     overlay.show();
     QApplication::processEvents();
 
-    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
-        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
-    require(thumbnail != nullptr, "screenshot window should own the thumbnail widget");
-
     const QRect selection(8, 20, 164, 160);
     overlay.setScrollingVisualHole(selection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(selection);
+
+    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
+        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
+    require(thumbnail != nullptr, "screenshot window should own the thumbnail widget");
 
     QImage preview(128, 384, QImage::Format_RGBA8888);
     preview.fill(QColor(30, 90, 180));
@@ -3606,14 +3635,14 @@ void scrollingThumbnailAlignsWithTopEdgeSelection() {
     overlay.show();
     QApplication::processEvents();
 
-    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
-        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
-    require(thumbnail != nullptr, "screenshot window should own the thumbnail widget");
-
     const QRect selection(20, 0, 100, 160);
     overlay.setScrollingVisualHole(selection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(selection);
+
+    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
+        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
+    require(thumbnail != nullptr, "screenshot window should own the thumbnail widget");
 
     QImage preview(128, 384, QImage::Format_RGBA8888);
     preview.fill(QColor(30, 90, 180));
@@ -3894,8 +3923,8 @@ void scrollingInputModeKeepsNativeSurfacesStable() {
     overlay.setScrollingCaptureMode(false);
     QApplication::processEvents();
     require(overlay.winId() == overlayId && overlayObserver.transitions == 0 &&
-                thumbnail->isHidden(),
-            "leaving scrolling must restore the overlay without replacing or hiding it");
+                overlay.scrollingThumbnailWindow() == nullptr,
+            "leaving scrolling must destroy the preview without replacing or hiding the overlay");
 #ifdef Q_OS_WIN
     if (native) {
         require(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) == initialStyle,
@@ -3996,15 +4025,15 @@ void horizontalScrollingThumbnailPrefersAboveThenBelowSelection() {
     overlay.resize(520, 420);
     overlay.show();
     QApplication::processEvents();
-    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
-        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
-    require(thumbnail != nullptr, "overlay should own the horizontal scrolling preview");
-
     const QImage preview(360, 128, QImage::Format_RGBA8888);
     const QRect upperSelection(40, 30, 320, 100);
     overlay.setScrollingVisualHole(upperSelection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(upperSelection, ScreenshotScrollingRecognitionMode::Horizontal);
+
+    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
+        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
+    require(thumbnail != nullptr, "overlay should own the horizontal scrolling preview");
     overlay.updateScrollingThumbnail(preview, QSize(360, 128),
                                      ScreenshotScrollingStitchChange::Initial, 360);
     QApplication::processEvents();

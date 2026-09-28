@@ -140,8 +140,6 @@ class ScreenshotOverlayWindow final : public QWidget {
     QRect m_scrollingThumbnailAnchor;
     ScreenshotScrollingRecognitionMode m_scrollingThumbnailMode =
         ScreenshotScrollingRecognitionMode::Vertical;
-    bool m_scrollingThumbnailSessionActive = false;
-    bool m_scrollingThumbnailHasPreview = false;
     bool m_scrollingCaptureMode = false;
     bool m_canvasContentWasVisible = true;
     bool m_canvasClearBackgroundWasEnabled = true;

@@ -142,14 +142,21 @@ struct ScreenshotScrollingCaptureController::Impl {
             return false;
         }
 
-        exclusionGeneration = generation + 1;
-        if (!excludeScrollingWindowsFromCapture(anchorOverlay)) {
-            return false;
-        }
-
         const auto renderSpec = screenshotSelectionRenderSpec(context.displaySession, selection);
         if (!renderSpec.isValid())
             return false;
+        const QRect logicalSelection =
+            logicalSelectionRect(context.geometry, *anchorDisplay, selection);
+        if (!context.presentationSuppressed())
+            anchorOverlay->beginScrollingThumbnail(
+                logicalSelection.translated(-anchorOverlay->geometry().topLeft()), requestedMode);
+
+        exclusionGeneration = generation + 1;
+        if (!excludeScrollingWindowsFromCapture(anchorOverlay)) {
+            anchorOverlay->clearScrollingThumbnail();
+            return false;
+        }
+
         viewportPixelSize = renderSpec.pixelSize;
         sourceScale = renderSpec.scale;
         canvasSelection = selection;
@@ -176,12 +183,6 @@ struct ScreenshotScrollingCaptureController::Impl {
 
         context.overlayCoordinator.setScrollingCaptureMode(context.displaySession,
                                                            QRectF(canvasSelection), true);
-
-        const QRect logicalSelection =
-            logicalSelectionRect(context.geometry, *anchorDisplay, canvasSelection);
-        if (!context.presentationSuppressed())
-            thumbnailHost->beginScrollingThumbnail(
-                logicalSelection.translated(-thumbnailHost->geometry().topLeft()), mode);
 
         logPreparation();
         logScrollingEvent("scrolling.prepared", generation);
