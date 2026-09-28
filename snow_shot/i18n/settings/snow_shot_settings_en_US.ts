@@ -925,8 +925,8 @@
             <translation>Auto-recognize QR Code</translation>
         </message>
         <message>
-            <source>Auto-save screenshot filename format</source>
-            <translation>Auto-save screenshot filename format</translation>
+            <source>Auto-save image filename format</source>
+            <translation>Auto-save image filename format</translation>
         </message>
         <message>
             <source>Automatic text recognition</source>
@@ -1097,16 +1097,16 @@
             <translation>Choose the compression effort used for image output and history results</translation>
         </message>
         <message>
-            <source>Choose the dialog used for manual screenshot saves</source>
-            <translation>Choose the dialog used for manual screenshot saves</translation>
+            <source>Choose the dialog used for manual image saves</source>
+            <translation>Choose the dialog used for manual image saves</translation>
         </message>
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
             <translation>Choose the fixed point used when zooming a pinned screenshot</translation>
         </message>
         <message>
-            <source>Choose the format used for automatically saved screenshot files</source>
-            <translation>Choose the format used for automatically saved screenshot files</translation>
+            <source>Choose the format used for automatically saved image files</source>
+            <translation>Choose the format used for automatically saved image files</translation>
         </message>
         <message>
             <source>Choose the functions shown in the system tray menu</source>
@@ -1757,6 +1757,10 @@
             <translation>Ignore global hotkeys while the focused window occupies an entire monitor</translation>
         </message>
         <message>
+            <source>Image Export</source>
+            <translation>Image Export</translation>
+        </message>
+        <message>
             <source>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</source>
             <translation>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</translation>
         </message>
@@ -1945,8 +1949,8 @@
             <translation>Manual</translation>
         </message>
         <message>
-            <source>Manual save screenshot filename format</source>
-            <translation>Manual save screenshot filename format</translation>
+            <source>Manual save image filename format</source>
+            <translation>Manual save image filename format</translation>
         </message>
         <message>
             <source>Match your system appearance or choose a light or dark theme</source>
@@ -2553,10 +2557,6 @@
             <translation>Screenshot interface and visual guidance settings</translation>
         </message>
         <message>
-            <source>Screenshot output locations, formats, and filenames</source>
-            <translation>Screenshot output locations, formats, and filenames</translation>
-        </message>
-        <message>
             <source>Screenshot selection behavior</source>
             <translation>Screenshot selection behavior</translation>
         </message>
@@ -2583,10 +2583,6 @@
         <message>
             <source>Screenshot translation settings</source>
             <translation>Screenshot translation settings</translation>
-        </message>
-        <message>
-            <source>Screenshots</source>
-            <translation>Screenshots</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -2645,8 +2641,8 @@
             <translation>Serial number</translation>
         </message>
         <message>
-            <source>Set image quality for screenshot files saved outside the Snow Shot dialog</source>
-            <translation>Set image quality for screenshot files saved outside the Snow Shot dialog</translation>
+            <source>Set quality for image files saved outside the Snow Shot dialog</source>
+            <translation>Set quality for image files saved outside the Snow Shot dialog</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
@@ -2669,16 +2665,16 @@
             <translation>Set the frame rate of exported animated images</translation>
         </message>
         <message>
-            <source>Set the generated filename used by automatic screenshot file saves</source>
-            <translation>Set the generated filename used by automatic screenshot file saves</translation>
+            <source>Set the generated filename used by automatic image file saves</source>
+            <translation>Set the generated filename used by automatic image file saves</translation>
         </message>
         <message>
             <source>Set the generated filename used for recording output files</source>
             <translation>Set the generated filename used for recording output files</translation>
         </message>
         <message>
-            <source>Set the generated filename used when saving a screenshot as a file</source>
-            <translation>Set the generated filename used when saving a screenshot as a file</translation>
+            <source>Set the generated filename used when saving an image as a file</source>
+            <translation>Set the generated filename used when saving an image as a file</translation>
         </message>
         <message>
             <source>Set the maximum resolution of exported animated images</source>
@@ -2715,6 +2711,10 @@
         <message>
             <source>Shape tool</source>
             <translation>Shape tool</translation>
+        </message>
+        <message>
+            <source>Shared image export settings for screenshot and pin-to-screen windows</source>
+            <translation>Shared image export settings for screenshot and pin-to-screen windows</translation>
         </message>
         <message>
             <source>Shortcut hint opacity</source>
@@ -3113,8 +3113,8 @@
             <translation>WebP</translation>
         </message>
         <message>
-            <source>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</source>
-            <translation>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</translation>
+            <source>When copying an image to the clipboard, also save it in the selected image format and save directory</source>
+            <translation>When copying an image to the clipboard, also save it in the selected image format and save directory</translation>
         </message>
         <message>
             <source>Window Element API</source>
@@ -3129,8 +3129,8 @@
             <translation>Window grouping</translation>
         </message>
         <message>
-            <source>Write the screenshot to a file and copy that file to the clipboard</source>
-            <translation>Write the screenshot to a file and copy that file to the clipboard</translation>
+            <source>Write the image to a file and copy that file to the clipboard</source>
+            <translation>Write the image to a file and copy that file to the clipboard</translation>
         </message>
         <message>
             <source>Zip archives (*.zip);;All files (*.*)</source>

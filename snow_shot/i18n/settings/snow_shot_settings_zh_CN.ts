@@ -925,8 +925,8 @@
             <translation>自动识别二维码</translation>
         </message>
         <message>
-            <source>Auto-save screenshot filename format</source>
-            <translation>自动保存截图文件名格式</translation>
+            <source>Auto-save image filename format</source>
+            <translation>自动保存图像文件名格式</translation>
         </message>
         <message>
             <source>Automatic text recognition</source>
@@ -1097,16 +1097,16 @@
             <translation>选择图像输出和历史记录结果图像的压缩级别</translation>
         </message>
         <message>
-            <source>Choose the dialog used for manual screenshot saves</source>
-            <translation>选择手动保存截图时使用的对话框</translation>
+            <source>Choose the dialog used for manual image saves</source>
+            <translation>选择手动保存图像时使用的对话框</translation>
         </message>
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
             <translation>选择缩放固定到屏幕的截图时使用的固定点</translation>
         </message>
         <message>
-            <source>Choose the format used for automatically saved screenshot files</source>
-            <translation>选择自动保存的截图文件所使用的格式</translation>
+            <source>Choose the format used for automatically saved image files</source>
+            <translation>选择自动保存图像文件时使用的格式</translation>
         </message>
         <message>
             <source>Choose the functions shown in the system tray menu</source>
@@ -1757,6 +1757,10 @@
             <translation>焦点窗口占满整个显示器时忽略全局快捷键</translation>
         </message>
         <message>
+            <source>Image Export</source>
+            <translation>图像导出</translation>
+        </message>
+        <message>
             <source>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</source>
             <translation>图像文件 (*.png *.ico);;PNG 图像 (*.png);;图标文件 (*.ico)</translation>
         </message>
@@ -1945,8 +1949,8 @@
             <translation>手动</translation>
         </message>
         <message>
-            <source>Manual save screenshot filename format</source>
-            <translation>手动保存截图文件名格式</translation>
+            <source>Manual save image filename format</source>
+            <translation>手动保存图像文件名格式</translation>
         </message>
         <message>
             <source>Match your system appearance or choose a light or dark theme</source>
@@ -2553,10 +2557,6 @@
             <translation>截图界面和视觉辅助设置</translation>
         </message>
         <message>
-            <source>Screenshot output locations, formats, and filenames</source>
-            <translation>截图输出位置、格式和文件名</translation>
-        </message>
-        <message>
             <source>Screenshot selection behavior</source>
             <translation>截图选择行为</translation>
         </message>
@@ -2583,10 +2583,6 @@
         <message>
             <source>Screenshot translation settings</source>
             <translation>截图翻译设置</translation>
-        </message>
-        <message>
-            <source>Screenshots</source>
-            <translation>截图</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -2645,8 +2641,8 @@
             <translation>序号</translation>
         </message>
         <message>
-            <source>Set image quality for screenshot files saved outside the Snow Shot dialog</source>
-            <translation>设置通过 Snow Shot 对话框以外的方式保存截图文件时的图像质量</translation>
+            <source>Set quality for image files saved outside the Snow Shot dialog</source>
+            <translation>设置在 Snow Shot 对话框以外保存的图像文件质量</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
@@ -2669,16 +2665,16 @@
             <translation>设置导出动图的帧率</translation>
         </message>
         <message>
-            <source>Set the generated filename used by automatic screenshot file saves</source>
-            <translation>设置自动保存截图文件时使用的自动生成文件名</translation>
+            <source>Set the generated filename used by automatic image file saves</source>
+            <translation>设置自动保存图像文件时生成的文件名</translation>
         </message>
         <message>
             <source>Set the generated filename used for recording output files</source>
             <translation>设置录制输出文件使用的自动生成文件名</translation>
         </message>
         <message>
-            <source>Set the generated filename used when saving a screenshot as a file</source>
-            <translation>设置将截图保存为文件时使用的自动生成文件名</translation>
+            <source>Set the generated filename used when saving an image as a file</source>
+            <translation>设置将图像保存为文件时生成的文件名</translation>
         </message>
         <message>
             <source>Set the maximum resolution of exported animated images</source>
@@ -2715,6 +2711,10 @@
         <message>
             <source>Shape tool</source>
             <translation>图形</translation>
+        </message>
+        <message>
+            <source>Shared image export settings for screenshot and pin-to-screen windows</source>
+            <translation>截图窗口和贴图窗口共用的图像导出设置</translation>
         </message>
         <message>
             <source>Shortcut hint opacity</source>
@@ -3113,8 +3113,8 @@
             <translation>WebP</translation>
         </message>
         <message>
-            <source>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</source>
-            <translation>将截图复制到剪贴板时，同时按所选图像格式保存到图像保存目录</translation>
+            <source>When copying an image to the clipboard, also save it in the selected image format and save directory</source>
+            <translation>将图像复制到剪贴板时，同时按所选图像格式保存到指定目录</translation>
         </message>
         <message>
             <source>Window Element API</source>
@@ -3129,8 +3129,8 @@
             <translation>窗口分组</translation>
         </message>
         <message>
-            <source>Write the screenshot to a file and copy that file to the clipboard</source>
-            <translation>将截图写入文件并将该文件复制到剪贴板</translation>
+            <source>Write the image to a file and copy that file to the clipboard</source>
+            <translation>将图像写入文件并将该文件复制到剪贴板</translation>
         </message>
         <message>
             <source>Zip archives (*.zip);;All files (*.*)</source>
