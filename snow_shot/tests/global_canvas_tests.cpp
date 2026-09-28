@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/globalcanvascontroller.h"
+#include "../src/presentation/globalcanvas/globalcanvasplatform.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -6,7 +7,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "widgets/button.h"
 #include <QApplication>
-#include <QKeyEvent>
+#include "physical_key_test_support.h"
 #include <QMouseEvent>
 #include <QScreen>
 #include <QTemporaryDir>
@@ -19,6 +20,9 @@
 #include <QThread>
 #include <QWindow>
 #include <QWheelEvent>
+#ifdef Q_OS_MACOS
+#include "../src/platform/macos/capturewindowlayers_p.h"
+#endif
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #endif
@@ -210,6 +214,120 @@ void nativeInput() {
 }
 #endif
 
+#ifdef Q_OS_MACOS
+void canvasCollectionBehavior() {
+    using namespace platform::detail;
+    const auto canvasLevel = captureWindowLevel({CaptureFamily::GlobalCanvas, kOverlayLayer});
+    require(canvasLevel > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
+                canvasLevel > CGWindowLevelForKey(kCGDockWindowLevelKey),
+            "canvas covers system chrome");
+    require(canvasLevel < captureWindowLevel({CaptureFamily::GlobalCanvas, kToolbarLayer}) &&
+                captureWindowLevel({CaptureFamily::GlobalCanvas, 1000}) <
+                    captureWindowLevel({CaptureFamily::Screenshot, 0}) &&
+                pinnedWindowLevel() < captureWindowLevel({CaptureFamily::Recording, 0}) &&
+                captureWindowLevel({CaptureFamily::Recording, 1000}) <
+                    captureWindowLevel({CaptureFamily::Screenshot, 0}),
+            "canvas tools remain above the canvas and below screenshot windows");
+    for (int layer : {kOverlayLayer, kToolbarLayer, kPopupLayer, 1000})
+        require(captureWindowLevel({CaptureFamily::GlobalCanvas, layer}) ==
+                    captureWindowLevel({CaptureFamily::Recording, layer}),
+                "canvas and recording share native levels including nested tools");
+    const auto screenshotLevel = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey);
+    require(captureWindowLevel({CaptureFamily::Screenshot, 0}) == screenshotLevel &&
+                captureWindowLevel({CaptureFamily::Recording, 0}) ==
+                    screenshotLevel - kRecordingBandSize &&
+                pinnedWindowLevel() == screenshotLevel - kRecordingBandSize - 1,
+            "original screenshot, recording, and pin levels remain unchanged");
+    QWindow canvas;
+    canvas.setProperty(kScreenshotLayer, kOverlayLayer);
+    canvas.setProperty(kCaptureFamily, static_cast<int>(CaptureFamily::GlobalCanvas));
+    QWindow toolbar;
+    toolbar.setTransientParent(&canvas);
+    QWindow popup;
+    popup.setTransientParent(&toolbar);
+    require(captureLayer(&toolbar).family == CaptureFamily::GlobalCanvas &&
+                captureWindowLevel(captureLayer(&toolbar)) > canvasLevel &&
+                captureWindowLevel(captureLayer(&popup)) >
+                    captureWindowLevel(captureLayer(&toolbar)),
+            "transient canvas tools and popups inherit the canvas band");
+    constexpr NSWindowCollectionBehavior unrelated =
+        NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorIgnoresCycle |
+        NSWindowCollectionBehaviorFullScreenDisallowsTiling;
+    for (const auto space :
+         {NSWindowCollectionBehaviorDefault, NSWindowCollectionBehaviorMoveToActiveSpace,
+          NSWindowCollectionBehaviorCanJoinAllSpaces}) {
+        for (const auto role :
+             {NSWindowCollectionBehaviorDefault, NSWindowCollectionBehaviorFullScreenPrimary,
+              NSWindowCollectionBehaviorFullScreenAuxiliary,
+              NSWindowCollectionBehaviorFullScreenNone}) {
+            const auto result =
+                presentation::globalCanvasCollectionBehavior(unrelated | space | role);
+            require(result == (unrelated | NSWindowCollectionBehaviorCanJoinAllSpaces |
+                               NSWindowCollectionBehaviorFullScreenAuxiliary),
+                    "canvas replaces conflicting policies and preserves unrelated window behavior");
+            require(presentation::globalCanvasCollectionBehavior(result) == result,
+                    "reapplying canvas policy is idempotent");
+        }
+    }
+}
+
+void nativeCanvasLifecycle() {
+    for (int session = 0; session < 2; ++session) {
+        presentation::GlobalCanvasController controller;
+        controller.activate();
+        QApplication::processEvents();
+        require(controller.active(), "native canvas opens");
+        NSWindow* native = reinterpret_cast<NSView*>(controller.window()->winId()).window;
+        require(native != nil, "canvas has a native window");
+        const auto verify = [&](bool transparent) {
+            using namespace platform::detail;
+            NSWindow* toolbar = reinterpret_cast<NSView*>(controller.toolbar()->winId()).window;
+            require(native.level == captureWindowLevel({CaptureFamily::Recording, 0}) &&
+                        toolbar.level > native.level &&
+                        toolbar.level < captureWindowLevel({CaptureFamily::Screenshot, 0}),
+                    "canvas uses the recording level with its toolbar above it");
+            require(NSEqualRects(native.frame, native.screen.frame),
+                    "canvas covers the display including the menu bar and notch area");
+            const NSRect notchFrame = NSMakeRect(-1920, -80, 1920, 1200);
+            require(NSEqualRects([native constrainFrameRect:notchFrame toScreen:native.screen],
+                                 notchFrame),
+                    "canvas frame bypasses AppKit visible-frame constraints");
+            const auto behavior = native.collectionBehavior;
+            require((behavior & NSWindowCollectionBehaviorCanJoinAllSpaces) != 0 &&
+                        (behavior & NSWindowCollectionBehaviorFullScreenAuxiliary) != 0 &&
+                        (behavior & NSWindowCollectionBehaviorMoveToActiveSpace) == 0 &&
+                        (behavior & NSWindowCollectionBehaviorFullScreenPrimary) == 0 &&
+                        (behavior & NSWindowCollectionBehaviorFullScreenNone) == 0,
+                    "native canvas has compatible Space and fullscreen policies");
+            require(native.ignoresMouseEvents == transparent && !native.hidesOnDeactivate,
+                    "native canvas input mode matches the controller");
+        };
+        verify(false);
+        controller.activate();
+        QApplication::processEvents();
+        verify(true);
+        require(controller.clickThrough() && controller.toolbar()->isVisible(),
+                "click-through retains the toolbar");
+        controller.activate();
+        QApplication::processEvents();
+        verify(false);
+        native.level = NSFloatingWindowLevel;
+        controller.toolbar()->raise();
+        QApplication::processEvents();
+        verify(false);
+        native.collectionBehavior =
+            NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenNone;
+        QEvent surfaceChanged(QEvent::WinIdChange);
+        QApplication::sendEvent(controller.window(), &surfaceChanged);
+        QApplication::processEvents();
+        verify(false);
+        controller.window()->close();
+        QApplication::processEvents();
+        require(!controller.active(), "native canvas closes");
+    }
+}
+#endif
+
 void toolbarPlacement(QApplication& app) {
     presentation::GlobalCanvasController controller(
         nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
@@ -308,6 +426,11 @@ void canvasNavigation(QApplication& app) {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
+#ifdef Q_OS_MACOS
+    canvasCollectionBehavior();
+    if (app.arguments().contains(QStringLiteral("--platform-only")))
+        return 0;
+#endif
     QTemporaryDir directory;
     auto& storage = storage::ApplicationStorage::instance();
     require(storage
@@ -315,6 +438,13 @@ int main(int argc, char** argv) {
                              directory.filePath(QStringLiteral("data")), 60000})
                 .success,
             "initialize storage");
+#ifdef Q_OS_MACOS
+    if (app.arguments().contains(QStringLiteral("--native-only"))) {
+        nativeCanvasLifecycle();
+        storage.shutdown();
+        return 0;
+    }
+#endif
 #ifdef Q_OS_WIN
     if (app.arguments().contains(QStringLiteral("--native-only"))) {
         nativeInput();
@@ -444,17 +574,40 @@ int main(int argc, char** argv) {
     require(pointerReads == 2 && !controller.clickThrough() &&
                 !controller.canvas()->canvasHistoryState().canUndo,
             "reopen creates empty editing session on current display");
-    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(controller.canvas(), &escape);
     app.processEvents();
     require(!controller.active(), "Escape on the canvas exits the session");
     controller.activate();
     controller.activate();
     require(controller.clickThrough(), "enable click-through before toolbar Escape");
-    QKeyEvent toolbarEscape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent toolbarEscape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(controller.toolbar()->palette(), &toolbarEscape);
     app.processEvents();
     require(!controller.active(), "Escape on the toolbar exits a click-through session");
+#ifdef Q_OS_MACOS
+    for (bool clickThrough : {false, true}) {
+        controller.activate();
+        if (clickThrough)
+            controller.activate();
+        QWidget* receiver = clickThrough ? static_cast<QWidget*>(controller.toolbar()->palette())
+                                         : static_cast<QWidget*>(controller.canvas());
+        PhysicalKeyEvent plainW(QEvent::KeyPress, Qt::Key_W, Qt::NoModifier);
+        QApplication::sendEvent(receiver, &plainW);
+        PhysicalKeyEvent plainWRelease(QEvent::KeyRelease, Qt::Key_W, Qt::NoModifier);
+        QApplication::sendEvent(receiver, &plainWRelease);
+        require(controller.active(), "unmodified W does not close the canvas");
+        // Qt maps the macOS Command key to ControlModifier.
+        PhysicalKeyEvent closePress(QEvent::KeyPress, Qt::Key_W, Qt::ControlModifier);
+        QApplication::sendEvent(receiver, &closePress);
+        require(controller.active(), "Command+W waits for release before closing");
+        PhysicalKeyEvent closeRelease(QEvent::KeyRelease, Qt::Key_W, Qt::ControlModifier);
+        QApplication::sendEvent(receiver, &closeRelease);
+        app.processEvents();
+        require(!controller.active(),
+                "Command+W exits from the canvas or the click-through toolbar");
+    }
+#endif
     presentation::GlobalCanvasController noDisplay(nullptr,
                                                    {[]() -> QScreen* { return nullptr; }, {}});
     noDisplay.activate();

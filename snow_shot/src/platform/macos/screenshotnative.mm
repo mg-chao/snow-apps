@@ -37,6 +37,7 @@ struct ScreenshotNativeSettings {
     ScreenshotNativeSettings required;
     ScreenshotNativeSettings requested;
     bool applying;
+    bool unconstrainedFrame;
 }
 @end
 @implementation SnowScreenshotWindowPolicy
@@ -201,6 +202,18 @@ void attachNativeWindowPolicy(NSWindow* window) {
                                ^BOOL(NSWindow* receiver) {
                                  return receiver.hidesOnDeactivate;
                                });
+    const SEL constrain = @selector(constrainFrameRect:toScreen:);
+    const Method method = class_getInstanceMethod(windowClass, constrain);
+    const IMP original = method_getImplementation(method);
+    const IMP replacement =
+        imp_implementationWithBlock(^NSRect(NSWindow* receiver, NSRect frame, NSScreen* screen) {
+          const auto* policy = nativePolicyState(receiver);
+          if (policy && policy->unconstrainedFrame)
+              return frame;
+          return reinterpret_cast<NSRect (*)(id, SEL, NSRect, NSScreen*)>(original)(
+              receiver, constrain, frame, screen);
+        });
+    class_replaceMethod(windowClass, constrain, replacement, method_getTypeEncoding(method));
     installedClasses.insert(windowClass);
 }
 
@@ -297,6 +310,11 @@ void applyScreenshotLayer(QWidget* widget, const ModalFloors& floors) {
     }
     const NSInteger level = captureWindowLevel(role);
     applyNativeWindowPolicy(window, level);
+    // AppKit otherwise constrains a screen-sized panel to the visible/safe frame,
+    // shifting its top edge below the menu bar or camera housing. Only the canvas
+    // surface owns the entire display; its tools keep normal frame constraints.
+    nativePolicyState(window)->unconstrainedFrame =
+        role.family == CaptureFamily::GlobalCanvas && role.layer == kOverlayLayer;
 }
 
 void synchronizeScreenshotLayers() {
@@ -317,7 +335,7 @@ void synchronizeScreenshotLayers() {
     // A selection modal and an OCR result can be siblings of the same overlay.
     // Transient depth alone cannot order them. Put modals above every visible
     // non-modal screenshot surface, regardless of its popup nesting depth.
-    ModalFloors modalFloors{kPopupLayer, kPopupLayer};
+    ModalFloors modalFloors{kPopupLayer, kPopupLayer, kPopupLayer};
     for (QWidget* widget : windows) {
         if (!widget->isVisible())
             continue;
@@ -329,7 +347,7 @@ void synchronizeScreenshotLayers() {
         if (!belongsToModal && role.valid())
             modalFloors[role.index()] = std::max(modalFloors[role.index()], role.layer + 1);
     }
-    std::array<NSInteger, 2> panelLevels{};
+    std::array<NSInteger, 3> panelLevels{};
     for (QWidget* widget : windows) {
         applyScreenshotLayer(widget, modalFloors);
         if (widget->isVisible() && widget->internalWinId()) {
@@ -338,7 +356,8 @@ void synchronizeScreenshotLayers() {
             if (role.valid() && nativePolicyState(native)) {
                 auto& level = panelLevels[role.index()];
                 level = std::max(level, native.level + 1);
-                if (role.family == CaptureFamily::Recording)
+                if (role.family == CaptureFamily::Recording ||
+                    role.family == CaptureFamily::GlobalCanvas)
                     level = std::min(
                         level, NSInteger(CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) - 1));
             }
@@ -363,7 +382,8 @@ void synchronizeScreenshotLayers() {
                 }
             }
         }
-        const std::size_t family = owner.valid() ? owner.index() : (panelLevels[0] ? 0u : 1u);
+        const std::size_t family =
+            owner.valid() ? owner.index() : (panelLevels[0] ? 0u : (panelLevels[1] ? 1u : 2u));
         const NSInteger panelLevel = panelLevels[family];
         if (panelLevel && window.visible)
             applyNativeWindowPolicy(window, panelLevel, false);
@@ -602,6 +622,12 @@ void configureControlledWindowDragging(QWidget* widget, bool controlResizing) {
     }
     auto* policy = new ControlledWindowDragging(widget);
     policy->configure(controlResizing);
+}
+
+void configureGlobalCanvasWindow(QWidget* widget) {
+    macos::configureWindowCursorUpdates(widget);
+    registerScreenshotLayer(widget, kOverlayLayer, CaptureFamily::GlobalCanvas);
+    configureControlledWindowDragging(widget, true);
 }
 
 void configureScreenshotOverlayWindow(QWidget* widget) {

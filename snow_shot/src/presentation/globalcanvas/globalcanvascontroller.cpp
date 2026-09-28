@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/globalcanvascontroller.h"
 #include "globalcanvasplatform.h"
+#include "snow_shot/platform/screenshotnative.h"
 #include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -16,6 +17,7 @@
 #include <QCloseEvent>
 #include <QCursor>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
@@ -128,6 +130,10 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
                             reloadShortcuts();
                     });
         }
+#ifdef Q_OS_MACOS
+        // Install native level and frame policy before setting the display geometry.
+        platform::configureGlobalCanvasWindow(this);
+#endif
         setDisplay(screen);
         drawing->setCanvasTool(SnowCanvasTool::Select);
         palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
@@ -362,13 +368,26 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         return false;
     }
     void registerShortcuts() {
+#ifdef Q_OS_MACOS
+        WindowShortcutManager::Binding closeBinding;
+        closeBinding.id = QStringLiteral("global-canvas.close");
+        for (const auto& sequence : QKeySequence::keyBindings(QKeySequence::Close))
+            closeBinding.keyCombinations.append(sequence[0]);
+        closeBinding.priority = WindowShortcutManager::StandardPriority::WindowCommand;
+        closeBinding.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Release;
+        closeBinding.activate = [this](const auto&) {
+            this->close();
+            return true;
+        };
+        static_cast<void>(shortcuts.addBinding(this, std::move(closeBinding)));
+#endif
         WindowShortcutManager::Binding exit;
         exit.id = QStringLiteral("global-canvas.exit");
         exit.keyCombinations = {QKeyCombination(Qt::Key_Escape)};
         exit.priority = WindowShortcutManager::StandardPriority::WindowCommand;
         exit.canActivate = [this](const auto&) { return !sampleTarget; };
         exit.activate = [this](const auto&) {
-            close();
+            this->close();
             return true;
         };
         static_cast<void>(shortcuts.addBinding(this, std::move(exit)));

@@ -10,6 +10,8 @@
 #include "snow_shot/presentation/styles/actionrowstyle.h"
 
 #include "widgets/button.h"
+#include "widgets/button_style.h"
+#include "theme/theme.h"
 #include "widgets/modal.h"
 #include "widgets/tooltip.h"
 
@@ -400,7 +402,8 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     config.shortcutValidator =
         [&lastValidatedShortcut](const shortcut_domain::ShortcutBinding& shortcut) {
             lastValidatedShortcut = shortcut.portableText;
-            const bool supported = !shortcut.portableText.contains(QStringLiteral("F25"));
+            const bool supported = !shortcut.portableText.contains(QStringLiteral("F25")) &&
+                                   !shortcut.portableText.contains(QStringLiteral("F9"));
             return shortcuts::GlobalShortcutValidationResult{
                 shortcut.portableText,
                 supported,
@@ -467,6 +470,50 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
             "the modal must not commit while the active recording is invalid");
     require(keyButton->busy(),
             "a backend-rejected key must keep the busy recording indicator so editing continues");
+
+    for (const auto modifiers : std::array<Qt::KeyboardModifiers, 3>{
+             Qt::NoModifier, Qt::ControlModifier, Qt::ControlModifier | Qt::ShiftModifier}) {
+        PhysicalKeyEvent rejectedEvent(QEvent::KeyPress, Qt::Key_F9, modifiers);
+        QCoreApplication::sendEvent(configContent, &rejectedEvent);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+        keyButton =
+            row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+        validationInfo = row.findChild<InfoTooltipIcon*>(
+            QStringLiteral("shortcutConfigValidationTooltipTrigger"));
+        require(keyButton != nullptr && validationInfo != nullptr && keyButton->busy(),
+                "rejected shortcuts should retain both the spinner and error icon");
+        adqt::widgets::detail::ButtonStyleInput input;
+        input.buttonStyle = keyButton->buttonStyle();
+        input.accentRole = keyButton->accentRole();
+        input.sizeClass = keyButton->sizeClass();
+        input.baseFont = keyButton->font();
+        const auto metrics = adqt::widgets::detail::resolveButtonVisualStyle(
+                                 input, adqt::theme::ThemeManager::instance().resolve(keyButton))
+                                 .metrics;
+        const int inset = metrics.horizontalPadding + metrics.borderWidth;
+        const int spinnerWidth = std::max(10, metrics.font.pixelSize()) + metrics.iconGap;
+        const int gap = validationInfo->property("inlineGap").toInt();
+        const int availableWidth =
+            keyButton->width() - 2 * inset - spinnerWidth - gap - validationInfo->width();
+        const QFontMetricsF fontMetrics(metrics.font);
+        require(
+            fontMetrics.elidedText(keyButton->text(), Qt::ElideRight, availableWidth) ==
+                keyButton->text(),
+            "rejected shortcut text must fit beside the spinner and error icon without elision");
+        keyButton->grab();
+        const int textStart = inset + spinnerWidth;
+        require(validationInfo->x() >= textStart +
+                                           static_cast<int>(std::ceil(
+                                               fontMetrics.horizontalAdvance(keyButton->text()))) +
+                                           gap,
+                "the error icon must follow the entire rejected shortcut text");
+        keyButton->resize(keyButton->width() + 20, keyButton->height());
+        const QRect iconAfterResize = validationInfo->geometry();
+        keyButton->grab();
+        require(validationInfo->geometry() == iconAfterResize,
+                "resizing and painting must agree on the error icon position beside the spinner");
+    }
 
     PhysicalKeyEvent supportedNumpadEvent(QEvent::KeyPress, Qt::Key_1, Qt::KeypadModifier);
     QCoreApplication::sendEvent(configContent, &supportedNumpadEvent);

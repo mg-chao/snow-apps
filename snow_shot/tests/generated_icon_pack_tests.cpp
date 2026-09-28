@@ -96,8 +96,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 144,
-            "Snow Shot pack should contain all 144 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 145,
+            "Snow Shot pack should contain all 145 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);

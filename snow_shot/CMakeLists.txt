@@ -2,6 +2,7 @@ if(APPLE)
     set_source_files_properties(src/presentation/core/screenshotgeometry.cpp
         src/presentation/recording/screenrecordingareawindow.cpp
         src/presentation/globalcanvas/globalcanvasplatform.cpp
+        tests/global_canvas_tests.cpp
         tests/screen_recording_shortcut_tests.cpp PROPERTIES LANGUAGE OBJCXX)
 endif()
 
@@ -4678,6 +4679,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-global-canvas-native-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+    if(APPLE)
+        add_test(NAME snow-shot-global-canvas-platform-tests
+            COMMAND snow-shot-global-canvas-tests --platform-only -platform offscreen)
+        set_tests_properties(snow-shot-global-canvas-platform-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 30)
+        add_test(NAME snow-shot-global-canvas-native-tests
+            COMMAND snow-shot-global-canvas-tests --native-only -platform cocoa)
+        set_tests_properties(snow-shot-global-canvas-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 90)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-global-canvas-tests)
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)

@@ -503,6 +503,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "FullScreenCanvas",
+      "name": "full-screen-canvas",
+      "source": "../src/presentation/components/icons/resources/full-screen-canvas.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Group",
       "name": "group",
       "source": "../src/presentation/components/icons/resources/group.svg",

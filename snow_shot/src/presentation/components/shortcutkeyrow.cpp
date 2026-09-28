@@ -18,6 +18,7 @@
 #include "widgets/modal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -25,6 +26,7 @@
 #include <QAbstractButton>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -221,8 +223,8 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
 
     QSize sizeHint() const override {
         const adqt::widgets::detail::ButtonVisualStyle style = buttonVisualStyle();
-        const QFontMetrics fontMetrics(style.metrics.font);
-        const int textWidth = fontMetrics.horizontalAdvance(text());
+        const QFontMetricsF fontMetrics(style.metrics.font);
+        const int textWidth = static_cast<int>(std::ceil(fontMetrics.horizontalAdvance(text())));
         const int horizontalFrameWidth =
             (style.metrics.horizontalPadding + style.metrics.borderWidth) * 2;
         return QSize(horizontalFrameWidth + busyIndicatorSlotWidth(style.metrics) + textWidth +
@@ -275,40 +277,22 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
             painter.drawPath(buttonPath);
         }
 
-        const int contentInset = metrics.horizontalPadding + metrics.borderWidth;
-        const QRect contentRect =
-            rect().adjusted(contentInset, metrics.borderWidth, -contentInset, -metrics.borderWidth);
-        const int busySlotWidth = busyIndicatorSlotWidth(metrics);
-        const int availableTextWidth =
-            std::max(0, contentRect.width() - busySlotWidth - m_infoGap - m_info->width());
+        const ContentLayout layout = contentLayout(metrics);
         painter.setFont(metrics.font);
-        const QFontMetrics fontMetrics(metrics.font);
-        const QString displayText =
-            fontMetrics.elidedText(text(), Qt::ElideRight, availableTextWidth);
-        const int textWidth = fontMetrics.horizontalAdvance(displayText);
-        const int contentWidth = busySlotWidth + textWidth + m_infoGap + m_info->width();
-        const int startX =
-            contentRect.left() + std::max(0, (contentRect.width() - contentWidth) / 2);
-        const int textX = startX + busySlotWidth;
 
         QColor contentColor = state.text;
         if (busy()) {
             contentColor.setAlphaF(contentColor.alphaF() * 0.72F);
         }
 
-        if (busySlotWidth > 0) {
-            const int indicatorSide = busyIndicatorSide(metrics);
-            drawSpinner(painter,
-                        QRect(startX, (height() - indicatorSide) / 2, indicatorSide, indicatorSide),
-                        contentColor);
+        if (busy()) {
+            drawSpinner(painter, layout.spinnerRect, contentColor);
         }
 
         painter.setPen(contentColor);
-        painter.drawText(QRect(textX, contentRect.top(), textWidth, contentRect.height()),
-                         Qt::AlignLeft | Qt::AlignVCenter, displayText);
+        painter.drawText(layout.textRect, Qt::AlignLeft | Qt::AlignVCenter, layout.displayText);
 
-        m_info->setGeometry(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2,
-                            m_info->width(), m_info->height());
+        m_info->setGeometry(layout.infoRect);
         m_info->setIconColor(contentColor);
         m_info->raise();
     }
@@ -350,24 +334,43 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
         m_info->setIconColor(infoColor);
     }
 
-    void syncInfoGeometry() {
-        const adqt::widgets::detail::ButtonVisualStyle style = buttonVisualStyle();
-        const auto& metrics = style.metrics;
+    struct ContentLayout {
+        QString displayText;
+        QRect spinnerRect;
+        QRect textRect;
+        QRect infoRect;
+    };
+
+    ContentLayout contentLayout(const adqt::widgets::detail::ButtonMetrics& metrics) const {
         const int contentInset = metrics.horizontalPadding + metrics.borderWidth;
         const QRect contentRect =
             rect().adjusted(contentInset, metrics.borderWidth, -contentInset, -metrics.borderWidth);
         const int busySlotWidth = busyIndicatorSlotWidth(metrics);
         const int availableTextWidth =
             std::max(0, contentRect.width() - busySlotWidth - m_infoGap - m_info->width());
-        const QFontMetrics fontMetrics(metrics.font);
+        const QFontMetricsF fontMetrics(metrics.font);
         const QString displayText =
             fontMetrics.elidedText(text(), Qt::ElideRight, availableTextWidth);
-        const int textWidth = fontMetrics.horizontalAdvance(displayText);
+        // Elision compares fractional advances, so round up both the requested
+        // width and the painted text slot to keep a fully fitting label intact.
+        const int textWidth =
+            static_cast<int>(std::ceil(fontMetrics.horizontalAdvance(displayText)));
         const int contentWidth = busySlotWidth + textWidth + m_infoGap + m_info->width();
-        const int textX =
+        const int startX =
             contentRect.left() + std::max(0, (contentRect.width() - contentWidth) / 2);
-        m_info->setGeometry(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2,
-                            m_info->width(), m_info->height());
+        const int textX = startX + busySlotWidth;
+        const int indicatorSide = busyIndicatorSide(metrics);
+        return {
+            displayText,
+            QRect(startX, (height() - indicatorSide) / 2, indicatorSide, indicatorSide),
+            QRect(textX, contentRect.top(), textWidth, contentRect.height()),
+            QRect(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2, m_info->width(),
+                  m_info->height()),
+        };
+    }
+
+    void syncInfoGeometry() {
+        m_info->setGeometry(contentLayout(buttonVisualStyle().metrics).infoRect);
         m_info->raise();
     }
 

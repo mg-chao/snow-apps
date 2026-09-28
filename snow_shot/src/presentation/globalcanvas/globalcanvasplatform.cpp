@@ -3,11 +3,21 @@
 #include <QWidget>
 #ifdef Q_OS_WIN
 #include "../../platform/windows/pinnedwindownative.h"
-#elif defined(Q_OS_MACOS)
-#import <AppKit/AppKit.h>
 #endif
 
 namespace snow_shot::presentation {
+#ifdef Q_OS_MACOS
+NSWindowCollectionBehavior globalCanvasCollectionBehavior(NSWindowCollectionBehavior current) {
+    // Qt tool windows can move to the active Space. AppKit rejects combining that
+    // policy with joining all Spaces, and fullscreen roles are mutually exclusive.
+    return (current & ~(NSWindowCollectionBehaviorMoveToActiveSpace |
+                        NSWindowCollectionBehaviorFullScreenPrimary |
+                        NSWindowCollectionBehaviorFullScreenNone)) |
+           NSWindowCollectionBehaviorCanJoinAllSpaces |
+           NSWindowCollectionBehaviorFullScreenAuxiliary;
+}
+#endif
+
 bool setGlobalCanvasInputTransparent(QWidget* window, bool transparent) {
 #ifdef Q_OS_WIN
     return screenshot_pinned_window_native::setInputTransparent(window->winId(), transparent);
@@ -19,8 +29,7 @@ bool setGlobalCanvasInputTransparent(QWidget* window, bool transparent) {
             return false;
         native.ignoresMouseEvents = transparent;
         native.hidesOnDeactivate = NO;
-        native.collectionBehavior |= NSWindowCollectionBehaviorCanJoinAllSpaces |
-                                     NSWindowCollectionBehaviorFullScreenAuxiliary;
+        native.collectionBehavior = globalCanvasCollectionBehavior(native.collectionBehavior);
         return native.ignoresMouseEvents == transparent;
     }
 #else

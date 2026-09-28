@@ -235,7 +235,7 @@ SettingsItemDefinition globalCanvasItem() {
                           "Open a canvas on the current display or toggle click-through"),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global Canvas"))},
         GlobalShortcutAction::GlobalCanvas, QStringLiteral("global_shortcuts/global_canvas"),
-        []() { return outlined_icons::Edit(); });
+        []() { return custom_outlined_icons::FullScreenCanvas(); });
     std::get<SettingsShortcutActionDefinition>(item.payload).showInTrayMenu = false;
     return item;
 }

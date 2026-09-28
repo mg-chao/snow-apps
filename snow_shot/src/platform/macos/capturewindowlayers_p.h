@@ -18,8 +18,8 @@ inline constexpr int kToolbarLayer = 2;
 inline constexpr int kPopupLayer = 3;
 inline constexpr int kRecordingBandSize = 128;
 
-enum class CaptureFamily { Screenshot, Recording };
-using ModalFloors = std::array<int, 2>;
+enum class CaptureFamily { Screenshot, Recording, GlobalCanvas };
+using ModalFloors = std::array<int, 3>;
 
 struct CaptureLayer {
     CaptureFamily family = CaptureFamily::Screenshot;
@@ -32,13 +32,13 @@ struct CaptureLayer {
         return static_cast<std::size_t>(family);
     }
     int offset() const {
-        return family == CaptureFamily::Recording
+        return family == CaptureFamily::Recording || family == CaptureFamily::GlobalCanvas
                    ? std::min(layer, kRecordingBandSize - 1) - kRecordingBandSize
                    : layer;
     }
 };
 
-// Keep system chrome < pins < the entire recording band < screenshots.
+// Keep system chrome < pins < the shared recording/canvas band < screenshots.
 // Derive the pin level from the recording floor so changes to the reserved band
 // cannot accidentally let pins cover a capture surface.
 inline CGWindowLevel captureWindowLevel(CaptureLayer role) {
