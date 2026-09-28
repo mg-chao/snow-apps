@@ -157,6 +157,24 @@ void builtInCatalogIsCompleteAndValid() {
                      standaloneToggle->configurationKey)
                      .toBool(true),
             "standalone translation exposes a persisted default-off switch");
+    const auto* quickModification =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.quick-selection-modification")});
+    require(quickModification &&
+                quickModification->configurationKey ==
+                    QStringLiteral("screenshot/quick_selection_modification") &&
+                storage::ConfigurationSchema::defaultValue(quickModification->configurationKey)
+                    .toBool() &&
+                std::get<settings::SettingsSwitchDefinition>(quickModification->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotQuickSelectionModification,
+            "Screenshot must expose the persisted default-on quick selection modification switch");
+    const auto* quickModificationSection =
+        catalog.section(QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"));
+    require(quickModificationSection &&
+                quickModificationSection->items.at(4).id ==
+                    QStringLiteral("screenshot.middle-mouse-button-action") &&
+                quickModificationSection->items.at(5).id == quickModification->id,
+            "quick selection modification must immediately follow middle mouse button action");
     const auto* selectionResizeMode =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.selection-resize-mode")});
@@ -266,7 +284,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 185, "catalog must contain 185 shared settings on every platform");
+    require(itemIds.size() == 186, "catalog must contain 186 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),

@@ -3202,6 +3202,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-direct-capture-history-tests
         COMMAND snow-shot-screenshot-history-tests --direct-capture-only
     )
+    add_test(
+        NAME snow-shot-selection-border-resize-tests
+        COMMAND snow-shot-screenshot-history-tests --selection-border-resize-only
+    )
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-tests)
     add_test(
         NAME snow-shot-screenshot-completion-gesture-tests
@@ -3209,6 +3213,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(
         snow-shot-direct-capture-history-tests
+        snow-shot-selection-border-resize-tests
         snow-shot-screenshot-completion-gesture-tests
         PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

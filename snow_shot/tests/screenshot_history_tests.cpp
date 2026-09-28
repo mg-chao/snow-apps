@@ -1426,6 +1426,58 @@ void moveToolModificationLeavesConfirmedStageUntilRelease() {
             "selection modification must confirm exactly once when the drag finishes");
 }
 
+void quickSelectionModificationControlsBorderResize() {
+    storage::ScreenshotSettings settings;
+    require(settings.quickSelectionModification(), "quick selection modification defaults on");
+    require(settings.setQuickSelectionModification(false), "disable quick selection modification");
+    for (const auto tool :
+         {ScreenshotActiveTool::Shape, ScreenshotActiveTool::FreeDraw, ScreenshotActiveTool::Select,
+          ScreenshotActiveTool::Text, ScreenshotActiveTool::Ocr, ScreenshotActiveTool::Table,
+          ScreenshotActiveTool::Qr, ScreenshotActiveTool::Latex, ScreenshotActiveTool::Markdown,
+          ScreenshotActiveTool::Html}) {
+        ScreenshotCaptureState captureState;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(10, 10, 80, 60));
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotInteractionState interaction;
+        interaction.setCanvasTool(tool);
+        ScreenshotSelectionDragMode cursor = ScreenshotSelectionDragMode::Right;
+        ScreenshotOverlayInputActions actions;
+        actions.setOverlayCursor = [&](ScreenshotOverlayWindow*, ScreenshotSelectionDragMode mode) {
+            cursor = mode;
+        };
+        ScreenshotOverlayInputHandler handler({captureState, interaction, selection, intelligent,
+                                               geometry, displays, std::move(actions)});
+        for (const auto point : {QPointF(90, 40), QPointF(10, 10), QPointF(50, 70)}) {
+            require(handler.selectionResizeDragModeAtCanvasPosition(point) ==
+                        ScreenshotSelectionDragMode::None,
+                    "disabled quick modification hides edge and corner resize targets");
+            require(handler.shouldHandleMouseEvent(nullptr, point, false) ==
+                        isScreenshotRecognitionTool(tool),
+                    "disabled quick modification leaves border hover to the active tool");
+            handler.handleMouseMove(nullptr, point);
+            require(cursor == ScreenshotSelectionDragMode::None,
+                    "disabled quick modification must not show a resize cursor");
+            require(!handler.beginSelectionResizeAtCanvasPosition(point),
+                    "disabled quick modification rejects canvas border resize");
+            handler.handleMousePress(nullptr, point);
+            require(!interaction.dragging() && interaction.activeTool() == tool &&
+                        selection.normalizedSelection() == QRectF(10, 10, 80, 60),
+                    "disabled border press preserves the tool and selection");
+        }
+        interaction.setMoveTool(true, false);
+        require(handler.beginSelectionResizeAtCanvasPosition(QPointF(90, 40)),
+                "Move must still resize when quick modification is disabled");
+        handler.updateSelectionResizeAtCanvasPosition(QPointF(100, 40));
+        handler.finishSelectionResizeAtCanvasPosition(QPointF(100, 40));
+        require(selection.normalizedSelection() == QRectF(10, 10, 90, 60),
+                "Move border drag must change the selection size");
+    }
+    require(settings.setQuickSelectionModification(true), "restore quick selection modification");
+}
+
 void nonMoveToolPermanentlySwitchesForSelectionResize() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -4005,8 +4057,19 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--selection-border-resize-only"))) {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "temporary settings directory unavailable");
+        auto& appStorage = storage::ApplicationStorage::instance();
+        appStorage.shutdown();
+        require(appStorage
+                    .initialize({QDir(temporary.path()).filePath(QStringLiteral("bin")),
+                                 QDir(temporary.path()).filePath(QStringLiteral("settings")), 0})
+                    .success,
+                "initialize isolated quick selection settings");
+        quickSelectionModificationControlsBorderResize();
         nonMoveToolPermanentlySwitchesForSelectionResize();
         recognitionAndScrollingToolsResizeSelectionBorder();
+        appStorage.shutdown();
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--selection-input-only"))) {

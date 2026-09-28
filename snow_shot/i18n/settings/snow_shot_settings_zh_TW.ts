@@ -845,6 +845,10 @@
             <translation>允許以目前系統使用者身分執行的 MCP 用戶端控制 Snow Shot。Snow Shot 必須保持執行。</translation>
         </message>
         <message>
+            <source>Allow resizing the selection from its borders while non-move tools are active</source>
+            <translation>啟用非移動工具時，允許從選取區域邊緣調整大小</translation>
+        </message>
+        <message>
             <source>Always</source>
             <translation>一律</translation>
         </message>
@@ -2311,6 +2315,10 @@
         <message>
             <source>Proxy</source>
             <translation>代理</translation>
+        </message>
+        <message>
+            <source>Quick Selection Modification</source>
+            <translation>快速修改選取區域</translation>
         </message>
         <message>
             <source>Quick save</source>

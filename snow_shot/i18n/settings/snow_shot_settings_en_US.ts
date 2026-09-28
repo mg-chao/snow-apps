@@ -845,6 +845,10 @@
             <translation>Allow MCP clients running as your OS user to control Snow Shot. Snow Shot must be running.</translation>
         </message>
         <message>
+            <source>Allow resizing the selection from its borders while non-move tools are active</source>
+            <translation>Allow resizing the selection from its borders while non-move tools are active</translation>
+        </message>
+        <message>
             <source>Always</source>
             <translation>Always</translation>
         </message>
@@ -2311,6 +2315,10 @@
         <message>
             <source>Proxy</source>
             <translation>Proxy</translation>
+        </message>
+        <message>
+            <source>Quick Selection Modification</source>
+            <translation>Quick Selection Modification</translation>
         </message>
         <message>
             <source>Quick save</source>

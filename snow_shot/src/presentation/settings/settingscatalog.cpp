@@ -1009,6 +1009,17 @@ SettingsItemDefinition screenshotMiddleClickActionItem() {
         SettingsSelectBinding::ScreenshotMiddleClickAction, screenshotPointerActionOptions());
 }
 
+SettingsItemDefinition quickSelectionModificationItem() {
+    return switchItem(
+        QStringLiteral("screenshot.quick-selection-modification"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Quick Selection Modification"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Allow resizing the selection from its borders while non-move tools are active"),
+        QStringLiteral("screenshot/quick_selection_modification"),
+        SettingsSwitchBinding::ScreenshotQuickSelectionModification);
+}
+
 SettingsItemDefinition selectionResizeModeItem() {
     return fixedSelectItem(
         QStringLiteral("screenshot.selection-resize-mode"),
@@ -2182,7 +2193,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::ScreenshotSettings,
                     {smartSelectionItem(), selectionResizeModeItem(), screenshotOcrActionItem(),
                      screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
-                     screenshotShutterSoundNotificationItem(),
+                     quickSelectionModificationItem(), screenshotShutterSoundNotificationItem(),
                      screenshotConfirmBeforeExitingViaShortcutItem(),
                      screenshotAutoRecognizeQrCodeItem()},
                 },
@@ -3618,6 +3629,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
                         expectedKey = QStringLiteral("screenshot/auto_save_after_copy");
+                        break;
+                    case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
+                        expectedKey = QStringLiteral("screenshot/quick_selection_modification");
                         break;
                     case SettingsSwitchBinding::ScreenshotCaptureCursor:
                         expectedKey = QStringLiteral("screenshot/capture_cursor");

@@ -943,6 +943,10 @@ ScreenshotOverlayInputHandler::dragModeForVirtualPosition(const QPointF& virtual
                                                           bool borderOnly) const {
     if (m_context.selection.regionOperationActive())
         return ScreenshotSelectionDragMode::None;
+    if (m_context.interaction.activeTool() != ScreenshotActiveTool::Move &&
+        !snow_shot::storage::ScreenshotSettings().quickSelectionModification()) {
+        return ScreenshotSelectionDragMode::None;
+    }
     if (!m_context.selection.rectangular()) {
         return !borderOnly && m_context.selection.pixelSelection().contains(
                                   QPoint(qFloor(virtualPosition.x()), qFloor(virtualPosition.y())))

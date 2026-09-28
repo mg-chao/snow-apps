@@ -634,6 +634,14 @@ bool ScreenshotSettings::setMiddleMouseButtonAction(const QString& action) const
     return cache().setValue(QStringLiteral("screenshot/middle_mouse_button_action"), action);
 }
 
+bool ScreenshotSettings::quickSelectionModification() const {
+    return cache().value(QStringLiteral("screenshot/quick_selection_modification")).toBool();
+}
+
+bool ScreenshotSettings::setQuickSelectionModification(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/quick_selection_modification"), enabled);
+}
+
 QString ScreenshotSettings::selectionResizeMode() const {
     return cache().value(QStringLiteral("screenshot/selection_resize_mode")).toString();
 }

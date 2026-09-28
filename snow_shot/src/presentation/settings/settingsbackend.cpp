@@ -530,6 +530,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::TraySettings().enabled();
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
         return storage::ScreenshotSettings().autoSaveAfterCopy();
+    case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
+        return storage::ScreenshotSettings().quickSelectionModification();
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
         return storage::ScreenshotSettings().captureCursor();
     case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
@@ -655,6 +657,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     }
     if (binding == SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut) {
         return storage::ScreenshotSettings().setConfirmBeforeExitingViaShortcut(value);
+    }
+    if (binding == SettingsSwitchBinding::ScreenshotQuickSelectionModification) {
+        return storage::ScreenshotSettings().setQuickSelectionModification(value);
     }
     if (binding == SettingsSwitchBinding::ScreenshotCaptureCursor) {
         return storage::ScreenshotSettings().setCaptureCursor(value);
@@ -785,6 +790,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenshotAreaTypeHint:
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
+    case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
     case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
@@ -1671,6 +1677,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    {QStringLiteral("screenshot/middle_mouse_button_action"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/middle_mouse_button_action"))},
+                   {QStringLiteral("screenshot/quick_selection_modification"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/quick_selection_modification"))},
                    {QStringLiteral("screenshot/selection_resize_mode"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/selection_resize_mode"))},

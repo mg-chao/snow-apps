@@ -127,6 +127,7 @@ enum class SettingsSwitchBinding {
     ScreenshotAreaTypeHint,
     TrayEnabled,
     ScreenshotAutoSaveAfterCopy,
+    ScreenshotQuickSelectionModification,
     ScreenshotCaptureCursor,
     ScreenshotCaptureUiInScrollingScreenshot,
     ScreenshotShutterSoundNotification,

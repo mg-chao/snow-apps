@@ -26,6 +26,12 @@ void require(bool condition, const char* message) {
 void resizeModeDefaultsPersistsAndResets(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto quickBinding =
+        settings::SettingsSwitchBinding::ScreenshotQuickSelectionModification;
+    require(backend.switchValue(quickBinding), "quick modification defaults on in the backend");
+    require(backend.applySwitchValue(quickBinding, false) && !backend.switchValue(quickBinding) &&
+                !storage::ScreenshotSettings().quickSelectionModification(),
+            "backend must persist disabling quick modification");
     constexpr auto binding = settings::SettingsSelectBinding::ScreenshotSelectionResizeMode;
     require(backend.selectValue(binding) == QStringLiteral("follow_mouse_movement"),
             "selection resize mode must default to following mouse movement");
@@ -43,7 +49,10 @@ void resizeModeDefaultsPersistsAndResets(const QString& configurationPath) {
     require(reloaded.value(QStringLiteral("screenshot/selection_resize_mode")) ==
                 QStringLiteral("follow_mouse_position"),
             "selection resize mode must survive a configuration reload");
+    require(!reloaded.value(QStringLiteral("screenshot/quick_selection_modification")).toBool(true),
+            "disabled quick modification must survive reload");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                backend.switchValue(quickBinding) &&
                 backend.selectValue(binding) == QStringLiteral("follow_mouse_movement"),
             "resetting the Screenshot function settings must restore following mouse movement");
     const auto invalid = storage::ConfigurationSchema::normalize(
