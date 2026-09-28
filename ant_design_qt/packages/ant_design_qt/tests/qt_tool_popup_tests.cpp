@@ -20,6 +20,7 @@
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
 #include "widgets/detail/overlay_popup_surface.h"
+#include "widgets/detail/overlay_popup_controller.h"
 #include "widgets/detail/qt_tooltip_bridge.h"
 #include "widgets/popover.h"
 #include "widgets/select.h"
@@ -127,7 +128,71 @@ class QtToolPopupTest final : public QObject {
   void recreateFactoryContentIsReleasedAfterHide();
   void directContentRemainsCompatibleWithFactoryApi();
   void colorPickerPrewarmCanBeDisabled();
+  void stationaryPopoverStopsRelayout();
+  void visiblePopoverRelayoutDoesNotRaise();
 };
+
+void QtToolPopupTest::stationaryPopoverStopsRelayout() {
+  using adqt::widgets::detail::OverlayPopupController;
+  for (auto layer : {AdPopover::PopupLayerMode::InWindow, AdPopover::PopupLayerMode::QtTool}) {
+    QWidget host;
+    host.resize(640, 400);
+    QPushButton trigger(QStringLiteral("Open"), &host);
+    trigger.setGeometry(200, 200, 100, 32);
+    AdPopover popover;
+    popover.setSourceWidget(&trigger);
+    popover.setPopupLayerMode(layer);
+    popover.setText(QStringLiteral("Stationary popup"));
+    host.show();
+    popover.show();
+    QVERIFY(popover.isVisible());
+    // Allow the bounded opening geometry tail to finish, then require quiescence.
+    QTest::qWait(250);
+    OverlayPopupController::resetSyncPopupGeometryCountersForTesting();
+    QTest::qWait(100);
+    QCOMPARE(OverlayPopupController::syncPopupGeometryCallCountForTesting(), 0);
+    popover.hide();
+  }
+}
+
+void QtToolPopupTest::visiblePopoverRelayoutDoesNotRaise() {
+  class StackingObserver final : public QObject {
+   public:
+    int changes = 0;
+    bool eventFilter(QObject*, QEvent* event) override {
+      if (event->type() == QEvent::ZOrderChange) ++changes;
+      return false;
+    }
+  };
+  QWidget host;
+  host.resize(800, 600);
+  QPushButton trigger(QStringLiteral("Open"), &host);
+  trigger.setGeometry(250, 300, 100, 32);
+  AdPopover popover;
+  popover.setSourceWidget(&trigger);
+  popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  auto* content = new QWidget;
+  content->setFixedSize(100, 40);
+  popover.setContentWidget(content);
+  host.show();
+  popover.show();
+  QTest::qWait(250);
+  QWidget* surface = content->window();
+  QVERIFY(surface && surface->isVisible());
+  StackingObserver observer;
+  surface->installEventFilter(&observer);
+  const QRect original = surface->geometry();
+  content->setFixedSize(180, 80);
+  QTRY_VERIFY(surface->size().width() > original.width());
+  const QPoint beforeMove = surface->pos();
+  trigger.move(trigger.pos() + QPoint(30, 0));
+  QTRY_COMPARE(surface->pos(), beforeMove + QPoint(30, 0));
+  content->setFixedSize(100, 40);
+  QTRY_COMPARE(surface->size(), original.size());
+  popover.refreshPopupLayout();
+  QTest::qWait(200);
+  QCOMPARE(observer.changes, 0);
+}
 
 void QtToolPopupTest::customButtonHitAreaIgnoresNativeBevel() {
   class InsetButtonStyle final : public QProxyStyle {

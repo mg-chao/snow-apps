@@ -64,6 +64,7 @@ class ScreenshotQrController final : public QObject {
     void finish(quint64 generation, QSize pixels, ScreenshotQrRecognitionResult result);
     void refreshMarkers();
     void showPopover(ScreenshotQrMarker* marker, bool focus);
+    void updatePopoverGeometry();
     void scheduleDismiss();
     void clearMarkers();
     QPointer<ScreenshotQrRecognitionPort> m_recognition;

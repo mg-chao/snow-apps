@@ -36,6 +36,7 @@ class ScreenshotColorPickerWindow final : public QWidget {
     QSize sizeHint() const override;
 
   protected:
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void paintEvent(QPaintEvent* event) override;
     void changeEvent(QEvent* event) override;
 

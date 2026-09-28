@@ -4920,6 +4920,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
     add_test(NAME snow-shot-color-picker-lifecycle-tests
         COMMAND snow-shot-color-picker-lifecycle-tests)
+    if(WIN32)
+        add_test(NAME snow-shot-tool-stacking-native-tests
+            COMMAND snow-shot-color-picker-lifecycle-tests --stacking-only -platform windows)
+        set_tests_properties(snow-shot-tool-stacking-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE)
+    endif()
     set_tests_properties(snow-shot-color-picker-lifecycle-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -7970,6 +7976,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt Qt6::Widgets)
     snow_shot_import_offscreen_platform(snow-shot-qr-controller-tests)
     add_test(NAME snow-shot-qr-controller-tests COMMAND snow-shot-qr-controller-tests)
+    if(WIN32)
+        add_test(NAME snow-shot-qr-stacking-native-tests
+            COMMAND snow-shot-qr-controller-tests --stacking-only -platform windows)
+        set_tests_properties(snow-shot-qr-stacking-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE)
+    endif()
     set_tests_properties(snow-shot-qr-controller-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
 endif()

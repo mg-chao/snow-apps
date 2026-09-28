@@ -1066,6 +1066,11 @@ class AdSelect::PopupFrame final : public QFrame, public detail::TopLevelToolRes
   }
 
  protected:
+  bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override {
+    detail::constrainTopLevelToolStackingToOwner(this, message);
+    return QFrame::nativeEvent(eventType, message, result);
+  }
+
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
 

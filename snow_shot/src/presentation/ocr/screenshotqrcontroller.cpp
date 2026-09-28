@@ -7,6 +7,8 @@
 #include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/scroll_area.h"
+#include "widgets/detail/top_level_popup_window.h"
+#include "widgets/window_creation_context.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -216,6 +218,21 @@ class ScreenshotQrPopover final : public QWidget {
         body->arrowY = anchor.center().y() - y();
         body->update();
     }
+    void prepareNativeSurface() {
+        QWidget* owner = parentWidget()->window();
+        const adqt::widgets::ScopedWindowCreationOwner creationOwner(this, owner);
+        setWindowFlag(Qt::WindowStaysOnTopHint,
+                      owner->windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+        if (!owner->windowHandle())
+            static_cast<void>(owner->winId());
+        // winId() enforces native siblings on the canvas, disrupting marker hover.
+        // Create only this tool while retaining its QObject and transient ownership.
+        create();
+        adqt::widgets::detail::setTopLevelToolTransientParent(this, owner);
+#if defined(Q_OS_MACOS)
+        adqt::widgets::detail::syncMacTopLevelPopupOwnership(this);
+#endif
+    }
     void showOpenError() {
         status->setText(ScreenshotQrController::tr("Unable to open the recognized link"));
         status->show();
@@ -229,6 +246,12 @@ class ScreenshotQrPopover final : public QWidget {
     QUrl url;
     QRect lastAnchor;
     QRect lastAvailable;
+
+  protected:
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override {
+        adqt::widgets::detail::constrainTopLevelToolStackingToOwner(this, message);
+        return QWidget::nativeEvent(eventType, message, result);
+    }
 };
 
 ScreenshotQrController::ScreenshotQrController(ScreenshotQrRecognitionPort& recognition,
@@ -538,17 +561,29 @@ void ScreenshotQrController::showPopover(ScreenshotQrMarker* marker, bool focus)
     if (m_popoverMarker != marker || !m_popover->isVisible())
         m_popover->setDetection(m_detections[marker->detection].text);
     m_popoverMarker = marker;
-    const QRect anchor(marker->mapToGlobal(QPoint()), marker->size());
-    QScreen* screen = QGuiApplication::screenAt(anchor.center());
-    if (!screen)
-        screen = marker->screen();
-    m_popover->place(anchor, screen->availableGeometry());
-    m_popover->show();
-    m_popover->raise();
+    updatePopoverGeometry();
+    const bool opening = !m_popover->isVisible();
+    if (opening) {
+        m_popover->prepareNativeSurface();
+        m_popover->show();
+    }
+    if (opening || focus)
+        m_popover->raise();
     if (focus) {
         m_popover->activateWindow();
         m_popover->text->setFocus(Qt::OtherFocusReason);
     }
+}
+
+void ScreenshotQrController::updatePopoverGeometry() {
+    if (!m_popover || !m_popoverMarker)
+        return;
+    const QRect anchor(m_popoverMarker->mapToGlobal(QPoint()), m_popoverMarker->size());
+    QScreen* screen = QGuiApplication::screenAt(anchor.center());
+    if (!screen)
+        screen = m_popoverMarker->screen();
+    // Following the canvas must not alter pending hover/dismissal or native stacking.
+    m_popover->place(anchor, screen->availableGeometry());
 }
 
 void ScreenshotQrController::dismissPopover() {
@@ -622,7 +657,7 @@ bool ScreenshotQrController::eventFilter(QObject* watched, QEvent* event) {
                 *marker->lastTransform != marker->canvas->canvasToViewTransform()) {
                 refreshMarkers();
                 if (m_popoverMarker && m_popover && m_popover->isVisible())
-                    showPopover(m_popoverMarker, false);
+                    updatePopoverGeometry();
                 break;
             }
         }
@@ -641,7 +676,7 @@ bool ScreenshotQrController::eventFilter(QObject* watched, QEvent* event) {
             if (canvas && (widget == canvas || widget == canvas->window())) {
                 refreshMarkers();
                 if (m_popoverMarker && m_popover && m_popover->isVisible())
-                    showPopover(m_popoverMarker, false);
+                    updatePopoverGeometry();
                 break;
             }
         }

@@ -1,6 +1,7 @@
 #include "overlay_popup_surface.h"
 
 #include "popup_shadow.h"
+#include "top_level_popup_window.h"
 
 #if defined(Q_OS_MACOS)
 #include "window_surface_mac_p.h"
@@ -120,6 +121,7 @@ bool OverlayPopupSurface::containsInteractiveGlobalPos(const QPoint& pos) const 
 }
 
 bool OverlayPopupSurface::nativeEvent(const QByteArray& eventType, void* message, qintptr* result) {
+  constrainTopLevelToolStackingToOwner(this, message);
 #if defined(Q_OS_WIN) || defined(_WIN32)
   auto* nativeMessage = static_cast<MSG*>(message);
   if (nativeMessage && nativeMessage->message == WM_NCHITTEST) {

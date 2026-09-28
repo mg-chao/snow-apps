@@ -15,6 +15,13 @@ class TopLevelToolResourceReleaser {
 
 void syncTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow);
 
+// Assign ownership to already-created surfaces without moving the owner's group.
+void setTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow);
+
+// Keep native tool shows/raises inside the owner's existing stacking group,
+// without pulling that group ahead of unrelated applications. Call from nativeEvent.
+void constrainTopLevelToolStackingToOwner(QWidget* toolWindow, void* message);
+
 #if defined(Q_OS_MACOS)
 void syncMacTopLevelPopupOwnership(QWidget* popup);
 #endif

@@ -3,6 +3,7 @@
 #include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
+#include "detail/top_level_popup_window.h"
 
 #include "button_style.h"
 #include "detail/button_grouping.h"
@@ -532,10 +533,7 @@ class BusyIndicatorSurface final : public QWidget {
       const ScopedWindowCreationOwner creationOwner(this, owner);
       owner->winId();
       winId();
-      if (windowHandle() && owner->windowHandle() &&
-          windowHandle()->transientParent() != owner->windowHandle()) {
-        windowHandle()->setTransientParent(owner->windowHandle());
-      }
+      setTopLevelToolTransientParent(this, owner);
     }
 
     const auto placement = PopupWidgetRect{button_, indicatorRect}.onScreen();
@@ -561,6 +559,11 @@ class BusyIndicatorSurface final : public QWidget {
   }
 
  protected:
+  bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override {
+    constrainTopLevelToolStackingToOwner(this, message);
+    return QWidget::nativeEvent(eventType, message, result);
+  }
+
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
     if (!button_) {

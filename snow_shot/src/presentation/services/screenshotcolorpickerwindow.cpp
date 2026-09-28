@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotcolorpickerwindow.h"
+#include "widgets/detail/top_level_popup_window.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotguidelinerendering.h"
@@ -229,18 +230,14 @@ void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
     // The initial native geometry must also belong to the owner's monitor.
     // Leaving it at (0, 0) can select another monitor's DPI before first reveal.
     move(owner->mapToGlobal(owner->rect().center()) - rect().center());
-    QWindow* ownerHandle = owner->windowHandle();
-    if (ownerHandle == nullptr) {
+    if (owner->windowHandle() == nullptr) {
         static_cast<void>(owner->winId());
-        ownerHandle = owner->windowHandle();
     }
     // winId() sets WA_NativeWindow and forces the picker's canvas siblings to
     // become native too. Cocoa can then lose their hover events beneath this
     // input-transparent tool. Create only this top-level surface instead.
     create();
-    if (QWindow* handle = windowHandle()) {
-        handle->setTransientParent(ownerHandle);
-    }
+    adqt::widgets::detail::setTopLevelToolTransientParent(this, owner);
 }
 
 void ScreenshotColorPickerWindow::prepareNativeSurface() {
@@ -363,6 +360,12 @@ void ScreenshotColorPickerWindow::hidePicker() {
         m_opacityEffect->setOpacity(0.0);
     }
     hide();
+}
+
+bool ScreenshotColorPickerWindow::nativeEvent(const QByteArray& eventType, void* message,
+                                              qintptr* result) {
+    adqt::widgets::detail::constrainTopLevelToolStackingToOwner(this, message);
+    return QWidget::nativeEvent(eventType, message, result);
 }
 
 void ScreenshotColorPickerWindow::setCenterGuideLineColor(const QColor& color) {

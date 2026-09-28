@@ -157,7 +157,6 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void schedulePopupRelayout(bool extendFrameTail);
   void cancelPopupRelayout();
   void refreshGeometryFrameSync();
-  bool shouldSkipQueuedRelayoutSync() const;
   void resetGeometrySyncSnapshot();
   void markAnchorScrollWatchersDirty();
   void refreshAnchorScrollBarWatchers();
@@ -168,7 +167,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void setPopupVisibleInternal(bool visible, bool emitSignal);
   void finishPopupVisibilityUpdate();
   void syncPreparedPopupVisibility();
-  bool syncPopupGeometry(bool prepareLayout = true);
+  bool syncPopupGeometry();
   bool popupUsesInWindowLayer() const;
   bool popupUsesTopLevelToolLayer() const;
   void syncPopupTooltipRoute();

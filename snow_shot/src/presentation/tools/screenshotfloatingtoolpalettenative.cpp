@@ -123,7 +123,9 @@ void screenshot_floating_palette_native::setNativePaletteOwner(WId windowId, QWi
         return;
     }
     const HWND ownerHwnd = owner != nullptr ? toNativeHwnd(owner->winId()) : nullptr;
-    SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(ownerHwnd));
+    if (GetWindow(hwnd, GW_OWNER) != ownerHwnd) {
+        SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(ownerHwnd));
+    }
 #else
     Q_UNUSED(windowId);
     Q_UNUSED(owner);

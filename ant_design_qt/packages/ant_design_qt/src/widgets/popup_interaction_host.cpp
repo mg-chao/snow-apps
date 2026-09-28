@@ -300,7 +300,7 @@ class PopupInteractionHost final : public QObject {
         return;
       }
       activeOwner_->popupRelayoutFromHost();
-      restackOwnerChain();
+      restackOwnerChain(false);
     });
   }
 
@@ -483,19 +483,19 @@ class PopupInteractionHost final : public QObject {
     }
   }
 
-  void restackOwnerChain() {
+  void restackOwnerChain(bool includeNativeWindows = true) {
     for (const SuspendedOwnerState& state : suspendedOwners_) {
-      raiseOwnerSurface(state.owner);
+      raiseOwnerSurface(state.owner, includeNativeWindows);
     }
-    raiseOwnerSurface(activeOwner_);
+    raiseOwnerSurface(activeOwner_, includeNativeWindows);
   }
 
-  void raiseOwnerSurface(PopupInteractionOwner* owner) {
+  void raiseOwnerSurface(PopupInteractionOwner* owner, bool includeNativeWindows) {
     if (!owner) {
       return;
     }
     QWidget* surface = owner->popupSurfaceWidget();
-    if (!surface || !surface->isVisible()) {
+    if (!surface || !surface->isVisible() || (!includeNativeWindows && surface->isWindow())) {
       return;
     }
     surface->raise();

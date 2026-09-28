@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "widgets/window_creation_context.h"
+#include "widgets/detail/top_level_popup_window.h"
 
 #include <QGuiApplication>
 #include <QPainter>
@@ -113,7 +114,7 @@ void ScreenshotCanvasColorSamplerWindow::beginSampling(QWidget* owner) {
     // owner; an unowned stays-on-top tool remains below the screenshot overlay.
     // create() avoids forcing native surfaces onto the owner's canvas children.
     create();
-    windowHandle()->setTransientParent(owner->windowHandle());
+    adqt::widgets::detail::setTopLevelToolTransientParent(this, owner);
     m_sampling = true;
 }
 
@@ -148,6 +149,12 @@ void ScreenshotCanvasColorSamplerWindow::endSampling() {
         // its panel just to release capture ownership. Qt clears ownership too.
         destroy();
     }
+}
+
+bool ScreenshotCanvasColorSamplerWindow::nativeEvent(const QByteArray& eventType, void* message,
+                                                     qintptr* result) {
+    adqt::widgets::detail::constrainTopLevelToolStackingToOwner(this, message);
+    return QWidget::nativeEvent(eventType, message, result);
 }
 
 QCursor ScreenshotCanvasColorSamplerWindow::samplingCursor() {

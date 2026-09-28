@@ -16,8 +16,14 @@
 #include <QTextEdit>
 #include <QThread>
 #include <QWindow>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
+#include <string>
+#include <thread>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -26,14 +32,36 @@ void require(bool condition, const char* message) {
         std::exit(EXIT_FAILURE);
     }
 }
-void until(const std::function<bool()>& ready) {
+#ifdef Q_OS_WIN
+// Native z-order assertions need real HWNDs, but must not mix synthetic hover
+// with the input desktop's unrelated Enter/Leave events. Keep the user's desktop
+// active and create only this test's windows on a private desktop. All Qt objects
+// are constructed on the dedicated GUI thread. Exiting it also releases system
+// windows (e.g. IME/OLE) that can outlive QApplication and prevent desktop detachment.
+int runOnNativeStackingDesktop(const std::function<int()>& run) {
+    const std::wstring name = L"SnowQrStacking-" + std::to_wstring(GetCurrentProcessId());
+    HDESK desktop = CreateDesktopW(name.c_str(), nullptr, nullptr, 0, GENERIC_ALL, nullptr);
+    require(desktop != nullptr, "create isolated native test desktop");
+    int result = EXIT_FAILURE;
+    std::thread guiThread([&] {
+        require(SetThreadDesktop(desktop), "attach native test GUI thread to its desktop");
+        result = run();
+    });
+    guiThread.join();
+    require(CloseDesktop(desktop), "release native test desktop");
+    return result;
+}
+#endif
+
+void until(const std::function<bool()>& ready,
+           const char* message = "asynchronous operation timed out") {
     QElapsedTimer timer;
     timer.start();
     while (!ready() && timer.elapsed() < 3000) {
         QApplication::processEvents();
         QThread::msleep(1);
     }
-    require(ready(), "asynchronous operation timed out");
+    require(ready(), message);
 }
 void advance(int milliseconds) {
     QEventLoop loop;
@@ -86,7 +114,10 @@ struct Fixture {
                                        },
                                        [this] { ++closed; }}};
     ScreenshotQrController::Snapshot snapshot;
-    Fixture() {
+    explicit Fixture(Qt::WindowFlags flags = {}) {
+        canvas.setWindowFlags(flags);
+        canvas.setAttribute(Qt::WA_ShowWithoutActivating,
+                            flags.testFlag(Qt::WindowDoesNotAcceptFocus));
         canvas.resize(400, 300);
         canvas.show();
         QImage image(400, 300, QImage::Format_RGB32);
@@ -101,7 +132,8 @@ struct Fixture {
         const auto count = decoder.callbacks.size();
         controller.recognize(snapshot);
         controller.synchronize(snapshot.selection, true, true);
-        until([&] { return decoder.callbacks.size() == count + 1; });
+        until([&] { return decoder.callbacks.size() == count + 1; },
+              "QR image preparation must reach the recognition port");
     }
     void complete(QList<ScreenshotQrDetection> detections) {
         decoder.callbacks.last()({{}, {}, std::move(detections)});
@@ -333,6 +365,147 @@ void separateDisplayCanvases() {
     require(visibleCount == 1, "one visible QR marker per display");
 }
 
+void hoverPopoverPreservesOwnerStacking() {
+    Fixture f(Qt::Tool | Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
+    f.start();
+    f.complete({{QStringLiteral("stacking"), quad(50, 60)}});
+    QWidget unrelated(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
+    unrelated.setAttribute(Qt::WA_ShowWithoutActivating);
+    unrelated.setGeometry(600, 50, 100, 100);
+    unrelated.show();
+    const auto verify = [&] {
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            const auto above = [](QWidget* first, QWidget* second) {
+                for (HWND window = GetTopWindow(nullptr); window;
+                     window = GetWindow(window, GW_HWNDNEXT)) {
+                    if (window == reinterpret_cast<HWND>(first->internalWinId()))
+                        return true;
+                    if (window == reinterpret_cast<HWND>(second->internalWinId()))
+                        return false;
+                }
+                return false;
+            };
+            require(above(&unrelated, &f.canvas), "QR hover must not raise the canvas owner");
+            if (f.popover() && f.popover()->isVisible())
+                require(above(&unrelated, f.popover()) && above(f.popover(), &f.canvas),
+                        "QR hover must stay above its owner and below unrelated topmosts");
+        }
+#endif
+    };
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        unrelated.raise();
+        QApplication::processEvents();
+        verify();
+        auto* marker = f.marker(0);
+        QEnterEvent enter(QPointF(12, 12), QPointF(12, 12), marker->mapToGlobal(QPoint(12, 12)));
+        QApplication::sendEvent(marker, &enter);
+        until([&] { return f.popover() && f.popover()->isVisible(); },
+              "QR hover must reveal the popover");
+        require(marker->internalWinId() == 0,
+                "native QR hover must preserve the marker's non-native surface");
+        verify();
+        f.canvas.resize(f.canvas.size() + QSize(1, 1));
+        QApplication::processEvents();
+        verify();
+        f.controller.setSuspended(true);
+        QApplication::processEvents();
+        require(!f.popover()->isVisible(), "suspending must hide QR hover");
+        verify();
+        f.controller.setSuspended(false);
+    }
+}
+
+void enterMarker(QWidget* marker) {
+    const QPoint center = marker->rect().center();
+    QEnterEvent enter(center, marker->mapTo(marker->window(), center), marker->mapToGlobal(center));
+    QApplication::sendEvent(marker, &enter);
+}
+
+void popoverCreationPreservesCanvasChildren() {
+    for (const bool staysOnTop : {false, true}) {
+        Fixture f(Qt::Window | (staysOnTop ? Qt::WindowStaysOnTopHint : Qt::WindowFlags{}));
+        f.start();
+        f.complete({{QStringLiteral("surface"), quad(50, 60)}});
+        auto* marker = f.marker(0);
+        require(marker->internalWinId() == 0, "QR marker starts without a native surface");
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            marker->click();
+            require(f.popover() && f.popover()->isVisible(), "click opens QR popover");
+            require(marker->internalWinId() == 0 && !marker->testAttribute(Qt::WA_NativeWindow),
+                    "opening a QR popover must not make canvas children native");
+            require(f.popover()->windowHandle()->transientParent() == f.canvas.windowHandle(),
+                    "QR native surface retains its canvas owner");
+            require(f.popover()->windowFlags().testFlag(Qt::WindowStaysOnTopHint) == staysOnTop,
+                    "QR popover inherits its owner's stacking band");
+            f.controller.dismissPopover();
+        }
+    }
+}
+
+void popoverRelayoutPreservesPendingHover() {
+    Fixture f;
+    f.start();
+    f.complete(
+        {{QStringLiteral("first"), quad(50, 60)}, {QStringLiteral("second"), quad(150, 60)}});
+    enterMarker(f.marker(0));
+    until([&] { return f.popover() && f.popover()->isVisible(); });
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(f.marker(0), &leave);
+    enterMarker(f.marker(1));
+    f.canvas.move(f.canvas.pos() + QPoint(12, 8));
+    until(
+        [&] {
+            return f.popover()->findChild<QTextEdit*>()->toPlainText() == QStringLiteral("second");
+        },
+        "relayout must preserve a pending hover on another QR marker");
+}
+
+void popoverRelayoutPreservesDismissal() {
+    Fixture f;
+    f.start();
+    f.complete({{QStringLiteral("dismiss"), quad(50, 60)}});
+    enterMarker(f.marker(0));
+    until([&] { return f.popover() && f.popover()->isVisible(); });
+    auto* text = f.popover()->findChild<QTextEdit*>();
+    text->setFocus();
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(f.marker(0), &leave);
+    QApplication::sendEvent(f.popover(), &leave);
+    f.canvas.resize(f.canvas.size() + QSize(1, 1));
+    advance(300);
+    require(f.popover()->isVisible(), "focused QR text retains its popover after pointer exit");
+    text->clearFocus();
+    QApplication::sendEvent(f.popover(), &leave);
+    f.canvas.resize(f.canvas.size() + QSize(1, 1));
+    until([&] { return !f.popover()->isVisible(); },
+          "relayout must preserve dismissal after leaving a QR popover");
+}
+
+void visiblePopoverRelayoutDoesNotRaise() {
+    Fixture f;
+    f.start();
+    f.complete({{QStringLiteral("relayout"), quad(50, 60)}});
+    f.marker(0)->click();
+    QApplication::processEvents();
+    class StackingEvents final : public QObject {
+      public:
+        int count = 0;
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::ZOrderChange)
+                ++count;
+            return false;
+        }
+    } events;
+    f.popover()->installEventFilter(&events);
+    const QPoint previousPosition = f.popover()->pos();
+    f.canvas.move(f.canvas.pos() + QPoint(12, 8));
+    QApplication::processEvents();
+    require(f.popover()->isVisible() && f.popover()->pos() != previousPosition,
+            "visible QR popover must follow its moved canvas");
+    require(events.count == 0, "QR popover geometry updates must not raise its native window");
+}
+
 void popoverActionsAndHover() {
     Fixture f;
     f.start();
@@ -532,7 +705,7 @@ void urlClassification() {
 }
 } // namespace
 
-int main(int argc, char** argv) {
+int runTests(int argc, char** argv) {
     QApplication app(argc, argv);
 #ifdef Q_OS_WIN
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
@@ -547,6 +720,11 @@ int main(int argc, char** argv) {
         renderPreviews(app.arguments()[index + 1]);
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--stacking-only"))) {
+        hoverPopoverPreservesOwnerStacking();
+        return 0;
+    }
+    hoverPopoverPreservesOwnerStacking();
     antialiasedMarkerAndPopoverArrow();
     urlClassification();
     disablingRecognitionCancelsAndRejectsLateResults();
@@ -555,6 +733,20 @@ int main(int argc, char** argv) {
     sourceMaskAndValidation();
     transformsRegionsAndSupersededRequests();
     separateDisplayCanvases();
+    visiblePopoverRelayoutDoesNotRaise();
+    popoverCreationPreservesCanvasChildren();
+    popoverRelayoutPreservesPendingHover();
+    popoverRelayoutPreservesDismissal();
     popoverActionsAndHover();
     return 0;
+}
+
+int main(int argc, char** argv) {
+#ifdef Q_OS_WIN
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--stacking-only") == 0)
+            return runOnNativeStackingDesktop([&] { return runTests(argc, argv); });
+    }
+#endif
+    return runTests(argc, argv);
 }

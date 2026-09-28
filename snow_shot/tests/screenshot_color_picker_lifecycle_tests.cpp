@@ -19,6 +19,10 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#include "widgets/popover.h"
+#include "widgets/select.h"
+#include "widgets/tooltip.h"
+#include "widgets/button.h"
 
 #include <QApplication>
 #include <QBackingStore>
@@ -595,6 +599,219 @@ void canvasSamplerFollowsSessionOwner() {
     }
 }
 
+void auxiliaryWindowsPreserveOwnerStacking() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary stacking-test storage available");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "initialize isolated stacking-test storage");
+    QWidget owner(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
+    owner.setObjectName(QStringLiteral("stackingOwner"));
+    owner.setAttribute(Qt::WA_ShowWithoutActivating);
+    owner.setGeometry(50, 50, 500, 400);
+    owner.show();
+    QWidget toolbar(&owner, Qt::Tool | Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
+    toolbar.setObjectName(QStringLiteral("stackingToolbar"));
+    toolbar.setAttribute(Qt::WA_ShowWithoutActivating);
+    toolbar.setGeometry(100, 100, 200, 60);
+    toolbar.show();
+    QWidget unrelated(nullptr, Qt::Tool | Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
+    unrelated.setObjectName(QStringLiteral("stackingUnrelated"));
+    unrelated.setAttribute(Qt::WA_ShowWithoutActivating);
+    unrelated.setGeometry(600, 50, 100, 100);
+    unrelated.show();
+    const auto checkCycles = [&]([[maybe_unused]] const char* name,
+                                 const std::function<QWidget*()>& reveal,
+                                 const std::function<void()>& update,
+                                 const std::function<void()>& conceal) {
+        for (int cycle = 0; cycle != 3; ++cycle) {
+            [[maybe_unused]] const char* stage = "before show";
+            unrelated.raise();
+            QApplication::processEvents();
+#ifdef Q_OS_WIN
+            const bool native = QGuiApplication::platformName() == QStringLiteral("windows");
+            const auto above = [](QWidget* first, QWidget* second) {
+                const HWND a = reinterpret_cast<HWND>(first->internalWinId());
+                const HWND b = reinterpret_cast<HWND>(second->internalWinId());
+                for (HWND window = GetTopWindow(nullptr); window;
+                     window = GetWindow(window, GW_HWNDNEXT)) {
+                    if (window == a)
+                        return true;
+                    if (window == b)
+                        return false;
+                }
+                return false;
+            };
+            const auto verifyOwner = [&] {
+                if (native) {
+                    const bool preserved = above(&unrelated, &owner) && above(&unrelated, &toolbar);
+                    if (!preserved) {
+                        std::cerr << name << " cycle " << cycle << " " << stage << '\n';
+                        for (HWND window = GetTopWindow(nullptr); window;
+                             window = GetWindow(window, GW_HWNDNEXT)) {
+                            if (auto* widget = QWidget::find(reinterpret_cast<WId>(window)))
+                                std::cerr << widget->objectName().toStdString()
+                                          << " visible=" << IsWindowVisible(window) << '\n';
+                        }
+                    }
+                    require(preserved, "auxiliary show/update/hide must not raise the owner group");
+                }
+            };
+            verifyOwner();
+#endif
+            QWidget* tool = reveal();
+            stage = "after show";
+            QApplication::processEvents();
+            require(tool && tool->isVisible(), "auxiliary window must remain visible");
+#ifdef Q_OS_WIN
+            verifyOwner();
+            if (native) {
+                if (!(above(tool, &toolbar) && above(&unrelated, tool)))
+                    std::cerr << name << " cycle " << cycle << " tool ordering after show\n";
+                require(above(tool, &toolbar) && above(&unrelated, tool),
+                        "auxiliary window must stack above its group, below unrelated topmosts");
+            }
+#endif
+            update();
+            tool->raise();
+            stage = "after update/raise";
+            QApplication::processEvents();
+#ifdef Q_OS_WIN
+            verifyOwner();
+#endif
+            conceal();
+            stage = "after hide";
+            QApplication::processEvents();
+#ifdef Q_OS_WIN
+            verifyOwner();
+#endif
+        }
+    };
+
+    StyleToolbarCommands commands;
+    ScreenshotToolbarWindow drawingToolbar(commands);
+    checkCycles(
+        "drawing toolbar transient owner",
+        [&]() {
+            drawingToolbar.restoreNativeSurface();
+            drawingToolbar.setTransientOwnerWindow(&owner);
+            drawingToolbar.prepareForDisplay();
+            drawingToolbar.show();
+            return &drawingToolbar;
+        },
+        [&] {
+            drawingToolbar.setTransientOwnerWindow(&owner);
+            drawingToolbar.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+            drawingToolbar.prepareForDisplay();
+        },
+        [&] { drawingToolbar.releaseNativeSurface(); });
+    checkCycles(
+        "drawing toolbar widget owner",
+        [&]() {
+            drawingToolbar.setOwnerWindow(&owner);
+            drawingToolbar.restoreNativeSurface();
+            drawingToolbar.prepareForDisplay();
+            drawingToolbar.show();
+            return &drawingToolbar;
+        },
+        [&] {
+            drawingToolbar.setOwnerWindow(&owner);
+            drawingToolbar.moveContentTo(drawingToolbar.contentPosition() + QPoint(1, 1));
+        },
+        [&] { drawingToolbar.hide(); });
+    drawingToolbar.setOwnerWindow(nullptr);
+
+    QImage image(16, 16, QImage::Format_RGB32);
+    image.fill(Qt::red);
+    ScreenshotColorPickerWindow picker;
+    picker.setCaptureImage(image, image.rect());
+    checkCycles(
+        "magnifier",
+        [&]() {
+            picker.setOwnerWindow(&owner);
+            picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 1.0);
+            return &picker;
+        },
+        [&] { picker.updatePicker(QPoint(9, 9), QPointF(20, 20), 1.0); },
+        [&] { picker.hidePicker(); });
+
+    ScreenshotCanvasColorSamplerWindow sampler;
+    checkCycles(
+        "canvas sampler",
+        [&]() {
+            sampler.beginSampling(&owner);
+            sampler.updateSample(image, owner.mapToGlobal(QPoint(20, 20)));
+            return &sampler;
+        },
+        [&] { sampler.updateSample(image, owner.mapToGlobal(QPoint(40, 40))); },
+        [&] { sampler.endSampling(); });
+
+    QWidget trigger(&toolbar);
+    trigger.setGeometry(20, 10, 40, 30);
+    trigger.show();
+    adqt::widgets::AdPopover popover;
+    popover.setSourceWidget(&trigger);
+    popover.setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    auto* content = new QWidget;
+    content->setFixedSize(80, 40);
+    popover.setContentWidget(content);
+    checkCycles(
+        "popover",
+        [&]() {
+            popover.show();
+            return content->window();
+        },
+        [&] { popover.refreshPopupLayout(); }, [&] { popover.hide(); });
+    const auto findSurface = [](const QString& name) -> QWidget* {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (widget->objectName() == name && widget->isVisible())
+                return widget;
+        }
+        return nullptr;
+    };
+    adqt::widgets::AdSelect select(&toolbar);
+    select.setGeometry(70, 10, 100, 30);
+    select.setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
+    select.show();
+    checkCycles(
+        "select",
+        [&]() {
+            select.showPopup();
+            return findSurface(QStringLiteral("adselect-popup"));
+        },
+        [&] { select.move(select.pos() + QPoint(1, 0)); }, [&] { select.hidePopup(); });
+
+    adqt::widgets::AdTooltip tooltip;
+    tooltip.setTargetWidget(&trigger);
+    tooltip.setLayerMode(adqt::widgets::AdTooltip::LayerMode::TopLevelTransient);
+    tooltip.setTriggers(adqt::widgets::AdTooltip::Trigger::Click);
+    tooltip.setText(QStringLiteral("Stacking tooltip"));
+    checkCycles(
+        "tooltip",
+        [&]() {
+            tooltip.show();
+            return findSurface(QStringLiteral("adtooltip-surface"));
+        },
+        [&] { trigger.move(trigger.pos() + QPoint(1, 0)); }, [&] { tooltip.hide(); });
+
+    // Isolated busy surfaces are a Windows-only presentation; other platforms render inline.
+    adqt::widgets::AdButton button(&toolbar);
+    button.setGeometry(20, 10, 100, 30);
+    button.setBusyIndicatorPresentation(
+        adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+    button.show();
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        checkCycles(
+            "busy indicator",
+            [&]() {
+                button.setBusy(true);
+                return button.busyIndicatorSurface();
+            },
+            [&] { button.move(button.pos() + QPoint(1, 0)); }, [&] { button.setBusy(false); });
+    }
+    storage.shutdown();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -606,9 +823,14 @@ int main(int argc, char** argv) {
         screenshotStyleBindingFollowsToolbarAttachment();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--stacking-only"))) {
+        auxiliaryWindowsPreserveOwnerStacking();
+        return 0;
+    }
     canvasSamplerFollowsSessionOwner();
     if (application.arguments().contains(QStringLiteral("--canvas-sampler-only")))
         return 0;
+    auxiliaryWindowsPreserveOwnerStacking();
     pickerLifetimeFollowsExplicitSessionOperations();
     visibleRecaptureWindowsIncludePicker();
     invocationMonitorOwnsThePreparedSurface();

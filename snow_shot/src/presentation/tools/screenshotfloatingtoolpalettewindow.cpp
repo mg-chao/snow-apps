@@ -13,6 +13,7 @@
 #include "widgets/dpi_stable_window_controller.h"
 #include "widgets/button.h"
 #include "widgets/window_creation_context.h"
+#include "widgets/detail/top_level_popup_window.h"
 #if defined(Q_OS_MACOS)
 #include "widgets/detail/window_surface_mac_p.h"
 #include "snow_shot/platform/screenshotnative.h"
@@ -195,18 +196,14 @@ void ScreenshotFloatingToolPaletteWindow::setTransientOwnerWindow(QWidget* owner
         toolPalette->setWatermarkTemplateModalOwnerWindow(owner);
     }
 
-    QWindow* ownerHandle = nullptr;
     if (owner != nullptr) {
-        ownerHandle = owner->windowHandle();
-        if (ownerHandle == nullptr) {
-            static_cast<void>(owner->winId());
-            ownerHandle = owner->windowHandle();
-        }
+        static_cast<void>(owner->winId());
     }
-
     const WId paletteWindowId = winId();
-    if (QWindow* handle = windowHandle()) {
-        handle->setTransientParent(ownerHandle);
+    if (owner != nullptr) {
+        adqt::widgets::detail::setTopLevelToolTransientParent(this, owner);
+    } else if (QWindow* handle = windowHandle(); handle && handle->transientParent()) {
+        handle->setTransientParent(nullptr);
     }
     native::setNativePaletteOwner(paletteWindowId, owner);
 }
@@ -296,6 +293,7 @@ void ScreenshotFloatingToolPaletteWindow::restoreNativeSurface() {
     if (m_transientOwnerWindow != nullptr) {
         setTransientOwnerWindow(m_transientOwnerWindow.data());
     } else {
+        adqt::widgets::detail::setTopLevelToolTransientParent(this, parentWidget());
         native::setNativePaletteOwner(paletteWindowId, parentWidget());
     }
     applyPlacementScreen();
@@ -511,7 +509,7 @@ bool ScreenshotFloatingToolPaletteWindow::eventFilter(QObject* watched, QEvent* 
 
 bool ScreenshotFloatingToolPaletteWindow::nativeEvent(const QByteArray& eventType, void* message,
                                                       qintptr* result) {
-    Q_UNUSED(eventType);
+    adqt::widgets::detail::constrainTopLevelToolStackingToOwner(this, message);
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const auto* msg = static_cast<MSG*>(message);
     if (m_changingKeyboardFocusPolicy && msg != nullptr && msg->message == WM_STYLECHANGING &&
