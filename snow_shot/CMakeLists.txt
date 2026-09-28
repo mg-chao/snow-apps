@@ -2425,10 +2425,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include"
     )
     target_link_libraries(snow-shot-system-tray-controller-tests PRIVATE
+        snow_shot_image_codec
         ant_design_qt
         snow_shot_settings_catalog
         Qt6::Widgets
     )
+    # Match deployment: ICO decoding must not depend on the optional Qt plugin.
+    qt_import_plugins(snow-shot-system-tray-controller-tests EXCLUDE Qt6::QICOPlugin)
     qt_add_resources(snow-shot-system-tray-controller-tests "snow_shot_tray_test_assets"
         PREFIX "/snow-shot/app-icons"
         BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"

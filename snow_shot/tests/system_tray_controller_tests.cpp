@@ -12,6 +12,8 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QBuffer>
+#include <QDataStream>
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDateTime>
@@ -20,6 +22,7 @@
 #include <QFileDevice>
 #include <QFileInfo>
 #include <QImage>
+#include <QImageReader>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
@@ -234,10 +237,78 @@ int main(int argc, char* argv[]) {
     const QString icoPath = QFileInfo(QString::fromUtf8(__FILE__))
                                 .dir()
                                 .absoluteFilePath(QStringLiteral("../resources/app-icon.ico"));
+    const QStringList pluginPaths = QCoreApplication::libraryPaths();
+    QCoreApplication::setLibraryPaths({});
+    require(!QImageReader::supportedImageFormats().contains(QByteArrayLiteral("ico")),
+            "the regression must run without a Qt ICO decoder");
     controller.setCustomIconPath(icoPath);
     require(trayIcon->property("customIconSourcePixelSize").toSize() == QSize(256, 256) &&
                 trayIcon->property("customIconDecodedPixelSize").toSize() == QSize(256, 256),
-            "ICO loading should select the available frame nearest 256 by 256");
+            "ICO loading should select the available frame nearest 256 by 256 without Qt plugins");
+    require(trayIcon->property("resolvedIconSource").toString() == icoPath,
+            "ICO loading without Qt plugins must use the custom icon");
+    // Build the directory explicitly: fixture creation must not need Qt's ICO plugin either.
+    const auto writeIcon = [&](const QString& name, const QList<QSize>& sizes,
+                               const QList<QByteArray>& payloads) {
+        const QString path = storageDirectory.filePath(name);
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly), "the ICO fixture should be writable");
+        QDataStream stream(&file);
+        stream.setByteOrder(QDataStream::LittleEndian);
+        stream << quint16(0) << quint16(1) << quint16(sizes.size());
+        quint32 offset = 6 + 16 * static_cast<quint32>(sizes.size());
+        for (qsizetype index = 0; index < sizes.size(); ++index) {
+            stream << quint8(sizes[index].width()) << quint8(sizes[index].height()) << quint8(0)
+                   << quint8(0) << quint16(1) << quint16(32) << quint32(payloads[index].size())
+                   << offset;
+            offset += static_cast<quint32>(payloads[index].size());
+        }
+        for (const auto& payload : payloads) {
+            require(file.write(payload) == payload.size(), "the ICO payload should be written");
+        }
+        return path;
+    };
+    const auto pngPayload = [](int extent, const QColor& color) {
+        QImage image(extent, extent, QImage::Format_RGBA8888);
+        image.fill(color);
+        QByteArray bytes;
+        QBuffer buffer(&bytes);
+        require(buffer.open(QIODevice::WriteOnly) && image.save(&buffer, "PNG"),
+                "the embedded PNG fixture should be writable");
+        return bytes;
+    };
+    const QColor selectedColor(64, 128, 255, 128);
+    const QString multiIconPath = writeIcon(
+        QStringLiteral("multi-icon.ico"), {QSize(16, 16), QSize(64, 64), QSize(32, 32)},
+        {pngPayload(16, Qt::red), pngPayload(64, selectedColor), pngPayload(32, Qt::green)});
+    controller.setCustomIconPath(multiIconPath);
+    require(trayIcon->property("customIconSourcePixelSize").toSize() == QSize(64, 64) &&
+                trayIcon->icon().pixmap(QSize(64, 64)).toImage().pixelColor(32, 32).rgba() ==
+                    selectedColor.rgba(),
+            "ICO selection must decode the nearest frame and preserve its alpha and color");
+    const auto icoDecodeCount = trayIcon->property("customIconDecodeCount").toULongLong();
+    controller.show();
+    require(trayIcon->property("customIconDecodeCount").toULongLong() == icoDecodeCount,
+            "unchanged ICO files should reuse the decoded icon");
+
+    QByteArray dib;
+    QDataStream dibStream(&dib, QIODevice::WriteOnly);
+    dibStream.setByteOrder(QDataStream::LittleEndian);
+    dibStream << quint32(40) << qint32(16) << qint32(32) << quint16(1) << quint16(32) << quint32(0)
+              << quint32(16 * 16 * 4) << qint32(0) << qint32(0) << quint32(0) << quint32(0);
+    for (int pixel = 0; pixel < 16 * 16; ++pixel) {
+        dibStream << quint32(0xff4080c0);
+    }
+    dib.append(QByteArray(16 * 4, '\0')); // DWORD-aligned AND mask rows.
+    controller.setCustomIconPath(writeIcon(QStringLiteral("dib-icon.ico"), {QSize(16, 16)}, {dib}));
+    require(trayIcon->icon().pixmap(QSize(16, 16)).toImage().pixelColor(8, 8) ==
+                QColor(64, 128, 192),
+            "DIB-backed ICO images must decode without Qt plugins");
+    controller.setCustomIconPath(
+        writeIcon(QStringLiteral("broken-icon.ico"), {QSize(16, 16)}, {QByteArray("broken")}));
+    require(trayIcon->property("resolvedIconSource").toString().startsWith(QStringLiteral(":/")),
+            "a corrupt ICO payload must fall back to the bundled icon");
+    QCoreApplication::setLibraryPaths(pluginPaths);
 
     controller.setIconSelection(QStringLiteral("light"));
     const QString oversizedIconPath =

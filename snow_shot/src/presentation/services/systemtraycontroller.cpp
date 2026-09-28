@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snowimageqtcodec.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
@@ -30,7 +31,6 @@
 #include <QVariant>
 
 #include <algorithm>
-#include <limits>
 
 namespace snow_shot::presentation {
 namespace {
@@ -106,38 +106,27 @@ class TrayImageCache final {
             return {};
         }
 
+        if (suffix == QStringLiteral("ico")) {
+            ++decodeCount_;
+            QImage image = image_codec::decodeIconFile(path, 256);
+            const QSize sourceSize = image.size();
+            if (image.width() > 256 || image.height() > 256) {
+                image =
+                    image.scaled(QSize(256, 256), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            }
+            QIcon icon;
+            if (!image.isNull()) {
+                icon = QIcon(QPixmap::fromImage(image));
+            }
+            remember(path, size, modified, icon, sourceSize, image.size());
+            return icon;
+        }
+
         QImageReader reader(path);
         reader.setAutoTransform(true);
         if (!reader.canRead()) {
             remember(path, size, modified, {}, {}, {});
             return {};
-        }
-
-        int selectedFrame = -1;
-        if (suffix == QStringLiteral("ico")) {
-            QImageReader probe(path);
-            probe.setAutoTransform(true);
-            const int frameCount = probe.imageCount();
-            qint64 bestScore = std::numeric_limits<qint64>::max();
-            for (int frame = 0; frame < frameCount; ++frame) {
-                if (!probe.jumpToImage(frame)) {
-                    continue;
-                }
-                const QSize candidate = probe.size();
-                if (!candidate.isValid() || candidate.width() <= 0 || candidate.height() <= 0) {
-                    continue;
-                }
-                const qint64 score = qAbs(static_cast<qint64>(candidate.width()) - 256) +
-                                     qAbs(static_cast<qint64>(candidate.height()) - 256);
-                if (score < bestScore) {
-                    bestScore = score;
-                    selectedFrame = frame;
-                }
-            }
-            if (selectedFrame >= 0 && !reader.jumpToImage(selectedFrame)) {
-                remember(path, size, modified, {}, {}, {});
-                return {};
-            }
         }
 
         const QSize sourceSize = reader.size();

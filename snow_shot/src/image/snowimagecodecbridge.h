@@ -187,6 +187,12 @@ SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_cod
     const uint8_t* encoded, uint64_t encoded_size, uint32_t expected_format,
     SnowShotImageCodecBuffer* output, char* error, uint64_t error_capacity);
 
+// Decode only the ICO frame nearest the requested extent (first entry wins ties).
+SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL
+snow_shot_image_codec_decode_icon_rgba8(const uint8_t* encoded, uint64_t encoded_size,
+                                        uint32_t preferred_extent, SnowShotImageCodecBuffer* output,
+                                        char* error, uint64_t error_capacity);
+
 SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_codec_decode_bgra8(
     const uint8_t* encoded, uint64_t encoded_size, uint32_t expected_format,
     SnowShotImageCodecBuffer* output, char* error, uint64_t error_capacity);

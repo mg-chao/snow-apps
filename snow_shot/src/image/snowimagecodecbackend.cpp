@@ -799,7 +799,8 @@ int32_t snow_shot_image_codec_encode_rgba8_stream(
 
 int32_t decodePacked8(const uint8_t* encoded, uint64_t encodedSize, uint32_t expectedFormat,
                       snow::image::PixelFormat outputFormat, const char* pixelDescription,
-                      SnowShotImageCodecBuffer* output, char* error, uint64_t errorCapacity) {
+                      SnowShotImageCodecBuffer* output, char* error, uint64_t errorCapacity,
+                      uint32_t preferredIconExtent = 0) {
     clearError(error, errorCapacity);
     if (!prepareBuffer(output, error, errorCapacity)) {
         return 0;
@@ -816,6 +817,32 @@ int32_t decodePacked8(const uint8_t* encoded, uint64_t encodedSize, uint32_t exp
         snow::image::DecodeOptions options;
         options.output_format = outputFormat;
         options.raster_layout = snow::image::RasterLayoutPolicy::packed;
+        if (preferredIconExtent != 0) {
+            const auto information =
+                service().inspect(snow::image::memory_input(bytes, nameHint(format)));
+            if (!information || information.value().format != snow::image::Format::ico ||
+                information.value().frames.empty()) {
+                setError(error, errorCapacity, "The icon directory is invalid.");
+                return 0;
+            }
+            uint64_t bestScore = std::numeric_limits<uint64_t>::max();
+            const auto& frames = information.value().frames;
+            for (std::size_t index = 0; index < frames.size(); ++index) {
+                const auto& frame = frames[index];
+                const auto distance = [preferredIconExtent](uint32_t extent) -> uint64_t {
+                    return extent > preferredIconExtent ? extent - preferredIconExtent
+                                                        : preferredIconExtent - extent;
+                };
+                const uint64_t score = distance(frame.width) + distance(frame.height);
+                if (score < bestScore) {
+                    bestScore = score;
+                    options.frame_index = static_cast<uint32_t>(index);
+                }
+            }
+            options.limits.maximum_width = 16384;
+            options.limits.maximum_height = 16384;
+            options.limits.maximum_pixels = 64ULL * 1024 * 1024;
+        }
         PackedDecodeSink sink(format, outputFormat);
         snow::image::Result<void> decoded = service().decode_to_sink(
             snow::image::memory_input(bytes, nameHint(format)), sink, options);
@@ -848,6 +875,15 @@ int32_t snow_shot_image_codec_decode_rgba8(const uint8_t* encoded, uint64_t enco
     return decodePacked8(encoded, encodedSize, expectedFormat, snow::image::kRgba8,
                          "The decoded image does not contain RGBA pixels.", output, error,
                          errorCapacity);
+}
+
+int32_t snow_shot_image_codec_decode_icon_rgba8(const uint8_t* encoded, uint64_t encodedSize,
+                                                uint32_t preferredExtent,
+                                                SnowShotImageCodecBuffer* output, char* error,
+                                                uint64_t errorCapacity) {
+    return decodePacked8(encoded, encodedSize, SNOW_SHOT_IMAGE_CODEC_FORMAT_ICO,
+                         snow::image::kRgba8, "The decoded icon does not contain RGBA pixels.",
+                         output, error, errorCapacity, preferredExtent);
 }
 
 int32_t snow_shot_image_codec_decode_bgra8(const uint8_t* encoded, uint64_t encodedSize,

@@ -264,7 +264,8 @@ QByteArray encodeImage(const QImage& image, snow::image::Format format,
     return encoded;
 }
 
-QImage decodeBytes(const QByteArray& encoded, snow::image::Format expectedFormat) {
+QImage decodeBytes(const QByteArray& encoded, snow::image::Format expectedFormat,
+                   uint32_t preferredIconExtent = 0) {
     const uint32_t bridgeExpectedFormat = bridgeFormat(expectedFormat);
     if (!backendAbiIsCompatible() || encoded.isEmpty() ||
         bridgeExpectedFormat == SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN) {
@@ -273,10 +274,13 @@ QImage decodeBytes(const QByteArray& encoded, snow::image::Format expectedFormat
 
     BackendBuffer output;
     std::array<char, kBackendErrorCapacity> backendError{};
-    const int32_t succeeded = snow_shot_image_codec_decode_rgba8(
-        reinterpret_cast<const uint8_t*>(encoded.constData()),
-        static_cast<uint64_t>(encoded.size()), bridgeExpectedFormat, &output.value,
-        backendError.data(), static_cast<uint64_t>(backendError.size()));
+    const auto decoder = preferredIconExtent != 0 ? snow_shot_image_codec_decode_icon_rgba8
+                                                  : snow_shot_image_codec_decode_rgba8;
+    const int32_t succeeded =
+        decoder(reinterpret_cast<const uint8_t*>(encoded.constData()),
+                static_cast<uint64_t>(encoded.size()),
+                preferredIconExtent != 0 ? preferredIconExtent : bridgeExpectedFormat,
+                &output.value, backendError.data(), static_cast<uint64_t>(backendError.size()));
     if (succeeded == 0 || output.value.data == nullptr || output.value.width == 0 ||
         output.value.height == 0 ||
         output.value.width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
@@ -578,6 +582,12 @@ QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
               const char* /*nameHint*/) {
     return decodeBytes(encoded, expectedFormat);
 }
+QImage decodeIconFile(const QString& path, uint32_t preferredExtent) {
+    if (preferredExtent == 0)
+        return {};
+    return decodeBytes(readFile(path), snow::image::Format::ico, preferredExtent);
+}
+
 QSize inspectSize(const QByteArray& encoded, snow::image::Format expectedFormat) {
     const auto format = bridgeFormat(expectedFormat);
     if (!backendAbiIsCompatible() || encoded.isEmpty() ||
