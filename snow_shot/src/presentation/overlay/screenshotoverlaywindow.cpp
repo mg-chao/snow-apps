@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include <QEvent>
+#include "snow_shot/platform/windows/windowchrome.h"
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/screenshotnative.h"
 #endif
@@ -68,6 +69,12 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     m_regionTypeControl = new ScreenshotRegionTypeControl(this, true);
     m_regionTypeControl->hide();
     m_scrollingThumbnail = new ScreenshotScrollingThumbnailWidget(*this);
+    // Configure once, before creating the native surface. Reparenting or changing
+    // QWidget window flags during capture would hide/recreate visible windows.
+    m_scrollingThumbnail->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
+                                         Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
+    m_scrollingThumbnail->setAttribute(Qt::WA_ShowWithoutActivating);
+    m_scrollingThumbnail->setAttribute(Qt::WA_TranslucentBackground);
     m_scrollingThumbnail->hide();
     m_framePresenter = std::make_unique<ScreenshotOverlayFramePresenter>(*this);
 
@@ -313,7 +320,7 @@ void ScreenshotOverlayWindow::setCanvasClearBackgroundEnabled(bool enabled) {
 QJsonObject ScreenshotOverlayWindow::scrollingDiagnostics() const {
     using snow_shot::capture_detail::scrollingRect;
     const QRect hole =
-        m_inputPassThroughRect.translated(m_captureFrameMargins.left(), m_captureFrameMargins.top())
+        m_scrollingVisualHole.translated(m_captureFrameMargins.left(), m_captureFrameMargins.top())
             .intersected(rect());
     QJsonObject fields{{QStringLiteral("overlay_rect"), scrollingRect(geometry())},
                        {QStringLiteral("hole_rect"), scrollingRect(hole)},
@@ -353,21 +360,21 @@ QJsonObject ScreenshotOverlayWindow::scrollingDiagnostics() const {
     return fields;
 }
 
-void ScreenshotOverlayWindow::setInputPassThroughRect(const QRect& localRect) {
-    m_inputPassThroughRect = localRect;
+void ScreenshotOverlayWindow::setScrollingVisualHole(const QRect& localRect) {
+    m_scrollingVisualHole = localRect;
     updateWindowMask();
 }
 
-void ScreenshotOverlayWindow::clearInputPassThroughRect() {
-    m_inputPassThroughRect = {};
+void ScreenshotOverlayWindow::clearScrollingVisualHole() {
+    m_scrollingVisualHole = {};
     updateWindowMask();
 }
 
 void ScreenshotOverlayWindow::setScrollingCaptureMode(bool enabled) {
     if (!enabled) {
-        // Standard rendering draws into the scrolling pass-through hole, so
+        // Standard rendering draws into the scrolling visual hole, so
         // restore the full window surface before its synchronous repaint.
-        clearInputPassThroughRect();
+        clearScrollingVisualHole();
         clearScrollingThumbnail();
     }
 
@@ -401,6 +408,7 @@ void ScreenshotOverlayWindow::setScrollingCaptureMode(bool enabled) {
     }
 
     m_scrollingCaptureMode = enabled;
+    updateScrollingInputTransparency();
     if (m_canvas != nullptr && m_canvas->isVisible() && m_canvas->updatesEnabled()) {
         m_canvas->repaint();
     } else if (m_canvas != nullptr) {
@@ -415,6 +423,7 @@ void ScreenshotOverlayWindow::beginScrollingThumbnail(const QRect& localSelectio
     }
 
     m_scrollingThumbnailSessionActive = true;
+    m_scrollingThumbnailHasPreview = false;
     m_scrollingThumbnailAnchor = localSelection.normalized();
     m_scrollingThumbnailMode = mode;
     m_scrollingThumbnail->setRecognitionMode(mode);
@@ -434,8 +443,14 @@ void ScreenshotOverlayWindow::updateScrollingThumbnail(const QImage& previewImag
 
     m_scrollingThumbnail->setStitchedImage(previewImage, sourceSize, change, addedRows,
                                            replacePreview, replacedPreviewRows);
-    m_scrollingThumbnail->show();
+    m_scrollingThumbnailHasPreview = true;
     layoutScrollingThumbnail();
+    if (isVisible() && !m_scrollingThumbnail->isVisible()) {
+#ifdef Q_OS_MACOS
+        snow_shot::platform::configureScreenshotToolbarWindow(m_scrollingThumbnail);
+#endif
+        m_scrollingThumbnail->show();
+    }
 }
 
 void ScreenshotOverlayWindow::reanchorScrollingThumbnail(const QRect& localSelection) {
@@ -445,6 +460,7 @@ void ScreenshotOverlayWindow::reanchorScrollingThumbnail(const QRect& localSelec
 
 void ScreenshotOverlayWindow::clearScrollingThumbnail() {
     m_scrollingThumbnailSessionActive = false;
+    m_scrollingThumbnailHasPreview = false;
     m_scrollingThumbnailAnchor = {};
     m_scrollingThumbnailMode = ScreenshotScrollingRecognitionMode::Vertical;
     if (m_scrollingThumbnail == nullptr) {
@@ -453,7 +469,21 @@ void ScreenshotOverlayWindow::clearScrollingThumbnail() {
 
     m_scrollingThumbnail->hide();
     m_scrollingThumbnail->reset();
-    updateWindowMask();
+}
+
+QWidget* ScreenshotOverlayWindow::scrollingThumbnailWindow() const {
+    return m_scrollingThumbnail;
+}
+
+void ScreenshotOverlayWindow::updateScrollingInputTransparency() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    // Mutate only WS_EX_TRANSPARENT on the existing layered HWND. In particular,
+    // do not hide/show the overlay or ask Qt to rebuild its window flags.
+    static_cast<void>(
+        snow_shot::platform::windows::setWindowInputTransparent(this, m_scrollingCaptureMode));
+#elif defined(Q_OS_MACOS)
+    snow_shot::platform::setScreenshotInputTransparent(this, m_scrollingCaptureMode);
+#endif
 }
 
 ScreenshotScrollingTrimRange ScreenshotOverlayWindow::scrollingThumbnailTrim() const {
@@ -496,7 +526,7 @@ void ScreenshotOverlayWindow::releaseNativeSurface() {
     hide();
     setUpdatesEnabled(false);
     clearMask();
-    m_inputPassThroughRect = {};
+    m_scrollingVisualHole = {};
     m_appliedWindowMask = QRegion();
     m_windowMaskInitialized = false;
     if (m_canvas != nullptr) {
@@ -545,6 +575,22 @@ void ScreenshotOverlayWindow::initializeScreenshotSurface() {
 }
 
 bool ScreenshotOverlayWindow::event(QEvent* event) {
+    if (event != nullptr && m_scrollingThumbnail != nullptr) {
+        if (event->type() == QEvent::Hide) {
+            m_scrollingThumbnail->hide();
+        } else if (event->type() == QEvent::Move) {
+            layoutScrollingThumbnail();
+        } else if (event->type() == QEvent::Show) {
+            updateScrollingInputTransparency();
+            layoutScrollingThumbnail();
+            if (m_scrollingThumbnailSessionActive && m_scrollingThumbnailHasPreview) {
+#ifdef Q_OS_MACOS
+                snow_shot::platform::configureScreenshotToolbarWindow(m_scrollingThumbnail);
+#endif
+                m_scrollingThumbnail->show();
+            }
+        }
+    }
     if (event != nullptr &&
         (event->type() == QEvent::SafeAreaMarginsChange || event->type() == QEvent::Show)) {
         layoutRegionTypeControl();
@@ -670,7 +716,7 @@ void ScreenshotOverlayWindow::layoutScrollingThumbnail() {
     }
 
     const QRect bounds(QPoint(), captureGeometry().size());
-    const QPoint frameOffset(m_captureFrameMargins.left(), m_captureFrameMargins.top());
+    const QPoint displayOrigin = captureGeometry().topLeft();
     if (m_scrollingThumbnailMode == ScreenshotScrollingRecognitionMode::Horizontal) {
         const int availableWidth = std::max(1, bounds.width() - kScrollingThumbnailMargin * 2);
         m_scrollingThumbnail->setMaximumPreviewExtent(availableWidth);
@@ -688,9 +734,7 @@ void ScreenshotOverlayWindow::layoutScrollingThumbnail() {
                                       bounds.width() - thumbnailWidth - kScrollingThumbnailMargin);
         const int x =
             std::clamp(m_scrollingThumbnailAnchor.x(), kScrollingThumbnailMargin, maximumX);
-        m_scrollingThumbnail->move(QPoint(x, y) + frameOffset);
-        m_scrollingThumbnail->raise();
-        updateWindowMask();
+        m_scrollingThumbnail->move(QPoint(x, y) + displayOrigin);
         return;
     }
 
@@ -714,43 +758,31 @@ void ScreenshotOverlayWindow::layoutScrollingThumbnail() {
     const int maximumY = std::max(kScrollingThumbnailMargin,
                                   bounds.height() - thumbnailHeight - kScrollingThumbnailMargin);
     const int y = std::clamp(m_scrollingThumbnailAnchor.y(), bounds.top(), maximumY);
-    m_scrollingThumbnail->move(QPoint(x, y) + frameOffset);
-    m_scrollingThumbnail->raise();
-    updateWindowMask();
+    m_scrollingThumbnail->move(QPoint(x, y) + displayOrigin);
 }
 
 void ScreenshotOverlayWindow::updateWindowMask() {
     const QRect hole =
-        m_inputPassThroughRect.translated(m_captureFrameMargins.left(), m_captureFrameMargins.top())
+        m_scrollingVisualHole.translated(m_captureFrameMargins.left(), m_captureFrameMargins.top())
             .intersected(rect());
-    QRegion interactiveRegion;
+    QRegion visibleRegion;
     if (hole.isEmpty()) {
-        interactiveRegion = {};
+        visibleRegion = {};
     } else {
-        interactiveRegion = QRegion(rect()).subtracted(QRegion(hole));
-        if (m_scrollingThumbnailSessionActive && m_scrollingThumbnail != nullptr &&
-            m_scrollingThumbnail->isVisible()) {
-            interactiveRegion += QRegion(m_scrollingThumbnail->geometry());
-        }
+        visibleRegion = QRegion(rect()).subtracted(QRegion(hole));
     }
-#ifdef Q_OS_MACOS
-    // An empty visual mask can mean either no hole or a full-display hole.
-    // Keep the native input region explicit, including overlapping preview controls.
-    snow_shot::platform::setScreenshotInputPassThroughRegion(
-        this, QRegion(hole).subtracted(interactiveRegion));
-#endif
-    if (m_windowMaskInitialized && interactiveRegion == m_appliedWindowMask) {
+    if (m_windowMaskInitialized && visibleRegion == m_appliedWindowMask) {
         return;
     }
     m_windowMaskInitialized = true;
-    m_appliedWindowMask = interactiveRegion;
+    m_appliedWindowMask = visibleRegion;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     ++m_windowMaskApplicationCount;
 #endif
-    if (interactiveRegion.isEmpty()) {
+    if (visibleRegion.isEmpty()) {
         clearMask();
     } else {
-        setMask(interactiveRegion);
+        setMask(visibleRegion);
     }
 }
 
