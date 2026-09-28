@@ -29,7 +29,7 @@
         </message>
         <message>
             <source>Adjust opacity</source>
-            <translation>調整透明度</translation>
+            <translation>調整不透明度</translation>
         </message>
         <message>
             <source>Align bottom</source>
@@ -106,6 +106,10 @@
         <message>
             <source>Blue</source>
             <translation>藍色</translation>
+        </message>
+        <message>
+            <source>Brightness</source>
+            <translation>亮度</translation>
         </message>
         <message>
             <source>Bring forward</source>
@@ -629,7 +633,7 @@
         </message>
         <message>
             <source>Opacity</source>
-            <translation>透明度</translation>
+            <translation>不透明度</translation>
         </message>
         <message>
             <source>Open recording folder</source>
@@ -1102,10 +1106,6 @@
         <message>
             <source>Transparent</source>
             <translation>透明</translation>
-        </message>
-        <message>
-            <source>Unavailable while recording</source>
-            <translation>錄製期間無法使用</translation>
         </message>
         <message>
             <source>Undo</source>

@@ -38,6 +38,62 @@ void require(bool condition, const char* message) {
     }
 }
 
+void brightnessHasNeutralMidpointAndPreservesAlpha() {
+    using namespace snow_canvas_filter_render;
+    QImage source(QSize(257, 256), QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < source.height(); ++y) {
+        for (int x = 0; x < source.width(); ++x) {
+            const int channel = qMin(x, y);
+            source.setPixel(x, y, qRgba(channel, channel / 2, y - channel, y));
+        }
+    }
+    Parameters parameters;
+    parameters.type = 6;
+    for (double strength : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+        parameters.strength = strength;
+        QImage result = source;
+        RenderWorkspace workspace;
+        apply(result, parameters, &workspace);
+        if (strength == 0.5) {
+            require(result.constBits() == source.constBits(),
+                    "neutral brightness must not detach or modify shared source pixels");
+            require(workspace.diagnostics().parallelJobs == 0,
+                    "neutral brightness must not dispatch pixel work");
+        }
+        for (int y = 0; y < source.height(); ++y) {
+            for (int x = 0; x < source.width(); ++x) {
+                const QRgb original = source.pixel(x, y);
+                const auto expected = [strength, original](int channel) {
+                    return strength <= 0.5 ? qRound(channel * strength * 2.0)
+                                           : qRound(channel + (qAlpha(original) - channel) *
+                                                                  (strength * 2.0 - 1.0));
+                };
+                require(result.pixel(x, y) == qRgba(expected(qRed(original)),
+                                                    expected(qGreen(original)),
+                                                    expected(qBlue(original)), qAlpha(original)),
+                        "brightness must fade toward black or white and retain alpha");
+            }
+        }
+        QImage rect = source;
+        const QRect area(3, 7, 243, 221);
+        require(applyRect(source, rect, area, 1.0, parameters), "brightness rectangle dispatch");
+        QImage region = source;
+        require(applyRegion(source, region, QRegion(area), parameters),
+                "brightness region dispatch");
+        require(region == rect, "brightness rectangle and region paths must agree");
+        QImage inPlace = source.copy();
+        require(applyRect(inPlace, inPlace, area, 1.0, parameters), "brightness in-place dispatch");
+        require(inPlace == rect, "in-place and separate brightness sources must agree");
+        for (int y = 0; y < source.height(); ++y) {
+            for (int x = 0; x < source.width(); ++x) {
+                require(rect.pixel(x, y) ==
+                            (area.contains(x, y) ? result.pixel(x, y) : source.pixel(x, y)),
+                        "brightness must only modify the requested region");
+            }
+        }
+    }
+}
+
 void publicRegionFilterApiRestrictsEffectsToTheRequestedRegion() {
     QImage source(QSize(24, 16), QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < source.height(); ++y) {
@@ -1047,7 +1103,7 @@ void mosaicPlanningCropsDirtyOutputAndBatchesEquivalentBlocks() {
             "mosaics with equal physical blocks must share one effect dispatch");
 }
 
-void embossBatchingRequiresEqualNormalizedStrength() {
+void intensityFilterBatchingRequiresEqualNormalizedStrength(std::uint32_t type) {
     const QSize size(160, 120);
     QImage background(size, QImage::Format_ARGB32_Premultiplied);
     background.fill(QColor(40, 90, 160));
@@ -1061,11 +1117,11 @@ void embossBatchingRequiresEqualNormalizedStrength() {
         first.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
         first.width = 96.0;
         first.height = 96.0;
-        first.filter = snow_filter_render_spec_resolve(4, 0.5);
+        first.filter = snow_filter_render_spec_resolve(type, 0.5);
         first.opacity = 1.0;
         SnowSceneDisplayItem second = first;
         second.center_x = 4.0;
-        second.filter = snow_filter_render_spec_resolve(4, secondStrength);
+        second.filter = snow_filter_render_spec_resolve(type, secondStrength);
         const SnowCanvasSceneItem items[] = {
             SnowCanvasSceneItem(first),
             SnowCanvasSceneItem(second),
@@ -1084,18 +1140,27 @@ void embossBatchingRequiresEqualNormalizedStrength() {
             &background,
         });
         painter.end();
+        if (type == 6) {
+            require(output.pixelColor(size.width() / 2, size.height() / 2) ==
+                        QColor(qRound(40 + (255 - 40) * (secondStrength * 2 - 1)),
+                               qRound(90 + (255 - 90) * (secondStrength * 2 - 1)),
+                               qRound(160 + (255 - 160) * (secondStrength * 2 - 1))),
+                    "scene brightness must use the requested intensity on the direct region path");
+        }
         return snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
     };
 
     const auto equalStrength = render(0.5);
-    require(equalStrength.originalFilterCount == 2 && equalStrength.effectDispatchCount == 1 &&
-                equalStrength.batchedFilterCount == 1,
-            "overlapping emboss regions with equal strengths must share one effect dispatch");
+    require(
+        equalStrength.originalFilterCount == 2 && equalStrength.effectDispatchCount == 1 &&
+            equalStrength.batchedFilterCount == 1,
+        "overlapping intensity-based regions with equal strengths must share one effect dispatch");
     const auto differentStrength = render(0.6);
     require(differentStrength.originalFilterCount == 2 &&
                 differentStrength.effectDispatchCount == 2 &&
                 differentStrength.batchedFilterCount == 0,
-            "overlapping emboss regions with different strengths must use separate dispatches");
+            "overlapping intensity-based regions with different strengths must use separate "
+            "dispatches");
 }
 
 void filteredBackgroundIsCompositedOnce() {
@@ -1211,7 +1276,7 @@ void penFilterUsesRawRoundStrokeMaskForEveryEffect() {
         return output;
     };
 
-    for (const std::uint32_t type : {0u, 1u, 2u, 3u, 4u}) {
+    for (const std::uint32_t type : {0u, 1u, 2u, 3u, 4u, 6u}) {
         const QImage output = render(type, 12.0);
         require(output.pixel(38, 48) != background.pixel(38, 48),
                 "every filter effect must be applied through a pen stroke");
@@ -1525,7 +1590,7 @@ void sparseAndForcedDensePenFiltersMatch() {
     info.surface_height = size.height();
     info.camera_zoom = 1.0;
 
-    for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u}) {
+    for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u, 6u}) {
         SnowSceneDisplayItem filter{};
         filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
         filter.element_id = SnowElementId{100 + type, 1};
@@ -1694,7 +1759,7 @@ void scalarAvx2AndThreadingProduceIdenticalPixels() {
                     static_cast<int>(generator() % static_cast<unsigned int>(alpha + 1)), alpha);
             }
         }
-        for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u}) {
+        for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u, 6u}) {
             QImage scalar = source;
             QImage optimized = source;
             snow_canvas_filter_render::Parameters parameters;
@@ -1766,7 +1831,7 @@ void maskedKernelsMatchAcrossBackendsAndRespectBlurMemoryBound() {
     }
     const QRect affected(3, 2, size.width() - 8, size.height() - 7);
     const QImage croppedMask = mask.copy(affected);
-    for (std::uint32_t type : {2u, 3u, 4u}) {
+    for (std::uint32_t type : {2u, 3u, 4u, 6u}) {
         for (double strength : {0.0, 0.5, 1.0}) {
             snow_canvas_filter_render::Parameters parameters;
             parameters.type = type;
@@ -2000,7 +2065,7 @@ void croppedCoverageWorkspaceAndFailurePathsStayValid() {
     require(maskedRegion == directRegion,
             "opaque-region reconstruction must match its Alpha8 union mask");
 
-    for (std::uint32_t type : {2u, 3u, 4u}) {
+    for (std::uint32_t type : {2u, 3u, 4u, 6u}) {
         snow_canvas_filter_render::Parameters color;
         color.type = type;
         color.strength = 0.5;
@@ -2984,6 +3049,7 @@ void tiledRenderMatchesFullRender() {
     runCase(1, 0.2, "blur strength 0.2");
     runCase(2, 0.5, "grayscale");
     runCase(4, 0.5, "emboss strength 0.5");
+    runCase(6, 0.75, "brightness strength 0.75");
 }
 } // namespace
 
@@ -2995,6 +3061,7 @@ int main(int argc, char** argv) {
         retainedFilterTilesRenderWithoutReopeningAnActivePainter();
         return 0;
     }
+    brightnessHasNeutralMidpointAndPreservesAlpha();
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();
@@ -3006,7 +3073,8 @@ int main(int argc, char** argv) {
     embossMatchesPixiFormulaAndPreservesPremultipliedAlpha();
     embossMatchesReferenceAcrossChannelDeltasAndAlpha();
     embossRenderingPathsShareOneImmutableSource();
-    embossBatchingRequiresEqualNormalizedStrength();
+    intensityFilterBatchingRequiresEqualNormalizedStrength(4);
+    intensityFilterBatchingRequiresEqualNormalizedStrength(6);
     partialFilterRenderUsesABoundedSurface();
     uniformGaussianBlurPreservesColor();
     approximateGaussianMeetsReferenceQualityFloor();

@@ -513,6 +513,7 @@ pub enum CanvasFilterType {
     Inversion,
     Emboss = 4,
     SmartErase = 5,
+    Brightness = 6,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

@@ -291,6 +291,9 @@ class ScreenshotPinnedWindowTestAccess {
     static double scale(const ScreenshotPinnedWindow& window) {
         return window.m_scalePercent;
     }
+    static void setFractionalScale(ScreenshotPinnedWindow& window, double percent) {
+        window.setEffectiveScale(percent, false);
+    }
     static int opacity(const ScreenshotPinnedWindow& window) {
         return window.m_opacityPercent;
     }
@@ -2459,6 +2462,81 @@ void cachedPinnedOcrAvailableWithoutRecognitionProvider() {
             "invalidated results must not leave provider-free recognition controls enabled");
 }
 
+void pinnedTransformGeometryIsAtomic() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QImage image(317, 173, QImage::Format_RGB32);
+    image.fill(QColor(42, 84, 126));
+    ScreenshotPinnedWindow::Config config;
+    config.canvasSourceRect = QRectF(QPointF(), image.size());
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.initialWindowSize = image.size();
+    config.nativeGeometry = QRect(QPoint(100, 100), image.size());
+    ScreenshotPinnedWindow window;
+    Access::restoreOffscreen(window, config);
+    auto* platform = Access::installObservedPlatform(window);
+    platform->observed = config.nativeGeometry;
+    auto* clockwise =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    auto* counterclockwise =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateCounterClockwiseAction"));
+    auto* flip = window.findChild<QAction*>(QStringLiteral("screenshotPinnedFlipHorizontalAction"));
+    auto* flipVertical =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedFlipVerticalAction"));
+    auto* reset =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedResetTransformAction"));
+    require(clockwise && counterclockwise && flip && flipVertical && reset,
+            "image actions must exist");
+    const auto verifyFit = [&] {
+        Access::settle(window);
+        const auto state = window.persistenceSnapshot();
+        const QSize expected = state.quarterTurns % 2 ? image.size().transposed() : image.size();
+        require(state.nativeGeometry.size() == expected &&
+                    state.contentCanvasRect.size() == QSizeF(expected),
+                "mixed transforms must keep window and canvas extents aligned");
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        const QRectF mapped = canvas->canvasToViewTransform().mapRect(state.contentCanvasRect);
+        require(qAbs(mapped.width() * canvas->devicePixelRatioF() - expected.width()) < .01 &&
+                    qAbs(mapped.height() * canvas->devicePixelRatioF() - expected.height()) < .01,
+                "transformed content must fill the viewport without transparent bands");
+    };
+    for (int i = 0; i < 8; ++i) {
+        for (auto* action : {clockwise, flip, counterclockwise, flipVertical, clockwise, reset}) {
+            action->trigger();
+            verifyFit();
+        }
+    }
+    // A native transaction can reject a resize while a move/resize is pending,
+    // or the platform can fail after accepting the proposed geometry.
+    for (auto* action : {clockwise, counterclockwise, reset}) {
+        reset->trigger();
+        if (action == reset)
+            clockwise->trigger();
+        for (int failure = 0; failure < 3; ++failure) {
+            const auto before = window.persistenceSnapshot();
+            if (failure == 0) {
+                require(Access::nativeController(window).beginMove(QPoint(120, 120)),
+                        "pending move must begin");
+            } else if (failure == 1) {
+                platform->rejectNext = true;
+            } else {
+                platform->biasNext = true;
+            }
+            action->trigger();
+            if (failure == 0)
+                Access::nativeController(window).cancelPendingInteraction();
+            const auto after = window.persistenceSnapshot();
+            require(after.imageTransform == before.imageTransform &&
+                        after.quarterTurns == before.quarterTurns &&
+                        after.nativeGeometry == before.nativeGeometry &&
+                        after.contentCanvasRect == before.contentCanvasRect,
+                    "rejected transform geometry must retain the image, orientation and canvas");
+            verifyFit();
+        }
+        action->trigger();
+        verifyFit();
+    }
+}
+
 void pinnedTransformResetPersistsWithoutResize() {
     auto config = cachedOcrPinConfig(nullptr);
     snow_shot::storage::PinnedWindowRecord lastWritten;
@@ -4115,6 +4193,159 @@ void pinnedBorderUsesCeiledWindowDpiPhysicalPixels(SnowCanvasRuntime&) {
         require(processUntilDeleted(guardedWindow, 2000), "client-edge border pin was not deleted");
         return;
     }
+}
+
+void pinnedImageProcessingShortcuts() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    window.show();
+    window.activateWindow();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "image commands need a canvas");
+    canvas->setFocus();
+    waitForUi(20);
+    const auto action = [&](const char* name) {
+        auto* result = window.findChild<QAction*>(QString::fromLatin1(name));
+        require(result != nullptr, "image command action must exist");
+        return result;
+    };
+    for (const auto& name : {"Opacity", "Scale"}) {
+        auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+            QStringLiteral("screenshotPinned%1Menu").arg(QString::fromLatin1(name)));
+        require(menu != nullptr && menu->actions().size() == 9 &&
+                    menu->actions().at(0)->text().startsWith(QStringLiteral("Increase 10%\t")) &&
+                    menu->actions().at(1)->text().startsWith(QStringLiteral("Decrease 10%\t")) &&
+                    menu->actions().at(2)->isSeparator(),
+                "adjustment menus must begin with increase, decrease, and a separator");
+    }
+    const struct {
+        const char* id;
+        const char* objectName;
+        Qt::Key key;
+        const char* portable;
+    } commands[] = {
+        {"increase_opacity", "screenshotPinnedIncreaseOpacityAction", Qt::Key_BracketRight, "]"},
+        {"decrease_opacity", "screenshotPinnedDecreaseOpacityAction", Qt::Key_BracketLeft, "["},
+        {"increase_scale", "screenshotPinnedIncreaseScaleAction", Qt::Key_Period, "."},
+        {"decrease_scale", "screenshotPinnedDecreaseScaleAction", Qt::Key_Comma, ","},
+        {"rotate_clockwise", "screenshotPinnedRotateClockwiseAction", Qt::Key_1, "1"},
+        {"rotate_counterclockwise", "screenshotPinnedRotateCounterClockwiseAction", Qt::Key_2, "2"},
+        {"flip_horizontal", "screenshotPinnedFlipHorizontalAction", Qt::Key_3, "3"},
+        {"flip_vertical", "screenshotPinnedFlipVerticalAction", Qt::Key_4, "4"},
+        {"reset_transform", "screenshotPinnedResetTransformAction", Qt::Key_0, "0"},
+    };
+    const snow_shot::storage::PinToScreenShortcutSettings settings;
+    for (const auto& command : commands) {
+        QAction* target = action(command.objectName);
+        const QString id = QString::fromLatin1(command.id);
+        const auto original = settings.shortcuts(id);
+        const QString hint = snow_shot::shortcuts::formatShortcutDisplayText(
+            snow_shot::shortcuts::bindingFromPortableText(QString::fromLatin1(command.portable)));
+        require(target->text().endsWith(QLatin1Char('\t') + hint),
+                "each image action must display its configured shortcut");
+        const auto reset = [&]() {
+            action("screenshotPinnedResetTransformAction")->trigger();
+            Access::setGeneralOpacity(window, 50);
+            Access::scaleBorderFixture(window, 100);
+            if (command.key == Qt::Key_0)
+                action("screenshotPinnedRotateClockwiseAction")->trigger();
+        };
+        reset();
+        target->trigger();
+        const auto clicked = window.persistenceSnapshot();
+        reset();
+        int activations = 0;
+        const auto connection =
+            QObject::connect(target, &QAction::triggered, &window, [&]() { ++activations; });
+        sendShortcut(*canvas, command.key);
+        const auto keyed = window.persistenceSnapshot();
+        require(activations == 1 && clicked.opacityPercent == keyed.opacityPercent &&
+                    clicked.scalePercent == keyed.scalePercent &&
+                    clicked.imageTransform == keyed.imageTransform &&
+                    clicked.quarterTurns == keyed.quarterTurns,
+                "each keyboard command must execute its menu action exactly once");
+        require(settings.setShortcuts(id, {QStringLiteral("Ctrl+Alt+9")}),
+                "each image command must support remapping");
+        sendShortcut(*canvas, command.key);
+        require(activations == 1, "the previous shortcut must stop activating after remapping");
+        sendShortcut(*canvas, Qt::Key_9, Qt::ControlModifier | Qt::AltModifier);
+        require(activations == 2, "remapped shortcuts must take effect immediately");
+        require(settings.setShortcuts(id, original), "restore the default image shortcut");
+        QEvent languageChange(QEvent::LanguageChange);
+        QCoreApplication::sendEvent(&window, &languageChange);
+        require(target->text().endsWith(QLatin1Char('\t') + hint),
+                "language changes must retain restored shortcut hints");
+        QObject::disconnect(connection);
+    }
+    Access::setGeneralOpacity(window, 50);
+    sendShortcut(*canvas, Qt::Key_BracketRight);
+    require(Access::opacity(window) == 60, "opacity increase must add ten percentage points");
+    sendShortcut(*canvas, Qt::Key_BracketLeft);
+    require(Access::opacity(window) == 50, "opacity decrease must subtract ten percentage points");
+    Access::setGeneralOpacity(window, 30);
+    sendShortcut(*canvas, Qt::Key_BracketLeft);
+    sendShortcut(*canvas, Qt::Key_BracketLeft);
+    require(Access::opacity(window) == 25, "opacity must clamp at 25 percent");
+    Access::setGeneralOpacity(window, 95);
+    sendShortcut(*canvas, Qt::Key_BracketRight);
+    sendShortcut(*canvas, Qt::Key_BracketRight);
+    require(Access::opacity(window) == 100, "opacity must clamp at 100 percent");
+    Access::scaleBorderFixture(window, 55);
+    sendShortcut(*canvas, Qt::Key_Period);
+    require(Access::scale(window) == 65, "scale increase must add ten percentage points");
+    sendShortcut(*canvas, Qt::Key_Comma);
+    require(Access::scale(window) == 55, "scale decrease must subtract ten percentage points");
+    Access::setFractionalScale(window, 55.6);
+    sendShortcut(*canvas, Qt::Key_Period);
+    require(Access::scale(window) == 66, "scale commands must round before stepping");
+    Access::scaleBorderFixture(window, 15);
+    sendShortcut(*canvas, Qt::Key_Comma);
+    sendShortcut(*canvas, Qt::Key_Comma);
+    require(Access::scale(window) == 10, "scale must clamp at ten percent");
+    Access::scaleBorderFixture(window, 495);
+    sendShortcut(*canvas, Qt::Key_Period);
+    sendShortcut(*canvas, Qt::Key_Period);
+    require(Access::scale(window) == 500, "scale must clamp at 500 percent");
+    Access::scaleBorderFixture(window, 100);
+    QLineEdit textInput(&window);
+    textInput.show();
+    textInput.setFocus();
+    waitForUi(20);
+    require(textInput.hasFocus(), "text input guard fixture must own focus");
+    const auto beforeTyping = window.persistenceSnapshot();
+    for (const auto& command : commands)
+        sendShortcut(textInput, command.key);
+    const auto afterTyping = window.persistenceSnapshot();
+    require(beforeTyping.opacityPercent == afterTyping.opacityPercent &&
+                beforeTyping.scalePercent == afterTyping.scalePercent &&
+                beforeTyping.imageTransform == afterTyping.imageTransform,
+            "image shortcuts must not intercept typing");
+    textInput.hide();
+    canvas->setFocus();
+    const snow_shot::storage::DrawingShortcutSettings drawingSettings;
+    const auto originalShapeShortcut = drawingSettings.shortcuts(QStringLiteral("shape"));
+    require(drawingSettings.setShortcuts(QStringLiteral("shape"), {QStringLiteral("1")}),
+            "drawing precedence fixture must bind Shape to 1");
+    action("screenshotPinnedDrawingAction")->setChecked(true);
+    const auto beforeDrawing = window.persistenceSnapshot();
+    sendShortcut(*canvas, Qt::Key_1);
+    require(canvas->canvasTool() == SnowCanvasTool::Shape &&
+                window.persistenceSnapshot().imageTransform == beforeDrawing.imageTransform,
+            "active drawing shortcuts must take precedence over image transforms");
+    action("screenshotPinnedDrawingAction")->setChecked(false);
+    require(drawingSettings.setShortcuts(QStringLiteral("shape"), originalShapeShortcut),
+            "restore the drawing shortcut");
+    Access::recognitionOffscreen(window, cachedOcrPinConfig(nullptr));
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    auto* scaleMenu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedScaleMenu"));
+    require(!scaleMenu->menuAction()->isEnabled(), "OCR must disable scale commands");
+    sendShortcut(*canvas, Qt::Key_Period);
+    action("screenshotPinnedIncreaseScaleAction")->trigger();
+    require(Access::scale(window) == 100, "neither shortcut nor menu may bypass OCR restrictions");
 }
 
 void pinnedShortcutDisplayUsesSettingsFormat() {
@@ -12786,6 +13017,10 @@ int main(int argc, char* argv[]) {
             pinnedSaveDialogRoutingAndCancellation();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--image-processing-shortcuts-only"))) {
+            pinnedImageProcessingShortcuts();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--shortcut-display-only"))) {
             pinnedShortcutDisplayUsesSettingsFormat();
             return 0;
@@ -12879,6 +13114,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--cached-ocr-provider-only"))) {
             cachedPinnedOcrAvailableWithoutRecognitionProvider();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--transform-geometry-only"))) {
+            pinnedTransformGeometryIsAtomic();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--transformed-ocr-only"))) {

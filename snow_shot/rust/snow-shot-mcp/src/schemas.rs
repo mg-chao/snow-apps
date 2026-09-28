@@ -376,6 +376,7 @@ enum Filter {
     Grayscale,
     Inversion,
     Emboss,
+    Brightness,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -727,6 +728,7 @@ enum FilterKind {
     Grayscale,
     Inversion,
     Emboss,
+    Brightness,
     SmartErase,
 }
 #[derive(Deserialize, JsonSchema)]

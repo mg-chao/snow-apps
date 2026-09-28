@@ -1421,6 +1421,14 @@
             <translation>深色</translation>
         </message>
         <message>
+            <source>Decrease opacity by 10%</source>
+            <translation>不透明度減少 10%</translation>
+        </message>
+        <message>
+            <source>Decrease scale by 10%</source>
+            <translation>縮放比例減少 10%</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>預設</translation>
         </message>
@@ -1669,6 +1677,14 @@
             <translation>固定到螢幕的截圖</translation>
         </message>
         <message>
+            <source>Flip horizontally</source>
+            <translation>水平翻轉</translation>
+        </message>
+        <message>
+            <source>Flip vertically</source>
+            <translation>垂直翻轉</translation>
+        </message>
+        <message>
             <source>Focused window</source>
             <translation>焦點視窗</translation>
         </message>
@@ -1778,7 +1794,7 @@
         </message>
         <message>
             <source>Hotkey hint opacity</source>
-            <translation>快速鍵提示透明度</translation>
+            <translation>快速鍵提示不透明度</translation>
         </message>
         <message>
             <source>Icon</source>
@@ -1843,6 +1859,14 @@
         <message>
             <source>Include the screenshot window and its toolbar in the stitched scrolling screenshot.</source>
             <translation>在拼接後的捲動截圖中包含截圖視窗及其工具列。</translation>
+        </message>
+        <message>
+            <source>Increase opacity by 10%</source>
+            <translation>不透明度增加 10%</translation>
+        </message>
+        <message>
+            <source>Increase scale by 10%</source>
+            <translation>縮放比例增加 10%</translation>
         </message>
         <message>
             <source>Input Monitoring</source>
@@ -2441,6 +2465,10 @@
             <translation>重設縮放</translation>
         </message>
         <message>
+            <source>Reset transform</source>
+            <translation>重設變換</translation>
+        </message>
+        <message>
             <source>Resident Recognition Process</source>
             <translation>常駐辨識程序</translation>
         </message>
@@ -2503,6 +2531,14 @@
         <message>
             <source>Reverse supported full-screen color filters in screenshots.</source>
             <translation>在螢幕擷取中還原支援的全螢幕色彩濾鏡效果。</translation>
+        </message>
+        <message>
+            <source>Rotate clockwise</source>
+            <translation>順時針旋轉</translation>
+        </message>
+        <message>
+            <source>Rotate counterclockwise</source>
+            <translation>逆時針旋轉</translation>
         </message>
         <message>
             <source>Save as file</source>
@@ -2702,7 +2738,7 @@
         </message>
         <message>
             <source>Set the color and opacity outside the screenshot selection</source>
-            <translation>設定截圖選取範圍外區域的色彩與透明度</translation>
+            <translation>設定截圖選取範圍外區域的色彩與不透明度</translation>
         </message>
         <message>
             <source>Set the frame rate of exported animated images</source>
@@ -2726,7 +2762,7 @@
         </message>
         <message>
             <source>Set the overall opacity of screenshot shortcut hints</source>
-            <translation>設定截圖快速鍵提示的整體透明度</translation>
+            <translation>設定截圖快速鍵提示的整體不透明度</translation>
         </message>
         <message>
             <source>Set the screen recording frame rate</source>
@@ -2762,7 +2798,7 @@
         </message>
         <message>
             <source>Shortcut hint opacity</source>
-            <translation>快速鍵提示透明度</translation>
+            <translation>快速鍵提示不透明度</translation>
         </message>
         <message>
             <source>Shortcut keys for drawing tools</source>

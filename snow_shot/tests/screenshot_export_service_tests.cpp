@@ -258,7 +258,8 @@ void pinnedSelectionPreservesFiltersAfterUndoRedo() {
     for (const auto tool : {SnowCanvasTool::RectangleFilter, SnowCanvasTool::PenFilter}) {
         for (const auto type : {SnowCanvasFilterType::Mosaic, SnowCanvasFilterType::GaussianBlur,
                                 SnowCanvasFilterType::Grayscale, SnowCanvasFilterType::Inversion,
-                                SnowCanvasFilterType::Emboss, SnowCanvasFilterType::SmartErase}) {
+                                SnowCanvasFilterType::Emboss, SnowCanvasFilterType::SmartErase,
+                                SnowCanvasFilterType::Brightness}) {
             ExportFixture fixture;
             require(fixture.isValid(), "filter export fixture could not initialize");
             SnowCanvasWidget canvas(fixture.runtime());

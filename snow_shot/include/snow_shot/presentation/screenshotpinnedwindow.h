@@ -339,6 +339,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact);
     void applyImageOperation(const QTransform& operation, int quarterTurnDelta = 0);
     void resetImageTransform();
+    void applyImageTransform(const QTransform& transform, int quarterTurns);
     void rebuildTransformedImage();
     void applyScale(int percent);
     void applyWheelScale(double percent, const QPointF& nativeCursor);

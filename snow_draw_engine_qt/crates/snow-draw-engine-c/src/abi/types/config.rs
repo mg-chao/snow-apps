@@ -78,6 +78,7 @@ snow_c_enum! {
         Inversion = 3,
         Emboss = 4,
         SmartErase = 5,
+        Brightness = 6,
     }
 }
 

@@ -365,12 +365,49 @@ mod tests {
             (CanvasFilterType::Grayscale, "Grayscale"),
             (CanvasFilterType::Inversion, "Inversion"),
             (CanvasFilterType::Emboss, "Emboss"),
+            (CanvasFilterType::Brightness, "Brightness"),
         ] {
             assert_eq!(
                 serde_json::to_value(filter_type).unwrap(),
                 serde_json::Value::String(representation.to_owned())
             );
         }
+    }
+
+    #[test]
+    fn brightness_document_and_editor_session_round_trip_preserves_filter_variants() {
+        assert_eq!(CanvasFilterType::Brightness as u32, 6);
+        let mut config = RuntimeEngineConfig::default();
+        config.style_defaults.editor.rectangle_filter.filter_type = CanvasFilterType::Brightness;
+        config.style_defaults.editor.rectangle_filter.strength = 0.75;
+        config.style_defaults.editor.pen_filter.filter_type = CanvasFilterType::Brightness;
+        config.style_defaults.editor.pen_filter.strength = 0.75;
+        let mut engine = Engine::new(config);
+
+        let brightness_id = engine.model.allocate_element_id();
+        let mut transaction = Transaction::new("brightness filter");
+        transaction.insert_filter(
+            brightness_id,
+            ElementMeta::default(),
+            FilterData {
+                filter_type: CanvasFilterType::Brightness,
+                strength: 0.75,
+                ..FilterData::default()
+            },
+        );
+        engine.model.apply_transaction(transaction).unwrap();
+
+        let bytes = engine.serialize_document_session().unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let serialized = json.to_string();
+        assert!(serialized.matches("\"Brightness\"").count() >= 3);
+
+        let restored = Engine::from_serialized_document_session(&bytes).unwrap();
+        assert_eq!(
+            restored.model.filter(brightness_id).unwrap().filter_type,
+            CanvasFilterType::Brightness
+        );
+        assert_eq!(restored.editor.persisted(), engine.editor.persisted());
     }
 
     #[test]

@@ -3737,6 +3737,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --click-through-native-only -platform windows)
     set_tests_properties(snow-shot-pinned-click-through-native-tests PROPERTIES
         LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-image-processing-shortcut-tests
+        COMMAND snow-shot-pinned-window-tests --image-processing-shortcuts-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-image-processing-shortcut-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
@@ -4098,6 +4101,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-transformed-ocr-tests
         COMMAND snow-shot-pinned-window-tests --transformed-ocr-only)
+    add_test(NAME snow-shot-pinned-transform-geometry-tests
+        COMMAND snow-shot-pinned-window-tests --transform-geometry-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-transform-geometry-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-selection-restore-tests
         COMMAND snow-shot-pinned-window-tests --selection-restore-only -platform offscreen)
     add_test(

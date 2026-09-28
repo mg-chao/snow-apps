@@ -456,6 +456,51 @@ bool colorMaskedAvx2(ConstImageView source, ImageView destination, AlphaView mas
 
 } // namespace
 
+bool brightnessRectAvx2(ConstImageView source, ImageView destination, AlphaView mask,
+                        QPoint maskOrigin, const QRect& pixels, int scale, int mix) {
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+    const int white = qMax(0, scale - 65536);
+    const int retained = scale - 2 * white;
+    const auto vectorTransform = [white, retained](__m256i value) {
+        const __m256i alpha = _mm256_srli_epi32(value, 24);
+        const __m256i bias = _mm256_add_epi32(_mm256_mullo_epi32(alpha, _mm256_set1_epi32(white)),
+                                              _mm256_set1_epi32(32768));
+        const __m256i byteMask = _mm256_set1_epi32(255);
+        const auto channel = [&](__m256i component) {
+            return _mm256_min_epu32(
+                alpha, _mm256_srli_epi32(_mm256_add_epi32(_mm256_mullo_epi32(
+                                                              _mm256_and_si256(component, byteMask),
+                                                              _mm256_set1_epi32(retained)),
+                                                          bias),
+                                         16));
+        };
+        return _mm256_or_si256(
+            _mm256_slli_epi32(alpha, 24),
+            _mm256_or_si256(
+                _mm256_slli_epi32(channel(_mm256_srli_epi32(value, 16)), 16),
+                _mm256_or_si256(_mm256_slli_epi32(channel(_mm256_srli_epi32(value, 8)), 8),
+                                channel(value))));
+    };
+    const auto scalarTransform = [scale](QRgb pixel) { return brightnessPixel(pixel, scale); };
+    if (mask.data != nullptr) {
+        return colorMaskedAvx2(source, destination, mask, maskOrigin.x(), maskOrigin.y(),
+                               pixels.left(), pixels.top(), pixels.right() + 1, pixels.bottom() + 1,
+                               mix, vectorTransform, scalarTransform);
+    }
+    return colorRectAvx2(source, destination, pixels.left(), pixels.top(), pixels.right() + 1,
+                         pixels.bottom() + 1, mix, vectorTransform, scalarTransform);
+#else
+    Q_UNUSED(source);
+    Q_UNUSED(destination);
+    Q_UNUSED(mask);
+    Q_UNUSED(maskOrigin);
+    Q_UNUSED(pixels);
+    Q_UNUSED(scale);
+    Q_UNUSED(mix);
+    return false;
+#endif
+}
+
 bool grayscaleRectAvx2(ConstImageView source, ImageView destination, int left, int top, int right,
                        int bottom, int mix) {
 #if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)

@@ -478,6 +478,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Grayscale"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Inversion"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Emboss"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brightness"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart Erase"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
@@ -2791,6 +2792,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
         appendFilterType("Grayscale", 2);
         appendFilterType("Inversion", 3);
         appendFilterType("Emboss", 4);
+        appendFilterType("Brightness", 6);
         result.typeSelect->setModel(typeModel);
         layout->addWidget(result.typeSelect);
     } else {

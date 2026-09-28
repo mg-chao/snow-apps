@@ -13,6 +13,7 @@ pub extern "C" fn snow_filter_render_spec_resolve(
         2 => snow_draw_engine::DisplayFilterType::Grayscale,
         3 => snow_draw_engine::DisplayFilterType::Inversion,
         4 => snow_draw_engine::DisplayFilterType::Emboss,
+        6 => snow_draw_engine::DisplayFilterType::Brightness,
         5 => snow_draw_engine::DisplayFilterType::SmartErase,
         _ => snow_draw_engine::DisplayFilterType::Mosaic,
     };
@@ -24,6 +25,7 @@ pub extern "C" fn snow_filter_render_spec_resolve(
             snow_draw_engine::DisplayFilterType::Grayscale => 2,
             snow_draw_engine::DisplayFilterType::Inversion => 3,
             snow_draw_engine::DisplayFilterType::Emboss => 4,
+            snow_draw_engine::DisplayFilterType::Brightness => 6,
             snow_draw_engine::DisplayFilterType::SmartErase => 5,
         },
         render_phase: 0,
@@ -409,6 +411,16 @@ pub unsafe extern "C" fn snow_patch_get_decoration_dirty_rects(
 #[cfg(test)]
 mod filter_render_spec_export_tests {
     use super::*;
+
+    #[test]
+    fn brightness_resolver_preserves_strength_and_has_no_spatial_support() {
+        for strength in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let spec = snow_filter_render_spec_resolve(6, strength);
+            assert_eq!(spec.filter_type, 6);
+            assert_eq!(spec.strength, strength);
+            assert_eq!(spec.sampling_radius, 0.0);
+        }
+    }
 
     #[test]
     fn emboss_resolver_preserves_abi_layout_and_normalized_strength() {

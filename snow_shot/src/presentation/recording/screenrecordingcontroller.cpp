@@ -602,6 +602,21 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::freeDrawRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::FreeDraw); });
+        QObject::connect(&palette, &ScreenshotToolPalette::highlightRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::RectangleHighlight); });
+        QObject::connect(&palette, &ScreenshotToolPalette::penHighlightRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::PenHighlight); });
+        QObject::connect(&palette, &ScreenshotToolPalette::rectangleFilterRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::RectangleFilter); });
+        QObject::connect(&palette, &ScreenshotToolPalette::penFilterRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::PenFilter); });
+        QObject::connect(&palette, &ScreenshotToolPalette::autoFilterRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::AutoFilter); });
         QObject::connect(&palette, &ScreenshotToolPalette::spotlightRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Spotlight); });

@@ -108,6 +108,10 @@
             <translation>Blue</translation>
         </message>
         <message>
+            <source>Brightness</source>
+            <translation>Brightness</translation>
+        </message>
+        <message>
             <source>Bring forward</source>
             <translation>Bring forward</translation>
         </message>
@@ -1102,10 +1106,6 @@
         <message>
             <source>Transparent</source>
             <translation>Transparent</translation>
-        </message>
-        <message>
-            <source>Unavailable while recording</source>
-            <translation>Unavailable while recording</translation>
         </message>
         <message>
             <source>Undo</source>

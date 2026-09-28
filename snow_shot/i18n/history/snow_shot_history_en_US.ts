@@ -471,6 +471,10 @@
             <translation>Current: %1%</translation>
         </message>
         <message>
+            <source>Decrease 10%</source>
+            <translation>Decrease 10%</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>Default</translation>
         </message>
@@ -545,6 +549,10 @@
         <message>
             <source>Image size is too large.</source>
             <translation>Image size is too large.</translation>
+        </message>
+        <message>
+            <source>Increase 10%</source>
+            <translation>Increase 10%</translation>
         </message>
         <message>
             <source>Load new content</source>

@@ -230,7 +230,7 @@ QJsonObject filterValue(const SnowCanvasFilterStyle& style) {
 void readFilterValue(const QJsonObject& object, SnowCanvasFilterStyle* style) {
     if (style == nullptr)
         return;
-    readEnum(object, QStringLiteral("type"), static_cast<int>(SnowCanvasFilterType::SmartErase),
+    readEnum(object, QStringLiteral("type"), static_cast<int>(SnowCanvasFilterType::Brightness),
              &style->type);
     readDouble(object, QStringLiteral("strength"), &style->strength);
     readDouble(object, QStringLiteral("opacity"), &style->opacity);

@@ -1155,6 +1155,40 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
 
     const struct {
         const char* id;
+        const char* actionObjectName;
+    } imageCommands[] = {
+        {"increase_opacity", "screenshotPinnedIncreaseOpacityAction"},
+        {"decrease_opacity", "screenshotPinnedDecreaseOpacityAction"},
+        {"increase_scale", "screenshotPinnedIncreaseScaleAction"},
+        {"decrease_scale", "screenshotPinnedDecreaseScaleAction"},
+        {"rotate_clockwise", "screenshotPinnedRotateClockwiseAction"},
+        {"rotate_counterclockwise", "screenshotPinnedRotateCounterClockwiseAction"},
+        {"flip_horizontal", "screenshotPinnedFlipHorizontalAction"},
+        {"flip_vertical", "screenshotPinnedFlipVerticalAction"},
+        {"reset_transform", "screenshotPinnedResetTransformAction"},
+    };
+    for (const auto& command : imageCommands) {
+        const QString actionId = QString::fromLatin1(command.id);
+        QAction* action = findChild<QAction*>(QString::fromLatin1(command.actionObjectName));
+        ShortcutManager::Binding binding;
+        binding.id = QStringLiteral("pinned.") + actionId;
+        // Drawing tools keep their configured keys while the editor is active.
+        binding.priority = ShortcutManager::StandardPriority::ContextualFallback;
+        binding.canActivate = [this, localCommandsAllowed, action, actionId](const auto& context) {
+            return localCommandsAllowed(context) && action != nullptr && action->isEnabled() &&
+                   (!actionId.endsWith(QStringLiteral("_scale")) ||
+                    (m_scaleMenuAction != nullptr && m_scaleMenuAction->isEnabled()));
+        };
+        binding.activate = [action](const auto&) {
+            action->trigger();
+            return true;
+        };
+        m_pinnedShortcutBindings.insert(actionId,
+                                        m_shortcutManager->addBinding(this, std::move(binding)));
+    }
+
+    const struct {
+        const char* id;
         snow_shot::platform::PhysicalCursorDirection direction;
         QPoint delta;
     } cursorMovements[] = {
@@ -1251,6 +1285,15 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"toggle_click_through", "screenshotPinnedClickThroughAction"},
         {"close_window", "screenshotPinnedCloseAction"},
         {"destroy_window", "screenshotPinnedDestroyAction"},
+        {"increase_opacity", "screenshotPinnedIncreaseOpacityAction"},
+        {"decrease_opacity", "screenshotPinnedDecreaseOpacityAction"},
+        {"increase_scale", "screenshotPinnedIncreaseScaleAction"},
+        {"decrease_scale", "screenshotPinnedDecreaseScaleAction"},
+        {"rotate_clockwise", "screenshotPinnedRotateClockwiseAction"},
+        {"rotate_counterclockwise", "screenshotPinnedRotateCounterClockwiseAction"},
+        {"flip_horizontal", "screenshotPinnedFlipHorizontalAction"},
+        {"flip_vertical", "screenshotPinnedFlipVerticalAction"},
+        {"reset_transform", "screenshotPinnedResetTransformAction"},
         {"move_cursor_up", nullptr},
         {"move_cursor_down", nullptr},
         {"move_cursor_left", nullptr},
@@ -2613,6 +2656,21 @@ void ScreenshotPinnedWindow::createContextMenu() {
     auto* opacityMenu = processMenu->addSubMenu(tr("Opacity"), outlined_icons::BgColors());
     setActionTranslationSource(opacityMenu->menuAction(), "Opacity");
     opacityMenu->setObjectName(QStringLiteral("screenshotPinnedOpacityMenu"));
+    QAction* increaseOpacity = opacityMenu->addItem(tr("Increase 10%"));
+    setActionTranslationSource(increaseOpacity, "Increase 10%");
+    increaseOpacity->setObjectName(QStringLiteral("screenshotPinnedIncreaseOpacityAction"));
+    connect(increaseOpacity, &QAction::triggered, this, [this]() {
+        setOpacityPercent(
+            qBound(kMinimumOpacityPercent, m_opacityPercent + 10, kMaximumOpacityPercent));
+    });
+    QAction* decreaseOpacity = opacityMenu->addItem(tr("Decrease 10%"));
+    setActionTranslationSource(decreaseOpacity, "Decrease 10%");
+    decreaseOpacity->setObjectName(QStringLiteral("screenshotPinnedDecreaseOpacityAction"));
+    connect(decreaseOpacity, &QAction::triggered, this, [this]() {
+        setOpacityPercent(
+            qBound(kMinimumOpacityPercent, m_opacityPercent - 10, kMaximumOpacityPercent));
+    });
+    opacityMenu->addSeparator();
     m_opacityActions = new QActionGroup(opacityMenu);
     m_opacityActions->setExclusive(true);
     for (int percent : {25, 50, 75, 100}) {
@@ -2635,6 +2693,19 @@ void ScreenshotPinnedWindow::createContextMenu() {
     setActionTranslationSource(scaleMenu->menuAction(), "Scale");
     scaleMenu->setObjectName(QStringLiteral("screenshotPinnedScaleMenu"));
     m_scaleMenuAction = scaleMenu->menuAction();
+    QAction* increaseScale = scaleMenu->addItem(tr("Increase 10%"));
+    setActionTranslationSource(increaseScale, "Increase 10%");
+    increaseScale->setObjectName(QStringLiteral("screenshotPinnedIncreaseScaleAction"));
+    connect(increaseScale, &QAction::triggered, this, [this]() {
+        applyScale(qBound(kMinimumScalePercent, qRound(m_scalePercent) + 10, kMaximumScalePercent));
+    });
+    QAction* decreaseScale = scaleMenu->addItem(tr("Decrease 10%"));
+    setActionTranslationSource(decreaseScale, "Decrease 10%");
+    decreaseScale->setObjectName(QStringLiteral("screenshotPinnedDecreaseScaleAction"));
+    connect(decreaseScale, &QAction::triggered, this, [this]() {
+        applyScale(qBound(kMinimumScalePercent, qRound(m_scalePercent) - 10, kMaximumScalePercent));
+    });
+    scaleMenu->addSeparator();
     m_scaleActions = new QActionGroup(scaleMenu);
     m_scaleActions->setExclusive(true);
     for (int percent : {25, 50, 75, 100}) {
@@ -5304,8 +5375,6 @@ void ScreenshotPinnedWindow::applyImageOperation(const QTransform& operation,
         return;
     }
     restoreFromThumbnailImmediately();
-    const QPoint nativeCenter = authoritativeNativeGeometry().center();
-    const QPoint nativeTopLeft = authoritativeNativeGeometry().topLeft();
     const QPolygonF sourceQuad({
         QPointF(0.0, 0.0),
         QPointF(m_originalImage.width(), 0.0),
@@ -5321,32 +5390,8 @@ void ScreenshotPinnedWindow::applyImageOperation(const QTransform& operation,
     if (!QTransform::quadToQuad(sourceQuad, targetQuad, combined)) {
         return;
     }
-    m_imageTransform = normalizedImageTransform(combined, m_originalImage.size());
-    m_quarterTurns = (m_quarterTurns + quarterTurnDelta) % 4;
-    if (m_quarterTurns < 0) {
-        m_quarterTurns += 4;
-    }
-    rebuildTransformedImage();
-
-    if (quarterTurnDelta != 0) {
-        QSize nativeSize = orientedInitialWindowSize();
-        nativeSize = QSize(std::max(1, qRound(nativeSize.width() * m_scalePercent / 100.0)),
-                           std::max(1, qRound(nativeSize.height() * m_scalePercent / 100.0)));
-        QRect nativeTarget(QPoint(), nativeSize);
-        if (hideToTopActive()) {
-            nativeTarget.moveTopLeft(nativeTopLeft);
-        } else {
-            nativeTarget.moveCenter(nativeCenter);
-        }
-        m_preserveScaleForSettledGeometry = true;
-        static_cast<void>(applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform));
-    }
-    updateCanvasViewport();
-    updateControlsGeometry();
-    if (m_editController != nullptr) {
-        m_editController->updatePlacement();
-    }
-    schedulePersistence();
+    const int quarterTurns = ((m_quarterTurns + quarterTurnDelta) % 4 + 4) % 4;
+    applyImageTransform(normalizedImageTransform(combined, m_originalImage.size()), quarterTurns);
 }
 
 void ScreenshotPinnedWindow::resetImageTransform() {
@@ -5362,26 +5407,40 @@ void ScreenshotPinnedWindow::resetImageTransform() {
         return;
     }
     restoreFromThumbnailImmediately();
-    const QPoint nativeCenter = authoritativeNativeGeometry().center();
-    const QPoint nativeTopLeft = authoritativeNativeGeometry().topLeft();
-    const bool dimensionsChange = (m_quarterTurns % 2) != 0;
-    m_imageTransform.reset();
-    m_quarterTurns = 0;
-    rebuildTransformedImage();
+    applyImageTransform(QTransform(), 0);
+}
+
+void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, int quarterTurns) {
+    const QRect currentGeometry = authoritativeNativeGeometry();
+    const bool dimensionsChange = (m_quarterTurns % 2) != (quarterTurns % 2);
+    // Native size constraints need the proposed orientation during SetWindowPos.
+    // Keep the rendered image unchanged until that geometry transaction succeeds.
+    QScopedValueRollback<int> orientation(m_quarterTurns, quarterTurns);
+    QScopedValueRollback<bool> preserveScale(m_preserveScaleForSettledGeometry);
     if (dimensionsChange) {
-        QSize nativeSize(
-            std::max(1, qRound(m_initialWindowSize.width() * m_scalePercent / 100.0)),
-            std::max(1, qRound(m_initialWindowSize.height() * m_scalePercent / 100.0)));
+        const QSize baseline = orientedInitialWindowSize();
+        const QSize nativeSize(std::max(1, qRound(baseline.width() * m_scalePercent / 100.0)),
+                               std::max(1, qRound(baseline.height() * m_scalePercent / 100.0)));
         QRect nativeTarget(QPoint(), nativeSize);
         if (hideToTopActive()) {
-            nativeTarget.moveTopLeft(nativeTopLeft);
+            nativeTarget.moveTopLeft(currentGeometry.topLeft());
         } else {
-            nativeTarget.moveCenter(nativeCenter);
+            nativeTarget.moveCenter(currentGeometry.center());
         }
         m_preserveScaleForSettledGeometry = true;
-        static_cast<void>(applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform));
+        if (!applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform)) {
+            return;
+        }
     }
+    orientation.commit();
+    preserveScale.commit();
+    m_imageTransform = transform;
+    rebuildTransformedImage();
     updateCanvasViewport();
+    updateControlsGeometry();
+    if (m_editController != nullptr) {
+        m_editController->updatePlacement();
+    }
     schedulePersistence();
 }
 
