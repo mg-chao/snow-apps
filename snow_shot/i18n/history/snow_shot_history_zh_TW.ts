@@ -562,11 +562,11 @@
         </message>
         <message>
             <source>Opacity</source>
-            <translation>透明度</translation>
+            <translation>不透明度</translation>
         </message>
         <message>
             <source>Opacity: %1%</source>
-            <translation>透明度：%1%</translation>
+            <translation>不透明度：%1%</translation>
         </message>
         <message>
             <source>Process image</source>

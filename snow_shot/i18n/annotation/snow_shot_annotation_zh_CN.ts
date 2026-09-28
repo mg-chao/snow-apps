@@ -29,7 +29,7 @@
         </message>
         <message>
             <source>Adjust opacity</source>
-            <translation>调整透明度</translation>
+            <translation>调整不透明度</translation>
         </message>
         <message>
             <source>Align bottom</source>
@@ -621,7 +621,7 @@
         </message>
         <message>
             <source>Opacity</source>
-            <translation>透明度</translation>
+            <translation>不透明度</translation>
         </message>
         <message>
             <source>Open recording folder</source>

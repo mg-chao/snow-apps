@@ -1786,7 +1786,7 @@
         </message>
         <message>
             <source>Hotkey hint opacity</source>
-            <translation>快速鍵提示透明度</translation>
+            <translation>快速鍵提示不透明度</translation>
         </message>
         <message>
             <source>Icon</source>
@@ -2726,7 +2726,7 @@
         </message>
         <message>
             <source>Set the color and opacity outside the screenshot selection</source>
-            <translation>設定截圖選取範圍外區域的色彩與透明度</translation>
+            <translation>設定截圖選取範圍外區域的色彩與不透明度</translation>
         </message>
         <message>
             <source>Set the frame rate of exported animated images</source>
@@ -2750,7 +2750,7 @@
         </message>
         <message>
             <source>Set the overall opacity of screenshot shortcut hints</source>
-            <translation>設定截圖快速鍵提示的整體透明度</translation>
+            <translation>設定截圖快速鍵提示的整體不透明度</translation>
         </message>
         <message>
             <source>Set the screen recording frame rate</source>
@@ -2786,7 +2786,7 @@
         </message>
         <message>
             <source>Shortcut hint opacity</source>
-            <translation>快速鍵提示透明度</translation>
+            <translation>快速鍵提示不透明度</translation>
         </message>
         <message>
             <source>Shortcut keys for drawing tools</source>
