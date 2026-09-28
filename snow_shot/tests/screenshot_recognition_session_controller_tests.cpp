@@ -705,9 +705,18 @@ void translationLanguageSelectsUseCodePrefixGroups() {
                 target->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool,
             "translation language selects should use Qt tool popups");
 
+    for (auto* select : content->findChildren<adqt::widgets::AdSelect*>()) {
+        require(select->searchEnabled(), "translation settings selects support input filtering");
+        const auto previous = select->currentValue();
+        select->setSearchText(QStringLiteral("no-matching-translation-option-1937"));
+        require(select->currentValue() == previous,
+                "filtering translation options cannot change the value");
+        select->setSearchText(QString());
+    }
+
     const auto sourceOptions = source->options();
     const auto targetOptions = target->options();
-    require(sourceOptions.size() == 13 && targetOptions.size() == 12,
+    require(sourceOptions.size() == 14 && targetOptions.size() == 13,
             "language selects should contain the expected source and target options");
     require(sourceOptions.constFirst().value == QStringLiteral("auto") &&
                 sourceOptions.constFirst().group.isEmpty(),

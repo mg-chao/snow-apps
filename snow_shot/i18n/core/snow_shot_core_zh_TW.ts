@@ -86,6 +86,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>交流與答疑 · 群號 %1</translation>
         </message>
         <message>
+            <source>Download from GitHub</source>
+            <translation>從 GitHub 下載</translation>
+        </message>
+        <message>
             <source>Download from website</source>
             <translation>前往官網下載</translation>
         </message>
@@ -596,8 +600,28 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>模型未傳回內容</translation>
         </message>
         <message>
+            <source>The text is too large to translate.</source>
+            <translation>文字過長，無法翻譯。</translation>
+        </message>
+        <message>
+            <source>The translation response is too large.</source>
+            <translation>翻譯回應過大。</translation>
+        </message>
+        <message>
+            <source>This service does not support the selected language combination.</source>
+            <translation>此服務不支援所選語言組合。</translation>
+        </message>
+        <message>
             <source>Translation failed</source>
             <translation>翻譯失敗</translation>
+        </message>
+        <message>
+            <source>Translation request timed out.</source>
+            <translation>翻譯請求逾時。</translation>
+        </message>
+        <message>
+            <source>Translation service request failed (HTTP %1, code %2).</source>
+            <translation>翻譯服務請求失敗（HTTP %1，代碼 %2）。</translation>
         </message>
         <message>
             <source>Translation service response is too large</source>

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
+#include "snow_shot/network/snowshotapiclient.h"
 
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/apppermissionservice.h"
@@ -31,9 +32,11 @@
 #include "widgets/switch.h"
 
 #include <QAbstractButton>
+#include <QApplication>
 #include "snow_shot/presentation/globalmousemanager.h"
 #include <QEvent>
 #include <QFileDialog>
+#include <QFocusEvent>
 #include <QGridLayout>
 #include <QHash>
 #include <QHideEvent>
@@ -47,6 +50,7 @@
 #include <QScopedValueRollback>
 #include <QShowEvent>
 #include <QStyle>
+#include <QStandardItemModel>
 #include <QSizePolicy>
 #include <QTimer>
 
@@ -82,6 +86,7 @@ permissionForRenderer(settings::SettingsCustomRenderer renderer) {
         return Permission::InputMonitoring;
     case Renderer::PermissionMicrophone:
         return Permission::Microphone;
+    case Renderer::TextTranslationConfigurations:
     case Renderer::CustomAiModels:
     case Renderer::McpStatus:
     case Renderer::StorageStatus:
@@ -124,7 +129,10 @@ class SettingsPageWidget::Impl {
         adqt::widgets::AdButton* permissionControl = nullptr;
         std::optional<snow_shot::presentation::AppPermission> permission;
         SettingsCustomWidget* customControl = nullptr;
+        std::optional<settings::SettingsCustomRenderer> deferredRenderer;
         QPointer<adqt::widgets::AdModal> modal;
+        bool fontOptionsLoaded = false;
+        QVector<adqt::widgets::AdSelect::Option> presentedOptions;
     };
 
     struct RuntimeSection {
@@ -133,6 +141,9 @@ class SettingsPageWidget::Impl {
         settings::SettingsSectionReset reset = settings::SettingsSectionReset::None;
         settings::SettingsSectionItemLayout itemLayout =
             settings::SettingsSectionItemLayout::VerticalList;
+        const settings::SettingsSectionPlan* plan = nullptr;
+        QWidget* list = nullptr;
+        bool materialized = false;
     };
 
     Impl(SettingsPageWidget& owner, const settings::SettingsRegistry& sourceRegistry,
@@ -146,8 +157,8 @@ class SettingsPageWidget::Impl {
         build();
         connectServices();
         retranslateUi();
-        syncValues();
         applyTheme(colorScheme);
+        initialized = true;
     }
 
     RuntimeItem* runtimeItem(const QString& itemId) {
@@ -243,6 +254,9 @@ class SettingsPageWidget::Impl {
             }
         }
         pageLayout->addWidget(pageContainer, 1);
+        if (!sections.isEmpty()) {
+            materializeSection(sections.first());
+        }
         scrollMarginX = metric.paddingSM;
         scrollMarginY = metric.paddingSM;
         requestVisibleSectionSync();
@@ -255,8 +269,6 @@ class SettingsPageWidget::Impl {
             sectionPlan != nullptr ? sectionPlan->reset : sectionDefinition.reset;
         const settings::SettingsSectionItemLayout itemLayout =
             sectionPlan != nullptr ? sectionPlan->itemLayout : sectionDefinition.itemLayout;
-        const QVector<int>* plannedFieldIndexes =
-            sectionPlan != nullptr ? &sectionPlan->fieldIndexes : nullptr;
         RuntimeSection runtimeSection;
         runtimeSection.definition = &sectionDefinition;
         runtimeSection.reset = reset;
@@ -279,14 +291,60 @@ class SettingsPageWidget::Impl {
 #endif
         contentLayout->addWidget(runtimeSection.header);
 
-        sections.push_back(runtimeSection);
-        sectionIndexes.insert(sectionDefinition.id, static_cast<int>(sections.size()) - 1);
-
         auto* list = new QWidget(contentWidget);
         list->setObjectName(settings::generatedObjectName(
             QStringLiteral("settings-section-list"),
             QStringLiteral("%1-%2").arg(page->id, sectionDefinition.id)));
         list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        runtimeSection.plan = sectionPlan;
+        runtimeSection.list = list;
+        list->setAccessibleName(sectionDefinition.title.translated());
+        // A focusable shell keeps deferred content reachable by keyboard and
+        // accessibility clients. Entering it creates the real controls.
+        list->setFocusPolicy(Qt::TabFocus);
+        list->setFixedHeight(estimatedSectionHeight(runtimeSection));
+        sections.push_back(runtimeSection);
+        sectionIndexes.insert(sectionDefinition.id, static_cast<int>(sections.size()) - 1);
+        contentLayout->addWidget(list);
+    }
+
+    int estimatedSectionHeight(const RuntimeSection& section) const {
+        if (section.plan == nullptr) {
+            return 0;
+        }
+        const auto& metric = colorScheme.metricAlias;
+        const int rowHeight = metric.controlHeight + metric.fontSize + metric.paddingSM;
+        int height = 0;
+        for (int fieldIndex : section.plan->fieldIndexes) {
+            height += registry.fields().at(fieldIndex).kind == settings::SettingsFieldKind::Custom
+                          ? rowHeight * 4
+                          : rowHeight;
+        }
+        if (section.itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid) {
+            return (height + rowHeight) / 2 +
+                   static_cast<int>(section.plan->fieldIndexes.size() / 2) * metric.marginLG;
+        }
+        return height +
+               qMax(0, static_cast<int>(section.plan->fieldIndexes.size()) - 1) * metric.paddingLG;
+    }
+
+    void materializeSection(RuntimeSection& section) {
+        if (section.materialized) {
+            return;
+        }
+        section.materialized = true;
+        QWidget* shell = section.list;
+        // Populate a hidden body, then attach it once. Initializing each row in
+        // an already visible shell would repeatedly run show/layout work.
+        auto* list = new QWidget(shell);
+        list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        list->hide();
+        const auto metric = colorScheme.metricAlias;
+        const auto itemLayout = section.itemLayout;
+        const auto& sectionDefinition = *section.definition;
+        const QVector<int>* plannedFieldIndexes =
+            section.plan != nullptr ? &section.plan->fieldIndexes : nullptr;
+        const int firstItem = static_cast<int>(items.size());
         auto* listLayout = new QVBoxLayout(list);
         listLayout->setContentsMargins(0, 0, 0, 0);
         const bool twoColumnItemGrid =
@@ -330,7 +388,18 @@ class SettingsPageWidget::Impl {
                           itemLayout, itemGrid, itemIndex);
             }
         }
-        contentLayout->addWidget(list);
+        if (initialized) {
+            retranslateUi(firstItem);
+            applyTheme(colorScheme, firstItem);
+        }
+        auto* shellLayout = new QVBoxLayout(shell);
+        shellLayout->setContentsMargins(0, 0, 0, 0);
+        shellLayout->addWidget(list);
+        shell->setFocusPolicy(Qt::NoFocus);
+        shell->setMinimumHeight(0);
+        shell->setMaximumHeight(QWIDGETSIZE_MAX);
+        list->show();
+        rebuildTabOrder();
     }
 
     void buildItem(const settings::SettingsItemDefinition& definition,
@@ -364,11 +433,26 @@ class SettingsPageWidget::Impl {
                 using Payload = std::decay_t<decltype(payload)>;
                 if constexpr (std::is_same_v<Payload, settings::SettingsSelectDefinition>) {
                     auto* select = new adqt::widgets::AdSelect(list);
+                    select->setSearchEnabled(true);
+                    select->setSearchFilterFields({QStringLiteral("label")});
                     select->setMode(adqt::widgets::AdSelect::Mode::Single);
                     select->setControlSize(adqt::widgets::AdSelect::ControlSize::Middle);
                     select->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
                     runtime.select = select;
+                    if (payload.binding == settings::SettingsSelectBinding::AppFont) {
+                        connect(select, &adqt::widgets::AdSelect::popupOpening, select,
+                                [this, itemId = definition.id]() {
+                                    RuntimeItem* item = runtimeItem(itemId);
+                                    if (item == nullptr || item->fontOptionsLoaded) {
+                                        return;
+                                    }
+                                    item->fontOptionsLoaded = true;
+                                    const QSignalBlocker blocker(item->select);
+                                    runtimeSession.requestFontOptions();
+                                    setOptions(*item, selectOptions(*item));
+                                });
+                    }
                     runtime.focusTarget = select;
                     runtime.anchor = settings_ui::createSettingItemRow(
                         list, colorScheme.metricAlias, &runtime.title, &runtime.description, select,
@@ -383,6 +467,8 @@ class SettingsPageWidget::Impl {
                                                     settings::SettingsMultiSelectDefinition>) {
                     auto* control = new adqt::widgets::AdMultiSelect(list);
                     control->setControlSize(adqt::widgets::AdMultiSelect::ControlSize::Middle);
+                    control->setSearchEnabled(true);
+                    control->setSearchFilterFields({QStringLiteral("label")});
                     control->setResponsiveMaxTagCount(true);
                     control->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
@@ -487,6 +573,9 @@ class SettingsPageWidget::Impl {
                         });
                 } else if constexpr (std::is_same_v<Payload, settings::SettingsColorDefinition>) {
                     auto* control = new adqt::widgets::AdColorPicker(list);
+                    // A settings page can contain many pickers below the fold.
+                    // Build each popup when opened, not when its page is shown.
+                    control->setPopupPrewarmEnabled(false);
                     control->setSize(adqt::widgets::AdColorPicker::Size::Middle);
                     control->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
                     control->setMode(adqt::widgets::AdColorPicker::Mode::Solid);
@@ -648,7 +737,10 @@ class SettingsPageWidget::Impl {
                 } else if constexpr (std::is_same_v<Payload, settings::SettingsTextDefinition>) {
                     auto* control = new adqt::widgets::AdLineEdit(list);
                     control->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Medium);
-                    control->setAllowClear(false);
+                    control->setAllowClear(payload.binding ==
+                                           settings::SettingsTextBinding::ServerUrl);
+                    if (payload.binding == settings::SettingsTextBinding::ServerUrl)
+                        control->setPlaceholderText(SnowShotApiClient::configuredBaseUrl());
                     control->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
                     runtime.textControl = control;
@@ -663,6 +755,14 @@ class SettingsPageWidget::Impl {
                             [this, control, binding = payload.binding]() {
                                 if (!synchronizingValues &&
                                     !runtimeSession.applyTextValue(binding, control->text())) {
+                                    if (binding == settings::SettingsTextBinding::ServerUrl) {
+                                        adqt::widgets::AdMessage::Request request;
+                                        request.content =
+                                            runtimeSession.state(QStringLiteral("api.server-url"))
+                                                .error;
+                                        adqt::widgets::AdMessageService::error(std::move(request),
+                                                                               &q);
+                                    }
                                     syncValues();
                                 }
                             });
@@ -851,6 +951,27 @@ class SettingsPageWidget::Impl {
                             });
                         return;
                     }
+                    // Toolbar previews can be far below the viewport even in a
+                    // visible section. Defer their drag surfaces and tool buttons
+                    // independently from the section's ordinary settings rows.
+                    if (payload.renderer ==
+                            settings::SettingsCustomRenderer::DrawingToolbarEditor ||
+                        payload.renderer ==
+                            settings::SettingsCustomRenderer::ScreenshotToolbarEditor ||
+                        payload.renderer == settings::SettingsCustomRenderer::PinnedToolbarEditor) {
+                        runtime.anchor = new QWidget(list);
+                        runtime.anchor->setObjectName(settings::generatedObjectName(
+                            QStringLiteral("settings-item"), definition.id));
+                        runtime.anchor->setFixedHeight(colorScheme.metricAlias.controlHeight * 4);
+                        runtime.anchor->setFocusPolicy(Qt::TabFocus);
+                        runtime.focusTarget = runtime.anchor;
+                        runtime.deferredRenderer = payload.renderer;
+                        if (initialized) {
+                            runtime.anchor->installEventFilter(&q);
+                        }
+                        addItemWidget(runtime.anchor);
+                        return;
+                    }
                     auto* control = createSettingsCustomWidget(payload.renderer, registry,
                                                                definition, runtimeSession, list);
                     Q_ASSERT(control != nullptr);
@@ -967,7 +1088,13 @@ class SettingsPageWidget::Impl {
                         values.push_back(selectOption(option.value, option.label));
                     }
                     const QSignalBlocker blocker(item->select);
-                    item->select->setOptions(values);
+                    const auto* definition =
+                        std::get_if<settings::SettingsSelectDefinition>(&item->definition->payload);
+                    setOptions(*item,
+                               definition != nullptr && definition->binding ==
+                                                            settings::SettingsSelectBinding::AppFont
+                                   ? selectOptions(*item)
+                                   : values);
                 }
                 if (item->multiSelect != nullptr) {
                     QVector<adqt::widgets::AdMultiSelect::Option> values;
@@ -976,7 +1103,7 @@ class SettingsPageWidget::Impl {
                         values.push_back(selectOption(option.value, option.label));
                     }
                     const QSignalBlocker blocker(item->multiSelect);
-                    item->multiSelect->setOptions(values);
+                    setOptions(*item, values);
                 }
             });
 #ifdef Q_OS_MACOS
@@ -1004,7 +1131,7 @@ class SettingsPageWidget::Impl {
 
         if (scrollArea != nullptr && scrollArea->verticalScrollBar() != nullptr) {
             QObject::connect(scrollArea->verticalScrollBar(), &QScrollBar::valueChanged, &q,
-                             [this](int) { syncVisibleSection(); });
+                             [this](int) { requestVisibleSectionSync(); });
             QObject::connect(scrollArea->verticalScrollBar(), &QScrollBar::rangeChanged, &q,
                              [this](int, int) { requestVisibleSectionSync(); });
         }
@@ -1110,15 +1237,34 @@ class SettingsPageWidget::Impl {
         }
     }
 
-    QList<adqt::widgets::AdSelect::Option>
-    selectOptions(const settings::SettingsSelectDefinition& definition) const {
+    QList<adqt::widgets::AdSelect::Option> selectOptions(const RuntimeItem& runtime) const {
+        const auto& definition =
+            std::get<settings::SettingsSelectDefinition>(runtime.definition->payload);
         QList<adqt::widgets::AdSelect::Option> options;
         for (const settings::SettingsOptionDefinition& option : definition.options) {
             options.push_back(selectOption(option.value, option.label.translated()));
         }
-        for (const settings::SettingsRuntimeOption& option :
-             runtimeSession.dynamicSelectOptions(definition.binding)) {
-            options.push_back(selectOption(option.value, option.label));
+        const bool isFont = definition.binding == settings::SettingsSelectBinding::AppFont;
+        if (!isFont || runtime.fontOptionsLoaded) {
+            for (const settings::SettingsRuntimeOption& option :
+                 runtimeSession.dynamicSelectOptions(definition.binding)) {
+                options.push_back(selectOption(option.value, option.label));
+            }
+        }
+        if (isFont) {
+            const QString current = runtimeSession.selectValue(definition.binding).toString();
+            if (!current.isEmpty() &&
+                std::none_of(options.cbegin(), options.cend(), [&current](const auto& option) {
+                    return option.value.toString() == current;
+                })) {
+                options.push_back(selectOption(current, current));
+            }
+            std::sort(options.begin(), options.end(), [](const auto& first, const auto& second) {
+                if (first.value.toString().isEmpty() != second.value.toString().isEmpty()) {
+                    return first.value.toString().isEmpty();
+                }
+                return QString::compare(first.label, second.label, Qt::CaseInsensitive) < 0;
+            });
         }
         return options;
     }
@@ -1140,13 +1286,22 @@ class SettingsPageWidget::Impl {
         QWidget* stateTarget =
             runtime.focusTarget != nullptr ? runtime.focusTarget : runtime.anchor;
         if (stateTarget != nullptr) {
-            stateTarget->setProperty("settingsDirty", sessionState.dirty);
-            stateTarget->setProperty("settingsPending", sessionState.busy);
-            stateTarget->setProperty("settingsConflicted", sessionState.conflicted);
-            stateTarget->setProperty("settingsError", sessionState.error);
-            stateTarget->style()->unpolish(stateTarget);
-            stateTarget->style()->polish(stateTarget);
-            stateTarget->update();
+            bool changed = false;
+            const auto setProperty = [&](const char* name, const QVariant& value) {
+                if (stateTarget->property(name) != value) {
+                    stateTarget->setProperty(name, value);
+                    changed = true;
+                }
+            };
+            setProperty("settingsDirty", sessionState.dirty);
+            setProperty("settingsPending", sessionState.busy);
+            setProperty("settingsConflicted", sessionState.conflicted);
+            setProperty("settingsError", sessionState.error);
+            if (changed && stateTarget->testAttribute(Qt::WA_WState_Polished)) {
+                stateTarget->style()->unpolish(stateTarget);
+                stateTarget->style()->polish(stateTarget);
+                stateTarget->update();
+            }
         }
 
         {
@@ -1155,6 +1310,9 @@ class SettingsPageWidget::Impl {
                 const auto* definition =
                     std::get_if<settings::SettingsSelectDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
+                    if (definition->binding == settings::SettingsSelectBinding::AppFont) {
+                        setOptions(runtime, selectOptions(runtime));
+                    }
                     runtime.select->setCurrentValue(
                         runtimeSession.selectValue(definition->binding));
                 }
@@ -1414,10 +1572,53 @@ class SettingsPageWidget::Impl {
         permissionBanner->setVisible(bannerVisible);
     }
 
-    void syncValues() {
+    void setOptions(RuntimeItem& item, const QVector<adqt::widgets::AdSelect::Option>& options) {
+        const auto sameOption = [](const auto& first, const auto& second) {
+            return first.value == second.value && first.label == second.label &&
+                   first.disabled == second.disabled && first.group == second.group &&
+                   first.metadata == second.metadata;
+        };
+        if (item.presentedOptions.size() == options.size() &&
+            std::equal(options.cbegin(), options.cend(), item.presentedOptions.cbegin(),
+                       sameOption)) {
+            return;
+        }
+        item.presentedOptions = options;
+        if (item.select != nullptr) {
+            const auto* definition =
+                std::get_if<settings::SettingsSelectDefinition>(&item.definition->payload);
+            if (definition != nullptr &&
+                definition->binding == settings::SettingsSelectBinding::AppFont) {
+                // Populate before attaching so each font does not rebuild the live selector.
+                auto* model = new QStandardItemModel(item.select);
+                for (const auto& option : options) {
+                    auto* row = new QStandardItem(option.label);
+                    row->setData(option.label, adqt::widgets::AdSelect::DefaultLabelRole);
+                    row->setData(option.value, adqt::widgets::AdSelect::DefaultValueRole);
+                    if (!option.value.toString().isEmpty()) {
+                        row->setData(QFont(option.value.toString()), Qt::FontRole);
+                    }
+                    model->appendRow(row);
+                }
+                auto* previousModel = item.select->model();
+                item.select->setModel(model);
+                item.select->setCurrentValue(runtimeSession.selectValue(definition->binding));
+                if (previousModel != nullptr) {
+                    previousModel->deleteLater();
+                }
+            } else {
+                item.select->setOptions(options);
+            }
+        }
+        if (item.multiSelect != nullptr) {
+            item.multiSelect->setOptions(options);
+        }
+    }
+
+    void syncValues(int firstItem = 0) {
         const auto storageStatus = runtimeSession.storageStatus();
-        for (RuntimeItem& runtime : items) {
-            syncField(runtime);
+        for (int index = firstItem; index < items.size(); ++index) {
+            syncField(items[index]);
         }
         for (RuntimeSection& runtime : sections) {
             if (runtime.reset != settings::SettingsSectionReset::None) {
@@ -1430,11 +1631,15 @@ class SettingsPageWidget::Impl {
         }
     }
 
-    void retranslateUi() {
-        for (RuntimeSection& runtime : sections) {
-            runtime.header->setTitle(runtime.definition->title.translated());
+    void retranslateUi(int firstItem = 0) {
+        if (firstItem == 0) {
+            for (RuntimeSection& runtime : sections) {
+                runtime.header->setTitle(runtime.definition->title.translated());
+                runtime.list->setAccessibleName(runtime.definition->title.translated());
+            }
         }
-        for (RuntimeItem& runtime : items) {
+        for (int runtimeIndex = firstItem; runtimeIndex < items.size(); ++runtimeIndex) {
+            RuntimeItem& runtime = items[runtimeIndex];
             const settings::SettingsItemDefinition& definition = *runtime.definition;
             const QString title = definition.title.translated();
             const QString description = definition.description.translated();
@@ -1453,7 +1658,7 @@ class SettingsPageWidget::Impl {
                     std::get_if<settings::SettingsSelectDefinition>(&definition.payload);
                 Q_ASSERT(select != nullptr);
                 const QSignalBlocker blocker(runtime.select);
-                runtime.select->setOptions(selectOptions(*select));
+                setOptions(runtime, selectOptions(runtime));
             }
             if (runtime.multiSelect != nullptr) {
                 const auto* multi =
@@ -1465,7 +1670,7 @@ class SettingsPageWidget::Impl {
                     options.push_back(selectOption(option.value, option.label.translated()));
                 }
                 const QSignalBlocker blocker(runtime.multiSelect);
-                runtime.multiSelect->setOptions(options);
+                setOptions(runtime, options);
             }
             if (runtime.integerControl != nullptr) {
                 const auto* integer =
@@ -1547,16 +1752,23 @@ class SettingsPageWidget::Impl {
             permissionButton->setAccessibleName(permissionButton->text());
             syncMousePermission();
         }
-        syncValues();
+        syncValues(firstItem);
         requestVisibleSectionSync();
     }
 
-    void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
+    void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme,
+                    int firstItem = 0) {
         colorScheme = scheme;
-        for (RuntimeSection& runtime : sections) {
-            runtime.header->applyTheme(scheme);
+        if (firstItem == 0) {
+            for (RuntimeSection& runtime : sections) {
+                // Headers subscribe to ThemeManager themselves.
+                if (!runtime.materialized) {
+                    runtime.list->setFixedHeight(estimatedSectionHeight(runtime));
+                }
+            }
         }
-        for (RuntimeItem& runtime : items) {
+        for (int runtimeIndex = firstItem; runtimeIndex < items.size(); ++runtimeIndex) {
+            RuntimeItem& runtime = items[runtimeIndex];
             if (runtime.title != nullptr && runtime.description != nullptr) {
                 settings_ui::applySettingItemTheme(runtime.title, runtime.description, scheme);
             }
@@ -1585,6 +1797,167 @@ class SettingsPageWidget::Impl {
         return contentLayout != nullptr ? contentLayout->contentsMargins().top() : 0;
     }
 
+    QVector<QWidget*> tabWidgets(QWidget* parent) const {
+        QVector<QWidget*> result;
+        QWidget* widget = parent;
+        do {
+            if ((widget == parent || parent->isAncestorOf(widget)) &&
+                (widget->focusPolicy() & Qt::TabFocus) != 0 && widget->focusProxy() == nullptr) {
+                result.push_back(widget);
+            }
+            widget = widget->nextInFocusChain();
+        } while (widget != parent);
+        return result;
+    }
+
+    void rebuildTabOrder() {
+        QWidget* previous = nullptr;
+        for (const RuntimeSection& section : sections) {
+            for (QWidget* parent : {static_cast<QWidget*>(section.header), section.list}) {
+                const auto widgets = tabWidgets(parent);
+                for (QWidget* widget : widgets) {
+                    if (previous != nullptr) {
+                        QWidget::setTabOrder(previous, widget);
+                    }
+                    previous = widget;
+                }
+            }
+        }
+    }
+
+    void materializeCustom(RuntimeItem& item) {
+        if (!item.deferredRenderer.has_value()) {
+            return;
+        }
+        item.customControl = createSettingsCustomWidget(
+            *item.deferredRenderer, registry, *item.definition, runtimeSession, item.anchor);
+        Q_ASSERT(item.customControl != nullptr);
+        item.deferredRenderer.reset();
+        item.anchor->setFocusPolicy(Qt::NoFocus);
+        item.anchor->setMinimumHeight(0);
+        item.anchor->setMaximumHeight(QWIDGETSIZE_MAX);
+        auto* layout = new QVBoxLayout(item.anchor);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(item.customControl);
+        item.customControl->show();
+        rebuildTabOrder();
+    }
+
+    void settleLayout() {
+        if (contentWidget == nullptr || scrollArea == nullptr) {
+            return;
+        }
+        // Match AdScrollArea's width-dependent sizing without pumping unrelated
+        // events while controls are being created or a search target is revealed.
+        const int width = scrollArea->viewport()->width();
+        const int fitted = contentLayout->totalHeightForWidth(width);
+        contentWidget->resize(width,
+                              qMax(0, fitted >= 0 ? fitted : contentLayout->sizeHint().height()));
+        contentLayout->activate();
+    }
+
+    void materializeVisibleSections() {
+        if (!q.isVisible() || materializing || scrollArea == nullptr || sections.isEmpty()) {
+            return;
+        }
+        const QScopedValueRollback<bool> guard(materializing, true);
+        settleLayout();
+        auto* bar = scrollArea->verticalScrollBar();
+        const int viewportHeight = scrollArea->viewport()->height();
+        // One control-height of overscan hides creation during ordinary scrolling,
+        // without constructing another entire screen of expensive editors.
+        const int overscan = colorScheme.metricAlias.controlHeight;
+        for (RuntimeSection& section : sections) {
+            if (section.materialized) {
+                continue;
+            }
+            const int top = section.list->y();
+            if (top > bar->value() + viewportHeight + overscan ||
+                top + section.list->height() < bar->value() - overscan) {
+                continue;
+            }
+            // Keep the section currently at the top of the viewport stationary
+            // when an estimated height above it is replaced with its actual height.
+            RuntimeSection* anchor = &sections.first();
+            for (RuntimeSection& candidate : sections) {
+                if (sectionTop(candidate) > bar->value()) {
+                    break;
+                }
+                anchor = &candidate;
+            }
+            const int offset = bar->value() - sectionTop(*anchor);
+            const bool atBottom = bar->maximum() > 0 && bar->value() == bar->maximum();
+            materializeSection(section);
+            settleLayout();
+            bar->setValue(atBottom ? bar->maximum() : sectionTop(*anchor) + offset);
+        }
+        for (RuntimeItem& item : items) {
+            if (!item.deferredRenderer.has_value()) {
+                continue;
+            }
+            const int top = item.anchor->mapTo(contentWidget, QPoint()).y();
+            if (top > bar->value() + viewportHeight + overscan ||
+                top + item.anchor->height() < bar->value() - overscan) {
+                continue;
+            }
+            RuntimeSection* anchor = &sections.first();
+            for (RuntimeSection& candidate : sections) {
+                if (sectionTop(candidate) > bar->value()) {
+                    break;
+                }
+                anchor = &candidate;
+            }
+            const int offset = bar->value() - sectionTop(*anchor);
+            const bool atBottom = bar->maximum() > 0 && bar->value() == bar->maximum();
+            materializeCustom(item);
+            settleLayout();
+            bar->setValue(atBottom ? bar->maximum() : sectionTop(*anchor) + offset);
+        }
+    }
+
+    bool filterEvent(QObject* watched, QEvent* event) {
+        if ((watched == contentWidget && event->type() == QEvent::LayoutRequest) ||
+            (scrollArea != nullptr && watched == scrollArea->viewport() &&
+             event->type() == QEvent::Resize)) {
+            requestVisibleSectionSync();
+        }
+        if (event->type() == QEvent::FocusIn) {
+            for (RuntimeItem& item : items) {
+                if (watched == item.anchor && item.deferredRenderer.has_value()) {
+                    materializeCustom(item);
+                    settleLayout();
+                    focusContent(item.anchor, static_cast<QFocusEvent*>(event)->reason());
+                    return true;
+                }
+            }
+            for (RuntimeSection& section : sections) {
+                if (watched != section.list || section.materialized) {
+                    continue;
+                }
+                const auto reason = static_cast<QFocusEvent*>(event)->reason();
+                materializeSection(section);
+                settleLayout();
+                focusContent(section.list, reason);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void focusContent(QWidget* parent, Qt::FocusReason reason) {
+        const auto widgets = tabWidgets(parent);
+        const bool backwards = reason == Qt::BacktabFocusReason;
+        for (int i = 0; i < widgets.size(); ++i) {
+            QWidget* widget = widgets.at(backwards ? widgets.size() - 1 - i : i);
+            if (widget->isEnabled() && widget->isVisibleTo(&q)) {
+                widget->setFocus(reason);
+                scrollArea->ensureWidgetVisible(widget, scrollMarginX, scrollMarginY);
+                return;
+            }
+        }
+        q.focusNextPrevChild(!backwards);
+    }
+
     void requestVisibleSectionSync() {
         if (visibleSectionSyncPending) {
             return;
@@ -1592,6 +1965,7 @@ class SettingsPageWidget::Impl {
         visibleSectionSyncPending = true;
         QTimer::singleShot(0, &q, [this]() {
             visibleSectionSyncPending = false;
+            materializeVisibleSections();
             syncVisibleSection();
         });
     }
@@ -1653,6 +2027,15 @@ class SettingsPageWidget::Impl {
         if (location.pageId != page->id || scrollArea == nullptr) {
             return;
         }
+        if (!requested.sectionId.isEmpty() || !requested.itemId.isEmpty()) {
+            if (RuntimeSection* section = runtimeSection(location.sectionId)) {
+                materializeSection(*section);
+                if (RuntimeItem* item = runtimeItem(location.itemId)) {
+                    materializeCustom(*item);
+                }
+                settleLayout();
+            }
+        }
         QWidget* target = nullptr;
         QWidget* focus = nullptr;
         RuntimeSection* targetSection = nullptr;
@@ -1681,6 +2064,14 @@ class SettingsPageWidget::Impl {
             } else {
                 scrollArea->ensureWidgetVisible(target, scrollMarginX, scrollMarginY);
             }
+        }
+        // Finish viewport materialization before handing focus to an editor.
+        // A later geometry change must not dismiss a popup opened at the target.
+        materializeVisibleSections();
+        if (targetSection != nullptr) {
+            scrollToSection(*targetSection);
+        } else if (target != nullptr) {
+            scrollArea->ensureWidgetVisible(target, scrollMarginX, scrollMarginY);
         }
         if (focus != nullptr) {
             QWidget* focusWidget = focus->focusProxy() != nullptr ? focus->focusProxy() : focus;
@@ -1712,6 +2103,8 @@ class SettingsPageWidget::Impl {
     bool suppressVisibleSectionTracking = false;
     bool synchronizingValues = false;
     bool visibleSectionSyncPending = false;
+    bool initialized = false;
+    bool materializing = false;
     QPointer<adqt::widgets::AdAlert> permissionBanner;
     int contentTopMarginWithoutPermissionBanner = 0;
     QPointer<adqt::widgets::AdButton> permissionButton;
@@ -1720,7 +2113,20 @@ class SettingsPageWidget::Impl {
 SettingsPageWidget::SettingsPageWidget(
     const snow_shot::presentation::settings::SettingsRegistry& registry, const QString& pageId,
     snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent)
-    : QWidget(parent), m_impl(std::make_unique<Impl>(*this, registry, pageId, runtimeSession)) {}
+    : QWidget(parent), m_impl(std::make_unique<Impl>(*this, registry, pageId, runtimeSession)) {
+    if (m_impl->scrollArea != nullptr) {
+        m_impl->scrollArea->viewport()->installEventFilter(this);
+        m_impl->contentWidget->installEventFilter(this);
+        for (const auto& section : m_impl->sections) {
+            section.list->installEventFilter(this);
+        }
+        for (const auto& item : m_impl->items) {
+            if (item.deferredRenderer.has_value()) {
+                item.anchor->installEventFilter(this);
+            }
+        }
+    }
+}
 
 SettingsPageWidget::~SettingsPageWidget() = default;
 
@@ -1740,7 +2146,6 @@ void SettingsPageWidget::applyTheme(
 
 void SettingsPageWidget::retranslateUi() {
     m_impl->retranslateUi();
-    m_impl->syncValues();
 }
 
 void SettingsPageWidget::changeEvent(QEvent* event) {
@@ -1754,6 +2159,14 @@ void SettingsPageWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     m_impl->runtimeSession.refreshPlatformSettings();
     m_impl->observePermissionPage(true);
+    m_impl->requestVisibleSectionSync();
+}
+
+bool SettingsPageWidget::eventFilter(QObject* watched, QEvent* event) {
+    if (m_impl != nullptr && m_impl->filterEvent(watched, event)) {
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void SettingsPageWidget::hideEvent(QHideEvent* event) {

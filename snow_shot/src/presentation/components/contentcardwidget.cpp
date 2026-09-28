@@ -270,10 +270,10 @@ void ContentCardWidget::applyTheme(
     if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
         page->applyTheme(scheme);
     }
-    if (auto* page = dynamic_cast<SettingsPageWidget*>(m_activePage.data()); page != nullptr) {
-        page->applyTheme(scheme);
-    } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
-               historyPage != nullptr) {
+    // Generated settings pages subscribe to the theme themselves, including when
+    // used outside this card. Do not deliver a second full-page theme pass.
+    if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
+        historyPage != nullptr) {
         historyPage->applyTheme(scheme);
     } else if (auto* pinnedPage =
                    dynamic_cast<PinnedWindowManagementPageWidget*>(m_activePage.data());
@@ -287,10 +287,9 @@ void ContentCardWidget::retranslateUi() {
     if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
         page->retranslateUi();
     }
-    if (auto* page = dynamic_cast<SettingsPageWidget*>(m_activePage.data()); page != nullptr) {
-        page->retranslateUi();
-    } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
-               historyPage != nullptr) {
+    // SettingsPageWidget handles its own LanguageChange event.
+    if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
+        historyPage != nullptr) {
         historyPage->retranslateUi();
     } else if (auto* pinnedPage =
                    dynamic_cast<PinnedWindowManagementPageWidget*>(m_activePage.data());

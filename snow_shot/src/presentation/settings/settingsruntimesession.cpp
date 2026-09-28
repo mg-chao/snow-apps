@@ -1,12 +1,15 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#include "snow_shot/serverconfiguration.h"
 
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/presentation/globalmousegesture.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
+#include <QCoreApplication>
 #include <QMetaType>
 #include <QJsonObject>
+#include <QTimer>
 
 #include <utility>
 
@@ -88,9 +91,19 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
             &SettingsRuntimeSession::operationMessage);
     connect(&m_backend, &SettingsBackend::actionFinished, this,
             &SettingsRuntimeSession::actionFinished);
-    connect(
-        &m_backend, &SettingsBackend::synchronized, this, [this]() { refreshAll(); },
-        Qt::QueuedConnection);
+    connect(&m_backend, &SettingsBackend::synchronized, this, [this] {
+        // A reset/import may notify once per key. Read the final backend snapshot once
+        // after the burst, without reentering the write that emitted the notification.
+        if (m_refreshPending) {
+            return;
+        }
+        m_refreshPending = true;
+        QTimer::singleShot(0, this, [this] {
+            if (m_refreshPending) {
+                refreshAll();
+            }
+        });
+    });
     connect(
         &m_backend, &SettingsBackend::shortcutStateChanged, this,
         [this](GlobalShortcutAction action, const GlobalShortcutRegistrationState&) {
@@ -770,6 +783,7 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
 }
 
 void SettingsRuntimeSession::refreshAll() {
+    m_refreshPending = false;
     for (const SettingsFieldDescriptor& descriptor : m_registry.fields()) {
         refreshField(descriptor.id);
         refreshOptions(descriptor);
@@ -945,6 +959,8 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                     return m_backend.multiSelectValue(SettingsMultiSelectBinding::TrayMenuOptions);
                 case SettingsCustomRenderer::CustomAiModels:
                     return QVariant::fromValue(m_backend.customAiModels());
+                case SettingsCustomRenderer::TextTranslationConfigurations:
+                    return QVariant::fromValue(m_backend.textTranslationConfigurations());
                 case SettingsCustomRenderer::StorageStatus:
                     return QVariant::fromValue(m_backend.storageStatus());
                 }
@@ -1024,6 +1040,10 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                 case SettingsCustomRenderer::CustomAiModels:
                     return value.canConvert<CustomAiModels>() &&
                            m_backend.applyCustomAiModels(value.value<CustomAiModels>());
+                case SettingsCustomRenderer::TextTranslationConfigurations:
+                    return value.canConvert<TextTranslationConfigurations>() &&
+                           m_backend.applyTextTranslationConfigurations(
+                               value.value<TextTranslationConfigurations>());
                 case SettingsCustomRenderer::StorageStatus:
                     return false;
                 }
@@ -1064,6 +1084,12 @@ bool SettingsRuntimeSession::isPending(const SettingsFieldDescriptor& descriptor
 }
 
 QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descriptor) const {
+    if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url") &&
+        !normalizedServerUrl(state(descriptor.id).draftValue.toString())) {
+        return QCoreApplication::translate("SettingsBackend",
+                                           "Enter a valid HTTP or HTTPS server address without "
+                                           "credentials, a query, or a fragment.");
+    }
     const QString currentError = backendError(descriptor);
     if (!currentError.isEmpty()) {
         return currentError;
@@ -1073,6 +1099,11 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,
                                          const QVariant& first, const QVariant& second) const {
+    if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url")) {
+        const auto a = normalizedServerUrl(first.toString());
+        const auto b = normalizedServerUrl(second.toString());
+        return a && b && *a == *b;
+    }
     if (descriptor.definition == nullptr) {
         return first == second;
     }
@@ -1137,7 +1168,7 @@ SettingsRuntimeSession::buildOptions(const SettingsFieldDescriptor& descriptor) 
         for (const SettingsOptionDefinition& option : select->options) {
             result.values.push_back({option.value, option.label.translated()});
         }
-        result.values.append(m_backend.dynamicSelectOptions(select->binding));
+        result.values.append(dynamicSelectOptions(select->binding));
     } else if (const auto* multi =
                    std::get_if<SettingsMultiSelectDefinition>(&descriptor.definition->payload)) {
         for (const SettingsOptionDefinition& option : multi->options) {
@@ -1211,8 +1242,22 @@ void SettingsRuntimeSession::updateState(const QString& fieldId, const SettingsF
 
 SESSION_DELEGATE_SELECT(selectValue, SettingsSelectBinding, descriptorForSelect)
 
+void SettingsRuntimeSession::requestFontOptions() {
+    if (m_fontOptionsLoaded) {
+        return;
+    }
+    m_fontOptionsLoaded = true;
+    m_fontOptions = m_backend.dynamicSelectOptions(SettingsSelectBinding::AppFont);
+    if (const auto* descriptor = descriptorForSelect(SettingsSelectBinding::AppFont)) {
+        refreshOptions(*descriptor);
+    }
+}
+
 QVector<SettingsRuntimeOption>
 SettingsRuntimeSession::dynamicSelectOptions(SettingsSelectBinding binding) const {
+    if (binding == SettingsSelectBinding::AppFont) {
+        return m_fontOptions;
+    }
     return m_backend.dynamicSelectOptions(binding);
 }
 
@@ -1475,6 +1520,19 @@ bool SettingsRuntimeSession::applyCustomAiModels(const CustomAiModels& models) {
     bool valid = false;
     const auto normalized = customAiModelsFromJson(customAiModelsToJson(models), &valid);
     return submitDraft(QStringLiteral("api.custom-models"),
+                       QVariant::fromValue(valid ? normalized : models));
+}
+
+TextTranslationConfigurations SettingsRuntimeSession::textTranslationConfigurations() const {
+    return state(QStringLiteral("api.text-translation"))
+        .acceptedValue.value<TextTranslationConfigurations>();
+}
+bool SettingsRuntimeSession::applyTextTranslationConfigurations(
+    const TextTranslationConfigurations& models) {
+    bool valid = false;
+    const auto normalized =
+        textTranslationConfigurationsFromJson(textTranslationConfigurationsToJson(models), &valid);
+    return submitDraft(QStringLiteral("api.text-translation"),
                        QVariant::fromValue(valid ? normalized : models));
 }
 

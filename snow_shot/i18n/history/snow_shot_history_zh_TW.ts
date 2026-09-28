@@ -605,6 +605,10 @@
             <translation>顯示主介面</translation>
         </message>
         <message>
+            <source>The image could not be saved automatically: %1</source>
+            <translation>無法自動儲存影像：%1</translation>
+        </message>
+        <message>
             <source>The new content could not be loaded</source>
             <translation>無法載入新內容</translation>
         </message>

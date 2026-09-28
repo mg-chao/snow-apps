@@ -6,6 +6,7 @@
 #include "widgets/form.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/input_password_edit.h"
+#include "widgets/input_number.h"
 #include "widgets/modal.h"
 #include "widgets/switch.h"
 #include "widgets/tag.h"
@@ -441,6 +442,16 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     m_fields[5] = new AdFormItem(QString(), m_reasoning, QStringLiteral("reasoningSupport"), form);
     m_fields[5]->setItemLayout(AdFormItem::ItemLayout::Vertical);
     grid->addWidget(m_fields[5], 2, 1);
+    m_concurrency = new AdInputNumber(form);
+    m_concurrency->setObjectName(QStringLiteral("customAiModelConcurrency"));
+    m_concurrency->setMinimum(1);
+    m_concurrency->setMaximum(16);
+    m_concurrency->setDecimals(0);
+    m_concurrency->setValue(value.concurrency);
+    m_fields[6] =
+        new AdFormItem(QString(), m_concurrency, QStringLiteral("customAiModelConcurrency"), form);
+    m_fields[6]->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    grid->addWidget(m_fields[6], 3, 0);
     layout->addWidget(form);
     m_modalError = new AdAlert(body);
     m_modalError->setSeverity(AdAlert::Severity::Error);
@@ -480,10 +491,10 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
 }
 
 void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
-    auto value =
-        normalizeCustomAiModel({m_editId, m_inputs[0]->text(), m_inputs[1]->text(),
-                                m_inputs[2]->text(), m_modelSelect->currentValue().toString(),
-                                m_vision->isChecked(), m_reasoning->isChecked()});
+    auto value = normalizeCustomAiModel(
+        {m_editId, m_inputs[0]->text(), m_inputs[1]->text(), m_inputs[2]->text(),
+         m_modelSelect->currentValue().toString(), m_vision->isChecked(), m_reasoning->isChecked(),
+         static_cast<int>(m_concurrency->value())});
     auto models = m_session.customAiModels();
     std::array<QString, 4> errors;
     if (value.name.isEmpty()) {
@@ -559,7 +570,8 @@ void CustomAiModelsSettingsWidget::translateModal() {
                          "try again."));
         }
         const QStringList labels{tr("Model Name"), tr("API URL"),        tr("API Key"),
-                                 tr("API Model"),  tr("Vision Support"), tr("Reasoning Support")};
+                                 tr("API Model"),  tr("Vision Support"), tr("Reasoning Support"),
+                                 tr("Concurrency")};
         for (size_t i = 0; i < m_fields.size(); ++i) {
             m_fields[i]->setLabel(labels[static_cast<qsizetype>(i)]);
             if (i < m_inputs.size()) {
@@ -577,6 +589,7 @@ void CustomAiModelsSettingsWidget::translateModal() {
             m_modelFetchStatus->property("fetchFailed").toBool() ? m_modelFetchStatus : nullptr);
         m_vision->setAccessibleName(tr("Vision Support"));
         m_reasoning->setAccessibleName(tr("Reasoning Support"));
+        m_concurrency->setAccessibleName(tr("Concurrency"));
         m_fields[0]->setTooltipText(tr("The model name displayed in Snow Shot."));
         m_fields[1]->setTooltipText(tr(
             "OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL."));
@@ -586,6 +599,9 @@ void CustomAiModelsSettingsWidget::translateModal() {
         m_fields[4]->setTooltipText(tr("Allow this model to convert images to Markdown and HTML."));
         m_fields[5]->setTooltipText(
             tr("Explicitly enable or disable reasoning in model requests."));
+        m_fields[6]->setTooltipText(
+            tr("Maximum simultaneous translation and image conversion requests for this model "
+               "(1-16)."));
     }
     if (m_deleteModal != nullptr) {
         m_deleteModal->setWindowTitle(tr("Delete Model"));

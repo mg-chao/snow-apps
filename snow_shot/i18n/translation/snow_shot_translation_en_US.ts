@@ -67,6 +67,10 @@
             <translation>Japanese</translation>
         </message>
         <message>
+            <source>Korean</source>
+            <translation>Korean</translation>
+        </message>
+        <message>
             <source>Portuguese</source>
             <translation>Portuguese</translation>
         </message>

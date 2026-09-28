@@ -208,6 +208,8 @@ void configurationItemsRenderAsButtons() {
     RecordingSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
     SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+    page.reveal({page.pageId(), registry.field(QStringLiteral("configuration.export"))->sectionId,
+                 QStringLiteral("configuration.export")});
     page.resize(960, 480);
 
     QWidget* const exportRow =
@@ -259,6 +261,8 @@ void configurationBusyStateDisablesBothButtons() {
     RecordingSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
     SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+    page.reveal({page.pageId(), registry.field(QStringLiteral("configuration.export"))->sectionId,
+                 QStringLiteral("configuration.export")});
 
     auto* const exportButton = page.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("settings-control-configuration-export"));
@@ -285,6 +289,8 @@ void buttonTextsRetranslate() {
     RecordingSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
     SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+    page.reveal({page.pageId(), registry.field(QStringLiteral("configuration.export"))->sectionId,
+                 QStringLiteral("configuration.export")});
 
     auto* const exportButton = page.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("settings-control-configuration-export"));
@@ -386,6 +392,9 @@ int main(int argc, char** argv) {
             RecordingSettingsBackend backend;
             settings::SettingsRuntimeSession session(registry, backend);
             SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+            page.reveal({page.pageId(),
+                         registry.field(QStringLiteral("configuration.export"))->sectionId,
+                         QStringLiteral("configuration.export")});
             page.resize(960, 1600);
             page.show();
             flushEvents();

@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
 #include "snow_shot/platform/screenshotnative.h"
 #include <QJsonDocument>
@@ -313,6 +314,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] ScreenshotOverlayWindow* keyboardOwnerOverlay() const;
     void rememberKeyboardOwner(QWidget* widget = nullptr);
     void restoreKeyboardOwnerQueued(ScreenshotOverlayWindow* overlay);
+    [[nodiscard]] ScreenshotToolbarWindow* toolbarForShortcut();
     [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
     [[nodiscard]] bool requestCancelCaptureViaShortcut();
     void setHistoryLoadingMessageVisible(bool visible);
@@ -325,7 +327,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] bool imageExportCurrent(quint64 generation) const;
     [[nodiscard]] bool imageExportNotificationCurrent(quint64 generation) const;
     [[nodiscard]] bool finishImageExport(quint64 generation);
-    void hideImageExportPresentation();
+    void hideCapturePresentationImmediately();
     void detachCaptureForExport(ExportDetachMode mode = ExportDetachMode::Immediate);
     void scheduleDeferredExportCleanup();
     void trackExportJob(const ScreenshotExportJobHandle& handle);
@@ -956,8 +958,20 @@ void ScreenshotController::Impl::restoreKeyboardOwnerQueued(ScreenshotOverlayWin
     });
 }
 
-bool ScreenshotController::Impl::activateScreenshotShortcut(const QString& actionId) {
+ScreenshotToolbarWindow* ScreenshotController::Impl::toolbarForShortcut() {
     ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->ensureToolbar();
+    if (toolbar != nullptr && m_interaction.selecting()) {
+        // A newly created or hidden toolbar may not have seen the live selection
+        // yet. Use the same recognition limit as selection-toolbar presentation
+        // before deciding whether a shortcut may commit that selection.
+        toolbar->setRecognitionEnabled(
+            makeScreenshotToolbarPresentationState(m_interaction, m_selection).ocrAvailable);
+    }
+    return toolbar;
+}
+
+bool ScreenshotController::Impl::activateScreenshotShortcut(const QString& actionId) {
+    ScreenshotToolbarWindow* toolbar = toolbarForShortcut();
     ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
     return palette != nullptr && palette->activateScreenshotShortcut(actionId);
 }
@@ -1697,7 +1711,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](const QString& actionId) { return activateScreenshotShortcut(actionId); },
         [this](const QString& toolId) {
             ScreenshotToolbarWindow* toolbar =
-                m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
+                m_overlayCoordinator != nullptr ? m_overlayCoordinator->ensureToolbar() : nullptr;
             return toolbar != nullptr && toolbar->activateDrawingShortcut(toolId);
         },
         [this]() { return m_historyService != nullptr && m_historyService->navigatePrevious(); },
@@ -1794,6 +1808,22 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](const QPoint& point, quint32 displayId) {
             if (m_selectorWorkflow)
                 static_cast<void>(m_selectorWorkflow->requestHitTest(point, displayId));
+        },
+        [this](const QString& actionId) {
+            const auto* toolbar = toolbarForShortcut();
+            auto* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+            return palette != nullptr && palette->canActivateScreenshotShortcut(actionId);
+        },
+        [this](const QString& toolId) {
+            const auto* toolbar = toolbarForShortcut();
+            const auto* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+            return palette != nullptr && palette->canActivateDrawingShortcut(toolId);
+        },
+        [this]() {
+            resetPendingCaptureRequest();
+            if (auto* toolbar = m_overlayCoordinator->ensureToolbar()) {
+                toolbar->suppressRememberedDrawingTool();
+            }
         },
     };
     m_overlayInputHandler =
@@ -2623,7 +2653,7 @@ bool ScreenshotController::Impl::imageExportNotificationCurrent(quint64 generati
     return epoch != m_imageExportCaptureEpochs.cend() && epoch.value() == m_captureEpoch;
 }
 
-void ScreenshotController::Impl::hideImageExportPresentation() {
+void ScreenshotController::Impl::hideCapturePresentationImmediately() {
     SNOW_SHOT_PIN_PERF_SCOPE("controller.hide_presentation");
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.hide_presentation.enter");
     if (m_colorPickerController != nullptr) {
@@ -2642,7 +2672,7 @@ void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
     SNOW_SHOT_PIN_PERF_SCOPE("controller.detach_capture");
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.detach_capture.enter");
     if (mode == ExportDetachMode::Immediate) {
-        hideImageExportPresentation();
+        hideCapturePresentationImmediately();
     }
     if (m_scrollingCaptureController != nullptr) {
         m_scrollingCaptureController->detachPendingResultRequest();
@@ -2868,7 +2898,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
             return;
         }
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.snapshot_requested");
-        hideImageExportPresentation();
+        hideCapturePresentationImmediately();
         detachCaptureForExport(ExportDetachMode::DeferredPresentation);
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
         return;
@@ -2989,7 +3019,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         return;
     }
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.export_scheduled");
-    hideImageExportPresentation();
+    hideCapturePresentationImmediately();
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
     detachCaptureForExport(ExportDetachMode::DeferredPresentation);
 }
@@ -4076,6 +4106,7 @@ void ScreenshotController::Impl::publishHistoryResult(
 }
 
 void ScreenshotController::Impl::cancelCapture() {
+    hideCapturePresentationImmediately();
     if (m_shortcutExitConfirmation != nullptr) {
         m_shortcutExitConfirmation->dismiss();
     }

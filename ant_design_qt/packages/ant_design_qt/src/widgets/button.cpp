@@ -1,4 +1,5 @@
 #include "button.h"
+#include "window_creation_context.h"
 #include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
@@ -528,6 +529,7 @@ class BusyIndicatorSurface final : public QWidget {
 
     QWidget* owner = button_->window();
     if (owner) {
+      const ScopedWindowCreationOwner creationOwner(this, owner);
       owner->winId();
       winId();
       if (windowHandle() && owner->windowHandle() &&

@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "widgets/window_creation_context.h"
 
 #include <QGuiApplication>
 #include <QPainter>
@@ -102,6 +103,7 @@ void ScreenshotCanvasColorSamplerWindow::beginSampling(QWidget* owner) {
     }
 
     owner = owner->window();
+    const adqt::widgets::ScopedWindowCreationOwner creationOwner(this, owner);
     if (owner->windowHandle() == nullptr) {
         static_cast<void>(owner->winId());
     }
@@ -140,10 +142,10 @@ void ScreenshotCanvasColorSamplerWindow::endSampling() {
     m_previewImage = QImage();
     m_currentColor = QColor();
     hide();
-    if (QWindow* handle = windowHandle()) {
-        handle->setTransientParent(nullptr);
+    if (windowHandle()) {
         // A native sampling surface belongs to one session. Cocoa can retain the
-        // previous owner's level after detaching; recreate it for the next owner.
+        // previous owner's level; destroy it directly instead of first replacing
+        // its panel just to release capture ownership. Qt clears ownership too.
         destroy();
     }
 }

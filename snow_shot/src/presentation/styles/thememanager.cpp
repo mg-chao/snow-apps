@@ -171,6 +171,7 @@ adqt::theme::ThemeConfig toAdqtThemeConfig(const ThemeStyleConfig& config) {
         adqtConfig.link = config.colorLink;
     }
 
+    adqtConfig.appFont = config.appFont;
     adqtConfig.fontSize = static_cast<double>(config.fontSize);
     adqtConfig.lineWidth = static_cast<double>(config.lineWidth);
     adqtConfig.borderRadius = static_cast<double>(config.borderRadius);
@@ -195,6 +196,7 @@ ThemeStyleConfig toThemeStyleConfig(const adqt::theme::ResolvedTheme& resolvedTh
     config.colorLink = resolvedTheme.config.link;
     config.colorTextBase = resolvedTheme.values.colorTextBase;
     config.colorBgBase = resolvedTheme.values.colorBgBase;
+    config.appFont = resolvedTheme.config.appFont;
     config.fontSize = qRound(resolvedTheme.config.fontSize);
     config.lineWidth = qRound(resolvedTheme.config.lineWidth);
     config.borderRadius = qRound(resolvedTheme.config.borderRadius);
@@ -212,6 +214,10 @@ ThemeManager::ThemeManager(QObject* parent)
       m_scheme(generateThemeColorScheme(m_config)),
       m_mode(decodeThemeMode(snow_shot::storage::InterfaceSettings().themeMode())) {
     m_config.colorPrimary = storage::InterfaceSettings().themePrimaryColor();
+    const QString family = storage::InterfaceSettings().appFontFamily();
+    if (!family.isEmpty()) {
+        m_config.appFont.setFamily(family);
+    }
     auto& adqtThemeManager = adqt::theme::ThemeManager::instance();
     adqtThemeManager.setConfig(toAdqtThemeConfig(m_config));
     m_config = toThemeStyleConfig(adqt::theme::makeResolvedTheme(adqtThemeManager.config()));
@@ -255,6 +261,29 @@ void ThemeManager::setThemeStyleConfig(const ThemeStyleConfig& config) {
     adqtThemeManager.setConfig(toAdqtThemeConfig(config));
     m_config = toThemeStyleConfig(adqt::theme::makeResolvedTheme(adqtThemeManager.config()));
     rebuildScheme();
+}
+
+QString ThemeManager::appFontFamily() const {
+    return (m_config.appFont.resolveMask() & (QFont::FamilyResolved | QFont::FamiliesResolved)) != 0
+               ? m_config.appFont.family()
+               : QString();
+}
+
+bool ThemeManager::setAppFontFamily(const QString& family) {
+    const QString normalized = family.trimmed();
+    if (!storage::InterfaceSettings().setAppFontFamily(normalized)) {
+        return false;
+    }
+    if (appFontFamily() != normalized) {
+        auto config = m_config;
+        config.appFont = QFont();
+        if (!normalized.isEmpty()) {
+            config.appFont.setFamily(normalized);
+        }
+        setThemeStyleConfig(config);
+        emit appFontFamilyChanged(normalized);
+    }
+    return true;
 }
 
 bool ThemeManager::setThemePrimaryColor(const QColor& color) {

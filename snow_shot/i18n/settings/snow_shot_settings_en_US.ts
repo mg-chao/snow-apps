@@ -174,6 +174,10 @@
             <translation>Cancel</translation>
         </message>
         <message>
+            <source>Concurrency</source>
+            <translation>Concurrency</translation>
+        </message>
+        <message>
             <source>Copy</source>
             <translation>Copy</translation>
         </message>
@@ -224,6 +228,10 @@
         <message>
             <source>Explicitly enable or disable reasoning in model requests.</source>
             <translation>Explicitly enable or disable reasoning in model requests.</translation>
+        </message>
+        <message>
+            <source>Maximum simultaneous translation and image conversion requests for this model (1-16).</source>
+            <translation>Maximum simultaneous translation and image conversion requests for this model (1-16).</translation>
         </message>
         <message>
             <source>Model Name</source>
@@ -694,6 +702,10 @@
     <context>
         <name>SettingsBackend</name>
         <message>
+            <source>Enter a valid HTTP or HTTPS server address without credentials, a query, or a fragment.</source>
+            <translation>Enter a valid HTTP or HTTPS server address without credentials, a query, or a fragment.</translation>
+        </message>
+        <message>
             <source>The clipboard is unavailable.</source>
             <translation>The clipboard is unavailable.</translation>
         </message>
@@ -857,6 +869,10 @@
             <translation>Animated image frame rate</translation>
         </message>
         <message>
+            <source>App Font</source>
+            <translation>App Font</translation>
+        </message>
+        <message>
             <source>App Permissions</source>
             <translation>App Permissions</translation>
         </message>
@@ -917,8 +933,8 @@
             <translation>Auto-recognize QR Code</translation>
         </message>
         <message>
-            <source>Auto-save screenshot filename format</source>
-            <translation>Auto-save screenshot filename format</translation>
+            <source>Auto-save image filename format</source>
+            <translation>Auto-save image filename format</translation>
         </message>
         <message>
             <source>Automatic text recognition</source>
@@ -1089,16 +1105,20 @@
             <translation>Choose the compression effort used for image output and history results</translation>
         </message>
         <message>
-            <source>Choose the dialog used for manual screenshot saves</source>
-            <translation>Choose the dialog used for manual screenshot saves</translation>
+            <source>Choose the dialog used for manual image saves</source>
+            <translation>Choose the dialog used for manual image saves</translation>
         </message>
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
             <translation>Choose the fixed point used when zooming a pinned screenshot</translation>
         </message>
         <message>
-            <source>Choose the format used for automatically saved screenshot files</source>
-            <translation>Choose the format used for automatically saved screenshot files</translation>
+            <source>Choose the font used throughout the application</source>
+            <translation>Choose the font used throughout the application</translation>
+        </message>
+        <message>
+            <source>Choose the format used for automatically saved image files</source>
+            <translation>Choose the format used for automatically saved image files</translation>
         </message>
         <message>
             <source>Choose the functions shown in the system tray menu</source>
@@ -1115,6 +1135,10 @@
         <message>
             <source>Choose the primary color used throughout the theme</source>
             <translation>Choose the primary color used throughout the theme</translation>
+        </message>
+        <message>
+            <source>Choose the server for built-in online services. Application updates are not affected.</source>
+            <translation>Choose the server for built-in online services. Application updates are not affected.</translation>
         </message>
         <message>
             <source>Choose the size of the screenshot, pinned, and recording toolbars</source>
@@ -1245,8 +1269,8 @@
             <translation>Configure application process behavior</translation>
         </message>
         <message>
-            <source>Configure custom AI model connections</source>
-            <translation>Configure custom AI model connections</translation>
+            <source>Configure custom AI models and text translation services</source>
+            <translation>Configure custom AI models and text translation services</translation>
         </message>
         <message>
             <source>Configure drawing tools and the screenshot drawing toolbar</source>
@@ -1357,6 +1381,10 @@
             <translation>Cursor guide line color</translation>
         </message>
         <message>
+            <source>Custom DeepL, Baidu, and Youdao-compatible services</source>
+            <translation>Custom DeepL, Baidu, and Youdao-compatible services</translation>
+        </message>
+        <message>
             <source>Custom Models</source>
             <translation>Custom Models</translation>
         </message>
@@ -1375,6 +1403,10 @@
         <message>
             <source>Custom screenshot toolbar</source>
             <translation>Custom screenshot toolbar</translation>
+        </message>
+        <message>
+            <source>Custom translation endpoints and concurrency</source>
+            <translation>Custom translation endpoints and concurrency</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -1561,6 +1593,10 @@
             <translation>Enlarge short side (more detail)</translation>
         </message>
         <message>
+            <source>Enter an HTTP or HTTPS address. Changes apply immediately. Clear to use the default server.</source>
+            <translation>Enter an HTTP or HTTPS address. Changes apply immediately. Clear to use the default server.</translation>
+        </message>
+        <message>
             <source>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</source>
             <translation>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</translation>
         </message>
@@ -1739,6 +1775,10 @@
         <message>
             <source>Ignore global hotkeys while the focused window occupies an entire monitor</source>
             <translation>Ignore global hotkeys while the focused window occupies an entire monitor</translation>
+        </message>
+        <message>
+            <source>Image Export</source>
+            <translation>Image Export</translation>
         </message>
         <message>
             <source>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</source>
@@ -1929,8 +1969,8 @@
             <translation>Manual</translation>
         </message>
         <message>
-            <source>Manual save screenshot filename format</source>
-            <translation>Manual save screenshot filename format</translation>
+            <source>Manual save image filename format</source>
+            <translation>Manual save image filename format</translation>
         </message>
         <message>
             <source>Match your system appearance or choose a light or dark theme</source>
@@ -2537,10 +2577,6 @@
             <translation>Screenshot interface and visual guidance settings</translation>
         </message>
         <message>
-            <source>Screenshot output locations, formats, and filenames</source>
-            <translation>Screenshot output locations, formats, and filenames</translation>
-        </message>
-        <message>
             <source>Screenshot selection behavior</source>
             <translation>Screenshot selection behavior</translation>
         </message>
@@ -2567,10 +2603,6 @@
         <message>
             <source>Screenshot translation settings</source>
             <translation>Screenshot translation settings</translation>
-        </message>
-        <message>
-            <source>Screenshots</source>
-            <translation>Screenshots</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -2629,8 +2661,12 @@
             <translation>Serial number</translation>
         </message>
         <message>
-            <source>Set image quality for screenshot files saved outside the Snow Shot dialog</source>
-            <translation>Set image quality for screenshot files saved outside the Snow Shot dialog</translation>
+            <source>Server address</source>
+            <translation>Server address</translation>
+        </message>
+        <message>
+            <source>Set quality for image files saved outside the Snow Shot dialog</source>
+            <translation>Set quality for image files saved outside the Snow Shot dialog</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
@@ -2653,16 +2689,16 @@
             <translation>Set the frame rate of exported animated images</translation>
         </message>
         <message>
-            <source>Set the generated filename used by automatic screenshot file saves</source>
-            <translation>Set the generated filename used by automatic screenshot file saves</translation>
+            <source>Set the generated filename used by automatic image file saves</source>
+            <translation>Set the generated filename used by automatic image file saves</translation>
         </message>
         <message>
             <source>Set the generated filename used for recording output files</source>
             <translation>Set the generated filename used for recording output files</translation>
         </message>
         <message>
-            <source>Set the generated filename used when saving a screenshot as a file</source>
-            <translation>Set the generated filename used when saving a screenshot as a file</translation>
+            <source>Set the generated filename used when saving an image as a file</source>
+            <translation>Set the generated filename used when saving an image as a file</translation>
         </message>
         <message>
             <source>Set the maximum resolution of exported animated images</source>
@@ -2699,6 +2735,10 @@
         <message>
             <source>Shape tool</source>
             <translation>Shape tool</translation>
+        </message>
+        <message>
+            <source>Shared image export settings for screenshot and pin-to-screen windows</source>
+            <translation>Shared image export settings for screenshot and pin-to-screen windows</translation>
         </message>
         <message>
             <source>Shortcut hint opacity</source>
@@ -2779,6 +2819,10 @@
         <message>
             <source>Snow Shot</source>
             <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot server</source>
+            <translation>Snow Shot server</translation>
         </message>
         <message>
             <source>Snowflake</source>
@@ -2869,6 +2913,10 @@
             <translation>System</translation>
         </message>
         <message>
+            <source>System default</source>
+            <translation>System default</translation>
+        </message>
+        <message>
             <source>System settings</source>
             <translation>System settings</translation>
         </message>
@@ -2899,6 +2947,10 @@
         <message>
             <source>Text Recognition</source>
             <translation>Text Recognition</translation>
+        </message>
+        <message>
+            <source>Text Translation</source>
+            <translation>Text Translation</translation>
         </message>
         <message>
             <source>Text detection scaling</source>
@@ -2987,6 +3039,10 @@
         <message>
             <source>Translation</source>
             <translation>Translation</translation>
+        </message>
+        <message>
+            <source>Translation Configurations</source>
+            <translation>Translation Configurations</translation>
         </message>
         <message>
             <source>Translation Page</source>
@@ -3089,8 +3145,8 @@
             <translation>WebP</translation>
         </message>
         <message>
-            <source>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</source>
-            <translation>When copying a screenshot image to the clipboard, also save it in the selected image format and save directory</translation>
+            <source>When copying an image to the clipboard, also save it in the selected image format and save directory</source>
+            <translation>When copying an image to the clipboard, also save it in the selected image format and save directory</translation>
         </message>
         <message>
             <source>Window Element API</source>
@@ -3105,8 +3161,8 @@
             <translation>Window grouping</translation>
         </message>
         <message>
-            <source>Write the screenshot to a file and copy that file to the clipboard</source>
-            <translation>Write the screenshot to a file and copy that file to the clipboard</translation>
+            <source>Write the image to a file and copy that file to the clipboard</source>
+            <translation>Write the image to a file and copy that file to the clipboard</translation>
         </message>
         <message>
             <source>Zip archives (*.zip);;All files (*.*)</source>
@@ -3427,6 +3483,137 @@ Unavailable: %2</translation>
         </message>
     </context>
     <context>
+        <name>TextTranslationSettingsWidget</name>
+        <message>
+            <source>%1 (Copy %2)</source>
+            <translation>%1 (Copy %2)</translation>
+        </message>
+        <message>
+            <source>%1 (Copy)</source>
+            <translation>%1 (Copy)</translation>
+        </message>
+        <message>
+            <source>%1 configuration %2</source>
+            <translation>%1 configuration %2</translation>
+        </message>
+        <message>
+            <source>A configuration with this name already exists.</source>
+            <translation>A configuration with this name already exists.</translation>
+        </message>
+        <message>
+            <source>API Key</source>
+            <translation>API Key</translation>
+        </message>
+        <message>
+            <source>API URL</source>
+            <translation>API URL</translation>
+        </message>
+        <message>
+            <source>Add Configuration</source>
+            <translation>Add Configuration</translation>
+        </message>
+        <message>
+            <source>Application ID</source>
+            <translation>Application ID</translation>
+        </message>
+        <message>
+            <source>Application Secret</source>
+            <translation>Application Secret</translation>
+        </message>
+        <message>
+            <source>Baidu</source>
+            <translation>Baidu</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Concurrency</source>
+            <translation>Concurrency</translation>
+        </message>
+        <message>
+            <source>Configuration Name</source>
+            <translation>Configuration Name</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
+            <source>DeepL</source>
+            <translation>DeepL</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Delete Configuration</source>
+            <translation>Delete Configuration</translation>
+        </message>
+        <message>
+            <source>Delete configuration "%1"? If selected, another available service will be used.</source>
+            <translation>Delete configuration "%1"? If selected, another available service will be used.</translation>
+        </message>
+        <message>
+            <source>Edit</source>
+            <translation>Edit</translation>
+        </message>
+        <message>
+            <source>Edit Configuration</source>
+            <translation>Edit Configuration</translation>
+        </message>
+        <message>
+            <source>Enter a configuration name.</source>
+            <translation>Enter a configuration name.</translation>
+        </message>
+        <message>
+            <source>Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment.</source>
+            <translation>Enter a full HTTP or HTTPS endpoint without embedded credentials or a fragment.</translation>
+        </message>
+        <message>
+            <source>Maximum simultaneous requests for this configuration across translation jobs (1-16).</source>
+            <translation>Maximum simultaneous requests for this configuration across translation jobs (1-16).</translation>
+        </message>
+        <message>
+            <source>No translation configurations added</source>
+            <translation>No translation configurations added</translation>
+        </message>
+        <message>
+            <source>Optional for servers that do not require authentication.</source>
+            <translation>Optional for servers that do not require authentication.</translation>
+        </message>
+        <message>
+            <source>Save</source>
+            <translation>Save</translation>
+        </message>
+        <message>
+            <source>Service Format</source>
+            <translation>Service Format</translation>
+        </message>
+        <message>
+            <source>The API key must not contain line breaks.</source>
+            <translation>The API key must not contain line breaks.</translation>
+        </message>
+        <message>
+            <source>The full translation endpoint. Its path and query are used as entered.</source>
+            <translation>The full translation endpoint. Its path and query are used as entered.</translation>
+        </message>
+        <message>
+            <source>This configuration was deleted. Close this form and create a new configuration.</source>
+            <translation>This configuration was deleted. Close this form and create a new configuration.</translation>
+        </message>
+        <message>
+            <source>Unable to save configurations. Check that configuration storage is writable and try again.</source>
+            <translation>Unable to save configurations. Check that configuration storage is writable and try again.</translation>
+        </message>
+        <message>
+            <source>Youdao</source>
+            <translation>Youdao</translation>
+        </message>
+    </context>
+    <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
             <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
@@ -3483,8 +3670,8 @@ Unavailable: %2</translation>
     <context>
         <name>snow_shot::storage::ConfigurationStore</name>
         <message>
-            <source>Some custom AI model configurations are invalid and were ignored</source>
-            <translation>Some custom AI model configurations are invalid and were ignored</translation>
+            <source>Some custom API configurations are invalid and were ignored</source>
+            <translation>Some custom API configurations are invalid and were ignored</translation>
         </message>
     </context>
 </TS>

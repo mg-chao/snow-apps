@@ -26,6 +26,7 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     explicit ScreenshotScrollingThumbnailWidget(QWidget& parent);
 
     void reset();
+    void releaseNativeSurface();
     void setTrimModel(std::shared_ptr<ScreenshotScrollingTrimRange> trim);
     void setRecognitionMode(ScreenshotScrollingRecognitionMode mode);
     void setMaximumPreviewHeight(int height);
@@ -33,6 +34,7 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     void setStitchedImage(const QImage& previewImage, const QSize& sourceSize,
                           ScreenshotScrollingStitchChange change, int addedRows,
                           bool replacePreview = false, int replacedPreviewRows = 0);
+    [[nodiscard]] bool hasPreview() const;
     [[nodiscard]] int trimTop() const;
     [[nodiscard]] int trimBottom() const;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
@@ -71,7 +73,6 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
         int spanCount = 0;
     };
 
-    [[nodiscard]] bool hasPreview() const;
     [[nodiscard]] QRect previewRect() const;
     [[nodiscard]] qreal imageScale() const;
     [[nodiscard]] int scaledImageExtent() const;

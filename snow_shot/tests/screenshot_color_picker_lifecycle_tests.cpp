@@ -579,11 +579,16 @@ void canvasSamplerFollowsSessionOwner() {
                 require(hud.level < CGWindowLevelForKey(kCGScreenSaverWindowLevelKey),
                         "pinned sampling must not retain the screenshot's elevated level");
             require(hud.ignoresMouseEvents, "the sampler must not intercept canvas input");
+            require(bool(hud.styleMask & NSWindowStyleMaskNonactivatingPanel) ==
+                        (owner == &overlay),
+                    "each sampling session must start with its owner's activation behavior");
         }
 #else
         Q_UNUSED(cocoa);
 #endif
         sampler.endSampling();
+        require(!sampler.internalWinId(),
+                "ending sampling must release the native surface directly");
         require(!sampler.isVisible() &&
                     (!sampler.windowHandle() || !sampler.windowHandle()->transientParent()),
                 "ending sampling must hide the HUD and release its transient owner");
@@ -594,6 +599,9 @@ void canvasSamplerFollowsSessionOwner() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+#ifdef Q_OS_MACOS
+    snow_shot::platform::initializeScreenshotWindowPolicy();
+#endif
     if (application.arguments().contains(QStringLiteral("--style-binding-only"))) {
         screenshotStyleBindingFollowsToolbarAttachment();
         return 0;

@@ -232,7 +232,10 @@ class ApplicationController::Impl {
             static_cast<void>(applicationStorage.initialize());
         }
         translationClient =
-            std::make_unique<SnowShotApiClient>(SnowShotApiClient::configuredBaseUrl());
+            std::make_unique<SnowShotApiClient>(SnowShotApiClient::configuredBaseUrl(
+                applicationStorage.configuration()
+                    .value(QStringLiteral("api_configuration/server_url"))
+                    .toString()));
         translationService = &translation::TranslationService::forClient(
             *translationClient, applicationStorage.configuration(),
             presentation::LanguageManager::instance().currentLocale());

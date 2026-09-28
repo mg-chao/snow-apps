@@ -246,6 +246,14 @@ QString colorToRgbaString(const QColor& color) {
         .toUpper();
 }
 
+QString ApiConfigurationSettings::serverUrl() const {
+    return cache().value(QStringLiteral("api_configuration/server_url")).toString();
+}
+
+bool ApiConfigurationSettings::setServerUrl(const QString& value) const {
+    return cache().setValue(QStringLiteral("api_configuration/server_url"), value);
+}
+
 CustomAiModels ApiConfigurationSettings::customModels() const {
     return customAiModelsFromJson(cache().value(QStringLiteral("api_configuration/custom_models")));
 }
@@ -255,12 +263,31 @@ bool ApiConfigurationSettings::setCustomModels(const CustomAiModels& models) con
                             customAiModelsToJson(models));
 }
 
+TextTranslationConfigurations ApiConfigurationSettings::textTranslationConfigurations() const {
+    return textTranslationConfigurationsFromJson(
+        cache().value(QStringLiteral("api_configuration/text_translation")));
+}
+
+bool ApiConfigurationSettings::setTextTranslationConfigurations(
+    const TextTranslationConfigurations& models) const {
+    return cache().setValue(QStringLiteral("api_configuration/text_translation"),
+                            textTranslationConfigurationsToJson(models));
+}
+
 QColor InterfaceSettings::themePrimaryColor() const {
     return colorValue(QStringLiteral("interface/theme_primary_color"));
 }
 
 bool InterfaceSettings::setThemePrimaryColor(const QColor& color) const {
     return setColorValue(QStringLiteral("interface/theme_primary_color"), color);
+}
+
+QString InterfaceSettings::appFontFamily() const {
+    return cache().value(QStringLiteral("interface/app_font")).toString();
+}
+
+bool InterfaceSettings::setAppFontFamily(const QString& family) const {
+    return cache().setValue(QStringLiteral("interface/app_font"), family.trimmed());
 }
 
 QString InterfaceSettings::themeMode() const {

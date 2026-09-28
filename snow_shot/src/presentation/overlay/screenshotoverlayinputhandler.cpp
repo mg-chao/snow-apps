@@ -41,10 +41,6 @@ bool recognitionTool(ScreenshotActiveTool tool) {
     return isScreenshotRecognitionTool(tool);
 }
 
-bool screenshotCompletionGestureTool(ScreenshotActiveTool tool) {
-    return tool != ScreenshotActiveTool::Select && !isScreenshotRecognitionTool(tool);
-}
-
 } // namespace
 
 ScreenshotOverlayInputHandler::ScreenshotOverlayInputHandler(
@@ -814,7 +810,43 @@ void ScreenshotOverlayInputHandler::setIntelligentSelectionIndex(int index) {
     m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
 }
 
+bool ScreenshotOverlayInputHandler::canPrepareSelectionForToolbarShortcut() const {
+    return m_context.interaction.selecting() && !m_externalDragActive &&
+           !m_context.selection.constructionActive() && !regionOperationActive() &&
+           m_context.selection.hasPixelSelection();
+}
+
+bool ScreenshotOverlayInputHandler::activateToolbarShortcutForSelection(
+    const std::function<bool()>& activate) {
+    if (!activate || !canPrepareSelectionForToolbarShortcut()) {
+        return false;
+    }
+    const bool consumeRelease =
+        m_context.interaction.dragging() || m_context.intelligentSelection.pressActive();
+    m_context.interaction.finishDrag();
+    // The requested command supersedes the tool being resized. Do not restore
+    // that tool from resetTransientShortcuts() or from the later mouse release.
+    m_toolBeforeSelectionResize.reset();
+    const bool resumeScrolling = std::exchange(m_scrollingCaptureSelectionResize, false);
+    resetTransientShortcuts();
+    m_consumeRegionRelease = consumeRelease;
+    m_context.actions.prepareExplicitSelectionCommand();
+    bool activated = false;
+    confirmSelection([&] {
+        if (resumeScrolling) {
+            m_context.actions.resumeScrollingCapture();
+        }
+        activated = activate();
+    });
+    return activated;
+}
+
 void ScreenshotOverlayInputHandler::confirmSelection() {
+    confirmSelection({});
+}
+
+void ScreenshotOverlayInputHandler::confirmSelection(
+    const std::function<void()>& beforePresentation) {
     if (m_context.interaction.dragging() || m_context.selection.constructionActive()) {
         return;
     }
@@ -840,14 +872,22 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
     m_context.interaction.confirmSelection();
     m_context.captureState.sessionState = ScreenshotSessionState::Editing;
     m_context.intelligentSelection.clearPress();
+    if (beforePresentation) {
+        const quint64 sessionId = m_context.captureState.sessionId;
+        beforePresentation();
+        // Export and recording commands can retire the capture synchronously.
+        // Never show its toolbar again, or notify a replacement capture session.
+        if (m_context.captureState.sessionId != sessionId || m_context.interaction.inactive() ||
+            m_context.captureState.presentationSuppressed) {
+            return;
+        }
+    }
     m_context.actions.updateOverlayState();
     m_context.actions.showToolbar();
     m_context.actions.selectionConfirmed();
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
-    if (customRegionInputActive() || m_consumeRegionRelease)
-        return;
     executeConfiguredCompletionAction(snow_shot::storage::ScreenshotSettings().doubleClickAction());
 }
 
@@ -857,12 +897,13 @@ void ScreenshotOverlayInputHandler::handleUnhandledMiddleClick() {
 }
 
 void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QString& action) {
-    if (m_externalDragActive)
+    // Unhandled completion gestures share capture-state eligibility across all tools.
+    // Region construction retains ownership until its final release is consumed.
+    if (m_externalDragActive || customRegionInputActive() || m_consumeRegionRelease)
         return;
     if (!(m_context.interaction.movingSelection() || m_context.interaction.editing() ||
           m_context.interaction.scrollingCapture()) ||
-        !m_context.selection.hasPixelSelection() ||
-        !screenshotCompletionGestureTool(m_context.interaction.activeTool())) {
+        !m_context.selection.hasPixelSelection()) {
         return;
     }
 

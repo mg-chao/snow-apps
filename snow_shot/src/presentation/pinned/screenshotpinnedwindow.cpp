@@ -3120,6 +3120,13 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
         }
     }
     m_screenshotRenderer->setBakedSelectionPath(bakedPath);
+    // Thumbnail presentation fills the entire viewport with an opaque background.
+    // Its rim must enclose that surface, not the fitted source image (which can
+    // leave letterboxing or rounded corners). Keep the baked image clip intact.
+    if (m_thumbnailMode) {
+        borderOutline = {};
+        cornerRadii = {};
+    }
     m_borderFrame->setProperty("borderOutline", borderOutline);
     m_borderFrame->setProperty("cornerRadii", cornerRadii);
     m_borderFrame->update();
@@ -4551,20 +4558,108 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
     auto artifact = viewportArtifact();
     if (!artifact)
         return;
+    copyRenderedImage(std::move(artifact));
+}
+
+void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact) {
+    if (m_closing || !artifact)
+        return;
     invalidatePendingCopy();
     m_exportArtifact = artifact;
-    if (!artifact->requestClipboard(
-            this, [this, artifact](ScreenshotExportClipboardResult result) mutable {
-                if (m_exportArtifact == artifact && !m_closing) {
-                    commitClipboardPayload(std::move(result.payload));
-                    m_exportArtifact.reset();
-                }
-            })) {
-        if (m_exportArtifact == artifact) {
+    const snow_shot::storage::ScreenshotSettings settings;
+    const bool copyFile = settings.copyImageFileToClipboard();
+    const bool autoSave = settings.autoSaveAfterCopy();
+    // Image publication and automatic saving finish independently. Keep the artifact
+    // cancellable until both complete, even when the clipboard wins the race.
+    const auto pending = std::make_shared<int>(!copyFile && autoSave ? 2 : 1);
+    const auto current = [this, artifact] { return !m_closing && m_exportArtifact == artifact; };
+    const auto finish = [this, current, pending] {
+        if (current() && --*pending == 0)
             m_exportArtifact.reset();
-        }
+    };
+    const auto copyError = [this](const QString& error) {
         showPinnedRecognitionMessage(
-            this, translatePinnedText("The pinned image copy could not be started"), true);
+            this,
+            QCoreApplication::translate("ScreenshotPinnedWindow",
+                                        "The pinned image could not be copied: %1")
+                .arg(error),
+            true);
+    };
+    const auto committed = [current, finish, copyError](ScreenshotClipboardCommitResult result) {
+        if (!current())
+            return;
+        if (!result.succeeded() && result.failure != ScreenshotClipboardCommitFailure::Cancelled)
+            copyError(result.errorString());
+        finish();
+    };
+    if (autoSave || copyFile) {
+        const auto saved = [this, current, finish, copyError, committed,
+                            copyFile](ScreenshotExportTaskResult result) {
+            if (!current())
+                return;
+            if (!result.succeeded()) {
+                if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+                    if (copyFile) {
+                        copyError(result.error);
+                    } else {
+                        showPinnedRecognitionMessage(
+                            this,
+                            QCoreApplication::translate(
+                                "ScreenshotPinnedWindow",
+                                "The image could not be saved automatically: %1")
+                                .arg(result.error),
+                            true);
+                    }
+                }
+                finish();
+                return;
+            }
+            if (!copyFile) {
+                finish();
+                return;
+            }
+            auto* mime = new QMimeData();
+            mime->setUrls({QUrl::fromLocalFile(QFileInfo(result.savedPath).absoluteFilePath())});
+            m_clipboardCommit = ScreenshotClipboardService::commitMimeData(
+                QApplication::clipboard(), this, mime, committed);
+            if (!m_clipboardCommit.isValid()) {
+                copyError(translatePinnedText("The pinned image copy could not be started"));
+                finish();
+            }
+        };
+        if (!artifact->requestAutomaticSave(
+                this,
+                ScreenshotImageFileService::automaticDirectories(settings.imageSaveDirectory()),
+                ScreenshotImageFileService::formatForKey(settings.imageFormat()),
+                settings.autoSaveFilenameFormat(),
+                snow_shot::presentation::screenshotEncodingOptions(settings), saved,
+                ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())})) {
+            saved(ScreenshotExportTaskResult::failure(
+                ScreenshotExportFailureStage::Queue,
+                QCoreApplication::translate("ScreenshotController",
+                                            "The screenshot export queue is full")));
+        }
+    }
+    if (copyFile)
+        return;
+    if (!artifact->requestClipboard(this, [this, current, finish, copyError,
+                                           committed](ScreenshotExportClipboardResult result) {
+            if (!current())
+                return;
+            if (!result.succeeded()) {
+                copyError(result.error);
+                finish();
+                return;
+            }
+            m_clipboardCommit = ScreenshotClipboardService::commit(
+                QApplication::clipboard(), this, std::move(result.payload), committed);
+            if (!m_clipboardCommit.isValid()) {
+                copyError(translatePinnedText("The pinned image copy could not be started"));
+                finish();
+            }
+        })) {
+        copyError(translatePinnedText("The pinned image copy could not be started"));
+        finish();
     }
 }
 
@@ -5998,6 +6093,7 @@ void ScreenshotPinnedWindow::updateThumbnailPresentation() {
         m_screenshotRenderer->setPinnedBackgroundColor(
             m_thumbnailMode ? opaquePinnedBackground(this) : QColor());
     }
+    updateBorderOutline();
     if (m_thumbnailAction != nullptr) {
         const QSignalBlocker blocker(m_thumbnailAction);
         m_thumbnailAction->setChecked(m_thumbnailMode);

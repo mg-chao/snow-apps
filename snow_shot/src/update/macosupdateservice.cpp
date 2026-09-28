@@ -2,6 +2,10 @@
 
 #include <QCoreApplication>
 #include <QEvent>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QUrlQuery>
 #include <QNetworkAccessManager>
 #include <QNetworkProxyFactory>
 #include <QNetworkReply>
@@ -91,7 +95,7 @@ struct UpdateService::Impl {
         deadline.setSingleShot(true);
         QObject::connect(&schedule, &QTimer::timeout, &q, [this] { check(false); });
         QObject::connect(&deadline, &QTimer::timeout, &q, [this] {
-            finishFailure(QT_TRANSLATE_NOOP("UpdateService",
+            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
                                             "The update check timed out. Please try again."));
         });
         network.setProxy(QNetworkProxy::NoProxy);
@@ -127,20 +131,192 @@ struct UpdateService::Impl {
         emit q.operationFinished(QStringLiteral("check"), QStringLiteral("failed"));
     }
 
+    void sourceFailure(const char* source) {
+        stopReply();
+        if (!github) {
+            github = true;
+            page = 1;
+            bestRelease = {};
+            request();
+        } else {
+            finishFailure(source);
+        }
+    }
+
+    qint64 byteLimit() const {
+        return github ? 8 * 1024 * 1024 : kMaximumVersionBytes;
+    }
+
     void read() {
         if (!reply)
             return;
-        bytes += reply->read(kMaximumVersionBytes + 1 - bytes.size());
-        if (bytes.size() > kMaximumVersionBytes)
-            finishFailure(QT_TRANSLATE_NOOP("UpdateService",
+        bytes += reply->read(byteLimit() + 1 - bytes.size());
+        if (bytes.size() > byteLimit())
+            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
                                             "The update server returned an invalid version."));
+    }
+
+    bool validUrl(const QUrl& url) const {
+        const bool local =
+            options.allowLocalHttp && url.scheme() == u"http" &&
+            (url.host() == u"127.0.0.1" || url.host() == u"localhost" || url.host() == u"::1");
+        return url.isValid() && !url.host().isEmpty() && (url.scheme() == u"https" || local) &&
+               url.userInfo().isEmpty();
+    }
+
+    void complete(const QString& text, const QUrl& downloadUrl = {}) {
+        const auto version = parseVersion(text);
+        if (!version) {
+            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                            "The update server returned an invalid version."));
+            return;
+        }
+        const bool available =
+            compareVersions(*version, *parseVersion(options.installedVersion)) > 0;
+        stopReply();
+        status = {
+            available ? UpdateState::Available : UpdateState::Idle, text, {}, 0, 0, downloadUrl};
+        const bool notify = available && !manual && mode == u"check" && !notified.contains(text);
+        if (notify)
+            notified.insert(text);
+        arm(options.automaticCheckInterval);
+        emit q.statusChanged();
+        emit q.operationFinished(QStringLiteral("check"), QStringLiteral("success"));
+        if (notify)
+            emit q.automaticUpdateAvailable(text);
+    }
+
+    void githubResponse() {
+        QJsonParseError error;
+        const auto document = QJsonDocument::fromJson(bytes, &error);
+        if (error.error != QJsonParseError::NoError || !document.isArray() ||
+            document.array().size() > 100) {
+            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                            "The update server returned an invalid version."));
+            return;
+        }
+        for (const auto& value : document.array()) {
+            const auto release = value.toObject();
+            if (!release.value(QStringLiteral("draft")).isBool() ||
+                release.value(QStringLiteral("draft")).toBool() ||
+                !release.value(QStringLiteral("prerelease")).isBool() ||
+                release.value(QStringLiteral("prerelease")).toBool())
+                continue;
+            const QString tag = release.value(QStringLiteral("tag_name")).toString();
+            if (!tag.startsWith(u'v') || !tag.endsWith(u"_snow-shot"))
+                continue;
+            const QString text = tag.mid(1, tag.size() - 11);
+            const auto version = parseVersion(text);
+            if (!version || !version->prerelease.isEmpty())
+                continue;
+            if (bestVersion.isEmpty() ||
+                compareVersions(*version, *parseVersion(bestVersion)) > 0) {
+                bestVersion = text;
+                bestRelease = release;
+            }
+        }
+        if (document.array().size() == 100) {
+            if (page == 10) {
+                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                                "The update server returned an invalid version."));
+                return;
+            }
+            ++page;
+            request();
+            return;
+        }
+#if defined(Q_PROCESSOR_ARM_64)
+        const QString arch = QStringLiteral("arm64");
+#else
+        const QString arch = QStringLiteral("x64");
+#endif
+        const QString name = QStringLiteral("snow-shot-%1-macos-%2.dmg").arg(bestVersion, arch);
+        const QString root = QStringLiteral("https://github.com/mg-chao/snow-apps/releases/");
+        const QString tag = bestRelease.value(QStringLiteral("tag_name")).toString();
+        for (const QString& assetName : {name, name + QStringLiteral(".sha256")}) {
+            int matches = 0;
+            for (const auto& value : bestRelease.value(QStringLiteral("assets")).toArray()) {
+                const auto asset = value.toObject();
+                if (asset.value(QStringLiteral("name")).toString() == assetName) {
+                    ++matches;
+                    if (QUrl(asset.value(QStringLiteral("browser_download_url")).toString()) !=
+                        QUrl(root + QStringLiteral("download/") + tag + u'/' + assetName)) {
+                        sourceFailure(QT_TRANSLATE_NOOP(
+                            "UpdateService", "The update server returned an invalid version."));
+                        return;
+                    }
+                }
+            }
+            if (matches != 1) {
+                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                                "The update server returned an invalid version."));
+                return;
+            }
+        }
+        complete(bestVersion, QUrl(root + QStringLiteral("tag/") + tag));
+    }
+
+    void request() {
+        stopReply();
+        QUrl url = github ? options.githubApiUrl
+                          : options.baseUrl.resolved(QUrl(QStringLiteral("/latest-version.txt")));
+        if (!validUrl(url)) {
+            finishFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                            "Could not check for updates. Please try again."));
+            return;
+        }
+        if (github) {
+            QUrlQuery query;
+            query.addQueryItem(QStringLiteral("per_page"), QStringLiteral("100"));
+            query.addQueryItem(QStringLiteral("page"), QString::number(page));
+            url.setQuery(query);
+        }
+        bytes.clear();
+        QNetworkRequest request(url);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::SameOriginRedirectPolicy);
+        request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
+                             QNetworkRequest::AlwaysNetwork);
+        request.setRawHeader("Accept", github ? "application/vnd.github+json" : "text/plain");
+        request.setRawHeader("User-Agent", "SnowShot/" + options.installedVersion.toUtf8());
+        request.setRawHeader("Cache-Control", "no-cache");
+        reply = network.get(request);
+        reply->setReadBufferSize(byteLimit() + 1);
+        const QPointer<QNetworkReply> current = reply;
+        QObject::connect(reply, &QNetworkReply::metaDataChanged, &q, [this, current] {
+            if (reply == current && reply &&
+                reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() > byteLimit())
+                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                                "The update server returned an invalid version."));
+        });
+        QObject::connect(reply, &QNetworkReply::readyRead, &q, [this, current] {
+            if (reply == current)
+                read();
+        });
+        QObject::connect(reply, &QNetworkReply::finished, &q, [this, current] {
+            if (reply != current)
+                return;
+            read();
+            if (!reply || reply != current)
+                return;
+            if (reply->error() != QNetworkReply::NoError ||
+                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 200) {
+                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                                "Could not check for updates. Please try again."));
+                return;
+            }
+            if (github)
+                githubResponse();
+            else
+                complete(QString::fromUtf8(bytes).trimmed());
+        });
+        deadline.start(options.requestTimeout);
     }
 
     void check(bool user) {
         if (!user && mode == u"manual")
             return;
         if (reply) {
-            // A user check joins the current request and gets visible error feedback.
             manual = manual || user;
             return;
         }
@@ -149,71 +325,15 @@ struct UpdateService::Impl {
         previous = status;
         previousErrorSource = errorSource;
         errorSource.clear();
-        const auto url = options.baseUrl.resolved(QUrl(QStringLiteral("/latest-version.txt")));
-        const bool local =
-            options.allowLocalHttp && url.scheme() == u"http" &&
-            (url.host() == u"127.0.0.1" || url.host() == u"localhost" || url.host() == u"::1");
-        if (!url.isValid() || url.host().isEmpty() || (url.scheme() != u"https" && !local) ||
-            !url.userInfo().isEmpty()) {
+        if (!parseVersion(options.installedVersion) || !validUrl(options.baseUrl)) {
             finishFailure(QT_TRANSLATE_NOOP("UpdateService",
                                             "Could not check for updates. Please try again."));
             return;
         }
-        if (!parseVersion(options.installedVersion)) {
-            finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "The update server returned an invalid version."));
-            return;
-        }
+        github = false;
+        bestVersion.clear();
         status = {UpdateState::Checking, {}, {}, 0, 0};
-        bytes.clear();
-        QNetworkRequest request(url);
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                             QNetworkRequest::SameOriginRedirectPolicy);
-        request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
-                             QNetworkRequest::AlwaysNetwork);
-        request.setRawHeader("Accept", "text/plain");
-        request.setRawHeader("Cache-Control", "no-cache");
-        reply = network.get(request);
-        reply->setReadBufferSize(kMaximumVersionBytes + 1);
-        QObject::connect(reply, &QNetworkReply::metaDataChanged, &q, [this] {
-            if (reply && reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() >
-                             kMaximumVersionBytes)
-                finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                                "The update server returned an invalid version."));
-        });
-        QObject::connect(reply, &QNetworkReply::readyRead, &q, [this] { read(); });
-        QObject::connect(reply, &QNetworkReply::finished, &q, [this] {
-            read();
-            if (!reply)
-                return;
-            if (reply->error() != QNetworkReply::NoError ||
-                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 200) {
-                finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                                "Could not check for updates. Please try again."));
-                return;
-            }
-            const QString text = QString::fromUtf8(bytes).trimmed();
-            const auto version = parseVersion(text);
-            if (!version) {
-                finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                                "The update server returned an invalid version."));
-                return;
-            }
-            const bool available =
-                compareVersions(*version, *parseVersion(options.installedVersion)) > 0;
-            stopReply();
-            status = {available ? UpdateState::Available : UpdateState::Idle, text, {}, 0, 0};
-            const bool notify =
-                available && !manual && mode == u"check" && !notified.contains(text);
-            if (notify)
-                notified.insert(text);
-            arm(options.automaticCheckInterval);
-            emit q.statusChanged();
-            emit q.operationFinished(QStringLiteral("check"), QStringLiteral("success"));
-            if (notify)
-                emit q.automaticUpdateAvailable(text);
-        });
-        deadline.start(options.requestTimeout);
+        request();
         emit q.statusChanged();
     }
 
@@ -232,6 +352,10 @@ struct UpdateService::Impl {
     QString mode = QStringLiteral("check");
     bool started = false;
     bool manual = false;
+    bool github = false;
+    int page = 1;
+    QString bestVersion;
+    QJsonObject bestRelease;
 };
 
 UpdateService::UpdateService(Options options, QObject* parent)

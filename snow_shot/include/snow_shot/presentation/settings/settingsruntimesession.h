@@ -86,6 +86,7 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] QVariant selectValue(SettingsSelectBinding binding) const;
     [[nodiscard]] QVector<SettingsRuntimeOption>
     dynamicSelectOptions(SettingsSelectBinding binding) const;
+    void requestFontOptions();
     [[nodiscard]] bool applySelectValue(SettingsSelectBinding binding, const QVariant& value);
     [[nodiscard]] bool switchValue(SettingsSwitchBinding binding) const;
     [[nodiscard]] bool switchEnabled(SettingsSwitchBinding binding) const;
@@ -140,6 +141,8 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {});
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);
+    [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
+    bool applyTextTranslationConfigurations(const TextTranslationConfigurations& values);
     bool
     importConfigurationSnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion,
                                 std::shared_future<storage::StorageResult>* completion = nullptr) {
@@ -258,11 +261,14 @@ class SettingsRuntimeSession final : public QObject {
     // need revision/error tracking distinct from ordinary field writes.
     QHash<QString, PendingWrite> m_pendingResets;
     QHash<QString, QVector<RetiredWrite>> m_retiredWrites;
+    bool m_fontOptionsLoaded = false;
+    QVector<SettingsRuntimeOption> m_fontOptions;
     mutable QHash<QString, SettingsOptions> m_optionsCache;
     QHash<int, SettingsCommandState> m_commandStateCache;
     QHash<int, int> m_auxiliaryIntegerValues;
     storage::StorageStatus m_lastStorageStatus;
     bool m_hasStorageStatus = false;
+    bool m_refreshPending = false;
 };
 
 } // namespace snow_shot::presentation::settings

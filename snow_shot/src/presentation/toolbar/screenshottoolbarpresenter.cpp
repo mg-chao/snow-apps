@@ -20,9 +20,7 @@ constexpr int kSelectionToolbarGap = 4;
 
 void updateOcrAvailability(ScreenshotOverlayCoordinator& overlayCoordinator, bool available) {
     if (ScreenshotToolbarWindow* toolbar = overlayCoordinator.toolbar()) {
-        toolbar->setOcrEnabled(available);
-        toolbar->setTableEnabled(available);
-        toolbar->setQrEnabled(available);
+        toolbar->setRecognitionEnabled(available);
     }
 }
 } // namespace

@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
 #include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/storage/persistedwindowgeometry.h"
 
@@ -65,14 +66,20 @@ enum class ScreenshotToolbarLayoutKind {
 
 class ApiConfigurationSettings final {
   public:
+    [[nodiscard]] QString serverUrl() const;
+    bool setServerUrl(const QString& value) const;
     [[nodiscard]] CustomAiModels customModels() const;
     bool setCustomModels(const CustomAiModels& models) const;
+    [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
+    bool setTextTranslationConfigurations(const TextTranslationConfigurations& values) const;
 };
 
 class InterfaceSettings final {
   public:
     [[nodiscard]] QColor themePrimaryColor() const;
     bool setThemePrimaryColor(const QColor& color) const;
+    [[nodiscard]] QString appFontFamily() const;
+    bool setAppFontFamily(const QString& family) const;
     [[nodiscard]] QString themeMode() const;
     bool setThemeMode(const QString& mode) const;
     [[nodiscard]] QString language() const;

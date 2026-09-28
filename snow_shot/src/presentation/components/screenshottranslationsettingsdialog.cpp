@@ -81,8 +81,11 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     source->setObjectName(QStringLiteral("screenshotTranslationSourceLanguage"));
     target->setObjectName(QStringLiteral("screenshotTranslationTargetLanguage"));
     models->setObjectName(QStringLiteral("screenshotTranslationService"));
-    for (auto* select : {source, target, models})
+    for (auto* select : {source, target, models}) {
         select->setPopupLayerMode(AdSelect::PopupLayerMode::QtTool);
+        select->setSearchEnabled(true);
+        select->setSearchFilterFields({QStringLiteral("label")});
+    }
     auto* imageRow = new QWidget(form);
     auto* imageLayout = new QHBoxLayout(imageRow);
     imageLayout->setContentsMargins(0, 0, 0, 0);

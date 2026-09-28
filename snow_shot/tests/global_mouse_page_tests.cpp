@@ -415,6 +415,17 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
                 modal->contentWidget()->findChild<QWidget*>(
                     QStringLiteral("shortcutConfigKeyButton")) == nullptr,
             "mouse configuration must contain exactly two selects and no key recorder");
+    require(activation->searchEnabled() && mouseButton->searchEnabled(),
+            "custom mouse settings selects support input filtering");
+    const auto originalKeys = activation->currentValues();
+    const auto originalButton = mouseButton->currentValue();
+    activation->setSearchText(QStringLiteral("shift"));
+    mouseButton->setSearchText(QStringLiteral("drag"));
+    require(activation->currentValues() == originalKeys &&
+                mouseButton->currentValue() == originalButton,
+            "filtering custom settings does not change their values");
+    activation->setSearchText(QString());
+    mouseButton->setSearchText(QString());
     require(optionValues(*activation) ==
                     QStringList{snow_shot::presentation::globalMouseActivationKeys().at(0),
                                 snow_shot::presentation::globalMouseActivationKeys().at(1),

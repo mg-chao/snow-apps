@@ -47,7 +47,7 @@ void ScreenshotOverlayCoordinator::prewarmDisplayPool(ScreenshotDisplaySession& 
 void ScreenshotOverlayCoordinator::clearOverlayCanvas(ScreenshotOverlayWindow* overlay) const {
     if (overlay != nullptr) {
         overlay->setScrollingCaptureMode(false);
-        overlay->clearInputPassThroughRect();
+        overlay->clearScrollingVisualHole();
     }
     m_canvasPresenter.clearOverlayCanvas(overlay);
     m_uiHost.hideColorPickerForOverlay(overlay);
@@ -141,7 +141,7 @@ void ScreenshotOverlayCoordinator::showOverlayWindows(
 
 void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
     const ScreenshotDisplaySession& displaySession) {
-    // This path is on the first-frame critical path of an export. Hide the
+    // This path is on the first-frame critical path of ending a capture. Hide the
     // interaction surfaces and leave renderer/native-surface retirement to the
     // deferred maintenance pass.
     m_uiHost.hideToolbar();
@@ -151,7 +151,7 @@ void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
         if (overlay == nullptr) {
             return;
         }
-        overlay->clearInputPassThroughRect();
+        overlay->clearScrollingVisualHole();
         if (overlay->canvas() != nullptr) {
             overlay->canvas()->setInteractionEnabled(false);
         }
@@ -179,7 +179,7 @@ void ScreenshotOverlayCoordinator::hideOverlayWindows(
             return;
         }
         overlay->setCanvasClearBackgroundEnabled(false);
-        overlay->clearInputPassThroughRect();
+        overlay->clearScrollingVisualHole();
         m_canvasPresenter.clearOverlayCanvas(overlay);
         overlay->releaseNativeSurface();
     });
@@ -239,7 +239,7 @@ void ScreenshotOverlayCoordinator::setScrollingCaptureMode(
             if (canvas != nullptr) {
                 canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
             }
-            overlay->setInputPassThroughRect(scrollingHoleForDisplay(display, selection));
+            overlay->setScrollingVisualHole(scrollingHoleForDisplay(display, selection));
             overlay->setScrollingCaptureMode(true);
             return;
         }

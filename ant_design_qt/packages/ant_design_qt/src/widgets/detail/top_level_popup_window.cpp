@@ -1,4 +1,5 @@
 #include "top_level_popup_window.h"
+#include "../window_creation_context.h"
 
 #include <QMetaObject>
 #include <QPointer>
@@ -18,6 +19,8 @@ void syncTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow) 
   if (!ownerTopLevel || ownerTopLevel == toolWindow) {
     return;
   }
+
+  const ScopedWindowCreationOwner creationOwner(toolWindow, ownerTopLevel);
 
   const bool ownerStaysOnTop = ownerTopLevel->windowFlags().testFlag(Qt::WindowStaysOnTopHint);
   if (toolWindow->windowFlags().testFlag(Qt::WindowStaysOnTopHint) != ownerStaysOnTop) {

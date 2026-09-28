@@ -9,6 +9,9 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
+#ifdef Q_OS_MACOS
+#include "snow_shot/platform/screenshotnative.h"
+#endif
 
 #include <QJsonValue>
 #include <QScreen>
@@ -52,6 +55,9 @@ ScreenshotToolbarWindow::ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& c
                                                  QWidget* parent)
     : ScreenshotFloatingToolPaletteWindow(screenshotToolbarOptions(), parent),
       m_commands(commands) {
+#ifdef Q_OS_MACOS
+    snow_shot::platform::prepareScreenshotToolbarWindow(this);
+#endif
     setToolbarSize(snow_shot::storage::ScreenshotUiSettings().toolbarSize());
     const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
     setToolbarLayout(
@@ -259,10 +265,7 @@ void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolP
     connect(&toolPalette, &ScreenshotToolPalette::saveRequested, this,
             [this]() { m_commands.saveSelectionToFile(); });
     connect(&toolPalette, &ScreenshotToolPalette::cancelRequested, this,
-            [this, palette = &toolPalette]() {
-                palette->clearActiveTool();
-                m_commands.cancelCapture();
-            });
+            [this]() { m_commands.cancelCapture(); });
     connect(&toolPalette, &ScreenshotToolPalette::copyRequested, this,
             [this]() { m_commands.copySelectionToClipboard(); });
 }
@@ -511,6 +514,10 @@ void ScreenshotToolbarWindow::restoreRememberedDrawingTool() {
     }
 }
 
+void ScreenshotToolbarWindow::suppressRememberedDrawingTool() {
+    m_rememberedDrawingToolRestorePending = false;
+}
+
 void ScreenshotToolbarWindow::setHistoryState(const SnowCanvasHistoryState& state) {
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setHistoryState(state);
@@ -594,6 +601,12 @@ void ScreenshotToolbarWindow::setImageConversionBusy(bool markdownBusy, bool htm
     if (auto* toolPalette = palette()) {
         toolPalette->setImageConversionBusy(markdownBusy, htmlBusy);
     }
+}
+
+void ScreenshotToolbarWindow::setRecognitionEnabled(bool enabled) {
+    setOcrEnabled(enabled);
+    setTableEnabled(enabled);
+    setQrEnabled(enabled);
 }
 
 void ScreenshotToolbarWindow::setOcrEnabled(bool enabled) {

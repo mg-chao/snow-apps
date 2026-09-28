@@ -129,6 +129,80 @@ void failuresAndOwnerLifetimes(const QString& directory) {
     require(!job->busy() && !job->errorText().isEmpty(),
             "provider destruction settles the job safely");
 }
+void serverChangesRefreshModelsAndPreserveStreams(const QString& directory) {
+    Server first, second, custom;
+    second.holdModels = true;
+    custom.streamPath = QByteArrayLiteral("/v1/chat/completions");
+    ConfigurationStore settings(directory + QStringLiteral("/servers.json"), true, true, 60000);
+    const QString serverKey = QStringLiteral("api_configuration/server_url");
+    const snow_shot::CustomAiModelConfiguration customModel{
+        QStringLiteral("11111111-1111-4111-8111-111111111111"),
+        QStringLiteral("Custom"),
+        custom.url() + QStringLiteral("/v1"),
+        QStringLiteral("test-key"),
+        QStringLiteral("provider-model"),
+        true};
+    require(settings.setValue(QStringLiteral("api_configuration/custom_models"),
+                              snow_shot::customAiModelsToJson({customModel})),
+            "save custom model");
+    SnowShotApiClient client(first.url());
+    auto& service = TranslationService::forClient(client, settings, QLocale::English);
+    service.refreshModels();
+    waitUntil([&] { return !service.loadingModels(); }, "initial server catalog loaded");
+    auto preferences = service.preferences();
+    preferences.modelId = QStringLiteral("vision");
+    require(service.savePreferences(preferences), "select model that exists on both servers");
+    QObject receiver;
+    bool originalDone = false;
+    SnowShotTranslationRequest input;
+    input.model = QStringLiteral("general");
+    input.text = QStringLiteral("hello");
+    require(client.streamTranslation(
+                input, &receiver, [](const QString&) {}, [&](auto) { originalDone = true; }) != 0,
+            "start original server stream");
+    waitUntil([&] { return first.streams.size() == 1; }, "original stream is active");
+    require(settings.setValue(serverKey, second.url()), "save replacement server");
+    waitUntil([&] { return second.modelRequests == 1; }, "new server catalog refresh starts");
+    require(service.loadingModels() && service.preferences().modelId == QStringLiteral("vision") &&
+                !client.hasBuiltInModels(QLocale(QLocale::English).name()),
+            "old catalog is cleared without prematurely replacing selected model");
+    first.delta(0, QStringLiteral("old output"));
+    first.finish(0);
+    waitUntil([&] { return originalDone; }, "old stream finishes after switch");
+    second.respondModels();
+    waitUntil([&] { return !service.loadingModels(); }, "replacement catalog loaded");
+    require(service.preferences().modelId == QStringLiteral("vision"),
+            "shared selected model survives server change");
+    require(client.streamTranslation(
+                input, &receiver, [](const QString&) {}, [](auto) {}) != 0,
+            "new built-in stream starts");
+    waitUntil([&] { return second.streams.size() == 1; }, "new stream reaches replacement server");
+    input.model = customModel.selectionId();
+    require(client.streamTranslation(
+                input, &receiver, [](const QString&) {}, [](auto) {}) != 0,
+            "custom stream starts");
+    waitUntil([&] { return custom.streams.size() == 1; }, "custom provider retains own address");
+    second.finish(0);
+    custom.finish(0);
+
+    // A second switch while discovery is pending must retire the first refresh.
+    first.holdModels = true;
+    require(settings.setValue(serverKey, first.url()), "start another held discovery");
+    waitUntil([&] { return first.modelRequests == 2; }, "discovery is in flight");
+    second.models =
+        QJsonArray{QJsonObject{{QStringLiteral("model"), QStringLiteral("replacement")},
+                               {QStringLiteral("name"), QStringLiteral("Replacement")}}};
+    require(settings.setValue(serverKey, second.url()), "switch during discovery");
+    waitUntil([&] { return second.modelRequests == 2; }, "latest discovery is in flight");
+    second.respondModels();
+    waitUntil([&] { return !service.loadingModels(); }, "latest discovery finishes");
+    first.respondModels();
+    flushEvents();
+    require(service.preferences().modelId != QStringLiteral("vision") &&
+                client.baseUrl() == second.url() &&
+                client.cachedChatModels().first().id == QStringLiteral("replacement"),
+            "missing selection falls back and retired refresh cannot overwrite latest catalog");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -137,5 +211,6 @@ int main(int argc, char** argv) {
     require(directory.isValid(), "isolated translation service settings");
     customModelsStayAvailableAndInvalidateTogether(directory.path());
     failuresAndOwnerLifetimes(directory.path());
+    serverChangesRefreshModelsAndPreserveStreams(directory.path());
     return 0;
 }

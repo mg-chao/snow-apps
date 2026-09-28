@@ -108,6 +108,7 @@ void pressRecapture() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    snow_shot::platform::initializeScreenshotWindowPolicy();
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     const bool floating = app.arguments().contains(QStringLiteral("--floating")) ||
                           app.arguments().contains(QStringLiteral("--local-floating"));
@@ -238,6 +239,11 @@ int main(int argc, char** argv) {
                 "keyboard shortcut did not trigger repeated recapture");
         require(waitFor([&] { return overlay.isActiveWindow() && NSApp.active; }),
                 "overlay did not regain native keyboard focus");
+        require(native.keyWindow, "recapture must restore the overlay's native key window");
+        if (!local)
+            require(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier ==
+                        target.processId(),
+                    "restoring a screenshot panel must leave its external target foreground");
         require(!native.ignoresMouseEvents &&
                     !overlay.windowHandle()->flags().testFlag(Qt::WindowTransparentForInput),
                 "native and Qt overlay input must both be restored");
