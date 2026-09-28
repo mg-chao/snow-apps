@@ -1155,7 +1155,7 @@ SettingsRuntimeSession::buildOptions(const SettingsFieldDescriptor& descriptor) 
         for (const SettingsOptionDefinition& option : select->options) {
             result.values.push_back({option.value, option.label.translated()});
         }
-        result.values.append(m_backend.dynamicSelectOptions(select->binding));
+        result.values.append(dynamicSelectOptions(select->binding));
     } else if (const auto* multi =
                    std::get_if<SettingsMultiSelectDefinition>(&descriptor.definition->payload)) {
         for (const SettingsOptionDefinition& option : multi->options) {
@@ -1229,8 +1229,22 @@ void SettingsRuntimeSession::updateState(const QString& fieldId, const SettingsF
 
 SESSION_DELEGATE_SELECT(selectValue, SettingsSelectBinding, descriptorForSelect)
 
+void SettingsRuntimeSession::requestFontOptions() {
+    if (m_fontOptionsLoaded) {
+        return;
+    }
+    m_fontOptionsLoaded = true;
+    m_fontOptions = m_backend.dynamicSelectOptions(SettingsSelectBinding::AppFont);
+    if (const auto* descriptor = descriptorForSelect(SettingsSelectBinding::AppFont)) {
+        refreshOptions(*descriptor);
+    }
+}
+
 QVector<SettingsRuntimeOption>
 SettingsRuntimeSession::dynamicSelectOptions(SettingsSelectBinding binding) const {
+    if (binding == SettingsSelectBinding::AppFont) {
+        return m_fontOptions;
+    }
     return m_backend.dynamicSelectOptions(binding);
 }
 

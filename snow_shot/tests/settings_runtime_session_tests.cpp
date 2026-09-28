@@ -90,8 +90,14 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         return {};
     }
 
+    mutable int fontOptionRequests = 0;
+
     QVector<settings::SettingsRuntimeOption>
     dynamicSelectOptions(settings::SettingsSelectBinding binding) const override {
+        if (binding == settings::SettingsSelectBinding::AppFont) {
+            ++fontOptionRequests;
+            return {{QStringLiteral("Test Font"), QStringLiteral("Test Font")}};
+        }
         if (binding == settings::SettingsSelectBinding::Language) {
             return {{QStringLiteral("en_US"), QStringLiteral("English")}};
         }
@@ -629,6 +635,24 @@ settings::SettingsRegistry registryWithoutStandaloneDelay() {
     return settings::SettingsRegistry::fromCatalog(
         settings::SettingsCatalog({page}, {navigation}, {page.id, section.id, {}}),
         QStringLiteral("test-provider"));
+}
+
+void fontOptionsLoadOnlyWhenRequested() {
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+    session.refreshAll();
+    require(backend.fontOptionRequests == 0 &&
+                session.dynamicSelectOptions(settings::SettingsSelectBinding::AppFont).isEmpty(),
+            "session construction and refresh must not enumerate fonts");
+    session.requestFontOptions();
+    require(backend.fontOptionRequests == 1 &&
+                session.dynamicSelectOptions(settings::SettingsSelectBinding::AppFont).size() == 1,
+            "explicit font request loads options");
+    session.requestFontOptions();
+    session.refreshAll();
+    require(backend.fontOptionRequests == 1,
+            "font options are reused across requests and refreshes");
 }
 
 void notificationBurstsAreCoalesced() {
@@ -1463,6 +1487,7 @@ int main(int argc, char** argv) {
         globalMouseCombinationsUseTypedStateAndRejectDuplicates();
         return 0;
     }
+    fontOptionsLoadOnlyWhenRequested();
     customModelsPreserveAcceptedStateOnRejectedWrites();
     notificationBurstsAreCoalesced();
     categoryResetFailuresRetainAcceptedValues();
