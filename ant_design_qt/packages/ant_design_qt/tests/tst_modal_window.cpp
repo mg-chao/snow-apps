@@ -1,11 +1,14 @@
 #include <QApplication>
 #include <QLayout>
 #include <QPointer>
+#include <QPushButton>
 #include <QScreen>
 #include <QLabel>
 #include <QToolButton>
 #include <QWidget>
+#include <QWindow>
 #include <QtTest>
+#include <memory>
 
 #ifdef Q_OS_MACOS
 #import <AppKit/AppKit.h>
@@ -34,6 +37,21 @@ class SurfaceLifecycleObserver : public QObject {
       ++disruptions;
     }
     return QObject::eventFilter(watched, event);
+  }
+};
+
+class ModalityObserver : public QObject {
+ public:
+  bool blocked = false;
+
+ protected:
+  bool eventFilter(QObject*, QEvent* event) override {
+    if (event->type() == QEvent::WindowBlocked) {
+      blocked = true;
+    } else if (event->type() == QEvent::WindowUnblocked) {
+      blocked = false;
+    }
+    return false;
   }
 };
 
@@ -115,6 +133,164 @@ class TstModalWindow : public QObject {
   }
 
 #ifdef Q_OS_MACOS
+  void macOwnerModalMovesIndependentlyAndBlocksOnlyOwner() {
+    QWidget owner;
+    QWidget unrelated;
+    QPushButton ownerButton(QStringLiteral("Owner"), &owner);
+    QPushButton unrelatedButton(QStringLiteral("Unrelated"), &unrelated);
+    QSignalSpy ownerClicks(&ownerButton, &QPushButton::clicked);
+    QSignalSpy unrelatedClicks(&unrelatedButton, &QPushButton::clicked);
+    const QRect available = qApp->primaryScreen()->availableGeometry();
+    owner.setGeometry(available.right() - 100, available.bottom() - 80, 100, 80);
+    unrelated.setGeometry(available.left() + 50, available.top() + 100, 100, 80);
+    owner.show();
+    unrelated.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    QVERIFY(QTest::qWaitForWindowExposed(&unrelated));
+    ModalityObserver ownerState;
+    ModalityObserver unrelatedState;
+    owner.windowHandle()->installEventFilter(&ownerState);
+    unrelated.windowHandle()->installEventFilter(&unrelatedState);
+
+    AdModal modal(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.setPreset(AdModal::Preset::Confirm);
+    modal.setWindowTitle(QStringLiteral("Destroy pinned window"));
+    modal.setText(QStringLiteral("Destroy this pinned window?"));
+    modal.open();
+    QWidget* surface = visibleOverlaySurface(modal.windowTitle());
+    QVERIFY(surface);
+    QVERIFY(QTest::qWaitForWindowExposed(surface));
+    QVERIFY(ownerState.blocked);
+    QVERIFY(!unrelatedState.blocked);
+    QVERIFY(surface->isEnabled());
+    QCOMPARE(modal.windowModality(), Qt::WindowModal);
+    QCOMPARE(surface->windowModality(), Qt::NonModal);
+    QVERIFY(available.contains(surface->frameGeometry()));
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      NSWindow* window = reinterpret_cast<NSView*>(surface->winId()).window;
+      NSWindow* nativeOwner = reinterpret_cast<NSView*>(owner.winId()).window;
+      QVERIFY(!window.isSheet);
+      QVERIFY(window.movable);
+      QCOMPARE(window.parentWindow, nativeOwner);
+      [nativeOwner makeKeyAndOrderFront:nil];
+      QVERIFY(NSApp.keyWindow != nativeOwner);
+    }
+    QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, Qt::NoModifier,
+                      ownerButton.geometry().center());
+    QTest::mouseClick(unrelated.windowHandle(), Qt::LeftButton, Qt::NoModifier,
+                      unrelatedButton.geometry().center());
+    QCOMPARE(ownerClicks.count(), 0);
+    QCOMPARE(unrelatedClicks.count(), 1);
+
+    QWidget* panel = modalSection(surface, "ad-modal-panel");
+    QVERIFY(panel);
+    const QPoint before = surface->pos();
+    const QPoint local(8, 8);
+    const QPoint press = panel->mapToGlobal(local);
+    const QPoint delta(-60, -40);
+    QMouseEvent down(QEvent::MouseButtonPress, local, press, Qt::LeftButton, Qt::LeftButton,
+                     Qt::NoModifier);
+    QApplication::sendEvent(panel, &down);
+    QMouseEvent move(QEvent::MouseMove, surface->mapFromGlobal(press + delta), press + delta,
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(surface, &move);
+    QMouseEvent up(QEvent::MouseButtonRelease, surface->mapFromGlobal(press + delta), press + delta,
+                   Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(surface, &up);
+    qApp->processEvents();
+    QCOMPARE(surface->pos(), before + delta);
+    QVERIFY(ownerState.blocked);
+    QTest::mouseClick(surface->windowHandle(), Qt::LeftButton, Qt::NoModifier,
+                      modal.rejectButton()->mapTo(surface, modal.rejectButton()->rect().center()));
+    QVERIFY(!modal.isOpen());
+    QVERIFY(!ownerState.blocked);
+    QVERIFY(QGuiApplication::modalWindow() == nullptr);
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      QVERIFY(reinterpret_cast<NSView*>(surface->winId()).window.parentWindow == nil);
+    }
+    modal.open();
+    QVERIFY(ownerState.blocked);
+    QVERIFY(available.contains(surface->frameGeometry()));
+    QTest::mouseClick(surface->windowHandle(), Qt::LeftButton, Qt::NoModifier,
+                      modal.acceptButton()->mapTo(surface, modal.acceptButton()->rect().center()));
+    QVERIFY(!modal.isOpen());
+    QVERIFY(!ownerState.blocked);
+    QVERIFY(!unrelatedState.blocked);
+    QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, Qt::NoModifier,
+                      ownerButton.geometry().center());
+    QCOMPARE(ownerClicks.count(), 1);
+  }
+
+  void macOwnerModalReleasesBlockingOnChangesAndDestruction() {
+    QWidget owner;
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    ModalityObserver ownerState;
+    owner.windowHandle()->installEventFilter(&ownerState);
+    auto modal = std::make_unique<AdModal>(&owner);
+    modal->setMode(AdModal::Mode::Window);
+    modal->open();
+    QVERIFY(ownerState.blocked);
+    modal->setWindowModality(Qt::NonModal);
+    QVERIFY(!ownerState.blocked);
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      QWidget* surface = modal->acceptButton()->window();
+      QVERIFY(reinterpret_cast<NSView*>(surface->winId()).window.parentWindow == nil);
+    }
+    modal->setWindowModality(Qt::WindowModal);
+    QVERIFY(ownerState.blocked);
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      QWidget* surface = modal->acceptButton()->window();
+      QCOMPARE(reinterpret_cast<NSView*>(surface->winId()).window.parentWindow,
+               reinterpret_cast<NSView*>(owner.winId()).window);
+    }
+    modal.reset();
+    QVERIFY(!ownerState.blocked);
+    QVERIFY(QGuiApplication::modalWindow() == nullptr);
+  }
+
+  void macNestedOwnerModalsCloseThroughActiveModalWidget() {
+    QWidget owner;
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    ModalityObserver ownerState;
+    owner.windowHandle()->installEventFilter(&ownerState);
+    AdModal outer(&owner);
+    outer.setMode(AdModal::Mode::Window);
+    outer.setWindowTitle(QStringLiteral("Outer modal"));
+    outer.open();
+    QWidget* outerSurface = visibleOverlaySurface(outer.windowTitle());
+    QVERIFY(outerSurface);
+    ModalityObserver outerState;
+    outerSurface->windowHandle()->installEventFilter(&outerState);
+    AdModal inner(outerSurface);
+    inner.setMode(AdModal::Mode::Window);
+    inner.setWindowTitle(QStringLiteral("Inner modal"));
+    inner.open();
+    QVERIFY(ownerState.blocked);
+    QVERIFY(outerState.blocked);
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      NSWindow* nativeOuter = reinterpret_cast<NSView*>(outerSurface->winId()).window;
+      NSWindow* nativeInner =
+          reinterpret_cast<NSView*>(inner.acceptButton()->window()->winId()).window;
+      QCOMPARE(nativeInner.parentWindow, nativeOuter);
+      [nativeOuter makeKeyAndOrderFront:nil];
+      QVERIFY(NSApp.keyWindow != nativeOuter);
+    }
+    QVERIFY(QApplication::activeModalWidget());
+    QApplication::activeModalWidget()->close();
+    QVERIFY(!inner.isOpen());
+    QVERIFY(outer.isOpen());
+    QVERIFY(ownerState.blocked);
+    QVERIFY(!outerState.blocked);
+    QVERIFY(QApplication::activeModalWidget());
+    QApplication::activeModalWidget()->close();
+    QVERIFY(!outer.isOpen());
+    QVERIFY(!ownerState.blocked);
+    QVERIFY(QApplication::activeModalWidget() == nullptr);
+  }
+
   void macWindowChromeSurvivesSurfaceChanges() {
     AdModal modal;
     modal.setMode(AdModal::Mode::Window);

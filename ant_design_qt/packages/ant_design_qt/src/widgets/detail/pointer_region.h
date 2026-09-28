@@ -1,5 +1,7 @@
 #pragma once
 
+#include "window_modality.h"
+
 #include <QApplication>
 #include <QEnterEvent>
 #include <QHoverEvent>
@@ -40,9 +42,8 @@ inline bool pointerTargetEligible(const QWidget* target, const QWidget* root) {
     if (widget->testAttribute(Qt::WA_TransparentForMouseEvents)) return false;
     if (widget->isWindow()) break;
   }
-  const QWidget* modal = QApplication::activeModalWidget();
   const QWidget* popup = QApplication::activePopupWidget();
-  return (!modal || modal == root->window() || modal->isAncestorOf(root)) &&
+  return !blockingModalWindow(root->window()->windowHandle()) &&
          (!popup || popup == root->window() || popup->isAncestorOf(root));
 }
 

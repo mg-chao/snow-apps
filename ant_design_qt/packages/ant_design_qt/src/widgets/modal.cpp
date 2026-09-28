@@ -234,6 +234,54 @@ class ModalOverlayWidget final : public QWidget {
     setFocusPolicy(Qt::StrongFocus);
   }
 
+  ~ModalOverlayWidget() override {
+#ifdef Q_OS_MACOS
+    macModalSession_.reset();
+    delete windowModalBlocker_.data();
+#endif
+  }
+
+  void setWindowModeModality(Qt::WindowModality modality, QWidget* owner) {
+#ifdef Q_OS_MACOS
+    // Cocoa turns an owned WindowModal surface into a sheet, taking over its
+    // position and preventing independent dragging. Keep Qt's input blocking
+    // on a non-rendered dialog and make the visible surface its transient child.
+    const bool ownerModal = modality == Qt::WindowModal && owner;
+    const Qt::WindowModality surfaceModality = ownerModal ? Qt::NonModal : modality;
+    if (windowModality() == surfaceModality &&
+        (ownerModal ? windowModalBlocker_ && windowModalBlocker_->parentWidget() == owner
+                    : !windowModalBlocker_)) {
+      return;
+    }
+    const bool wasVisible = isVisible();
+    if (wasVisible) {
+      hide();
+    }
+    if (windowModalBlocker_) {
+      if (windowHandle()) {
+        windowHandle()->setTransientParent(parentWidget() ? parentWidget()->windowHandle()
+                                                          : nullptr);
+      }
+      delete windowModalBlocker_.data();
+    }
+    if (ownerModal) {
+      windowModalBlocker_ = new QWidget(owner, Qt::Dialog);
+      windowModalBlocker_->setObjectName(QStringLiteral("ad-modal-owner-blocker"));
+      windowModalBlocker_->setAttribute(Qt::WA_DontShowOnScreen);
+      windowModalBlocker_->setAttribute(Qt::WA_ShowWithoutActivating);
+      windowModalBlocker_->setWindowModality(Qt::WindowModal);
+      windowModalBlocker_->installEventFilter(this);
+    }
+    QWidget::setWindowModality(surfaceModality);
+    if (wasVisible) {
+      show();
+    }
+#else
+    Q_UNUSED(owner)
+    QWidget::setWindowModality(modality);
+#endif
+  }
+
   void setFocusNavigator(std::function<bool(bool)> navigator) {
     focusNavigator_ = std::move(navigator);
   }
@@ -253,10 +301,26 @@ class ModalOverlayWidget final : public QWidget {
 
 #ifdef Q_OS_MACOS
   void setVisible(bool visible) override {
+    if (!visible) {
+      macModalSession_.reset();
+    }
+    if (visible && windowModalBlocker_) {
+      winId();
+      windowModalBlocker_->winId();
+      windowHandle()->setTransientParent(windowModalBlocker_->windowHandle());
+      windowModalBlocker_->show();
+    }
     QWidget::setVisible(visible);
+    if (!visible && windowModalBlocker_) {
+      windowModalBlocker_->hide();
+    }
     if (visible) {
       // Cocoa can replace the NSWindow when showing a new surface type.
       applyWindowModeNativeChrome();
+      if (windowModalBlocker_ && !macModalSession_ &&
+          QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        macModalSession_ = detail::createMacModalSession(this, windowModalBlocker_);
+      }
     }
   }
 #endif
@@ -335,6 +399,13 @@ class ModalOverlayWidget final : public QWidget {
   }
 
  protected:
+  bool event(QEvent* event) override {
+    if (handleWindowModeDragMouseEvent(this, event)) {
+      return true;
+    }
+    return QWidget::event(event);
+  }
+
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
 
@@ -355,7 +426,16 @@ class ModalOverlayWidget final : public QWidget {
   }
 
   bool eventFilter(QObject* watched, QEvent* event) override {
-    if (handleWindowModeDragMousePress(watched, event)) {
+#ifdef Q_OS_MACOS
+    if (watched == windowModalBlocker_ && event->type() == QEvent::Close) {
+      // Callers closing QApplication::activeModalWidget() must close the real
+      // dialog through its normal reject/close-policy path as well.
+      event->ignore();
+      close();
+      return true;
+    }
+#endif
+    if (handleWindowModeDragMouseEvent(watched, event)) {
       return true;
     }
     return QWidget::eventFilter(watched, event);
@@ -389,6 +469,9 @@ class ModalOverlayWidget final : public QWidget {
 #ifdef Q_OS_MACOS
     if (windowModeChromeEnabled_ && QGuiApplication::platformName() == QStringLiteral("cocoa")) {
       detail::applyMacModalChrome(this);
+      if (macModalSession_) {
+        macModalSession_->synchronize();
+      }
     }
 #endif
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -486,9 +569,34 @@ class ModalOverlayWidget final : public QWidget {
 #endif
   }
 
-  bool handleWindowModeDragMousePress(QObject* watched, QEvent* event) {
-    if (!windowModeChromeEnabled_ || event == nullptr ||
-        event->type() != QEvent::MouseButtonPress) {
+  bool handleWindowModeDragMouseEvent(QObject* watched, QEvent* event) {
+    if (!windowModeChromeEnabled_ || event == nullptr) {
+      return false;
+    }
+
+#ifdef Q_OS_MACOS
+    if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate ||
+        event->type() == QEvent::UngrabMouse) {
+      windowDragOffset_.reset();
+      if (QWidget::mouseGrabber() == this) {
+        releaseMouse();
+      }
+    }
+    if (windowDragOffset_ &&
+        (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonRelease)) {
+      auto* mouseEvent = static_cast<QMouseEvent*>(event);
+      if (event->type() == QEvent::MouseMove && mouseEvent->buttons().testFlag(Qt::LeftButton)) {
+        move(mouseEvent->globalPosition().toPoint() - *windowDragOffset_);
+      } else if (!mouseEvent->buttons().testFlag(Qt::LeftButton)) {
+        windowDragOffset_.reset();
+        if (QWidget::mouseGrabber() == this) {
+          releaseMouse();
+        }
+      }
+      return true;
+    }
+#endif
+    if (event->type() != QEvent::MouseButtonPress) {
       return false;
     }
 
@@ -508,7 +616,15 @@ class ModalOverlayWidget final : public QWidget {
     }
 
     mouseEvent->accept();
+#ifdef Q_OS_MACOS
+    // Qt delivers mouse events asynchronously on Cocoa. NSApp.currentEvent can
+    // already be a different event, so startSystemMove cannot reliably use it.
+    windowDragOffset_ = globalPos - pos();
+    grabMouse();
+    return true;
+#else
     return startWindowModeDrag();
+#endif
   }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -568,6 +684,11 @@ class ModalOverlayWidget final : public QWidget {
   bool windowResizable_ = false;
   QPointer<QWidget> windowModeHeader_;
   QPointer<QWidget> windowModePanel_;
+#ifdef Q_OS_MACOS
+  QPointer<QWidget> windowModalBlocker_;
+  std::unique_ptr<detail::MacModalSession> macModalSession_;
+  std::optional<QPoint> windowDragOffset_;
+#endif
   std::function<bool(bool)> focusNavigator_;
 };
 
@@ -898,7 +1019,8 @@ void AdModal::setWindowModality(Qt::WindowModality value) {
   windowModality_ = value;
   emit windowModalityChanged(windowModality_);
   if (overlay_ && usesWindowSurface()) {
-    overlay_->setWindowModality(windowModality_);
+    static_cast<ModalOverlayWidget*>(overlay_.data())
+        ->setWindowModeModality(windowModality_, ownerWindow_);
   }
 }
 
@@ -1948,7 +2070,7 @@ void AdModal::ensureOverlay() {
 #endif
     overlay->setWindowTitle(windowTitle_.trimmed().isEmpty() ? tr("Modal")
                                                              : windowTitle_.trimmed());
-    overlay->setWindowModality(windowModality_);
+    overlay->setWindowModeModality(windowModality_, ownerWindow_);
     overlay->setAttribute(Qt::WA_DeleteOnClose, false);
   } else {
     overlay->setWindowModality(Qt::NonModal);
@@ -2195,7 +2317,7 @@ void AdModal::releaseOverlay() {
   overlay_->removeEventFilter(this);
   overlay_->hide();
   if (usesWindowSurface()) {
-    overlay_->setWindowModality(Qt::NonModal);
+    static_cast<ModalOverlayWidget*>(overlay_.data())->setWindowModeModality(Qt::NonModal, nullptr);
   }
   overlay_->deleteLater();
 
@@ -3110,7 +3232,8 @@ void AdModal::setOpenInternal(bool value, bool emitSignal) {
     syncOverlayGeometry();
     if (overlay_) {
       if (usesWindowSurface()) {
-        overlay_->setWindowModality(windowModality_);
+        static_cast<ModalOverlayWidget*>(overlay_.data())
+            ->setWindowModeModality(windowModality_, ownerWindow_);
       }
       overlay_->show();
       registerOpenModal(this);
@@ -3131,7 +3254,8 @@ void AdModal::setOpenInternal(bool value, bool emitSignal) {
     if (overlay_) {
       overlay_->hide();
       if (usesWindowSurface()) {
-        overlay_->setWindowModality(Qt::NonModal);
+        static_cast<ModalOverlayWidget*>(overlay_.data())
+            ->setWindowModeModality(Qt::NonModal, nullptr);
       }
     }
     restoreFocusAfterClose();

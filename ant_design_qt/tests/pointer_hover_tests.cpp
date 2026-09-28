@@ -42,6 +42,7 @@ struct Fixture final : OverlayPopupControllerDelegate {
   QPoint cursor;
   QWidget* target = &trigger;
   int cursorReads = 0;
+  std::optional<QRect> anchorRect;
   QPointer<QWidget> releasedContent;
   OverlayPopupController controller{this, nullptr,
                                     [this] {
@@ -78,6 +79,7 @@ struct Fixture final : OverlayPopupControllerDelegate {
   }
   bool popupHasContent() const override { return true; }
   OverlayPopupPlacement popupPlacement() const override { return OverlayPopupPlacement::Bottom; }
+  std::optional<QRect> popupAnchorLocalRect() const override { return anchorRect; }
   adqt::widgets::AdPopupLayerMode popupLayerMode() const override { return layerMode; }
   bool popupAutoAdjustOverflow() const override { return false; }
   bool popupArrowVisible() const override { return false; }
@@ -227,7 +229,7 @@ void independentReasonsAndPopupTravel() {
   require(!f.controller.popupVisible(), "explicit dismissal must close the popup");
 }
 
-void popupShadowOverTriggerPreservesHover() {
+void nonInteractivePopupCornerOverTriggerPreservesHover() {
   for (const auto layer :
        {adqt::widgets::AdPopupLayerMode::QtTool, adqt::widgets::AdPopupLayerMode::InWindow}) {
     Fixture f;
@@ -240,24 +242,30 @@ void popupShadowOverTriggerPreservesHover() {
     surface.setArrowVisible(false);
     surface.setFixedSize(160, 100);
     f.surface = &surface;
+    // Deliberately overlap the popup's noninteractive corner with a larger
+    // trigger. Cocoa draws the shadow outside top-level windows, so ordinary
+    // below-trigger placement cannot put an internal shadow over the trigger.
+    f.trigger.setGeometry(10, 10, 260, 110);
+    f.anchorRect = QRect(80, 0, 100, 60);
     f.controller.popupSurfaceChanged();
-    f.cursor = f.trigger.mapToGlobal(QPoint(50, 39));
     f.enter(f.trigger);
     require(f.controller.popupVisible(), "trigger hover must open the shadowed popup");
     require(surface.isWindow() == (layer == adqt::widgets::AdPopupLayerMode::QtTool),
             "fixture surface must match its popup layer mode");
+    f.cursor = surface.mapToGlobal(QPoint(1, 1));
     require(surface.rect().contains(surface.mapFromGlobal(f.cursor)) &&
+                f.trigger.rect().contains(f.trigger.mapFromGlobal(f.cursor)) &&
                 !surface.containsInteractiveGlobalPos(f.cursor),
-            "popup shadow must overlap the trigger edge without interactive content");
+            "a noninteractive popup corner must overlap the trigger");
 
-    // widgetAt sees the rectangular Qt window, although Windows native hit testing
-    // returns HTTRANSPARENT for these shadow pixels.
+    // widgetAt can see the rectangular popup even where its painted shape does
+    // not take input (an internal shadow or a rounded transparent corner).
     f.target = &surface;
     QEvent leave(QEvent::Leave);
     QApplication::sendEvent(&f.trigger, &leave);
     QTest::qWait(40);
     require(f.controller.popupVisible(),
-            "reconciliation must not close a popup whose own shadow covers its trigger");
+            "reconciliation must preserve hover through a noninteractive popup corner");
 
     const auto moveAt = [&](const QPoint& global) {
       QMouseEvent move(QEvent::MouseMove, surface.mapFromGlobal(global), global, Qt::NoButton,
@@ -268,22 +276,23 @@ void popupShadowOverTriggerPreservesHover() {
     require(f.controller.popupVisible(), "popup body must retain hover");
     moveAt(f.cursor);
     require(f.controller.popupVisible(),
-            "returning through the shadow to the trigger must stay open");
+            "returning through the transparent corner to the trigger must stay open");
 
     QWidget cover(&f.window);
     cover.setGeometry(f.trigger.geometry());
     cover.show();
     cover.raise();
     moveAt(f.cursor);
-    require(!f.controller.popupVisible(),
-            "shadow hit testing must still respect trigger occlusion");
+    require(!f.controller.popupVisible(), "popup hit testing must still respect trigger occlusion");
     cover.hide();
     f.enter(f.trigger);
     require(f.controller.popupVisible(), "uncovered trigger must reopen");
-    const QPoint outsideShadow = surface.mapToGlobal(surface.rect().bottomRight() - QPoint(1, 1));
-    require(!surface.containsInteractiveGlobalPos(outsideShadow), "fixture must hit only shadow");
-    moveAt(outsideShadow);
-    require(!f.controller.popupVisible(), "shadow outside the trigger must still close hover");
+    const QPoint outsideCorner = surface.mapToGlobal(surface.rect().bottomRight() - QPoint(1, 1));
+    require(!surface.containsInteractiveGlobalPos(outsideCorner) &&
+                !f.trigger.rect().contains(f.trigger.mapFromGlobal(outsideCorner)),
+            "the opposite corner must be noninteractive and outside the trigger");
+    moveAt(outsideCorner);
+    require(!f.controller.popupVisible(), "a corner outside the trigger must still close hover");
   }
 }
 
@@ -593,7 +602,7 @@ int main(int argc, char** argv) {
   deadlinesValidateTargetAndStopWhenIdle();
   tooltipWindowCannotStealAnEstablishedHoverTarget();
   independentReasonsAndPopupTravel();
-  popupShadowOverTriggerPreservesHover();
+  nonInteractivePopupCornerOverTriggerPreservesHover();
   embeddedPopupShadowForwardsWheelAfterClosing();
   gapTravelAndRapidReentryPreserveSession();
   focusAndClickSurviveHoverExit();

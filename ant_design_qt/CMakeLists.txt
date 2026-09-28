@@ -56,10 +56,13 @@ file(GLOB_RECURSE ADQT_WIDGET_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/*.h"
 )
 add_library(ant_design_qt STATIC ${ADQT_WIDGET_SOURCES})
+# Keep the modal-blocking query behind a private adapter so native input and
+# popup hover use Qt's complete modal stack on every platform. Consumers finalize
+# executables in sibling directories, so this static library's private link
+# dependency must remain visible there as well.
+find_package(Qt6 REQUIRED COMPONENTS GuiPrivate GLOBAL)
+target_link_libraries(ant_design_qt PRIVATE Qt6::GuiPrivate)
 if(APPLE)
-    # Consumers finalize Qt executables in sibling directories, so this static
-    # library's private link dependency must remain visible there as well.
-    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate GLOBAL)
     # This repair uses QAccessibleCache's private destruction slot. Do not
     # silently disable it on upgrades: review the upstream fix and run the
     # accessibility regression before changing the validated version here.
@@ -76,7 +79,7 @@ if(APPLE)
         packages/ant_design_qt/src/widgets/detail/window_surface_mac.mm
         packages/ant_design_qt/src/widgets/detail/top_level_popup_window_mac.mm)
     # QPlatformMenu keeps Cocoa's modal ownership and mouse-release cleanup in Qt.
-    target_link_libraries(ant_design_qt PRIVATE Qt6::GuiPrivate "-framework AppKit")
+    target_link_libraries(ant_design_qt PRIVATE "-framework AppKit")
 endif()
 add_library(adqt::widgets ALIAS ant_design_qt)
 target_include_directories(ant_design_qt SYSTEM PUBLIC
@@ -330,6 +333,16 @@ if(ADQT_BUILD_TESTS)
         set_tests_properties(adqt-modal-window-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
 
+    add_executable(adqt-modal-popup-interaction-tests
+        packages/ant_design_qt/tests/modal_popup_interaction_tests.cpp)
+    target_link_libraries(adqt-modal-popup-interaction-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-modal-popup-interaction-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-modal-popup-interaction-tests
+        COMMAND adqt-modal-popup-interaction-tests -platform offscreen)
+    set_tests_properties(adqt-modal-popup-interaction-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+
     add_executable(adqt-segmented-tests packages/ant_design_qt/tests/tst_segmented.cpp)
     set_target_properties(adqt-segmented-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-segmented-tests PRIVATE adqt::widgets Qt6::Test)
@@ -397,7 +410,7 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-popup-hover-geometry-tests tests/popup_hover_geometry_tests.cpp)
     add_executable(adqt-pointer-hover-tests tests/pointer_hover_tests.cpp)
     target_link_libraries(adqt-pointer-hover-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin AND adqt_qt_core_type STREQUAL "STATIC_LIBRARY")
         target_link_libraries(adqt-pointer-hover-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-pointer-hover-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()

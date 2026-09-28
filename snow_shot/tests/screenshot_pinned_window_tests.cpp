@@ -12030,12 +12030,28 @@ void pinnedManagementLifecycle() {
                 destroyConfirmation->windowModality() == Qt::WindowModal &&
                 repository.loadRecord(unrelated.id).has_value(),
             "clicking Destroy must show a window-modal confirmation before removing the pin");
+#ifdef Q_OS_MACOS
+    QWidget* confirmationSurface = destroyConfirmation->acceptButton()->window();
+    QWindow* modalBlocker = QGuiApplication::modalWindow();
+    require(
+        modalBlocker &&
+            otherWindow->windowHandle()->isAncestorOf(modalBlocker, QWindow::IncludeTransients) &&
+            modalBlocker->isAncestorOf(confirmationSurface->windowHandle(),
+                                       QWindow::IncludeTransients) &&
+            confirmationSurface->windowModality() == Qt::NonModal,
+        "the movable confirmation must remain exempt from its pinned owner's input block");
+    require(confirmationSurface->screen()->availableGeometry().contains(
+                confirmationSurface->frameGeometry()),
+            "the destroy confirmation must open within the display bounds");
+#endif
     QPointer<adqt::widgets::AdModal> dismissedConfirmation(destroyConfirmation);
     destroyConfirmation->reject();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(otherWindow && !dismissedConfirmation &&
                 repository.loadRecord(unrelated.id).has_value(),
             "canceling Destroy must keep the pinned window and its record");
+    require(QGuiApplication::modalWindow() == nullptr,
+            "canceling Destroy must release the pinned window's input block");
     pinnedMenuActionNamed(*otherWindow, QStringLiteral("screenshotPinnedDestroyAction"))->trigger();
     destroyConfirmation = otherWindow->findChild<adqt::widgets::AdModal*>(
         QStringLiteral("screenshotPinnedDestroyConfirmation"));

@@ -7583,7 +7583,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     set_target_properties(snow-shot-macos-pinned-window-tests PROPERTIES
         MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "top.snowshot.tests.pinned")
     target_include_directories(snow-shot-macos-pinned-window-tests PRIVATE include src)
-    target_link_libraries(snow-shot-macos-pinned-window-tests PRIVATE Qt6::Widgets
+    target_link_libraries(snow-shot-macos-pinned-window-tests PRIVATE Qt6::Widgets adqt::widgets
         "-framework AppKit" "-framework CoreGraphics")
     add_test(NAME snow-shot-pinned-auxiliary-ownership-tests
         COMMAND snow-shot-macos-pinned-window-tests --ownership-only -platform offscreen)
@@ -7595,7 +7595,9 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-macos-pinned-window-tests --focus -platform cocoa)
     add_test(NAME snow-shot-macos-pinned-delivery-tests
         COMMAND snow-shot-macos-pinned-window-tests --delivery -platform cocoa)
-    set_tests_properties(snow-shot-macos-pinned-window-tests snow-shot-macos-pinned-focus-tests snow-shot-macos-pinned-delivery-tests
+    add_test(NAME snow-shot-macos-pinned-modal-delivery-tests
+        COMMAND snow-shot-macos-pinned-window-tests --modal-delivery -platform cocoa)
+    set_tests_properties(snow-shot-macos-pinned-window-tests snow-shot-macos-pinned-focus-tests snow-shot-macos-pinned-delivery-tests snow-shot-macos-pinned-modal-delivery-tests
         PROPERTIES LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60 SKIP_RETURN_CODE 77)
 endif()
 
