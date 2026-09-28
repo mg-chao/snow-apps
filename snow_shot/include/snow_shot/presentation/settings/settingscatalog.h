@@ -66,11 +66,13 @@ struct SettingsOptionDefinition {
 enum class SettingsSelectSource {
     Fixed,
     LanguageCatalog,
+    FontFamilies,
 };
 
 enum class SettingsSelectBinding {
     Theme,
     Language,
+    AppFont,
     ApplicationPriority,
     Proxy,
     UpdateMode,

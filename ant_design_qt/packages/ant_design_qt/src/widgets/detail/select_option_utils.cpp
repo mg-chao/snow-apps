@@ -16,7 +16,9 @@ QVariant normalizeSelectValue(const QVariant& value) {
   }
 
   if (value.typeId() == QMetaType::QString) {
-    return value.toString().trimmed();
+    const QString text = value.toString().trimmed();
+    // Equal empty strings must share a key: QDataStream distinguishes null from empty.
+    return text.isEmpty() ? QStringLiteral("") : text;
   }
 
   return value;

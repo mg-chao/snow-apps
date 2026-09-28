@@ -173,14 +173,14 @@ void ThemeManager::applyApplicationTypography() {
   // geometry this design system draws everywhere else. Unresolved font properties merge
   // with the application font (QFont::resolve), so parentless top-level windows, popup
   // surfaces, and partially-configured widget fonts all inherit this preference.
-  QFont applicationFont =
-      resolved_.config.appFont != QFont() ? resolved_.theme.appFont : originalAppFont_;
+  QFont applicationFont = resolved_.config.appFont.resolve(originalAppFont_);
   applicationFont.setHintingPreference(QFont::PreferNoHinting);
   QApplication::setFont(applicationFont);
 
   for (const char* className : kSmoothOutlineFontClasses) {
     const QString classNameText = QString::fromLatin1(className);
     QFont popupFont = originalPopupClassFonts_.value(classNameText, QApplication::font());
+    popupFont = resolved_.config.appFont.resolve(popupFont);
     popupFont.setHintingPreference(QFont::PreferNoHinting);
     QApplication::setFont(popupFont, className);
   }
@@ -339,7 +339,7 @@ void ThemeManager::applyScopeState(QObject* scope) {
   localResolved.palette = buildPalette(localResolved.theme, basePalette);
 
   widget->setPalette(localResolved.palette);
-  if (localResolved.config.appFont != QFont()) {
+  if (localResolved.config.appFont.resolveMask() != 0) {
     widget->setFont(localResolved.theme.appFont);
   } else if (it->hadExplicitFont) {
     widget->setFont(it->originalFont);

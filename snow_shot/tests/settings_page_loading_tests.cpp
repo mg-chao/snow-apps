@@ -9,6 +9,9 @@
 #include "widgets/scroll_area.h"
 #include "widgets/color_picker.h"
 #include "widgets/select.h"
+#include "widgets/multi_select.h"
+#include <QListView>
+#include <QLineEdit>
 #include "widgets/switch.h"
 
 #include <QApplication>
@@ -180,6 +183,164 @@ void deferredSections(const settings::SettingsRegistry& registry,
     require(scroll->verticalScrollBar()->value() == 0, "page navigation still reveals the top");
 }
 
+bool hasSelectableOption(const QAbstractItemModel* model) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (model->flags(model->index(row, 0)).testFlag(Qt::ItemIsSelectable)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void fontPreviewAndFiltering(const settings::SettingsRegistry& registry,
+                             settings::SettingsRuntimeSession& session) {
+    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    page.resize(880, 760);
+    page.show();
+    drainEvents();
+    auto* font = page.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("settings-control-interface-app-font"));
+    require(font != nullptr && font->searchEnabled(), "font selector supports input filtering");
+    auto* model = font->model();
+    require(
+        model->rowCount() > 1 &&
+            model->index(0, 0).data(adqt::widgets::AdSelect::DefaultValueRole).toString().isEmpty(),
+        "System default is first");
+    require(font->currentValue().isValid() && font->currentValue().toString().isEmpty() &&
+                font->currentModelIndex().row() == 0 &&
+                font->currentText() == model->index(0, 0).data(Qt::DisplayRole).toString() &&
+                !font->currentText().isEmpty() && font->lineEdit()->text() == font->currentText(),
+            "System default is visibly selected when the application font is unset");
+    for (int row = 1; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        require(index.data(Qt::FontRole).value<QFont>().family() ==
+                    index.data(adqt::widgets::AdSelect::DefaultValueRole).toString(),
+                "font options carry their corresponding preview family");
+    }
+    const QString family =
+        model->index(1, 0).data(adqt::widgets::AdSelect::DefaultValueRole).toString();
+    const QVariant saved = font->currentValue();
+    font->showPopup();
+    font->setSearchText(family.toUpper());
+    drainEvents();
+    require(font->view()->model()->rowCount() >= 1 && font->currentValue() == saved,
+            "font filtering is case insensitive and does not commit a selection");
+    for (int row = 0; row < font->view()->model()->rowCount(); ++row) {
+        const auto index = font->view()->model()->index(row, 0);
+        require(index.data(Qt::DisplayRole).toString().contains(family, Qt::CaseInsensitive) &&
+                    index.data(Qt::FontRole).value<QFont>().family() ==
+                        index.data(Qt::DisplayRole).toString(),
+                "filtered popup retains labels and preview fonts");
+    }
+    font->setSearchText(QStringLiteral("no-font-matches-this-unique-query-019837"));
+    require(font->currentValue() == saved, "no matches cannot clear the saved font");
+    require(!hasSelectableOption(font->view()->model()), "unmatched query filters every font");
+    font->setSearchText(QString());
+    font->hidePopup();
+    font->setCurrentValue(family);
+    drainEvents();
+    require(session.selectValue(settings::SettingsSelectBinding::AppFont).toString() == family,
+            "choosing a font commits the setting");
+    TestTranslator translator;
+    QCoreApplication::installTranslator(&translator);
+    drainEvents();
+    require(font->model() == model && font->currentValue().toString() == family &&
+                model->index(0, 0)
+                    .data(Qt::DisplayRole)
+                    .toString()
+                    .startsWith(QStringLiteral("Translated: ")),
+            "language changes retain the model and selected family and translate System default");
+    require(model->index(1, 0).data(Qt::FontRole).value<QFont>().family() == family,
+            "language changes preserve font preview roles");
+    QCoreApplication::removeTranslator(&translator);
+    drainEvents();
+    const auto previous =
+        snow_shot::storage::ApplicationStorage::instance().configuration().snapshot();
+    auto imported = previous;
+    const QString unavailable = QStringLiteral("SnowShot Missing UI Font Family");
+    imported.insert(QStringLiteral("interface/app_font"), unavailable);
+    require(session.importConfigurationSnapshot(imported, 3), "import a missing font family");
+    drainEvents();
+    require(font->currentValue().toString() == unavailable && font->currentText() == unavailable,
+            "imported unavailable fonts remain visibly selected after options refresh");
+    require(session.importConfigurationSnapshot(previous, 3), "restore the font snapshot");
+    drainEvents();
+    require(font->currentValue().toString() == family, "rollback refreshes the selected font");
+    auto* theme = page.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("settings-control-interface-theme"));
+    const QVariant originalTheme = theme->currentValue();
+    require(theme->searchEnabled(), "ordinary settings selects support filtering");
+    theme->showPopup();
+    theme->setFocus();
+    drainEvents();
+    QKeyEvent input(QEvent::KeyPress, Qt::Key_D, Qt::NoModifier, QStringLiteral("dArK"));
+    QApplication::sendEvent(theme->lineEdit(), &input);
+    drainEvents();
+    require(theme->view()->model()->rowCount() == 1 && theme->currentValue() == originalTheme,
+            "typing filters settings options without committing");
+    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(theme->lineEdit(), &enter);
+    drainEvents();
+    require(session.selectValue(settings::SettingsSelectBinding::Theme).toString() ==
+                QStringLiteral("dark"),
+            "Enter commits the filtered choice");
+    theme->hidePopup();
+    require(session.applySelectValue(settings::SettingsSelectBinding::Theme, originalTheme),
+            "restore theme");
+    require(session.applySelectValue(settings::SettingsSelectBinding::AppFont, saved),
+            "restore font");
+    drainEvents();
+    require(font->currentModelIndex().row() == 0 && !font->currentText().isEmpty() &&
+                font->lineEdit()->text() == font->currentText(),
+            "returning to System default restores its visible label");
+    QCoreApplication::installTranslator(&translator);
+    drainEvents();
+    require(font->currentModelIndex().row() == 0 &&
+                font->currentText() == model->index(0, 0).data(Qt::DisplayRole).toString() &&
+                font->currentText().startsWith(QStringLiteral("Translated: ")) &&
+                font->lineEdit()->text() == font->currentText(),
+            "language changes keep System default visibly selected");
+    QCoreApplication::removeTranslator(&translator);
+    drainEvents();
+    font->setCurrentValue(family);
+    drainEvents();
+    require(session.reset(settings::SettingsSectionReset::GeneralSettings),
+            "reset General settings with a custom font selected");
+    drainEvents();
+    require(font->currentModelIndex().row() == 0 && !font->currentText().isEmpty() &&
+                font->lineEdit()->text() == font->currentText(),
+            "resetting General settings visibly selects System default");
+}
+
+void multiSettingsSelectsSearch(const settings::SettingsRegistry& registry,
+                                settings::SettingsRuntimeSession& session) {
+    int count = 0;
+    for (const auto& field : registry.fields()) {
+        if (field.kind != settings::SettingsFieldKind::MultiSelect) {
+            continue;
+        }
+        SettingsPageWidget page(registry, field.pageId, session);
+        page.resize(880, 760);
+        page.show();
+        page.reveal({field.pageId, field.sectionId, field.id});
+        drainEvents();
+        auto* select = page.findChild<adqt::widgets::AdMultiSelect*>(
+            settings::generatedObjectName(QStringLiteral("settings-control"), field.id));
+        ++count;
+        require(select != nullptr && select->searchEnabled(),
+                "every settings multi-select supports input filtering");
+        const auto selected = select->selectedValues();
+        select->setSearchText(QStringLiteral("no-matching-setting-option-1937"));
+        require(!hasSelectableOption(select->view()->model()) &&
+                    select->selectedValues() == selected,
+                "multi-select filtering cannot alter the selection");
+        select->setSearchText(QString());
+        require(hasSelectableOption(select->view()->model()),
+                "clearing search restores multi-select options");
+    }
+    require(count > 0, "exercise the shared multi-select settings control");
+}
+
 void unchangedPresentation(const settings::SettingsRegistry& registry,
                            settings::SettingsRuntimeSession& session) {
     CountingStyle style;
@@ -214,12 +375,21 @@ int main(int argc, char** argv) {
     require(temporary.isValid() &&
                 storage.initialize({temporary.path(), temporary.path(), 60000}).success,
             "initialize isolated storage");
-    snow_shot::presentation::LanguageManager::instance().initialize();
+    auto& languageManager = snow_shot::presentation::LanguageManager::instance();
+    languageManager.initialize();
+    require(languageManager.setLanguage(QStringLiteral("en_US")),
+            "use English settings labels for deterministic filtering checks");
     snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+    if (application.arguments().contains(QStringLiteral("--selects-only"))) {
+        fontPreviewAndFiltering(registry, session);
+        multiSettingsSelectsSearch(registry, session);
+        storage.shutdown();
+        return 0;
+    }
     deferredSections(registry, session);
     deferredStateAndKeyboard(registry, session);
     scrollingLoadsSections(registry, session);

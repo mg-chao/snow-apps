@@ -865,6 +865,10 @@
             <translation>動態圖片畫面播放速率</translation>
         </message>
         <message>
+            <source>App Font</source>
+            <translation>應用程式字型</translation>
+        </message>
+        <message>
             <source>App Permissions</source>
             <translation>應用程式權限</translation>
         </message>
@@ -1103,6 +1107,10 @@
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
             <translation>選擇縮放固定到螢幕的截圖時使用的固定點</translation>
+        </message>
+        <message>
+            <source>Choose the font used throughout the application</source>
+            <translation>選擇整個應用程式使用的字型</translation>
         </message>
         <message>
             <source>Choose the format used for automatically saved image files</source>
@@ -2883,6 +2891,10 @@
         <message>
             <source>System</source>
             <translation>系統</translation>
+        </message>
+        <message>
+            <source>System default</source>
+            <translation>系統預設</translation>
         </message>
         <message>
             <source>System settings</source>

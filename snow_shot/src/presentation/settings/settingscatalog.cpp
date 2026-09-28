@@ -277,6 +277,22 @@ SettingsItemDefinition languageItem() {
     };
 }
 
+SettingsItemDefinition appFontItem() {
+    SettingsSelectDefinition payload;
+    payload.binding = SettingsSelectBinding::AppFont;
+    payload.source = SettingsSelectSource::FontFamilies;
+    payload.options = {
+        {QStringLiteral(""), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "System default"))},
+    };
+    return {QStringLiteral("interface.app-font"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "App Font")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Choose the font used throughout the application")),
+            {},
+            QStringLiteral("interface/app_font"),
+            payload};
+}
+
 SettingsItemDefinition screenshotToolbarSizeItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::ScreenshotToolbarSize;
@@ -2242,7 +2258,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Appearance and language settings")),
                     SettingsSectionReset::GeneralSettings,
-                    {themeItem(), themePrimaryColorItem(), languageItem()},
+                    {themeItem(), themePrimaryColorItem(), languageItem(), appFontItem()},
                 },
                 {
                     QStringLiteral("interface-screenshot"),
@@ -3400,6 +3416,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     switch (select->binding) {
                     case SettingsSelectBinding::Theme:
                         expectedKey = QStringLiteral("interface/theme_mode");
+                        break;
+                    case SettingsSelectBinding::AppFont:
+                        expectedKey = QStringLiteral("interface/app_font");
+                        expectedSource = SettingsSelectSource::FontFamilies;
                         break;
                     case SettingsSelectBinding::Language:
                         expectedKey = QStringLiteral("interface/language");

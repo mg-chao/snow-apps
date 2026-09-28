@@ -156,6 +156,7 @@ adqt::theme::ThemeConfig toAdqtThemeConfig(const ThemeStyleConfig& config) {
         adqtConfig.link = config.colorLink;
     }
 
+    adqtConfig.appFont = config.appFont;
     adqtConfig.fontSize = static_cast<double>(config.fontSize);
     adqtConfig.lineWidth = static_cast<double>(config.lineWidth);
     adqtConfig.borderRadius = static_cast<double>(config.borderRadius);
@@ -183,6 +184,7 @@ ThemeStyleConfig toThemeStyleConfig(const adqt::theme::ResolvedTheme& resolvedTh
     config.presetColors =
         buildPresetColorMap(static_cast<const adqt::theme::ThemeAccents&>(resolvedTheme.values));
 
+    config.appFont = resolvedTheme.config.appFont;
     config.fontSize = roundMetric(resolvedTheme.config.fontSize);
     config.lineWidth = roundLineWidth(resolvedTheme.config.lineWidth);
     config.borderRadius = roundMetric(resolvedTheme.config.borderRadius);

@@ -865,6 +865,10 @@
             <translation>动图帧率</translation>
         </message>
         <message>
+            <source>App Font</source>
+            <translation>应用字体</translation>
+        </message>
+        <message>
             <source>App Permissions</source>
             <translation>应用权限</translation>
         </message>
@@ -1103,6 +1107,10 @@
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
             <translation>选择缩放固定到屏幕的截图时使用的固定点</translation>
+        </message>
+        <message>
+            <source>Choose the font used throughout the application</source>
+            <translation>选择整个应用使用的字体</translation>
         </message>
         <message>
             <source>Choose the format used for automatically saved image files</source>
@@ -2883,6 +2891,10 @@
         <message>
             <source>System</source>
             <translation>系统</translation>
+        </message>
+        <message>
+            <source>System default</source>
+            <translation>系统默认</translation>
         </message>
         <message>
             <source>System settings</source>

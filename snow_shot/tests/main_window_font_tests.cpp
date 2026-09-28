@@ -305,6 +305,19 @@ void mainWindowTitlesKeepSmoothRendering() {
     }
     require(QApplication::font() == applicationFont,
             "main window typography must not change the application font for other windows");
+    const QString family = QStringLiteral("SnowShot UI Font Test Family");
+    require(styles::ThemeManager::instance().setAppFontFamily(family),
+            "apply a new interface family");
+    flushEvents();
+    require(window.font().family() == family, "existing main window follows app font changes");
+    for (const auto* label : card->findChildren<QLabel*>()) {
+        require(label->font().family() == family,
+                "existing main window labels follow app font changes");
+    }
+    require(styles::ThemeManager::instance().setAppFontFamily(QString()), "restore system font");
+    flushEvents();
+    require(window.font().family() == applicationFont.family(),
+            "main window restores the platform family");
 }
 
 #ifdef Q_OS_MACOS

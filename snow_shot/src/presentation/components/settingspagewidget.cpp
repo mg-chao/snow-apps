@@ -49,6 +49,7 @@
 #include <QScopedValueRollback>
 #include <QShowEvent>
 #include <QStyle>
+#include <QStandardItemModel>
 #include <QSizePolicy>
 #include <QTimer>
 
@@ -430,6 +431,8 @@ class SettingsPageWidget::Impl {
                 using Payload = std::decay_t<decltype(payload)>;
                 if constexpr (std::is_same_v<Payload, settings::SettingsSelectDefinition>) {
                     auto* select = new adqt::widgets::AdSelect(list);
+                    select->setSearchEnabled(true);
+                    select->setSearchFilterFields({QStringLiteral("label")});
                     select->setMode(adqt::widgets::AdSelect::Mode::Single);
                     select->setControlSize(adqt::widgets::AdSelect::ControlSize::Middle);
                     select->setFixedWidth(
@@ -449,6 +452,8 @@ class SettingsPageWidget::Impl {
                                                     settings::SettingsMultiSelectDefinition>) {
                     auto* control = new adqt::widgets::AdMultiSelect(list);
                     control->setControlSize(adqt::widgets::AdMultiSelect::ControlSize::Middle);
+                    control->setSearchEnabled(true);
+                    control->setSearchFilterFields({QStringLiteral("label")});
                     control->setResponsiveMaxTagCount(true);
                     control->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
@@ -1526,7 +1531,29 @@ class SettingsPageWidget::Impl {
         }
         item.presentedOptions = options;
         if (item.select != nullptr) {
-            item.select->setOptions(options);
+            const auto* definition =
+                std::get_if<settings::SettingsSelectDefinition>(&item.definition->payload);
+            if (definition != nullptr &&
+                definition->binding == settings::SettingsSelectBinding::AppFont) {
+                auto* model = qobject_cast<QStandardItemModel*>(item.select->model());
+                if (model == nullptr) {
+                    model = new QStandardItemModel(item.select);
+                    item.select->setModel(model);
+                }
+                model->clear();
+                for (const auto& option : options) {
+                    auto* row = new QStandardItem(option.label);
+                    row->setData(option.label, adqt::widgets::AdSelect::DefaultLabelRole);
+                    row->setData(option.value, adqt::widgets::AdSelect::DefaultValueRole);
+                    if (!option.value.toString().isEmpty()) {
+                        row->setData(QFont(option.value.toString()), Qt::FontRole);
+                    }
+                    model->appendRow(row);
+                }
+                item.select->setCurrentValue(runtimeSession.selectValue(definition->binding));
+            } else {
+                item.select->setOptions(options);
+            }
         }
         if (item.multiSelect != nullptr) {
             item.multiSelect->setOptions(options);

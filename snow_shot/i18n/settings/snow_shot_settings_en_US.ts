@@ -865,6 +865,10 @@
             <translation>Animated image frame rate</translation>
         </message>
         <message>
+            <source>App Font</source>
+            <translation>App Font</translation>
+        </message>
+        <message>
             <source>App Permissions</source>
             <translation>App Permissions</translation>
         </message>
@@ -1103,6 +1107,10 @@
         <message>
             <source>Choose the fixed point used when zooming a pinned screenshot</source>
             <translation>Choose the fixed point used when zooming a pinned screenshot</translation>
+        </message>
+        <message>
+            <source>Choose the font used throughout the application</source>
+            <translation>Choose the font used throughout the application</translation>
         </message>
         <message>
             <source>Choose the format used for automatically saved image files</source>
@@ -2883,6 +2891,10 @@
         <message>
             <source>System</source>
             <translation>System</translation>
+        </message>
+        <message>
+            <source>System default</source>
+            <translation>System default</translation>
         </message>
         <message>
             <source>System settings</source>

@@ -29,6 +29,11 @@ int main(int argc, char** argv) {
   QApplication app(argc, argv);
   auto& manager = adqt::theme::ThemeManager::instance();
 
+  const QFont platformFont = QApplication::font();
+  QFont platformMenuFont = platformFont;
+  platformMenuFont.setFamily(QStringLiteral("platform-menu-font"));
+  platformMenuFont.setPointSize(17);
+  QApplication::setFont(platformMenuFont, "QMenu");
   manager.applyTo(app);
 
   // The theme owns application typography: every surface resolving from the application
@@ -85,6 +90,23 @@ int main(int argc, char** argv) {
     requireSmoothOutlines(QApplication::font(popupClass),
                           "popup class fonts must stay unhinted after config changes");
   }
+
+  require(QApplication::font().family() == platformFont.family(),
+          "resetting theme typography restores the original platform family");
+  require(QApplication::font("QMenu").family() == platformMenuFont.family(),
+          "resetting typography restores the platform-specific menu family");
+  config.appFont = QFont();
+  config.appFont.setFamily(QStringLiteral("family-only-probe"));
+  manager.setConfig(config);
+  require(QApplication::font("QMenu").family() == QStringLiteral("family-only-probe") &&
+              QApplication::font("QMenu").pointSize() == platformMenuFont.pointSize(),
+          "family-only overrides reach native menus without changing their size");
+  require(QApplication::font().pointSize() == platformFont.pointSize(),
+          "family-only overrides preserve platform application font size");
+  config.appFont = QFont();
+  manager.setConfig(config);
+  require(QApplication::font().family() == platformFont.family(),
+          "clearing a family-only override restores the platform font");
 
   return 0;
 }

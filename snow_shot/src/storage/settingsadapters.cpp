@@ -274,6 +274,14 @@ bool InterfaceSettings::setThemePrimaryColor(const QColor& color) const {
     return setColorValue(QStringLiteral("interface/theme_primary_color"), color);
 }
 
+QString InterfaceSettings::appFontFamily() const {
+    return cache().value(QStringLiteral("interface/app_font")).toString();
+}
+
+bool InterfaceSettings::setAppFontFamily(const QString& family) const {
+    return cache().setValue(QStringLiteral("interface/app_font"), family.trimmed());
+}
+
 QString InterfaceSettings::themeMode() const {
     return cache().value(QStringLiteral("interface/theme_mode")).toString();
 }

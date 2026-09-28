@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_STYLES_THEMECOLORSCHEME_H
 
 #include <QColor>
+#include <QFont>
 #include <QHash>
 #include <QString>
 
@@ -38,6 +39,7 @@ struct ThemeStyleConfig {
     QColor colorBgBase;
     ThemePresetColorMap presetColors;
 
+    QFont appFont;
     int fontSize = 14;
     int lineWidth = 1;
     int borderRadius = 6;

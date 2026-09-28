@@ -2178,6 +2178,25 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-app-font-tests
+        tests/app_font_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-app-font-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-app-font-tests
+             COMMAND snow-shot-app-font-tests)
+    set_tests_properties(snow-shot-app-font-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-app-font-tests)
+    snow_shot_add_translations(snow-shot-app-font-tests)
+
     add_executable(snow-shot-theme-primary-color-tests
         tests/theme_primary_color_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
@@ -2221,6 +2240,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-settings-page-loading-tests PRIVATE
         snow_shot_settings snow_shot_image_codec)
     snow_shot_import_offscreen_platform(snow-shot-settings-page-loading-tests)
+    snow_shot_add_translations(snow-shot-settings-page-loading-tests)
+    add_test(NAME snow-shot-settings-select-tests
+        COMMAND snow-shot-settings-page-loading-tests --selects-only)
+    set_tests_properties(snow-shot-settings-select-tests PROPERTIES
+        TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     add_test(NAME snow-shot-settings-page-loading-tests
         COMMAND snow-shot-settings-page-loading-tests)
     set_tests_properties(snow-shot-settings-page-loading-tests PROPERTIES

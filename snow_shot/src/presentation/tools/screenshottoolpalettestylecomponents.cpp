@@ -11,7 +11,7 @@
 #include <QBoxLayout>
 #include <QCoreApplication>
 #include <QFont>
-#include <QFontDatabase>
+#include "snow_shot/presentation/fontfamilies.h"
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -1608,24 +1608,7 @@ screenshotToolPaletteSizePresetEditorConfig(const QString& summaryTooltip,
 }
 
 const QStringList& screenshotToolPaletteFontFamilies() {
-    // The palette evicts and rebuilds its font editors after every capture
-    // reset and tool-family switch, so the system enumeration and normalization
-    // run once per process instead of per editor build.
-    static const QStringList cachedFamilies = [] {
-        QStringList families;
-        const QStringList systemFamilies = QFontDatabase::families();
-        families.reserve(systemFamilies.size());
-        for (const QString& family : systemFamilies) {
-            const QString trimmed = family.trimmed();
-            if (!trimmed.isEmpty()) {
-                families.append(trimmed);
-            }
-        }
-        families.removeDuplicates();
-        families.sort(Qt::CaseInsensitive);
-        return families;
-    }();
-    return cachedFamilies;
+    return applicationFontFamilies();
 }
 
 } // namespace snow_shot::presentation

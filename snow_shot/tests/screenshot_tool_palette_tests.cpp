@@ -12787,6 +12787,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--text-style-only"))) {
+        fontFamilyListIsCachedForEditorBuilds();
         textStyleControlsExposeAndEmitAllRequestedProperties();
         textStylePopupLifecyclesAreBalanced();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

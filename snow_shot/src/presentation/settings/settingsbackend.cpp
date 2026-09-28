@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/fontfamilies.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
@@ -219,6 +220,9 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
     connect(&themeManager, &styles::ThemeManager::themeModeChanged, this,
             [this](styles::ThemeMode) { emit synchronized(); });
 
+    connect(&themeManager, &styles::ThemeManager::appFontFamilyChanged, this,
+            [this](const QString&) { emit synchronized(); });
+
     auto& languageManager = LanguageManager::instance();
     connect(&languageManager, &LanguageManager::languageChanged, this,
             [this](const QString&, const QLocale&) {
@@ -252,6 +256,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
     switch (binding) {
     case SettingsSelectBinding::TranslationLayoutProcessing:
         return storage::ScreenshotTranslationSettings().layoutProcessing();
+    case SettingsSelectBinding::AppFont:
+        return styles::ThemeManager::instance().appFontFamily();
     case SettingsSelectBinding::Theme:
         return themeModeValue(styles::ThemeManager::instance().themeMode());
     case SettingsSelectBinding::Language:
@@ -352,6 +358,19 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
 QVector<SettingsRuntimeOption>
 BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) const {
     QVector<SettingsRuntimeOption> result;
+    if (binding == SettingsSelectBinding::AppFont) {
+        QStringList families = applicationFontFamilies();
+        const QString saved = styles::ThemeManager::instance().appFontFamily();
+        if (!saved.isEmpty() && !families.contains(saved)) {
+            families.append(saved);
+            families.sort(Qt::CaseInsensitive);
+        }
+        result.reserve(families.size());
+        for (const QString& family : families) {
+            result.push_back({family, family});
+        }
+        return result;
+    }
     if (binding != SettingsSelectBinding::Language) {
         return result;
     }
@@ -368,6 +387,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     switch (binding) {
     case SettingsSelectBinding::TranslationLayoutProcessing:
         return storage::ScreenshotTranslationSettings().setLayoutProcessing(value.toString());
+    case SettingsSelectBinding::AppFont:
+        return styles::ThemeManager::instance().setAppFontFamily(value.toString());
     case SettingsSelectBinding::Theme: {
         const auto requested = themeModeForValue(value);
         styles::ThemeManager::instance().setThemeMode(requested);
@@ -1459,6 +1480,9 @@ bool BuiltInSettingsBackend::importConfigurationSnapshot(
     applyRuntimeValue(QStringLiteral("interface/theme_mode"), [&](const QJsonValue& value) {
         return applySelectValue(SettingsSelectBinding::Theme, value.toVariant());
     });
+    applyRuntimeValue(QStringLiteral("interface/app_font"), [&](const QJsonValue& value) {
+        return applySelectValue(SettingsSelectBinding::AppFont, value.toVariant());
+    });
     applyRuntimeValue(QStringLiteral("interface/language"), [&](const QJsonValue& value) {
         return applySelectValue(SettingsSelectBinding::Language, value.toVariant());
     });
@@ -1600,7 +1624,10 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             storage::colorFromRgbaString(storage::ConfigurationSchema::defaultValue(
                                              QStringLiteral("interface/theme_primary_color"))
                                              .toString()));
-        return themeAccepted && languageAccepted && primaryColorAccepted;
+        const bool fontAccepted = applySelectValue(
+            SettingsSelectBinding::AppFont,
+            storage::ConfigurationSchema::defaultValue(QStringLiteral("interface/app_font")));
+        return themeAccepted && languageAccepted && primaryColorAccepted && fontAccepted;
     }
     case SettingsSectionReset::HistoryPolicy:
         return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(

@@ -127,6 +127,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("system"), QStringLiteral("light"), QStringLiteral("dark")}},
     {QStringLiteral("interface/theme_primary_color"), QStringLiteral("#1677FFFF"),
      ConfigurationValueKind::String},
+    {QStringLiteral("interface/app_font"), QStringLiteral(""), ConfigurationValueKind::String},
     {QStringLiteral("interface/language"), QStringLiteral("system"),
      ConfigurationValueKind::String},
     {QStringLiteral("system/application_priority"),

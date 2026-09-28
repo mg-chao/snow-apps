@@ -17,17 +17,20 @@ class ThemeManager : public QObject {
 
     void initialize(QApplication& application);
 
+    [[nodiscard]] QString appFontFamily() const;
     [[nodiscard]] ThemeMode themeMode() const;
     [[nodiscard]] ThemeColorScheme themeColorScheme() const;
 
   public slots:
     void setThemeStyleConfig(const ThemeStyleConfig& config);
+    bool setAppFontFamily(const QString& family);
     bool setThemePrimaryColor(const QColor& color);
     void setThemeMode(ThemeMode mode);
     void setThemeAppearance(ThemeAppearance appearance);
     void setThemePreset(ThemePreset preset);
 
   signals:
+    void appFontFamilyChanged(const QString& family);
     void themeModeChanged(ThemeMode mode);
     void themeChanged(const ThemeColorScheme& scheme);
 

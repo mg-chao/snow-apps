@@ -173,6 +173,8 @@ void GlobalMouseRow::openConfigurationDialog() {
     contentLayout->addWidget(form);
     const auto addSelect = [form](const QString& objectName) {
         auto* select = new adqt::widgets::AdSelect(form);
+        select->setSearchEnabled(true);
+        select->setSearchFilterFields({QStringLiteral("label")});
         select->setObjectName(objectName);
         select->setMode(adqt::widgets::AdSelect::Mode::Single);
         select->setControlSize(adqt::widgets::AdSelect::ControlSize::Middle);
