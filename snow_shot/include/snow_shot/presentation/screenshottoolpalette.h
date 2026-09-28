@@ -605,9 +605,6 @@ class ScreenshotToolPalette final : public QWidget,
     void releaseDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
-    [[nodiscard]] bool isRecordingUnavailableTool(Tool tool) const;
-    void refreshRecordingToolAvailability(adqt::widgets::AdButton* button, Tool tool,
-                                          const QString& label);
     [[nodiscard]] Tool drawingShortcutEntryTool(const QString& itemId, Tool fallback) const;
     void selectDrawingToolGroupEntry(Tool tool);
     void selectDrawingItemGroupEntry(const QString& itemId);

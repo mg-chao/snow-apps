@@ -1980,6 +1980,56 @@ int main(int argc, char** argv) {
         mouse(QEvent::MouseMove, {100, 80}, Qt::NoButton, Qt::LeftButton);
         mouse(QEvent::MouseButtonRelease, {100, 80}, Qt::LeftButton, Qt::NoButton);
         require(canvas->canvasHistoryState().canUndo, "drawing must create history");
+        // Recording effects operate on the transparent annotation canvas.
+        using Tool = ScreenshotToolPalette::Tool;
+        int expectedHistoryEntries = 1;
+        for (const auto& [tool, canvasTool] :
+             {std::pair{Tool::RectangleHighlight, SnowCanvasTool::RectangleHighlight},
+              std::pair{Tool::PenHighlight, SnowCanvasTool::PenHighlight},
+              std::pair{Tool::RectangleFilter, SnowCanvasTool::RectangleFilter},
+              std::pair{Tool::PenFilter, SnowCanvasTool::PenFilter},
+              std::pair{Tool::AutoFilter, SnowCanvasTool::AutoFilter}}) {
+            const snow_shot::storage::ScreenshotToolbarSettings settings;
+            if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
+                settings.setLastHighlightTool(tool == Tool::RectangleHighlight
+                                                  ? QStringLiteral("rectangle-highlight")
+                                                  : QStringLiteral("pen-highlight"));
+            } else {
+                settings.setLastFilterTool(
+                    tool == Tool::RectangleFilter ? QStringLiteral("rectangle-filter")
+                    : tool == Tool::PenFilter     ? QStringLiteral("pen-filter")
+                                                  : QStringLiteral("auto-filter"));
+            }
+            const QString shortcut = tool == Tool::RectangleHighlight || tool == Tool::PenHighlight
+                                         ? QStringLiteral("highlight")
+                                         : QStringLiteral("filter");
+            auto* exportSettings = palette()->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenRecordingExportSettings"));
+            require(exportSettings != nullptr, "recording export settings button must exist");
+            exportSettings->click();
+            require(palette()->activateDrawingShortcut(shortcut),
+                    "recording effect shortcut must activate");
+            require(canvas->canvasTool() == canvasTool &&
+                        area->inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing &&
+                        !palette()->recordingExportSettingsVisible(),
+                    "recording effect must select its canvas tool and enable drawing");
+            if (tool != Tool::AutoFilter) {
+                mouse(QEvent::MouseButtonPress, {35, 35}, Qt::LeftButton, Qt::LeftButton);
+                mouse(QEvent::MouseMove, {90, 70}, Qt::NoButton, Qt::LeftButton);
+                mouse(QEvent::MouseButtonRelease, {90, 70}, Qt::LeftButton, Qt::NoButton);
+                ++expectedHistoryEntries;
+                int historyEntries = 0;
+                while (canvas->canvasHistoryState().canUndo) {
+                    require(canvas->undo(), "recording effects must remain undoable canvas edits");
+                    ++historyEntries;
+                }
+                require(historyEntries == expectedHistoryEntries,
+                        "each recording effect gesture must add one canvas history entry");
+                while (historyEntries-- > 0) {
+                    require(canvas->redo(), "recording effects must remain redoable canvas edits");
+                }
+            }
+        }
         controller.open(region);
         require(canvas->canvasHistoryState().canUndo,
                 "opening an already visible region must preserve its drawing");

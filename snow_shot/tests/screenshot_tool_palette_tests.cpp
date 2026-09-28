@@ -794,6 +794,13 @@ void recordingEffectSettingsModal() {
 }
 
 void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const QString previousHighlightTool = settings.lastHighlightTool();
+    const QString previousFilterTool = settings.lastFilterTool();
+    snow_shot::storage::ScreenshotToolbarSettings().setLastHighlightTool(
+        QStringLiteral("rectangle-highlight"));
+    snow_shot::storage::ScreenshotToolbarSettings().setLastFilterTool(
+        QStringLiteral("rectangle-filter"));
     ScreenshotToolPalette::Options options;
     options.showDragHandle = true;
     options.showShapeTool = true;
@@ -878,9 +885,9 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     const auto disabledIconColor =
         snow_shot::presentation::styles::generateThemeColorScheme().map.colorTextQuaternary;
     const std::optional<QColor> filterIconColor = filterButton->iconRef().colors().primarySlot();
-    require(filterButton->isEnabled() && filterIconColor.has_value() &&
-                filterIconColor->rgba() == disabledIconColor.rgba(),
-            "unavailable recording tools should remain explorable and use the disabled icon color");
+    require(filterButton->isEnabled() && (!filterIconColor.has_value() ||
+                                          filterIconColor->rgba() != disabledIconColor.rgba()),
+            "recording filters should be enabled and use the normal tool icon color");
     require(exportButton->toolTip() == QStringLiteral("Export Settings") &&
                 exportButton->accessibleName() == QStringLiteral("Export Settings") &&
                 adqt::icons::describeIcon(exportButton->iconRef()).key.name ==
@@ -1154,9 +1161,10 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     require(exportVisible && exportVisibilityChanges > 1,
             "activating export settings should notify the controller to enable region movement");
     filterButton->click();
-    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+    require(!exportPanel->isVisible() &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::RectangleFilter &&
                 selectRequests == 1,
-            "selecting an unavailable recording tool should leave the shared state unchanged");
+            "selecting a recording filter should activate drawing and close Export Settings");
     shapeButton->click();
     shapeButton->click();
     require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
@@ -1354,11 +1362,11 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
     require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
             "shape should activate during recording drawing mode");
-    require(!palette.activateDrawingShortcut(QStringLiteral("highlight")) &&
-                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape &&
-                !palette.activateDrawingShortcut(QStringLiteral("filter")) &&
-                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
-            "unavailable recording tools should not activate through scoped shortcuts");
+    require(palette.activateDrawingShortcut(QStringLiteral("highlight")) &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::RectangleHighlight &&
+                palette.activateDrawingShortcut(QStringLiteral("filter")) &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::RectangleFilter,
+            "recording highlights and filters should activate through scoped shortcuts");
     require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Eraser,
             "enabled recording tools should remain available through scoped shortcuts");
@@ -1385,6 +1393,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     verifyColorIconTooltips();
     require(trail->toolTip().isEmpty() && click->toolTip().isEmpty(),
             "retranslation should keep color picker tooltips on their icons");
+    settings.setLastHighlightTool(previousHighlightTool);
+    settings.setLastFilterTool(previousFilterTool);
 }
 
 void dynamicToolbarLabelsUseEveryTranslationCatalog() {
@@ -3083,8 +3093,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
         QCoreApplication::processEvents();
     };
     const auto verifyDrawingGroup = [&](ScreenshotToolPalette::Options options,
-                                        const QString& triggerObjectName,
-                                        bool expectRecordingRestriction) {
+                                        const QString& triggerObjectName, bool recordingGroup) {
         ScreenshotToolPalette palette(options);
         palette.show();
         QCoreApplication::processEvents();
@@ -3103,7 +3112,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
         auto* alternative =
             firstContent != nullptr
                 ? firstContent->findChild<adqt::widgets::AdButton*>(
-                      expectRecordingRestriction
+                      recordingGroup
                           ? QStringLiteral("screenshotDrawingToolGroupOption-highlighter")
                           : QStringLiteral("screenshotDrawingToolGroupOption-line"))
                 : nullptr;
@@ -3111,10 +3120,9 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
                     firstContent->layout()->indexOf(arrow) <
                         firstContent->layout()->indexOf(alternative),
                 "each drawing group opening must rebuild its configured ordered options");
-        if (expectRecordingRestriction) {
-            require(alternative->accessibleDescription() ==
-                        QStringLiteral("Unavailable while recording"),
-                    "recording-only restrictions must be applied to recreated group options");
+        if (recordingGroup) {
+            require(alternative->isEnabled() && alternative->accessibleDescription().isEmpty(),
+                    "recording highlight options should be enabled without a restriction");
         }
         QPointer<adqt::widgets::AdButton> firstArrow = arrow;
         QPointer<adqt::widgets::AdButton> firstAlternative = alternative;
@@ -3126,7 +3134,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
         require(firstContent.isNull() && firstArrow.isNull() && firstAlternative.isNull(),
                 "drawing group content and buttons must be deferred-deleted after hiding");
 
-        if (!expectRecordingRestriction) {
+        if (!recordingGroup) {
             palette.setActiveTool(ScreenshotToolPalette::Tool::Line);
         }
         popover->show();
@@ -3134,12 +3142,11 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
         auto* secondArrow = popover->contentWidget()->findChild<adqt::widgets::AdButton*>(
             QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
         auto* secondAlternative = popover->contentWidget()->findChild<adqt::widgets::AdButton*>(
-            expectRecordingRestriction
-                ? QStringLiteral("screenshotDrawingToolGroupOption-highlighter")
-                : QStringLiteral("screenshotDrawingToolGroupOption-line"));
+            recordingGroup ? QStringLiteral("screenshotDrawingToolGroupOption-highlighter")
+                           : QStringLiteral("screenshotDrawingToolGroupOption-line"));
         require(secondArrow != nullptr && secondAlternative != nullptr,
                 "reopening a drawing group must create a complete new option tree");
-        if (!expectRecordingRestriction) {
+        if (!recordingGroup) {
             require(
                 secondAlternative->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                     secondAlternative->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
@@ -5530,9 +5537,10 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     require(recordingPalette.activeToolForTests() == Tool::Shape &&
                 !recordingPalette.recordingExportSettingsVisible(),
             "programmatic recording tool synchronization must remain idempotent");
-    require(!recordingPalette.activateDrawingShortcut(QStringLiteral("highlight")) &&
-                recordingPalette.activeToolForTests() == Tool::Shape,
-            "unavailable recording shortcuts should leave the current tool unchanged");
+    require(recordingPalette.activateDrawingShortcut(QStringLiteral("highlight")) &&
+                (recordingPalette.activeToolForTests() == Tool::RectangleHighlight ||
+                 recordingPalette.activeToolForTests() == Tool::PenHighlight),
+            "recording highlight shortcuts should activate the canvas tool");
 }
 
 void screenshotShortcutsShareButtonCommandsAndAvailability() {

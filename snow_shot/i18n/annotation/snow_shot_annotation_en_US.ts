@@ -1096,10 +1096,6 @@
             <translation>Transparent</translation>
         </message>
         <message>
-            <source>Unavailable while recording</source>
-            <translation>Unavailable while recording</translation>
-        </message>
-        <message>
             <source>Undo</source>
             <translation>Undo</translation>
         </message>

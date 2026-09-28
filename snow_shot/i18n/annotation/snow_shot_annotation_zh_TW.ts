@@ -1096,10 +1096,6 @@
             <translation>透明</translation>
         </message>
         <message>
-            <source>Unavailable while recording</source>
-            <translation>錄製期間無法使用</translation>
-        </message>
-        <message>
             <source>Undo</source>
             <translation>復原</translation>
         </message>
