@@ -5,8 +5,12 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "widgets/button.h"
+#include "widgets/select.h"
 #include <QApplication>
+#include <QDir>
+#include <QFontDatabase>
 #include "physical_key_test_support.h"
 #include <QMouseEvent>
 #include <QScreen>
@@ -423,9 +427,130 @@ void canvasNavigation(QApplication& app) {
     controller.shutdown();
 }
 
+void textEscapePreservesAnnotations(QApplication& app) {
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    app.processEvents();
+    auto* canvas = controller.canvas();
+    canvas->setCanvasTool(SnowCanvasTool::FreeDraw);
+    mouse(canvas, QEvent::MouseButtonPress, {100, 100}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseMove, {180, 140}, Qt::NoButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {180, 140}, Qt::LeftButton, Qt::NoButton);
+    require(canvas->canvasHistoryState().canUndo, "create annotation before text editing");
+    canvas->setCanvasTool(SnowCanvasTool::Text);
+    mouse(canvas, QEvent::MouseButtonPress, {220, 180}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {220, 180}, Qt::LeftButton, Qt::NoButton);
+    require(canvas->hasActiveTextEditing(), "begin global canvas text draft");
+    QKeyEvent text(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("a"));
+    QApplication::sendEvent(canvas, &text);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &escape);
+    app.processEvents();
+    require(controller.active(), "Escape cancels text without destroying annotations");
+    require(!canvas->hasActiveTextEditing() && canvas->canvasHistoryState().canUndo,
+            "Escape ends the draft and retains annotation history");
+    require(canvas->undo() && !canvas->canvasHistoryState().canUndo,
+            "cancelled text adds no history entry");
+    PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &release);
+    PhysicalKeyEvent exit(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &exit);
+    app.processEvents();
+    require(!controller.active(), "Escape still closes canvas after text cancellation");
+}
+
+void savedToolbarLayout(QApplication& app) {
+    const storage::ScreenshotToolbarSettings settings;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::DrawingTools;
+    const auto original = settings.layout(kind);
+    auto visible = original;
+    for (auto& position : visible.positions)
+        position.removeAll(QStringLiteral("arrow"));
+    visible.positions.prepend({QStringLiteral("arrow")});
+    visible.hidden.removeAll(QStringLiteral("arrow"));
+    auto hidden = visible;
+    for (auto& position : hidden.positions)
+        position.removeAll(QStringLiteral("arrow"));
+    hidden.hidden.append(QStringLiteral("arrow"));
+    require(settings.setLayout(kind, visible), "save standalone arrow tool");
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    app.processEvents();
+    auto* palette = controller.toolbar()->palette();
+    auto* arrow =
+        palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowButton"));
+    require(arrow && arrow->isVisible(), "canvas loads saved drawing tool layout");
+    require(settings.setLayout(kind, hidden), "hide arrow tool");
+    app.processEvents();
+    require(!arrow->isVisible(), "open canvas hides tools removed from the layout");
+    require(settings.setLayout(kind, visible), "restore visible arrow tool");
+    app.processEvents();
+    require(arrow->isVisible(), "open canvas follows drawing layout changes");
+    for (const auto* name : {"globalCanvasClickThroughButton", "globalCanvasExitButton"}) {
+        auto* button = palette->findChild<adqt::widgets::AdButton*>(QString::fromLatin1(name));
+        require(button && button->isVisible(), "layout changes retain canvas actions");
+    }
+    require(settings.setLayout(kind, original), "restore drawing layout");
+}
+
+void templateInsertionAfterNavigation(QApplication& app) {
+    SnowCanvasRuntime source;
+    SnowCanvasWidget sourceCanvas(source);
+    sourceCanvas.resize(400, 300);
+    sourceCanvas.show();
+    app.processEvents();
+    sourceCanvas.setCanvasTool(SnowCanvasTool::Shape);
+    mouse(&sourceCanvas, QEvent::MouseButtonPress, {100, 100}, Qt::LeftButton, Qt::LeftButton);
+    mouse(&sourceCanvas, QEvent::MouseMove, {180, 140}, Qt::NoButton, Qt::LeftButton);
+    mouse(&sourceCanvas, QEvent::MouseButtonRelease, {180, 140}, Qt::LeftButton, Qt::NoButton);
+    sourceCanvas.setCanvasTool(SnowCanvasTool::Select);
+    mouse(&sourceCanvas, QEvent::MouseButtonPress, {140, 100}, Qt::LeftButton, Qt::LeftButton);
+    mouse(&sourceCanvas, QEvent::MouseButtonRelease, {140, 100}, Qt::LeftButton, Qt::NoButton);
+    const QByteArray payload = source.serializeSelectedDrawTemplate();
+    require(!payload.isEmpty(), "serialize a real drawing template");
+    const storage::DrawTemplateSettings settings;
+    const auto original = settings.templates();
+    require(settings.setTemplates({{QStringLiteral("Rectangle"), payload}}), "save test template");
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    app.processEvents();
+    auto* canvas = controller.canvas();
+    auto* select = controller.toolbar()->palette()->findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotDrawTemplateSelect"));
+    require(select != nullptr, "canvas exposes saved templates");
+    for (const double zoom : {0.5, 1.0, 2.0}) {
+        canvas->clearDocument();
+        canvas->setViewportCamera(5000, -3000, zoom);
+        select->selected(QStringLiteral("draw-template:0"), QStringLiteral("Rectangle"));
+        require(canvas->canvasHistoryState().canUndo, "template insertion creates history");
+        canvas->resetEditingState();
+        const QImage image = canvas->grab().toImage();
+        QRect painted;
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x)
+                if (image.pixelColor(x, y).alpha() > 10)
+                    painted = painted.united(QRect(x, y, 1, 1));
+        require(!painted.isEmpty() &&
+                    QLineF(QRectF(painted).center(), QRectF(image.rect()).center()).length() < 4,
+                "templates remain centered in the visible viewport after pan and zoom");
+    }
+    require(settings.setTemplates(original), "restore template library");
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
+#ifdef Q_OS_WIN
+    // Static Qt's offscreen font database does not discover Windows fonts.
+    require(
+        QFontDatabase::addApplicationFont(
+            QDir(qEnvironmentVariable("WINDIR")).filePath(QStringLiteral("Fonts/segoeui.ttf"))) >=
+            0,
+        "load a font for inline text editing");
+#endif
 #ifdef Q_OS_MACOS
     canvasCollectionBehavior();
     if (app.arguments().contains(QStringLiteral("--platform-only")))
@@ -452,6 +577,24 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--text-escape-only"))) {
+        textEscapePreservesAnnotations(app);
+        storage.shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--saved-layout-only"))) {
+        savedToolbarLayout(app);
+        storage.shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--template-navigation-only"))) {
+        templateInsertionAfterNavigation(app);
+        storage.shutdown();
+        return 0;
+    }
+    textEscapePreservesAnnotations(app);
+    savedToolbarLayout(app);
+    templateInsertionAfterNavigation(app);
     toolbarPlacement(app);
     canvasNavigation(app);
     if (app.arguments().contains(QStringLiteral("--toolbar-placement-only"))) {

@@ -49,6 +49,8 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showSerialNumberTool = true;
     options.showGlobalCanvasActions = true;
     options.separatorAfterSelect = true;
+    options.toolbarLayout = storage::ScreenshotToolbarSettings().layout(
+        storage::ScreenshotToolbarLayoutKind::DrawingTools);
     options.styleDefaults = screenshotCanvasToolStyleDefaults();
     return options;
 }
@@ -126,8 +128,12 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         if (storage.isInitialized()) {
             connect(&storage.configuration(), &storage::ConfigurationStore::valueChanged, this,
                     [this](const QString& key, const QJsonValue&) {
-                        if (key.startsWith(QStringLiteral("drawing_shortcuts/")))
+                        if (key.startsWith(QStringLiteral("drawing_shortcuts/"))) {
                             reloadShortcuts();
+                        } else if (key == QStringLiteral("screenshot_toolbar/layout")) {
+                            palette->setToolbarLayout(storage::ScreenshotToolbarSettings().layout(
+                                storage::ScreenshotToolbarLayoutKind::DrawingTools));
+                        }
                     });
         }
 #ifdef Q_OS_MACOS
@@ -385,7 +391,9 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         exit.id = QStringLiteral("global-canvas.exit");
         exit.keyCombinations = {QKeyCombination(Qt::Key_Escape)};
         exit.priority = WindowShortcutManager::StandardPriority::WindowCommand;
-        exit.canActivate = [this](const auto&) { return !sampleTarget; };
+        exit.canActivate = [this](const auto&) {
+            return !sampleTarget && !drawing->hasActiveTextEditing();
+        };
         exit.activate = [this](const auto&) {
             this->close();
             return true;
@@ -607,7 +615,9 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         palette->setDrawTemplateCallbacks(
             [this]() { return runtime.serializeSelectedDrawTemplate(); },
             [this](const QByteArray& payload) {
-                drawing->insertDrawTemplate(payload, QRectF(rect()).center());
+                const QPointF center = drawing->canvasToViewTransform().inverted().map(
+                    QRectF(drawing->rect()).center());
+                drawing->insertDrawTemplate(payload, center);
             });
         connect(palette, &ScreenshotToolPalette::canvasColorSamplingRequested, this,
                 [this](adqt::widgets::AdColorPicker* picker) {
