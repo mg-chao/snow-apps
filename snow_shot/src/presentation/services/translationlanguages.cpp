@@ -12,6 +12,7 @@ const QVector<TranslationLanguage>& translationLanguages() {
         {"fr", QT_TRANSLATE_NOOP("TranslationLanguages", "French")},
         {"it", QT_TRANSLATE_NOOP("TranslationLanguages", "Italian")},
         {"ja", QT_TRANSLATE_NOOP("TranslationLanguages", "Japanese")},
+        {"ko", QT_TRANSLATE_NOOP("TranslationLanguages", "Korean")},
         {"pt", QT_TRANSLATE_NOOP("TranslationLanguages", "Portuguese")},
         {"ru", QT_TRANSLATE_NOOP("TranslationLanguages", "Russian")},
         {"tr", QT_TRANSLATE_NOOP("TranslationLanguages", "Turkish")},

@@ -15,14 +15,17 @@ using snow_shot::storage::ConfigurationStore;
 namespace {
 void sharedLanguageAndModelHelpers() {
     using namespace snow_shot::presentation;
-    require(translationLanguages().size() == 12 &&
+    require(translationLanguages().size() == 13 &&
                 defaultTranslationTargetLanguage(QLocale(QStringLiteral("zh_TW"))) ==
                     QStringLiteral("zh-Hant") &&
                 defaultTranslationTargetLanguage(QLocale(QStringLiteral("ja_JP"))) ==
                     QStringLiteral("ja") &&
                 defaultTranslationTargetLanguage(QLocale(QStringLiteral("ko_KR"))) ==
-                    QStringLiteral("en"),
-            "shared language metadata retains supported locales and fallback");
+                    QStringLiteral("ko") &&
+                defaultTranslationTargetLanguage(QLocale(QStringLiteral("nl_NL"))) ==
+                    QStringLiteral("en") &&
+                translationLanguageName(QStringLiteral("ko")) == QStringLiteral("Korean"),
+            "shared language metadata includes Korean and retains unsupported-locale fallback");
     const QVector<SnowShotChatModel> models{
         {QStringLiteral("vision"), QStringLiteral("Vision"), false, QStringLiteral("default"),
          true},
