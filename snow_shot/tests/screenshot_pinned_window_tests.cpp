@@ -8256,6 +8256,60 @@ void pinnedCheckerboardTracksContentSource() {
     replacementWindow.close();
 }
 
+void pinnedThumbnailBorderContainsBackgroundOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "thumbnail border needs a screen");
+    for (const QSize contentSize :
+         {QSize(24, 12), QSize(12, 24), QSize(24, 24), QSize(83, 83), QSize(400, 200)}) {
+        for (const int radius : {0, 6}) {
+            ScreenshotPinnedWindow window;
+            auto config = clickThroughTestConfig(*screen);
+            const ScreenshotResultStyle style{radius, 0, {}, {}};
+            QImage source(contentSize, QImage::Format_RGB32);
+            source.fill(QColor(42, 84, 126));
+            config.canvasSourceRect = QRectF(QPointF(), QSizeF(contentSize));
+            config.nativeGeometry.setSize(contentSize);
+            config.initialWindowSize = contentSize;
+            config.imageSource = ScreenshotImageSource::fromImage(
+                ScreenshotResultCompositor::compose(source, style), config.canvasSourceRect);
+            config.borderAppearance = screenshotSelectionBorderAppearance(contentSize, style);
+            config.checkerboardEnabled = false;
+            Access::prepareReplacement(window, config);
+            window.show();
+            waitForUi(20);
+            auto* frame = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
+            require(frame != nullptr, "thumbnail border frame missing");
+            const QRectF originalOutline = frame->property("borderOutline").toRectF();
+            const auto verifyBorder = [&] {
+                const QImage raster = renderWidget(window);
+                const QColor color = frame->property("borderColor").value<QColor>();
+                for (const QPoint point : {QPoint(0, 0), raster.rect().topRight(),
+                                           raster.rect().bottomLeft(), raster.rect().bottomRight()})
+                    requireColorNear(raster.pixelColor(point), color, 0,
+                                     "thumbnail border must enclose the opaque square background");
+            };
+            auto* thumbnail =
+                window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+            require(thumbnail != nullptr, "thumbnail action missing");
+            thumbnail->setChecked(true);
+            auto* animation = window.findChild<QVariantAnimation*>(
+                QStringLiteral("screenshotPinnedGeometryAnimation"));
+            require(animation != nullptr, "thumbnail animation missing");
+            animation->pause();
+            verifyBorder();
+            animation->setCurrentTime(animation->duration() / 2);
+            verifyBorder();
+            animation->setCurrentTime(animation->duration());
+            verifyBorder();
+            Access::thumbnailForHideTest(window, false);
+            require(frame->property("borderOutline").toRectF() == originalOutline,
+                    "thumbnail exit must restore the source image outline");
+            window.close();
+        }
+    }
+}
+
 void pinnedSelectionBorderOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -12614,6 +12668,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--show-border-only"))) {
+            pinnedThumbnailBorderContainsBackgroundOffscreen();
             pinnedShowBorderOffscreen();
             pinnedSelectionBorderOffscreen();
             pinnedCompoundSelectionOffscreen();

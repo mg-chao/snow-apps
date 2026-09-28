@@ -3120,6 +3120,13 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
         }
     }
     m_screenshotRenderer->setBakedSelectionPath(bakedPath);
+    // Thumbnail presentation fills the entire viewport with an opaque background.
+    // Its rim must enclose that surface, not the fitted source image (which can
+    // leave letterboxing or rounded corners). Keep the baked image clip intact.
+    if (m_thumbnailMode) {
+        borderOutline = {};
+        cornerRadii = {};
+    }
     m_borderFrame->setProperty("borderOutline", borderOutline);
     m_borderFrame->setProperty("cornerRadii", cornerRadii);
     m_borderFrame->update();
@@ -6086,6 +6093,7 @@ void ScreenshotPinnedWindow::updateThumbnailPresentation() {
         m_screenshotRenderer->setPinnedBackgroundColor(
             m_thumbnailMode ? opaquePinnedBackground(this) : QColor());
     }
+    updateBorderOutline();
     if (m_thumbnailAction != nullptr) {
         const QSignalBlocker blocker(m_thumbnailAction);
         m_thumbnailAction->setChecked(m_thumbnailMode);
