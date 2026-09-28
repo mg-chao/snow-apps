@@ -234,9 +234,9 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 42, "macOS adds one permissions section");
+    require(sectionCount == 43, "macOS adds one permissions section");
 #else
-    require(sectionCount == 41, "catalog must contain forty-one sections");
+    require(sectionCount == 42, "catalog must contain forty-two sections");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
     // Explicit platform membership also catches substitutions that a total alone would miss.
@@ -266,7 +266,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 182, "catalog must contain 182 shared settings on every platform");
+    require(itemIds.size() == 183, "catalog must contain 183 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -726,12 +726,17 @@ void builtInCatalogIsCompleteAndValid() {
             storagePage->sections.at(5).id == QStringLiteral("storage-status") &&
             imageFormat != nullptr && imageDirectory != nullptr && autoSaveAfterCopy != nullptr &&
             copyImageFile != nullptr && saveDialog != nullptr && videoFilename != nullptr &&
+            storagePage->sections.at(0).title.translated() == QStringLiteral("Image Export") &&
+            storagePage->sections.at(0).searchDescription.translated() ==
+                QStringLiteral(
+                    "Shared image export settings for screenshot and pin-to-screen windows") &&
+            storagePage->sections.at(0).reset == settings::SettingsSectionReset::ScreenshotOutput &&
             storagePage->sections.at(0).items.at(0).id == autoSaveAfterCopy->id &&
             storagePage->sections.at(0).items.at(1).id == copyImageFile->id &&
             storagePage->sections.at(0).items.at(2).id == saveDialog->id &&
             storagePage->sections.at(0).items.at(3).id == imageDirectory->id &&
             autoSaveAfterCopy->description.translated() ==
-                QStringLiteral("When copying a screenshot image to the clipboard, also save it in "
+                QStringLiteral("When copying an image to the clipboard, also save it in "
                                "the selected image format and save directory") &&
             std::get<settings::SettingsSwitchDefinition>(autoSaveAfterCopy->payload).binding ==
                 settings::SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy &&

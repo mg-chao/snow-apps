@@ -1,0 +1,309 @@
+{
+  "notification_burst_ms": {
+    "median": 0.7034,
+    "p95": 1.4666
+  },
+  "pages": [
+    {
+      "all_interactions_ms": {
+        "median": 33.9506,
+        "p95": 47.4139
+      },
+      "all_sections_ms": {
+        "median": 33.9485,
+        "p95": 47.4115
+      },
+      "construction_ms": {
+        "median": 11.9161,
+        "p95": 13.1596
+      },
+      "first_display_ms": {
+        "median": 20.8214,
+        "p95": 25.8313
+      },
+      "initial_widgets": 95,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "global-hotkeys",
+      "retranslation_ms": {
+        "median": 2.8492,
+        "p95": 7.2296
+      },
+      "slowest_section_ms": {
+        "median": 10.3381,
+        "p95": 14.7516
+      },
+      "total_widgets": 145
+    },
+    {
+      "all_interactions_ms": {
+        "median": 12.492,
+        "p95": 16.8768
+      },
+      "all_sections_ms": {
+        "median": 12.4902,
+        "p95": 16.8742
+      },
+      "construction_ms": {
+        "median": 7.3001,
+        "p95": 8.0471
+      },
+      "first_display_ms": {
+        "median": 12.4223,
+        "p95": 16.0958
+      },
+      "initial_widgets": 62,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "global-mouse",
+      "retranslation_ms": {
+        "median": 0.9475,
+        "p95": 1.8768
+      },
+      "slowest_section_ms": {
+        "median": 0.0575,
+        "p95": 1.6868
+      },
+      "total_widgets": 62
+    },
+    {
+      "all_interactions_ms": {
+        "median": 105.2062,
+        "p95": 121.9799
+      },
+      "all_sections_ms": {
+        "median": 105.2034,
+        "p95": 121.977
+      },
+      "construction_ms": {
+        "median": 16.5123,
+        "p95": 17.926
+      },
+      "first_display_ms": {
+        "median": 34.2161,
+        "p95": 37.2047
+      },
+      "initial_widgets": 170,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "function-settings",
+      "retranslation_ms": {
+        "median": 5.361,
+        "p95": 7.1886
+      },
+      "slowest_section_ms": {
+        "median": 23.8572,
+        "p95": 26.9383
+      },
+      "total_widgets": 358
+    },
+    {
+      "all_interactions_ms": {
+        "median": 462.0157,
+        "p95": 588.2997
+      },
+      "all_sections_ms": {
+        "median": 117.8685,
+        "p95": 166.3882
+      },
+      "construction_ms": {
+        "median": 14.1648,
+        "p95": 22.3882
+      },
+      "first_display_ms": {
+        "median": 33.5994,
+        "p95": 52.63
+      },
+      "initial_widgets": 148,
+      "max_popup_open_ms": {
+        "median": 45.7913,
+        "p95": 64.6124
+      },
+      "page": "interface-settings",
+      "retranslation_ms": {
+        "median": 1.6363,
+        "p95": 4.1127
+      },
+      "slowest_section_ms": {
+        "median": 24.5629,
+        "p95": 37.2692
+      },
+      "total_widgets": 735
+    },
+    {
+      "all_interactions_ms": {
+        "median": 188.9234,
+        "p95": 200.497
+      },
+      "all_sections_ms": {
+        "median": 188.9213,
+        "p95": 200.4951
+      },
+      "construction_ms": {
+        "median": 19.8974,
+        "p95": 20.6218
+      },
+      "first_display_ms": {
+        "median": 34.6895,
+        "p95": 36.179
+      },
+      "initial_widgets": 142,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "storage-and-privacy",
+      "retranslation_ms": {
+        "median": 6.0099,
+        "p95": 6.8693
+      },
+      "slowest_section_ms": {
+        "median": 70.2215,
+        "p95": 75.5856
+      },
+      "total_widgets": 413
+    },
+    {
+      "all_interactions_ms": {
+        "median": 4.0734,
+        "p95": 4.6087
+      },
+      "all_sections_ms": {
+        "median": 4.072,
+        "p95": 4.6066
+      },
+      "construction_ms": {
+        "median": 2.6542,
+        "p95": 3.031
+      },
+      "first_display_ms": {
+        "median": 3.6398,
+        "p95": 4.2052
+      },
+      "initial_widgets": 29,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "api-configuration",
+      "retranslation_ms": {
+        "median": 0.407,
+        "p95": 0.7609
+      },
+      "slowest_section_ms": {
+        "median": 0.389,
+        "p95": 0.5584
+      },
+      "total_widgets": 30
+    },
+    {
+      "all_interactions_ms": {
+        "median": 6.4385,
+        "p95": 7.0823
+      },
+      "all_sections_ms": {
+        "median": 6.4367,
+        "p95": 7.0794
+      },
+      "construction_ms": {
+        "median": 2.7976,
+        "p95": 3.0852
+      },
+      "first_display_ms": {
+        "median": 6.3689,
+        "p95": 7.0062
+      },
+      "initial_widgets": 30,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "extended-features",
+      "retranslation_ms": {
+        "median": 0.0304,
+        "p95": 0.0513
+      },
+      "slowest_section_ms": {
+        "median": 0.0648,
+        "p95": 0.0844
+      },
+      "total_widgets": 30
+    },
+    {
+      "all_interactions_ms": {
+        "median": 65.2492,
+        "p95": 72.041
+      },
+      "all_sections_ms": {
+        "median": 65.2471,
+        "p95": 72.0394
+      },
+      "construction_ms": {
+        "median": 12.7715,
+        "p95": 14.0655
+      },
+      "first_display_ms": {
+        "median": 22.6289,
+        "p95": 25.0639
+      },
+      "initial_widgets": 106,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "system-settings",
+      "retranslation_ms": {
+        "median": 0.6608,
+        "p95": 0.983
+      },
+      "slowest_section_ms": {
+        "median": 16.7932,
+        "p95": 18.9584
+      },
+      "total_widgets": 203
+    },
+    {
+      "all_interactions_ms": {
+        "median": 84.0648,
+        "p95": 101.9508
+      },
+      "all_sections_ms": {
+        "median": 84.0633,
+        "p95": 101.9491
+      },
+      "construction_ms": {
+        "median": 22.8797,
+        "p95": 28.7851
+      },
+      "first_display_ms": {
+        "median": 44.2912,
+        "p95": 52.9515
+      },
+      "initial_widgets": 187,
+      "max_popup_open_ms": {
+        "median": 0,
+        "p95": 0
+      },
+      "page": "application-shortcuts",
+      "retranslation_ms": {
+        "median": 10.9947,
+        "p95": 16.9138
+      },
+      "slowest_section_ms": {
+        "median": 19.0832,
+        "p95": 26.2042
+      },
+      "total_widgets": 315
+    }
+  ],
+  "platform": "offscreen",
+  "qt_version": "6.11.1",
+  "refreshes_per_25_notifications": 1,
+  "samples": 21
+}

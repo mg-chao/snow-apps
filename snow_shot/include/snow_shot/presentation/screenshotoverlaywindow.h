@@ -80,8 +80,8 @@ class ScreenshotOverlayWindow final : public QWidget {
     void commitInitialSelectionCursor();
     void setCanvasClearBackgroundEnabled(bool enabled);
     [[nodiscard]] QJsonObject scrollingDiagnostics() const;
-    void setInputPassThroughRect(const QRect& localRect);
-    void clearInputPassThroughRect();
+    void setScrollingVisualHole(const QRect& localRect);
+    void clearScrollingVisualHole();
     void setScrollingCaptureMode(bool enabled);
     void beginScrollingThumbnail(
         const QRect& localSelection,
@@ -91,6 +91,7 @@ class ScreenshotOverlayWindow final : public QWidget {
                                   bool replacePreview = false, int replacedPreviewRows = 0);
     void reanchorScrollingThumbnail(const QRect& localSelection);
     void clearScrollingThumbnail();
+    [[nodiscard]] QWidget* scrollingThumbnailWindow() const;
     [[nodiscard]] ScreenshotScrollingTrimRange scrollingThumbnailTrim() const;
     void setScrollingTrimModel(std::shared_ptr<ScreenshotScrollingTrimRange> trim);
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
@@ -124,6 +125,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void layoutRegionTypeControl();
     void layoutScrollingThumbnail();
     void updateWindowMask();
+    void updateScrollingInputTransparency();
 
     ScreenshotOverlayEventSink& m_eventSink;
     QMargins m_captureFrameMargins;
@@ -133,12 +135,13 @@ class ScreenshotOverlayWindow final : public QWidget {
     ScreenshotScrollingThumbnailWidget* m_scrollingThumbnail = nullptr;
     std::unique_ptr<ScreenshotOverlayFramePresenter> m_framePresenter;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
-    QRect m_inputPassThroughRect;
+    QRect m_scrollingVisualHole;
     QRegion m_appliedWindowMask;
     QRect m_scrollingThumbnailAnchor;
     ScreenshotScrollingRecognitionMode m_scrollingThumbnailMode =
         ScreenshotScrollingRecognitionMode::Vertical;
     bool m_scrollingThumbnailSessionActive = false;
+    bool m_scrollingThumbnailHasPreview = false;
     bool m_scrollingCaptureMode = false;
     bool m_canvasContentWasVisible = true;
     bool m_canvasClearBackgroundWasEnabled = true;

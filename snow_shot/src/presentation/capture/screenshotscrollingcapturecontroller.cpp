@@ -324,6 +324,7 @@ struct ScreenshotScrollingCaptureController::Impl {
             return false;
         }
         captureExclusion.exclude(overlay);
+        captureExclusion.exclude(overlay->scrollingThumbnailWindow());
         captureExclusion.exclude(toolbar);
         exclusionWindowIds = captureExclusion.windowIds(snow_shot::platform::captureWindowId);
 #else

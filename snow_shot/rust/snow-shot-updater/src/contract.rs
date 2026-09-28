@@ -399,7 +399,7 @@ pub fn verify_release_file(path: &Path) -> Result<UpdateRelease> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use proptest::prelude::*;
     use rand::rngs::OsRng;
@@ -419,7 +419,7 @@ mod tests {
         ]
     }
 
-    fn valid_payload() -> Value {
+    pub(crate) fn valid_payload() -> Value {
         let files = inventory();
         json!({
             "schema": 1,
@@ -437,7 +437,7 @@ mod tests {
         })
     }
 
-    fn trusted_key(private: &RsaPrivateKey, exponent: Option<Vec<u8>>) -> Vec<u8> {
+    pub(crate) fn trusted_key(private: &RsaPrivateKey, exponent: Option<Vec<u8>>) -> Vec<u8> {
         let public = private.to_public_key();
         serde_json::to_vec(&json!({"keys":[{
             "id":"test",
@@ -447,7 +447,11 @@ mod tests {
         .unwrap()
     }
 
-    fn sign_payload(payload: &Value, private: &RsaPrivateKey, salt_length: usize) -> Vec<u8> {
+    pub(crate) fn sign_payload(
+        payload: &Value,
+        private: &RsaPrivateKey,
+        salt_length: usize,
+    ) -> Vec<u8> {
         let payload = serde_json::to_vec(payload).unwrap();
         let signature = private
             .sign_with_rng(

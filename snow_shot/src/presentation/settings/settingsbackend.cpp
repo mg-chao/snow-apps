@@ -1412,6 +1412,14 @@ bool BuiltInSettingsBackend::applyCustomAiModels(const CustomAiModels& models) {
     return storage::ApiConfigurationSettings().setCustomModels(models);
 }
 
+TextTranslationConfigurations BuiltInSettingsBackend::textTranslationConfigurations() const {
+    return storage::ApiConfigurationSettings().textTranslationConfigurations();
+}
+bool BuiltInSettingsBackend::applyTextTranslationConfigurations(
+    const TextTranslationConfigurations& models) {
+    return storage::ApiConfigurationSettings().setTextTranslationConfigurations(models);
+}
+
 bool BuiltInSettingsBackend::importConfigurationSnapshot(
     const QMap<QString, QJsonValue>& values, int schemaVersion,
     std::shared_future<storage::StorageResult>* completion) {
@@ -1854,6 +1862,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_translation/layout_processing"))},
         });
+    case SettingsSectionReset::TextTranslationConfigurations:
     case SettingsSectionReset::CustomAiModels:
     case SettingsSectionReset::ExtendedTranslation: {
         // These categories contain configuration-backed fields only. The compiled

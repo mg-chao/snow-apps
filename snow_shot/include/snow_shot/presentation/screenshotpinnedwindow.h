@@ -336,6 +336,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> viewportArtifact();
     void quickSave();
     void invalidatePendingCopy();
+    void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact);
     void applyImageOperation(const QTransform& operation, int quarterTurnDelta = 0);
     void resetImageTransform();
     void rebuildTransformedImage();

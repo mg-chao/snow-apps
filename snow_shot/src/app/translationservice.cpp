@@ -13,6 +13,7 @@ const QString sourceKey = QStringLiteral("screenshot_translation/source_language
 const QString targetKey = QStringLiteral("screenshot_translation/target_language");
 const QString modelKey = QStringLiteral("screenshot_translation/model");
 const QString customKey = QStringLiteral("api_configuration/custom_models");
+const QString textKey = QStringLiteral("api_configuration/text_translation");
 const QString proxyKey = QStringLiteral("network/proxy");
 } // namespace
 
@@ -33,6 +34,8 @@ TranslationService::TranslationService(SnowShotApiClient& client,
     : QObject(&client), m_client(&client), m_settings(&settings), m_locale(std::move(locale)),
       m_defaultTarget(defaultTranslationTargetLanguage(m_locale)) {
     client.setCustomModels(customAiModelsFromJson(settings.value(customKey)));
+    client.setTextTranslationConfigurations(
+        textTranslationConfigurationsFromJson(settings.value(textKey)));
     client.setUseSystemProxy(settings.value(proxyKey).toString() == QStringLiteral("system"));
     connect(&settings, &QObject::destroyed, this, [this] { delete this; });
     connect(&settings, &storage::ConfigurationStore::valueChanged, this,
@@ -41,6 +44,9 @@ TranslationService::TranslationService(SnowShotApiClient& client,
                     return;
                 if (key == customKey) {
                     m_client->setCustomModels(customAiModelsFromJson(m_settings->value(customKey)));
+                } else if (key == textKey) {
+                    m_client->setTextTranslationConfigurations(
+                        textTranslationConfigurationsFromJson(m_settings->value(textKey)));
                 } else if (key == proxyKey) {
                     m_client->setUseSystemProxy(m_settings->value(proxyKey).toString() ==
                                                 QStringLiteral("system"));
@@ -112,10 +118,13 @@ void TranslationService::publishModels(bool resolveSelection) {
     const auto reason =
         m_modelInvalidationPending ? ChangeReason::ModelInvalidated : ChangeReason::Catalog;
     const int index = translationModelIndex(m_models, m_preferences.modelId);
-    const bool missingCustom = m_preferences.modelId.startsWith(QStringLiteral("custom:")) &&
-                               !m_client->isCustomModel(m_preferences.modelId);
+    const bool missingCustom = (m_preferences.modelId.startsWith(QStringLiteral("custom:")) &&
+                                !m_client->isCustomModel(m_preferences.modelId)) ||
+                               (m_preferences.modelId.startsWith(QStringLiteral("translation:")) &&
+                                !m_client->isTextTranslation(m_preferences.modelId));
     const bool localDefault = m_preferences.modelId.isEmpty() && index >= 0 &&
-                              m_client->isCustomModel(m_models.at(index).id);
+                              (m_client->isCustomModel(m_models.at(index).id) ||
+                               m_client->isTextTranslation(m_models.at(index).id));
     if ((resolveSelection || missingCustom || localDefault) && (index >= 0 || missingCustom)) {
         const QString resolved = index >= 0 ? m_models.at(index).id : QString();
         if (resolved != m_preferences.modelId && m_settings != nullptr) {
@@ -307,7 +316,10 @@ void TranslationJob::pump() {
     if (m_state != State::Streaming || m_client == nullptr)
         return;
     const auto generation = m_generation;
-    for (int index = 0; index < m_units.size() && m_requests.size() < 4 && !m_rateLimited;
+    for (int index = 0;
+         index < m_units.size() &&
+         m_requests.size() < (m_client->isTextTranslation(m_preferences.modelId) ? 16 : 4) &&
+         !m_rateLimited;
          ++index) {
         auto& unit = m_units[index];
         if (unit.state != State::Idle)
@@ -336,6 +348,15 @@ void TranslationJob::pump() {
                     m_result = result;
                 if (result.httpStatus == 429) {
                     m_rateLimited = true;
+                    if (m_client->isTextTranslation(m_preferences.modelId)) {
+                        // Requests waiting in the provider queue must not continue spending
+                        // quota after this job is throttled. Retry preserves completed units.
+                        const auto requests = std::exchange(m_requests, {});
+                        for (auto it = requests.cbegin(); it != requests.cend(); ++it) {
+                            m_client->cancel(it.value());
+                            m_units[it.key()].state = State::Failed;
+                        }
+                    }
                     for (auto& pending : m_units)
                         if (pending.state == State::Idle)
                             pending.state = State::Failed;

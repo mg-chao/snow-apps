@@ -52,6 +52,8 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
             application.processEvents();
         }
         require(field.pageId == colorPageId, "color settings use the same interface page");
+        page->reveal({field.pageId, field.sectionId, field.id});
+        application.processEvents();
         auto* row = page->findChild<QWidget*>(
             settings::generatedObjectName(QStringLiteral("settings-item"), field.id));
         auto* picker = row ? row->findChild<adqt::widgets::AdColorPicker*>() : nullptr;

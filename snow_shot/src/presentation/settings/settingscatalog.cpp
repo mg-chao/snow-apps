@@ -783,7 +783,7 @@ SettingsItemDefinition screenshotImageFormatItem() {
         QStringLiteral("screenshot-output.image-format"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Image format"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Choose the format used for automatically saved screenshot files"),
+                          "Choose the format used for automatically saved image files"),
         QStringLiteral("screenshot/image_format"), SettingsSelectBinding::ScreenshotImageFormat,
         {{QStringLiteral("png"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "PNG"))},
          {QStringLiteral("jpeg"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "JPEG"))},
@@ -813,8 +813,7 @@ SettingsItemDefinition screenshotImageQualityItem() {
         QStringLiteral("screenshot-output.image-quality"),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image quality")),
         settingsText(QT_TRANSLATE_NOOP(
-            "SettingsCatalog",
-            "Set image quality for screenshot files saved outside the Snow Shot dialog")),
+            "SettingsCatalog", "Set quality for image files saved outside the Snow Shot dialog")),
         {},
         QStringLiteral("screenshot/image_quality"),
         SettingsSliderDefinition{SettingsSliderBinding::ScreenshotImageQuality,
@@ -838,7 +837,7 @@ SettingsItemDefinition screenshotSaveAsFileDialogItem() {
     return fixedSelectItem(
         QStringLiteral("screenshot.save-as-file-dialog"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Save as file dialog"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Choose the dialog used for manual screenshot saves"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Choose the dialog used for manual image saves"),
         QStringLiteral("screenshot/save_as_file_dialog"),
         SettingsSelectBinding::ScreenshotSaveAsFileDialog,
         {{QStringLiteral("system"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "System"))},
@@ -851,7 +850,7 @@ SettingsItemDefinition screenshotAutoSaveAfterCopyItem() {
         QStringLiteral("screenshot.auto-save-after-copy"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Auto save after copy"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "When copying a screenshot image to the clipboard, also save it in the "
+                          "When copying an image to the clipboard, also save it in the "
                           "selected image format and save directory"),
         QStringLiteral("screenshot/auto_save_after_copy"),
         SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy);
@@ -862,7 +861,7 @@ SettingsItemDefinition screenshotCopyFileItem() {
         QStringLiteral("screenshot.copy-image-file-to-clipboard"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Copy image file to clipboard"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Write the screenshot to a file and copy that file to the clipboard"),
+                          "Write the image to a file and copy that file to the clipboard"),
         QStringLiteral("screenshot/copy_image_file_to_clipboard"),
         SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard);
 }
@@ -899,16 +898,16 @@ QVector<SettingsItemDefinition> screenshotOutputItems() {
                           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Landscape A4"))}}),
         textFormatItem(
             QStringLiteral("screenshot-output.manual-filename-format"),
-            QT_TRANSLATE_NOOP("SettingsCatalog", "Manual save screenshot filename format"),
+            QT_TRANSLATE_NOOP("SettingsCatalog", "Manual save image filename format"),
             QT_TRANSLATE_NOOP("SettingsCatalog",
-                              "Set the generated filename used when saving a screenshot as a file"),
+                              "Set the generated filename used when saving an image as a file"),
             QStringLiteral("screenshot/manual_save_filename_format"),
             SettingsTextBinding::ScreenshotManualFilenameFormat),
         textFormatItem(
             QStringLiteral("screenshot-output.auto-filename-format"),
-            QT_TRANSLATE_NOOP("SettingsCatalog", "Auto-save screenshot filename format"),
+            QT_TRANSLATE_NOOP("SettingsCatalog", "Auto-save image filename format"),
             QT_TRANSLATE_NOOP("SettingsCatalog",
-                              "Set the generated filename used by automatic screenshot file saves"),
+                              "Set the generated filename used by automatic image file saves"),
             QStringLiteral("screenshot/auto_save_filename_format"),
             SettingsTextBinding::ScreenshotAutoFilenameFormat),
     };
@@ -2352,9 +2351,10 @@ QVector<SettingsPageDefinition> builtInPages() {
             {
                 {
                     QStringLiteral("screenshots"),
-                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshots")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image Export")),
                     settingsText(QT_TRANSLATE_NOOP(
-                        "SettingsCatalog", "Screenshot output locations, formats, and filenames")),
+                        "SettingsCatalog",
+                        "Shared image export settings for screenshot and pin-to-screen windows")),
                     SettingsSectionReset::ScreenshotOutput,
                     screenshotOutputItems(),
                 },
@@ -2518,8 +2518,8 @@ QVector<SettingsPageDefinition> builtInPages() {
             QStringLiteral("api-configuration"),
             QStringLiteral("/settings/apiConfiguration"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Configuration")),
-            settingsText(
-                QT_TRANSLATE_NOOP("SettingsCatalog", "Configure custom AI model connections")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog", "Configure custom AI models and text translation services")),
             {{QStringLiteral("ai-model"),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AI Model")),
               settingsText(QT_TRANSLATE_NOOP(
@@ -2534,7 +2534,19 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Key")),
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Vision Support"))},
                 QStringLiteral("api_configuration/custom_models"),
-                SettingsCustomDefinition{SettingsCustomRenderer::CustomAiModels}}}}},
+                SettingsCustomDefinition{SettingsCustomRenderer::CustomAiModels}}}},
+             {QStringLiteral("text-translation"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text Translation")),
+              settingsText(QT_TRANSLATE_NOOP(
+                  "SettingsCatalog", "Custom DeepL, Baidu, and Youdao-compatible services")),
+              SettingsSectionReset::TextTranslationConfigurations,
+              {{QStringLiteral("api.text-translation"),
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Configurations")),
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                               "Custom translation endpoints and concurrency")),
+                {},
+                QStringLiteral("api_configuration/text_translation"),
+                SettingsCustomDefinition{SettingsCustomRenderer::TextTranslationConfigurations}}}}},
         },
         {
             QStringLiteral("extended-features"),
@@ -3979,6 +3991,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     storage::ConfigurationValueKind expectedKind =
                         storage::ConfigurationValueKind::Structured;
                     switch (custom->renderer) {
+                    case SettingsCustomRenderer::TextTranslationConfigurations:
+                        rendererSupported = true;
+                        expectedKey = QStringLiteral("api_configuration/text_translation");
+                        break;
                     case SettingsCustomRenderer::CustomAiModels:
                         rendererSupported = true;
                         expectedKey = QStringLiteral("api_configuration/custom_models");

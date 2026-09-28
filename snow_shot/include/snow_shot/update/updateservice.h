@@ -27,10 +27,11 @@ struct UpdateStatus {
     QString error;
     qint64 received = 0;
     qint64 total = 0;
+    QUrl downloadUrl = {};
 };
 
 // Windows delegates installation to the updater helper. macOS checks versions over HTTPS
-// and leaves package downloads and installation to the official website.
+// and leaves package downloads and installation to the website or GitHub Releases.
 class UpdateService final : public QObject {
     Q_OBJECT
   public:
@@ -44,6 +45,9 @@ class UpdateService final : public QObject {
         std::chrono::milliseconds automaticCheckInterval = std::chrono::hours(24);
         // macOS check transport; overrides also support deterministic local-server tests.
         QString installedVersion;
+        // Production discovery endpoint; loopback overrides require allowLocalHttp.
+        QUrl githubApiUrl =
+            QUrl(QStringLiteral("https://api.github.com/repos/mg-chao/snow-apps/releases"));
         std::chrono::milliseconds requestTimeout = std::chrono::seconds(30);
     };
 

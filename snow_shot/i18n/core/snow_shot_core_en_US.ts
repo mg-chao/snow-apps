@@ -86,6 +86,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Discussion and support · Group No. %1</translation>
         </message>
         <message>
+            <source>Download from GitHub</source>
+            <translation>Download from GitHub</translation>
+        </message>
+        <message>
             <source>Download from website</source>
             <translation>Download from website</translation>
         </message>
@@ -596,8 +600,28 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>The model returned no content</translation>
         </message>
         <message>
+            <source>The text is too large to translate.</source>
+            <translation>The text is too large to translate.</translation>
+        </message>
+        <message>
+            <source>The translation response is too large.</source>
+            <translation>The translation response is too large.</translation>
+        </message>
+        <message>
+            <source>This service does not support the selected language combination.</source>
+            <translation>This service does not support the selected language combination.</translation>
+        </message>
+        <message>
             <source>Translation failed</source>
             <translation>Translation failed</translation>
+        </message>
+        <message>
+            <source>Translation request timed out.</source>
+            <translation>Translation request timed out.</translation>
+        </message>
+        <message>
+            <source>Translation service request failed (HTTP %1, code %2).</source>
+            <translation>Translation service request failed (HTTP %1, code %2).</translation>
         </message>
         <message>
             <source>Translation service response is too large</source>

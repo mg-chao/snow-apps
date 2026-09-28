@@ -849,6 +849,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/sectionheaderwidget.h
     include/snow_shot/presentation/components/screenshothistorypagewidget.h
     include/snow_shot/presentation/components/emptystateicon.h
+    include/snow_shot/presentation/components/texttranslationsettingswidget.h
     include/snow_shot/presentation/components/customaimodelssettingswidget.h
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
@@ -879,6 +880,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/pinnedwindowmanagementpagewidget.cpp
     src/presentation/services/screenshotclipboardcontent.cpp
     src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
+    src/presentation/components/texttranslationsettingswidget.cpp
     src/presentation/components/customaimodelssettingswidget.cpp
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
@@ -1747,6 +1749,19 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-text-translation-settings-tests tests/text_translation_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-text-translation-settings-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets Qt6::Network)
+    snow_shot_add_translations(snow-shot-text-translation-settings-tests)
+    snow_shot_import_offscreen_platform(snow-shot-text-translation-settings-tests)
+    add_test(NAME snow-shot-text-translation-settings-tests COMMAND snow-shot-text-translation-settings-tests -platform offscreen)
+    set_tests_properties(snow-shot-text-translation-settings-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+
+    add_executable(snow-shot-text-translation-tests tests/text_translation_tests.cpp)
+    target_link_libraries(snow-shot-text-translation-tests PRIVATE snow_shot_translation)
+    add_test(NAME snow-shot-text-translation-tests COMMAND snow-shot-text-translation-tests)
+    set_tests_properties(snow-shot-text-translation-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+
     add_executable(snow-shot-custom-ai-models-tests tests/custom_ai_models_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
     target_link_libraries(snow-shot-custom-ai-models-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets Qt6::Network)
@@ -2199,6 +2214,19 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     snow_shot_import_offscreen_platform(snow-shot-settings-color-commit-tests)
+
+    add_executable(snow-shot-settings-page-loading-tests
+        tests/settings_page_loading_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-settings-page-loading-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-settings-page-loading-tests)
+    add_test(NAME snow-shot-settings-page-loading-tests
+        COMMAND snow-shot-settings-page-loading-tests)
+    set_tests_properties(snow-shot-settings-page-loading-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-screen-recording-shortcut-settings-tests
         tests/screen_recording_shortcut_settings_tests.cpp
@@ -3336,6 +3364,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-scrolling-overlay-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --scrolling-overlay -platform offscreen)
+    if(WIN32)
+        add_test(NAME snow-shot-scrolling-overlay-native-tests
+            COMMAND snow-shot-screenshot-canvas-renderer-tests --scrolling-overlay -platform windows)
+        set_tests_properties(snow-shot-scrolling-overlay-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT "QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     add_test(NAME snow-shot-overlay-safe-area-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-safe-area -platform offscreen)
     add_test(NAME snow-shot-overlay-boundary-input-tests
@@ -4294,6 +4330,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-recognition-save-tests
         COMMAND snow-shot-pinned-window-tests --recognition-save-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-recognition-save-tests PROPERTIES LABELS "unit" TIMEOUT 90)
+    add_test(NAME snow-shot-pinned-shared-image-export-tests
+        COMMAND snow-shot-pinned-window-tests --shared-image-export-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-shared-image-export-tests PROPERTIES
+        LABELS "unit" TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-opacity-export-tests
         COMMAND snow-shot-pinned-window-tests --opacity-export-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-opacity-export-tests PROPERTIES
@@ -6238,6 +6279,13 @@ if(APPLE AND SNOW_SHOT_BUILD_BENCHMARKS)
 endif()
 
 if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-settings-page-performance-benchmark
+        tests/settings_page_performance_benchmark.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-settings-page-performance-benchmark PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-settings-page-performance-benchmark)
+
     add_executable(snow-shot-pinned-window-management-performance-benchmark
         tests/pinned_window_management_performance_benchmark.cpp)
     target_link_libraries(snow-shot-pinned-window-management-performance-benchmark PRIVATE
@@ -7721,6 +7769,11 @@ endif()
 get_property(_region_switcher_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_target IN LISTS _region_switcher_targets)
     get_target_property(_sources ${_target} SOURCES)
+    if(WIN32 AND _sources MATCHES "screenshotoverlaywindow.cpp" AND
+       NOT _sources MATCHES "src/platform/windows/windowchrome.cpp")
+        target_sources(${_target} PRIVATE src/platform/windows/windowchrome.cpp)
+        target_link_libraries(${_target} PRIVATE dwmapi user32)
+    endif()
     if(NOT "${_target}" STREQUAL "snow_shot" AND
        _sources MATCHES "screenshotoverlaywindow.cpp" AND NOT _sources MATCHES "snowshoticons.cpp")
         target_sources(${_target} PRIVATE src/presentation/components/icons/snowshoticons.cpp)

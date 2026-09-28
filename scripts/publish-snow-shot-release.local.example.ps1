@@ -2,6 +2,9 @@
 [CmdletBinding()]
 param([ValidateSet('Publish', 'Verify', 'Rollback')][string]$Operation = 'Publish', [switch]$SkipBuild, [switch]$AuditOnly, [switch]$WhatIf)
 $releaseSettings = @{
+    Destination = 'GitHub'
+    GitHubRepository = 'mg-chao/snow-apps'
+    # Website connection settings are required only for Destination Website or Both.
     ServerHost = 'YOUR_SSH_HOST'
     ServerUser = 'YOUR_SSH_USER'
     IdentityFile = 'C:/private/ssh-key'

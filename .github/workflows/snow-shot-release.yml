@@ -91,6 +91,11 @@ jobs:
         run: |
           python scripts/test-snow-shot-publisher.py
           if ($LASTEXITCODE -ne 0) { throw "Publisher tests failed." }
+          & scripts/test-snow-shot-github-release.ps1
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib service::tests
+          if ($LASTEXITCODE -ne 0) { throw "Updater fallback tests failed." }
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib github::tests
+          if ($LASTEXITCODE -ne 0) { throw "GitHub transport tests failed." }
           & scripts/test-snow-shot-ocr-release-runtime.ps1
           & scripts/test-snow-shot-release-symbols.ps1 -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
           & scripts/test-snow-shot-installer.ps1
@@ -99,9 +104,9 @@ jobs:
           $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
           cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
           if ($LASTEXITCODE -ne 0) { throw "Updater test configuration failed." }
-          cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4
+          cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-adapter-tests snow-shot-macos-update-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "Updater test build failed." }
-          ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-update-(tests|about-tests|settings-tests)$' --output-on-failure
+          ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-(update-(adapter-tests|about-tests|settings-tests)|macos-update-tests)$' --output-on-failure
           if ($LASTEXITCODE -ne 0) { throw "Updater tests failed." }
           & scripts/test-snow-shot-update-helper.ps1
 
@@ -140,7 +145,9 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Create draft prerelease with generated changelog
+      # Local publisher signs latest-version.json, verifies all assets, and publishes the draft.
+      # CI never receives the private release signing key.
+      - name: Create draft release for local signing and finalization
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

@@ -597,6 +597,13 @@ class ScreenshotPinnedWindowTestAccess {
     static void copyCurrentViewport(ScreenshotPinnedWindow& window) {
         window.copyCurrentViewport();
     }
+    static void copyRenderedImage(ScreenshotPinnedWindow& window,
+                                  std::shared_ptr<ScreenshotExportArtifact> artifact) {
+        window.copyRenderedImage(std::move(artifact));
+    }
+    static void copyEditToolbarContent(ScreenshotPinnedWindow& window) {
+        window.copyEditToolbarContent();
+    }
     static void copyOriginalContent(ScreenshotPinnedWindow& window) {
         window.copyOriginalContent();
     }
@@ -9918,6 +9925,198 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
     require(processUntilDeleted(qrWindow, 2000), "close QR pin");
 }
 
+// The Windows image service publishes native PNG even with Qt's offscreen plugin.
+QImage exportedClipboardImage() {
+#ifdef Q_OS_WIN
+    if (!OpenClipboard(nullptr))
+        return {};
+    const auto close = qScopeGuard([] { CloseClipboard(); });
+    const auto handle = static_cast<HGLOBAL>(GetClipboardData(RegisterClipboardFormatW(L"PNG")));
+    const auto* data = handle ? static_cast<const char*>(GlobalLock(handle)) : nullptr;
+    if (!data)
+        return {};
+    const QByteArray bytes(data, static_cast<qsizetype>(GlobalSize(handle)));
+    GlobalUnlock(handle);
+    return QImage::fromData(bytes, "PNG");
+#else
+    return QApplication::clipboard()->image();
+#endif
+}
+
+void pinnedSharedImageExportOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    IsolatedPinnedStorage storage;
+    QTemporaryDir directory;
+    require(directory.isValid(), "image export directory");
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(settings.setImageSaveDirectory(directory.path()) &&
+                settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setCompressionLevel(QStringLiteral("high")),
+            "configure shared image export");
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!predicate() && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(predicate(), message);
+    };
+    const auto normalized = [](const QImage& image) {
+        return image.convertToFormat(QImage::Format_ARGB32);
+    };
+    QImage sentinel(3, 3, QImage::Format_ARGB32);
+    sentinel.fill(Qt::magenta);
+    const auto seedClipboard = [&] {
+        require(ScreenshotClipboardService::publishImage(QApplication::clipboard(), sentinel),
+                "seed image clipboard");
+        QApplication::clipboard()->setText(QStringLiteral("unchanged"));
+    };
+    ScreenshotPinnedWindow window;
+    const auto config = cachedOcrPinConfig(nullptr);
+    Access::restoreOffscreen(window, config);
+    Access::setGeneralOpacity(window, 75);
+    for (bool autoSave : {false, true}) {
+        for (bool copyFile : {false, true}) {
+            const QString name = QStringLiteral("export-%1-%2").arg(autoSave).arg(copyFile);
+            require(settings.setAutoSaveAfterCopy(autoSave) &&
+                        settings.setCopyImageFileToClipboard(copyFile) &&
+                        settings.setAutoSaveFilenameFormat(name),
+                    "configure copy option combination");
+            seedClipboard();
+            Access::copyEditToolbarContent(window);
+            const auto artifact = Access::exportArtifact(window);
+            require(artifact != nullptr, "toolbar copy starts an image export");
+            QImage rendered;
+            require(artifact->requestImage(&window,
+                                           [&](ScreenshotExportImageResult result) {
+                                               require(result.succeeded(), "render copy snapshot");
+                                               rendered = std::move(result.image);
+                                           }),
+                    "request rendered copy snapshot");
+            wait([&] { return !Access::exportArtifact(window) && !rendered.isNull(); },
+                 "copy and automatic save both complete");
+            const QString path = directory.filePath(name + QStringLiteral(".png"));
+            require(QFileInfo::exists(path) == (autoSave || copyFile),
+                    "only enabled copy export options write a file");
+            if (autoSave || copyFile) {
+                require(normalized(QImage(path)) == normalized(rendered),
+                        "automatic save contains the same rendered viewport including opacity");
+                require(QDir(directory.path())
+                                .entryList({name + QStringLiteral("*")}, QDir::Files)
+                                .size() == 1,
+                        "combined options save exactly once");
+            }
+            if (copyFile) {
+                require(QApplication::clipboard()->mimeData()->urls() ==
+                            QList<QUrl>{QUrl::fromLocalFile(path)},
+                        "file copy publishes the saved file URL");
+            } else {
+                wait([&] { return normalized(exportedClipboardImage()) == normalized(rendered); },
+                     "image copy publishes the rendered viewport");
+            }
+        }
+    }
+
+    // A component longer than the filesystem limit fails in every fallback directory.
+    require(settings.setAutoSaveFilenameFormat(QString(300, QLatin1Char('x'))) &&
+                settings.setAutoSaveAfterCopy(true),
+            "configure deterministic save failure");
+    for (bool copyFile : {false, true}) {
+        require(settings.setCopyImageFileToClipboard(copyFile), "configure failing copy mode");
+        seedClipboard();
+        Access::copyCurrentViewport(window);
+        wait([&] { return !Access::exportArtifact(window); }, "failed save settles export");
+        if (copyFile) {
+            require(QApplication::clipboard()->text() == QStringLiteral("unchanged"),
+                    "failed file copy leaves clipboard untouched");
+        } else {
+            require(!exportedClipboardImage().isNull() &&
+                        exportedClipboardImage().size() != sentinel.size(),
+                    "automatic save failure still publishes image");
+        }
+    }
+
+    require(settings.setAutoSaveFilenameFormat(QStringLiteral("original-must-not-save")),
+            "configure original content exclusion");
+    Access::copyOriginalContent(window);
+    wait(
+        [&] {
+            return normalized(exportedClipboardImage()) ==
+                   normalized(config.imageSource.materializedImage);
+        },
+        "original image copy ignores shared export switches and opacity");
+    require(!QFileInfo::exists(directory.filePath(QStringLiteral("original-must-not-save.png"))),
+            "original content does not auto save");
+    auto* recognition = Access::recognitionOffscreen(window, config);
+    require(recognition && recognition->active(), "activate recognition copy exclusion");
+    Access::copyEditToolbarContent(window);
+    require(QApplication::clipboard()->text() == QStringLiteral("Saved OCR") &&
+                !Access::exportArtifact(window),
+            "recognition copy remains text without image export");
+
+    // Hold materialization so replacement and closure precede every async result.
+    const auto deferredArtifact = [](std::function<void(QImage)>& deliver) {
+        return std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImageLoader(
+            [&deliver](QObject*, std::function<void(QImage)> ready) {
+                deliver = std::move(ready);
+                return true;
+            }));
+    };
+    require(settings.setImageFormat(QStringLiteral("bmp")) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("snapshot")),
+            "configure non-default format before deferred export");
+    std::function<void(QImage)> deliverSnapshot;
+    Access::copyRenderedImage(window, deferredArtifact(deliverSnapshot));
+    wait([&] { return static_cast<bool>(deliverSnapshot); }, "snapshot copy starts");
+    require(settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("later-settings")) &&
+                settings.setCopyImageFileToClipboard(false),
+            "change shared settings while materialization is pending");
+    deliverSnapshot(config.imageSource.materializedImage);
+    wait([&] { return !Access::exportArtifact(window); }, "snapshot copy completes");
+    const QString snapshotPath = directory.filePath(QStringLiteral("snapshot.bmp"));
+    QFile snapshotFile(snapshotPath);
+    require(snapshotFile.open(QIODevice::ReadOnly) && snapshotFile.read(2) == QByteArray("BM") &&
+                QImage(snapshotPath).size() == config.imageSource.materializedImage.size() &&
+                QApplication::clipboard()->mimeData()->urls() ==
+                    QList<QUrl>{QUrl::fromLocalFile(snapshotPath)},
+            "file copy snapshots format, filename, and clipboard mode at invocation");
+    snapshotFile.close();
+    require(settings.setCopyImageFileToClipboard(true), "restore file-copy mode");
+    require(settings.setAutoSaveFilenameFormat(QStringLiteral("cancelled")), "cancel filename");
+    seedClipboard();
+    std::function<void(QImage)> deliver;
+    auto cancelled = deferredArtifact(deliver);
+    Access::copyRenderedImage(window, cancelled);
+    wait([&] { return static_cast<bool>(deliver); }, "deferred copy starts");
+    Access::copyOriginalContent(window);
+    require(cancelled->isCancelled(), "replacement cancels the pending export");
+    deliver(config.imageSource.materializedImage);
+    wait(
+        [&] {
+            return normalized(exportedClipboardImage()) ==
+                   normalized(config.imageSource.materializedImage);
+        },
+        "replacement copy completes");
+    require(!QFileInfo::exists(directory.filePath(QStringLiteral("cancelled.png"))),
+            "cancelled copy cannot save a late result");
+
+    auto closing = std::make_unique<ScreenshotPinnedWindow>();
+    Access::restoreOffscreen(*closing, config);
+    std::function<void(QImage)> deliverClosed;
+    auto closed = deferredArtifact(deliverClosed);
+    seedClipboard();
+    Access::copyRenderedImage(*closing, closed);
+    wait([&] { return static_cast<bool>(deliverClosed); }, "closing copy starts");
+    closing->close();
+    require(closed->isCancelled(), "window closure cancels pending copy");
+    closing.reset();
+    deliverClosed(config.imageSource.materializedImage);
+    waitForUi(20);
+    require(QApplication::clipboard()->text() == QStringLiteral("unchanged") &&
+                !QFileInfo::exists(directory.filePath(QStringLiteral("cancelled.png"))),
+            "late closed-window result cannot publish or save");
+}
+
 void pinnedOpacityAppliesToRenderedExportsOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
 
@@ -12498,6 +12697,10 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--recognition-save-only"))) {
             pinnedRecognitionSaveSnapshotsAndRoutesOffscreen();
             pinnedTextRecognitionSavesSourceFilesOffscreen();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--shared-image-export-only"))) {
+            pinnedSharedImageExportOffscreen();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--opacity-export-only"))) {

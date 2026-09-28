@@ -1,6 +1,7 @@
 #include "snow_shot/globalmouseactivationkeys.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
 
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
@@ -113,6 +114,8 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 }
 
 const QVector<ConfigurationSchemaEntry> kRawEntries = {
+    {QStringLiteral("api_configuration/text_translation"), QJsonArray(),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("api_configuration/custom_models"), QJsonArray(),
      ConfigurationValueKind::Structured},
     {QStringLiteral("storage/schema_version"), 3, ConfigurationValueKind::Integer,
@@ -1803,6 +1806,12 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         bool valid = false;
         const auto models = customAiModelsFromJson(value, &valid);
         const auto normalized = customAiModelsToJson(models);
+        return {normalized, valid, normalized != value};
+    }
+    if (key == QStringLiteral("api_configuration/text_translation")) {
+        bool valid = false;
+        const auto models = textTranslationConfigurationsFromJson(value, &valid);
+        const auto normalized = textTranslationConfigurationsToJson(models);
         return {normalized, valid, normalized != value};
     }
     if (key == QStringLiteral("interface/theme_mode")) {

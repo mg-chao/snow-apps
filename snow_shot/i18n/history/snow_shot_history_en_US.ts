@@ -611,6 +611,10 @@
             <translation>Show main interface</translation>
         </message>
         <message>
+            <source>The image could not be saved automatically: %1</source>
+            <translation>The image could not be saved automatically: %1</translation>
+        </message>
+        <message>
             <source>The new content could not be loaded</source>
             <translation>The new content could not be loaded</translation>
         </message>

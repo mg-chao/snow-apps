@@ -74,6 +74,15 @@ if(SNOW_SHOT_BUILD_UPDATE_TESTS)
         add_executable(snow-shot-update-adapter-tests tests/macos_update_tests.cpp)
         target_link_libraries(snow-shot-update-adapter-tests PRIVATE Qt6::Network)
     else()
+        # The macOS version-check service uses portable Qt networking. Exercise it on Windows
+        # as well, without linking the Windows helper adapter into the same executable.
+        add_executable(snow-shot-macos-update-tests tests/macos_update_tests.cpp
+            src/update/macosupdateservice.cpp include/snow_shot/update/updateservice.h)
+        target_include_directories(snow-shot-macos-update-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-macos-update-tests PRIVATE Qt6::Core Qt6::Network)
+        target_compile_definitions(snow-shot-macos-update-tests PRIVATE SNOW_SHOT_VERSION="${SNOW_SHOT_VERSION}")
+        add_test(NAME snow-shot-macos-update-tests COMMAND snow-shot-macos-update-tests)
+        set_tests_properties(snow-shot-macos-update-tests PROPERTIES LABELS "unit" TIMEOUT 30)
         add_executable(snow-shot-update-adapter-tests tests/update_adapter_tests.cpp)
     endif()
     target_link_libraries(snow-shot-update-adapter-tests PRIVATE snow_shot_updates Qt6::Core)

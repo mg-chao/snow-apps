@@ -1,5 +1,6 @@
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
 
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/storagelogging.h"
@@ -32,7 +33,7 @@ struct MaterializedConfiguration {
     QMap<QString, QJsonValue> values;
     QJsonObject document;
     bool dirty = false;
-    bool customModelsRepaired = false;
+    bool customConfigurationsRepaired = false;
 };
 
 QJsonValue valueAtPath(const QJsonObject& root, const QString& path, bool* present = nullptr) {
@@ -131,11 +132,16 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
                 migratedDestroyShortcut = true;
             }
         }
-        if (entry.key == kCustomModelsKey) {
+        if (entry.key == kCustomModelsKey ||
+            entry.key == QStringLiteral("api_configuration/text_translation")) {
             bool valid = false;
-            const QJsonValue canonical = customAiModelsToJson(customAiModelsFromJson(raw, &valid));
+            const QJsonValue canonical =
+                entry.key == kCustomModelsKey
+                    ? customAiModelsToJson(customAiModelsFromJson(raw, &valid))
+                    : textTranslationConfigurationsToJson(
+                          textTranslationConfigurationsFromJson(raw, &valid));
             result.values.insert(entry.key, canonical);
-            result.customModelsRepaired = result.customModelsRepaired || !valid;
+            result.customConfigurationsRepaired = result.customConfigurationsRepaired || !valid;
             if (replaceAll) {
                 insertPath(&result.document, entry.key, canonical);
             }
@@ -366,8 +372,8 @@ bool ConfigurationStore::applySnapshot(const QMap<QString, QJsonValue>& values, 
         values, ConfigurationSchema::completeDefaultDocument(), schemaVersion,
         ConfigurationCompatibility::Current, ConfigurationOverlayPolicy::ReplaceAll);
     const QString customModelsError =
-        materialized.customModelsRepaired
-            ? tr("Some custom AI model configurations are invalid and were ignored")
+        materialized.customConfigurationsRepaired
+            ? tr("Some custom API configurations are invalid and were ignored")
             : QString();
 
     QVector<QPair<QString, QJsonValue>> changed;
@@ -512,8 +518,8 @@ void ConfigurationStore::load() {
                 loaded = materialized.values;
                 document = materialized.document;
                 dirty = materialized.dirty;
-                if (materialized.customModelsRepaired) {
-                    error = tr("Some custom AI model configurations are invalid and were ignored");
+                if (materialized.customConfigurationsRepaired) {
+                    error = tr("Some custom API configurations are invalid and were ignored");
                     qCWarning(storageLog) << error;
                 }
             }

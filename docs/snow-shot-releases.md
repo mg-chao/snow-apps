@@ -15,6 +15,72 @@ The first updater release is `1.0.0-beta`. Binaries without an updater require o
 installation/replacement. This release introduces no user-data migration, delta patches,
 additional channels, macOS in-app installation, or OCR model-host deployment.
 
+## GitHub fallback and local publication
+
+Clients try the configured official website first. Failed HTTP requests, timeouts, and
+invalid metadata fall back to published stable `v<version>_snow-shot` releases in
+`mg-chao/snow-apps`. Discovery selects the highest stable SemVer and is bounded to ten
+pages of 100 releases. A valid website response saying there is no update does not query
+GitHub. Drafts and prereleases are never offered by the fallback.
+
+Windows requires the release asset `latest-version.json`, authenticated with the existing
+embedded RSA keys. GitHub transports the same schema-1 envelope; its version must match
+the tag. Signed website package identities map to versioned GitHub assets, retaining all
+signed sizes, hashes, inventories, and downgrade protections. A failed website package
+transfer retries against the exact accepted version on GitHub. Resume validators are
+bound to the source URL and partial downloads restart when changing sources. The helper
+restores authenticated cached release state between operation-scoped processes.
+
+macOS requires a DMG and checksum for its architecture before announcing a GitHub update.
+About then offers **Download from GitHub**, opening the exact release page. It still does
+not install updates in-app. Intel clients require separately provided x64 assets; the
+existing remote Mac publisher produces arm64 only.
+
+The tag workflow continues to create drafts and never receives the private signing key.
+Finalize through the local publisher, using the same audited bytes as any existing draft:
+
+```powershell
+& scripts/publish-snow-shot-release.ps1 -Destination GitHub `
+    -SigningKeyPath C:/private/snow-shot-release/private.pem -SkipBuild
+& scripts/publish-snow-shot-release.ps1 -Destination GitHub -Operation Verify
+```
+
+`-Destination` accepts `Website` (the compatibility default), `GitHub`, or `Both`.
+The checked-in local wrapper example selects `GitHub`. `-GitHubRepository` defaults to
+`mg-chao/snow-apps`; changing the publication repository does not redirect shipped clients.
+Use an authenticated GitHub CLI with repository Contents write permission. Push the
+matching tag first: its commit must match the local source checkout. Avoid rebuilding
+an existing version with different bytes; download the draft's versioned artifacts into
+the build directory for `-SkipBuild`, or publish a new version. The local compiled updater
+is still required to audit the complete staged release.
+
+GitHub-only publication and auditing require no website settings or website access.
+They still validate the immutable OCR runtime and, when configured, use the Mac build host.
+The publisher signs locally, audits before upload, verifies all uploaded bytes, then
+publishes the draft. Stable versions become latest; beta versions remain prereleases.
+Identical retries reuse the existing authenticated envelope and assets; conflicting
+assets or incomplete already-public releases fail without overwrite. `-AuditOnly` performs
+no upload/publication, and `-WhatIf` only lists the intended assets. Existing ignored local
+wrappers are not changed automatically; add `Destination = 'GitHub'` to opt in.
+
+`Both` publishes GitHub before starting website deployment. Website failure does not undo
+GitHub publication. `Verify` checks signed Windows payloads and any macOS DMG/checksum
+pairs. GitHub rollback is unsupported; select `Website` explicitly for website rollback,
+or publish a higher corrective version. Homebrew and WinGet publication still follow
+their existing release-event workflows. When macOS is configured, its versioned DMG and
+checksum are included before the release becomes public.
+
+Legacy GitHub releases without signed metadata cannot drive Windows automatic updates.
+Clients predating this fallback require a manual upgrade while the website is unavailable.
+No production publication is needed to run the focused tests:
+
+```powershell
+& scripts/test-snow-shot-github-release.ps1
+cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib service::tests
+cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib github::tests
+ctest --preset test-windows-msvc-debug -R '^snow-shot-(macos-update|update-adapter|about-page)-tests$'
+```
+
 ## Release contract
 
 The Windows updater consumes `/latest-version.json`, not the unsigned text file. The root
@@ -486,7 +552,7 @@ settings restores the platform default. Automatic checks start 30 seconds after 
 repeat 24 hours after completion; manual checks remain available in About. Switching to manual
 stops the schedule and cancels an active background check.
 
-The macOS Qt service fetches `/latest-version.txt` from the configured API base URL over HTTPS,
+The macOS Qt service first fetches `/latest-version.txt` from the configured API base URL over HTTPS,
 respects the network proxy setting, limits responses to 4 KiB, and times out after 30 seconds.
 It compares strict SemVer precedence (including prereleases and ignoring build metadata).
 This website compatibility endpoint is unsigned; it only supplies version display text and
@@ -495,7 +561,7 @@ matching macOS installation packages before announcing a shared version on this 
 
 A newer version discovered automatically shows a system notification once per version per
 session. Clicking it opens About, where **Download from website** uses the configured official
-website URL. About retains the available version. Background failures stay quiet; manual
+website URL, or **Download from GitHub** opens the exact release page when the fallback supplied the update. About retains the available version. Background failures stay quiet; manual
 failures display a retry action.
 macOS does not build or bundle the Windows updater helper and never downloads or installs an
 update in-app. The Windows signed-metadata and installation flow is unchanged.

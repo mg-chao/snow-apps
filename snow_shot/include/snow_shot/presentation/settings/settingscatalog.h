@@ -328,6 +328,7 @@ enum class SettingsCustomRenderer {
     PermissionInputMonitoring,
     PermissionMicrophone,
     CustomAiModels,
+    TextTranslationConfigurations,
     StorageStatus,
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,
@@ -432,6 +433,7 @@ enum class SettingsSectionReset {
     TextRecognition,
     Translation,
     CustomAiModels,
+    TextTranslationConfigurations,
     ExtendedTranslation,
 };
 

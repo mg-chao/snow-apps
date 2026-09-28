@@ -148,9 +148,8 @@ void projectLinkSurfacesMatchStandardButtons() {
     for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
         manager.setThemeAppearance(appearance);
         flushEvents();
-        for (const char* name :
-             {"aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup2",
-              "aboutQqGroup3"}) {
+        for (const char* name : {"aboutWebsite", "aboutSourceCode", "aboutFeedback",
+                                 "aboutQqGroup2", "aboutQqGroup3"}) {
             auto* button = child<AdButton>(page, name);
             require(button->buttonStyle() == AdButton::ButtonStyle::Outline &&
                         button->accentRole() == AdButton::AccentRole::Neutral,
@@ -300,9 +299,9 @@ void largerTypeKeepsEveryActionReachable() {
     auto* artwork = child<QWidget>(page, "aboutArtwork");
     require(artwork->width() <= scroll->viewport()->width() && artwork->height() > 0,
             "artwork scales down to the available width with larger fonts");
-    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction",
-                             "aboutWebsite", "aboutSourceCode", "aboutFeedback", "aboutQqGroup2",
-                             "aboutQqGroup3"}) {
+    for (const char* name :
+         {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction", "aboutWebsite",
+          "aboutSourceCode", "aboutFeedback", "aboutQqGroup2", "aboutQqGroup3"}) {
         auto* button = child<QAbstractButton>(page, name);
         scroll->ensureWidgetVisible(button);
         flushEvents();
@@ -351,6 +350,14 @@ void updatePolicyAndUnavailableCopy() {
     action->click();
     require(opened == QList<QUrl>{QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
             "About opens configured website");
+    status.downloadUrl =
+        QUrl(QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"));
+    emit updates.statusChanged();
+    flushEvents();
+    require(action->text() == QStringLiteral("Download from GitHub"),
+            "About identifies GitHub fallback");
+    action->click();
+    require(opened.last() == status.downloadUrl, "About opens the exact fallback release");
 #else
     require(backend.selectValue(binding).toString() == QStringLiteral("download"),
             "automatic download is the default update policy");

@@ -55,6 +55,9 @@
 #include <private/qhighdpiscaling_p.h>
 #include <qpa/qplatformwindow.h>
 #include <QScreen>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 #ifdef Q_OS_MACOS
 #include "macos_native_input.h"
 #endif
@@ -629,16 +632,16 @@ void overlayReceivesDisplayBoundaryInput(bool native) {
                         sink.releases == QVector<QPointF>{end} && sink.lastMove == end &&
                         overlay.captureGeometry() == display,
                     "a drag from the screen corner must reach selection without resizing capture");
-                overlay.setInputPassThroughRect(QRect(0, 0, 40, 30));
+                overlay.setScrollingVisualHole(QRect(0, 0, 40, 30));
                 require(
                     !overlay.mask().contains(overlay.mapFromGlobal(display.topLeft())) &&
                         overlay.mask().contains(
                             overlay.mapFromGlobal(display.topLeft() + QPoint(40, 30))),
-                    "scrolling input holes must align with canvas coordinates inside the frame");
-                overlay.setInputPassThroughRect(QRect(QPoint(), display.size()));
+                    "scrolling visual holes must align with canvas coordinates inside the frame");
+                overlay.setScrollingVisualHole(QRect(QPoint(), display.size()));
                 require(overlay.scrollingDiagnostics().value(QStringLiteral("full_hole")).toBool(),
                         "scrolling must recognize a full display hole with native frame padding");
-                overlay.clearInputPassThroughRect();
+                overlay.clearScrollingVisualHole();
                 overlay.hide();
             }
             overlay.releaseNativeSurface();
@@ -3483,7 +3486,7 @@ void verticalOcrTextKeepsCjkGraphemesUprightAndSelectable() {
     canvas.setCustomRenderer(nullptr);
 }
 
-void scrollingModeClearsPassThroughMaskBeforeRestoringRenderer() {
+void scrollingModeClearsVisualMaskBeforeRestoringRenderer() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
     ScreenshotOverlayWindow overlay(eventSink, canvas);
@@ -3491,22 +3494,21 @@ void scrollingModeClearsPassThroughMaskBeforeRestoringRenderer() {
     overlay.show();
     QApplication::processEvents();
 
-    overlay.setInputPassThroughRect(QRect(20, 20, 40, 40));
-    require(!overlay.mask().isEmpty(),
-            "scrolling capture should install a selection pass-through mask");
+    overlay.setScrollingVisualHole(QRect(20, 20, 40, 40));
+    require(!overlay.mask().isEmpty(), "scrolling capture should install a selection visual mask");
     overlay.setScrollingCaptureMode(true);
     QApplication::processEvents();
     const auto partial = overlay.scrollingDiagnostics();
     require(!partial.value(QStringLiteral("full_hole")).toBool() &&
                 !partial.value(QStringLiteral("mask_empty")).toBool(),
-            "diagnostics distinguish a partial input hole with an applied mask");
-    overlay.setInputPassThroughRect(overlay.rect());
+            "diagnostics distinguish a partial visual hole with an applied mask");
+    overlay.setScrollingVisualHole(overlay.rect());
     const auto full = overlay.scrollingDiagnostics();
     require(full.value(QStringLiteral("full_hole")).toBool() &&
                 full.value(QStringLiteral("mask_empty")).toBool() &&
                 !full.value(QStringLiteral("thumbnail_visible")).toBool(),
             "diagnostics expose a full display hole with the mask cleared before preview");
-    overlay.setInputPassThroughRect(QRect(20, 20, 40, 40));
+    overlay.setScrollingVisualHole(QRect(20, 20, 40, 40));
 
     CanvasPaintObserver paintObserver(overlay);
     canvas->installEventFilter(&paintObserver);
@@ -3516,13 +3518,12 @@ void scrollingModeClearsPassThroughMaskBeforeRestoringRenderer() {
     require(paintObserver.sawPaint(),
             "restoring standard rendering should repaint the canvas immediately");
     require(paintObserver.maskWasEmpty(),
-            "the pass-through mask should be clear before standard rendering repaints");
-    require(overlay.mask().isEmpty(),
-            "leaving scrolling capture should clear the pass-through mask");
+            "the visual mask should be clear before standard rendering repaints");
+    require(overlay.mask().isEmpty(), "leaving scrolling capture should clear the visual mask");
     canvas->removeEventFilter(&paintObserver);
 }
 
-void scrollingThumbnailIsAnEmbeddedScreenshotWidget() {
+void scrollingThumbnailHasAnIndependentInputWindow() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
     ScreenshotOverlayWindow overlay(eventSink, canvas);
@@ -3535,12 +3536,13 @@ void scrollingThumbnailIsAnEmbeddedScreenshotWidget() {
     require(thumbnail != nullptr, "screenshot window should own the thumbnail widget");
     require(thumbnail->parentWidget() == &overlay,
             "thumbnail should be a direct child of the screenshot window");
-    require(!thumbnail->isWindow(), "thumbnail must not be a top-level window");
-    require(thumbnail->window() == &overlay,
-            "thumbnail should render on the screenshot window surface");
+    require(thumbnail->isWindow() && thumbnail->window() == thumbnail,
+            "thumbnail must own an input surface independent of the click-through overlay");
+    require(overlay.scrollingThumbnailWindow() == thumbnail,
+            "capture exclusion must use the persistent preview window");
 
     const QRect selection(8, 20, 20, 160);
-    overlay.setInputPassThroughRect(selection);
+    overlay.setScrollingVisualHole(selection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(selection);
 
@@ -3551,14 +3553,16 @@ void scrollingThumbnailIsAnEmbeddedScreenshotWidget() {
     QApplication::processEvents();
 
     require(thumbnail->isVisible(), "thumbnail should become visible after a frame");
-    require(overlay.rect().contains(thumbnail->geometry()),
-            "embedded thumbnail should stay within the screenshot window");
-    require(overlay.mask().contains(thumbnail->geometry().center()),
-            "window mask should keep an overlapping thumbnail interactive");
+    require(overlay.captureGeometry().contains(thumbnail->geometry()),
+            "thumbnail should stay within the screenshot display");
+    require(!thumbnail->windowFlags().testFlag(Qt::WindowTransparentForInput),
+            "thumbnail must remain interactive while the overlay passes input through");
     require(!overlay.mask().contains(QPoint(20, 100)),
-            "selection should remain pass-through outside the thumbnail");
-    require(!QApplication::topLevelWidgets().contains(thumbnail),
-            "thumbnail should not create another application window");
+            "selection should remain visually cut out beneath the independent thumbnail");
+    overlay.hide();
+    require(thumbnail->isHidden(), "hiding the overlay must also hide the preview");
+    overlay.show();
+    require(thumbnail->isVisible(), "showing an active session must restore its preview");
 
     overlay.setScrollingCaptureMode(false);
     require(thumbnail->isHidden(), "leaving scrolling mode should hide the thumbnail");
@@ -3579,7 +3583,7 @@ void scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits() {
     require(thumbnail != nullptr, "screenshot window should own the thumbnail widget");
 
     const QRect selection(8, 20, 164, 160);
-    overlay.setInputPassThroughRect(selection);
+    overlay.setScrollingVisualHole(selection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(selection);
 
@@ -3590,7 +3594,7 @@ void scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits() {
     QApplication::processEvents();
 
     require(thumbnail->isVisible(), "thumbnail should become visible after a frame");
-    require(overlay.rect().contains(thumbnail->geometry()),
+    require(overlay.captureGeometry().contains(thumbnail->geometry()),
             "thumbnail should stay within the display that hosts the capture selection");
 }
 
@@ -3607,7 +3611,7 @@ void scrollingThumbnailAlignsWithTopEdgeSelection() {
     require(thumbnail != nullptr, "screenshot window should own the thumbnail widget");
 
     const QRect selection(20, 0, 100, 160);
-    overlay.setInputPassThroughRect(selection);
+    overlay.setScrollingVisualHole(selection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(selection);
 
@@ -3617,7 +3621,7 @@ void scrollingThumbnailAlignsWithTopEdgeSelection() {
                                      ScreenshotScrollingStitchChange::Initial, 300);
     QApplication::processEvents();
 
-    require(thumbnail->geometry().top() == selection.top(),
+    require(thumbnail->geometry().top() == overlay.captureGeometry().top() + selection.top(),
             "a thumbnail beside a top-edge selection should align with its top edge");
 }
 
@@ -3799,7 +3803,7 @@ void stableScrollingGeometryDoesNotReapplyWindowMask() {
     QApplication::processEvents();
 
     const QRect selection(20, 20, 180, 180);
-    overlay.setInputPassThroughRect(selection);
+    overlay.setScrollingVisualHole(selection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(selection);
     QImage preview(128, 128, QImage::Format_RGBA8888);
@@ -3814,6 +3818,90 @@ void stableScrollingGeometryDoesNotReapplyWindowMask() {
     }
     require(overlay.windowMaskApplicationCountForTesting() == stableCount,
             "stable scrolling geometry should not reapply the native window mask");
+}
+
+void scrollingInputModeKeepsNativeSurfacesStable() {
+    class SurfaceObserver final : public QObject {
+      public:
+        int transitions = 0;
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::Show || event->type() == QEvent::Hide ||
+                event->type() == QEvent::WinIdChange) {
+                ++transitions;
+            }
+            return false;
+        }
+    };
+    NoopOverlayEventSink eventSink;
+    ScreenshotOverlayWindow overlay(eventSink, new SnowCanvasWidget);
+    overlay.setCaptureGeometry(QRect(60, 70, 300, 300));
+    overlay.show();
+    QApplication::processEvents();
+    const WId overlayId = overlay.winId();
+    SurfaceObserver overlayObserver;
+    overlay.installEventFilter(&overlayObserver);
+#ifdef Q_OS_WIN
+    const bool native = QGuiApplication::platformName() == QStringLiteral("windows");
+    const auto hwnd = reinterpret_cast<HWND>(overlayId);
+    const LONG_PTR initialStyle = native ? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+#endif
+    const QRect selection(20, 20, 180, 180);
+    overlay.setScrollingVisualHole(selection);
+    overlay.setScrollingCaptureMode(true);
+    overlay.beginScrollingThumbnail(selection);
+    QImage preview(128, 128, QImage::Format_RGBA8888);
+    preview.fill(Qt::blue);
+    overlay.updateScrollingThumbnail(preview, preview.size(),
+                                     ScreenshotScrollingStitchChange::Initial, 128);
+    QApplication::processEvents();
+    QWidget* thumbnail = overlay.scrollingThumbnailWindow();
+    const WId previewId = thumbnail->winId();
+    SurfaceObserver previewObserver;
+    thumbnail->installEventFilter(&previewObserver);
+    const quint64 masks = overlay.windowMaskApplicationCountForTesting();
+    for (int update = 0; update < 10; ++update) {
+        overlay.updateScrollingThumbnail(preview, preview.size(),
+                                         ScreenshotScrollingStitchChange::Replaced, 0);
+        QApplication::processEvents();
+    }
+    require(overlay.winId() == overlayId && thumbnail->winId() == previewId &&
+                overlayObserver.transitions == 0 && previewObserver.transitions == 0,
+            "scrolling must preserve native surfaces without hide/show cycles");
+    require(overlay.windowMaskApplicationCountForTesting() == masks,
+            "preview updates must not change the overlay's native region");
+#ifdef Q_OS_WIN
+    if (native) {
+        require(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) == (initialStyle | WS_EX_TRANSPARENT),
+                "scrolling must change only the existing overlay's native input transparency");
+        require((GetWindowLongPtrW(reinterpret_cast<HWND>(previewId), GWL_EXSTYLE) &
+                 WS_EX_TRANSPARENT) == 0,
+                "preview input must remain enabled independently of the mask");
+    }
+#endif
+    overlay.clearScrollingVisualHole();
+    require(overlay.mask().isEmpty() && thumbnail->isVisible(),
+            "clearing the visual hole must preserve the independent scrolling preview");
+#ifdef Q_OS_WIN
+    if (native) {
+        require(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) == (initialStyle | WS_EX_TRANSPARENT),
+                "whole-window input transparency must not depend on the visual hole");
+    }
+#endif
+    const QPoint previousPosition = thumbnail->pos();
+    overlay.move(overlay.pos() + QPoint(15, 20));
+    require(thumbnail->pos() == previousPosition + QPoint(15, 20),
+            "the preview must follow the capture display in global coordinates");
+    overlay.setScrollingCaptureMode(false);
+    QApplication::processEvents();
+    require(overlay.winId() == overlayId && overlayObserver.transitions == 0 &&
+                thumbnail->isHidden(),
+            "leaving scrolling must restore the overlay without replacing or hiding it");
+#ifdef Q_OS_WIN
+    if (native) {
+        require(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) == initialStyle,
+                "leaving scrolling must restore native input styles");
+    }
+#endif
 }
 
 void historyLoadingMessageFollowsVisibility() {
@@ -3914,13 +4002,13 @@ void horizontalScrollingThumbnailPrefersAboveThenBelowSelection() {
 
     const QImage preview(360, 128, QImage::Format_RGBA8888);
     const QRect upperSelection(40, 30, 320, 100);
-    overlay.setInputPassThroughRect(upperSelection);
+    overlay.setScrollingVisualHole(upperSelection);
     overlay.setScrollingCaptureMode(true);
     overlay.beginScrollingThumbnail(upperSelection, ScreenshotScrollingRecognitionMode::Horizontal);
     overlay.updateScrollingThumbnail(preview, QSize(360, 128),
                                      ScreenshotScrollingStitchChange::Initial, 360);
     QApplication::processEvents();
-    require(thumbnail->geometry().top() > upperSelection.bottom(),
+    require(thumbnail->geometry().top() > overlay.captureGeometry().top() + upperSelection.bottom(),
             "horizontal preview should fall below a selection when above does not fit");
 
     const QRect lowerSelection(40, 290, 320, 100);
@@ -3928,7 +4016,7 @@ void horizontalScrollingThumbnailPrefersAboveThenBelowSelection() {
     overlay.updateScrollingThumbnail(preview, QSize(360, 128),
                                      ScreenshotScrollingStitchChange::Initial, 360);
     QApplication::processEvents();
-    require(thumbnail->geometry().bottom() < lowerSelection.top(),
+    require(thumbnail->geometry().bottom() < overlay.captureGeometry().top() + lowerSelection.top(),
             "horizontal preview should move above a low selection when below does not fit");
 }
 
@@ -4307,7 +4395,7 @@ void overlayNativeSurfaceRetirementPreservesReusableRenderState() {
     overlay.setScreenshotImage(capturedImage, QRectF(0.0, 0.0, 96.0, 72.0));
     overlay.setScreenshotMaskVisible(true);
     overlay.setScreenshotSelection(QRectF(8.0, 6.0, 64.0, 48.0), true, 0);
-    overlay.setInputPassThroughRect(QRect(16, 12, 48, 36));
+    overlay.setScrollingVisualHole(QRect(16, 12, 48, 36));
 
     ScreenshotCanvasRenderer* renderer = overlay.screenshotRendererForTesting();
     require(renderer != nullptr, "the retirement test requires an overlay renderer");
@@ -5147,8 +5235,9 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--scrolling-overlay"))) {
-        scrollingModeClearsPassThroughMaskBeforeRestoringRenderer();
-        scrollingThumbnailIsAnEmbeddedScreenshotWidget();
+        scrollingModeClearsVisualMaskBeforeRestoringRenderer();
+        scrollingThumbnailHasAnIndependentInputWindow();
+        scrollingInputModeKeepsNativeSurfacesStable();
         scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits();
         scrollingThumbnailAlignsWithTopEdgeSelection();
         horizontalScrollingThumbnailPrefersAboveThenBelowSelection();
@@ -5270,8 +5359,9 @@ int main(int argc, char** argv) {
     ocrPresentationRendersTextInPinnedResultMode();
     ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch();
     verticalOcrTextKeepsCjkGraphemesUprightAndSelectable();
-    scrollingModeClearsPassThroughMaskBeforeRestoringRenderer();
-    scrollingThumbnailIsAnEmbeddedScreenshotWidget();
+    scrollingModeClearsVisualMaskBeforeRestoringRenderer();
+    scrollingThumbnailHasAnIndependentInputWindow();
+    scrollingInputModeKeepsNativeSurfacesStable();
     scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits();
     scrollingThumbnailAlignsWithTopEdgeSelection();
     scrollingThumbnailCropHandlesUseVerticalResizeCursor();

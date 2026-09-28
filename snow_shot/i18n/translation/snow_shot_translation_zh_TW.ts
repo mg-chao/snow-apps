@@ -67,6 +67,10 @@
             <translation>日語</translation>
         </message>
         <message>
+            <source>Korean</source>
+            <translation>韓語</translation>
+        </message>
+        <message>
             <source>Portuguese</source>
             <translation>葡萄牙語</translation>
         </message>
