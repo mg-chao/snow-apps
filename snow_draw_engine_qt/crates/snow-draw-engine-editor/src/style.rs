@@ -1813,6 +1813,22 @@ impl Editor {
         Ok(None)
     }
 
+    pub fn set_text_creation_style(
+        &mut self,
+        style: TextStyle,
+        properties: u32,
+    ) -> Result<(), ErrorCode> {
+        validate_text_style(&style)?;
+        if properties & !TEXT_STYLE_ALL_PROPERTIES != 0 {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        self.state.default_text = text_with_style_attributes(
+            &self.state.default_text,
+            &patched_text_style(&self.state.default_text, &style, properties),
+        );
+        Ok(())
+    }
+
     pub fn set_text_style(
         &mut self,
         document: &DocumentModel,
@@ -1930,6 +1946,19 @@ impl Editor {
             SERIAL_NUMBER_STYLE_ALL_PROPERTIES
         };
 
+        self.set_serial_number_style_patch(document, style, properties)
+    }
+
+    pub fn set_serial_number_style_patch(
+        &mut self,
+        document: &DocumentModel,
+        style: SerialNumberStyle,
+        properties: u32,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        validate_serial_number_style(&style)?;
+        if properties == 0 || properties & !SERIAL_NUMBER_STYLE_ALL_PROPERTIES != 0 {
+            return Err(ErrorCode::InvalidArgument);
+        }
         let selected_serial_ids = self
             .state
             .selection
@@ -2821,6 +2850,49 @@ mod tests {
         assert_eq!(numbered.number, original.number);
         assert_eq!(numbered.font_family, original.font_family);
         assert_eq!(numbered.stroke_width, original.stroke_width);
+    }
+
+    #[test]
+    fn explicit_serial_font_patch_preserves_unrelated_mixed_properties() {
+        let mut document = DocumentModel::new();
+        let first_id = document.allocate_element_id();
+        let second_id = document.allocate_element_id();
+        let first = SerialNumberData::default();
+        let second = SerialNumberData {
+            number: 27,
+            font_size: 52.0,
+            font_family: Some("Other font".to_owned()),
+            color: ColorRgba8 {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+            },
+            ..SerialNumberData::default()
+        };
+        let mut insert = Transaction::new("insert mixed serials");
+        insert.insert_serial_number(first_id, ElementMeta::default(), first.clone());
+        insert.insert_serial_number(second_id, ElementMeta::default(), second.clone());
+        document.apply_transaction(insert).unwrap();
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state(vec![first_id, second_id], Some(first_id));
+        let mut style = editor.serial_number_style(&document);
+        style.font_size = 43.0;
+        let command = editor
+            .set_serial_number_style_patch(&document, style, SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE)
+            .unwrap()
+            .unwrap();
+        let EditorCommand::ApplyTransaction(command) = command else {
+            panic!("expected transaction")
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        for (id, original) in [(first_id, first), (second_id, second)] {
+            let changed = document.serial_number(id).unwrap();
+            assert_eq!(changed.font_size, 43.0);
+            assert_eq!(changed.number, original.number);
+            assert_eq!(changed.color, original.color);
+            assert_eq!(changed.font_family, original.font_family);
+        }
     }
 
     #[test]

@@ -376,6 +376,9 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
         break;
     }
     case QEvent::Wheel: {
+        if (m_canvas->hasActiveTextEditing() || m_canvas->canvasTool() == SnowCanvasTool::Text ||
+            m_canvas->canvasTool() == SnowCanvasTool::SerialNumber)
+            return false;
         auto* wheel = static_cast<QWheelEvent*>(event);
         const int delta =
             !wheel->pixelDelta().isNull() ? wheel->pixelDelta().y() : wheel->angleDelta().y();

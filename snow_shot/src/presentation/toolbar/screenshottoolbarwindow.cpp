@@ -2,6 +2,7 @@
 
 #include "../tools/screenshottoolbarperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
@@ -323,23 +324,7 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     // instead of wiping the document and its history.
     connect(&toolPalette, &ScreenshotToolPalette::resetCanvasRequested, this,
             [this]() { m_commands.deleteAllElements(); });
-    connect(
-        &toolPalette, &ScreenshotToolPalette::shapeStyleChanged, this,
-        [this](const SnowCanvasShapeStyle& style, quint32 properties, SnowCanvasShapeKind kind) {
-            m_commands.setShapeStyleFromToolbar(style, properties, kind);
-            if (ScreenshotToolPalette* palette = this->palette()) {
-                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                    palette->creationStyleDefaults()));
-            }
-        });
-    connect(&toolPalette, &ScreenshotToolPalette::textStyleChanged, this,
-            [this](const SnowCanvasTextStyle& style, quint32 properties) {
-                m_commands.setTextStyleFromToolbar(style, properties);
-                if (ScreenshotToolPalette* palette = this->palette()) {
-                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                        palette->creationStyleDefaults()));
-                }
-            });
+
     connect(&toolPalette, &ScreenshotToolPalette::lineRequested, this, [this]() {
         m_commands.setLineTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Line);
@@ -382,46 +367,17 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
         m_commands.setPenFilterTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::PenFilter);
     });
-    connect(&toolPalette, &ScreenshotToolPalette::filterStyleChanged, this,
-            [this](const SnowCanvasFilterStyle& style, quint32 properties) {
-                m_commands.setFilterStyleFromToolbar(style, properties);
-                if (ScreenshotToolPalette* palette = this->palette()) {
-                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                        palette->creationStyleDefaults()));
-                }
-            });
+
     connect(&toolPalette, &ScreenshotToolPalette::watermarkRequested, this, [this]() {
         m_commands.setWatermarkTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Watermark);
     });
-    connect(&toolPalette, &ScreenshotToolPalette::watermarkConfigChanged, this,
-            [this](const SnowCanvasWatermarkConfig& config) {
-                m_commands.setWatermarkConfigFromToolbar(config);
-                if (ScreenshotToolPalette* palette = this->palette()) {
-                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                        palette->creationStyleDefaults()));
-                }
-            });
+
     connect(&toolPalette, &ScreenshotToolPalette::watermarkPreviewChanged, this,
             [this](const SnowCanvasWatermarkConfig& config) {
                 m_commands.previewWatermarkFromToolbar(config);
             });
-    connect(&toolPalette, &ScreenshotToolPalette::serialNumberStyleChanged, this,
-            [this](const SnowCanvasSerialNumberStyle& style) {
-                m_commands.setSerialNumberStyleFromToolbar(style);
-                if (ScreenshotToolPalette* palette = this->palette()) {
-                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                        palette->creationStyleDefaults()));
-                }
-            });
-    connect(&toolPalette, &ScreenshotToolPalette::spotlightConfigChanged, this,
-            [this](const SnowCanvasSpotlightConfig& config) {
-                m_commands.setSpotlightConfigFromToolbar(config);
-                if (ScreenshotToolPalette* palette = this->palette()) {
-                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                        palette->creationStyleDefaults()));
-                }
-            });
+
     connect(&toolPalette, &ScreenshotToolPalette::spotlightPreviewChanged, this,
             [this](const SnowCanvasSpotlightConfig& config) {
                 m_commands.previewSpotlightFromToolbar(config);

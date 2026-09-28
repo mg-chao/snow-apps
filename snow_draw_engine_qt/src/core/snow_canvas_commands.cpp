@@ -365,6 +365,29 @@ MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const Sn
     return result;
 }
 
+MutationResult setTextCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                    const SnowTextStyle& style, std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_text_creation_style_ex(runtime, viewport, &style, properties,
+                                                 result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+MutationResult setSerialNumberStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                         const SnowSerialNumberStyle& style,
+                                         std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_serial_number_style_patch_ex(
+            runtime, viewport, &style, properties, result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult setSerialNumberStyle(SnowRuntime runtime, SnowViewport viewport,
                                     const SnowSerialNumberStyle& style) {
     MutationResult result;

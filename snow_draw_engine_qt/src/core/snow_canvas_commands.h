@@ -117,6 +117,11 @@ MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
                             std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts = {});
+MutationResult setTextCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                    const SnowTextStyle& style, std::uint32_t properties);
+MutationResult setSerialNumberStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                         const SnowSerialNumberStyle& style,
+                                         std::uint32_t properties);
 MutationResult setSerialNumberStyle(SnowRuntime runtime, SnowViewport viewport,
                                     const SnowSerialNumberStyle& style);
 PairedMutationResult setSnapConfig(SnowRuntime runtime, SnowViewport viewport,

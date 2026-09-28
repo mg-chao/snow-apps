@@ -93,9 +93,6 @@ class SnowCanvasWidgetTextInteraction final {
     StyleChangeResult applyTextStyle(SnowRuntime runtime, SnowViewport viewport,
                                      SnowCanvasDisplayCache& displayCache,
                                      const SnowTextStyle& style, std::uint32_t properties);
-    StyleChangeResult stepFontSize(SnowRuntime runtime, SnowViewport viewport,
-                                   SnowCanvasDisplayCache& displayCache,
-                                   const SnowTextStyle& fallbackStyle, bool increase);
 
     BeginResult beginArrow(SnowRuntime runtime, SnowViewport viewport,
                            SnowCanvasDisplayCache& displayCache, const QPointF& viewPosition,

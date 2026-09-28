@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "physical_key_test_support.h"
 #include "window_close_shortcut_test_support.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
@@ -1864,6 +1865,11 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
 }
 
 void pinnedArrowLabelWheelReachesTextEditor() {
+    const auto originalStyles = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+    const auto restoreStyles = qScopeGuard([&] {
+        static_cast<void>(
+            snow_shot::presentation::persistScreenshotCanvasToolStyles(originalStyles));
+    });
     ScreenshotPinnedWindow window;
     SnowCanvasWidget canvas;
     snow_shot::presentation::WindowShortcutManager manager;
@@ -1896,6 +1902,11 @@ void pinnedArrowLabelWheelReachesTextEditor() {
     QApplication::sendEvent(&canvas, &wheel);
     require(canvas.canvasStyleToolbarState().textStyle.fontSize == initialFontSize + 1.0,
             "pinned editor passes arrow label wheel input to font-size stepping");
+    require(snow_shot::presentation::screenshotCanvasToolStyleDefaults().text.fontSize ==
+                initialFontSize + 1.0,
+            "canvas font-size wheel must persist the explicit style choice");
+    require(palette->creationStyleDefaults().text.fontSize == initialFontSize + 1.0,
+            "canvas font-size wheel must update the palette creation default");
 }
 
 void pinnedEditingRemembersLastFilterToolAcrossSessions() {

@@ -81,6 +81,7 @@ class ScreenshotOverlayUiHost final {
     QPointer<ScreenshotToolbarWindow> m_toolbar;
     QPointer<SnowCanvasWidget> m_toolbarStyleCanvas;
     QMetaObject::Connection m_toolbarStyleConnection;
+    QPointer<QObject> m_toolbarStyleBinding;
     QMetaObject::Connection m_toolbarHistoryConnection;
     QMetaObject::Connection m_toolbarStylePopupBeginConnection;
     QMetaObject::Connection m_toolbarStylePopupEndConnection;

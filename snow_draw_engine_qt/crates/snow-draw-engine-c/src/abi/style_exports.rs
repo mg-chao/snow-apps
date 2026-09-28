@@ -437,3 +437,63 @@ pub unsafe extern "C" fn snow_viewport_set_serial_number_style_ex(
         }))
     })
 }
+
+/// Apply only the specified serial-number properties.
+///
+/// # Safety
+/// Handles and pointers must satisfy the same requirements as the full style setter.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_serial_number_style_patch_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowSerialNumberStyle,
+    properties: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if style.is_null()
+            || out_changed_viewports.is_null()
+            || !unsafe { serial_number_style_type_is_valid(style) }
+        {
+            return SnowError::InvalidArgument;
+        }
+
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .set_viewport_serial_number_style_patch(id, unsafe { (*style).into() }, properties)
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
+/// Update future text defaults without touching selected objects or an active draft.
+///
+/// # Safety
+/// Handles must be live, style readable and out_changed_viewports writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_text_creation_style_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowTextStyle,
+    properties: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if style.is_null() || out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .set_viewport_text_creation_style(id, unsafe { (*style).into() }, properties)
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}

@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 #include "screenshottoolpalettestylemodel.h"
 
 #include "screenshottoolpalettestylepresets.h"
@@ -44,6 +45,8 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     rectangleFilterStyle = creationRectangleFilterStyle;
     creationPenFilterStyle = defaults.penFilter;
     penFilterStyle = creationPenFilterStyle;
+    creationWatermarkConfig = defaults.watermark;
+    creationSpotlightConfig = defaults.spotlight;
     m_watermarkConfig = defaults.watermark;
     spotlightConfig = defaults.spotlight;
     m_showingSelectedStyle = false;
@@ -60,8 +63,8 @@ namespace {
 constexpr double kMaxRectangleStrokeWidth = 72.0;
 constexpr int kMinRectangleCornerRadius = 0;
 constexpr int kMaxRectangleCornerRadius = 83;
-constexpr double kMinTextFontSize = 6.0;
-constexpr double kMaxTextFontSize = 256.0;
+constexpr double kMinTextFontSize = snow_canvas_style_limits::minimumFontSize;
+constexpr double kMaxTextFontSize = snow_canvas_style_limits::maximumTextFontSize;
 constexpr double kMinTextStrokeWidth = 0.0;
 constexpr double kMaxTextStrokeWidth = 72.0;
 constexpr int kMinTextCornerRadius = 0;

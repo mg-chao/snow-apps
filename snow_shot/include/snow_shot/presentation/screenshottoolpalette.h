@@ -4,7 +4,7 @@
 #include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 #include "icon_core.h"
 #include "widgets/control_scale.h"
-#include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -286,6 +286,8 @@ class ScreenshotToolPalette final : public QWidget,
     void resetStyleState();
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
+    void rememberStyleEdit(const SnowCanvasStyleEdit& edit);
+    void setStyleEditHandler(std::function<bool(const SnowCanvasStyleEdit&)> handler);
     bool setShadowMargins(const QMargins& margins);
     bool setPhysicalScale(qreal scale);
     bool setScaleContext(const adqt::widgets::AdControlScaleContext& context);
@@ -542,6 +544,11 @@ class ScreenshotToolPalette final : public QWidget,
     void materializedScope(QWidget* scope);
 
   private:
+    std::function<bool(const SnowCanvasStyleEdit&)> m_styleEditHandler;
+    [[nodiscard]] bool submitStyleEdit(const SnowCanvasStyleEdit& edit);
+    void notifyFilterStyleChanged(const SnowCanvasFilterStyle& style, quint32 properties);
+    void setFilterStrength(double strength);
+    void setPenFilterStrokeWidth(double width);
     void changeEvent(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;

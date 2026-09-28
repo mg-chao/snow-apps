@@ -309,6 +309,9 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
         : widget(widget), runtimeBinding(runtime), cursorController(widget),
           inputHandler(widget, cursorController), textInteraction(widget, cursorController) {}
 
+    bool stepFontSize(int direction);
+    bool applyStyleEdit(const SnowCanvasStyleEdit& edit);
+    bool rememberDraftStyle(const SnowCanvasStyleEdit& edit);
     void initializeWidget();
     void initializeViewport();
     std::uint64_t runtimeViewportId() const override;
@@ -2673,30 +2676,88 @@ SnowCanvasWidget::Impl::FontWheelTarget SnowCanvasWidget::Impl::fontWheelTarget(
 }
 
 bool SnowCanvasWidget::Impl::stepSerialNumberFontSize(bool increase) {
-    SnowSerialNumberStyle style = displayState.snapshot().styleToolbarState.serial_number_style;
-    const double nextFontSize =
-        snow_canvas_text_measurement::steppedFontSize(style.font_size, increase);
-    if (std::abs(nextFontSize - style.font_size) <= std::numeric_limits<double>::epsilon()) {
+    auto style = widget.canvasStyleToolbarState().serialNumberStyle;
+    const double next = std::clamp(style.fontSize + (increase ? 1.0 : -1.0),
+                                   snow_canvas_style_limits::minimumFontSize,
+                                   snow_canvas_style_limits::maximumBadgeFontSize);
+    if (next == style.fontSize && (widget.canvasStyleToolbarState().serialNumberStyleMixed &
+                                   SnowCanvasSerialNumberStyleMixedFontSize) == 0)
         return true;
-    }
-
-    style.font_size = nextFontSize;
-    return applyMutationResult(snow_canvas_commands::setSerialNumberStyle(
-        runtimeBinding.engine(), runtimeBinding.viewportHandle(), style));
+    style.fontSize = next;
+    return widget.commitStyleEdit(
+        SnowCanvasSerialNumberEdit{style, SnowCanvasSerialNumberStyleMixedFontSize});
 }
 
 bool SnowCanvasWidget::Impl::stepTextFontSize(bool increase) {
-    SnowCanvasWidgetTextInteraction::StyleChangeResult result = textInteraction.stepFontSize(
-        runtimeBinding.engine(), runtimeBinding.viewportHandle(), displayState.displayCache(),
-        displayState.snapshot().styleToolbarState.text_style, increase);
-    if (!result.success) {
-        return false;
-    }
+    auto style = widget.canvasStyleToolbarState().textStyle;
+    const double next = snow_canvas_text_measurement::steppedFontSize(style.fontSize, increase);
+    if (next == style.fontSize &&
+        (widget.canvasStyleToolbarState().textStyleMixed & SnowCanvasTextStyleMixedFontSize) == 0)
+        return true;
+    style.fontSize = next;
+    return widget.commitStyleEdit(SnowCanvasTextEdit{style, SnowCanvasTextStyleMixedFontSize});
+}
 
-    syncChangedViewports(result.changedViewports.get());
-    if (result.toolbarStateChanged) {
-        emit widget.styleToolbarStateChanged();
-    }
+bool SnowCanvasWidget::stepFontSize(int direction) {
+    return m_impl->stepFontSize(direction);
+}
+
+bool SnowCanvasWidget::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
+    return m_impl->applyStyleEdit(edit);
+}
+
+bool SnowCanvasWidget::Impl::stepFontSize(int direction) {
+    if (direction == 0 || !interactionEnabled())
+        return false;
+    return fontWheelTarget() == FontWheelTarget::SerialNumber
+               ? stepSerialNumberFontSize(direction > 0)
+               : stepTextFontSize(direction > 0);
+}
+
+bool SnowCanvasWidget::Impl::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
+    return std::visit(
+        [this](const auto& patch) -> bool {
+            if (patch.properties == 0)
+                return false;
+            using T = std::decay_t<decltype(patch)>;
+            if constexpr (std::is_same_v<T, SnowCanvasShapeEdit>) {
+                return setCanvasShapeStylePatch(patch.style, patch.properties, patch.kind);
+            } else if constexpr (std::is_same_v<T, SnowCanvasTextEdit>) {
+                return setCanvasTextStyle(patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit>) {
+                auto style = widget.canvasStyleToolbarState().serialNumberStyle;
+                snowCanvasMergeStyle(style, patch.style, patch.properties);
+                return applyMutationResult(snow_canvas_commands::setSerialNumberStylePatch(
+                    runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+                    snow_canvas_types::toEngineSerialNumberStyle(style), patch.properties));
+            } else if constexpr (std::is_same_v<T, SnowCanvasFilterEdit>) {
+                return setCanvasFilterStyle(patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasWatermarkEdit>) {
+                auto style = canvasWatermarkConfig();
+                snowCanvasMergeStyle(style, patch.style, patch.properties);
+                return setCanvasWatermarkConfig(style);
+            } else {
+                auto style = canvasSpotlightConfig();
+                snowCanvasMergeStyle(style, patch.style, patch.properties);
+                return setCanvasSpotlightConfig(style);
+            }
+        },
+        edit);
+}
+
+bool SnowCanvasWidget::Impl::rememberDraftStyle(const SnowCanvasStyleEdit& edit) {
+    const auto* text = std::get_if<SnowCanvasTextEdit>(&edit);
+    if (text == nullptr || !textInteraction.isActive())
+        return true;
+    return applyMutationResult(snow_canvas_commands::setTextCreationStyle(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+        snow_canvas_types::toEngineTextStyle(text->style), text->properties));
+}
+
+bool SnowCanvasWidget::commitStyleEdit(const SnowCanvasStyleEdit& edit) {
+    if (!interactionEnabled() || !applyStyleEdit(edit) || !m_impl->rememberDraftStyle(edit))
+        return false;
+    emit styleEditCommitted(edit);
     return true;
 }
 

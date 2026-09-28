@@ -4,7 +4,7 @@
 #include "screenshottoolpalettestylecomponents.h"
 #include "screenshottoolpalettestylemodel.h"
 
-#include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QColor>
@@ -77,11 +77,13 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void(const SnowCanvasTextStyle& style, quint32 properties)> textStyleChanged;
     std::function<void()> textStylePopupInteractionBegan;
     std::function<void()> textStylePopupInteractionEnded;
-    std::function<void(const SnowCanvasSerialNumberStyle& style)> serialNumberStyleChanged;
+    std::function<void(const SnowCanvasSerialNumberStyle& style, quint32 properties)>
+        serialNumberStyleChanged;
     std::function<void()> serialNumberDecrementRequested;
     std::function<void()> serialNumberIncrementRequested;
     std::function<void()> serialNumberCreateTextRequested;
-    std::function<void(const SnowCanvasWatermarkConfig& config)> watermarkConfigChanged;
+    std::function<void(const SnowCanvasWatermarkConfig& config, quint32 properties)>
+        watermarkConfigChanged;
     std::function<void(const SnowCanvasWatermarkConfig& config)> watermarkPreviewChanged;
     std::function<void()> visibleContentChanged;
     std::function<void(adqt::widgets::AdColorPicker* picker)> canvasColorSamplingRequested;
@@ -252,6 +254,7 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] bool stepWatermarkFontSize(int direction);
     [[nodiscard]] SnowCanvasShapeStyle rectangleStyle() const;
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
+    void rememberStyleEdit(const SnowCanvasStyleEdit& edit);
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
@@ -331,17 +334,14 @@ class ScreenshotToolPaletteStyleControls final {
     void registerSerialNumberEntries();
     void registerWatermarkEntries();
 
-    // Generic property commits: mutate the owning model, mirror the creation
+    // Generic property commits: mutate the displayed model and publish the explicit
     // style, clear the mixed flag, refresh the family and notify.
-    template <typename Apply, typename Mirror>
-    void commitShapeProperty(quint32 property, Apply apply, Mirror mirror);
+    template <typename Apply> void commitShapeProperty(quint32 property, Apply apply);
     template <typename Apply> void commitArrowProperty(quint32 property, Apply apply);
-    template <typename Apply, typename Mirror>
-    void commitPenHighlightProperty(quint32 property, Apply apply, Mirror mirror);
-    template <typename Apply, typename Mirror>
-    void commitTextProperty(quint32 mixedFlag, Apply apply, Mirror mirror);
+    template <typename Apply> void commitPenHighlightProperty(quint32 property, Apply apply);
+    template <typename Apply> void commitTextProperty(quint32 mixedFlag, Apply apply);
     template <typename Apply> void commitSerialNumberProperty(quint32 mixedFlag, Apply apply);
-    template <typename Apply> void commitWatermarkField(Apply apply);
+    template <typename Apply> void commitWatermarkField(quint32 properties, Apply apply);
 
     void setStrokeWidth(double strokeWidth);
     void cycleStrokeWidth();
@@ -414,10 +414,10 @@ class ScreenshotToolPaletteStyleControls final {
     void updateWatermarkControls();
     void refreshWatermarkOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void refreshSpotlightOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
-    void notifyWatermarkConfigChanged() const;
+    void notifyWatermarkConfigChanged(quint32 properties) const;
     void notifyWatermarkPreviewChanged() const;
     void updateSerialNumberStyleControls(quint32 groups = 0xffffffffu);
-    void notifySerialNumberStyleChanged() const;
+    void notifySerialNumberStyleChanged(quint32 properties) const;
     void beginTextStylePopupInteraction(QObject* popup);
     void endTextStylePopupInteraction(QObject* popup);
     void addToolbarSpacing(QBoxLayout* layout, int baseSpacing,

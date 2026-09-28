@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 #include "snow_canvas_text_measurement.h"
 
 #include "snow_canvas_text.h"
@@ -200,10 +201,10 @@ SnowTextLayoutSize measureResizeLayout(const ResizeLayoutMeasurementRequest& req
 }
 
 double steppedFontSize(double current, bool increase) {
-    constexpr double kMaximumTextFontSize = 256.0;
     const double resolvedCurrent = snow_canvas_text::resolvedTextFontSize(current);
     return std::clamp(resolvedCurrent + (increase ? 1.0 : -1.0),
-                      snow_canvas_text::minimumTextFontSize(), kMaximumTextFontSize);
+                      snow_canvas_style_limits::minimumFontSize,
+                      snow_canvas_style_limits::maximumTextFontSize);
 }
 
 } // namespace snow_canvas_text_measurement

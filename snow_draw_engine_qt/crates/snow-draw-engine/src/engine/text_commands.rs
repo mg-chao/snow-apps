@@ -219,6 +219,18 @@ impl Engine {
         }
     }
 
+    pub fn set_viewport_text_creation_style(
+        &mut self,
+        id: ViewportId,
+        style: TextStyle,
+        properties: u32,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(id)?;
+        let before = self.editor.snapshot();
+        self.editor.set_text_creation_style(style, properties)?;
+        self.refresh_after_session_mutation(before)
+    }
+
     pub fn set_viewport_serial_number_style(
         &mut self,
         id: ViewportId,
@@ -227,6 +239,24 @@ impl Engine {
         self.ensure_viewport(id)?;
         let before = self.editor.snapshot();
         let command = self.editor.set_serial_number_style(&self.model, style)?;
+        if let Some(command) = command {
+            self.apply_editor_command(id, command)
+        } else {
+            self.refresh_after_session_mutation(before)
+        }
+    }
+
+    pub fn set_viewport_serial_number_style_patch(
+        &mut self,
+        id: ViewportId,
+        style: SerialNumberStyle,
+        properties: u32,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(id)?;
+        let before = self.editor.snapshot();
+        let command = self
+            .editor
+            .set_serial_number_style_patch(&self.model, style, properties)?;
         if let Some(command) = command {
             self.apply_editor_command(id, command)
         } else {

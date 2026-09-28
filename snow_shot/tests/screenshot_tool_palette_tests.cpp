@@ -12051,7 +12051,7 @@ void filterEditorsRestoreValuesAfterToolSwitch() {
     }
 }
 
-void selectedFilterTypeDoesNotReplaceCreationDefault() {
+void selectedFilterTypeRemembersOnlyTheEditedProperty() {
     ScreenshotToolPalette::Options options;
     options.showFilterTool = true;
     ScreenshotToolPalette palette(options);
@@ -12069,8 +12069,10 @@ void selectedFilterTypeDoesNotReplaceCreationDefault() {
         palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenshotFilterTypeSelect"));
     require(type != nullptr, "selected filter exposes its type control");
     type->setCurrentValue(static_cast<int>(SnowCanvasFilterType::Grayscale));
-    require(palette.creationStyleDefaults().rectangleFilter.type == before.type,
-            "selected filter type edit preserves creation type");
+    require(palette.creationStyleDefaults().rectangleFilter.type ==
+                    SnowCanvasFilterType::Grayscale &&
+                palette.creationStyleDefaults().rectangleFilter.strength == before.strength,
+            "explicit selected filter type edits remember only the edited property");
 }
 
 void filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches() {
@@ -12747,6 +12749,9 @@ void regionSwitcherRetranslatesAndRenders() {
 }
 } // namespace
 
+void runScreenshotStyleBindingTests();
+void runScreenshotStylePersistenceFailureTest();
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir storageDirectory;
@@ -12765,6 +12770,22 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--style-commit-only"))) {
+        runScreenshotStyleBindingTests();
+        selectedStyleEditsAreReflectedInTheCreationStyleContext();
+        arrowStyleControlsExposeAndEmitAllStyleProperties();
+        selectedArrowMixedPropertiesResolveIndependently();
+        lineStyleControlsExposeStraightAndCurveTypes();
+        serialNumberStyleControlsExposeAndEmitRequestedProperties();
+        serialNumberInputCommitsEditsAndSupportsWheel();
+        watermarkToolExposesSharedStyleControls();
+        activeFilterAndWatermarkToolsExposeCanvasWheelSteps();
+        selectedFilterTypeRemembersOnlyTheEditedProperty();
+        canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+        runScreenshotStylePersistenceFailureTest();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--text-style-only"))) {
         textStyleControlsExposeAndEmitAllRequestedProperties();
         textStylePopupLifecyclesAreBalanced();
@@ -12786,7 +12807,7 @@ int main(int argc, char** argv) {
         configurationDrivenStyleEditorsShareStructuralContracts();
         filterEditorsRestoreValuesAfterToolSwitch();
         autoFilterLegacyStrengthMigration();
-        selectedFilterTypeDoesNotReplaceCreationDefault();
+        selectedFilterTypeRemembersOnlyTheEditedProperty();
         filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches();
         autoFilterControlsShareStylesAndKeepCategoryUnselected();
         filterToolExposesTypeAndIntensityControls();

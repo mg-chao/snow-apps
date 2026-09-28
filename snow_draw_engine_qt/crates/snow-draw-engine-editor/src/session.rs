@@ -333,6 +333,14 @@ impl EditorSession {
         self.editor.set_rectangle_shape_style(document, style)
     }
 
+    pub fn set_text_creation_style(
+        &mut self,
+        style: TextStyle,
+        properties: u32,
+    ) -> Result<(), ErrorCode> {
+        self.editor.set_text_creation_style(style, properties)
+    }
+
     pub fn set_text_style(
         &mut self,
         document: &DocumentModel,
@@ -342,6 +350,16 @@ impl EditorSession {
     ) -> Result<Option<EditorCommand>, ErrorCode> {
         self.editor
             .set_text_style(document, style, properties, layouts)
+    }
+
+    pub fn set_serial_number_style_patch(
+        &mut self,
+        document: &DocumentModel,
+        style: SerialNumberStyle,
+        properties: u32,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        self.editor
+            .set_serial_number_style_patch(document, style, properties)
     }
 
     pub fn set_serial_number_style(

@@ -88,10 +88,6 @@ class ScreenshotPinnedEditController final : public QObject {
     void syncPaletteFromCanvasStyle();
     void activateCanvasTool(SnowCanvasTool tool);
     void applyResizeWindowTool();
-    void applyShapeStyleFromPalette(const SnowCanvasShapeStyle& style, quint32 properties,
-                                    SnowCanvasShapeKind kind);
-    void applyTextStyleFromPalette(const SnowCanvasTextStyle& style, quint32 properties);
-    void applySerialNumberStyleFromPalette(const SnowCanvasSerialNumberStyle& style);
     void markToolbarManuallyPlaced();
     void beginCanvasColorSampling(adqt::widgets::AdColorPicker* picker);
     void cancelCanvasColorSampling();

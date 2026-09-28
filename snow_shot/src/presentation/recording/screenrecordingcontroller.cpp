@@ -13,6 +13,7 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
 #include "screenrecordinggeometry.h"
 #include "screenrecordingselection.h"
@@ -622,48 +623,13 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::redoRequested,
                          uiSession->connections.get(),
                          [canvas]() { static_cast<void>(canvas->redo()); });
-        QObject::connect(
-            &palette, &ScreenshotToolPalette::shapeStyleChanged, uiSession->connections.get(),
-            [canvas, &palette](const SnowCanvasShapeStyle& style, quint32 properties,
-                               SnowCanvasShapeKind kind) {
-                canvas->setCanvasShapeStylePatch(style, properties, kind);
-                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                    palette.creationStyleDefaults()));
-            });
-        QObject::connect(
-            &palette, &ScreenshotToolPalette::textStyleChanged, uiSession->connections.get(),
-            [canvas, &palette](const SnowCanvasTextStyle& style, quint32 properties) {
-                static_cast<void>(canvas->setCanvasTextStyle(style, properties));
-                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                    palette.creationStyleDefaults()));
-            });
-        QObject::connect(&palette, &ScreenshotToolPalette::serialNumberStyleChanged,
-                         uiSession->connections.get(),
-                         [canvas, &palette](const SnowCanvasSerialNumberStyle& style) {
-                             static_cast<void>(canvas->setCanvasSerialNumberStyle(style));
-                             static_cast<void>(
-                                 snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                                     palette.creationStyleDefaults()));
-                         });
-        QObject::connect(
-            &palette, &ScreenshotToolPalette::watermarkConfigChanged, uiSession->connections.get(),
-            [canvas, &palette](const SnowCanvasWatermarkConfig& config) {
-                static_cast<void>(canvas->setCanvasWatermarkConfig(config));
-                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                    palette.creationStyleDefaults()));
-            });
+
         QObject::connect(&palette, &ScreenshotToolPalette::watermarkPreviewChanged,
                          uiSession->connections.get(),
                          [canvas](const SnowCanvasWatermarkConfig& config) {
                              canvas->previewCanvasWatermarkConfig(config);
                          });
-        QObject::connect(
-            &palette, &ScreenshotToolPalette::spotlightConfigChanged, uiSession->connections.get(),
-            [canvas, &palette](const SnowCanvasSpotlightConfig& config) {
-                static_cast<void>(canvas->setCanvasSpotlightConfig(config));
-                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                    palette.creationStyleDefaults()));
-            });
+
         QObject::connect(&palette, &ScreenshotToolPalette::spotlightPreviewChanged,
                          uiSession->connections.get(),
                          [canvas](const SnowCanvasSpotlightConfig& config) {
@@ -681,24 +647,12 @@ struct ScreenRecordingController::Impl {
                              areaWindow->setInputMode(
                                  ScreenRecordingAreaWindow::InputMode::PassThrough);
                          });
+        new snow_shot::presentation::ScreenshotStyleBinding(palette, *canvas,
+                                                            uiSession->connections.get());
         QObject::connect(areaWindow, &ScreenRecordingAreaWindow::drawingWheelRequested,
                          uiSession->connections.get(), [canvas, &palette](int direction) {
-                             switch (canvas->canvasTool()) {
-                             case SnowCanvasTool::Shape:
-                             case SnowCanvasTool::Arrow:
-                             case SnowCanvasTool::Line:
-                             case SnowCanvasTool::FreeDraw:
-                                 static_cast<void>(palette.stepStrokeWidth(direction));
-                                 break;
-                             case SnowCanvasTool::Spotlight:
-                                 static_cast<void>(palette.stepSpotlightOpacity(direction));
-                                 break;
-                             case SnowCanvasTool::Watermark:
-                                 static_cast<void>(palette.stepWatermarkFontSize(direction));
-                                 break;
-                             default:
-                                 break;
-                             }
+                             static_cast<void>(snow_shot::presentation::stepScreenshotStyle(
+                                 palette, *canvas, direction));
                          });
         snow_shot::presentation::applyScreenshotCanvasToolStyles(
             *canvas, snow_shot::presentation::screenshotCanvasToolStyleDefaults());

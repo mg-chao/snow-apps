@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotqrcontroller.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
@@ -487,6 +488,13 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
                          snow_shot::storage::CaptureHistorySource historySource,
                          std::shared_ptr<ScreenshotExportArtifact> artifact = {});
     void startScreenRecording() override;
+    void replicateStyleEdit(const SnowCanvasStyleEdit& edit, SnowCanvasWidget* source) override {
+        m_displaySession.forEachOverlay([&](qsizetype, ScreenshotOverlayWindow* overlay) {
+            if (overlay != nullptr && overlay->canvas() != nullptr && overlay->canvas() != source) {
+                snow_shot::presentation::replicateScreenshotStyleEdit(*overlay->canvas(), edit);
+            }
+        });
+    }
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind) override;
     void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties) override;

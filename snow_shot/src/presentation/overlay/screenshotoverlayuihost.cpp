@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotoverlayuihost.h"
 
 #include "../capture/screenshotcaptureperfinstrumentation.h"
@@ -366,6 +367,8 @@ void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* ov
         return;
     }
 
+    delete m_toolbarStyleBinding.data();
+    m_toolbarStyleBinding = nullptr;
     if (m_toolbarStyleConnection) {
         if (m_toolbarStyleCanvas != nullptr) {
             m_toolbarStyleCanvas->endTextStylePopupInteraction(toolbarWindow);
@@ -413,6 +416,11 @@ void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* ov
             toolbarWindow->setHistoryState(canvas->canvasHistoryState());
         });
     if (ScreenshotToolPalette* palette = toolbarWindow->palette()) {
+        m_toolbarStyleBinding = new snow_shot::presentation::ScreenshotStyleBinding(
+            *palette, *canvas, toolbarWindow, [this, canvas](const SnowCanvasStyleEdit& edit) {
+                if (m_toolbarCommands != nullptr)
+                    m_toolbarCommands->replicateStyleEdit(edit, canvas);
+            });
         m_toolbarStylePopupBeginConnection = QObject::connect(
             palette, &ScreenshotToolPalette::textStylePopupInteractionBegan, toolbarWindow,
             [canvas]() { canvas->beginTextStylePopupInteraction(); });
@@ -603,27 +611,39 @@ void ScreenshotOverlayUiHost::hideShortcutHints() {
 }
 
 bool ScreenshotOverlayUiHost::stepToolbarStrokeWidth(int direction) {
-    return m_toolbar != nullptr && m_toolbar->stepStrokeWidth(direction);
+    auto* palette = m_toolbar != nullptr ? m_toolbar->palette() : nullptr;
+    return palette != nullptr && m_toolbarStyleCanvas != nullptr &&
+           snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);
 }
 
 bool ScreenshotOverlayUiHost::stepToolbarSelectionOpacity(int direction) {
-    return m_toolbar != nullptr && m_toolbar->stepSelectionOpacity(direction);
+    auto* palette = m_toolbar != nullptr ? m_toolbar->palette() : nullptr;
+    return palette != nullptr && m_toolbarStyleCanvas != nullptr &&
+           snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);
 }
 
 bool ScreenshotOverlayUiHost::stepToolbarSpotlightOpacity(int direction) {
-    return m_toolbar != nullptr && m_toolbar->stepSpotlightOpacity(direction);
+    auto* palette = m_toolbar != nullptr ? m_toolbar->palette() : nullptr;
+    return palette != nullptr && m_toolbarStyleCanvas != nullptr &&
+           snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);
 }
 
 bool ScreenshotOverlayUiHost::stepToolbarFilterIntensity(int direction) {
-    return m_toolbar != nullptr && m_toolbar->stepFilterIntensity(direction);
+    auto* palette = m_toolbar != nullptr ? m_toolbar->palette() : nullptr;
+    return palette != nullptr && m_toolbarStyleCanvas != nullptr &&
+           snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);
 }
 
 bool ScreenshotOverlayUiHost::stepToolbarPenFilterStrokeWidth(int direction) {
-    return m_toolbar != nullptr && m_toolbar->stepPenFilterStrokeWidth(direction);
+    auto* palette = m_toolbar != nullptr ? m_toolbar->palette() : nullptr;
+    return palette != nullptr && m_toolbarStyleCanvas != nullptr &&
+           snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);
 }
 
 bool ScreenshotOverlayUiHost::stepToolbarWatermarkFontSize(int direction) {
-    return m_toolbar != nullptr && m_toolbar->stepWatermarkFontSize(direction);
+    auto* palette = m_toolbar != nullptr ? m_toolbar->palette() : nullptr;
+    return palette != nullptr && m_toolbarStyleCanvas != nullptr &&
+           snow_shot::presentation::stepScreenshotStyle(*palette, *m_toolbarStyleCanvas, direction);
 }
 
 void ScreenshotOverlayUiHost::resetToolbarForNewCapture() {
@@ -731,6 +751,8 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
     }
 
     if (m_toolbarStyleCanvas == overlay->canvas() && m_toolbarStyleConnection) {
+        delete m_toolbarStyleBinding.data();
+        m_toolbarStyleBinding = nullptr;
         m_toolbarStyleCanvas->endTextStylePopupInteraction(m_toolbar.data());
         QObject::disconnect(m_toolbarStyleConnection);
         m_toolbarStyleConnection = {};
@@ -762,6 +784,8 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
 }
 
 void ScreenshotOverlayUiHost::destroyUiResources() {
+    delete m_toolbarStyleBinding.data();
+    m_toolbarStyleBinding = nullptr;
     if (m_toolbarStyleConnection) {
         if (m_toolbarStyleCanvas != nullptr) {
             m_toolbarStyleCanvas->endTextStylePopupInteraction(m_toolbar.data());

@@ -1,3 +1,6 @@
+#include "snow_shot/presentation/screenshottoolbarcommands.h"
+#include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
 #include "snow_shot/platform/screenshotnative.h"
 #ifdef Q_OS_MACOS
@@ -91,6 +94,99 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
 
     void raiseToolbarForCanvasInteraction() override {}
 };
+
+class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
+                                   public ScreenshotSelectionToolbarCommandSink {
+  public:
+    void setMoveTool() override {
+        ++moveToolCount;
+    }
+    void setSelectTool() override {
+        ++selectToolCount;
+    }
+    void setShapeTool() override {
+        ++shapeToolCount;
+    }
+    void setArrowTool() override {}
+    void setLineTool() override {}
+    void setFreeDrawTool() override {}
+    void setHighlightTool() override {}
+    void setPenHighlightTool() override {}
+    void setEraserTool() override {}
+    void setFilterTool() override {}
+    void setWatermarkTool() override {}
+    void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig&) override {}
+    void previewWatermarkFromToolbar(const SnowCanvasWatermarkConfig&) override {}
+    void setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32) override {}
+    void setTextTool() override {}
+    void setSerialNumberTool() override {}
+    void setOcrTool() override {}
+    void startScrollingScreenshot() override {}
+    void pinSelectionToScreen() override {}
+    void cancelCapture() override {}
+    void copySelectionToClipboard() override {}
+    void startScreenRecording() override {}
+    void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
+                                  SnowCanvasShapeKind) override {}
+    void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
+    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
+    void decrementSelectedSerialNumbers() override {}
+    void incrementSelectedSerialNumbers() override {}
+    void createTextForSelectedSerialNumber() override {}
+    void repositionToolbarForContentChange() override {}
+    void hideColorPickersForScreenshotUi() override {}
+
+    void toggleSelectionAspectRatioLockFromToolbar() override {}
+    void openSelectionResizeModalFromToolbar() override {}
+    void adjustSelectionFromToolbar(int, int, int, int) override {}
+    void setSelectionCornerRadiusFromToolbar(int) override {}
+    void setSelectionShadowWidthFromToolbar(int) override {}
+    void setSelectionToolbarHovered(bool) override {}
+    int moveToolCount = 0;
+    int selectToolCount = 0;
+    int shapeToolCount = 0;
+};
+
+void screenshotStyleBindingFollowsToolbarAttachment() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary style storage available");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "initialize isolated style storage");
+    {
+        NoopOverlayEventSink sink;
+        ScreenshotOverlayWindow first(sink, new SnowCanvasWidget);
+        ScreenshotOverlayWindow second(sink, new SnowCanvasWidget);
+        StyleToolbarCommands commands;
+        ScreenshotOverlayUiHost host;
+        host.setToolbarCommandSinks(commands, commands);
+        host.attachToolbarToOverlay(&first);
+        first.canvas()->setInteractionEnabled(true);
+        require(first.canvas()->setCanvasTool(SnowCanvasTool::Text), "activate first canvas text");
+        host.toolbar()->palette()->setActiveTool(ScreenshotToolPalette::Tool::Text);
+        const double firstSize = first.canvas()->canvasStyleToolbarState().textStyle.fontSize;
+        require(first.canvas()->stepFontSize(1), "step first screenshot font");
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults().text.fontSize ==
+                    firstSize + 1,
+                "real screenshot UI host persists canvas font edits");
+        host.attachToolbarToOverlay(&second);
+        second.canvas()->setInteractionEnabled(true);
+        require(second.canvas()->setCanvasTool(SnowCanvasTool::Text),
+                "activate second canvas text");
+        const double secondSize = second.canvas()->canvasStyleToolbarState().textStyle.fontSize;
+        require(second.canvas()->stepFontSize(-1), "step second screenshot font");
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults().text.fontSize ==
+                    secondSize - 1,
+                "moving the screenshot toolbar rebinds style persistence");
+        host.detachOverlayTransientUi(&second);
+        const auto saved = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+        require(second.canvas()->stepFontSize(1),
+                "detached canvas can still update its local style");
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == saved,
+                "detaching screenshot UI removes its preference binding");
+    }
+    storage.shutdown();
+}
 
 void pickerLifetimeFollowsExplicitSessionOperations() {
     QTemporaryDir temporary;
@@ -498,6 +594,10 @@ void canvasSamplerFollowsSessionOwner() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--style-binding-only"))) {
+        screenshotStyleBindingFollowsToolbarAttachment();
+        return 0;
+    }
     canvasSamplerFollowsSessionOwner();
     if (application.arguments().contains(QStringLiteral("--canvas-sampler-only")))
         return 0;

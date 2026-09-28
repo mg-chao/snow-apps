@@ -125,6 +125,8 @@ struct ScreenshotToolPaletteStyleState {
     SnowCanvasFilterStyle rectangleFilterStyle;
     SnowCanvasFilterStyle creationPenFilterStyle;
     SnowCanvasFilterStyle penFilterStyle;
+    SnowCanvasWatermarkConfig creationWatermarkConfig;
+    SnowCanvasSpotlightConfig creationSpotlightConfig;
     SnowCanvasWatermarkConfig m_watermarkConfig;
     SnowCanvasSpotlightConfig spotlightConfig;
     bool m_arrowControlsActive = false;

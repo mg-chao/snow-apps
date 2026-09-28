@@ -1279,6 +1279,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotselectionpin.cpp
     src/presentation/core/screenshotgeometry.cpp
     src/presentation/core/screenshotcanvastoolstyles.cpp
+    src/presentation/core/screenshotstylebinding.cpp
     src/presentation/core/screenshotintelligentselectionmodel.cpp
     src/presentation/core/screenshotinteractionstate.cpp
     src/presentation/core/screenshotsmartselectiontransition.cpp
@@ -3521,6 +3522,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshotocrtexteditingsession.cpp
@@ -3710,6 +3712,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-save-dialog-tests
         COMMAND snow-shot-pinned-window-tests --save-dialog-only)
     set_tests_properties(snow-shot-pinned-save-dialog-tests PROPERTIES TIMEOUT 90)
+    add_test(NAME snow-shot-pinned-style-wheel-tests
+        COMMAND snow-shot-pinned-window-tests --arrow-label-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(
         NAME snow-shot-pinned-toolbar-parity-tests
         COMMAND snow-shot-pinned-window-tests --toolbar-parity-only
@@ -4307,11 +4312,13 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-tool-palette-tests
         tests/screenshot_tool_palette_tests.cpp
+        tests/screenshot_style_binding_tests.cpp
         include/snow_shot/presentation/languagemanager.h
         include/snow_shot/presentation/screenshottoolpalette.h
         include/snow_shot/presentation/styles/thememanager.h
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
         src/presentation/services/languagemanager.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalettebuttons.cpp
@@ -4362,6 +4369,9 @@ if(SNOW_SHOT_BUILD_TESTS)
             -platform offscreen)
     set_tests_properties(snow-shot-screenshot-tool-palette-remembered-drawing-tool-tests
         PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-style-commit-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --style-commit-only -platform offscreen)
+    set_tests_properties(snow-shot-style-commit-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-spotlight-wheel-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --spotlight-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-spotlight-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -4486,6 +4496,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
         src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -4536,6 +4547,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/platform/windows/monitorgeometry.cpp
             src/presentation/core/screenshotgeometry.cpp
             src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
             src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
             src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
             src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -4600,6 +4612,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/platform/windows/monitorgeometry.cpp
             src/presentation/core/screenshotgeometry.cpp
             src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
             src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
             src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
             src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -4659,6 +4672,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
@@ -4734,6 +4748,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
@@ -4807,6 +4822,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selection/screenshotselectiontoolbarwidgets.h
         src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
     )
+    add_test(NAME snow-shot-screenshot-style-binding-tests
+        COMMAND snow-shot-color-picker-lifecycle-tests --style-binding-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-style-binding-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     snow_shot_link_macos_window_platform(snow-shot-color-picker-lifecycle-tests)
     target_include_directories(snow-shot-color-picker-lifecycle-tests PRIVATE include)
     target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE
@@ -5367,6 +5385,9 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT "QT_QPA_PLATFORM=windows"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
+    add_test(NAME snow-shot-recording-style-wheel-tests
+        COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
     if(WIN32)
@@ -6336,6 +6357,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
         src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -6495,6 +6517,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotstylebinding.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshotocrtexteditingsession.cpp

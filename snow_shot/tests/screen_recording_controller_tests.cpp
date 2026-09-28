@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "window_close_shortcut_test_support.h"
 #include <QFontDatabase>
 #include "recording_effect_test_source.h"
@@ -1734,6 +1735,36 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (app.arguments().contains(QStringLiteral("--style-wheel-only"))) {
+        ScreenRecordingController controller(testEffectsSource);
+        controller.open(QRect(10, 10, 640, 480));
+        QCoreApplication::processEvents();
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget))
+                area = candidate;
+        }
+        require(area != nullptr, "recording area exists");
+        auto* toolbar = palette();
+        auto* canvas = area->canvas();
+        for (const auto& tool : {QStringLiteral("text"), QStringLiteral("serial_number")}) {
+            require(toolbar->activateDrawingShortcut(tool), "activate recording font tool");
+            const bool text = tool == QStringLiteral("text");
+            const auto before = canvas->canvasStyleToolbarState();
+            const double size =
+                text ? before.textStyle.fontSize : before.serialNumberStyle.fontSize;
+            const QPointF point(100, 100);
+            QWheelEvent event(point, canvas->mapToGlobal(point.toPoint()), QPoint(), QPoint(0, 120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(canvas, &event);
+            const auto saved = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+            require((text ? saved.text.fontSize : saved.serialNumber.fontSize) == size + 1,
+                    "recording canvas wheel applies and persists the font style");
+        }
+        toolbar->recordingCloseRequested();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--automation-only"))) {
         {
             ScreenRecordingController manual(testEffectsSource);

@@ -300,23 +300,6 @@ SnowCanvasWidgetTextInteraction::StyleChangeResult SnowCanvasWidgetTextInteracti
     return result;
 }
 
-SnowCanvasWidgetTextInteraction::StyleChangeResult
-SnowCanvasWidgetTextInteraction::stepFontSize(SnowRuntime runtime, SnowViewport viewport,
-                                              SnowCanvasDisplayCache& displayCache,
-                                              const SnowTextStyle& fallbackStyle, bool increase) {
-    SnowTextStyle style = m_session.isActive() ? m_session.currentTextStyle() : fallbackStyle;
-    const double nextFontSize =
-        snow_canvas_text_measurement::steppedFontSize(style.font_size, increase);
-    if (std::abs(nextFontSize - style.font_size) <= std::numeric_limits<double>::epsilon()) {
-        StyleChangeResult result;
-        result.success = true;
-        return result;
-    }
-
-    style.font_size = nextFontSize;
-    return applyTextStyle(runtime, viewport, displayCache, style, SNOW_TEXT_STYLE_MIXED_FONT_SIZE);
-}
-
 QRegion SnowCanvasWidgetTextInteraction::applyEditorTextStyle(
     const SnowTextStyle& style, const SnowCanvasDisplayCache& displayCache, const QFont& baseFont) {
     QRegion region = editingRegion(displayCache, baseFont);

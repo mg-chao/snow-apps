@@ -1614,14 +1614,17 @@ void textFontWheelPreservesMixedSelectionStyles() {
                 count == 2,
             "font wheel should start with both texts selected");
     const double nextSize = canvas.canvasStyleToolbarState().textStyle.fontSize + 1.0;
-    SnowCanvasDisplayCache cache;
-    require(cache.sync(handle, inspection.get()), "font wheel should synchronize selected text");
-    SnowCanvasCursorController cursor(canvas);
-    SnowCanvasWidgetTextInteraction interaction(canvas, cursor);
-    const auto mutation = interaction.stepFontSize(
-        handle, inspection.get(), cache,
-        snow_canvas_types::toEngineTextStyle(canvas.canvasStyleToolbarState().textStyle), true);
-    require(mutation.success, "font wheel should update the selected text");
+    int committed = 0;
+    QObject::connect(&canvas, &SnowCanvasWidget::styleEditCommitted, &canvas,
+                     [&](const SnowCanvasStyleEdit& edit) {
+                         const auto* patch = std::get_if<SnowCanvasTextEdit>(&edit);
+                         require(patch != nullptr &&
+                                     patch->properties == SnowCanvasTextStyleMixedFontSize,
+                                 "font stepping publishes only the explicitly changed property");
+                         ++committed;
+                     });
+    require(canvas.stepFontSize(1), "font wheel should update the selected text");
+    require(committed == 1, "font step publishes one successful user commit");
 
     const auto verify = [&](bool stepped) {
         for (int i = 0; i < 2; ++i) {
@@ -1660,6 +1663,9 @@ void textFontWheelPreservesMixedSelectionStyles() {
     SnowTextElementInfo info{};
     require(snow_runtime_get_text_element(handle, ids[1], &info) == SNOW_OK,
             "draft patch fixture should read the resized text");
+    SnowCanvasDisplayCache cache;
+    SnowCanvasCursorController cursor(canvas);
+    SnowCanvasWidgetTextInteraction interaction(canvas, cursor);
     require(cache.sync(handle, inspection.get()), "draft patch fixture should refresh its cache");
     SnowCanvasTextStyle current = styles[1];
     current.fontSize = nextSize;

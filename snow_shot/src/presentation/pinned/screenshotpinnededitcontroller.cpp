@@ -6,6 +6,7 @@
 
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -71,20 +72,6 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
     options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
     return options;
-}
-
-bool wheelAdjustsStrokeWidth(SnowCanvasTool tool) {
-    switch (tool) {
-    case SnowCanvasTool::Shape:
-    case SnowCanvasTool::Arrow:
-    case SnowCanvasTool::Line:
-    case SnowCanvasTool::FreeDraw:
-    case SnowCanvasTool::RectangleHighlight:
-    case SnowCanvasTool::PenHighlight:
-        return true;
-    default:
-        return false;
-    }
 }
 
 } // namespace
@@ -242,36 +229,11 @@ bool ScreenshotPinnedEditController::eventFilter(QObject* watched, QEvent* event
         auto* wheelEvent = static_cast<QWheelEvent*>(event);
         const int deltaY = !wheelEvent->pixelDelta().isNull() ? wheelEvent->pixelDelta().y()
                                                               : wheelEvent->angleDelta().y();
-        ScreenshotToolPaletteHost* host = toolbarHost();
-        const int direction = deltaY > 0 ? 1 : -1;
-        bool handled = false;
-        if (deltaY != 0 && host != nullptr) {
-            const SnowCanvasTool activeTool = m_canvas.canvasTool();
-            if (wheelAdjustsStrokeWidth(activeTool)) {
-                handled = host->stepStrokeWidth(direction);
-            } else {
-                switch (activeTool) {
-                case SnowCanvasTool::Select:
-                    handled = host->stepSelectionOpacity(direction);
-                    break;
-                case SnowCanvasTool::Spotlight:
-                    handled = host->stepSpotlightOpacity(direction);
-                    break;
-                case SnowCanvasTool::RectangleFilter:
-                case SnowCanvasTool::AutoFilter:
-                    handled = host->stepFilterIntensity(direction);
-                    break;
-                case SnowCanvasTool::PenFilter:
-                    handled = host->stepPenFilterStrokeWidth(direction);
-                    break;
-                case SnowCanvasTool::Watermark:
-                    handled = host->stepWatermarkFontSize(direction);
-                    break;
-                default:
-                    break;
-                }
-            }
-        }
+        ScreenshotToolPalette* palette =
+            m_toolbarWindow != nullptr ? m_toolbarWindow->palette() : nullptr;
+        const bool handled =
+            deltaY != 0 && palette != nullptr &&
+            snow_shot::presentation::stepScreenshotStyle(*palette, m_canvas, deltaY > 0 ? 1 : -1);
         if (handled) {
             wheelEvent->accept();
             return true;
@@ -368,6 +330,7 @@ void ScreenshotPinnedEditController::ensureToolbar() {
     m_toolbarWindow->setStyleToolbarAboveMain(false);
 
     if (ScreenshotToolPalette* toolbar = m_toolbarWindow->palette()) {
+        new snow_shot::presentation::ScreenshotStyleBinding(*toolbar, m_canvas, toolbar);
         toolbar->setHistoryState(m_canvas.canvasHistoryState());
         connect(toolbar, &ScreenshotToolPalette::undoRequested, this,
                 [this]() { static_cast<void>(m_canvas.undo()); });
@@ -406,41 +369,17 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 m_autoFilterController.get(), &ScreenshotAutoFilterController::fillCategory);
         connect(toolbar, &ScreenshotToolPalette::penFilterRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::PenFilter); });
-        connect(toolbar, &ScreenshotToolPalette::filterStyleChanged, this,
-                [this](const SnowCanvasFilterStyle& style, quint32 properties) {
-                    m_canvas.setCanvasFilterStyle(style, properties);
-                    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
-                        static_cast<void>(
-                            snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                                m_toolbarWindow->palette()->creationStyleDefaults()));
-                    }
-                });
+
         toolbar->setWatermarkConfig(m_canvas.canvasWatermarkConfig());
         toolbar->setSpotlightConfig(m_canvas.canvasSpotlightConfig());
         connect(toolbar, &ScreenshotToolPalette::watermarkRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Watermark); });
-        connect(toolbar, &ScreenshotToolPalette::watermarkConfigChanged, this,
-                [this](const SnowCanvasWatermarkConfig& config) {
-                    m_canvas.setCanvasWatermarkConfig(config);
-                    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
-                        static_cast<void>(
-                            snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                                m_toolbarWindow->palette()->creationStyleDefaults()));
-                    }
-                });
+
         connect(toolbar, &ScreenshotToolPalette::watermarkPreviewChanged, this,
                 [this](const SnowCanvasWatermarkConfig& config) {
                     m_canvas.previewCanvasWatermarkConfig(config);
                 });
-        connect(toolbar, &ScreenshotToolPalette::spotlightConfigChanged, this,
-                [this](const SnowCanvasSpotlightConfig& config) {
-                    m_canvas.setCanvasSpotlightConfig(config);
-                    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
-                        static_cast<void>(
-                            snow_shot::presentation::persistScreenshotCanvasToolStyles(
-                                m_toolbarWindow->palette()->creationStyleDefaults()));
-                    }
-                });
+
         connect(toolbar, &ScreenshotToolPalette::spotlightPreviewChanged, this,
                 [this](const SnowCanvasSpotlightConfig& config) {
                     m_canvas.previewCanvasSpotlightConfig(config);
@@ -511,16 +450,12 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { m_canvas.deleteSelected(); });
         connect(toolbar, &ScreenshotToolPalette::resetCanvasRequested, this,
                 [this]() { m_canvas.deleteAllElements(); });
-        connect(toolbar, &ScreenshotToolPalette::shapeStyleChanged, this,
-                &ScreenshotPinnedEditController::applyShapeStyleFromPalette);
-        connect(toolbar, &ScreenshotToolPalette::textStyleChanged, this,
-                &ScreenshotPinnedEditController::applyTextStyleFromPalette);
+
         connect(toolbar, &ScreenshotToolPalette::textStylePopupInteractionBegan, this,
                 [this]() { m_canvas.beginTextStylePopupInteraction(); });
         connect(toolbar, &ScreenshotToolPalette::textStylePopupInteractionEnded, this,
                 [this]() { m_canvas.endTextStylePopupInteraction(m_toolbarWindow); });
-        connect(toolbar, &ScreenshotToolPalette::serialNumberStyleChanged, this,
-                &ScreenshotPinnedEditController::applySerialNumberStyleFromPalette);
+
         connect(toolbar, &ScreenshotToolPalette::canvasColorSamplingRequested, this,
                 &ScreenshotPinnedEditController::beginCanvasColorSampling);
         connect(toolbar, &ScreenshotToolPalette::confirmRequested, this,
@@ -922,34 +857,6 @@ void ScreenshotPinnedEditController::syncPaletteFromCanvasStyle() {
     toolbar->setStyleToolbarState(m_canvas.canvasStyleToolbarState());
     toolbar->setWatermarkConfig(m_canvas.canvasWatermarkConfig());
     toolbar->setSpotlightConfig(m_canvas.canvasSpotlightConfig());
-}
-
-void ScreenshotPinnedEditController::applyShapeStyleFromPalette(const SnowCanvasShapeStyle& style,
-                                                                quint32 properties,
-                                                                SnowCanvasShapeKind kind) {
-    m_canvas.setCanvasShapeStylePatch(style, properties, kind);
-    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
-        static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-            m_toolbarWindow->palette()->creationStyleDefaults()));
-    }
-}
-
-void ScreenshotPinnedEditController::applyTextStyleFromPalette(const SnowCanvasTextStyle& style,
-                                                               quint32 properties) {
-    static_cast<void>(m_canvas.setCanvasTextStyle(style, properties));
-    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
-        static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-            m_toolbarWindow->palette()->creationStyleDefaults()));
-    }
-}
-
-void ScreenshotPinnedEditController::applySerialNumberStyleFromPalette(
-    const SnowCanvasSerialNumberStyle& style) {
-    static_cast<void>(m_canvas.setCanvasSerialNumberStyle(style));
-    if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
-        static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
-            m_toolbarWindow->palette()->creationStyleDefaults()));
-    }
 }
 
 void ScreenshotPinnedEditController::markToolbarManuallyPlaced() {

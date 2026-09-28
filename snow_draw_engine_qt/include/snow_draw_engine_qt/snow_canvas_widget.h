@@ -1,4 +1,5 @@
 #pragma once
+#include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 #include "snow_draw_engine_qt/snow_canvas_smart_erase.h"
 
 #include <QRect>
@@ -53,6 +54,11 @@ class SnowCanvasWidget : public QWidget {
     void setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor);
     void clearCursorForLayer(SnowCanvasCursorLayer layer);
 
+    // Apply a property patch without recording a user preference (restoration/replication).
+    bool applyStyleEdit(const SnowCanvasStyleEdit& edit);
+    // Apply explicit user intent and publish it only on success.
+    bool commitStyleEdit(const SnowCanvasStyleEdit& edit);
+    bool stepFontSize(int direction);
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
@@ -159,6 +165,7 @@ class SnowCanvasWidget : public QWidget {
     void autoFilterInteractionStarting();
     void activeToolChanged();
     void styleToolbarStateChanged();
+    void styleEditCommitted(const SnowCanvasStyleEdit& edit);
     void historyStateChanged();
     void snapConfigChanged();
     void gridConfigChanged();

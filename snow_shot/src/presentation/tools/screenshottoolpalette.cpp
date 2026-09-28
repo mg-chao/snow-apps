@@ -860,20 +860,28 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
             ScreenshotToolPaletteStyleControlCallbacks{
                 [this](const SnowCanvasShapeStyle& style, quint32 properties,
                        SnowCanvasShapeKind kind) {
+                    if (!submitStyleEdit(SnowCanvasShapeEdit{style, properties, kind}))
+                        return;
                     emit shapeStyleChanged(style, properties, kind);
                 },
                 [this](const SnowCanvasTextStyle& style, quint32 properties) {
+                    if (!submitStyleEdit(SnowCanvasTextEdit{style, properties}))
+                        return;
                     emit textStyleChanged(style, properties);
                 },
                 [this]() { emit textStylePopupInteractionBegan(); },
                 [this]() { emit textStylePopupInteractionEnded(); },
-                [this](const SnowCanvasSerialNumberStyle& style) {
+                [this](const SnowCanvasSerialNumberStyle& style, quint32 properties) {
+                    if (!submitStyleEdit(SnowCanvasSerialNumberEdit{style, properties}))
+                        return;
                     emit serialNumberStyleChanged(style);
                 },
                 [this]() { emit serialNumberDecrementRequested(); },
                 [this]() { emit serialNumberIncrementRequested(); },
                 [this]() { emit serialNumberCreateTextRequested(); },
-                [this](const SnowCanvasWatermarkConfig& config) {
+                [this](const SnowCanvasWatermarkConfig& config, quint32 properties) {
+                    if (!submitStyleEdit(SnowCanvasWatermarkEdit{config, properties}))
+                        return;
                     emit watermarkConfigChanged(config);
                 },
                 [this](const SnowCanvasWatermarkConfig& config) {
@@ -1172,6 +1180,31 @@ void ScreenshotToolPalette::setCreationStyleDefaults(const SnowCanvasStyleDefaul
     refreshFilterEditorState(m_penFilterEditor, true);
 }
 
+void ScreenshotToolPalette::setStyleEditHandler(
+    std::function<bool(const SnowCanvasStyleEdit&)> handler) {
+    m_styleEditHandler = std::move(handler);
+}
+
+bool ScreenshotToolPalette::submitStyleEdit(const SnowCanvasStyleEdit& edit) {
+    if (m_styleEditHandler)
+        return m_styleEditHandler(edit);
+    // Standalone palettes still maintain local creation preferences without storage access.
+    rememberStyleEdit(edit);
+    return true;
+}
+
+void ScreenshotToolPalette::rememberStyleEdit(const SnowCanvasStyleEdit& edit) {
+    m_styleControls->rememberStyleEdit(edit);
+}
+
+void ScreenshotToolPalette::notifyFilterStyleChanged(const SnowCanvasFilterStyle& style,
+                                                     quint32 properties) {
+    const bool pen = m_activeTool == Tool::PenFilter;
+    if (!submitStyleEdit(SnowCanvasFilterEdit{style, properties, pen}))
+        return;
+    emit filterStyleChanged(style, properties);
+}
+
 SnowCanvasStyleDefaults ScreenshotToolPalette::creationStyleDefaults() const {
     return m_styleControls != nullptr ? m_styleControls->creationStyleDefaults()
                                       : snow_shot::presentation::screenshotCanvasStyleDefaults();
@@ -1227,18 +1260,7 @@ bool ScreenshotToolPalette::stepFilterIntensity(int direction) {
 
     const int current = qRound(m_styleControls->styleState().rectangleFilterStyle.strength * 100.0);
     const int next = qBound(0, current + (direction > 0 ? 1 : -1), 100);
-    if (next != current) {
-        m_styleControls->styleState().rectangleFilterStyle.strength = next / 100.0;
-        m_styleControls->styleState().creationRectangleFilterStyle.strength = next / 100.0;
-        m_styleControls->styleState().creationPenFilterStyle.strength = next / 100.0;
-        m_styleControls->styleState().penFilterStyle.strength = next / 100.0;
-        {
-            const QSignalBlocker blocker(editor.intensitySlider);
-            editor.intensitySlider->setValue(next);
-        }
-        emit filterStyleChanged(m_styleControls->styleState().rectangleFilterStyle,
-                                SnowCanvasFilterStylePropertyStrength);
-    }
+    setFilterStrength(next / 100.0);
     return true;
 }
 
@@ -1247,21 +1269,41 @@ bool ScreenshotToolPalette::stepPenFilterStrokeWidth(int direction) {
         return false;
     }
 
-    const double next = qBound(1.0,
-                               m_styleControls->styleState().penFilterStyle.strokeWidth +
-                                   (direction > 0 ? 1.0 : -1.0),
-                               72.0);
-    const bool wasMixed = (m_styleControls->styleState().filterStyleMixed &
-                           SnowCanvasFilterStylePropertyStrokeWidth) != 0;
-    if (next != m_styleControls->styleState().penFilterStyle.strokeWidth || wasMixed) {
-        m_styleControls->styleState().penFilterStyle.strokeWidth = next;
-        m_styleControls->styleState().creationPenFilterStyle.strokeWidth = next;
-        m_styleControls->styleState().filterStyleMixed &= ~SnowCanvasFilterStylePropertyStrokeWidth;
-        updatePenFilterStrokeWidthControls();
-        emit filterStyleChanged(m_styleControls->styleState().penFilterStyle,
-                                SnowCanvasFilterStylePropertyStrokeWidth);
-    }
+    setPenFilterStrokeWidth(m_styleControls->styleState().penFilterStyle.strokeWidth +
+                            (direction > 0 ? 1.0 : -1.0));
     return true;
+}
+
+void ScreenshotToolPalette::setFilterStrength(double strength) {
+    auto& state = m_styleControls->styleState();
+    const double next = std::clamp(strength, 0.0, 1.0);
+    if (next == state.rectangleFilterStyle.strength &&
+        (state.filterStyleMixed & SnowCanvasFilterStylePropertyStrength) == 0)
+        return;
+    state.rectangleFilterStyle.strength = next;
+    state.penFilterStyle.strength = next;
+    state.filterStyleMixed &= ~SnowCanvasFilterStylePropertyStrength;
+    for (auto* editor : {&m_filterEditor, &m_autoFilterEditor, &m_penFilterEditor}) {
+        if (editor->intensitySlider != nullptr) {
+            const QSignalBlocker blocker(editor->intensitySlider);
+            editor->intensitySlider->setValue(qRound(next * 100.0));
+        }
+    }
+    notifyFilterStyleChanged(m_activeTool == Tool::PenFilter ? state.penFilterStyle
+                                                             : state.rectangleFilterStyle,
+                             SnowCanvasFilterStylePropertyStrength);
+}
+
+void ScreenshotToolPalette::setPenFilterStrokeWidth(double width) {
+    auto& state = m_styleControls->styleState();
+    const double next = std::clamp(width, 1.0, 72.0);
+    if (next == state.penFilterStyle.strokeWidth &&
+        (state.filterStyleMixed & SnowCanvasFilterStylePropertyStrokeWidth) == 0)
+        return;
+    state.penFilterStyle.strokeWidth = next;
+    state.filterStyleMixed &= ~SnowCanvasFilterStylePropertyStrokeWidth;
+    updatePenFilterStrokeWidthControls();
+    notifyFilterStyleChanged(state.penFilterStyle, SnowCanvasFilterStylePropertyStrokeWidth);
 }
 
 bool ScreenshotToolPalette::stepWatermarkFontSize(int direction) {
@@ -5695,51 +5737,16 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
                                                           : m_filterEditor;
         SnowCanvasFilterStyle& style = filterStyleForEditor(target);
         style.type = static_cast<SnowCanvasFilterType>(typeValue);
-        const auto source = m_styleControls->styleState().filterStyleSource;
-        if (source != SnowCanvasStyleToolbarSource::SelectedRectangleFilter &&
-            source != SnowCanvasStyleToolbarSource::SelectedPenFilter) {
-            if (tool == Tool::PenFilter) {
-                m_styleControls->styleState().creationPenFilterStyle.type = style.type;
-            } else {
-                m_styleControls->styleState().creationRectangleFilterStyle.type = style.type;
-            }
-        }
         if (target.intensitySlider != nullptr) {
             target.intensitySlider->setEnabled(filterTypeSupportsIntensity(style.type));
         }
         updateFilterIntensityIcon(target);
-        emit filterStyleChanged(style, SnowCanvasFilterStylePropertyType);
+        notifyFilterStyleChanged(style, SnowCanvasFilterStylePropertyType);
     };
-    callbacks.setStrength = [this, tool](double strength) {
-        FilterEditor& target = tool == Tool::PenFilter    ? m_penFilterEditor
-                               : tool == Tool::AutoFilter ? m_autoFilterEditor
-                                                          : m_filterEditor;
-        SnowCanvasFilterStyle& style = filterStyleForEditor(target);
-        style.strength = qBound(0.0, strength, 1.0);
-        m_styleControls->styleState().creationRectangleFilterStyle.strength = style.strength;
-        m_styleControls->styleState().creationPenFilterStyle.strength = style.strength;
-        m_styleControls->styleState().rectangleFilterStyle.strength = style.strength;
-        m_styleControls->styleState().penFilterStyle.strength = style.strength;
-        emit filterStyleChanged(style, SnowCanvasFilterStylePropertyStrength);
-    };
+    callbacks.setStrength = [this](double strength) { setFilterStrength(strength); };
     const auto setPenFilterWidth = [this, tool](double width) {
-        if (tool != Tool::PenFilter) {
-            return;
-        }
-        const double clamped = qBound(1.0, width, 72.0);
-        const bool wasMixed = (m_styleControls->styleState().filterStyleMixed &
-                               SnowCanvasFilterStylePropertyStrokeWidth) != 0;
-        if (qFuzzyCompare(m_styleControls->styleState().penFilterStyle.strokeWidth + 1.0,
-                          clamped + 1.0) &&
-            !wasMixed) {
-            return;
-        }
-        m_styleControls->styleState().penFilterStyle.strokeWidth = clamped;
-        m_styleControls->styleState().creationPenFilterStyle.strokeWidth = clamped;
-        m_styleControls->styleState().filterStyleMixed &= ~SnowCanvasFilterStylePropertyStrokeWidth;
-        updatePenFilterStrokeWidthControls();
-        emit filterStyleChanged(m_styleControls->styleState().penFilterStyle,
-                                SnowCanvasFilterStylePropertyStrokeWidth);
+        if (tool == Tool::PenFilter)
+            setPenFilterStrokeWidth(width);
     };
     callbacks.setStrokeWidth = setPenFilterWidth;
     callbacks.cycleStrokeWidth = [this, setPenFilterWidth]() {
@@ -7843,6 +7850,9 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
             m_styleControls->styleState().spotlightConfig.color = color;
             m_styleControls->updateSpotlightColorControls(color);
             if (!m_replayingMaterializedState) {
+                if (!submitStyleEdit(SnowCanvasSpotlightEdit{
+                        m_styleControls->styleState().spotlightConfig, SnowCanvasSpotlightColor}))
+                    return;
                 emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
             }
         };
@@ -7855,6 +7865,9 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         spotlightCallbacks.setOpacity = [this](double opacity) {
             m_styleControls->styleState().spotlightConfig.opacity = std::clamp(opacity, 0.0, 1.0);
             if (!m_replayingMaterializedState) {
+                if (!submitStyleEdit(SnowCanvasSpotlightEdit{
+                        m_styleControls->styleState().spotlightConfig, SnowCanvasSpotlightOpacity}))
+                    return;
                 emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
             }
         };
