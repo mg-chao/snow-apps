@@ -381,6 +381,7 @@ class ScreenshotToolPaletteFontEditor final : public ScreenshotToolPaletteStyleE
     std::shared_ptr<std::function<void()>> m_cycleSize;
     std::shared_ptr<std::function<void(double)>> m_setSize;
     std::shared_ptr<std::function<void(const QString&)>> m_setFamily;
+    std::shared_ptr<bool> m_fontFamiliesLoaded;
 };
 
 struct ScreenshotToolPaletteIconOption {

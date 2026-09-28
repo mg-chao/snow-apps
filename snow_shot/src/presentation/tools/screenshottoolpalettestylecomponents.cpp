@@ -1217,6 +1217,61 @@ void ScreenshotToolPaletteNumericPresetEditor::release() {
     releaseRoot();
 }
 
+namespace {
+void ensureFontFamily(QStandardItemModel* model, const QString& family, bool loaded) {
+    if (model == nullptr || family.isEmpty() || family == QStringLiteral("__mixed__")) {
+        return;
+    }
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (model->index(row, 0).data(adqt::widgets::AdSelect::DefaultValueRole).toString() ==
+            family) {
+            return;
+        }
+    }
+    auto* item = new QStandardItem(family);
+    item->setData(family, adqt::widgets::AdSelect::DefaultValueRole);
+    if (loaded) {
+        const ScreenshotToolPaletteTranslationText unavailableText =
+            ScreenshotToolPaletteTranslationText("%1 (unavailable)").arg(family);
+        item->setText(unavailableText.translated());
+        setScreenshotToolPaletteItemTranslationSource(item, unavailableText);
+        item->setEnabled(false);
+    } else {
+        item->setData(family, adqt::widgets::AdSelect::DefaultLabelRole);
+        item->setData(QFont(family), Qt::FontRole);
+    }
+    model->appendRow(item);
+}
+
+QStandardItemModel* createFontFamilyModel(QObject* parent, const QString& current, bool loaded) {
+    auto* model = new QStandardItemModel(parent);
+    const auto appendFont = [model](const QString& label, const char* source, const QString& value,
+                                    bool enabled, bool preview) {
+        auto* item = new QStandardItem(label);
+        if (source != nullptr) {
+            setScreenshotToolPaletteItemTranslationSource(item, source);
+        } else {
+            item->setData(label, adqt::widgets::AdSelect::DefaultLabelRole);
+        }
+        item->setData(value, adqt::widgets::AdSelect::DefaultValueRole);
+        item->setEnabled(enabled);
+        if (preview && !value.isEmpty()) {
+            item->setData(QFont(value), Qt::FontRole);
+        }
+        model->appendRow(item);
+    };
+    appendFont(QStringLiteral("Default"), "Default", QString(), true, false);
+    appendFont(QStringLiteral("Mixed"), "Mixed", QStringLiteral("__mixed__"), false, false);
+    if (loaded) {
+        for (const QString& family : screenshotToolPaletteFontFamilies()) {
+            appendFont(family, nullptr, family, true, true);
+        }
+    }
+    ensureFontFamily(model, current, loaded);
+    return model;
+}
+} // namespace
+
 void ScreenshotToolPaletteFontEditor::build(QBoxLayout* layout, QWidget* parent, QObject* receiver,
                                             const ScreenshotToolPaletteFontEditorConfig& config,
                                             double initialSize, const QString& initialFamily,
@@ -1295,28 +1350,25 @@ void ScreenshotToolPaletteFontEditor::build(QBoxLayout* layout, QWidget* parent,
             return QString::compare(lhs.label, rhs.label, Qt::CaseInsensitive) < 0;
         });
 
-    auto* fontModel = new QStandardItemModel(m_familySelect);
-    const auto appendFont = [fontModel](const QString& label, const char* source,
-                                        const QString& value, bool enabled, bool preview) {
-        auto* item = new QStandardItem(label);
-        if (source != nullptr) {
-            setScreenshotToolPaletteItemTranslationSource(item, source);
-        } else {
-            item->setData(label, adqt::widgets::AdSelect::DefaultLabelRole);
-        }
-        item->setData(value, adqt::widgets::AdSelect::DefaultValueRole);
-        item->setEnabled(enabled);
-        if (preview && !value.isEmpty()) {
-            item->setData(QFont(value), Qt::FontRole);
-        }
-        fontModel->appendRow(item);
-    };
-    appendFont(QStringLiteral("Default"), "Default", QString(), true, false);
-    appendFont(QStringLiteral("Mixed"), "Mixed", QStringLiteral("__mixed__"), false, false);
-    for (const QString& family : screenshotToolPaletteFontFamilies()) {
-        appendFont(family, nullptr, family, true, true);
-    }
-    m_familySelect->setModel(fontModel);
+    m_fontFamiliesLoaded = std::make_shared<bool>(false);
+    m_familySelect->setModel(createFontFamilyModel(m_familySelect, initialFamily, false));
+    QObject::connect(m_familySelect, &adqt::widgets::AdSelect::popupOpening, m_familySelect,
+                     [select = m_familySelect, loaded = m_fontFamiliesLoaded]() {
+                         if (*loaded) {
+                             return;
+                         }
+                         *loaded = true;
+                         const QSignalBlocker blocker(select);
+                         const QVariant current =
+                             select->currentData(adqt::widgets::AdSelect::DefaultValueRole);
+                         // Populate before attaching: each live insertion resets and sorts the
+                         // selector's proxy model, turning first-open loading into repeated
+                         // full-list rebuilds.
+                         auto* previousModel = select->model();
+                         select->setModel(createFontFamilyModel(select, current.toString(), true));
+                         select->setCurrentValue(current);
+                         previousModel->deleteLater();
+                     });
     m_familySelect->setCurrentData(initialFamily, adqt::widgets::AdSelect::DefaultValueRole);
     layout->addWidget(m_familySelect);
     QObject::connect(m_familySelect, &adqt::widgets::AdSelect::selected, receiver,
@@ -1350,23 +1402,12 @@ void ScreenshotToolPaletteFontEditor::update(double size, const QString& family,
 
     const QSignalBlocker blocker(m_familySelect);
     auto* model = qobject_cast<QStandardItemModel*>(m_familySelect->model());
-    if (!familyMixed && model != nullptr && !family.isEmpty()) {
-        bool found = false;
-        for (int row = 0; row < model->rowCount(); ++row) {
-            if (model->index(row, 0).data(adqt::widgets::AdSelect::DefaultValueRole).toString() ==
-                family) {
-                found = true;
-                break;
-            }
+    if (model != nullptr && m_fontFamiliesLoaded != nullptr) {
+        if (!*m_fontFamiliesLoaded) {
+            model->removeRows(2, model->rowCount() - 2);
         }
-        if (!found) {
-            const ScreenshotToolPaletteTranslationText unavailableText =
-                ScreenshotToolPaletteTranslationText("%1 (unavailable)").arg(family);
-            auto* item = new QStandardItem(unavailableText.translated());
-            setScreenshotToolPaletteItemTranslationSource(item, unavailableText);
-            item->setData(family, adqt::widgets::AdSelect::DefaultValueRole);
-            item->setEnabled(false);
-            model->appendRow(item);
+        if (!familyMixed) {
+            ensureFontFamily(model, family, *m_fontFamiliesLoaded);
         }
     }
     m_familySelect->setCurrentData(familyMixed ? QVariant(QStringLiteral("__mixed__"))
@@ -1432,6 +1473,7 @@ void ScreenshotToolPaletteFontEditor::release() {
     m_cycleSize.reset();
     m_setSize.reset();
     m_setFamily.reset();
+    m_fontFamiliesLoaded.reset();
     releaseRoot();
 }
 

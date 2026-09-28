@@ -6936,6 +6936,9 @@ void watermarkToolExposesSharedStyleControls() {
         require(preset != nullptr && preset->text().isEmpty(),
                 "Watermark font-size presets should use the text icons");
     }
+    require(family->model()->rowCount() == 2, "watermark fonts remain unloaded before opening");
+    family->showPopup();
+    family->hidePopup();
     require(family->placeholder() == QStringLiteral("Font family") &&
                 family->variant() == adqt::widgets::AdSelect::Variant::Borderless &&
                 family->controlSize() == adqt::widgets::AdSelect::ControlSize::Small &&
@@ -8835,6 +8838,9 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
             "text font-family select should be borderless");
     require(fontSelect->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool,
             "text font-family select should use QtTool");
+    require(fontSelect->model()->rowCount() == 2, "text fonts remain unloaded before opening");
+    fontSelect->showPopup();
+    fontSelect->hidePopup();
     require(fontSelect->model() != nullptr &&
                 fontSelect->model()->rowCount() ==
                     snow_shot::presentation::screenshotToolPaletteFontFamilies().size() + 2,
@@ -11958,6 +11964,55 @@ void colorPresetEditorsPreserveCommandsAcrossRebinding() {
     }
 }
 
+void fontEditorLoadsOnFirstOpen() {
+    QWidget host;
+    QHBoxLayout layout(&host);
+    snow_shot::presentation::ScreenshotToolPaletteFontEditor editor;
+    snow_shot::presentation::ScreenshotToolPaletteFontEditorConfig config;
+    int commits = 0;
+    editor.build(&layout, &host, &host, config, 16, QStringLiteral("Segoe UI"), {}, {},
+                 [&commits](const QString&) { ++commits; }, {}, {});
+    auto* select = editor.familySelect();
+    auto* model = select->model();
+    require(model->rowCount() == 3 && select->currentText() == QStringLiteral("Segoe UI"),
+            "unopened toolbar shows only special rows and the saved font");
+    const QString missing = QStringLiteral("Missing lazy font 019837");
+    editor.update(16, missing, false, false, 2, 1, 2);
+    require(model->rowCount() == 3 && select->currentText() == missing,
+            "unopened toolbar updates its saved font without marking it unavailable");
+    int liveFontInsertions = 0;
+    QObject::connect(model, &QAbstractItemModel::rowsInserted, &host,
+                     [&liveFontInsertions]() { ++liveFontInsertions; });
+    select->showPopup();
+    require(liveFontInsertions == 0,
+            "opening must publish complete fonts without rebuilding the live selector per font");
+    model = select->model();
+    require(select->currentData(adqt::widgets::AdSelect::DefaultValueRole).toString() == missing &&
+                select->currentText().contains(QStringLiteral("unavailable")) &&
+                !(select->currentModelIndex().flags() & Qt::ItemIsEnabled) && commits == 0,
+            "opening resolves unavailable fonts without committing");
+    const int loadedRows = model->rowCount();
+    select->hidePopup();
+    select->showPopup();
+    require(select->model() == model && model->rowCount() == loadedRows && commits == 0,
+            "reopening reuses loaded toolbar fonts");
+    select->hidePopup();
+    editor.release();
+    editor.build(&layout, &host, &host, config, 16, QString(), {}, {}, {}, {}, {});
+    select = editor.familySelect();
+    editor.update(16, QString(), false, true, 2, 1, 2);
+    require(select->model()->rowCount() == 2 &&
+                select->currentData(adqt::widgets::AdSelect::DefaultValueRole).toString() ==
+                    QStringLiteral("__mixed__"),
+            "rebuilt editor keeps mixed fonts lazy");
+    select->showPopup();
+    require(select->currentData(adqt::widgets::AdSelect::DefaultValueRole).toString() ==
+                QStringLiteral("__mixed__"),
+            "loading preserves the mixed selection");
+    select->hidePopup();
+    editor.release();
+}
+
 void fontFamilyListIsCachedForEditorBuilds() {
     const QStringList& first = snow_shot::presentation::screenshotToolPaletteFontFamilies();
     const QStringList& second = snow_shot::presentation::screenshotToolPaletteFontFamilies();
@@ -12787,6 +12842,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--text-style-only"))) {
+        fontEditorLoadsOnFirstOpen();
         fontFamilyListIsCachedForEditorBuilds();
         textStyleControlsExposeAndEmitAllRequestedProperties();
         textStylePopupLifecyclesAreBalanced();
@@ -13079,6 +13135,7 @@ int main(int argc, char** argv) {
     prewarmedDestinationMergesSourceSharedAndDestinationOnlyEditors();
     retainedEditorsApplyDestinationMixedStateDuringReconciliation();
     repeatedStyleReconciliationDoesNotAccumulateHiddenRows();
+    fontEditorLoadsOnFirstOpen();
     fontFamilyListIsCachedForEditorBuilds();
     scrollingScreenshotKeepsDrawingToolsAvailable();
     recognitionToolsKeepDrawingToolsAvailable();

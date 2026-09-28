@@ -22,6 +22,7 @@
 #include <QLabel>
 #include <QProxyStyle>
 #include <QPixmap>
+#include <QPointer>
 #include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTranslator>
@@ -202,6 +203,35 @@ void fontPreviewAndFiltering(const settings::SettingsRegistry& registry,
         QStringLiteral("settings-control-interface-app-font"));
     require(font != nullptr && font->searchEnabled(), "font selector supports input filtering");
     auto* model = font->model();
+    require(model->rowCount() == 1, "unopened font selector contains only System default");
+    session.refreshAll();
+    TestTranslator initialTranslator;
+    QCoreApplication::installTranslator(&initialTranslator);
+    drainEvents();
+    require(font->model()->rowCount() == 1, "refresh and translation do not load unopened fonts");
+    QCoreApplication::removeTranslator(&initialTranslator);
+    drainEvents();
+    int selectionChanges = 0;
+    QObject::connect(font, &adqt::widgets::AdSelect::currentValueChanged, font,
+                     [&selectionChanges] { ++selectionChanges; });
+    int liveFontInsertions = 0;
+    QObject::connect(font->model(), &QAbstractItemModel::rowsInserted, &page,
+                     [&liveFontInsertions] { ++liveFontInsertions; });
+    QPointer<QAbstractItemModel> unloadedModel = font->model();
+    font->showPopup();
+    require(liveFontInsertions == 0,
+            "opening must publish complete fonts without rebuilding the live selector per font");
+    require(selectionChanges == 0, "loading fonts must not commit a selection");
+    font->hidePopup();
+    model = font->model();
+    drainEvents();
+    require(unloadedModel.isNull(), "loading releases the replaced font model");
+    const int loadedRows = model->rowCount();
+    font->showPopup();
+    require(font->model() == model && model->rowCount() == loadedRows && selectionChanges == 0,
+            "reopening reuses the font model without changing selection");
+    font->hidePopup();
+
     require(
         model->rowCount() > 1 &&
             model->index(0, 0).data(adqt::widgets::AdSelect::DefaultValueRole).toString().isEmpty(),
@@ -241,15 +271,36 @@ void fontPreviewAndFiltering(const settings::SettingsRegistry& registry,
     drainEvents();
     require(session.selectValue(settings::SettingsSelectBinding::AppFont).toString() == family,
             "choosing a font commits the setting");
+    {
+        SettingsPageWidget unopened(registry, QStringLiteral("interface-settings"), session);
+        unopened.resize(880, 760);
+        unopened.show();
+        drainEvents();
+        auto* unopenedFont = unopened.findChild<adqt::widgets::AdSelect*>(
+            QStringLiteral("settings-control-interface-app-font"));
+        session.refreshAll();
+        require(unopenedFont != nullptr && unopenedFont->model()->rowCount() == 2 &&
+                    unopenedFont->currentText() == family,
+                "another selector loading fonts does not populate unopened selectors");
+    }
+
     TestTranslator translator;
+    QObject::connect(model, &QAbstractItemModel::rowsInserted, &page,
+                     [&liveFontInsertions] { ++liveFontInsertions; });
+    QPointer<QAbstractItemModel> untranslatedModel = model;
+    const int changesBeforeTranslation = selectionChanges;
     QCoreApplication::installTranslator(&translator);
     drainEvents();
-    require(font->model() == model && font->currentValue().toString() == family &&
+    model = font->model();
+    require(liveFontInsertions == 0 && untranslatedModel.isNull() &&
+                selectionChanges == changesBeforeTranslation,
+            "translation publishes complete fonts, releases the old model and never commits");
+    require(font->currentValue().toString() == family &&
                 model->index(0, 0)
                     .data(Qt::DisplayRole)
                     .toString()
                     .startsWith(QStringLiteral("Translated: ")),
-            "language changes retain the model and selected family and translate System default");
+            "language changes retain the selected family and translate System default");
     require(model->index(1, 0).data(Qt::FontRole).value<QFont>().family() == family,
             "language changes preserve font preview roles");
     QCoreApplication::removeTranslator(&translator);
@@ -295,6 +346,7 @@ void fontPreviewAndFiltering(const settings::SettingsRegistry& registry,
             "returning to System default restores its visible label");
     QCoreApplication::installTranslator(&translator);
     drainEvents();
+    model = font->model();
     require(font->currentModelIndex().row() == 0 &&
                 font->currentText() == model->index(0, 0).data(Qt::DisplayRole).toString() &&
                 font->currentText().startsWith(QStringLiteral("Translated: ")) &&

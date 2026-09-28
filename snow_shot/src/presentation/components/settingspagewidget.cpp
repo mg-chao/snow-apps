@@ -130,6 +130,7 @@ class SettingsPageWidget::Impl {
         SettingsCustomWidget* customControl = nullptr;
         std::optional<settings::SettingsCustomRenderer> deferredRenderer;
         QPointer<adqt::widgets::AdModal> modal;
+        bool fontOptionsLoaded = false;
         QVector<adqt::widgets::AdSelect::Option> presentedOptions;
     };
 
@@ -438,6 +439,19 @@ class SettingsPageWidget::Impl {
                     select->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
                     runtime.select = select;
+                    if (payload.binding == settings::SettingsSelectBinding::AppFont) {
+                        connect(select, &adqt::widgets::AdSelect::popupOpening, select,
+                                [this, itemId = definition.id]() {
+                                    RuntimeItem* item = runtimeItem(itemId);
+                                    if (item == nullptr || item->fontOptionsLoaded) {
+                                        return;
+                                    }
+                                    item->fontOptionsLoaded = true;
+                                    const QSignalBlocker blocker(item->select);
+                                    runtimeSession.requestFontOptions();
+                                    setOptions(*item, selectOptions(*item));
+                                });
+                    }
                     runtime.focusTarget = select;
                     runtime.anchor = settings_ui::createSettingItemRow(
                         list, colorScheme.metricAlias, &runtime.title, &runtime.description, select,
@@ -1062,7 +1076,13 @@ class SettingsPageWidget::Impl {
                         values.push_back(selectOption(option.value, option.label));
                     }
                     const QSignalBlocker blocker(item->select);
-                    setOptions(*item, values);
+                    const auto* definition =
+                        std::get_if<settings::SettingsSelectDefinition>(&item->definition->payload);
+                    setOptions(*item,
+                               definition != nullptr && definition->binding ==
+                                                            settings::SettingsSelectBinding::AppFont
+                                   ? selectOptions(*item)
+                                   : values);
                 }
                 if (item->multiSelect != nullptr) {
                     QVector<adqt::widgets::AdMultiSelect::Option> values;
@@ -1205,15 +1225,34 @@ class SettingsPageWidget::Impl {
         }
     }
 
-    QList<adqt::widgets::AdSelect::Option>
-    selectOptions(const settings::SettingsSelectDefinition& definition) const {
+    QList<adqt::widgets::AdSelect::Option> selectOptions(const RuntimeItem& runtime) const {
+        const auto& definition =
+            std::get<settings::SettingsSelectDefinition>(runtime.definition->payload);
         QList<adqt::widgets::AdSelect::Option> options;
         for (const settings::SettingsOptionDefinition& option : definition.options) {
             options.push_back(selectOption(option.value, option.label.translated()));
         }
-        for (const settings::SettingsRuntimeOption& option :
-             runtimeSession.dynamicSelectOptions(definition.binding)) {
-            options.push_back(selectOption(option.value, option.label));
+        const bool isFont = definition.binding == settings::SettingsSelectBinding::AppFont;
+        if (!isFont || runtime.fontOptionsLoaded) {
+            for (const settings::SettingsRuntimeOption& option :
+                 runtimeSession.dynamicSelectOptions(definition.binding)) {
+                options.push_back(selectOption(option.value, option.label));
+            }
+        }
+        if (isFont) {
+            const QString current = runtimeSession.selectValue(definition.binding).toString();
+            if (!current.isEmpty() &&
+                std::none_of(options.cbegin(), options.cend(), [&current](const auto& option) {
+                    return option.value.toString() == current;
+                })) {
+                options.push_back(selectOption(current, current));
+            }
+            std::sort(options.begin(), options.end(), [](const auto& first, const auto& second) {
+                if (first.value.toString().isEmpty() != second.value.toString().isEmpty()) {
+                    return first.value.toString().isEmpty();
+                }
+                return QString::compare(first.label, second.label, Qt::CaseInsensitive) < 0;
+            });
         }
         return options;
     }
@@ -1259,6 +1298,9 @@ class SettingsPageWidget::Impl {
                 const auto* definition =
                     std::get_if<settings::SettingsSelectDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
+                    if (definition->binding == settings::SettingsSelectBinding::AppFont) {
+                        setOptions(runtime, selectOptions(runtime));
+                    }
                     runtime.select->setCurrentValue(
                         runtimeSession.selectValue(definition->binding));
                 }
@@ -1535,12 +1577,8 @@ class SettingsPageWidget::Impl {
                 std::get_if<settings::SettingsSelectDefinition>(&item.definition->payload);
             if (definition != nullptr &&
                 definition->binding == settings::SettingsSelectBinding::AppFont) {
-                auto* model = qobject_cast<QStandardItemModel*>(item.select->model());
-                if (model == nullptr) {
-                    model = new QStandardItemModel(item.select);
-                    item.select->setModel(model);
-                }
-                model->clear();
+                // Populate before attaching so each font does not rebuild the live selector.
+                auto* model = new QStandardItemModel(item.select);
                 for (const auto& option : options) {
                     auto* row = new QStandardItem(option.label);
                     row->setData(option.label, adqt::widgets::AdSelect::DefaultLabelRole);
@@ -1550,7 +1588,12 @@ class SettingsPageWidget::Impl {
                     }
                     model->appendRow(row);
                 }
+                auto* previousModel = item.select->model();
+                item.select->setModel(model);
                 item.select->setCurrentValue(runtimeSession.selectValue(definition->binding));
+                if (previousModel != nullptr) {
+                    previousModel->deleteLater();
+                }
             } else {
                 item.select->setOptions(options);
             }
@@ -1603,7 +1646,7 @@ class SettingsPageWidget::Impl {
                     std::get_if<settings::SettingsSelectDefinition>(&definition.payload);
                 Q_ASSERT(select != nullptr);
                 const QSignalBlocker blocker(runtime.select);
-                setOptions(runtime, selectOptions(*select));
+                setOptions(runtime, selectOptions(runtime));
             }
             if (runtime.multiSelect != nullptr) {
                 const auto* multi =
