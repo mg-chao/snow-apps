@@ -121,6 +121,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     bool handleCanvasWheel(QWheelEvent* event);
     bool dispatchHandledMouseEvent(QMouseEvent* event);
     void initializeScreenshotSurface();
+    void layoutRegionTypeControl();
     void layoutScrollingThumbnail();
     void updateWindowMask();
 

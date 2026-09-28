@@ -22,6 +22,7 @@
 #include <QResizeEvent>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QWindow>
 
 #include <algorithm>
 #include <optional>
@@ -544,6 +545,10 @@ void ScreenshotOverlayWindow::initializeScreenshotSurface() {
 }
 
 bool ScreenshotOverlayWindow::event(QEvent* event) {
+    if (event != nullptr &&
+        (event->type() == QEvent::SafeAreaMarginsChange || event->type() == QEvent::Show)) {
+        layoutRegionTypeControl();
+    }
 #ifdef Q_OS_MACOS
     if (event != nullptr && event->type() == QEvent::Show) {
         const bool handled = QWidget::event(event);
@@ -655,6 +660,7 @@ void ScreenshotOverlayWindow::paintEvent(QPaintEvent* event) {
 void ScreenshotOverlayWindow::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     layoutScrollingThumbnail();
+    layoutRegionTypeControl();
     updateWindowMask();
 }
 
@@ -883,17 +889,28 @@ void ScreenshotOverlayWindow::setRegionTypeControlVisible(bool visible, Screensh
                                                           const QPointF& cursorGlobal) {
     m_regionTypeControl->setType(type);
     if (visible) {
-        const int maximumWidth = std::max(1, width() - 16);
-        if (m_regionTypeControl->maximumWidth() != maximumWidth) {
-            m_regionTypeControl->setMaximumWidth(maximumWidth);
-            m_regionTypeControl->adjustSize();
-        }
-        const QPoint position(std::max(0, (width() - m_regionTypeControl->width()) / 2),
-                              std::max(0, std::min(12, height() - m_regionTypeControl->height())));
-        if (m_regionTypeControl->pos() != position)
-            m_regionTypeControl->move(position);
+        layoutRegionTypeControl();
     }
     m_regionTypeControl->setPresentationVisible(visible, selectionGlobal, cursorGlobal);
+}
+
+void ScreenshotOverlayWindow::layoutRegionTypeControl() {
+    if (m_regionTypeControl == nullptr) {
+        return;
+    }
+    const int maximumWidth = std::max(1, width() - 16);
+    if (m_regionTypeControl->maximumWidth() != maximumWidth) {
+        m_regionTypeControl->setMaximumWidth(maximumWidth);
+        m_regionTypeControl->adjustSize();
+    }
+    // Keep the capture canvas full-screen, but place controls below the notch.
+    // QWindow reports logical margins, matching QWidget coordinates at every DPR.
+    const int safeTop = windowHandle() != nullptr ? windowHandle()->safeAreaMargins().top() : 0;
+    const QPoint position(
+        std::max(0, (width() - m_regionTypeControl->width()) / 2),
+        std::max(0, std::min(safeTop + 12, height() - m_regionTypeControl->height())));
+    if (m_regionTypeControl->pos() != position)
+        m_regionTypeControl->move(position);
 }
 
 void ScreenshotOverlayWindow::setSelectionDraft(const QPainterPath& path,

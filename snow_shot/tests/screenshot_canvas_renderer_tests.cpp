@@ -459,6 +459,9 @@ void overlayCanvasCoversDisplaySafeAreas() {
     ScreenshotOverlayWindow overlay(eventSink, canvas);
     const QRect displayGeometry(-640, -480, 640, 480);
     overlay.setCaptureGeometry(displayGeometry);
+    auto* regionControl =
+        overlay.findChild<QWidget*>(QStringLiteral("screenshotRegionTypeControl"));
+    require(regionControl != nullptr, "overlay must own the region switch prompt");
     for (int surface = 0; surface < 2; ++surface) {
         overlay.restoreNativeSurface();
         for (int reveal = 0; reveal < 2; ++reveal) {
@@ -476,8 +479,17 @@ void overlayCanvasCoversDisplaySafeAreas() {
                     platform.margins = QHighDpi::toNativePixels(margins, window);
                     require(window->safeAreaMargins() == margins,
                             "the fixture must expose the display safe area through QPA");
+                    overlay.setRegionTypeControlVisible(true, ScreenshotRegionType::Rectangle, {},
+                                                        {});
+                    require(regionControl->y() == margins.top() + 12,
+                            "showing the region prompt must leave a gap below the notch");
+                    regionControl->move(0, 0);
                     QEvent changed(QEvent::SafeAreaMarginsChange);
                     QCoreApplication::sendEvent(window, &changed);
+                    require(regionControl->y() == margins.top() + 12 &&
+                                regionControl->x() ==
+                                    (overlay.width() - regionControl->width()) / 2,
+                            "safe-area changes must reposition and center the region prompt");
                     overlay.layout()->invalidate();
                     overlay.layout()->activate();
                     require(canvas->size() == displayGeometry.size(),
