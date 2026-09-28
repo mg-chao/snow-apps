@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
 #include "snow_shot/platform/screenshotnative.h"
 #include <QJsonDocument>
@@ -313,6 +314,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] ScreenshotOverlayWindow* keyboardOwnerOverlay() const;
     void rememberKeyboardOwner(QWidget* widget = nullptr);
     void restoreKeyboardOwnerQueued(ScreenshotOverlayWindow* overlay);
+    [[nodiscard]] ScreenshotToolbarWindow* toolbarForShortcut();
     [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
     [[nodiscard]] bool requestCancelCaptureViaShortcut();
     void setHistoryLoadingMessageVisible(bool visible);
@@ -956,8 +958,20 @@ void ScreenshotController::Impl::restoreKeyboardOwnerQueued(ScreenshotOverlayWin
     });
 }
 
-bool ScreenshotController::Impl::activateScreenshotShortcut(const QString& actionId) {
+ScreenshotToolbarWindow* ScreenshotController::Impl::toolbarForShortcut() {
     ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->ensureToolbar();
+    if (toolbar != nullptr && m_interaction.selecting()) {
+        // A newly created or hidden toolbar may not have seen the live selection
+        // yet. Use the same recognition limit as selection-toolbar presentation
+        // before deciding whether a shortcut may commit that selection.
+        toolbar->setRecognitionEnabled(
+            makeScreenshotToolbarPresentationState(m_interaction, m_selection).ocrAvailable);
+    }
+    return toolbar;
+}
+
+bool ScreenshotController::Impl::activateScreenshotShortcut(const QString& actionId) {
+    ScreenshotToolbarWindow* toolbar = toolbarForShortcut();
     ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
     return palette != nullptr && palette->activateScreenshotShortcut(actionId);
 }
@@ -1697,7 +1711,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](const QString& actionId) { return activateScreenshotShortcut(actionId); },
         [this](const QString& toolId) {
             ScreenshotToolbarWindow* toolbar =
-                m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
+                m_overlayCoordinator != nullptr ? m_overlayCoordinator->ensureToolbar() : nullptr;
             return toolbar != nullptr && toolbar->activateDrawingShortcut(toolId);
         },
         [this]() { return m_historyService != nullptr && m_historyService->navigatePrevious(); },
@@ -1794,6 +1808,22 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](const QPoint& point, quint32 displayId) {
             if (m_selectorWorkflow)
                 static_cast<void>(m_selectorWorkflow->requestHitTest(point, displayId));
+        },
+        [this](const QString& actionId) {
+            const auto* toolbar = toolbarForShortcut();
+            auto* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+            return palette != nullptr && palette->canActivateScreenshotShortcut(actionId);
+        },
+        [this](const QString& toolId) {
+            const auto* toolbar = toolbarForShortcut();
+            const auto* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+            return palette != nullptr && palette->canActivateDrawingShortcut(toolId);
+        },
+        [this]() {
+            resetPendingCaptureRequest();
+            if (auto* toolbar = m_overlayCoordinator->ensureToolbar()) {
+                toolbar->suppressRememberedDrawingTool();
+            }
         },
     };
     m_overlayInputHandler =

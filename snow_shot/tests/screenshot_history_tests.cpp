@@ -3004,109 +3004,289 @@ void cursorMovementEligibilityFollowsInteractionState() {
             "scrolling capture must not enable cursor movement");
 }
 
-void hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize() {
+void selectionStagesActivateEveryToolbarShortcut() {
     const storage::ScreenshotShortcutSettings screenshotSettings;
-    const snow_shot::shortcuts::ShortcutBindingMap originalScreenshotShortcuts =
-        screenshotSettings.allShortcuts();
-    snow_shot::shortcuts::ShortcutBindingMap screenshotShortcuts = originalScreenshotShortcuts;
-    for (auto shortcuts = screenshotShortcuts.begin(); shortcuts != screenshotShortcuts.end();
-         ++shortcuts) {
-        shortcuts.value().clear();
-    }
-    screenshotShortcuts.insert(QStringLiteral("move_tool"), {QStringLiteral("M")});
-    require(screenshotSettings.setAllShortcutsAtomic(screenshotShortcuts),
-            "failed to establish the toolbar-visibility screenshot shortcut fixture");
-
     const storage::DrawingShortcutSettings drawingSettings;
-    const snow_shot::shortcuts::ShortcutBindingMap originalDrawingShortcuts =
-        drawingSettings.allShortcuts();
-    snow_shot::shortcuts::ShortcutBindingMap drawingShortcuts = originalDrawingShortcuts;
-    for (auto shortcuts = drawingShortcuts.begin(); shortcuts != drawingShortcuts.end();
-         ++shortcuts) {
-        shortcuts.value().clear();
-    }
-    drawingShortcuts.insert(QStringLiteral("shape"), {QStringLiteral("H")});
-    require(drawingSettings.setAllShortcutsAtomic(drawingShortcuts),
-            "failed to establish the toolbar-visibility drawing shortcut fixture");
+    const auto originalScreenshot = screenshotSettings.allShortcuts();
+    const auto originalDrawing = drawingSettings.allShortcuts();
+    auto screenshotBindings = originalScreenshot;
+    auto drawingBindings = originalDrawing;
+    for (auto& binding : screenshotBindings)
+        binding.clear();
+    for (auto& binding : drawingBindings)
+        binding.clear();
 
-    ScreenshotCaptureState captureState;
-    captureState.sessionState = ScreenshotSessionState::Editing;
+    const QStringList screenshotCommands = {
+        QStringLiteral("move_tool"),
+        QStringLiteral("table_recognition"),
+        QStringLiteral("qr_code_recognition"),
+        QStringLiteral("video_recording"),
+        QStringLiteral("text_recognition"),
+        QStringLiteral("text_translation"),
+        QStringLiteral("scrolling_screenshot"),
+        QStringLiteral("quick_save"),
+        QStringLiteral("save_as_file"),
+        QStringLiteral("pin_to_screen"),
+        QStringLiteral("copy_to_clipboard"),
+        QStringLiteral("undo"),
+        QStringLiteral("redo"),
+    };
+    for (const bool drawing : {false, true}) {
+        const auto commands = drawing ? originalDrawing.keys() : screenshotCommands;
+        for (const auto& id : commands) {
+            auto screenshot = screenshotBindings;
+            auto draw = drawingBindings;
+            (drawing ? draw : screenshot).insert(id, {QStringLiteral("Alt+J")});
+            require(screenshotSettings.setAllShortcutsAtomic(screenshot) &&
+                        drawingSettings.setAllShortcutsAtomic(draw),
+                    "configure isolated toolbar shortcut");
+            // Smart hover, smart press, manual idle, marquee, move, and resize.
+            for (int stage = 0; stage < 6; ++stage) {
+                ScreenshotCaptureState capture;
+                capture.sessionState = ScreenshotSessionState::OverlayVisible;
+                ScreenshotDisplaySession displays;
+                ScreenshotGeometryMapper geometry;
+                ScreenshotSelectionModel selection;
+                selection.setSelectionRect(QRectF(10, 20, 80, 60));
+                ScreenshotIntelligentSelectionModel intelligent;
+                ScreenshotInteractionState interaction;
+                interaction.enterOverlayVisible(stage < 2);
+                if (stage == 1)
+                    intelligent.beginPress(QPointF(30, 40), selection.normalizedSelection());
+                if (stage >= 3)
+                    require(interaction.enterSelectionDrag(
+                                stage == 3   ? ScreenshotSelectionDragMode::Marquee
+                                : stage == 4 ? ScreenshotSelectionDragMode::All
+                                             : ScreenshotSelectionDragMode::Right),
+                            "start selection drag fixture");
+                const QRect bounds = selection.pixelSelection();
+                bool available = false;
+                bool inputAllowed = true;
+                bool toolbarVisible = false;
+                bool pendingQuickAction = true;
+                bool rememberedTool = true;
+                int activations = 0;
+                int confirmations = 0;
+                int preparations = 0;
+                int automaticActions = 0;
+                ScreenshotOverlayInputActions actions;
+                actions.mainToolbarVisible = [&] { return toolbarVisible; };
+                actions.localShortcutInputAllowed = [&] { return inputAllowed; };
+                actions.canActivateScreenshotShortcut = [&](const QString& command) {
+                    return !drawing && command == id && available;
+                };
+                actions.canActivateDrawingShortcut = [&](const QString& command) {
+                    return drawing && command == id && available;
+                };
+                actions.prepareExplicitSelectionCommand = [&] {
+                    ++preparations;
+                    pendingQuickAction = false;
+                    rememberedTool = false;
+                };
+                actions.updateOverlayState = [&] {
+                    require(activations == 1 &&
+                                interaction.activeTool() == ScreenshotActiveTool::Shape,
+                            "selection confirmation must not present an intermediate Move state");
+                };
+                actions.showToolbar = [&] {
+                    require(activations == 1 &&
+                                interaction.activeTool() == ScreenshotActiveTool::Shape,
+                            "first toolbar presentation must already use the requested tool");
+                    toolbarVisible = true;
+                    if (rememberedTool)
+                        ++automaticActions;
+                };
+                actions.selectionConfirmed = [&] {
+                    ++confirmations;
+                    if (pendingQuickAction)
+                        ++automaticActions;
+                };
+                const auto activate = [&](const QString& command) {
+                    require(command == id && !interaction.selecting() && !interaction.dragging() &&
+                                capture.sessionState == ScreenshotSessionState::Editing &&
+                                selection.pixelSelection() == bounds && !toolbarVisible,
+                            "toolbar command must observe the committed selection");
+                    ++activations;
+                    interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+                    return true;
+                };
+                actions.activateScreenshotShortcut = activate;
+                actions.activateDrawingShortcut = activate;
+                ScreenshotOverlayInputHandler handler(
+                    {capture, interaction, selection, intelligent, geometry, displays, actions});
+                QWidget receiver;
+                snow_shot::presentation::WindowShortcutManager manager;
+                manager.addScopeWindow(&receiver);
+                ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction,
+                                                              intelligent, actions);
+                require(!dispatchShortcut(receiver, Qt::Key_J, Qt::AltModifier) &&
+                            interaction.selecting() && interaction.dragging() == (stage >= 3) &&
+                            preparations == 0 && !toolbarVisible,
+                        "disabled commands must leave the selection gesture untouched");
+                available = true;
+                inputAllowed = false;
+                require(!dispatchShortcut(receiver, Qt::Key_J, Qt::AltModifier) &&
+                            preparations == 0,
+                        "text input must suppress selection-stage toolbar shortcuts");
+                inputAllowed = true;
+                require(dispatchShortcut(receiver, Qt::Key_J, Qt::AltModifier) &&
+                            activations == 1 && preparations == 1 && confirmations == 1 &&
+                            automaticActions == 0 && !intelligent.pressActive(),
+                        "explicit toolbar shortcut must confirm and activate exactly once");
+                static_cast<void>(dispatchShortcut(receiver, Qt::Key_J, Qt::AltModifier, true));
+                static_cast<void>(dispatchShortcutRelease(receiver, Qt::Key_J, Qt::AltModifier));
+                if (stage == 1 || stage >= 3)
+                    require(handler.shouldHandleMouseEvent(nullptr, QPointF(300, 300), true),
+                            "selection release must not leak to the newly activated canvas tool");
+                handler.handleMouseMove(nullptr, QPointF(300, 300));
+                handler.handleMouseRelease(nullptr, QPointF(300, 300));
+                require(selection.pixelSelection() == bounds && activations == 1 &&
+                            confirmations == 1 &&
+                            interaction.activeTool() == ScreenshotActiveTool::Shape,
+                        "later mouse and key events must not complete the selection again");
+            }
+        }
+    }
+    require(screenshotSettings.setAllShortcutsAtomic(originalScreenshot) &&
+                drawingSettings.setAllShortcutsAtomic(originalDrawing),
+            "restore toolbar shortcuts");
+}
+
+void toolbarSelectionPreparationRejectsIncompleteRegions() {
+    ScreenshotCaptureState capture;
     ScreenshotDisplaySession displays;
     ScreenshotGeometryMapper geometry;
     ScreenshotSelectionModel selection;
-    selection.setSelectionRect(QRectF(10, 10, 20, 20));
     ScreenshotIntelligentSelectionModel intelligent;
     ScreenshotInteractionState interaction;
-    interaction.confirmSelection();
-    QWidget shortcutWindow;
-    snow_shot::presentation::WindowShortcutManager shortcutManager;
-    shortcutManager.addScopeWindow(&shortcutWindow);
-
-    bool mainToolbarVisible = true;
-    int showToolbarCount = 0;
-    int moveToolActivations = 0;
-    int drawingToolActivations = 0;
+    interaction.enterOverlayVisible(true);
+    int preparations = 0;
     ScreenshotOverlayInputActions actions;
-    actions.hideMainToolbar = [&mainToolbarVisible]() { mainToolbarVisible = false; };
-    actions.showToolbar = [&mainToolbarVisible, &showToolbarCount]() {
-        mainToolbarVisible = true;
-        ++showToolbarCount;
+    actions.prepareExplicitSelectionCommand = [&] { ++preparations; };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    const auto rejected = [&] {
+        require(!handler.canPrepareSelectionForToolbarShortcut() &&
+                    !handler.activateToolbarShortcutForSelection([] { return true; }) &&
+                    preparations == 0 && interaction.selecting(),
+                "incomplete or externally owned selection must reject toolbar preparation");
     };
-    actions.mainToolbarVisible = [&mainToolbarVisible]() { return mainToolbarVisible; };
-    actions.activateScreenshotShortcut = [&interaction, &moveToolActivations](const QString& id) {
-        if (id != QStringLiteral("move_tool")) {
-            return false;
+    rejected();
+    selection.setSelectionRect(QRectF(10, 20, 80, 60));
+    handler.setExternalDragActive(true);
+    rejected();
+    handler.setExternalDragActive(false);
+    for (const auto type : {ScreenshotRegionType::Polyline, ScreenshotRegionType::Freehand}) {
+        selection.setSelectionRect(QRectF(10, 20, 80, 60));
+        selection.setRegionType(type);
+        selection.setDraftRegion(selection.selectionRegion());
+        rejected();
+        selection.clearDraftRegion();
+    }
+    for (const auto operation : {ScreenshotSelectionModel::RegionOperation::Add,
+                                 ScreenshotSelectionModel::RegionOperation::Subtract}) {
+        selection.setSelectionRect(QRectF(10, 20, 80, 60));
+        selection.beginRegionOperation(operation);
+        rejected();
+        selection.cancelRegionOperation();
+    }
+    require(handler.activateToolbarShortcutForSelection([] { return true; }) && preparations == 1,
+            "a completed region must allow toolbar preparation");
+}
+
+void explicitToolbarCommandFinishesCanvasResize() {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(10, 20, 80, 60));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.setCanvasTool(ScreenshotActiveTool::Text);
+    int restoredTools = 0;
+    int confirmations = 0;
+    int scrollingResumes = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.activateToolForSelectionResize = [&](ScreenshotActiveTool tool) {
+        if (tool == ScreenshotActiveTool::Move)
+            interaction.setMoveTool(true, false);
+        else {
+            ++restoredTools;
+            interaction.setCanvasTool(tool);
         }
-        ++moveToolActivations;
-        interaction.setMoveTool(true, false);
         return true;
     };
-    actions.activateDrawingShortcut = [&interaction,
-                                       &drawingToolActivations](const QString& toolId) {
-        if (toolId != QStringLiteral("shape")) {
-            return false;
-        }
-        ++drawingToolActivations;
+    actions.selectionConfirmed = [&] { ++confirmations; };
+    actions.resumeScrollingCapture = [&] {
+        require(!interaction.selecting() && !interaction.dragging(),
+                "scrolling may resume only after the resized selection is confirmed");
+        ++scrollingResumes;
+        interaction.enterScrollingCapture();
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    require(handler.beginSelectionResizeAtCanvasPosition(QPointF(90, 50)),
+            "begin a real canvas selection resize");
+    handler.updateSelectionResizeAtCanvasPosition(QPointF(120, 50));
+    const QRect committed = selection.pixelSelection();
+    const auto activateShape = [&] {
         interaction.setCanvasTool(ScreenshotActiveTool::Shape);
         return true;
     };
-
-    ScreenshotOverlayInputHandler handler({
-        captureState,
-        interaction,
-        selection,
-        intelligent,
-        geometry,
-        displays,
-        actions,
-    });
-    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
-                                                           intelligent, actions);
-
-    handler.handleMousePress(nullptr, QPointF(30, 20));
-    require(interaction.modifyingSelection() && interaction.dragging() && !mainToolbarVisible,
-            "Move resize did not hide the main toolbar for the active drag");
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_H) && drawingToolActivations == 0 &&
-                interaction.moveToolActive() && interaction.dragging(),
-            "a hidden toolbar allowed a drawing-tool shortcut to interrupt selection resize");
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_M) && moveToolActivations == 0 &&
-                interaction.moveToolActive() && interaction.dragging(),
-            "a hidden toolbar allowed the Move shortcut to reset selection resize");
-
-    handler.handleMouseMove(nullptr, QPointF(40, 20));
-    handler.handleMouseRelease(nullptr, QPointF(40, 20));
-    require(selection.normalizedSelection() == QRectF(10, 10, 30, 20) &&
-                interaction.movingSelection() && !interaction.dragging() && mainToolbarVisible &&
-                showToolbarCount == 1,
-            "selection resize did not finish and restore the main toolbar");
-    require(dispatchShortcut(shortcutWindow, Qt::Key_H) && drawingToolActivations == 1 &&
+    require(committed.width() > 80 && handler.activateToolbarShortcutForSelection(activateShape),
+            "explicit toolbar command must commit the current resized bounds");
+    handler.updateSelectionResizeAtCanvasPosition(QPointF(140, 50));
+    handler.finishSelectionResizeAtCanvasPosition(QPointF(140, 50));
+    handler.handleMouseRelease(nullptr, QPointF(140, 50));
+    handler.resetTransientShortcuts();
+    require(restoredTools == 0 && confirmations == 1 && selection.pixelSelection() == committed &&
                 interaction.activeTool() == ScreenshotActiveTool::Shape,
-            "restoring the toolbar did not re-enable drawing-tool shortcuts");
+            "resized tool must not return after explicit tool activation");
 
-    require(screenshotSettings.setAllShortcutsAtomic(originalScreenshotShortcuts),
-            "failed to restore screenshot shortcuts after the toolbar-visibility test");
-    require(drawingSettings.setAllShortcutsAtomic(originalDrawingShortcuts),
-            "failed to restore drawing shortcuts after the toolbar-visibility test");
+    interaction.enterScrollingCapture();
+    selection.setSelectionRect(QRectF(10, 20, 80, 60));
+    require(handler.beginSelectionResizeAtCanvasPosition(QPointF(90, 50)) &&
+                handler.activateToolbarShortcutForSelection(activateShape) && scrollingResumes == 1,
+            "a scrolling resize must finish before dispatching its toolbar command");
+    handler.handleMouseRelease(nullptr, QPointF(140, 50));
+    handler.resetTransientShortcuts();
+    require(scrollingResumes == 1 && confirmations == 2 &&
+                interaction.activeTool() == ScreenshotActiveTool::Shape,
+            "later release must not restart scrolling over the requested tool");
+}
+
+void selectionToolbarCommandsDoNotReopenRetiredCaptures() {
+    for (int completion = 0; completion < 3; ++completion) {
+        ScreenshotCaptureState capture;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(10, 20, 80, 60));
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotInteractionState interaction;
+        interaction.enterOverlayVisible(true);
+        int presentations = 0;
+        int confirmations = 0;
+        ScreenshotOverlayInputActions actions;
+        actions.showToolbar = [&] { ++presentations; };
+        actions.updateOverlayState = [&] { ++presentations; };
+        actions.selectionConfirmed = [&] { ++confirmations; };
+        ScreenshotOverlayInputHandler handler(
+            {capture, interaction, selection, intelligent, geometry, displays, actions});
+        require(handler.activateToolbarShortcutForSelection([&] {
+            require(!interaction.selecting() && presentations == 0,
+                    "completion commands must run before selection presentation");
+            if (completion == 0)
+                interaction.reset();
+            else if (completion == 1)
+                ++capture.sessionId;
+            else
+                capture.presentationSuppressed = true;
+            return true;
+        }) && presentations == 0 &&
+                    confirmations == 0,
+                "a completed command must not reopen or notify a retired or hidden capture");
+    }
 }
 
 void canvasColorSamplingConsumesOneCanvasClick() {
@@ -3908,7 +4088,10 @@ int main(int argc, char** argv) {
         intelligentSelectionSupportsCursorMovementShortcuts();
         cursorMovementEligibilityFollowsInteractionState();
         configuredScreenshotShortcutsControlMoveAndCursorNavigation();
-        hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize();
+        selectionStagesActivateEveryToolbarShortcut();
+        toolbarSelectionPreparationRejectsIncompleteRegions();
+        explicitToolbarCommandFinishesCanvasResize();
+        selectionToolbarCommandsDoNotReopenRetiredCaptures();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -3957,7 +4140,10 @@ int main(int argc, char** argv) {
     configuredScreenshotShortcutsControlMoveAndCursorNavigation();
     shortcutExitConfirmationGatesCancellation();
     scrollingCaptureRoutesEveryToolbarShortcut();
-    hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize();
+    selectionStagesActivateEveryToolbarShortcut();
+    toolbarSelectionPreparationRejectsIncompleteRegions();
+    explicitToolbarCommandFinishesCanvasResize();
+    selectionToolbarCommandsDoNotReopenRetiredCaptures();
     canvasColorSamplingConsumesOneCanvasClick();
     storage::ApplicationStorage::instance().shutdown();
     return 0;

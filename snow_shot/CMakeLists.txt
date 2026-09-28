@@ -4558,6 +4558,14 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-toolbar-remembered-tool-tests
         tests/screenshot_toolbar_remembered_tool_tests.cpp
+        src/presentation/core/screenshotinteractionstate.cpp
+        src/presentation/core/screenshotintelligentselectionmodel.cpp
+        src/presentation/overlay/screenshotoverlayinputhandler.cpp
+        src/presentation/overlay/screenshotoverlayshortcutcontroller.cpp
+        src/presentation/selection/screenshotselectiongeometry.cpp
+        src/presentation/selection/screenshotselectionmodel.cpp
+        src/presentation/selection/screenshotselectionparams.cpp
+        src/presentation/toolbar/screenshottoolbarpresentationstatefactory.cpp
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolbarwindow.h
         include/snow_shot/presentation/screenshottoolpalette.h
@@ -4587,6 +4595,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-screenshot-toolbar-remembered-tool-tests PRIVATE
+        snow_shot_window_shortcuts
         adqt_icon_core
         ant_design_icons_qt
         ant_design_qt

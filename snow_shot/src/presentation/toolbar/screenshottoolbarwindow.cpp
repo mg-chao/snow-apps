@@ -514,6 +514,10 @@ void ScreenshotToolbarWindow::restoreRememberedDrawingTool() {
     }
 }
 
+void ScreenshotToolbarWindow::suppressRememberedDrawingTool() {
+    m_rememberedDrawingToolRestorePending = false;
+}
+
 void ScreenshotToolbarWindow::setHistoryState(const SnowCanvasHistoryState& state) {
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setHistoryState(state);
@@ -597,6 +601,12 @@ void ScreenshotToolbarWindow::setImageConversionBusy(bool markdownBusy, bool htm
     if (auto* toolPalette = palette()) {
         toolPalette->setImageConversionBusy(markdownBusy, htmlBusy);
     }
+}
+
+void ScreenshotToolbarWindow::setRecognitionEnabled(bool enabled) {
+    setOcrEnabled(enabled);
+    setTableEnabled(enabled);
+    setQrEnabled(enabled);
 }
 
 void ScreenshotToolbarWindow::setOcrEnabled(bool enabled) {

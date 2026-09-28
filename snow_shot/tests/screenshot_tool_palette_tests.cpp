@@ -5586,12 +5586,16 @@ void screenshotShortcutsShareButtonCommandsAndAvailability() {
             const auto clickedTool = palette.activeToolForTests();
             require(requests == 1, "button must emit its command exactly once");
             palette.setActiveTool(Tool::Select);
+            require(palette.canActivateScreenshotShortcut(QString::fromLatin1(command.id)) &&
+                        requests == 1,
+                    "checking command availability must not activate the tool");
             require(palette.activateScreenshotShortcut(QString::fromLatin1(command.id)) &&
                         requests == 2 && palette.activeToolForTests() == clickedTool,
                     "shortcut must produce the same command and active tool as a button click");
             button->setEnabled(false);
             button->click();
-            require(!palette.activateScreenshotShortcut(QString::fromLatin1(command.id)) &&
+            require(!palette.canActivateScreenshotShortcut(QString::fromLatin1(command.id)) &&
+                        !palette.activateScreenshotShortcut(QString::fromLatin1(command.id)) &&
                         requests == 2,
                     "disabled button and shortcut must both reject the command");
             button->setEnabled(true);
@@ -5600,13 +5604,17 @@ void screenshotShortcutsShareButtonCommandsAndAvailability() {
     }
     palette.setTableEnabled(false);
     palette.setQrEnabled(true);
-    require(!palette.activateScreenshotShortcut(QStringLiteral("table_recognition")) &&
+    require(!palette.canActivateScreenshotShortcut(QStringLiteral("table_recognition")) &&
+                palette.canActivateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
+                !palette.activateScreenshotShortcut(QStringLiteral("table_recognition")) &&
                 palette.activateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
                 palette.activeToolForTests() == Tool::Qr,
             "shared recognition entries must respect each option's enabled state");
     palette.setTableEnabled(true);
     palette.setQrEnabled(false);
-    require(!palette.activateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
+    require(!palette.canActivateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
+                palette.canActivateScreenshotShortcut(QStringLiteral("table_recognition")) &&
+                !palette.activateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
                 palette.activateScreenshotShortcut(QStringLiteral("table_recognition")) &&
                 palette.activeToolForTests() == Tool::Table,
             "the enabled recognition option must remain reachable through its shortcut");

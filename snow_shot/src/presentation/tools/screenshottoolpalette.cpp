@@ -4236,15 +4236,7 @@ bool ScreenshotToolPalette::drawingToolCanBeActivated(Tool tool) const {
     return button != nullptr && button->isEnabled();
 }
 
-bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
-    tool = rememberedDrawingMode(tool);
-    if (isRecordingUnavailableTool(tool)) {
-        return false;
-    }
-
-    // Toolbar clicks and shortcuts toggle the active drawing/action tool back
-    // to selection mode. Programmatic setActiveTool() calls remain
-    // explicit so state synchronization does not unexpectedly toggle.
+adqt::widgets::AdButton* ScreenshotToolPalette::toolShortcutButton(Tool tool) const {
     adqt::widgets::AdButton* requestedButton = nullptr;
     switch (tool) {
     case Tool::Move:
@@ -4277,9 +4269,25 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         requestedButton = drawingToolEntryButton(tool);
         break;
     }
-    if (requestedButton == nullptr || !requestedButton->isEnabled()) {
+    return requestedButton;
+}
+
+bool ScreenshotToolPalette::canActivateToolShortcut(Tool tool) const {
+    tool = rememberedDrawingMode(tool);
+    const auto* button = toolShortcutButton(tool);
+    return !isRecordingUnavailableTool(tool) && button != nullptr && button->isEnabled();
+}
+
+bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
+    tool = rememberedDrawingMode(tool);
+    if (!canActivateToolShortcut(tool)) {
         return false;
     }
+
+    // Toolbar clicks and shortcuts toggle the active drawing/action tool back
+    // to selection mode. Programmatic setActiveTool() calls remain
+    // explicit so state synchronization does not unexpectedly toggle.
+    adqt::widgets::AdButton* requestedButton = toolShortcutButton(tool);
     const bool alreadyActive =
         !toggleVisibleButton         ? m_activeTool.has_value() && *m_activeTool == tool
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
@@ -4312,10 +4320,14 @@ bool ScreenshotToolPalette::historyActionEnabled(const QString& itemId) const {
     return undo ? m_canvasHistoryState.canUndo : m_canvasHistoryState.canRedo;
 }
 
+bool ScreenshotToolPalette::canActivateHistoryItem(const QString& itemId) const {
+    const auto* button = drawingItemButton(itemId);
+    return historyActionEnabled(itemId) && (button == nullptr || button->isEnabled());
+}
+
 bool ScreenshotToolPalette::activateDrawingItem(const QString& itemId, bool toggleVisibleButton) {
     if (itemId == QStringLiteral("undo") || itemId == QStringLiteral("redo")) {
-        const auto* button = drawingItemButton(itemId);
-        if (!historyActionEnabled(itemId) || (button != nullptr && !button->isEnabled())) {
+        if (!canActivateHistoryItem(itemId)) {
             return false;
         }
         selectDrawingItemGroupEntry(itemId);
@@ -5443,7 +5455,8 @@ ScreenshotToolPalette::Tool ScreenshotToolPalette::drawingShortcutEntryTool(cons
     return fallback;
 }
 
-bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
+std::optional<ScreenshotToolPalette::Tool>
+ScreenshotToolPalette::drawingShortcutTool(const QString& toolId) const {
     Tool tool = Tool::Move;
     if (toolId == QStringLiteral("select")) {
         tool = Tool::Select;
@@ -5466,9 +5479,19 @@ bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
     } else if (toolId == QStringLiteral("watermark")) {
         tool = Tool::Watermark;
     } else {
-        return false;
+        return std::nullopt;
     }
-    return activateToolShortcut(tool);
+    return tool;
+}
+
+bool ScreenshotToolPalette::canActivateDrawingShortcut(const QString& toolId) const {
+    const auto tool = drawingShortcutTool(toolId);
+    return tool.has_value() && canActivateToolShortcut(*tool);
+}
+
+bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
+    const auto tool = drawingShortcutTool(toolId);
+    return tool.has_value() && activateToolShortcut(*tool);
 }
 
 bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
@@ -5499,24 +5522,8 @@ bool ScreenshotToolPalette::activateRememberedDrawingTool() {
     return true;
 }
 
-bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) {
-    if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
-        return activateDrawingItem(actionId);
-    }
-    if (actionId == QStringLiteral("move_tool")) {
-        return activateToolShortcut(Tool::Move);
-    }
-    if (actionId == QStringLiteral("recapture")) {
-        if (!m_activeTool.has_value() || *m_activeTool != Tool::Move) {
-            return false;
-        }
-        static_cast<void>(ensureActionFamily(ActionFamily::Move));
-        if (m_recaptureButton == nullptr || !m_recaptureButton->isEnabled()) {
-            return false;
-        }
-        m_recaptureButton->click();
-        return true;
-    }
+namespace {
+QString screenshotShortcutActionItem(const QString& actionId) {
     static const QMap<QString, QString> actionItems{
         {QStringLiteral("table_recognition"), QStringLiteral("table-recognition")},
         {QStringLiteral("qr_code_recognition"), QStringLiteral("barcode-recognition")},
@@ -5528,15 +5535,50 @@ bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) 
         {QStringLiteral("save_as_file"), QStringLiteral("save-as-file")},
         {QStringLiteral("pin_to_screen"), QStringLiteral("pin-to-screen")},
     };
-    const auto item = actionItems.constFind(actionId);
-    if (item != actionItems.cend()) {
-        return activateActionTool(*item, false);
+    return actionItems.value(actionId);
+}
+} // namespace
+
+adqt::widgets::AdButton* ScreenshotToolPalette::screenshotShortcutButton(const QString& actionId) {
+    if (actionId == QStringLiteral("recapture")) {
+        if (m_activeTool != Tool::Move) {
+            return nullptr;
+        }
+        static_cast<void>(ensureActionFamily(ActionFamily::Move));
+        return m_recaptureButton;
     }
-    auto* button = actionId == QStringLiteral("undo")                ? m_undoButton
-                   : actionId == QStringLiteral("redo")              ? m_redoButton
-                   : actionId == QStringLiteral("cancel_screenshot") ? m_cancelButton
-                   : actionId == QStringLiteral("copy_to_clipboard") ? m_copyButton
-                                                                     : nullptr;
+    return actionId == QStringLiteral("cancel_screenshot")   ? m_cancelButton
+           : actionId == QStringLiteral("copy_to_clipboard") ? m_copyButton
+                                                             : nullptr;
+}
+
+bool ScreenshotToolPalette::canActivateScreenshotShortcut(const QString& actionId) {
+    if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
+        return canActivateHistoryItem(actionId);
+    }
+    if (actionId == QStringLiteral("move_tool")) {
+        return canActivateToolShortcut(Tool::Move);
+    }
+    const QString item = screenshotShortcutActionItem(actionId);
+    if (!item.isEmpty()) {
+        return actionToolAvailable(item) && actionToolState(item).enabled;
+    }
+    const auto* button = screenshotShortcutButton(actionId);
+    return button != nullptr && button->isEnabled();
+}
+
+bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) {
+    if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
+        return activateDrawingItem(actionId);
+    }
+    if (actionId == QStringLiteral("move_tool")) {
+        return activateToolShortcut(Tool::Move);
+    }
+    const QString item = screenshotShortcutActionItem(actionId);
+    if (!item.isEmpty()) {
+        return activateActionTool(item, false);
+    }
+    auto* button = screenshotShortcutButton(actionId);
     if (button == nullptr || !button->isEnabled()) {
         return false;
     }

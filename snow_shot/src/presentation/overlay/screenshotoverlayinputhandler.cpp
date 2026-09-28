@@ -810,7 +810,43 @@ void ScreenshotOverlayInputHandler::setIntelligentSelectionIndex(int index) {
     m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
 }
 
+bool ScreenshotOverlayInputHandler::canPrepareSelectionForToolbarShortcut() const {
+    return m_context.interaction.selecting() && !m_externalDragActive &&
+           !m_context.selection.constructionActive() && !regionOperationActive() &&
+           m_context.selection.hasPixelSelection();
+}
+
+bool ScreenshotOverlayInputHandler::activateToolbarShortcutForSelection(
+    const std::function<bool()>& activate) {
+    if (!activate || !canPrepareSelectionForToolbarShortcut()) {
+        return false;
+    }
+    const bool consumeRelease =
+        m_context.interaction.dragging() || m_context.intelligentSelection.pressActive();
+    m_context.interaction.finishDrag();
+    // The requested command supersedes the tool being resized. Do not restore
+    // that tool from resetTransientShortcuts() or from the later mouse release.
+    m_toolBeforeSelectionResize.reset();
+    const bool resumeScrolling = std::exchange(m_scrollingCaptureSelectionResize, false);
+    resetTransientShortcuts();
+    m_consumeRegionRelease = consumeRelease;
+    m_context.actions.prepareExplicitSelectionCommand();
+    bool activated = false;
+    confirmSelection([&] {
+        if (resumeScrolling) {
+            m_context.actions.resumeScrollingCapture();
+        }
+        activated = activate();
+    });
+    return activated;
+}
+
 void ScreenshotOverlayInputHandler::confirmSelection() {
+    confirmSelection({});
+}
+
+void ScreenshotOverlayInputHandler::confirmSelection(
+    const std::function<void()>& beforePresentation) {
     if (m_context.interaction.dragging() || m_context.selection.constructionActive()) {
         return;
     }
@@ -836,6 +872,16 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
     m_context.interaction.confirmSelection();
     m_context.captureState.sessionState = ScreenshotSessionState::Editing;
     m_context.intelligentSelection.clearPress();
+    if (beforePresentation) {
+        const quint64 sessionId = m_context.captureState.sessionId;
+        beforePresentation();
+        // Export and recording commands can retire the capture synchronously.
+        // Never show its toolbar again, or notify a replacement capture session.
+        if (m_context.captureState.sessionId != sessionId || m_context.interaction.inactive() ||
+            m_context.captureState.presentationSuppressed) {
+            return;
+        }
+    }
     m_context.actions.updateOverlayState();
     m_context.actions.showToolbar();
     m_context.actions.selectionConfirmed();

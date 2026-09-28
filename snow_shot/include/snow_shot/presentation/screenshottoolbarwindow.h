@@ -29,10 +29,12 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setRecaptureBusy(bool busy);
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void restoreRememberedDrawingTool();
+    void suppressRememberedDrawingTool();
     void setHistoryState(const SnowCanvasHistoryState& state);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
+    void setRecognitionEnabled(bool enabled);
     void setOcrEnabled(bool enabled);
     void setOcrBusy(bool busy);
     void setTableEnabled(bool enabled);

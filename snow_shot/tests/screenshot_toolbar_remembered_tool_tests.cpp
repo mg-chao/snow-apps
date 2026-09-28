@@ -1,3 +1,14 @@
+#include "physical_key_test_support.h"
+#include "snow_shot/presentation/screenshotcapturestate.h"
+#include "snow_shot/presentation/screenshotdisplaysession.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotinteractionstate.h"
+#include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
+#include "snow_shot/presentation/screenshotoverlayinputhandler.h"
+#include "snow_shot/presentation/screenshotoverlayshortcutcontroller.h"
+#include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -20,7 +31,7 @@ void require(bool condition, const char* message) {
     }
 }
 
-class RecordingToolbarCommands final : public ScreenshotToolbarCommandSink {
+class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
   public:
     void setMoveTool() override {
         ++moveToolCount;
@@ -108,12 +119,196 @@ void rememberedDrawingToolRestoresOncePerCapture() {
     require(commands.shapeToolCount == 2 && window.palette()->activeTool() == Tool::Select,
             "an explicit tool set must cancel the pending remembered restore");
 
+    // Requesting the remembered tool explicitly must select it, not toggle it off.
+    window.resetForNewCapture();
+    window.suppressRememberedDrawingTool();
+    window.restoreRememberedDrawingTool();
+    require(commands.shapeToolCount == 2 && window.palette()->activeTool() == Tool::Move,
+            "explicit command preparation must not restore the remembered tool");
+    require(window.palette()->canActivateDrawingShortcut(QStringLiteral("shape")) &&
+                window.activateDrawingShortcut(QStringLiteral("shape")) &&
+                commands.shapeToolCount == 3 && window.palette()->activeTool() == Tool::Shape,
+            "requesting the remembered tool explicitly must activate it exactly once");
+    window.restoreRememberedDrawingTool();
+    require(commands.shapeToolCount == 3 && window.palette()->activeTool() == Tool::Shape,
+            "later presentation must not restore over the explicit tool");
+
     // The switch disables the restore entirely.
     require(drawingSettings.setRememberLastUsedTool(false), "the switch must be writable");
     window.resetForNewCapture();
     window.restoreRememberedDrawingTool();
-    require(commands.shapeToolCount == 2 && window.palette()->activeTool() == Tool::Move,
+    require(commands.shapeToolCount == 3 && window.palette()->activeTool() == Tool::Move,
             "a disabled switch must keep the move tool after a capture reset");
+}
+// Exercise production keyboard routing and toolbar signal connections together.
+// Only the command sink substitutes for external recognition/export services.
+void selectionShortcutsReachToolbarCommands() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const storage::ScreenshotShortcutSettings screenshotSettings;
+    const storage::DrawingShortcutSettings drawingSettings;
+    const storage::DrawingSettings drawingPreferences;
+    const storage::ScreenshotToolbarSettings toolbarSettings;
+    const auto originalScreenshot = screenshotSettings.allShortcuts();
+    const auto originalDrawing = drawingSettings.allShortcuts();
+    const bool originalRemember = drawingPreferences.rememberLastUsedTool();
+    const QString originalTool = toolbarSettings.lastDrawingTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(screenshotSettings.setAllShortcutsAtomic(originalScreenshot));
+        static_cast<void>(drawingSettings.setAllShortcutsAtomic(originalDrawing));
+        static_cast<void>(drawingPreferences.setRememberLastUsedTool(originalRemember));
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalTool));
+    });
+    require(drawingPreferences.setRememberLastUsedTool(true), "enable remembered tool fixture");
+
+    for (const QString& id :
+         {QStringLiteral("shape"), QStringLiteral("text_recognition"),
+          QStringLiteral("table_recognition"), QStringLiteral("qr_code_recognition"),
+          QStringLiteral("copy_to_clipboard"), QStringLiteral("video_recording")}) {
+        ScreenshotCaptureState capture;
+        capture.sessionState = ScreenshotSessionState::OverlayVisible;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotInteractionState interaction;
+        interaction.enterOverlayVisible(true);
+        selection.setSelectionRect(QRectF(10, 20, 80, 60));
+        const bool drawing = id == QStringLiteral("shape");
+        const bool completion =
+            id == QStringLiteral("copy_to_clipboard") || id == QStringLiteral("video_recording");
+        const bool recognition = !drawing && !completion;
+        struct Commands final : RecordingToolbarCommands {
+            ScreenshotInteractionState& interaction;
+            ScreenshotSelectionModel& selection;
+            ScreenshotCaptureState& capture;
+            int calls = 0;
+            Commands(ScreenshotInteractionState& i, ScreenshotSelectionModel& s,
+                     ScreenshotCaptureState& c)
+                : interaction(i), selection(s), capture(c) {}
+            void checkCommitted() {
+                require(!interaction.selecting() && !interaction.dragging() &&
+                            selection.pixelSelection() == QRect(10, 20, 80, 60) &&
+                            capture.sessionState == ScreenshotSessionState::Editing,
+                        "real toolbar command must receive committed bounds and editing state");
+                ++calls;
+            }
+            void setShapeTool() override {
+                checkCommitted();
+                interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+            }
+            void setOcrTool() override {
+                checkCommitted();
+                interaction.setOcrTool();
+            }
+            void setTableTool() override {
+                checkCommitted();
+                interaction.setTableTool();
+            }
+            void setQrTool() override {
+                checkCommitted();
+                interaction.setQrTool();
+            }
+            void copySelectionToClipboard() override {
+                checkCommitted();
+                interaction.reset();
+            }
+            void startScreenRecording() override {
+                checkCommitted();
+                capture.presentationSuppressed = true;
+            }
+        } commands(interaction, selection, capture);
+        require(toolbarSettings.setLastDrawingTool(QStringLiteral("shape")),
+                "seed remembered shape for every command");
+        ScreenshotToolbarWindow window(commands);
+        window.resetForNewCapture();
+        int presentations = 0;
+        int confirmations = 0;
+        int preparations = 0;
+        const auto refreshAvailability = [&] {
+            window.setRecognitionEnabled(
+                makeScreenshotToolbarPresentationState(interaction, selection).ocrAvailable);
+        };
+        ScreenshotOverlayInputActions actions;
+        actions.mainToolbarVisible = [&] { return window.isVisible(); };
+        actions.canActivateDrawingShortcut = [&](const QString& tool) {
+            return window.palette()->canActivateDrawingShortcut(tool);
+        };
+        actions.canActivateScreenshotShortcut = [&](const QString& action) {
+            refreshAvailability();
+            return window.palette()->canActivateScreenshotShortcut(action);
+        };
+        actions.activateDrawingShortcut = [&](const QString& tool) {
+            return window.activateDrawingShortcut(tool);
+        };
+        actions.activateScreenshotShortcut = [&](const QString& action) {
+            return window.palette()->activateScreenshotShortcut(action);
+        };
+        actions.prepareExplicitSelectionCommand = [&] {
+            ++preparations;
+            window.suppressRememberedDrawingTool();
+        };
+        actions.showToolbar = [&] {
+            require(commands.calls == 1, "command must execute before toolbar presentation");
+            ++presentations;
+            window.restoreRememberedDrawingTool();
+        };
+        actions.selectionConfirmed = [&] { ++confirmations; };
+        ScreenshotOverlayInputHandler handler(
+            {capture, interaction, selection, intelligent, geometry, displays, actions});
+        auto screenshot = originalScreenshot;
+        auto draw = originalDrawing;
+        for (auto& binding : screenshot)
+            binding.clear();
+        for (auto& binding : draw)
+            binding.clear();
+        (drawing ? draw : screenshot).insert(id, {QStringLiteral("Alt+J")});
+        require(screenshotSettings.setAllShortcutsAtomic(screenshot) &&
+                    drawingSettings.setAllShortcutsAtomic(draw),
+                "configure integration shortcut");
+        QWidget receiver;
+        snow_shot::presentation::WindowShortcutManager manager;
+        manager.addScopeWindow(&receiver);
+        ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction, intelligent,
+                                                      actions);
+        const auto dispatch = [&] {
+            PhysicalKeyEvent overrideEvent(QEvent::ShortcutOverride, Qt::Key_J, Qt::AltModifier);
+            overrideEvent.setAccepted(false);
+            QCoreApplication::sendEvent(&receiver, &overrideEvent);
+            PhysicalKeyEvent event(QEvent::KeyPress, Qt::Key_J, Qt::AltModifier);
+            event.setAccepted(false);
+            QCoreApplication::sendEvent(&receiver, &event);
+            return event.isAccepted();
+        };
+        if (recognition) {
+            selection.setSelectionRect(QRectF(0, 0, 3841, 2160));
+            require(!dispatch() && interaction.selecting() && preparations == 0 &&
+                        commands.calls == 0 && presentations == 0,
+                    "oversized recognition selection must remain untouched");
+            selection.setSelectionRect(QRectF(10, 20, 80, 60));
+        }
+        intelligent.beginPress(QPointF(30, 40), selection.normalizedSelection());
+        require(dispatch() && commands.calls == 1 && preparations == 1,
+                "keyboard shortcut must reach its real toolbar command exactly once");
+        require(presentations == (completion ? 0 : 1) && confirmations == (completion ? 0 : 1),
+                "completed captures must not be presented or confirmed again");
+        handler.handleMouseRelease(nullptr, QPointF(300, 300));
+        require(commands.calls == 1 && selection.pixelSelection() == QRect(10, 20, 80, 60),
+                "pending mouse release must not repeat the command or change the region");
+        if (drawing)
+            require(window.palette()->activeTool() == Tool::Shape,
+                    "remembered shape must not toggle off an explicitly requested shape");
+        if (recognition) {
+            const Tool expected = id == QStringLiteral("text_recognition")    ? Tool::Ocr
+                                  : id == QStringLiteral("table_recognition") ? Tool::Table
+                                                                              : Tool::Qr;
+            require(window.palette()->activeTool() == expected,
+                    "the toolbar must retain the exact requested recognition tool");
+        }
+        if (completion)
+            require(id == QStringLiteral("copy_to_clipboard") ? interaction.inactive()
+                                                              : capture.presentationSuppressed,
+                    "completion shortcut must reach the correct command sink operation");
+    }
 }
 } // namespace
 
@@ -126,6 +321,7 @@ int main(int argc, char** argv) {
         applicationStorage.initialize({storageDirectory.filePath(QStringLiteral("bin")),
                                        storageDirectory.filePath(QStringLiteral("data")), 60000}));
     rememberedDrawingToolRestoresOncePerCapture();
+    selectionShortcutsReachToolbarCommands();
     applicationStorage.shutdown();
     return 0;
 }

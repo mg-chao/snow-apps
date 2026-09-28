@@ -94,8 +94,8 @@ struct ScreenshotOverlayInputActions {
     std::function<void()> pauseScrollingCapture = []() {};
     std::function<void()> resumeScrollingCapture = []() {};
 
-    // Tool-switch shortcuts mirror the main toolbar's availability. Contextual
-    // screenshot shortcuts remain active while the toolbar is temporarily hidden.
+    // Confirmed-session tool shortcuts follow toolbar visibility. Selection-stage
+    // shortcuts prepare the current region before using the same toolbar commands.
     std::function<bool()> mainToolbarVisible = []() { return true; };
 
     std::function<void(ScreenshotOverlayWindow* overlay, const QPointF& localPosition)>
@@ -108,6 +108,15 @@ struct ScreenshotOverlayInputActions {
     std::function<bool()> recaptureAvailable = []() { return false; };
     std::function<bool()> cancelCaptureViaShortcut = []() { return false; };
     std::function<void(const QPoint&, quint32)> requestUiSelectorHitTestOnDisplay;
+    std::function<bool(const QString&)> canActivateScreenshotShortcut = [](const QString&) {
+        return true;
+    };
+    std::function<bool(const QString&)> canActivateDrawingShortcut = [](const QString&) {
+        return true;
+    };
+    // Suppress automatic tool restoration and pending quick actions before an
+    // explicit command confirms the selection and shows the toolbar.
+    std::function<void()> prepareExplicitSelectionCommand = []() {};
 };
 
 struct ScreenshotOverlayInputHandlerContext {
@@ -197,11 +206,15 @@ class ScreenshotOverlayInputHandler final {
     // This is also used by non-interactive quick actions that select a whole
     // monitor or a focused window after the capture frame arrives.
     void confirmSelection();
+    [[nodiscard]] bool canPrepareSelectionForToolbarShortcut() const;
+    // Commit the region, activate the command, then present its resulting tool.
+    [[nodiscard]] bool activateToolbarShortcutForSelection(const std::function<bool()>& activate);
     void beginRegionOperation(bool subtract);
     bool cancelRegionOperation();
     [[nodiscard]] bool regionOperationActive() const;
 
   private:
+    void confirmSelection(const std::function<void()>& beforePresentation);
     [[nodiscard]] QPointF virtualPositionForOverlay(const ScreenshotOverlayWindow* overlay,
                                                     const QPointF& localPosition) const;
     [[nodiscard]] QPoint physicalPositionForCanvasPoint(const QPointF& point) const;
