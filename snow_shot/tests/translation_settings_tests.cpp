@@ -17,6 +17,7 @@
 #include <QMouseEvent>
 #include <QDir>
 #include <QHash>
+#include <QGridLayout>
 #include <QImage>
 #include <QTemporaryDir>
 
@@ -80,6 +81,45 @@ class FakeTranslationHotkeyBackend final : public snow_shot::presentation::Globa
     QHash<int, snow_shot::shortcuts::ShortcutBinding> registrations;
 };
 
+void requireCompactTrayOptions(QWidget* widget) {
+    auto* options = widget->findChild<QWidget*>(QStringLiteral("settings-tray-menu-options-grid"));
+    auto* grid = qobject_cast<QGridLayout*>(options->layout());
+    require(grid != nullptr, "tray options use a grid");
+    widget->resize(1000, widget->sizeHint().height());
+    widget->show();
+    QCoreApplication::processEvents();
+    int row = 0;
+    bool firstGroup = true;
+    for (const auto& group :
+         snow_shot::presentation::settings::builtInSettingsRegistry().catalog().trayMenuGroups()) {
+        int visibleCount = 0;
+        for (const auto& option : group.options) {
+            auto* checkbox = widget->findChild<QAbstractButton*>(
+                QStringLiteral("settings-tray-menu-option-%1").arg(option.id));
+            require(checkbox != nullptr, "tray option retains its widget");
+            if (checkbox->isHidden()) {
+                continue;
+            }
+            if (visibleCount == 0 && !firstGroup) {
+                ++row; // Group divider.
+            }
+            int actualRow = -1;
+            int column = -1;
+            int rowSpan = 0;
+            int columnSpan = 0;
+            grid->getItemPosition(grid->indexOf(checkbox), &actualRow, &column, &rowSpan,
+                                  &columnSpan);
+            require(actualRow == row + visibleCount / 2 && column == visibleCount % 2,
+                    "visible tray options fill consecutive cells without hidden-option gaps");
+            ++visibleCount;
+        }
+        if (visibleCount > 0) {
+            row += (visibleCount + 1) / 2;
+            firstGroup = false;
+        }
+    }
+}
+
 void selectedTextShortcutSettings() {
     using namespace snow_shot::presentation;
     namespace storage = snow_shot::storage;
@@ -139,6 +179,7 @@ void selectedTextShortcutSettings() {
         require(translationCheckbox != nullptr && screenshotCheckbox != nullptr &&
                     translationCheckbox->isHidden() && translationCheckbox->isChecked(),
                 "disabled tray customization hides translation but retains its checked preference");
+        requireCompactTrayOptions(trayWidget.get());
         screenshotCheckbox->setChecked(!screenshotCheckbox->isChecked());
         require(tray.menuOptions().contains(menuId),
                 "editing another tray option preserves the hidden translation preference");
@@ -154,6 +195,7 @@ void selectedTextShortcutSettings() {
                 "enable OCR translation jump before category reset");
         require(!translationCheckbox->isHidden() && translationCheckbox->isChecked(),
                 "live enabling restores the selected tray customization checkbox");
+        requireCompactTrayOptions(trayWidget.get());
         require(tray.setMenuOptions(defaultMenu),
                 "restore tray configuration after feature checks");
         require(session.state(QStringLiteral("quick.translate-selected-text")).visible,
@@ -200,12 +242,14 @@ void selectedTextShortcutSettings() {
                         persisted.translateSelectedText() == keys,
                     "reset disables translation, refreshes UI and hotkeys, and preserves bindings");
             require(!thumbIsOnRight(toggle), "reset moves the translation thumb to the left");
+            requireCompactTrayOptions(trayWidget.get());
             for (const bool enabled : {true, false, true}) {
                 clickWidget(toggle);
                 QCoreApplication::processEvents();
                 require(toggle->isChecked() == enabled && thumbIsOnRight(toggle) == enabled &&
                             storage::ExtendedFeaturesSettings().translationPageEnabled() == enabled,
                         "clicking translation after reset updates both rendering and storage");
+                requireCompactTrayOptions(trayWidget.get());
             }
             QCoreApplication::processEvents();
         }

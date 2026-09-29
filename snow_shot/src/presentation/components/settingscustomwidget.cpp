@@ -732,6 +732,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         auto* options = new QWidget(this);
         options->setObjectName(QStringLiteral("settings-tray-menu-options-grid"));
         auto* grid = new QGridLayout(options);
+        m_optionsGrid = grid;
         grid->setContentsMargins(0, 6, 0, 0);
         grid->setHorizontalSpacing(snow_shot::presentation::styles::ThemeManager::instance()
                                        .themeColorScheme()
@@ -740,23 +741,17 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         grid->setColumnStretch(0, 1);
         grid->setColumnStretch(1, 1);
 
-        int row = 0;
-        bool firstGroup = true;
         for (const auto& group : m_registry.catalog().trayMenuGroups()) {
             if (group.options.isEmpty()) {
                 continue;
             }
-            if (!firstGroup) {
-                auto* separator = new adqt::widgets::AdDivider(options);
-                separator->setObjectName(
-                    QStringLiteral("settings-tray-menu-options-separator-%1").arg(group.id));
-                separator->setDividerSize(adqt::widgets::AdDivider::Size::Small);
-                grid->addWidget(separator, row++, 0, 1, 2);
-            }
+            auto* separator = new adqt::widgets::AdDivider(options);
+            separator->setObjectName(
+                QStringLiteral("settings-tray-menu-options-separator-%1").arg(group.id));
+            separator->setDividerSize(adqt::widgets::AdDivider::Size::Small);
+            m_separators.insert(group.id, separator);
 
-            const int optionCount = static_cast<int>(group.options.size());
-            for (int index = 0; index < optionCount; ++index) {
-                const auto& option = group.options.at(index);
+            for (const auto& option : group.options) {
                 auto* checkbox = new adqt::widgets::AdCheckbox(options);
                 checkbox->setObjectName(
                     QStringLiteral("settings-tray-menu-option-%1").arg(option.id));
@@ -765,10 +760,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
                 m_checkboxes.insert(option.id, checkbox);
                 connect(checkbox, &QAbstractButton::toggled, this,
                         [this](bool) { applySelection(); });
-                grid->addWidget(checkbox, row + index / 2, index % 2);
             }
-            row += (optionCount + 1) / 2;
-            firstGroup = false;
         }
         rootLayout->addWidget(options);
 
@@ -812,6 +804,41 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
                                                  SettingsSwitchBinding::TranslationPageEnabled));
         }
         m_syncing = false;
+        layoutVisibleOptions();
+    }
+
+    void layoutVisibleOptions() {
+        // Hidden widgets must not reserve cells in the ordered, two-column option list.
+        // Keep the widgets themselves so their selection and signal connections survive.
+        while (auto* item = m_optionsGrid->takeAt(0)) {
+            delete item;
+        }
+        int row = 0;
+        bool firstGroup = true;
+        for (const auto& group : m_registry.catalog().trayMenuGroups()) {
+            auto* separator = m_separators.value(group.id);
+            if (separator == nullptr) {
+                continue;
+            }
+            separator->hide();
+            int visibleCount = 0;
+            for (const auto& option : group.options) {
+                auto* checkbox = m_checkboxes.value(option.id);
+                if (checkbox->isHidden()) {
+                    continue;
+                }
+                if (visibleCount == 0 && !firstGroup) {
+                    m_optionsGrid->addWidget(separator, row++, 0, 1, 2);
+                    separator->show();
+                }
+                m_optionsGrid->addWidget(checkbox, row + visibleCount / 2, visibleCount % 2);
+                ++visibleCount;
+            }
+            if (visibleCount > 0) {
+                row += (visibleCount + 1) / 2;
+                firstGroup = false;
+            }
+        }
     }
 
     void applySelection() {
@@ -839,6 +866,8 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
     snow_shot::presentation::settings::SettingsRuntimeSession& m_runtimeSession;
     QLabel* m_title = nullptr;
     QLabel* m_description = nullptr;
+    QGridLayout* m_optionsGrid = nullptr;
+    QHash<QString, adqt::widgets::AdDivider*> m_separators;
     QHash<QString, adqt::widgets::AdCheckbox*> m_checkboxes;
     bool m_syncing = false;
 };
