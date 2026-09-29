@@ -24,6 +24,8 @@
 #include <QDebug>
 #ifdef Q_OS_MACOS
 #include "macos_native_input.h"
+#include <QElapsedTimer>
+#include <QThread>
 #include <stdexcept>
 #endif
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -125,6 +127,100 @@ QRect testRecordingRegion() {
 }
 
 #ifdef Q_OS_MACOS
+void recordingBorderInput(bool native) {
+    ScreenRecordingAreaWindow area;
+    const QRect initial(QGuiApplication::primaryScreen()->availableGeometry().center() -
+                            QPoint(120, 80),
+                        QSize(240, 160));
+    area.setRecordingRegion(initial);
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    area.show();
+    QCoreApplication::processEvents();
+    if (native)
+        macActivateApplication();
+    int starts = 0, finishes = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionStarted,
+                     [&] { ++starts; });
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionFinished,
+                     [&] { ++finishes; });
+    const auto check = [](bool condition, const char* message) {
+        if (!condition)
+            throw std::runtime_error(message);
+    };
+    for (const QPoint direction : {QPoint(-1, 0), QPoint(1, 0), QPoint(0, -1), QPoint(0, 1),
+                                   QPoint(-1, -1), QPoint(1, -1), QPoint(-1, 1), QPoint(1, 1)}) {
+        area.setRecordingRegion(initial);
+        QCoreApplication::processEvents();
+        // Hit the painted outer border, where AppKit can intercept input before Qt.
+        const QPoint start(direction.x() < 0   ? initial.x() - 2
+                           : direction.x() > 0 ? initial.x() + initial.width() + 1
+                                               : initial.center().x(),
+                           direction.y() < 0   ? initial.y() - 2
+                           : direction.y() > 0 ? initial.y() + initial.height() + 1
+                                               : initial.center().y());
+        const auto send = [&](QEvent::Type type, QPoint global) {
+            const QPoint local = area.mapFromGlobal(global);
+            QMouseEvent event(type, local, local, global,
+                              type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                              type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                              Qt::NoModifier);
+            QCoreApplication::sendEvent(&area, &event);
+            QCoreApplication::processEvents();
+        };
+        std::unique_ptr<MacMouseDrag> drag;
+        if (native) {
+            // WindowServer commits the preceding frame change asynchronously.
+            QElapsedTimer timer;
+            timer.start();
+            while (!macWindowReceivesPoint(&area, start) && timer.elapsed() < 1000) {
+                QCoreApplication::processEvents();
+                QThread::msleep(1);
+            }
+            check(macWindowReceivesPoint(&area, start), "recording border must receive input");
+            drag = std::make_unique<MacMouseDrag>(start);
+        } else {
+            send(QEvent::MouseButtonPress, start);
+        }
+        check(ScreenRecordingAreaWindowTestAccess::dragging(area),
+              "border input must begin the controlled resize");
+        for (int extent : {1, -40, 1, 60}) {
+            const QPoint end = start - QPoint(direction.x() * (initial.width() - extent),
+                                              direction.y() * (initial.height() - extent));
+            if (native)
+                drag->moveTo(end);
+            else
+                send(QEvent::MouseMove, end);
+            const int minimum = snow_shot::presentation::recording::screenRecordingMinimumExtent(
+                area.devicePixelRatioF());
+            const int size = qMax(minimum, qAbs(extent));
+            QRect expected = initial;
+            if (direction.x()) {
+                const int anchor = direction.x() > 0 ? initial.x() : initial.x() + initial.width();
+                expected.setRect(anchor - (direction.x() * extent < 0 ? size : 0), expected.y(),
+                                 size, expected.height());
+            }
+            if (direction.y()) {
+                const int anchor = direction.y() > 0 ? initial.y() : initial.y() + initial.height();
+                expected.setRect(expected.x(), anchor - (direction.y() * extent < 0 ? size : 0),
+                                 expected.width(), size);
+            }
+            check(area.recordingRegion() == expected,
+                  "each border must retain its anchor, enforce the minimum and flip both ways");
+            check(area.selectionRect().size().toSize() == expected.size(),
+                  "visible selection must match the committed recording region");
+        }
+        if (native)
+            drag->finish();
+        else
+            send(QEvent::MouseButtonRelease,
+                 start - QPoint(direction.x() * (initial.width() - 60),
+                                direction.y() * (initial.height() - 60)));
+        check(!ScreenRecordingAreaWindowTestAccess::dragging(area) && starts == finishes,
+              "border release must finish exactly one controlled interaction");
+    }
+    check(starts == 8 && finishes == 8, "every edge and corner must complete one resize");
+}
+
 void nativeLogicalDrag() {
     ScreenRecordingAreaWindow area;
     QScreen* primary = QGuiApplication::primaryScreen();
@@ -989,6 +1085,21 @@ int main(int argc, char** argv) {
     }
 #endif
 #ifdef Q_OS_MACOS
+    if (application.arguments().contains(QStringLiteral("--native-border-input-only"))) {
+        int result = 0;
+        if (!macCanPostMouseEvents()) {
+            result = 77;
+        } else {
+            try {
+                recordingBorderInput(true);
+            } catch (const std::exception& error) {
+                std::cerr << error.what() << '\n';
+                result = 1;
+            }
+        }
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return result;
+    }
     if (application.arguments().contains(QStringLiteral("--native-logical-drag-only"))) {
         int result = 0;
         if (QGuiApplication::screens().size() < 2 || !macCanPostMouseEvents()) {
@@ -1004,6 +1115,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return result;
     }
+    recordingBorderInput(false);
     logicalRegionDragAndResize();
 #endif
     controlledBordersCrossAndCancelWithoutClearingAnnotations();

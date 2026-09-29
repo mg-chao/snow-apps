@@ -37,6 +37,7 @@ struct NativeOrderRecord {
   NSWindowAnimationBehavior animation;
 };
 QList<NativeOrderRecord> nativeOrders;
+NSWindow* ownerActivatingDuringOrderOut = nil;
 
 void observeNativeOrdering() {
   static const bool installed = [] {
@@ -48,6 +49,15 @@ void observeNativeOrdering() {
                                               NSInteger relative) {
           nativeOrders.append(
               {QString::fromNSString(window.title), mode, relative, window.animationBehavior});
+          if (mode == NSWindowOut && ownerActivatingDuringOrderOut) {
+            // AppKit can return focus to the owner synchronously inside orderOut,
+            // before QWidget clears its visible state. Reproduce that ordering.
+            NSWindow* owner = ownerActivatingDuringOrderOut;
+            ownerActivatingDuringOrderOut = nil;
+            [NSNotificationCenter.defaultCenter
+                postNotificationName:NSWindowDidBecomeKeyNotification
+                              object:owner];
+          }
           reinterpret_cast<void (*)(id, SEL, NSWindowOrderingMode, NSInteger)>(original)(
               window, selector, mode, relative);
         }));
@@ -246,6 +256,60 @@ class TstModalWindow : public QObject {
     modal.setWindowTaskbarVisible(false);
     verifyPresentation();
     modal.close();
+  }
+
+  void macClosingDoesNotReactivateSurface_data() {
+    QTest::addColumn<int>("action");
+    QTest::newRow("cancel") << 0;
+    QTest::newRow("destroy") << 1;
+    QTest::newRow("window-close") << 2;
+  }
+
+  void macClosingDoesNotReactivateSurface() {
+    QFETCH(int, action);
+    QWidget owner;
+    owner.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    AdModal modal(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.setPreset(AdModal::Preset::Confirm);
+    modal.setWindowTitle(QStringLiteral("Closing confirmation"));
+    for (int presentation = 0; presentation < 2; ++presentation) {
+      modal.open();
+      QWidget* surface = modal.acceptButton()->window();
+      QVERIFY(QTest::qWaitForWindowExposed(surface));
+      QVERIFY(QGuiApplication::modalWindow());
+      const bool cocoa = QGuiApplication::platformName() == QStringLiteral("cocoa");
+      if (cocoa) {
+        ownerActivatingDuringOrderOut = reinterpret_cast<NSView*>(owner.winId()).window;
+      }
+      nativeOrders.clear();
+      if (action == 0) {
+        modal.reject();
+      } else if (action == 1) {
+        modal.accept();
+      } else {
+        surface->close();
+      }
+      QVERIFY(!modal.isOpen());
+      QVERIFY(!surface->isVisible());
+      QVERIFY(!QGuiApplication::modalWindow());
+      if (cocoa) {
+        QVERIFY(!ownerActivatingDuringOrderOut);
+        bool hidden = false;
+        for (const auto& order : nativeOrders) {
+          if (order.title != modal.windowTitle()) {
+            continue;
+          }
+          // Dismissal may order out more than once, but must never order in
+          // again or restart the native presentation animation.
+          QCOMPARE(order.mode, NSWindowOut);
+          hidden = true;
+        }
+        QVERIFY(hidden);
+      }
+    }
   }
 
   void macPresentationRespectsExplicitAnimationAndRestoresDefault() {

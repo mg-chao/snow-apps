@@ -314,6 +314,11 @@ class ModalOverlayWidget final : public QWidget {
       // the first presentation. Keep the session alive through native order-out.
       macModalSession_ = detail::createMacModalSession(this, windowModalBlocker_);
     }
+    if (!visible && macModalSession_) {
+      // Native order-out can activate the owner before QWidget clears its
+      // visible state. Stop redirecting focus before entering that transition.
+      macModalSession_->beginHide();
+    }
     QWidget::setVisible(visible);
     if (!visible) {
       macModalSession_.reset();

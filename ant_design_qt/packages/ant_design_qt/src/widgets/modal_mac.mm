@@ -112,6 +112,14 @@ class CocoaModalSession final : public MacModalSession {
         }
     }
 
+    void beginHide() override {
+        closing_ = true;
+    }
+
+    bool isClosing() const {
+        return closing_;
+    }
+
     NSWindow* nativeSurface() const {
         // Qt can replace the native window during show or a window-flag change.
         // The QWidget is the session's identity, not a retained obsolete NSWindow.
@@ -138,7 +146,7 @@ class CocoaModalSession final : public MacModalSession {
 
   private:
     bool blocks(NSWindow* native) const {
-        if (!native || !surface_ || !surface_->isVisible() || !blocker_)
+        if (closing_ || !native || !surface_ || !surface_->isVisible() || !blocker_)
             return false;
         for (QWidget* widget : QApplication::topLevelWidgets()) {
             if (nativeWindow(widget) != native || !widget->windowHandle())
@@ -150,7 +158,7 @@ class CocoaModalSession final : public MacModalSession {
     }
 
     void activateSurface() {
-        if (activating_ || !nativeSurface())
+        if (closing_ || activating_ || !nativeSurface())
             return;
         const QScopedValueRollback guard(activating_, true);
         [nativeSurface() makeKeyAndOrderFront:nil];
@@ -161,6 +169,7 @@ class CocoaModalSession final : public MacModalSession {
     id eventMonitor_ = nil;
     id activationObserver_ = nil;
     bool activating_ = false;
+    bool closing_ = false;
 };
 
 bool usesDocumentPresentation(NSWindow* window) {
@@ -184,6 +193,8 @@ void constrainOrdering(NSWindow* window, NSWindowOrderingMode& mode, NSInteger& 
     // notification is too late to prevent a frame of owner-over-modal occlusion.
     // Native levels remain the responsibility of Qt/the host's stacking policy.
     for (auto* session : sessions) {
+        if (session->isClosing())
+            continue;
         NSWindow* surface = session->nativeSurface();
         NSWindow* anchor = nil;
         NSWindowOrderingMode bound = NSWindowOut;

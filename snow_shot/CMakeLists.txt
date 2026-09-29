@@ -5683,6 +5683,11 @@ if(SNOW_SHOT_BUILD_TESTS)
             ../cmake/test-support/macos_native_input.mm)
         target_include_directories(snow-shot-screen-recording-area-window-tests PRIVATE
             ../cmake/test-support)
+        add_test(NAME snow-shot-macos-recording-border-input-tests
+            COMMAND snow-shot-screen-recording-area-window-tests --native-border-input-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-recording-border-input-tests PROPERTIES
+            LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE
+            TIMEOUT 60 SKIP_RETURN_CODE 77)
         add_test(NAME snow-shot-macos-recording-cross-display-drag-tests
             COMMAND snow-shot-screen-recording-area-window-tests --native-logical-drag-only -platform cocoa)
         set_tests_properties(snow-shot-macos-recording-cross-display-drag-tests PROPERTIES
