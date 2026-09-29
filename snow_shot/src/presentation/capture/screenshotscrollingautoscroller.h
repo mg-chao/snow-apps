@@ -7,6 +7,7 @@
 #include <QRect>
 #include <QTimer>
 
+#include <algorithm>
 #include <functional>
 #include <utility>
 
@@ -19,7 +20,7 @@ class ScreenshotScrollingAutoScroller final : public QObject {
     explicit ScreenshotScrollingAutoScroller(ScrollStep scrollStep)
         : m_scrollStep(std::move(scrollStep)) {
         m_timer.setParent(this);
-        m_timer.setInterval(200);
+        m_timer.setInterval(kScreenshotScrollingAutoScrollIntervalDefault);
         m_timer.setTimerType(Qt::PreciseTimer);
         connect(&m_timer, &QTimer::timeout, this, [this]() {
             if (m_timer.isActive()) {
@@ -42,6 +43,14 @@ class ScreenshotScrollingAutoScroller final : public QObject {
 
     void setMode(ScreenshotScrollingRecognitionMode mode) {
         m_mode = mode;
+    }
+
+    void setIntervalMs(int milliseconds) {
+        const int interval = std::clamp(milliseconds, kScreenshotScrollingAutoScrollIntervalMinimum,
+                                        kScreenshotScrollingAutoScrollIntervalMaximum);
+        if (m_timer.interval() != interval) {
+            m_timer.setInterval(interval);
+        }
     }
 
     void setEnabled(bool enabled) {

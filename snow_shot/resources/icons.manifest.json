@@ -367,6 +367,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "AutoScrollInterval",
+      "name": "auto-scroll-interval",
+      "source": "../src/presentation/components/icons/resources/auto-scroll-interval.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Blur",
       "name": "blur",
       "source": "../src/presentation/components/icons/resources/blur.svg",

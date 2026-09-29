@@ -1047,6 +1047,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationIntegerRange{0, 64, 1}},
     {QStringLiteral("screenshot_selection/lock_aspect_ratio"), false,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("screenshot/scrolling_auto_scroll_interval_ms"), 200,
+     ConfigurationValueKind::Integer, ConfigurationIntegerRange{128, 1000, 1}},
     {QStringLiteral("screenshot/capture_cursor"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot"), true,
      ConfigurationValueKind::Boolean},

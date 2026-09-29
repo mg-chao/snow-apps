@@ -96,6 +96,10 @@
             <translation>Auto-scroll</translation>
         </message>
         <message>
+            <source>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</source>
+            <translation>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</translation>
+        </message>
+        <message>
             <source>Avatar</source>
             <translation>Avatar</translation>
         </message>
@@ -1153,6 +1157,11 @@
         </message>
         <message>
             <source>ms</source>
+            <translation>ms</translation>
+        </message>
+        <message>
+            <source>ms</source>
+            <comment>Auto-scroll interval unit</comment>
             <translation>ms</translation>
         </message>
         <message>

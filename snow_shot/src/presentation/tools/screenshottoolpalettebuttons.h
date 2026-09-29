@@ -476,6 +476,9 @@ createScreenshotToolPaletteRecordingDelayEditor(QWidget* parent, const char* too
                                                 const adqt::icons::IconRef& iconRef, int seconds,
                                                 const ScreenshotToolPaletteButtonMetrics& metrics);
 
+void configureScreenshotToolPaletteScrollingIntervalEditor(
+    IconNumericValuePreviewButton* button, const ScreenshotToolPaletteButtonMetrics& metrics);
+
 void configureScreenshotToolPaletteRecordingDelayEditor(
     IconNumericValuePreviewButton* button, const ScreenshotToolPaletteButtonMetrics& metrics);
 

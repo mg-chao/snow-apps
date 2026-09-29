@@ -1961,6 +1961,17 @@ createScreenshotToolPaletteRecordingDelayEditor(QWidget* parent, const char* too
     return button;
 }
 
+void configureScreenshotToolPaletteScrollingIntervalEditor(
+    IconNumericValuePreviewButton* button, const ScreenshotToolPaletteButtonMetrics& metrics) {
+    if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {
+        return;
+    }
+    configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+    constexpr int referenceWidth = 96;
+    button->setFixedWidth(scaledMetric(referenceWidth, metrics.physicalScale));
+    stampScreenshotToolbarReferenceWidth(button, referenceWidth);
+}
+
 void configureScreenshotToolPaletteRecordingDelayEditor(
     IconNumericValuePreviewButton* button, const ScreenshotToolPaletteButtonMetrics& metrics) {
     if (!screenshotToolPaletteMetricsApplyTo(metrics, button)) {

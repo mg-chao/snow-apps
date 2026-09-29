@@ -71,10 +71,39 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     void repositionToolbarForContentChange() override {}
     void hideColorPickersForScreenshotUi() override {}
 
+    void setScrollingScreenshotAutoScrollIntervalMs(int milliseconds) override {
+        interval = milliseconds;
+        ++intervalChanges;
+    }
+    int interval = 0;
+    int intervalChanges = 0;
     int moveToolCount = 0;
     int selectToolCount = 0;
     int shapeToolCount = 0;
 };
+
+void scrollingIntervalRestoresAndReachesCommands() {
+    const storage::ScreenshotSettings settings;
+    require(settings.setScrollingAutoScrollIntervalMs(350), "save initial interval");
+    RecordingToolbarCommands commands;
+    {
+        ScreenshotToolbarWindow window(commands);
+        auto* palette = window.palette();
+        require(palette != nullptr && palette->scrollingAutoScrollIntervalMs() == 350,
+                "toolbar must restore the saved interval before scrolling controls materialize");
+        palette->setScrollingAutoScrollIntervalMs(470);
+        emit palette->scrollingAutoScrollIntervalMsChanged(470);
+        require(commands.interval == 470 && commands.intervalChanges == 1 &&
+                    settings.scrollingAutoScrollIntervalMs() == 470,
+                "interval changes must persist and reach the capture command exactly once");
+        window.resetForNewCapture();
+        require(palette->scrollingAutoScrollIntervalMs() == 470,
+                "new captures must retain the selected interval");
+    }
+    ScreenshotToolbarWindow restored(commands);
+    require(restored.palette()->scrollingAutoScrollIntervalMs() == 470,
+            "new toolbar windows must restore the persisted interval");
+}
 
 void rememberedDrawingToolRestoresOncePerCapture() {
     using Tool = ScreenshotToolPalette::Tool;
@@ -320,6 +349,11 @@ int main(int argc, char** argv) {
     static_cast<void>(
         applicationStorage.initialize({storageDirectory.filePath(QStringLiteral("bin")),
                                        storageDirectory.filePath(QStringLiteral("data")), 60000}));
+    if (application.arguments().contains(QStringLiteral("--scrolling-interval-only"))) {
+        scrollingIntervalRestoresAndReachesCommands();
+        applicationStorage.shutdown();
+        return 0;
+    }
     rememberedDrawingToolRestoresOncePerCapture();
     selectionShortcutsReachToolbarCommands();
     applicationStorage.shutdown();

@@ -419,6 +419,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void startScrollingScreenshot() override;
     void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode mode) override;
     void setScrollingScreenshotAutoScroll(bool enabled) override;
+    void setScrollingScreenshotAutoScrollIntervalMs(int milliseconds) override;
     void beginScrollingSelectionMove(ScreenshotScrollingRecognitionMode axis,
                                      QPoint position) override;
     void updateScrollingSelectionMove(QPoint position) override;
@@ -1206,6 +1207,8 @@ bool ScreenshotController::Impl::ensureScrollingFeature() {
             [this] { return m_captureState.presentationSuppressed; },
         },
         &owner);
+    m_scrollingCaptureController->setAutoScrollIntervalMs(
+        snow_shot::storage::ScreenshotSettings().scrollingAutoScrollIntervalMs());
     return m_scrollingCaptureController != nullptr;
 }
 
@@ -3053,6 +3056,12 @@ void ScreenshotController::Impl::endScrollingSelectionMove() {
         return;
     m_scrollingCaptureController->endSelectionMove();
     m_presentationServices->updateOverlayState();
+}
+
+void ScreenshotController::Impl::setScrollingScreenshotAutoScrollIntervalMs(int milliseconds) {
+    if (m_scrollingCaptureController != nullptr) {
+        m_scrollingCaptureController->setAutoScrollIntervalMs(milliseconds);
+    }
 }
 
 void ScreenshotController::Impl::setScrollingScreenshotAutoScroll(bool enabled) {

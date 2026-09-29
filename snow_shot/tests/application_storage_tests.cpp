@@ -74,6 +74,48 @@ void writeBytes(const QString& path, const QByteArray& bytes) {
     require(file.write(bytes) == bytes.size(), "failed to write test file");
 }
 
+void scrollingIntervalSettingsPersistAndValidate() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "interval settings require an isolated directory");
+    auto& appStorage = storage::ApplicationStorage::instance();
+    const storage::StorageInitializationOptions options{temporary.filePath(QStringLiteral("bin")),
+                                                        temporary.filePath(QStringLiteral("data")),
+                                                        60000};
+    static_cast<void>(appStorage.initialize(options));
+    const storage::ScreenshotSettings settings;
+    const QString key = QStringLiteral("screenshot/scrolling_auto_scroll_interval_ms");
+    require(settings.scrollingAutoScrollIntervalMs() == 200, "interval must default to 200 ms");
+    for (const int value : {128, 1000, 350}) {
+        require(settings.setScrollingAutoScrollIntervalMs(value) &&
+                    settings.scrollingAutoScrollIntervalMs() == value,
+                "valid intervals must round trip through the settings adapter");
+    }
+    for (const int value : {127, 1001}) {
+        require(!settings.setScrollingAutoScrollIntervalMs(value) &&
+                    settings.scrollingAutoScrollIntervalMs() == 350,
+                "invalid writes must preserve the accepted setting");
+    }
+    require(appStorage.flushNow().success, "interval must be persisted to disk");
+    appStorage.shutdown();
+    static_cast<void>(appStorage.initialize(options));
+    require(settings.scrollingAutoScrollIntervalMs() == 350,
+            "interval must survive application storage restart");
+    appStorage.shutdown();
+    for (const QJsonValue value : {QJsonValue(127), QJsonValue(1001), QJsonValue(200.5),
+                                   QJsonValue(QStringLiteral("invalid"))}) {
+        const QString path = temporary.filePath(QStringLiteral("invalid.json"));
+        writeBytes(
+            path, QJsonDocument(
+                      QJsonObject{{QStringLiteral("screenshot"),
+                                   QJsonObject{{QStringLiteral("scrolling_auto_scroll_interval_ms"),
+                                                value}}}})
+                      .toJson());
+        storage::ConfigurationStore store(path, true, true, 60000);
+        require(store.value(key).toInt() == 200,
+                "invalid stored intervals must fall back to 200 ms");
+    }
+}
+
 void setLastModified(const QString& path, const QDateTime& when) {
     namespace fs = std::filesystem;
     const auto systemMoment =
@@ -2406,6 +2448,10 @@ void pinnedManagementConfigurationAndTrayMigration() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--scrolling-interval-only"))) {
+        scrollingIntervalSettingsPersistAndValidate();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--global-mouse-only"))) {
         globalMouseCombinationSchemaIsStrictAndPersistent();
         return 0;

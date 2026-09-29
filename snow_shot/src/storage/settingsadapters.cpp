@@ -606,6 +606,15 @@ bool ScreenshotSettings::setCaptureCursor(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/capture_cursor"), enabled);
 }
 
+int ScreenshotSettings::scrollingAutoScrollIntervalMs() const {
+    return cache().value(QStringLiteral("screenshot/scrolling_auto_scroll_interval_ms")).toInt();
+}
+
+bool ScreenshotSettings::setScrollingAutoScrollIntervalMs(int milliseconds) const {
+    return cache().setValue(QStringLiteral("screenshot/scrolling_auto_scroll_interval_ms"),
+                            milliseconds);
+}
+
 bool ScreenshotSettings::captureUiInScrollingScreenshot() const {
     return cache().value(QStringLiteral("screenshot/capture_ui_in_scrolling_screenshot")).toBool();
 }

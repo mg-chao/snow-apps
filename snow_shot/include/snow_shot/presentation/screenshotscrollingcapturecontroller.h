@@ -47,6 +47,7 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool active() const;
     void setExportPaused(bool paused);
     void setAutoScroll(bool enabled);
+    void setAutoScrollIntervalMs(int milliseconds);
     [[nodiscard]] QJsonObject state() const;
     [[nodiscard]] bool setTrimRange(int start, int end);
     [[nodiscard]] bool moveSelection(QPoint offset);

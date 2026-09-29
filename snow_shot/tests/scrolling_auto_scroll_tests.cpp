@@ -160,6 +160,13 @@ int main(int argc, char** argv) {
     auto* timer = scroller.findChild<QTimer*>();
     require(timer && timer->interval() == 200 && timer->timerType() == Qt::PreciseTimer,
             "auto-scroll must use a precise 200 ms timer");
+    scroller.setIntervalMs(1);
+    require(timer->interval() == 128 && !timer->isActive(),
+            "interval changes must clamp the minimum without starting an inactive timer");
+    scroller.setIntervalMs(2000);
+    require(timer->interval() == 1000 && !timer->isActive(),
+            "interval changes must clamp the maximum without starting an inactive timer");
+    scroller.setIntervalMs(350);
     const auto tick = [&]() {
         require(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection),
                 "timer timeout must be invokable without wall-clock waits");
@@ -172,7 +179,11 @@ int main(int argc, char** argv) {
     tick();
     require(steps == 0, "new sessions must start disabled");
     scroller.setEnabled(true);
-    require(steps == 0 && timer->isActive(), "first step must wait for the timer");
+    require(steps == 0 && timer->isActive() && timer->interval() == 350,
+            "first step must wait for the configured interval");
+    scroller.setIntervalMs(450);
+    require(steps == 0 && timer->isActive() && timer->interval() == 450,
+            "changing an active interval must restart timing without an immediate scroll");
     tick();
     require(steps == 1 && target == selection && delta == QPoint(0, -120),
             "vertical ticks must send one downward wheel notch to the physical selection");
@@ -187,6 +198,9 @@ int main(int argc, char** argv) {
     require(steps == 3 && !timer->isActive(), "deactivation must stop pending ticks");
     scroller.setEnabled(true);
     scroller.setPaused(true);
+    scroller.setIntervalMs(550);
+    require(timer->interval() == 550 && !timer->isActive(),
+            "changing a paused interval must preserve the pause");
     tick();
     require(steps == 3 && !timer->isActive(), "export pause must suppress scrolling");
     const QRect movedSelection(1200, 400, 800, 600);
@@ -209,6 +223,7 @@ int main(int argc, char** argv) {
     require(steps == 4 && !timer->isActive(), "capture termination must stop scrolling");
     scroller.start(selection, Mode::Horizontal);
     tick();
-    require(steps == 4, "capture restart must not restore prior activation");
+    require(steps == 4 && timer->interval() == 550,
+            "capture restart must retain the interval without restoring activation");
     return 0;
 }

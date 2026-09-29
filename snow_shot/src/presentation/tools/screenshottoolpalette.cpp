@@ -2276,6 +2276,19 @@ void ScreenshotToolPalette::setScreenshotRegionType(ScreenshotRegionType type) {
     }
 }
 
+void ScreenshotToolPalette::setScrollingAutoScrollIntervalMs(int milliseconds) {
+    m_scrollingAutoScrollIntervalMs =
+        std::clamp(milliseconds, kScreenshotScrollingAutoScrollIntervalMinimum,
+                   kScreenshotScrollingAutoScrollIntervalMaximum);
+    if (m_scrollingAutoScrollIntervalEditor != nullptr) {
+        m_scrollingAutoScrollIntervalEditor->setValue(m_scrollingAutoScrollIntervalMs);
+    }
+}
+
+int ScreenshotToolPalette::scrollingAutoScrollIntervalMs() const {
+    return m_scrollingAutoScrollIntervalMs;
+}
+
 void ScreenshotToolPalette::setCaptureCursorEnabled(bool enabled) {
     m_captureCursorEnabled = enabled;
     setScreenshotToolPaletteButtonActive(m_captureCursorButton, enabled);
@@ -3146,7 +3159,7 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         const auto metrics = actionButtonMetrics(m_physicalScale);
         for (adqt::widgets::AdButton* button :
              m_selectActionPanel->findChildren<adqt::widgets::AdButton*>()) {
-            if (button != nullptr) {
+            if (button != nullptr && button != m_scrollingAutoScrollIntervalEditor) {
                 const QByteArray tooltip = button->toolTip().toUtf8();
                 configureScreenshotToolPaletteStyleButton(button, tooltip.constData(), metrics);
             }
@@ -3246,6 +3259,10 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         configureScreenshotToolPaletteStyleButton(m_recordKeyboardButton,
                                                   "Show keystrokes in recording",
                                                   styleButtonMetrics(m_physicalScale));
+    }
+    if (m_scrollingAutoScrollIntervalEditor != nullptr) {
+        configureScreenshotToolPaletteScrollingIntervalEditor(m_scrollingAutoScrollIntervalEditor,
+                                                              actionButtonMetrics(m_physicalScale));
     }
     if (m_recordDelayButton != nullptr) {
         configureScreenshotToolPaletteRecordingDelayEditor(m_recordDelayButton,
@@ -3575,6 +3592,20 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         return false;
     }
     const int direction = deltaY > 0 ? 1 : -1;
+    if (m_scrollingAutoScrollIntervalEditor != nullptr &&
+        m_scrollingAutoScrollIntervalEditor->isEnabled() &&
+        m_scrollingAutoScrollIntervalEditor->isVisible() &&
+        m_scrollingAutoScrollIntervalEditor->rect().contains(
+            m_scrollingAutoScrollIntervalEditor->mapFromGlobal(
+                event->globalPosition().toPoint()))) {
+        const int previous = m_scrollingAutoScrollIntervalMs;
+        setScrollingAutoScrollIntervalMs(previous + direction * 10);
+        if (previous != m_scrollingAutoScrollIntervalMs) {
+            emit scrollingAutoScrollIntervalMsChanged(m_scrollingAutoScrollIntervalMs);
+        }
+        event->accept();
+        return true;
+    }
     // The delay editor lives on the export settings sub-toolbar, which is
     // available regardless of the active tool, so it is hit-tested before the
     // style/action toolbar visibility gate below.
@@ -3809,6 +3840,9 @@ void ScreenshotToolPalette::changeEvent(QEvent* event) {
 }
 
 void ScreenshotToolPalette::retranslateUi() {
+    if (m_scrollingAutoScrollIntervalEditor != nullptr) {
+        m_scrollingAutoScrollIntervalEditor->setValueSuffix(tr("ms", "Auto-scroll interval unit"));
+    }
     retranslateScreenshotToolPalette(this);
     retranslateDrawTemplateUi();
     if (m_styleControls != nullptr) {
@@ -6574,6 +6608,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_scrollingMoveVerticalButton = nullptr;
     m_scrollingRecognitionControls = nullptr;
     m_scrollingAutoScrollButton = nullptr;
+    m_scrollingAutoScrollIntervalEditor = nullptr;
     m_scrollingVerticalButton = nullptr;
     m_scrollingHorizontalButton = nullptr;
 
@@ -7695,6 +7730,24 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
     m_scrollingAutoScrollButton->setObjectName(
         QStringLiteral("screenshotScrollingAutoScrollButton"));
     layout->addWidget(m_scrollingAutoScrollButton);
+    addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
+    m_scrollingAutoScrollIntervalEditor = createScreenshotToolPaletteIconNumericValueButton(
+        m_scrollingRecognitionControls,
+        QT_TR_NOOP("Auto-scroll interval (scroll to adjust; click to reset to 200 ms)"),
+        custom_outlined_icons::AutoScrollInterval(), m_scrollingAutoScrollIntervalMs,
+        QStringLiteral("1000ms"), actionButtonMetrics(m_physicalScale));
+    m_scrollingAutoScrollIntervalEditor->setObjectName(
+        QStringLiteral("screenshotScrollingAutoScrollIntervalEditor"));
+    m_scrollingAutoScrollIntervalEditor->setValueSuffix(tr("ms", "Auto-scroll interval unit"));
+    configureScreenshotToolPaletteScrollingIntervalEditor(m_scrollingAutoScrollIntervalEditor,
+                                                          actionButtonMetrics(m_physicalScale));
+    layout->addWidget(m_scrollingAutoScrollIntervalEditor);
+    connect(m_scrollingAutoScrollIntervalEditor, &adqt::widgets::AdButton::clicked, this, [this]() {
+        if (m_scrollingAutoScrollIntervalMs != kScreenshotScrollingAutoScrollIntervalDefault) {
+            setScrollingAutoScrollIntervalMs(kScreenshotScrollingAutoScrollIntervalDefault);
+            emit scrollingAutoScrollIntervalMsChanged(m_scrollingAutoScrollIntervalMs);
+        }
+    });
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
     auto* separator = createStyleToolbarSeparator(m_scrollingRecognitionControls);
     separator->setObjectName(QStringLiteral("screenshotScrollingAutoScrollSeparator"));
@@ -7729,10 +7782,11 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
     addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
     layout->addWidget(m_scrollingMoveVerticalButton);
     m_selectActionLayout->addWidget(m_scrollingRecognitionControls);
-    stampScreenshotToolbarReferenceWidth(m_scrollingRecognitionControls,
-                                         actionButtonMetrics(1.0).buttonSize * 5 +
-                                             STYLE_GROUP_SPACING * 8 + STYLE_ITEM_SPACING * 2 +
-                                             TOOLBAR_SEPARATOR_WIDTH * 2);
+    stampScreenshotToolbarReferenceWidth(
+        m_scrollingRecognitionControls,
+        actionButtonMetrics(1.0).buttonSize * 5 +
+            screenshotToolbarReferenceWidth(m_scrollingAutoScrollIntervalEditor) +
+            STYLE_GROUP_SPACING * 8 + STYLE_ITEM_SPACING * 3 + TOOLBAR_SEPARATOR_WIDTH * 2);
     connect(m_scrollingAutoScrollButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         m_scrollingAutoScroll = !m_scrollingAutoScroll;
         updateScrollingRecognitionButtons();

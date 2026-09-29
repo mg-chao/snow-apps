@@ -1,6 +1,10 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSCROLLINGTYPES_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSCROLLINGTYPES_H
 
+inline constexpr int kScreenshotScrollingAutoScrollIntervalDefault = 200;
+inline constexpr int kScreenshotScrollingAutoScrollIntervalMinimum = 128;
+inline constexpr int kScreenshotScrollingAutoScrollIntervalMaximum = 1000;
+
 enum class ScreenshotScrollingRecognitionMode {
     Vertical,
     Horizontal,

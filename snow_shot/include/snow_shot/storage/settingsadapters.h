@@ -159,6 +159,8 @@ class ScreenshotSettings final {
     bool setConfirmBeforeExitingViaShortcut(bool enabled) const;
     [[nodiscard]] bool captureCursor() const;
     bool setCaptureCursor(bool enabled) const;
+    [[nodiscard]] int scrollingAutoScrollIntervalMs() const;
+    bool setScrollingAutoScrollIntervalMs(int milliseconds) const;
     [[nodiscard]] bool captureUiInScrollingScreenshot() const;
     bool setCaptureUiInScrollingScreenshot(bool enabled) const;
     [[nodiscard]] bool restoreOriginalScreenColors() const;

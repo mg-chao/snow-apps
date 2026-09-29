@@ -676,6 +676,10 @@ void ScreenshotScrollingCaptureController::setExportPaused(bool paused) {
     m_impl->setExportPaused(paused);
 }
 
+void ScreenshotScrollingCaptureController::setAutoScrollIntervalMs(int milliseconds) {
+    m_impl->autoScroller.setIntervalMs(milliseconds);
+}
+
 void ScreenshotScrollingCaptureController::setAutoScroll(bool enabled) {
     logScrollingEvent("scrolling.auto_scroll", m_impl->generation,
                       {{QStringLiteral("status"), enabled && m_impl->active}});

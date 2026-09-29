@@ -84,6 +84,7 @@ class ScreenshotToolbarCommandSink {
     virtual void startScrollingScreenshot() = 0;
     virtual void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode) {}
     virtual void setScrollingScreenshotAutoScroll(bool) {}
+    virtual void setScrollingScreenshotAutoScrollIntervalMs(int) {}
     virtual void beginScrollingSelectionMove(ScreenshotScrollingRecognitionMode, QPoint) {}
     virtual void updateScrollingSelectionMove(QPoint) {}
     virtual void endScrollingSelectionMove() {}

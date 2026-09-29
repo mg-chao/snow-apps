@@ -321,6 +321,8 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] bool activateToolShortcut(Tool tool);
     [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
     [[nodiscard]] bool activateRememberedDrawingTool();
+    void setScrollingAutoScrollIntervalMs(int milliseconds);
+    [[nodiscard]] int scrollingAutoScrollIntervalMs() const;
     void setCaptureCursorEnabled(bool enabled);
     void setScreenshotRegionType(ScreenshotRegionType type);
     [[nodiscard]] bool captureCursorEnabled() const;
@@ -488,6 +490,7 @@ class ScreenshotToolPalette final : public QWidget,
     void scrollingSelectionMoveUpdated(QPoint globalPosition);
     void scrollingSelectionMoveFinished();
     void scrollingAutoScrollChanged(bool enabled);
+    void scrollingAutoScrollIntervalMsChanged(int milliseconds);
     void screenRecordRequested();
     void serialNumberDecrementRequested();
     void serialNumberIncrementRequested();
@@ -975,6 +978,8 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_selectionOpacityAvailable = false;
     bool m_selectionActionAvailabilityInitialized = false;
     bool m_scrollingScreenshotMode = false;
+    int m_scrollingAutoScrollIntervalMs = kScreenshotScrollingAutoScrollIntervalDefault;
+    IconNumericValuePreviewButton* m_scrollingAutoScrollIntervalEditor = nullptr;
     bool m_scrollingAutoScroll = false;
     adqt::widgets::AdButton* m_scrollingAutoScrollButton = nullptr;
     ScreenshotScrollingRecognitionMode m_scrollingRecognitionMode =

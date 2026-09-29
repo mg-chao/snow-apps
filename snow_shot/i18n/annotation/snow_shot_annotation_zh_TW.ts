@@ -96,6 +96,10 @@
             <translation>自動捲動</translation>
         </message>
         <message>
+            <source>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</source>
+            <translation>自動捲動間隔（滾輪調整；按一下重設為 200 ms）</translation>
+        </message>
+        <message>
             <source>Avatar</source>
             <translation>頭像</translation>
         </message>
@@ -1154,6 +1158,11 @@
         <message>
             <source>ms</source>
             <translation>毫秒</translation>
+        </message>
+        <message>
+            <source>ms</source>
+            <comment>Auto-scroll interval unit</comment>
+            <translation>ms</translation>
         </message>
         <message>
             <source>px</source>

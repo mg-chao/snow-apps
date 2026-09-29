@@ -4680,9 +4680,9 @@ void scrollingSelectionButtonsDragAndLockAxis() {
     require(!horizontal->isEnabled() && vertical->isEnabled(),
             "vertical mode must lock horizontal movement");
     auto* layout = separator->parentWidget()->layout();
-    require(layout->itemAt(8)->widget() == separator &&
-                layout->itemAt(10)->widget() == horizontal &&
-                layout->itemAt(12)->widget() == vertical,
+    require(layout->itemAt(10)->widget() == separator &&
+                layout->itemAt(12)->widget() == horizontal &&
+                layout->itemAt(14)->widget() == vertical,
             "movement controls must follow direction controls");
     require(!vertical->toolTip().isEmpty() && !vertical->accessibleName().isEmpty(),
             "movement button must explain its interaction accessibly");
@@ -4749,11 +4749,46 @@ void scrollingSelectionButtonsDragAndLockAxis() {
     require(finishes == 5, "session exit must end dragging once");
 }
 
+void scrollingIntervalContentsScaleProportionally() {
+    ScreenshotToolPalette::Options options;
+    options.showScrollingScreenshotTool = true;
+    ScreenshotToolPalette baseline(options);
+    baseline.setScrollingScreenshotMode(true);
+    auto* reference = baseline.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotScrollingAutoScrollIntervalEditor"));
+    require(reference != nullptr, "interval reference must exist");
+    const QFont referenceFont = reference->font();
+    const QSize referenceIcon = reference->iconSize();
+    for (const bool createBeforeScale : {false, true}) {
+        ScreenshotToolPalette palette(options);
+        if (createBeforeScale)
+            palette.setScrollingScreenshotMode(true);
+        for (const qreal scale : {0.75, 1.25, 1.5, 2.0, 1.0}) {
+            static_cast<void>(palette.setPhysicalScale(scale));
+            palette.setScrollingScreenshotMode(true);
+            palette.show();
+            QCoreApplication::processEvents();
+            auto* editor = palette.findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotScrollingAutoScrollIntervalEditor"));
+            const QFont expectedFont = adqt::widgets::scaleControlFont(referenceFont, scale);
+            std::cerr << "interval scale=" << scale << " early=" << createBeforeScale
+                      << " font=" << editor->font().toString().toStdString()
+                      << " expected=" << expectedFont.toString().toStdString()
+                      << " icon=" << editor->iconSize().width() << '\n';
+            require(editor->font() == expectedFont,
+                    "interval text must scale once from its reference font");
+            require(editor->iconSize() == adqt::widgets::scaleControlSize(referenceIcon, scale),
+                    "interval icon must scale with its text");
+        }
+    }
+}
+
 void scrollingScreenshotExposesAxisRecognitionModes() {
     ScreenshotToolPalette::Options options;
     options.showScrollingScreenshotTool = true;
     options.showOcrTool = true;
     ScreenshotToolPalette palette(options);
+    palette.show();
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
     QCoreApplication::processEvents();
@@ -4784,7 +4819,7 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
                                  : nullptr;
     require(controls != nullptr &&
                 controls->findChild<adqt::widgets::AdRadioButtonGroup*>() == nullptr &&
-                modeButtons.size() == 5 && verticalButton != nullptr && horizontalButton != nullptr,
+                modeButtons.size() == 6 && verticalButton != nullptr && horizontalButton != nullptr,
             "scrolling screenshot should expose two independent mode buttons");
     auto* autoScroll = controls->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotScrollingAutoScrollButton"));
@@ -4793,6 +4828,48 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     require(autoScroll != nullptr && separator != nullptr && !autoScroll->isCheckable() &&
                 !autoScroll->isChecked(),
             "auto-scroll must use the same non-checkable action button as the axis controls");
+    auto* interval = dynamic_cast<IconNumericValuePreviewButton*>(controls->findChild<QWidget*>(
+        QStringLiteral("screenshotScrollingAutoScrollIntervalEditor")));
+    require(
+        interval != nullptr && interval->valueText() == QStringLiteral("200ms") &&
+            interval->isEnabled() && interval->width() == 96,
+        "interval editor must show the default with units and remain enabled without auto-scroll");
+    int intervalChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::scrollingAutoScrollIntervalMsChanged,
+                     [&](int value) {
+                         ++intervalChanges;
+                         require(value == palette.scrollingAutoScrollIntervalMs(),
+                                 "interval signal must match the displayed state");
+                     });
+    const auto intervalWheel = [&](int delta) {
+        const QPoint local = interval->rect().center();
+        QWheelEvent event(QPointF(local), interval->mapToGlobal(local), QPoint(), QPoint(0, delta),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        require(palette.handleToolbarWheel(&event) && event.isAccepted(),
+                "interval wheel input must be consumed, including at limits");
+    };
+    intervalWheel(120);
+    require(interval->valueText() == QStringLiteral("210ms") && intervalChanges == 1,
+            "wheel up must increase the interval by 10 ms exactly once");
+    palette.setScrollingAutoScrollIntervalMs(130);
+    intervalWheel(-120);
+    intervalWheel(-120);
+    require(interval->valueText() == QStringLiteral("128ms") && intervalChanges == 2,
+            "wheel down must clamp to 128 ms without duplicate changes at the limit");
+    palette.setScrollingAutoScrollIntervalMs(995);
+    intervalWheel(120);
+    intervalWheel(120);
+    require(interval->valueText() == QStringLiteral("1000ms") && intervalChanges == 3,
+            "wheel up must clamp to 1000 ms without duplicate changes at the limit");
+    interval->click();
+    interval->click();
+    require(interval->valueText() == QStringLiteral("200ms") && intervalChanges == 4,
+            "click must reset to 200 ms and avoid redundant notifications");
+    palette.setScrollingAutoScrollIntervalMs(-1);
+    require(palette.scrollingAutoScrollIntervalMs() == 128, "setter must clamp the minimum");
+    palette.setScrollingAutoScrollIntervalMs(2000);
+    require(palette.scrollingAutoScrollIntervalMs() == 1000, "setter must clamp the maximum");
+    palette.setScrollingAutoScrollIntervalMs(350);
     const auto requireAutoScrollStyle = [&](bool active) {
         require(!autoScroll->isCheckable() && !autoScroll->isChecked() &&
                     autoScroll->buttonStyle() ==
@@ -4805,12 +4882,14 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     };
     requireAutoScrollStyle(false);
     require(controls->layout()->itemAt(0)->widget() == autoScroll &&
-                controls->layout()->itemAt(2)->widget() == separator &&
-                controls->layout()->itemAt(4)->widget() == verticalButton,
+                controls->layout()->itemAt(2)->widget() == interval &&
+                controls->layout()->itemAt(4)->widget() == separator &&
+                controls->layout()->itemAt(6)->widget() == verticalButton,
             "auto-scroll must be the leftmost control with a separator to its right");
     const auto requireSeparatorSpacing = [&](int groupSpacing, int buttonSpacing) {
         controls->layout()->activate();
-        require(separator->x() - (autoScroll->x() + autoScroll->width()) == groupSpacing &&
+        require(interval->x() - (autoScroll->x() + autoScroll->width()) == buttonSpacing &&
+                    separator->x() - (interval->x() + interval->width()) == groupSpacing &&
                     verticalButton->x() - (separator->x() + separator->width()) == groupSpacing,
                 "scrolling separator must match the selection toolbar's spacing on both sides");
         require(horizontalButton->x() - (verticalButton->x() + verticalButton->width()) ==
@@ -4867,14 +4946,16 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
         require(button != nullptr && !button->toolTip().isEmpty() &&
                     button->accessibleName() == button->toolTip(),
                 "scrolling mode buttons should expose translated tooltip accessibility");
-        require(button->size() == QSize(32, 32) && button->iconSize() == QSize(24, 24),
+        require(button->size() == QSize(button == interval ? 96 : 32, 32) &&
+                    button->iconSize() == QSize(24, 24),
                 "scrolling mode buttons should use the enlarged action toolbar metrics");
     }
     require(palette.setPhysicalScale(1.5),
             "scrolling screenshot toolbar should accept a physical scale change");
     requireSeparatorSpacing(24, 6);
     for (adqt::widgets::AdButton* button : modeButtons) {
-        require(button->size() == QSize(48, 48) && button->iconSize() == QSize(36, 36),
+        require(button->size() == QSize(button == interval ? 144 : 48, 48) &&
+                    button->iconSize() == QSize(36, 36),
                 "scrolling mode buttons should retain their enlarged metrics after scaling");
     }
 
@@ -4906,6 +4987,11 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
         QStringLiteral("screenshotScrollingAutoScrollButton"));
     require(autoScroll != nullptr && !autoScroll->isChecked(),
             "a new scrolling capture must reset auto-scroll activation");
+    interval = dynamic_cast<IconNumericValuePreviewButton*>(
+        palette.findChild<QWidget*>(QStringLiteral("screenshotScrollingAutoScrollIntervalEditor")));
+    require(interval != nullptr && interval->valueText() == QStringLiteral("350ms") &&
+                palette.scrollingAutoScrollIntervalMs() == 350,
+            "toolbar recreation and new captures must preserve the chosen interval");
     requireAutoScrollStyle(false);
     controls = palette.findChild<QWidget*>(QStringLiteral("screenshotScrollingRecognitionMode"));
     verticalButton = controls != nullptr ? controls->findChild<adqt::widgets::AdButton*>(
@@ -4920,6 +5006,25 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
                 verticalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 horizontalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
             "each new scrolling screenshot session should reset to vertical recognition");
+    auto& languages = snow_shot::presentation::LanguageManager::instance();
+    const QString englishTooltip = interval->toolTip();
+    for (const auto& locale : {QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(languages.setLanguage(locale), "load interval translations");
+        QCoreApplication::processEvents();
+        require(interval->toolTip() != englishTooltip &&
+                    interval->accessibleName() == interval->toolTip() &&
+                    interval->valueText() == QStringLiteral("350ms"),
+                "interval tooltip must translate while retaining the ms unit");
+        static_cast<void>(palette.setPhysicalScale(locale == QStringLiteral("zh_CN") ? 1.0 : 1.5));
+        require(interval->width() >=
+                    interval->iconSize().width() +
+                        interval->fontMetrics().horizontalAdvance(QStringLiteral("1000ms")) + 8,
+                "the editor must fit the maximum value and icon at each scale");
+    }
+    require(languages.setLanguage(QStringLiteral("en_US")), "restore English interval labels");
+    QCoreApplication::processEvents();
+    require(interval->toolTip() == englishTooltip,
+            "scaling a translated interval editor must preserve its translation source");
 }
 
 void originalImageToggleLeadsRecognitionActions() {
@@ -13131,6 +13236,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--scrolling-only"))) {
         scrollingSelectionButtonsDragAndLockAxis();
+        scrollingIntervalContentsScaleProportionally();
         scrollingScreenshotExposesAxisRecognitionModes();
         scrollingScreenshotKeepsDrawingToolsAvailable();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

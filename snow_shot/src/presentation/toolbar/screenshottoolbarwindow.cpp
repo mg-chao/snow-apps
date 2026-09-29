@@ -404,6 +404,17 @@ void ScreenshotToolbarWindow::connectSerialNumberCommands(ScreenshotToolPalette&
 
 void ScreenshotToolbarWindow::connectScrollingScreenshotCommands(
     ScreenshotToolPalette& toolPalette) {
+    toolPalette.setScrollingAutoScrollIntervalMs(
+        snow_shot::storage::ScreenshotSettings().scrollingAutoScrollIntervalMs());
+    connect(&toolPalette, &ScreenshotToolPalette::scrollingAutoScrollIntervalMsChanged, this,
+            [this, &toolPalette](int milliseconds) {
+                const snow_shot::storage::ScreenshotSettings settings;
+                if (!settings.setScrollingAutoScrollIntervalMs(milliseconds)) {
+                    milliseconds = settings.scrollingAutoScrollIntervalMs();
+                    toolPalette.setScrollingAutoScrollIntervalMs(milliseconds);
+                }
+                m_commands.setScrollingScreenshotAutoScrollIntervalMs(milliseconds);
+            });
     connect(&toolPalette, &ScreenshotToolPalette::scrollingScreenshotRequested, this,
             [this]() { m_commands.startScrollingScreenshot(); });
     connect(&toolPalette, &ScreenshotToolPalette::scrollingSelectionMoveStarted, this,

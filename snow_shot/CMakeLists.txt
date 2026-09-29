@@ -1686,6 +1686,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-scrolling-interval-settings-tests
+        COMMAND snow-shot-application-storage-tests --scrolling-interval-only)
+    set_tests_properties(snow-shot-scrolling-interval-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     # Flaky by design: the async policy mutation settles on timers, and
     # CPU contention from parallel tests can stretch the settling window.
     # The test must not run in parallel with other tests (RUN_SERIAL), and
@@ -4642,9 +4647,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-screenshot-toolbar-remembered-tool-tests PRIVATE comctl32)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-screenshot-toolbar-remembered-tool-tests)
+    add_test(NAME snow-shot-scrolling-interval-command-tests
+        COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests --scrolling-interval-only -platform offscreen)
     add_test(NAME snow-shot-screenshot-toolbar-remembered-tool-tests
         COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests)
-    set_tests_properties(snow-shot-screenshot-toolbar-remembered-tool-tests PROPERTIES
+    set_tests_properties(snow-shot-scrolling-interval-command-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    set_tests_properties(snow-shot-screenshot-toolbar-remembered-tool-tests
+        snow-shot-scrolling-interval-command-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
