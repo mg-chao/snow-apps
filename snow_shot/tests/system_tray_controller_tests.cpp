@@ -26,6 +26,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
+#include <QPainter>
 #include <QPushButton>
 #include <QScreen>
 #include <QSet>
@@ -185,6 +186,52 @@ int main(int argc, char* argv[]) {
                 "switching bundled macOS tray icons must preserve their original colors");
 #endif
     }
+    const auto verifyDisabledBadge = [&]() {
+        using snow_shot::presentation::GlobalShortcutAction;
+        controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, false);
+        const QIcon original = trayIcon->icon();
+        controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, true);
+        require(!trayIcon->icon().isMask(), "the disabled badge must retain its red color");
+        for (const int size : {16, 22, 32, 44, 64}) {
+            QImage normal(size, size, QImage::Format_ARGB32_Premultiplied);
+            normal.fill(Qt::transparent);
+            QPainter painter(&normal);
+            original.paint(&painter, QRect(0, 0, size, size));
+            painter.end();
+            const QImage disabled = trayIcon->icon().pixmap(QSize(size, size), 1.0).toImage();
+            require(disabled.size() == QSize(size, size),
+                    "badged tray icons should provide standard and high-DPI sizes");
+            const QColor red = disabled.pixelColor(size * 13 / 16, size * 6 / 16);
+            require(red.red() > 180 && red.green() < 100 && red.blue() < 100,
+                    "disabled shortcuts should display a red badge at the top-right");
+            const int slashX = size * 12 / 16;
+            const int slashY = size - 1 - slashX;
+            const QColor slash = disabled.pixelColor(slashX, slashY);
+            require(slash.red() > 220 && slash.green() > 220 && slash.blue() > 220,
+                    "the disabled badge should have a white diagonal slash");
+            // Leave room for the antialiased white outline around the badge.
+            const int bottomStart = size * 9 / 16;
+            require(normal.copy(0, bottomStart, size, size - bottomStart) ==
+                        disabled.copy(0, bottomStart, size, size - bottomStart) &&
+                        normal.copy(0, 0, size * 7 / 16, size) ==
+                            disabled.copy(0, 0, size * 7 / 16, size),
+                    "the badge must preserve artwork outside the top-right corner");
+        }
+        controller.show();
+        require(trayIcon->icon().pixmap(QSize(32, 32), 1.0).toImage() !=
+                    original.pixmap(QSize(32, 32), 1.0).toImage(),
+                "refreshing the tray must preserve the disabled badge");
+        controller.setQuickActionChecked(GlobalShortcutAction::ToggleGlobalHotkeys, false);
+        require(trayIcon->icon().pixmap(QSize(32, 32), 1.0).toImage() ==
+                    original.pixmap(QSize(32, 32), 1.0).toImage(),
+                "re-enabling shortcuts must restore the original tray artwork");
+    };
+    for (const QString& selection : bundledSelections) {
+        controller.setQuickActionChecked(
+            snow_shot::presentation::GlobalShortcutAction::ToggleGlobalHotkeys, true);
+        controller.setIconSelection(selection);
+        verifyDisabledBadge();
+    }
     controller.setIconSelection(QStringLiteral("unsupported"));
     require(controller.iconSelection() == QStringLiteral("default") &&
                 trayIcon->property("resolvedIconSource").toString() ==
@@ -228,6 +275,8 @@ int main(int argc, char* argv[]) {
                 trayIcon->icon().pixmap(QSize(80, 40)).toImage().pixelColor(40, 20) ==
                     QColor(17, 113, 229),
             "a changed source fingerprint should replace the retained custom raster");
+
+    verifyDisabledBadge();
 
     const QString largeIconPath = storageDirectory.filePath(QStringLiteral("large-icon.png"));
     QImage largeImage(1024, 512, QImage::Format_ARGB32_Premultiplied);
@@ -346,6 +395,7 @@ int main(int argc, char* argv[]) {
     require(trayIcon->property("resolvedIconSource").toString() ==
                 QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-light.png"),
             "an invalid custom image should fall back to the selected bundled tray icon");
+    verifyDisabledBadge();
     const QString malformedIconPath =
         storageDirectory.filePath(QStringLiteral("malformed-icon.png"));
     QFile malformedIcon(malformedIconPath);
@@ -631,22 +681,20 @@ int main(int argc, char* argv[]) {
         }
         return static_cast<QAction*>(nullptr);
     };
-    const auto requireTrayModalCentered = [](adqt::widgets::AdModal* modal,
-                                            const char* message) {
+    const auto requireTrayModalCentered = [](adqt::widgets::AdModal* modal, const char* message) {
         QScreen* screen = QApplication::screenAt(QCursor::pos());
         if (screen == nullptr) {
             screen = QApplication::primaryScreen();
         }
         QWidget* surface = nullptr;
         for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (widget->isVisible() &&
-                widget->objectName() == QStringLiteral("ad-modal-overlay")) {
+            if (widget->isVisible() && widget->objectName() == QStringLiteral("ad-modal-overlay")) {
                 surface = widget;
                 break;
             }
         }
-        require(screen != nullptr && modal != nullptr && modal->centered() &&
-                    surface != nullptr && surface->isVisible() &&
+        require(screen != nullptr && modal != nullptr && modal->centered() && surface != nullptr &&
+                    surface->isVisible() &&
                     (surface->geometry().center() - screen->availableGeometry().center())
                             .manhattanLength() <= 2,
                 message);
