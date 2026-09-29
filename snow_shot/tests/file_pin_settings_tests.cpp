@@ -142,11 +142,21 @@ void shortcutSettings() {
                     manager.state(action).bindings.first().failureReason ==
                         GlobalShortcutFailureReason::AlreadyInUse,
                 "clipboard shortcut conflict must be reported");
+        const auto managementAction = GlobalShortcutAction::OpenPinToScreenManagement;
+        const snow_shot::shortcuts::ShortcutBindingList managementKeys{
+            QStringLiteral("Ctrl+Alt+Shift+M")};
+        require(session.applyShortcuts(managementAction, managementKeys),
+                "management shortcut must be configurable");
+        require(backend.resetSection(settings::SettingsSectionReset::OtherShortcuts) &&
+                    manager.state(managementAction).shortcuts == managementKeys,
+                "Other reset must preserve the management shortcut in Pin to screen");
         require(backend.resetSection(settings::SettingsSectionReset::GlobalPinToScreenShortcuts),
                 "Pin to screen reset succeeds");
         require(stored.pinSelectedFiles().isEmpty() &&
                     manager.state(action).status == GlobalShortcutStatus::Unset,
                 "Pin to screen reset must clear the new shortcut");
+        require(manager.state(managementAction).shortcuts.isEmpty(),
+                "Pin to screen reset must clear the management shortcut");
         require(session.applyShortcuts(action, keys), "prepare reload");
     }
     {

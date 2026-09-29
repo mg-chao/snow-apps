@@ -215,7 +215,7 @@ SettingsItemDefinition openCaptureHistoryItem() {
 }
 
 SettingsItemDefinition openPinToScreenManagementItem() {
-    SettingsItemDefinition item = quickActionItem(
+    return quickActionItem(
         QStringLiteral("quick.open-pin-to-screen-management"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen Management"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
@@ -223,12 +223,10 @@ SettingsItemDefinition openPinToScreenManagementItem() {
         {}, GlobalShortcutAction::OpenPinToScreenManagement,
         QStringLiteral("global_shortcuts/open_pin_to_screen_management"),
         []() { return custom_outlined_icons::PinToScreenManagement(); });
-    std::get<SettingsShortcutActionDefinition>(item.payload).showInTrayMenu = false;
-    return item;
 }
 
 SettingsItemDefinition globalCanvasItem() {
-    SettingsItemDefinition item = quickActionItem(
+    return quickActionItem(
         QStringLiteral("quick.global-canvas"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Full-screen canvas (enable/disable click-through)"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
@@ -236,8 +234,6 @@ SettingsItemDefinition globalCanvasItem() {
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global Canvas"))},
         GlobalShortcutAction::GlobalCanvas, QStringLiteral("global_shortcuts/global_canvas"),
         []() { return custom_outlined_icons::FullScreenCanvas(); });
-    std::get<SettingsShortcutActionDefinition>(item.payload).showInTrayMenu = false;
-    return item;
 }
 
 SettingsItemDefinition themeItem() {
@@ -2146,6 +2142,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         pinClipboardContentItem(),
                         pinSelectedFilesItem(),
                         restoreLastClosedWindowsItem(),
+                        openPinToScreenManagementItem(),
                     },
                 },
                 {
@@ -2168,7 +2165,6 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::OtherShortcuts,
                     {
                         openCaptureHistoryItem(),
-                        openPinToScreenManagementItem(),
                         globalCanvasItem(),
                         translateSelectedTextItem(),
                         toggleGlobalHotkeysItem(),
@@ -3334,7 +3330,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
           quick(QStringLiteral("quick.restore-last-closed-windows"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Restore Last Closed Window"),
                 GlobalShortcutAction::RestoreLastClosedWindows,
-                []() { return outlined_icons::History(); })}},
+                []() { return outlined_icons::History(); }),
+          quick(QStringLiteral("quick.open-pin-to-screen-management"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen Management"),
+                GlobalShortcutAction::OpenPinToScreenManagement,
+                []() { return custom_outlined_icons::PinToScreenManagement(); })}},
         {QStringLiteral("screen-recording"),
          {quick(QStringLiteral("quick.screen-record"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording"),
@@ -3353,6 +3353,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot history"),
                 GlobalShortcutAction::OpenCaptureHistory,
                 []() { return outlined_icons::History(); }),
+          quick(QStringLiteral("quick.global-canvas"),
+                QT_TRANSLATE_NOOP("SettingsCatalog",
+                                  "Full-screen canvas (enable/disable click-through)"),
+                GlobalShortcutAction::GlobalCanvas,
+                []() { return custom_outlined_icons::FullScreenCanvas(); }),
           quick(QStringLiteral("quick.translate-selected-text"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Translate Selected Text"),
                 GlobalShortcutAction::TranslateSelectedText,

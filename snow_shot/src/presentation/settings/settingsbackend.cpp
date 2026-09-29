@@ -1611,8 +1611,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                       QStringLiteral("global_shortcuts/open_capture_history"));
         resetShortcut(GlobalShortcutAction::GlobalCanvas,
                       QStringLiteral("global_shortcuts/global_canvas"));
-        resetShortcut(GlobalShortcutAction::OpenPinToScreenManagement,
-                      QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
         resetShortcut(GlobalShortcutAction::TranslateSelectedText,
                       QStringLiteral("global_shortcuts/translate_selected_text"));
         resetShortcut(GlobalShortcutAction::ToggleGlobalHotkeys,
@@ -1634,6 +1632,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                       QStringLiteral("global_shortcuts/restore_last_closed_windows"));
         resetShortcut(GlobalShortcutAction::PinSelectedFiles,
                       QStringLiteral("global_shortcuts/pin_selected_files"));
+        resetShortcut(GlobalShortcutAction::OpenPinToScreenManagement,
+                      QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
         return accepted;
     }
     case SettingsSectionReset::GeneralSettings: {

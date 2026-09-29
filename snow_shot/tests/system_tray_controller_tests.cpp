@@ -212,7 +212,7 @@ int main(int argc, char* argv[]) {
             // Leave room for the antialiased white outline around the badge.
             const int bottomStart = size * 9 / 16;
             require(normal.copy(0, bottomStart, size, size - bottomStart) ==
-                        disabled.copy(0, bottomStart, size, size - bottomStart) &&
+                            disabled.copy(0, bottomStart, size, size - bottomStart) &&
                         normal.copy(0, 0, size * 7 / 16, size) ==
                             disabled.copy(0, 0, size * 7 / 16, size),
                     "the badge must preserve artwork outside the top-right corner");
@@ -1011,6 +1011,24 @@ int main(int argc, char* argv[]) {
     controller.setMenuOptions(defaultMenuOptions);
     require(!fullscreenToggleMenuAction->isVisible() && quickActions.size() == 4,
             "hiding the fullscreen suppression entry must not redispatch its quick action");
+    for (const auto& entry :
+         {std::pair{QStringLiteral("quick.open-pin-to-screen-management"),
+                    snow_shot::presentation::GlobalShortcutAction::OpenPinToScreenManagement},
+          std::pair{QStringLiteral("quick.global-canvas"),
+                    snow_shot::presentation::GlobalShortcutAction::GlobalCanvas}}) {
+        auto* optionalAction = actionForId(entry.first);
+        require(optionalAction != nullptr && !optionalAction->isVisible(),
+                "management and canvas tray actions must start hidden");
+        controller.setMenuOptions({entry.first, QStringLiteral("tray.exit")});
+        require(optionalAction->isVisible(), "selected optional tray action must be visible");
+        const auto previousCount = quickActions.size();
+        optionalAction->trigger();
+        require(quickActions.size() == previousCount + 1 && quickActions.last() == entry.second,
+                "optional tray action must dispatch the corresponding command");
+        controller.setMenuOptions(defaultMenuOptions);
+        require(!optionalAction->isVisible() && quickActions.size() == previousCount + 1,
+                "restoring defaults must hide optional actions without dispatching");
+    }
     require(groupManager.setActiveGroup(QStringLiteral("default")),
             "the default group should be activatable for the localized title check");
 
