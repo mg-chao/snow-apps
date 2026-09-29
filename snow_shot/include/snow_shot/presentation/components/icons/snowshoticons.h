@@ -193,6 +193,7 @@ SequenceNumberSolidSquare(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef WatermarkGap(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef WheelMouse(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Window(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef WindowGroupSwitch(const adqt::icons::IconColors& colors = {});
 } // namespace outlined
 
 namespace twotone {

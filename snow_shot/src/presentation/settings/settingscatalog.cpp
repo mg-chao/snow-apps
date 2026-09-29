@@ -222,7 +222,7 @@ SettingsItemDefinition switchWindowGroupItem() {
                           "Preview window groups, then release the shortcut keys to switch"),
         {}, GlobalShortcutAction::SwitchWindowGroup,
         QStringLiteral("global_shortcuts/switch_window_group"),
-        []() { return outlined_icons::Swap(); });
+        []() { return custom_outlined_icons::WindowGroupSwitch(); });
     std::get<SettingsShortcutActionDefinition>(item.payload).showInTrayMenu = false;
     return item;
 }

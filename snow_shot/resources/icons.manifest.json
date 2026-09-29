@@ -1166,6 +1166,14 @@
       "fit": "contain"
     },
     {
+      "variant": "outlined",
+      "symbol": "WindowGroupSwitch",
+      "name": "window-group-switch",
+      "source": "../src/presentation/components/icons/resources/window-group-switch.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
       "variant": "twotone",
       "symbol": "ScreenshotFeature",
       "name": "screenshot-feature",
