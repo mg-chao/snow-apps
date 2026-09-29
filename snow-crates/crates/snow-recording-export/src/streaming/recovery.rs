@@ -352,6 +352,7 @@ impl StreamingEncoder {
             state.audio_path.as_deref(),
             &assembled,
             video_start,
+            endpoint,
             state.config.fps,
         )?;
         publish_unless_canceled(&assembled, &state.config.output_path, cancellation)?;
@@ -364,6 +365,7 @@ fn remux(
     audio: Option<&Path>,
     destination: &Path,
     video_start: i64,
+    video_end: i64,
     fps: u32,
 ) -> Result<()> {
     let mut inputs = vec![ffmpeg::format::input(video).map_err(error)?];
@@ -399,6 +401,10 @@ fn remux(
             .ok_or_else(|| error("missing mux track"))?
             .time_base();
         let mut video_offset = None;
+        // Fragment sample durations are decode-time deltas. Hold only the last
+        // reordered group so its highest-PTS image can regain the final still
+        // duration when publishing the ordinary MP4, without another encode.
+        let mut video_tail: Vec<ffmpeg::Packet> = Vec::new();
         for (stream, mut packet) in input.packets() {
             if stream.index() != source_index {
                 continue;
@@ -413,6 +419,28 @@ fn remux(
             packet.rescale_ts(time_base, target_time_base);
             packet.set_stream(target_index);
             packet.set_position(-1);
+            if target_index == 0 {
+                if video_tail
+                    .first()
+                    .is_some_and(|first| packet.pts() > first.pts())
+                {
+                    for previous in video_tail.drain(..) {
+                        previous.write_interleaved(&mut output).map_err(error)?;
+                    }
+                }
+                video_tail.push(packet);
+            } else {
+                packet.write_interleaved(&mut output).map_err(error)?;
+            }
+        }
+        if let Some(last_image) = video_tail.first_mut() {
+            let end = video_end.rescale((1, fps as i32), target_time_base);
+            let pts = last_image
+                .pts()
+                .ok_or_else(|| error("missing final video PTS"))?;
+            last_image.set_duration((end - pts).max(1));
+        }
+        for packet in video_tail {
             packet.write_interleaved(&mut output).map_err(error)?;
         }
     }
@@ -712,11 +740,15 @@ mod tests {
             .recoverable()
             .create()
             .unwrap();
-        for pts in [0, 2] {
+        // Run past software lookahead so this failure exercises retained media,
+        // independently of the selected preset's initial buffering delay.
+        for pts in 0..48 {
             encoder
                 .push_owned_rgba_frame_at_pts(pts, vec![50; 32 * 32 * 4])
                 .unwrap();
         }
+        let emitted = encoder.report.video_packets;
+        assert!(emitted > 0);
         encoder.push_audio_pcm_i16(0, &vec![300; 19_200]).unwrap();
         let failure = encoder
             .preserve_recovery_failure("CPU capture could not reopen")
@@ -730,7 +762,7 @@ mod tests {
         );
         assert!(!path.exists());
         let manifest = fs::read_to_string(retained.join("timeline.txt")).unwrap();
-        assert!(manifest.contains("video\t0\t1\t"));
+        assert!(manifest.contains(&format!("video\t0\t{emitted}\t")));
         assert!(manifest.contains("audio\t"));
         assert!(
             ffmpeg::format::input(&retained.join("audio.mp4"))
@@ -810,7 +842,11 @@ mod tests {
     fn recovery_retains_video_timeline_and_one_continuous_audio_track() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("recovered.mp4");
-        let mut encoder = StreamingEncoder::builder(config(path.clone()))
+        let mut settings = config(path.clone());
+        // This offscreen fixture substitutes software for the failed GPU codec.
+        // Match the GPU's no-lookahead/no-B-frame behavior before device loss.
+        settings.video.speed = snow_recording_model::VideoEncodingSpeed::UltraFast;
+        let mut encoder = StreamingEncoder::builder(settings)
             .recoverable()
             .create()
             .unwrap();
@@ -830,7 +866,8 @@ mod tests {
         encoder.push_audio_pcm_i16(500, &vec![300; 67_200]).unwrap();
         let report = encoder.finish_at_pts(12).unwrap();
         assert_eq!(report.recovery_count, 1);
-        assert_eq!(report.abandoned_frames, 1);
+        // The fixture retains one frame in x264 and one deferred duration frame.
+        assert_eq!(report.abandoned_frames, 2);
         assert_eq!(report.audio_encoder.as_deref(), Some("aac"));
         let mut media = ffmpeg::format::input(&path).unwrap();
         assert_eq!(media.nb_streams(), 2);
@@ -869,8 +906,8 @@ mod tests {
         {
             decoded += 1;
         }
-        assert_eq!(points, [(0, 2), (2, 6), (8, 2), (10, 2)]);
-        assert_eq!(decoded, 4);
+        assert_eq!(points, [(0, 8), (8, 2), (10, 2)]);
+        assert_eq!(decoded, 3);
         assert!(audio_pts.len() > 50);
         assert!(audio_pts.windows(2).all(|pair| pair[1] - pair[0] == 1024));
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);

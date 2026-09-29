@@ -63,6 +63,7 @@ struct DirectRecordingSettings {
     SnowRecordingOutputFormat format = SNOW_RECORDING_OUTPUT_FORMAT_MP4;
     SnowCaptureVideoCodec codec = SNOW_CAPTURE_VIDEO_CODEC_H264;
     SnowCaptureVideoEncodingPreset preset = SNOW_CAPTURE_VIDEO_ENCODING_PRESET_VERYFAST;
+    uint32_t quality = 80;
     bool useHardwareEncoder = false;
     QSize maximumSize{1920, 1080};
     uint32_t targetFps = 30;
@@ -107,6 +108,8 @@ DirectRecordingSettings directRecordingSettings(const QString& outputFormat,
     result.codec = videoCodec(encoder);
     result.preset = videoEncodingPreset(
         overrides.value(QStringLiteral("encoding_preset")).toString(settings.encodingPreset()));
+    result.quality = static_cast<uint32_t>(
+        qBound(0, overrides.value(QStringLiteral("quality")).toInt(settings.videoQuality()), 100));
     result.useHardwareEncoder = encoder == QStringLiteral("h264_hw");
 
     if (outputFormat == QStringLiteral("mp4")) {
@@ -866,6 +869,7 @@ struct ScreenRecordingController::Impl {
                 nullptr,
                 nullptr,
                 0u,
+                sessionOutputSettings.quality,
             };
             const QString baseName =
                 ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
@@ -1480,6 +1484,7 @@ bool ScreenRecordingController::startAutomation(const QRect& region, const QJson
     const QHash<QString, QPair<int, int>> integers{
         {QStringLiteral("start_delay_seconds"), {0, 10}},
         {QStringLiteral("frame_rate"), {1, 120}},
+        {QStringLiteral("quality"), {0, 100}},
         {QStringLiteral("animated_frame_rate"), {1, 24}},
         {QStringLiteral("mouse_trail_duration_ms"), {100, 2000}},
         {QStringLiteral("keyboard_size"), {32, 128}}};

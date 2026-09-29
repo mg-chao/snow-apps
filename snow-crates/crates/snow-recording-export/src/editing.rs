@@ -1,6 +1,6 @@
 use crate::resize::{NearestResizePlan, resize_rgba_fast_into};
 use std::cell::Cell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::ffi::c_void;
 use std::fs;
@@ -32,7 +32,9 @@ use crate::export::{
     ExportPathKind, ExportProgress, ExportResult, ExportRuntimeReport, ExportStage,
     ExportStageDurationsMs, ExportTask,
 };
-use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized, is_eagain};
+use crate::ffmpeg_util::{
+    VideoPacketDurations, copy_rgba_into_frame, ensure_ffmpeg_initialized, is_eagain,
+};
 use crate::streaming::{StreamingEncoder, StreamingEncoderConfig};
 use crate::video_quality::{quality_to_h264_crf, smart_quality_bitrate_bps};
 
@@ -5169,12 +5171,8 @@ pub(crate) fn choose_video_pixel_format(
     mode: ExportExecutionMode,
 ) -> ffmpeg::format::Pixel {
     let preferred = match format {
-        ExportFormat::Gif => [
-            ffmpeg::format::Pixel::RGB8,
-            ffmpeg::format::Pixel::PAL8,
-            ffmpeg::format::Pixel::RGB24,
-        ]
-        .as_slice(),
+        // GIF must use the adaptive palette converter even for RGB8 sources.
+        ExportFormat::Gif => return ffmpeg::format::Pixel::PAL8,
         ExportFormat::Apng => [
             ffmpeg::format::Pixel::RGBA,
             ffmpeg::format::Pixel::RGB24,
@@ -5225,7 +5223,7 @@ pub(crate) fn choose_video_pixel_format(
     }
 
     source_hint.unwrap_or(match format {
-        ExportFormat::Gif => ffmpeg::format::Pixel::RGB8,
+        ExportFormat::Gif => ffmpeg::format::Pixel::PAL8,
         ExportFormat::Apng => ffmpeg::format::Pixel::RGBA,
         ExportFormat::Webp => ffmpeg::format::Pixel::YUVA420P,
         ExportFormat::Mp4 | ExportFormat::Avi => ffmpeg::format::Pixel::YUV420P,
@@ -6001,7 +5999,7 @@ where
             })?;
     }
 
-    let mut scaler = ffmpeg::software::scaling::Context::get(
+    let mut scaler = crate::output_scaler::OutputScaler::get(
         ffmpeg::format::Pixel::RGBA,
         width,
         height,
@@ -6029,8 +6027,8 @@ where
     let video_encode_start = Instant::now();
     let encoded_output_count = Cell::new(0usize);
     let scheduled_output_count = Cell::new(0usize);
-    let mut pending_video_packet_durations = VecDeque::new();
-    let mut pending_collapsed_video_frame = PendingCollapsedVideoFrame::default();
+    let mut pending_video_packet_durations = VideoPacketDurations::default();
+    let mut pending_collapsed_video_frame = VideoFrameState::default();
 
     for index in 0..frame_count {
         check_canceled(cancel_flag)?;
@@ -6489,7 +6487,7 @@ fn export_video_generated_from_source(
     let mut hdr_overlay_frame = ffmpeg::frame::Video::empty();
     let mut overlay_state = OverlaySearchState::default();
     let mut tone_mapper = crate::hdr::ToneMapper::default();
-    let mut scaler = None::<ffmpeg::software::scaling::Context>;
+    let mut scaler = None::<crate::output_scaler::OutputScaler>;
     let mut encode_frame = None::<ffmpeg::frame::Video>;
     let mut decoded = ffmpeg::frame::Video::empty();
     let mut transferred_decoded = ffmpeg::frame::Video::empty();
@@ -6499,8 +6497,8 @@ fn export_video_generated_from_source(
     let mut decode_complete = false;
     let start = Instant::now();
     let video_encode_start = Instant::now();
-    let mut pending_video_packet_durations = VecDeque::new();
-    let mut pending_collapsed_video_frame = PendingCollapsedVideoFrame::default();
+    let mut pending_video_packet_durations = VideoPacketDurations::default();
+    let mut pending_collapsed_video_frame = VideoFrameState::default();
 
     let mut process_decoded_frame = |decoded: &mut ffmpeg::frame::Video| -> Result<()> {
         check_canceled(cancel_flag)?;
@@ -6625,7 +6623,7 @@ fn export_video_generated_from_source(
                 .unwrap_or(false);
             if needs_reset {
                 scaler = Some(
-                    ffmpeg::software::scaling::Context::get(
+                    crate::output_scaler::OutputScaler::get(
                         decoded.format(),
                         source_width,
                         source_height,
@@ -7134,7 +7132,7 @@ fn export_video_generated_from_source_with_overlay(
     };
     let mut audio_worker = AudioPacketWorkerGuard::new(audio_worker, Arc::clone(cancel_flag));
 
-    let mut encode_scaler = ffmpeg::software::scaling::Context::get(
+    let mut encode_scaler = crate::output_scaler::OutputScaler::get(
         ffmpeg::format::Pixel::RGBA,
         width,
         height,
@@ -7162,7 +7160,7 @@ fn export_video_generated_from_source_with_overlay(
     let mut decode_rgba_scaler = None::<ffmpeg::software::scaling::Context>;
     let mut decode_rgba_frame = None::<ffmpeg::frame::Video>;
     let mut decode_rgba_key = None::<(u32, u32, ffmpeg::format::Pixel)>;
-    let mut source_encode_scaler = None::<ffmpeg::software::scaling::Context>;
+    let mut source_encode_scaler = None::<crate::output_scaler::OutputScaler>;
     let mut source_encode_frame = None::<ffmpeg::frame::Video>;
     let mut source_encode_key = None::<(u32, u32, ffmpeg::format::Pixel)>;
     let mut native_overlay_frame = None::<ffmpeg::frame::Video>;
@@ -7175,8 +7173,8 @@ fn export_video_generated_from_source_with_overlay(
     let mut decode_complete = false;
     let start = Instant::now();
     let video_encode_start = Instant::now();
-    let mut pending_video_packet_durations = VecDeque::new();
-    let mut pending_collapsed_video_frame = PendingCollapsedVideoFrame::default();
+    let mut pending_video_packet_durations = VideoPacketDurations::default();
+    let mut pending_collapsed_video_frame = VideoFrameState::default();
 
     let mut process_decoded_frame = |decoded: &mut ffmpeg::frame::Video| -> Result<()> {
         check_canceled(cancel_flag)?;
@@ -7716,7 +7714,7 @@ fn scale_decoded_frame_to_output_format(
     output_w: u32,
     output_h: u32,
     output_format: ffmpeg::format::Pixel,
-    scaler: &mut Option<ffmpeg::software::scaling::Context>,
+    scaler: &mut Option<crate::output_scaler::OutputScaler>,
     scaled_frame: &mut Option<ffmpeg::frame::Video>,
     scaler_key: &mut Option<(u32, u32, ffmpeg::format::Pixel)>,
 ) -> Result<()> {
@@ -7732,7 +7730,7 @@ fn scale_decoded_frame_to_output_format(
     let key = (source_w, source_h, decoded_format);
     if scaler_key.as_ref() != Some(&key) {
         *scaler = Some(
-            ffmpeg::software::scaling::Context::get(
+            crate::output_scaler::OutputScaler::get(
                 decoded_format,
                 source_w,
                 source_h,
@@ -7772,7 +7770,8 @@ fn send_video_frame_with_duration_and_progress(
     video_stream_time_base: ffmpeg::Rational,
     frame: &mut ffmpeg::frame::Video,
     frame_duration_ticks: usize,
-    pending_packet_durations: &mut VecDeque<i64>,
+    pending_packet_durations: &mut VideoPacketDurations,
+    gif_delta: &mut crate::gif_palette::GifDeltaState,
     encoded_output_count: &Cell<usize>,
     total_frame_count: usize,
     start: &Instant,
@@ -7781,10 +7780,11 @@ fn send_video_frame_with_duration_and_progress(
     let frame_duration_ticks = frame_duration_ticks.max(1);
     let output_index = encoded_output_count.get();
     frame.set_pts(Some(output_index as i64));
+    gif_delta.prepare(video_encoder, frame)?;
     video_encoder.send_frame(frame).map_err(|err| {
         ScreenRecorderError::Export(format!("failed to send frame to video encoder: {err}"))
     })?;
-    pending_packet_durations.push_back(frame_duration_ticks as i64);
+    pending_packet_durations.push_back((output_index as i64, frame_duration_ticks as i64));
     drain_video_packets_with_durations(
         video_encoder,
         output,
@@ -7814,12 +7814,14 @@ fn send_video_frame_with_duration_and_progress(
 }
 
 #[derive(Default)]
-struct PendingCollapsedVideoFrame {
+struct VideoFrameState {
+    // Palette history belongs to submitted frames and survives repeat flushes.
+    gif_delta: crate::gif_palette::GifDeltaState,
     frame: Option<ffmpeg::frame::Video>,
     duration_ticks: usize,
 }
 
-impl PendingCollapsedVideoFrame {
+impl VideoFrameState {
     fn store(&mut self, source: &ffmpeg::frame::Video, duration_ticks: usize) -> Result<()> {
         let needs_reallocate = self.frame.as_ref().is_none_or(|frame| {
             frame.format() != source.format()
@@ -7861,8 +7863,8 @@ fn queue_video_frame_with_repeat_collapse(
     frame: &mut ffmpeg::frame::Video,
     frame_duration_ticks: usize,
     allow_repeat_collapse: bool,
-    pending_collapsed_frame: &mut PendingCollapsedVideoFrame,
-    pending_packet_durations: &mut VecDeque<i64>,
+    pending_collapsed_frame: &mut VideoFrameState,
+    pending_packet_durations: &mut VideoPacketDurations,
     encoded_output_count: &Cell<usize>,
     scheduled_output_count: &Cell<usize>,
     total_frame_count: usize,
@@ -7897,6 +7899,7 @@ fn queue_video_frame_with_repeat_collapse(
             frame,
             frame_duration_ticks,
             pending_packet_durations,
+            &mut pending_collapsed_frame.gif_delta,
             encoded_output_count,
             total_frame_count,
             start,
@@ -7938,8 +7941,8 @@ fn flush_pending_collapsed_video_frame(
     output: &mut ffmpeg::format::context::Output,
     video_stream_index: usize,
     video_stream_time_base: ffmpeg::Rational,
-    pending_collapsed_frame: &mut PendingCollapsedVideoFrame,
-    pending_packet_durations: &mut VecDeque<i64>,
+    pending_collapsed_frame: &mut VideoFrameState,
+    pending_packet_durations: &mut VideoPacketDurations,
     encoded_output_count: &Cell<usize>,
     total_frame_count: usize,
     start: &Instant,
@@ -7961,6 +7964,7 @@ fn flush_pending_collapsed_video_frame(
         frame,
         duration_ticks,
         pending_packet_durations,
+        &mut pending_collapsed_frame.gif_delta,
         encoded_output_count,
         total_frame_count,
         start,
@@ -8276,29 +8280,12 @@ pub(crate) fn open_video_encoder(
     codec: &ffmpeg::Codec,
     video_config: &VideoEncodeConfig,
 ) -> Result<ffmpeg::encoder::video::Encoder> {
-    open_video_encoder_impl(video_encoder, codec, video_config, false)
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn open_live_hdr_encoder(
-    video_encoder: ffmpeg::codec::encoder::video::Video,
-    codec: &ffmpeg::Codec,
-    video_config: &VideoEncodeConfig,
-) -> Result<ffmpeg::encoder::video::Encoder> {
-    open_video_encoder_impl(video_encoder, codec, video_config, true)
-}
-
-fn open_video_encoder_impl(
-    video_encoder: ffmpeg::codec::encoder::video::Video,
-    codec: &ffmpeg::Codec,
-    video_config: &VideoEncodeConfig,
-    low_latency_hevc: bool,
-) -> Result<ffmpeg::encoder::video::Encoder> {
+    // Recording exports while capture runs, but is not a network livestream.
+    // Let the selected preset use B-frames, lookahead and frame workers; stop
+    // drains that finite codec tail instead of re-encoding the whole recording.
     if should_use_x264_options(codec) {
         let mut options = ffmpeg::Dictionary::new();
         options.set("preset", x264_preset_for(video_config.speed));
-        options.set("tune", "zerolatency");
-        options.set("bf", "0");
         options.set(
             "crf",
             &quality_to_h264_crf(video_config.quality).to_string(),
@@ -8311,13 +8298,6 @@ fn open_video_encoder_impl(
     }
     if should_use_x265_options(codec) {
         let mut options = ffmpeg::Dictionary::new();
-        if low_latency_hevc {
-            // A live capture stream cannot amortize many retained frame workers
-            // and lookahead pictures as an offline export can. WPP still uses
-            // the configured CPU pool within one frame.
-            options.set("tune", "zerolatency");
-            options.set("x265-params", "frame-threads=1:rc-lookahead=0:bframes=0");
-        }
         options.set("preset", video_config.speed.as_x264_preset());
         options.set(
             "crf",
@@ -8330,10 +8310,10 @@ fn open_video_encoder_impl(
         });
     }
     let mut options = ffmpeg::Dictionary::new();
-    if apply_hardware_encoder_speed_options(&mut options, codec) {
+    if apply_hardware_encoder_options(&mut options, codec, video_config.quality) {
         return video_encoder.open_as_with(*codec, options).map_err(|err| {
             ScreenRecorderError::Export(format!(
-                "failed to open hardware video encoder with speed options: {err}"
+                "failed to open hardware video encoder with recording options: {err}"
             ))
         });
     }
@@ -8342,11 +8322,15 @@ fn open_video_encoder_impl(
         .map_err(|err| ScreenRecorderError::Export(format!("failed to open video encoder: {err}")))
 }
 
-fn apply_hardware_encoder_speed_options(
+fn apply_hardware_encoder_options(
     options: &mut ffmpeg::Dictionary<'_>,
     codec: &ffmpeg::Codec,
+    quality: u8,
 ) -> bool {
     let name = codec.name().to_ascii_lowercase();
+    let qp = quality_to_h264_crf(quality).to_string();
+    // Preserve each live encoder's speed policy while passing the requested
+    // quality. Hardware queues remain bounded and non-reordering for recovery.
     if name.ends_with("_videotoolbox") {
         options.set("allow_sw", "0");
         options.set("require_sw", "0");
@@ -8358,20 +8342,25 @@ fn apply_hardware_encoder_speed_options(
         options.set("preset", "p1");
         options.set("tune", "ull");
         options.set("rc", "constqp");
+        options.set("qp", &qp);
         options.set("bf", "0");
         options.set("delay", "0");
         return true;
     }
     if name.contains("qsv") {
         options.set("preset", "veryfast");
+        options.set("global_quality", &qp);
         options.set("look_ahead", "0");
         options.set("async_depth", "1");
         options.set("bf", "0");
         return true;
     }
     if name.contains("amf") {
-        options.set("usage", "transcoding");
+        options.set("usage", "ultralowlatency");
         options.set("quality", "speed");
+        options.set("rc", "cqp");
+        options.set("qp_i", &qp);
+        options.set("qp_p", &qp);
         options.set("bf", "0");
         return true;
     }
@@ -8395,7 +8384,7 @@ pub(crate) fn drain_video_packets_with_durations(
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
     draining: bool,
-    pending_packet_durations: &mut VecDeque<i64>,
+    pending_packet_durations: &mut VideoPacketDurations,
 ) -> Result<()> {
     drain_video_packets_observed(
         encoder,
@@ -8414,16 +8403,14 @@ pub(crate) fn drain_video_packets_observed(
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
     draining: bool,
-    pending_packet_durations: &mut VecDeque<i64>,
+    pending_packet_durations: &mut VideoPacketDurations,
     mut packet_received: impl FnMut(&mut ffmpeg::Packet),
 ) -> Result<()> {
     loop {
         let mut packet = ffmpeg::Packet::empty();
         match encoder.receive_packet(&mut packet) {
             Ok(()) => {
-                if let Some(duration) = pending_packet_durations.pop_front() {
-                    packet.set_duration(duration);
-                }
+                pending_packet_durations.apply(&mut packet, draining);
                 packet_received(&mut packet);
                 packet.set_stream(stream_index);
                 packet.rescale_ts(encoder.time_base(), stream_time_base);
@@ -9165,6 +9152,128 @@ mod tests {
         assert_eq!(choose_export_fps(60, ExportFormat::Gif, Some(24)), 24);
         assert_eq!(choose_export_fps(60, ExportFormat::Apng, Some(15)), 15);
         assert_eq!(choose_export_fps(60, ExportFormat::Webp, Some(10)), 10);
+    }
+
+    #[test]
+    fn gif_source_and_overlay_exports_use_adaptive_colors() {
+        let directory = tempdir().unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let performance = ExportPerformanceConfig {
+            mode: ExportExecutionMode::SoftwareOnly,
+            ..Default::default()
+        };
+        let source = directory.path().join("source.apng");
+        let colors = [[23, 37, 51, 255], [209, 151, 77, 255], [23, 37, 51, 255]];
+        export_video_generated(
+            &source,
+            128,
+            96,
+            3,
+            10,
+            ExportFormat::Apng,
+            VideoCodec::H264,
+            false,
+            None,
+            8,
+            &VideoEncodeConfig::default(),
+            &performance,
+            &cancel,
+            &None,
+            |index, rgba| {
+                for pixel in rgba.chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&colors[index]);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        let retime = RetimePlan {
+            source_indices: vec![0, 0, 1, 2],
+            output_timestamps_ms: vec![0, 100, 200, 300],
+            frame_count: 4,
+            output_duration_ms: 400,
+        };
+        let tracks = MouseTracks {
+            click_downs: vec![MouseClickDown {
+                ts_ms: 100,
+                x: 64,
+                y: 48,
+            }],
+            ..Default::default()
+        };
+        let mouse = MouseEditConfig {
+            click_enabled: true,
+            ..Default::default()
+        };
+        for overlay in [false, true] {
+            let path = directory.path().join(format!("edited-{overlay}.gif"));
+            if overlay {
+                export_video_generated_from_source_with_overlay(
+                    &source,
+                    &path,
+                    &retime,
+                    128,
+                    96,
+                    10,
+                    ExportFormat::Gif,
+                    VideoCodec::H264,
+                    false,
+                    None,
+                    8,
+                    &VideoEncodeConfig::default(),
+                    &performance,
+                    &tracks,
+                    &mouse,
+                    &cancel,
+                    &None,
+                )
+                .unwrap();
+            } else {
+                export_video_generated_from_source(
+                    &source,
+                    &path,
+                    &retime,
+                    false,
+                    None,
+                    128,
+                    96,
+                    10,
+                    ExportFormat::Gif,
+                    VideoCodec::H264,
+                    false,
+                    None,
+                    8,
+                    &VideoEncodeConfig::default(),
+                    &performance,
+                    &cancel,
+                    &None,
+                )
+                .unwrap();
+            }
+            let mut options = gif::DecodeOptions::new();
+            options.set_color_output(gif::ColorOutput::RGBA);
+            let mut decoder = options.read_info(fs::File::open(path).unwrap()).unwrap();
+            let mut count = 0;
+            let mut delay = 0;
+            let mut corner = [0; 4];
+            while let Some(frame) = decoder.read_next_frame().unwrap() {
+                if frame.left == 0 && frame.top == 0 && frame.buffer[3] != 0 {
+                    corner.copy_from_slice(&frame.buffer[..4]);
+                }
+                assert_eq!(
+                    corner,
+                    colors[retime.source_indices[usize::from(delay / 10)]],
+                    "overlay={overlay}, frame={count}"
+                );
+                delay += frame.delay;
+                count += 1;
+            }
+            assert!(
+                (3..=4).contains(&count),
+                "identical observations may share a longer GIF delay"
+            );
+            assert_eq!(delay, 40);
+        }
     }
 
     #[test]
@@ -10399,10 +10508,128 @@ mod tests {
         assert_eq!(optimized.data(1), reference.data(1));
     }
     #[test]
+    fn buffered_export_matches_reordered_packets_to_submitted_durations() {
+        ensure_ffmpeg_initialized().unwrap();
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("reordered.mp4");
+        let mut output = ffmpeg::format::output(&path).unwrap();
+        let codec = ffmpeg::encoder::find_by_name("libx264").unwrap();
+        let mut video = ffmpeg::codec::context::Context::new_with_codec(codec)
+            .encoder()
+            .video()
+            .unwrap();
+        video.set_width(64);
+        video.set_height(64);
+        video.set_format(ffmpeg::format::Pixel::YUV420P);
+        video.set_time_base((1, 30));
+        video.set_frame_rate(Some((30, 1)));
+        video.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
+        configure_codec_threads(&mut video, 1, ffmpeg::codec::threading::Type::Frame);
+        let mut encoder = open_video_encoder(
+            video,
+            &codec,
+            &VideoEncodeConfig {
+                quality: 80,
+                speed: VideoEncodingSpeed::VeryFast,
+            },
+        )
+        .unwrap();
+        {
+            let mut stream = output.add_stream(codec).unwrap();
+            stream.set_time_base((1, 30));
+            stream.set_parameters(&encoder);
+        }
+        output.write_header().unwrap();
+        let time_base = output.stream(0).unwrap().time_base();
+        let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, 64, 64);
+        frame.data_mut(0).fill(80);
+        frame.data_mut(1).fill(128);
+        frame.data_mut(2).fill(128);
+        let mut pending = VideoPacketDurations::default();
+        let mut gif_delta = crate::gif_palette::GifDeltaState::default();
+        let count = Cell::new(0);
+        let start = Instant::now();
+        let mut expected = Vec::new();
+        for duration in [1, 4, 2, 7, 3, 5, 2, 11] {
+            expected.push((count.get() as i64, duration as i64));
+            send_video_frame_with_duration_and_progress(
+                &mut encoder,
+                &mut output,
+                0,
+                time_base,
+                &mut frame,
+                duration,
+                &mut pending,
+                &mut gif_delta,
+                &count,
+                35,
+                &start,
+                &None,
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            pending.len(),
+            expected.len(),
+            "fixture must remain in lookahead"
+        );
+        encoder.send_eof().unwrap();
+        let mut packets = Vec::new();
+        drain_video_packets_observed(
+            &mut encoder,
+            &mut output,
+            0,
+            time_base,
+            true,
+            &mut pending,
+            |packet| packets.push((packet.pts().unwrap(), packet.duration())),
+        )
+        .unwrap();
+        output.write_trailer().unwrap();
+        assert!(packets.windows(2).any(|pair| pair[0].0 > pair[1].0));
+        // Only the last decode packet may be extended to cover the track tail.
+        let tail = packets.pop().unwrap();
+        let original_tail = expected.iter().position(|(pts, _)| *pts == tail.0).unwrap();
+        assert!(tail.1 >= expected.remove(original_tail).1);
+        packets.sort_unstable();
+        assert_eq!(packets, expected);
+        assert!(pending.is_empty());
+        drop(output);
+        let input = ffmpeg::format::input(&path).unwrap();
+        use ffmpeg::Rescale;
+        assert_eq!(input.duration().rescale((1, 1_000_000), (1, 30)), 35);
+    }
+
+    #[test]
+    fn hardware_quality_targets_follow_requested_quality() {
+        ensure_ffmpeg_initialized().unwrap();
+        for (name, keys) in [
+            ("h264_nvenc", &["qp"][..]),
+            ("h264_qsv", &["global_quality"][..]),
+            ("h264_amf", &["qp_i", "qp_p"][..]),
+        ] {
+            let Some(codec) = ffmpeg::encoder::find_by_name(name) else {
+                continue;
+            };
+            let mut lower = ffmpeg::Dictionary::new();
+            let mut higher = ffmpeg::Dictionary::new();
+            assert!(apply_hardware_encoder_options(&mut lower, &codec, 40));
+            assert!(apply_hardware_encoder_options(&mut higher, &codec, 80));
+            for key in keys {
+                assert!(
+                    higher.get(key).unwrap().parse::<u8>().unwrap()
+                        < lower.get(key).unwrap().parse::<u8>().unwrap(),
+                    "{name}: {key}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn media_foundation_hardware_selection_is_explicit() {
         if let Some(codec) = ffmpeg::encoder::find_by_name("h264_mf") {
             let mut options = ffmpeg::Dictionary::new();
-            assert!(apply_hardware_encoder_speed_options(&mut options, &codec));
+            assert!(apply_hardware_encoder_options(&mut options, &codec, 80));
             assert_eq!(options.get("hw_encoding"), Some("1"));
         }
     }

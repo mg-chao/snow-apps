@@ -1837,6 +1837,10 @@ int main(int argc, char** argv) {
                                             {{QStringLiteral("frame_rate"), 37}}, &error) &&
                     error == QStringLiteral("invalid_parameters") && !controller.isOpen(),
                 "invalid automation options must reject before opening recording UI");
+        require(!controller.startAutomation(QRect(10, 10, 320, 240),
+                                            {{QStringLiteral("quality"), 101}}, &error) &&
+                    error == QStringLiteral("invalid_parameters") && !controller.isOpen(),
+                "out-of-range video quality must reject before opening recording UI");
         require(controller.startAutomation(QRect(10, 10, 320, 240),
                                            {{QStringLiteral("format"), QStringLiteral("gif")},
                                             {QStringLiteral("start_delay_seconds"), 10},
@@ -1860,7 +1864,8 @@ int main(int argc, char** argv) {
                                            {{QStringLiteral("format"), QStringLiteral("mp4")},
                                             {QStringLiteral("path"), outputPath},
                                             {QStringLiteral("start_delay_seconds"), 0},
-                                            {QStringLiteral("frame_rate"), 24}},
+                                            {QStringLiteral("frame_rate"), 24},
+                                            {QStringLiteral("quality"), 63}},
                                            &error),
                 "automation start must succeed");
         waitForRecording(controller);
@@ -1868,6 +1873,8 @@ int main(int argc, char** argv) {
                 "the controller must leave output publication to the recording exporter");
         require(lastDirectConfig.capture_fps == 24,
                 "automation frame rate must reach the native capture configuration");
+        require(lastDirectConfig.quality == 63,
+                "automation quality must reach the native capture configuration");
         const auto runningRevision =
             controller.automationState().value(QStringLiteral("revision")).toInteger();
         require(controller.controlAutomation(QStringLiteral("pause"), {}, &error),

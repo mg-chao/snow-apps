@@ -206,6 +206,7 @@ int main(int argc, char* argv[]) {
             config.output_fps = 15;
             config.maximum_width = 1920;
             config.maximum_height = 1080;
+            config.quality = 80;
             config.codec = arguments.contains(u"hevc") ? SNOW_CAPTURE_VIDEO_CODEC_H265
                                                        : SNOW_CAPTURE_VIDEO_CODEC_H264;
             config.preset = SNOW_CAPTURE_VIDEO_ENCODING_PRESET_VERYFAST;
@@ -293,6 +294,7 @@ int main(int argc, char* argv[]) {
         config.capture_fps = 30;
         config.output_fps = 30;
         config.preset = 1;
+        config.quality = 80;
         config.encoder_preference = 1;
         config.enable_system_audio = 1;
         config.show_cursor = 1;

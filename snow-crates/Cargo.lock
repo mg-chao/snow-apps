@@ -3348,6 +3348,7 @@ dependencies = [
  "anyhow",
  "crossbeam-channel",
  "ffmpeg-next",
+ "gif",
  "num_cpus",
  "proptest",
  "rayon",

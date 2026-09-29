@@ -101,7 +101,7 @@ typedef struct SnowCaptureExclusions {
 } SnowCaptureExclusions;
 #endif
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 8u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 9u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -159,6 +159,8 @@ typedef struct SnowCaptureDirectRecordingConfig {
     const char* keyboard_font_family_utf8;
     const char* keyboard_cjk_font_family_utf8;
     uint32_t keyboard_font_weight;
+    /* Version 9: MP4 quality, 0..100. Older versions retain the default of 80. */
+    uint32_t quality;
 } SnowCaptureDirectRecordingConfig;
 
 /* Worker-thread query. macOS region coordinates are points; output is pixels.

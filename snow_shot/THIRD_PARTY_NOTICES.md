@@ -97,6 +97,11 @@ x264 (GPL-2.0-or-later), x265 (GPL-2.0-or-later), WebP (BSD-3-Clause), and zlib-
 do not link FFmpeg. Each architecture's resolved license bundle is generated
 with `scripts/collect-third-party-licenses.ps1 -StandaloneMedia`.
 
+Recording GIF regression tests use the `gif` crate 0.14.2 (MIT OR Apache-2.0)
+as an independent decoder. It is a development dependency; the adaptive palette
+encoder adds no production dependencies. The crate's original notices are in
+the Cargo registry source used by the test build.
+
 The generated bundle is authoritative for a particular binary because its
 contents are produced from that build environment. Dependency licenses and
 copyright notices remain the property of their respective owners.

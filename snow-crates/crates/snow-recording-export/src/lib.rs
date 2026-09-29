@@ -15,6 +15,8 @@ pub mod bench_timing;
 pub(crate) mod ffmpeg_util;
 #[cfg(any(test, feature = "bench-experiments"))]
 mod frame_converter;
+mod gif_palette;
+mod output_scaler;
 pub(crate) mod video_quality;
 
 pub use config::{

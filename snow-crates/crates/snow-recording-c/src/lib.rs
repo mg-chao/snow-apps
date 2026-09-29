@@ -167,6 +167,7 @@ pub struct SnowCaptureDirectRecordingConfig {
     keyboard_font_family_utf8: *const c_char,
     keyboard_cjk_font_family_utf8: *const c_char,
     keyboard_font_weight: u32,
+    quality: u32,
 }
 
 #[repr(C)]
@@ -176,7 +177,9 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 8;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 9;
+// Version 8 ended with four padding bytes now occupied by quality.
+const DIRECT_RECORDING_CONFIG_V8_SIZE: u32 = 256;
 const DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, loop_animated_images);
 const DIRECT_RECORDING_CONFIG_V4_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE
@@ -207,6 +210,7 @@ fn direct_config_size(version: u32) -> Result<u32, String> {
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, keyboard_font_family_utf8)
                 as u32,
         ),
+        8 => Ok(DIRECT_RECORDING_CONFIG_V8_SIZE),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -641,6 +645,14 @@ fn parse_direct_recording_config(
         4 => VideoEncodingSpeed::Placebo,
         value => return Err(format!("invalid direct recording encoding preset: {value}")),
     };
+    let quality = if config.version >= 9 {
+        u8::try_from(config.quality)
+            .ok()
+            .filter(|quality| *quality <= 100)
+            .ok_or_else(|| "direct recording quality must be in 0..=100".to_string())?
+    } else {
+        80
+    };
     let prefer_hardware_encoder = match config.encoder_preference {
         0 => false,
         1 => true,
@@ -680,6 +692,7 @@ fn parse_direct_recording_config(
         maximum_height: (config.maximum_height != 0).then_some(config.maximum_height),
         codec,
         preset,
+        quality,
         prefer_hardware_encoder,
         enable_microphone: config.enable_microphone != 0 && !format.is_animated_image(),
         enable_system_audio: config.enable_system_audio != 0 && !format.is_animated_image(),
@@ -1231,7 +1244,7 @@ mod tests {
 
     #[test]
     fn direct_recording_exclusion_abi_layout() {
-        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 8);
+        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 9);
         assert_eq!(
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, exclusions),
             192
@@ -1240,7 +1253,7 @@ mod tests {
         assert_eq!(direct_config_size(7).unwrap(), 232);
         assert_eq!(direct_config_size(6).unwrap(), 224);
         assert_eq!(DIRECT_RECORDING_CONFIG_V5_SIZE, 192);
-        for version in [5, 6, 7, 8] {
+        for version in [5, 6, 7, 8, 9] {
             let header = SnowCaptureDirectRecordingConfigHeader {
                 version,
                 struct_size: 8,
@@ -1606,6 +1619,7 @@ mod tests {
             keyboard_font_family_utf8: std::ptr::null(),
             keyboard_cjk_font_family_utf8: std::ptr::null(),
             keyboard_font_weight: 0,
+            quality: 80,
             reserved: [0; 64],
             show_keyboard: 0,
             keyboard_background_rgba: 0,
@@ -1668,7 +1682,9 @@ mod tests {
     #[test]
     fn direct_config_maps_all_fields_and_rgba_order() {
         let output = CString::new("recording.mp4").unwrap();
-        let parsed = parse_direct_recording_config(&direct_config(&output)).unwrap();
+        let mut config = direct_config(&output);
+        config.quality = 63;
+        let parsed = parse_direct_recording_config(&config).unwrap();
         assert_eq!(parsed.region, RecordingRegion::new(-100, 50, 1280, 720));
         assert_eq!(
             parsed.capture_backend,
@@ -1682,6 +1698,7 @@ mod tests {
         assert_eq!(parsed.maximum_height, Some(1080));
         assert_eq!(parsed.codec, VideoCodec::H264);
         assert_eq!(parsed.preset, VideoEncodingSpeed::VeryFast);
+        assert_eq!(parsed.quality, 63);
         assert!(parsed.prefer_hardware_encoder);
         assert!(parsed.enable_microphone && parsed.enable_system_audio && parsed.show_cursor);
         assert_eq!(parsed.mouse_trail_rgba, [0x11, 0x22, 0x33, 0x44]);
@@ -1710,8 +1727,24 @@ mod tests {
         config.maximum_height = 0;
         assert!(parse_direct_recording_config(&config).is_err());
         config.maximum_height = 1080;
+        config.quality = 101;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.quality = 80;
         config.struct_size -= 1;
         assert!(parse_direct_recording_config(&config).is_err());
+    }
+    #[test]
+    fn direct_config_v8_ignores_tail_padding_and_uses_default_quality() {
+        let output = CString::new("recording.mp4").unwrap();
+        let mut config = direct_config(&output);
+        config.version = 8;
+        config.struct_size = direct_config_size(8).unwrap();
+        config.quality = u32::MAX;
+        let parsed = parse_direct_recording_config(
+            &unsafe { read_direct_recording_config(&config) }.unwrap(),
+        )
+        .unwrap();
+        assert_eq!(parsed.quality, 80);
     }
     #[test]
     fn direct_config_reads_only_header_before_size_validation() {

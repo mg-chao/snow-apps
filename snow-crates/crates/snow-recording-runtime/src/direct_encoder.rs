@@ -663,7 +663,9 @@ mod tests {
             (0, false),
         )
         .unwrap();
-        for pts in [0, 1] {
+        // Fill the selected software preset's lookahead before failing audio:
+        // this test promises to retain emitted packets, not queued codec input.
+        for pts in 0..96 {
             owned
                 .encoder
                 .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
@@ -672,7 +674,7 @@ mod tests {
         // Inject a failed audio sink: the mixer has data but the encoder has no
         // audio track. The stop boundary must retain already emitted video.
         owned.mixer = Some(LiveAudioMixer::new(true, false));
-        let error = owned.finish(10).unwrap_err().to_string();
+        let error = owned.finish(100).unwrap_err().to_string();
         assert!(error.contains("without an audio track"), "{error}");
         assert!(error.contains("recoverable media is retained"), "{error}");
         assert!(!path.exists());
@@ -683,7 +685,12 @@ mod tests {
             .unwrap()
             .path();
         let manifest = std::fs::read_to_string(retained.join("timeline.txt")).unwrap();
-        assert!(manifest.contains("video\t0\t1\t"), "{manifest}");
+        let video = manifest
+            .lines()
+            .find(|line| line.starts_with("video\t0\t"))
+            .unwrap();
+        let packets = video.split('\t').nth(2).unwrap().parse::<u64>().unwrap();
+        assert!(packets > 0, "{manifest}");
     }
 
     #[test]

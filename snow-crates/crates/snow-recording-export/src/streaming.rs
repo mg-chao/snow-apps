@@ -18,7 +18,9 @@ use crate::editing::{
 use crate::error::{RecordingExportError, Result};
 #[cfg(test)]
 use crate::ffmpeg_util::copy_rgba_into_frame;
-use crate::ffmpeg_util::ensure_ffmpeg_initialized;
+use crate::ffmpeg_util::{VideoPacketDurations, ensure_ffmpeg_initialized};
+#[cfg(test)]
+use crate::output_scaler::convert_owned_rgba;
 use crate::video_quality::smart_quality_bitrate_bps;
 
 pub const DIRECT_STAGING_PREFIX: &str = ".snow-recording-direct-";
@@ -325,11 +327,12 @@ pub struct StreamingEncoder {
     audio_output: Option<ffmpeg::format::context::Output>,
     output: Option<ffmpeg::format::context::Output>,
     encoder: ffmpeg::encoder::video::Encoder,
+    gif_delta: crate::gif_palette::GifDeltaState,
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
     #[cfg(any(test, feature = "bench-experiments"))]
     frame_converter: Option<crate::frame_converter::FrameConverter>,
-    scaler: Option<ffmpeg::software::scaling::Context>,
+    scaler: Option<crate::output_scaler::OutputScaler>,
     #[cfg(target_os = "macos")]
     native_input: Option<snow_media::PixelFormat>,
     #[cfg(target_os = "macos")]
@@ -345,8 +348,7 @@ pub struct StreamingEncoder {
     pending: Option<PendingFrame>,
     admitted_frames: u64,
     spare_rgba: Vec<u8>,
-    pending_packet_durations: VecDeque<i64>,
-    pending_timed_durations: VecDeque<(i64, i64)>,
+    pending_timed_durations: VideoPacketDurations,
     audio: Option<StreamingAudioState>,
     staging_path: Option<PathBuf>,
     retain_failed_output: bool,
@@ -658,10 +660,6 @@ impl StreamingEncoder {
                 frames.configure(&mut encoder)?;
                 return frames.open(encoder, codec, effective_video.quality);
             }
-            #[cfg(target_os = "macos")]
-            if cpu_hdr_input {
-                return crate::editing::open_live_hdr_encoder(encoder, &codec, &effective_video);
-            }
             open_video_encoder(encoder, &codec, &effective_video)
         };
 
@@ -798,7 +796,7 @@ impl StreamingEncoder {
             None
         } else {
             Some(
-                ffmpeg::software::scaling::Context::get(
+                crate::output_scaler::OutputScaler::get(
                     cpu_format,
                     config.width,
                     config.height,
@@ -848,6 +846,7 @@ impl StreamingEncoder {
             audio_output: None,
             output: Some(output),
             encoder,
+            gif_delta: crate::gif_palette::GifDeltaState::default(),
             stream_index,
             stream_time_base,
             scaler,
@@ -872,8 +871,7 @@ impl StreamingEncoder {
             pending: None,
             admitted_frames: 0,
             spare_rgba: Vec::new(),
-            pending_packet_durations: VecDeque::new(),
-            pending_timed_durations: VecDeque::new(),
+            pending_timed_durations: VideoPacketDurations::default(),
             audio,
             staging_path: None,
             retain_failed_output: false,
@@ -932,6 +930,11 @@ impl StreamingEncoder {
         if self.pending.is_some() || self.report.encoded_frames != 0 || threads > 4 {
             return Err(RecordingExportError::InvalidConfig(
                 "conversion workers require an unstarted encoder and at most four threads".into(),
+            ));
+        }
+        if threads != 0 && self.encode_frame.format() == ffmpeg::format::Pixel::PAL8 {
+            return Err(RecordingExportError::InvalidConfig(
+                "GIF uses adaptive palette conversion instead of swscale workers".into(),
             ));
         }
         self.frame_converter = if threads == 0 {
@@ -1320,7 +1323,6 @@ impl StreamingEncoder {
             let stage = "encode.gpu_send";
             self.report.timings.record(stage, send_started);
         }
-        self.pending_packet_durations.push_back(duration.max(1));
         #[cfg(feature = "bench-timing")]
         {
             #[cfg(target_os = "macos")]
@@ -1363,10 +1365,7 @@ impl StreamingEncoder {
                     )));
                 }
             }
-            if let Some(duration) = self.pending_packet_durations.pop_front() {
-                packet.set_duration(duration);
-            }
-            apply_packet_duration(&mut packet, &mut self.pending_timed_durations);
+            self.pending_timed_durations.apply(&mut packet, flushing);
             #[cfg(feature = "bench-timing")]
             self.report.timings.packet(packet.pts());
             packet.set_stream(self.stream_index);
@@ -1602,18 +1601,16 @@ impl StreamingEncoder {
         if let Some(converter) = self.frame_converter.as_mut() {
             converter.convert_prepared(&mut self.encode_frame)?;
         } else {
-            convert_owned_rgba(
-                self.scaler.as_mut().expect("CPU scaler"),
-                &pending.rgba,
-                &mut self.encode_frame,
-            )?;
+            self.scaler
+                .as_mut()
+                .expect("CPU scaler")
+                .run_owned_rgba(&pending.rgba, &mut self.encode_frame)?;
         }
         #[cfg(not(any(test, feature = "bench-experiments")))]
-        convert_owned_rgba(
-            self.scaler.as_mut().expect("CPU scaler"),
-            &pending.rgba,
-            &mut self.encode_frame,
-        )?;
+        self.scaler
+            .as_mut()
+            .expect("CPU scaler")
+            .run_owned_rgba(&pending.rgba, &mut self.encode_frame)?;
         #[cfg(feature = "bench-timing")]
         self.report
             .timings
@@ -1634,6 +1631,8 @@ impl StreamingEncoder {
             .push((pending.pts, std::time::Instant::now()));
         #[cfg(feature = "bench-timing")]
         let send_started = std::time::Instant::now();
+        self.gif_delta
+            .prepare(&mut self.encoder, &self.encode_frame)?;
         self.encoder
             .send_frame(&self.encode_frame)
             .map_err(|error| {
@@ -1645,7 +1644,6 @@ impl StreamingEncoder {
         self.report.timings.record("encode.send", send_started);
         #[cfg(feature = "bench-timing")]
         let drain_started = std::time::Instant::now();
-        self.pending_packet_durations.push_back(duration.max(1));
         self.pending_timed_durations
             .push_back((pending.pts, duration.max(1)));
         self.drain_available_packets()?;
@@ -1749,67 +1747,6 @@ pub(crate) unsafe fn configure_bt709_scaler(context: *mut ffmpeg::ffi::SwsContex
         )));
     }
     Ok(())
-}
-
-fn convert_owned_rgba(
-    scaler: &mut ffmpeg::software::scaling::Context,
-    rgba: &[u8],
-    output: &mut ffmpeg::frame::Video,
-) -> Result<()> {
-    let input = scaler.input();
-    let stride = input
-        .width
-        .checked_mul(4)
-        .and_then(|value| i32::try_from(value).ok())
-        .ok_or_else(|| RecordingExportError::InvalidConfig("RGBA row size overflow".into()))?;
-    let expected = stride as usize * input.height as usize;
-    if input.format != ffmpeg::format::Pixel::RGBA
-        || rgba.len() < expected + ffmpeg::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize
-        || output.format() != scaler.output().format
-        || (output.width(), output.height()) != (scaler.output().width, scaler.output().height)
-    {
-        return Err(RecordingExportError::InvalidConfig(
-            "invalid owned RGBA conversion layout".into(),
-        ));
-    }
-    let height = input.height;
-    let mut source = [std::ptr::null(); 8];
-    source[0] = rgba.as_ptr();
-    let mut strides = [0; 8];
-    strides[0] = stride;
-    // SAFETY: sws_scale is synchronous and does not retain these source pointers.
-    // The caller owns the initialized RGBA pixels and SIMD tail padding through
-    // this call; each source row has exactly `stride` bytes. The destination is
-    // a fully allocated, writable AVFrame matching the scaler output. Encoding
-    // references only that separate destination, so RGBA storage can be recycled.
-    let rows = unsafe {
-        ffmpeg::ffi::sws_scale(
-            scaler.as_mut_ptr(),
-            source.as_ptr(),
-            strides.as_ptr(),
-            0,
-            height as i32,
-            (*output.as_mut_ptr()).data.as_ptr(),
-            (*output.as_mut_ptr()).linesize.as_ptr(),
-        )
-    };
-    if rows != output.height() as i32 {
-        return Err(RecordingExportError::Encode(format!(
-            "owned RGBA conversion returned {rows} rows"
-        )));
-    }
-    Ok(())
-}
-
-// Encoders with B-frames emit packets in decode order. Duration belongs to
-// the submitted image's PTS, including a prolonged static final image.
-fn apply_packet_duration(packet: &mut ffmpeg::Packet, pending: &mut VecDeque<(i64, i64)>) {
-    let index = packet
-        .pts()
-        .map_or(Some(0), |pts| pending.iter().position(|(at, _)| *at == pts));
-    if let Some((_, duration)) = index.and_then(|index| pending.remove(index)) {
-        packet.set_duration(duration);
-    }
 }
 
 fn create_audio_state(
@@ -2568,6 +2505,19 @@ mod tests {
     }
 
     fn decoded_video_frame_count(path: &Path) -> (usize, u32, u32) {
+        if path.extension().is_some_and(|ext| ext == "gif") {
+            // The minimal FFmpeg build has a GIF decoder but no GIF parser;
+            // its demuxer emits arbitrary byte chunks rather than image packets.
+            let mut decoder = gif::DecodeOptions::new()
+                .read_info(std::fs::File::open(path).unwrap())
+                .unwrap();
+            let dimensions = (u32::from(decoder.width()), u32::from(decoder.height()));
+            let mut count = 0;
+            while decoder.read_next_frame().unwrap().is_some() {
+                count += 1;
+            }
+            return (count, dimensions.0, dimensions.1);
+        }
         let mut input = ffmpeg::format::input(path).unwrap_or_else(|error| {
             panic!("failed to open generated video {}: {error}", path.display())
         });
@@ -2832,6 +2782,106 @@ mod tests {
     }
 
     #[test]
+    fn software_presets_buffer_reorder_and_flush_variable_duration_frames() {
+        use ffmpeg::Rescale;
+        let directory = tempfile::tempdir().unwrap();
+        for (codec, recoverable, frame_count, initial_hold, final_hold) in [
+            (VideoCodec::H264, false),
+            (VideoCodec::H264, true),
+            (VideoCodec::H265, false),
+        ]
+        .into_iter()
+        .flat_map(|(codec, recoverable)| {
+            [(94, 0, 20), (96, 0, 20), (97, 0, 20), (96, 20, 0)]
+                .map(|(count, initial, end)| (codec, recoverable, count, initial, end))
+        }) {
+            let path = directory.path().join(format!(
+                "buffered-{codec:?}-{recoverable}-{frame_count}-{initial_hold}.mp4"
+            ));
+            let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
+            config.codec = codec;
+            config.width = 64;
+            config.height = 64;
+            config.encode_threads = 2;
+            let builder = StreamingEncoder::builder(config);
+            let mut encoder = if recoverable {
+                builder.recoverable()
+            } else {
+                builder
+            }
+            .create()
+            .unwrap();
+            let mut expected = Vec::new();
+            let mut pts = 0;
+            // Similar images encourage B-frames; unequal holds expose FIFO duration bugs.
+            for index in 0..frame_count {
+                let duration = 1 + index % 4 + if index == 0 { initial_hold } else { 0 };
+                expected.push((pts, duration));
+                let mut pixels = vec![80; 64 * 64 * 4];
+                for pixel in pixels.chunks_exact_mut(4).skip(index % 64).take(64) {
+                    pixel.copy_from_slice(&[180, 180, 180, 255]);
+                }
+                encoder.push_rgba_frame_at_pts(pts as u64, &pixels).unwrap();
+                // Preset lookahead is a fixed tail, independent of recording length.
+                assert!(encoder.pending_timed_durations.len() < 64);
+                pts += duration;
+            }
+            let emitted = encoder.report.video_packets;
+            assert!(
+                emitted > 0 && emitted < (frame_count - 1) as u64,
+                "expected ongoing buffered encoding"
+            );
+            // A prolonged final still must survive delayed packet emission at stop.
+            expected.last_mut().unwrap().1 += final_hold;
+            let report = encoder.finish_at_pts((pts + final_hold) as u64).unwrap();
+            assert_eq!(report.video_packets, frame_count as u64);
+            let mut input = ffmpeg::format::input(&path).unwrap();
+            let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+            let time_base = stream.time_base();
+            // Both MP4 media and movie durations must include the final hold.
+            assert_eq!(
+                stream.duration().rescale(time_base, (1, 10)),
+                (pts + final_hold) as i64
+            );
+            assert_eq!(
+                input.duration().rescale((1, 1_000_000), (1, 10)),
+                (pts + final_hold) as i64
+            );
+            let mut previous_dts = None;
+            let mut packets: Vec<_> = input
+                .packets()
+                .map(|(_, packet)| {
+                    let dts = packet.dts().unwrap();
+                    assert!(previous_dts.is_none_or(|previous| dts > previous));
+                    assert!(dts <= packet.pts().unwrap());
+                    previous_dts = Some(dts);
+                    (
+                        packet.pts().unwrap().rescale(time_base, (1, 10)),
+                        packet.duration().rescale(time_base, (1, 10)),
+                    )
+                })
+                .collect();
+            assert!(
+                packets.windows(2).any(|pair| pair[0].0 > pair[1].0),
+                "preset should permit reordered frames: {codec:?}"
+            );
+            packets.sort_unstable();
+            // MP4 sample durations describe decode order (stts). Presentation
+            // holds follow consecutive PTS and the track's final endpoint.
+            assert_eq!(
+                packets.iter().map(|(p, _)| *p).collect::<Vec<_>>(),
+                expected
+                    .into_iter()
+                    .map(|(p, _)| p as i64)
+                    .collect::<Vec<_>>()
+            );
+            if codec == VideoCodec::H264 {
+                assert_eq!(decoded_video_frame_count(&path), (frame_count, 64, 64));
+            }
+        }
+    }
+
+    #[test]
     fn explicit_pts_and_endpoint_preserve_variable_duration_and_decode() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("timing.mp4");
@@ -2923,11 +2973,14 @@ mod tests {
 
     #[test]
     fn reordered_packets_keep_the_duration_of_their_own_image() {
-        let mut pending = VecDeque::from([(0, 3), (3, 3), (6, 6)]);
+        let mut pending = VideoPacketDurations::default();
+        for entry in [(0, 3), (3, 3), (6, 6)] {
+            pending.push_back(entry);
+        }
         for (pts, duration) in [(0, 3), (6, 6), (3, 3)] {
             let mut packet = ffmpeg::Packet::empty();
             packet.set_pts(Some(pts));
-            apply_packet_duration(&mut packet, &mut pending);
+            pending.apply(&mut packet, false);
             assert_eq!(packet.duration(), duration);
         }
         assert!(pending.is_empty());

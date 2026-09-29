@@ -6969,6 +6969,32 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         VERBATIM
     )
 
+    add_custom_target(snow-shot-recording-encoder-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-export --example recording_encoder_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+
+    add_custom_target(snow-shot-gif-encoding-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "SNOW_GIF_BENCH_OUTPUT=${CMAKE_BINARY_DIR}/gif-encoding-performance"
+            "${CARGO_EXECUTABLE}" test --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-export --test gif_encoding
+            gif_encoding_release_comparison -- --ignored --exact --nocapture
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+
     add_custom_target(snow-shot-recording-effects-performance-benchmark
         COMMAND "${CMAKE_COMMAND}" -E env
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"

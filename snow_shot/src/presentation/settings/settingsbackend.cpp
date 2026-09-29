@@ -919,6 +919,8 @@ int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
         return storage::ScreenshotUiSettings().shortcutHintOpacity();
     case SettingsSliderBinding::ScreenshotImageQuality:
         return storage::ScreenshotSettings().imageQuality();
+    case SettingsSliderBinding::ScreenRecordingVideoQuality:
+        return storage::RecordingSettings().videoQuality();
     }
     return 0;
 }
@@ -929,6 +931,8 @@ bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int
         return storage::ScreenshotUiSettings().setShortcutHintOpacity(value);
     case SettingsSliderBinding::ScreenshotImageQuality:
         return storage::ScreenshotSettings().setImageQuality(value);
+    case SettingsSliderBinding::ScreenRecordingVideoQuality:
+        return storage::RecordingSettings().setVideoQuality(value);
     }
     return false;
 }
@@ -1997,6 +2001,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/encoding_preset"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/encoding_preset"))},
+            {QStringLiteral("screen_recording/video_quality"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/video_quality"))},
         });
     case SettingsSectionReset::ScreenRecordingCapture:
         return storage::ApplicationStorage::instance().configuration().setValue(

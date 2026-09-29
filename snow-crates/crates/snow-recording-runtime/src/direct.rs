@@ -94,6 +94,7 @@ pub struct DirectRecordingConfig {
     pub maximum_height: Option<u32>,
     pub codec: VideoCodec,
     pub preset: VideoEncodingSpeed,
+    pub quality: u8,
     pub prefer_hardware_encoder: bool,
     pub enable_microphone: bool,
     pub enable_system_audio: bool,
@@ -116,6 +117,9 @@ impl DirectRecordingConfig {
     }
 
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if self.quality > 100 {
+            return Err("direct recording quality must be in 0..=100".into());
+        }
         if self.excluded_windows.len() > snow_capture::exclusions::MAX_EXCLUSIONS
             || self.excluded_processes.len() > snow_capture::exclusions::MAX_EXCLUSIONS
         {
@@ -183,7 +187,7 @@ impl DirectRecordingConfig {
             },
             software_h264_priority: SoftwareH264Priority::X264First,
             video: VideoEncodeConfig {
-                quality: 80,
+                quality: self.quality,
                 speed: self.preset,
             },
             encode_threads: self.automatic_encode_threads(),
@@ -3008,6 +3012,7 @@ mod tests {
             maximum_height: None,
             codec: VideoCodec::H264,
             preset: VideoEncodingSpeed::VeryFast,
+            quality: 80,
             prefer_hardware_encoder: false,
             enable_microphone: false,
             enable_system_audio: false,
@@ -3020,6 +3025,15 @@ mod tests {
             record_mouse_clicks: false,
             show_keyboard: true,
         }
+    }
+
+    #[test]
+    fn direct_quality_reaches_export_config_and_rejects_out_of_range_values() {
+        let mut value = config();
+        value.quality = 37;
+        assert_eq!(value.streaming_config().video.quality, 37);
+        value.quality = 101;
+        assert!(value.validate().is_err());
     }
 
     #[test]

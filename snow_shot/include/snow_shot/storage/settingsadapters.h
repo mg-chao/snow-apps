@@ -389,6 +389,8 @@ class RecordingSettings final {
     bool setShowCursor(bool show) const;
     [[nodiscard]] QString encoder() const;
     bool setEncoder(const QString& encoder) const;
+    [[nodiscard]] int videoQuality() const;
+    bool setVideoQuality(int quality) const;
     [[nodiscard]] QString encodingPreset() const;
     bool setEncodingPreset(const QString& preset) const;
     [[nodiscard]] bool captureToolbarInRecording() const;

@@ -825,6 +825,10 @@
             <translation>活动窗口</translation>
         </message>
         <message>
+            <source>Adjust MP4 quality and file size</source>
+            <translation>调整 MP4 画质和文件大小</translation>
+        </message>
+        <message>
             <source>Age</source>
             <translation>期限</translation>
         </message>
@@ -3171,6 +3175,10 @@
         <message>
             <source>Video filename format</source>
             <translation>视频文件名格式</translation>
+        </message>
+        <message>
+            <source>Video quality</source>
+            <translation>视频画质</translation>
         </message>
         <message>
             <source>Video recording</source>

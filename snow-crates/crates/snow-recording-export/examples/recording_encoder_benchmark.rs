@@ -1,32 +1,54 @@
 //! Deterministic encoder capacity and decoded-quality experiment.
-//! Arguments: output.mp4 seconds threads hardware(0/1). Release only.
+//! Arguments: output.mp4 clip-seconds threads hardware(0/1) codec(h264/h265) quality(0..100) scene(ui/gradient).
+//! Release only.
+//! Encodes a fixed frame count so file size and quality are comparable across runs.
 use ffmpeg_next as ffmpeg;
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingEncoder,
     StreamingEncoderConfig, VideoCodec,
 };
 use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
-use std::{
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::{path::Path, time::Instant};
 
-fn source(rgba: &mut [u8], index: u64) {
-    for (y, row) in rgba.chunks_exact_mut(1920 * 4).enumerate() {
-        for (x, pixel) in row.chunks_exact_mut(4).enumerate() {
-            let tile = ((x / 48 + y / 48) % 2) as u8 * 24;
-            let moving = ((x as u64 + index * 13) % 1920) < 180 && (200..700).contains(&y);
-            let color = if moving {
-                [220, 110, 40, 255]
-            } else {
-                [tile + 40, tile + 70, tile + 100, 255]
-            };
-            pixel.copy_from_slice(&color);
+#[derive(Clone, Copy, Debug)]
+enum Scene {
+    Ui,
+    Gradient,
+}
+
+fn source(rgba: &mut [u8], index: u64, scene: Scene) {
+    match scene {
+        Scene::Ui => {
+            for (y, row) in rgba.chunks_exact_mut(1920 * 4).enumerate() {
+                for (x, pixel) in row.chunks_exact_mut(4).enumerate() {
+                    let tile = ((x / 48 + y / 48) % 2) as u8 * 24;
+                    let moving = ((x as u64 + index * 13) % 1920) < 180 && (200..700).contains(&y);
+                    let color = if moving {
+                        [220, 110, 40, 255]
+                    } else {
+                        [tile + 40, tile + 70, tile + 100, 255]
+                    };
+                    pixel.copy_from_slice(&color);
+                }
+            }
+        }
+        Scene::Gradient => {
+            for (y, row) in rgba.chunks_exact_mut(1920 * 4).enumerate() {
+                for (x, pixel) in row.chunks_exact_mut(4).enumerate() {
+                    let color = [
+                        ((x + y + index as usize * 3) % 256) as u8,
+                        ((2 * x + y / 2 + index as usize * 5) % 256) as u8,
+                        ((x / 2 + 3 * y + index as usize * 2) % 256) as u8,
+                        255,
+                    ];
+                    pixel.copy_from_slice(&color);
+                }
+            }
         }
     }
 }
 
-fn quality(path: &Path) -> Result<(usize, f64), Box<dyn std::error::Error>> {
+fn quality(path: &Path, scene: Scene) -> Result<(usize, f64), Box<dyn std::error::Error>> {
     let mut input = ffmpeg::format::input(path)?;
     let stream = input
         .streams()
@@ -55,7 +77,7 @@ fn quality(path: &Path) -> Result<(usize, f64), Box<dyn std::error::Error>> {
         while decoder.receive_frame(&mut frame).is_ok() {
             if count.is_multiple_of(15) {
                 scaler.run(&frame, &mut rgba)?;
-                source(&mut expected, count as u64);
+                source(&mut expected, count as u64, scene);
                 for y in 0..1080 {
                     let row = &rgba.data(0)[y * rgba.stride(0)..y * rgba.stride(0) + 1920 * 4];
                     for x in 0..1920 {
@@ -95,6 +117,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let seconds: u64 = args.get(2).map(String::as_str).unwrap_or("30").parse()?;
     let threads: u8 = args.get(3).map(String::as_str).unwrap_or("0").parse()?;
     let hardware = args.get(4).is_some_and(|v| v == "1");
+    let codec = match args.get(5).map(String::as_str).unwrap_or("h264") {
+        "h264" => VideoCodec::H264,
+        "h265" => VideoCodec::H265,
+        _ => return Err("codec must be h264 or h265".into()),
+    };
+    let requested_quality: u8 = args.get(6).map(String::as_str).unwrap_or("80").parse()?;
+    if requested_quality > 100 {
+        return Err("quality must be in 0..=100".into());
+    }
+    let scene = match args.get(7).map(String::as_str).unwrap_or("ui") {
+        "ui" => Scene::Ui,
+        "gradient" => Scene::Gradient,
+        _ => return Err("scene must be ui or gradient".into()),
+    };
     let setup = Instant::now();
     let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
         loop_animated_images: true,
@@ -103,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         width: 1920,
         height: 1080,
         fps: 30,
-        codec: VideoCodec::H264,
+        codec,
         prefer_hardware_h264: hardware,
         execution_mode: if hardware {
             ExportExecutionMode::HardwarePreferred
@@ -112,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         software_h264_priority: SoftwareH264Priority::X264First,
         video: VideoEncodeConfig {
-            quality: 80,
+            quality: requested_quality,
             speed: VideoEncodingSpeed::VeryFast,
         },
         encode_threads: threads,
@@ -123,9 +159,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut samples = Vec::new();
     let started = Instant::now();
     let mut index = 0;
-    while started.elapsed() < Duration::from_secs(seconds) {
+    while index < seconds.max(1) * 30 {
         pixels.resize(1920 * 1080 * 4, 0);
-        source(&mut pixels, index);
+        source(&mut pixels, index, scene);
         let at = Instant::now();
         pixels = encoder.push_owned_rgba_frame_at_pts(index, pixels)?;
         samples.push(at.elapsed().as_secs_f64() * 1000.0);
@@ -144,9 +180,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<String>(),
     )?;
     samples.sort_by(f64::total_cmp);
-    let (decoded, psnr) = quality(&path)?;
+    let decoded_quality = ffmpeg::decoder::find(match codec {
+        VideoCodec::H264 => ffmpeg::codec::Id::H264,
+        VideoCodec::H265 => ffmpeg::codec::Id::HEVC,
+    })
+    .map(|_| quality(&path, scene))
+    .transpose()?;
+    let packet_count = ffmpeg::format::input(&path)?.packets().count();
+    assert_eq!(packet_count as u64, index);
+    let (decoded, psnr) = decoded_quality
+        .map(|(count, psnr)| (count.to_string(), psnr.to_string()))
+        .unwrap_or_else(|| ("unavailable".into(), "unavailable".into()));
+    let bytes = std::fs::metadata(&path)?.len();
     let csv = format!(
-        "threads,hardware_requested,hardware_used,encoder,frames,decoded,seconds,fps,setup_ms,finish_ms,p50_ms,p95_ms,psnr_db\n{threads},{hardware},{},{},{index},{decoded},{measured},{},{setup_ms},{finish_ms},{},{},{psnr}\n",
+        "scene,codec,quality,threads,hardware_requested,hardware_used,encoder,frames,decoded,seconds,fps,setup_ms,finish_ms,p50_ms,p95_ms,psnr_db,bytes\n{scene:?},{codec:?},{requested_quality},{threads},{hardware},{},{},{index},{decoded},{measured},{},{setup_ms},{finish_ms},{},{},{psnr},{bytes}\n",
         report.used_hardware_video_encoder,
         report.video_encoder,
         index as f64 / measured,
@@ -155,6 +202,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     std::fs::write(path.with_extension("csv"), &csv)?;
     println!("{csv}");
-    assert_eq!(decoded as u64, index);
+    if let Some((decoded_count, _)) = decoded_quality {
+        assert_eq!(decoded_count as u64, index);
+    }
     Ok(())
 }

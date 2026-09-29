@@ -969,6 +969,7 @@ fn run_sample(
         maximum_height,
         codec: VideoCodec::H264,
         preset: VideoEncodingSpeed::VeryFast,
+        quality: 80,
         prefer_hardware_encoder: options.prefer_hardware,
         enable_microphone: false,
         enable_system_audio: options.audio,

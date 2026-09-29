@@ -1512,6 +1512,14 @@ bool RecordingSettings::setEncoder(const QString& encoder) const {
     return cache().setValue(QStringLiteral("screen_recording/encoder"), encoder);
 }
 
+int RecordingSettings::videoQuality() const {
+    return cache().value(QStringLiteral("screen_recording/video_quality")).toInt();
+}
+
+bool RecordingSettings::setVideoQuality(int quality) const {
+    return cache().setValue(QStringLiteral("screen_recording/video_quality"), quality);
+}
+
 QString RecordingSettings::encodingPreset() const {
     return cache().value(QStringLiteral("screen_recording/encoding_preset")).toString();
 }

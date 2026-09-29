@@ -29,6 +29,7 @@ snow-d3d11 = { path = "../snow-d3d11" }
 windows = { workspace = true, features = ["Win32_Graphics_Direct3D11"] }
 
 [dev-dependencies]
+gif = "0.14.2"
 anyhow.workspace = true
 proptest = "1.11.0"
 symphonia = { version = "0.5.4", default-features = false, features = ["aac", "isomp4"] }

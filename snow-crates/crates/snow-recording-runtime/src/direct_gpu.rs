@@ -806,6 +806,7 @@ mod tests {
             maximum_height: None,
             codec: VideoCodec::H264,
             preset: VideoEncodingSpeed::VeryFast,
+            quality: 80,
             prefer_hardware_encoder: true,
             enable_microphone: false,
             enable_system_audio: false,

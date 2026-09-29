@@ -825,6 +825,10 @@
             <translation>作用中視窗</translation>
         </message>
         <message>
+            <source>Adjust MP4 quality and file size</source>
+            <translation>調整 MP4 畫質與檔案大小</translation>
+        </message>
+        <message>
             <source>Age</source>
             <translation>期限</translation>
         </message>
@@ -3171,6 +3175,10 @@
         <message>
             <source>Video filename format</source>
             <translation>影片檔名格式</translation>
+        </message>
+        <message>
+            <source>Video quality</source>
+            <translation>影片畫質</translation>
         </message>
         <message>
             <source>Video recording</source>

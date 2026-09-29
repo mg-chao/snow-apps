@@ -825,6 +825,10 @@
             <translation>Active window</translation>
         </message>
         <message>
+            <source>Adjust MP4 quality and file size</source>
+            <translation>Adjust MP4 quality and file size</translation>
+        </message>
+        <message>
             <source>Age</source>
             <translation>Age</translation>
         </message>
@@ -3171,6 +3175,10 @@
         <message>
             <source>Video filename format</source>
             <translation>Video filename format</translation>
+        </message>
+        <message>
+            <source>Video quality</source>
+            <translation>Video quality</translation>
         </message>
         <message>
             <source>Video recording</source>
