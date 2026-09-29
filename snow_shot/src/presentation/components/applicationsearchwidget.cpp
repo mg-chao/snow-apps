@@ -23,6 +23,7 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace {
@@ -30,6 +31,7 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 
 constexpr int kDescriptionRole = Qt::UserRole + 101;
 constexpr int kCategoryRole = Qt::UserRole + 102;
+constexpr int kCategoryKindRole = Qt::UserRole + 103;
 constexpr auto kScreenshotDelayKey = "screenshot/delay_seconds";
 
 snow_shot::presentation::settings::SettingsSearchRuntimeValues searchRuntimeValues() {
@@ -67,7 +69,11 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
         m_activeBackground = scheme.map.colorPrimaryBg;
         m_titleColor = scheme.map.colorText;
         m_descriptionColor = scheme.map.colorTextTertiary;
-        m_categoryColor = scheme.map.colorTextSecondary;
+        m_categoryColors = {{
+            {scheme.map.colorInfoText, scheme.map.colorInfoBg, scheme.map.colorInfoBorder},
+            {scheme.map.colorWarningText, scheme.map.colorWarningBg, scheme.map.colorWarningBorder},
+            {scheme.map.colorSuccessText, scheme.map.colorSuccessBg, scheme.map.colorSuccessBorder},
+        }};
         m_horizontalPadding = scheme.metricAlias.paddingSM;
         m_verticalPadding = scheme.metricAlias.paddingXS;
         m_columnGap = scheme.metricAlias.marginSM;
@@ -177,43 +183,53 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
 
         const QRect contentRect = backgroundRect.adjusted(m_horizontalPadding, m_verticalPadding,
                                                           -m_horizontalPadding, -m_verticalPadding);
-        const int categoryWidth =
-            category.isEmpty() ? 0 : std::clamp(contentRect.width() * 2 / 5, 96, 180);
-        const int leftWidth = std::max(0, contentRect.width() - categoryWidth -
-                                              (categoryWidth > 0 ? m_columnGap : 0));
-        const QRect leftRect(contentRect.left(), contentRect.top(), leftWidth,
-                             contentRect.height());
-        const QRect categoryRect(contentRect.right() - categoryWidth + 1, contentRect.top(),
-                                 categoryWidth, contentRect.height());
-
         QFont titleFont = option.font;
         titleFont.setPixelSize(m_titleFontSize);
         titleFont.setWeight(QFont::DemiBold);
-        painter->setFont(titleFont);
-        painter->setPen(m_titleColor);
-        const QFontMetrics titleMetrics(titleFont);
-        const int titleHeight = titleMetrics.height();
-        painter->drawText(QRect(leftRect.left(), leftRect.top(), leftRect.width(), titleHeight),
-                          Qt::AlignLeft | Qt::AlignVCenter,
-                          titleMetrics.elidedText(title, Qt::ElideRight, leftRect.width()));
-
         QFont supportingFont = option.font;
         supportingFont.setPixelSize(m_supportingFontSize);
         supportingFont.setWeight(QFont::Normal);
-        painter->setFont(supportingFont);
         const QFontMetrics supportingMetrics(supportingFont);
-        const int descriptionTop = leftRect.bottom() - supportingMetrics.height() + 1;
+        const QFontMetrics titleMetrics(titleFont);
+        const int tagPadding = 6;
+        const int categoryWidth =
+            category.isEmpty()
+                ? 0
+                : std::min(supportingMetrics.horizontalAdvance(category) + 2 * tagPadding,
+                           std::max(0, contentRect.width() / 2));
+        const int titleWidth = std::max(0, contentRect.width() - categoryWidth -
+                                               (categoryWidth > 0 ? m_columnGap : 0));
+        const int titleHeight = std::max(titleMetrics.height(), supportingMetrics.height() + 4);
+        const QRect categoryRect(contentRect.right() - categoryWidth + 1, contentRect.top(),
+                                 categoryWidth, titleHeight);
+
+        painter->setFont(titleFont);
+        painter->setPen(m_titleColor);
+        painter->drawText(QRect(contentRect.left(), contentRect.top(), titleWidth, titleHeight),
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          titleMetrics.elidedText(title, Qt::ElideRight, titleWidth));
+
+        painter->setFont(supportingFont);
+        const int descriptionTop = contentRect.bottom() - supportingMetrics.height() + 1;
         painter->setPen(m_descriptionColor);
         painter->drawText(
-            QRect(leftRect.left(), descriptionTop, leftRect.width(), supportingMetrics.height()),
+            QRect(contentRect.left(), descriptionTop, contentRect.width(),
+                  supportingMetrics.height()),
             Qt::AlignLeft | Qt::AlignVCenter,
-            supportingMetrics.elidedText(description, Qt::ElideRight, leftRect.width()));
+            supportingMetrics.elidedText(description, Qt::ElideRight, contentRect.width()));
 
         if (categoryWidth > 0) {
-            painter->setPen(m_categoryColor);
-            painter->drawText(
-                categoryRect, Qt::AlignRight | Qt::AlignVCenter,
-                supportingMetrics.elidedText(category, Qt::ElideLeft, categoryRect.width()));
+            const auto& colors =
+                m_categoryColors.at(std::clamp(index.data(kCategoryKindRole).toInt(), 0, 2));
+            painter->setPen(colors.border);
+            painter->setBrush(colors.background);
+            painter->drawRoundedRect(QRectF(categoryRect).adjusted(0.5, 0.5, -0.5, -0.5), m_radius,
+                                     m_radius);
+            painter->setPen(colors.text);
+            const QRect textRect = categoryRect.adjusted(tagPadding, 0, -tagPadding, 0);
+            painter->drawText(textRect, Qt::AlignCenter,
+                              supportingMetrics.elidedText(category, Qt::ElideLeft,
+                                                           std::max(0, textRect.width())));
         }
         painter->restore();
     }
@@ -224,7 +240,12 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
     QColor m_activeBackground;
     QColor m_titleColor;
     QColor m_descriptionColor;
-    QColor m_categoryColor;
+    struct CategoryColors {
+        QColor text;
+        QColor background;
+        QColor border;
+    };
+    std::array<CategoryColors, 3> m_categoryColors;
     int m_horizontalPadding = 12;
     int m_verticalPadding = 8;
     int m_columnGap = 12;
@@ -441,6 +462,7 @@ void ApplicationSearchWidget::populateResults(const QString& queryText) {
         option.label = entry.title;
         option.metadata.insert(metadataRoleKey(kDescriptionRole), entry.description);
         option.metadata.insert(metadataRoleKey(kCategoryRole), entry.path);
+        option.metadata.insert(metadataRoleKey(kCategoryKindRole), static_cast<int>(entry.kind));
         option.metadata.insert(QStringLiteral("description"), entry.description);
         option.metadata.insert(QStringLiteral("entryId"), entry.id);
         options.push_back(option);

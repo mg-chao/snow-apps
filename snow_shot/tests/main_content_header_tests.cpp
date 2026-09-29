@@ -12,9 +12,14 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QImage>
+#include <QFontMetrics>
 #include <QLayout>
 #include <QListView>
 #include <QPalette>
+#include <QPainter>
+#include <QStandardItemModel>
+#include <QStyleOptionViewItem>
+#include <QAbstractItemDelegate>
 #include <QStringList>
 #include <QTemporaryDir>
 
@@ -284,6 +289,62 @@ void headerSurfaceFollowsTheme() {
                 themeManager.themeColorScheme().map.colorBgContainer,
             "the content header should restore the light container surface");
 }
+
+void searchTagsLeaveDescriptionsFullWidth() {
+    using snow_shot::presentation::styles::ThemeAppearance;
+    auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
+    MainContentHeaderWidget header(registry(), themeManager.themeColorScheme().metricAlias);
+    auto* search = header.findChild<ApplicationSearchWidget*>(QStringLiteral("globalTopSearchBar"));
+    auto* select = search->findChild<adqt::widgets::AdSelect*>();
+    QStandardItemModel model(1, 1);
+    const QModelIndex index = model.index(0, 0);
+    model.setData(index, QStringLiteral("Search result title"),
+                  adqt::widgets::AdSelect::DefaultLabelRole);
+    model.setData(index,
+                  QStringLiteral("A long description that uses the entire available row width"),
+                  Qt::UserRole + 101);
+    for (const auto appearance : {ThemeAppearance::Light, ThemeAppearance::Dark}) {
+        themeManager.setThemeAppearance(appearance);
+        flushEvents();
+        for (const int width : {292, 400}) {
+            QStyleOptionViewItem option;
+            option.initFrom(select);
+            option.font = select->font();
+            option.rect = QRect(0, 0, width, 56);
+            option.rect.setHeight(select->itemDelegate()->sizeHint(option, index).height());
+            const auto render = [&]() {
+                QImage image(option.rect.size(), QImage::Format_ARGB32_Premultiplied);
+                image.fill(Qt::transparent);
+                QPainter painter(&image);
+                select->itemDelegate()->paint(&painter, option, index);
+                return image;
+            };
+            model.setData(index, QString(), Qt::UserRole + 102);
+            const QImage withoutTag = render();
+            model.setData(index, QStringLiteral("Interface settings / General"),
+                          Qt::UserRole + 102);
+            QImage previous;
+            for (int kind = 0; kind < 3; ++kind) {
+                model.setData(index, kind, Qt::UserRole + 103);
+                const QImage withTag = render();
+                QFont descriptionFont = option.font;
+                descriptionFont.setPixelSize(
+                    themeManager.themeColorScheme().metricAlias.fontSizeSM);
+                const int descriptionHeight = QFontMetrics(descriptionFont).height();
+                const int bottomPadding = 2 + themeManager.themeColorScheme().metricAlias.paddingXS;
+                const QRect descriptionRect(
+                    0, option.rect.height() - bottomPadding - descriptionHeight, width,
+                    descriptionHeight);
+                require(withTag.copy(descriptionRect) == withoutTag.copy(descriptionRect),
+                        "category tags should not reduce or overlap the description line");
+                require(withTag != withoutTag && (previous.isNull() || withTag != previous),
+                        "page, section, and item tags should have distinct themed colors");
+                previous = withTag;
+            }
+        }
+    }
+    themeManager.setThemeAppearance(ThemeAppearance::Light);
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -304,6 +365,7 @@ int main(int argc, char** argv) {
     headerPlacesSearchAboveAntDesignTabs();
     tabsRequestCategoriesWithoutChangingPages();
     headerSurfaceFollowsTheme();
+    searchTagsLeaveDescriptionsFullWidth();
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;
 }
