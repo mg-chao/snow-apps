@@ -17,6 +17,19 @@ This package includes published beta versions and the default OCR resources. See
 [WinGet release support](docs/snow-shot-releases.md#winget) for upgrades, removal,
 and maintainer setup.
 
+Alternatively, install the portable Windows x64 package with [Scoop](https://scoop.sh):
+
+```powershell
+scoop bucket add snow-apps https://github.com/mg-chao/snow-apps
+scoop install snow-apps/snowshot
+```
+
+The Scoop package includes published beta releases and the default OCR resources.
+Quit Snow Shot before running `scoop update snowshot`; use Scoop rather than the
+app's built-in updater. Settings and history persist across upgrades and ordinary
+uninstall. See [Scoop release support](docs/snow-shot-releases.md#scoop) for removal,
+data locations, and maintainer setup.
+
 ## Install Snow Shot on macOS
 
 After the first stable Homebrew release is published, Apple Silicon Macs running

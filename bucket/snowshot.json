@@ -1,0 +1,26 @@
+{
+  "version": "1.1.7-beta",
+  "description": "A screenshot utility for capturing, annotating, pinning, and recognizing screen content.",
+  "homepage": "https://snowshot.top",
+  "license": "GPL-3.0-or-later",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/mg-chao/snow-apps/releases/download/v1.1.7-beta/snow-shot-1.1.7-beta-windows-x64-portable.zip",
+      "hash": "1eaa76ec2756f166e1c6506ac17c7da22e89c728a81282661e2bcc94631d250d"
+    }
+  },
+  "bin": [
+    [
+      "bin\\snow_shot.exe",
+      "snowshot"
+    ]
+  ],
+  "shortcuts": [
+    [
+      "bin\\snow_shot.exe",
+      "Snow Shot"
+    ]
+  ],
+  "persist": "bin\\portable",
+  "notes": "Quit Snow Shot before upgrading. Use scoop update snowshot instead of the built-in updater. Published beta releases are included."
+}
