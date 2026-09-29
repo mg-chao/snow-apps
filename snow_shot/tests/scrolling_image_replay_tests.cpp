@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snowimageqtcodec.h"
 #include "snow_stitch_images.h"
+#include "../src/presentation/capture/scrollingsnapshotrequest.h"
 
 #include <QApplication>
 #include <QEventLoop>
@@ -353,6 +354,94 @@ void pauseWithDispatchedFramePreservesPreview() {
             "pause must preserve the trimmed result and reject later source frames");
 }
 
+void snapshotRequestLifetime() {
+    ScrollingSnapshotRequest request;
+    QObject receiver;
+    int completed = 0;
+    const auto queue = [&]() {
+        auto completion = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+        require(static_cast<bool>(completion), "snapshot must be accepted");
+        QMetaObject::invokeMethod(
+            &receiver, [completion] { completion({}); }, Qt::QueuedConnection);
+        return completion;
+    };
+    auto detached = queue();
+    require(request.pending(), "cached delivery must register as pending before dispatch");
+    require(!request.begin([](ScreenshotScrollingSnapshot) {}),
+            "a pending cached delivery must reject a second request");
+    request.detach();
+    request.cancel(); // capture teardown must not revoke a detached export
+    QCoreApplication::sendPostedEvents(&receiver, QEvent::MetaCall);
+    require(completed == 1, "detached cached delivery must survive capture teardown");
+    detached({});
+    require(completed == 1, "a snapshot completion must run exactly once");
+
+    queue();
+    request.cancel();
+    queue(); // a new capture may start before the old completion arrives
+    QCoreApplication::sendPostedEvents(&receiver, QEvent::MetaCall);
+    require(completed == 2 && !request.pending(),
+            "cancel must discard only its own request and permit the next capture");
+
+    auto oldExport = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+    request.detach();
+    auto nextCapture = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+    oldExport({});
+    require(completed == 3 && request.pending(),
+            "finishing an old export must not release the next capture's pending request");
+    request.cancel();
+    nextCapture({});
+    require(completed == 3, "the next capture still owns cancellation of its request");
+}
+
+void acceptedSnapshotsSurviveTeardown() {
+    for (const auto mode : {ScreenshotScrollingRecognitionMode::Vertical,
+                            ScreenshotScrollingRecognitionMode::Horizontal}) {
+        auto state = std::make_shared<ManualState>();
+        const QImage frame = fixture().copy(0, 0, 400, 400);
+        state->push(frame);
+        QEventLoop loop;
+        bool ready = false;
+        auto pipeline = std::make_unique<ScreenshotScrollingPipeline>(
+            [&](ScrollingPipelineFrame result) {
+                ready = result.changed && !result.fatalError;
+                loop.quit();
+            },
+            [&](quint64, QString) { loop.quit(); });
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timeout.start(5000);
+        pipeline->begin(1, frame.size(), mode,
+                        [state] { return std::make_unique<ManualSource>(state); });
+        loop.exec();
+        require(ready, "snapshot teardown fixture must have a stitched frame");
+        int completed = 0;
+        constexpr int requests = 256;
+        for (int index = 0; index < requests; ++index) {
+            require(pipeline->requestSnapshot(
+                        30, 370, &loop,
+                        [&](ScreenshotScrollingSnapshot snapshot) {
+                            const auto expected =
+                                mode == ScreenshotScrollingRecognitionMode::Horizontal
+                                    ? frame.copy(30, 0, 340, 400)
+                                    : frame.copy(0, 30, 400, 340);
+                            require(snapshot.materialize() == expected,
+                                    "detached snapshot must retain its pixels");
+                            ++completed;
+                        }),
+                    "snapshot request must be accepted before teardown");
+        }
+        // Match export detachment: reset and destroy the workers before the UI
+        // dispatches any result. Accepted snapshots belong to their receivers.
+        pipeline->reset(2);
+        pipeline.reset();
+        QCoreApplication::sendPostedEvents(&loop, QEvent::MetaCall);
+        require(completed == requests,
+                "teardown must deliver every accepted snapshot exactly once");
+    }
+}
+
 void captureReleasesNativeFrameAfterAdmission() {
     auto state = std::make_shared<ManualState>();
     std::atomic_bool released = false;
@@ -670,6 +759,11 @@ int main(int argc, char** argv) {
             interruptedThumbnailDragTest();
             return 0;
         }
+        if (application.arguments().contains(QStringLiteral("--snapshot-teardown-only"))) {
+            snapshotRequestLifetime();
+            acceptedSnapshotsSurviveTeardown();
+            return 0;
+        }
         interruptedThumbnailDragTest();
         scheduleTests();
         std::cerr << "schedule and input validation passed\n";
@@ -677,6 +771,8 @@ int main(int argc, char** argv) {
         std::cerr << "vertical pipeline passed\n";
         pipelineTest(ScreenshotScrollingRecognitionMode::Horizontal);
         pauseWithDispatchedFramePreservesPreview();
+        snapshotRequestLifetime();
+        acceptedSnapshotsSurviveTeardown();
         captureReleasesNativeFrameAfterAdmission();
         overloadTest();
         replaySourceTest();

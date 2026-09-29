@@ -647,7 +647,10 @@ struct ScreenshotScrollingPipeline::Impl {
             producer, [this]() { producer->reset(generation); }, Qt::BlockingQueuedConnection);
         captureThread.quit();
         captureThread.wait();
-        stitchThread.quit();
+        // Export snapshots accepted before reset must be delivered even when
+        // capture immediately destroys the pipeline. quit() from this thread
+        // can discard queued work; enqueue it behind the accepted worker jobs.
+        QMetaObject::invokeMethod(worker, [this]() { stitchThread.quit(); }, Qt::QueuedConnection);
         stitchThread.wait();
     }
     void handleCapture(ScrollCaptureResult result) {

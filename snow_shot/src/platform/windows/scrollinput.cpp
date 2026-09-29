@@ -20,9 +20,14 @@ ScrollInputResult sendScrollingWheelStep(const QRect& physicalSelection, const Q
         DWORD processId = 0;
         GetWindowThreadProcessId(window, &processId);
         RECT bounds{};
+        // Layered transparent overlays pass mouse input through to windows below.
+        // WS_EX_TRANSPARENT alone only controls painting order for non-layered
+        // top-level windows, which must remain eligible input targets.
+        constexpr LONG_PTR passThroughStyles = WS_EX_LAYERED | WS_EX_TRANSPARENT;
+        const LONG_PTR styles = GetWindowLongPtrW(window, GWL_EXSTYLE);
         if (processId != GetCurrentProcessId() && IsWindowVisible(window) &&
-            IsWindowEnabled(window) && GetWindowRect(window, &bounds) &&
-            PtInRect(&bounds, screenPoint)) {
+            IsWindowEnabled(window) && (styles & passThroughStyles) != passThroughStyles &&
+            GetWindowRect(window, &bounds) && PtInRect(&bounds, screenPoint)) {
             target = window;
             break;
         }
