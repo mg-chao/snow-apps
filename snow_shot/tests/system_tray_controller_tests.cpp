@@ -123,8 +123,8 @@ int main(int argc, char* argv[]) {
     require(trayIcon != nullptr, "the controller should own a system tray icon");
     require(!trayIcon->icon().isNull(), "the bundled tray icon should load");
 #ifdef Q_OS_MACOS
-    require(trayIcon->icon().isMask(),
-            "bundled macOS tray icons must use native template rendering");
+    require(!trayIcon->icon().isMask(),
+            "bundled macOS tray icons must preserve their original colors");
 #endif
     require(trayIcon->toolTip() == QStringLiteral("SnowShot"),
             "the tray tooltip should be SnowShot");
@@ -180,6 +180,10 @@ int main(int argc, char* argv[]) {
         require(trayIcon->property("resolvedIconSource").toString() ==
                     QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-%1.png").arg(selection),
                 "each tray icon selection should resolve to its bundled asset");
+#ifdef Q_OS_MACOS
+        require(!trayIcon->icon().isMask(),
+                "switching bundled macOS tray icons must preserve their original colors");
+#endif
     }
     controller.setIconSelection(QStringLiteral("unsupported"));
     require(controller.iconSelection() == QStringLiteral("default") &&
@@ -308,6 +312,10 @@ int main(int argc, char* argv[]) {
         writeIcon(QStringLiteral("broken-icon.ico"), {QSize(16, 16)}, {QByteArray("broken")}));
     require(trayIcon->property("resolvedIconSource").toString().startsWith(QStringLiteral(":/")),
             "a corrupt ICO payload must fall back to the bundled icon");
+#ifdef Q_OS_MACOS
+    require(!trayIcon->icon().isMask(),
+            "a bundled fallback must preserve its colors after a custom icon fails to load");
+#endif
     QCoreApplication::setLibraryPaths(pluginPaths);
 
     controller.setIconSelection(QStringLiteral("light"));
