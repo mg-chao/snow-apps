@@ -201,21 +201,22 @@ int main(int argc, char* argv[]) {
             const QImage disabled = trayIcon->icon().pixmap(QSize(size, size), 1.0).toImage();
             require(disabled.size() == QSize(size, size),
                     "badged tray icons should provide standard and high-DPI sizes");
-            const QColor red = disabled.pixelColor(size * 13 / 16, size * 6 / 16);
+            const QColor red = disabled.pixelColor(size * 6 / 16, size * 6 / 16);
             require(red.red() > 180 && red.green() < 100 && red.blue() < 100,
-                    "disabled shortcuts should display a red badge at the top-right");
-            const int slashX = size * 12 / 16;
-            const int slashY = size - 1 - slashX;
+                    "disabled shortcuts should display a red badge at the center");
+            const int slashX = size / 2 - 1;
+            const int slashY = size / 2;
             const QColor slash = disabled.pixelColor(slashX, slashY);
             require(slash.red() > 220 && slash.green() > 220 && slash.blue() > 220,
                     "the disabled badge should have a white diagonal slash");
-            // Leave room for the antialiased white outline around the badge.
-            const int bottomStart = size * 9 / 16;
-            require(normal.copy(0, bottomStart, size, size - bottomStart) ==
-                            disabled.copy(0, bottomStart, size, size - bottomStart) &&
-                        normal.copy(0, 0, size * 7 / 16, size) ==
-                            disabled.copy(0, 0, size * 7 / 16, size),
-                    "the badge must preserve artwork outside the top-right corner");
+            const int margin = size * 3 / 16;
+            require(normal.copy(0, 0, size, margin) == disabled.copy(0, 0, size, margin) &&
+                        normal.copy(0, size - margin, size, margin) ==
+                            disabled.copy(0, size - margin, size, margin) &&
+                        normal.copy(0, 0, margin, size) == disabled.copy(0, 0, margin, size) &&
+                        normal.copy(size - margin, 0, margin, size) ==
+                            disabled.copy(size - margin, 0, margin, size),
+                    "the centered badge must preserve artwork along every edge");
         }
         controller.show();
         require(trayIcon->icon().pixmap(QSize(32, 32), 1.0).toImage() !=

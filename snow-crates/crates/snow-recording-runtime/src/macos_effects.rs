@@ -7,12 +7,14 @@ use snow_media::{
 };
 use snow_recording_effects::{
     keyboard_overlay::{KeyboardOverlay, KeyboardOverlayConfig},
-    laser_trail::LaserTrail,
     mouse_effects::{CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks_to},
     mouse_hook::ObservedMouseButton,
     surface::{Surface, Tile, TileSurface},
 };
 use std::collections::VecDeque;
+
+mod trail;
+use trail::FrameTrail;
 
 #[derive(Clone)]
 pub struct NativeEffectsConfig {
@@ -52,7 +54,7 @@ pub(crate) struct Effects {
     pending_input: VecDeque<InputEvent>,
     show_cursor: bool,
     clicks: VecDeque<RenderClick>,
-    trail: LaserTrail,
+    trail: FrameTrail,
     keyboard: Option<KeyboardOverlay>,
     generation: u64,
     status: InputStatus,
@@ -112,7 +114,7 @@ impl Effects {
         Ok(Some(Self {
             input,
             cursor,
-            trail: LaserTrail::new(config.trail_duration_ms),
+            trail: FrameTrail::new(config.trail_duration_ms),
             config,
             output,
             surface: TileSurface::new((output.width, output.height)),
@@ -257,8 +259,7 @@ impl Effects {
                 }
             }
             if self.config.trail && matches!(event.kind, 5..=7 | 27) {
-                let size = (self.output.width, self.output.height);
-                self.trail.observe(point, size, size, at_ms);
+                self.trail.observe(point, at_ms);
             }
             if self.config.show_keyboard
                 && let Some(keyboard) = &mut self.keyboard
@@ -386,6 +387,65 @@ pub(crate) fn project(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cursor_hotspot_tracks_highlight_across_retina_scaling_and_tile_edges() {
+        // An asymmetric bitmap with a red hotspot and blue pixels below it.
+        let mut rgba = vec![0; 4 * 6 * 4];
+        rgba[(2 * 4 + 2) * 4..(2 * 4 + 2) * 4 + 4].copy_from_slice(&[255, 0, 0, 255]);
+        rgba[(4 * 4 + 2) * 4..(4 * 4 + 2) * 4 + 4].copy_from_slice(&[0, 0, 255, 255]);
+        let shape = snow_macos::cursor::CursorShape {
+            width: 4,
+            height: 6,
+            point_width: 2.0,
+            point_height: 3.0,
+            hotspot_x: 1.0,
+            hotspot_y: 1.0,
+            rgba: rgba.into(),
+        };
+        for scale in [1.0, 1.5, 2.0] {
+            let transform = DesktopTransform::new(
+                snow_media::geometry::DesktopRect {
+                    space: snow_media::geometry::DesktopSpace::Points,
+                    x: -300.0,
+                    y: -200.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                PixelSize::new(200, 200).unwrap(),
+            )
+            .unwrap();
+            let destination = PixelRect {
+                x: 28,
+                y: 28,
+                width: (100.0 * scale) as u32,
+                height: (100.0 * scale) as u32,
+            };
+            let (x, y) = project(-250.0, -150.0, transform, destination).unwrap();
+            let mut surface = TileSurface::new((256, 256));
+            draw_cursor(&mut surface, &shape, x, y, scale, scale);
+            let tiles = surface.snapshot();
+            let pixel = |px: i32, py: i32| {
+                let tile = tiles
+                    .iter()
+                    .find(|tile| {
+                        px as u32 >= tile.x
+                            && py as u32 >= tile.y
+                            && (px as u32) < tile.x + 128
+                            && (py as u32) < tile.y + 128
+                    })
+                    .unwrap();
+                let offset = ((py as u32 - tile.y) * 128 + px as u32 - tile.x) as usize * 4;
+                &tile.pixels[offset..offset + 4]
+            };
+            assert_eq!(pixel(x, y), &[255, 0, 0, 255], "hotspot at scale {scale}");
+            assert_eq!(
+                pixel(x, y + scale.ceil() as i32),
+                &[0, 0, 255, 255],
+                "cursor must extend below the hotspot at scale {scale}"
+            );
+        }
+    }
+
     #[test]
     fn point_projection_honors_letterbox_and_retina_points() {
         let transform = DesktopTransform::new(

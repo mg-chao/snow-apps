@@ -56,6 +56,33 @@ the fixed boundary, and back before releasing. The same cases run offscreen in
 the area-window tests. The native overlay-initialization fixture also verifies
 that AppKit cannot take over recording geometry after native surface recreation.
 
+## Cursor orientation and hotspot regression
+
+Cursor bitmaps, effect tiles, and editable cursor assets use top-first rows.
+`NSCursor.hotSpot` uses points from the image's top-left; Quartz input locations
+use top-left desktop points. Drawing the native CGImage into an untransformed
+bitmap context preserves its scanline order. Applying a Cocoa-style Y flip here
+inverts only the image, leaving its hotspot unchanged: the pointer tip then appears
+below the highlight. Fix this at cursor acquisition, shared by direct and editable
+recording, rather than compensating in the highlight or desktop transform.
+
+Focused, offscreen checks (use the FFmpeg environment above for runtime tests):
+
+```sh
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-macos --lib cursor::tests
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-macos --lib compositor::tests
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-recording-runtime --lib macos_effects::
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-recording-runtime --lib macos::editable_cursor::
+```
+
+The asymmetric native pixel fixture failed with reversed rows before the correction
+and passed afterward. Coverage includes premultiplied alpha, scaled hotspots at
+1x/1.5x/2x, negative desktop origins, destination offsets, tile boundaries, editable
+straight-alpha assets, and native GPU overlay/highlight orientation with padded
+rows and clipping at the canvas edge. For visual acceptance, record with highlight
+and separate cursor enabled, switch between arrow and text cursors, and verify the
+hotspot stays at the highlight center in both direct output and editable export.
+
 ## Native export probe
 
 Deploy with the normal bundle installer, then use the diagnostic entry point:

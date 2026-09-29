@@ -294,6 +294,35 @@ fn rasterize(shape: &CursorShape, scale: (f64, f64), id: u64) -> Result<CursorSh
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn editable_cursor_preserves_asymmetric_rows_and_scaled_hotspot() {
+        let shape = CursorShape {
+            width: 2,
+            height: 3,
+            point_width: 2.0,
+            point_height: 3.0,
+            hotspot_x: 1.0,
+            hotspot_y: 1.0,
+            rgba: [
+                255, 0, 0, 255, 255, 0, 0, 255, 0, 128, 0, 128, 0, 128, 0, 128, 0, 0, 255, 255, 0,
+                0, 255, 255,
+            ]
+            .into(),
+        };
+        for scale in [1.0, 1.5, 2.0] {
+            let record = rasterize(&shape, (scale, scale), 1).unwrap();
+            assert_eq!(record.hotspot_x, scale.round() as u32);
+            assert_eq!(record.hotspot_y, scale.round() as u32);
+            assert_eq!(&record.shape_rgba[..4], &[255, 0, 0, 255]);
+            let hotspot = ((record.hotspot_y * record.width + record.hotspot_x) * 4) as usize;
+            assert_eq!(&record.shape_rgba[hotspot..hotspot + 4], &[0, 255, 0, 128]);
+            assert_eq!(
+                &record.shape_rgba[record.shape_rgba.len() - 4..],
+                &[0, 0, 255, 255]
+            );
+        }
+    }
+
     fn shape(value: u8) -> CursorShape {
         CursorShape {
             width: 2,

@@ -77,14 +77,13 @@ QIcon withShortcutsDisabledBadge(const QIcon& base) {
         painter.setRenderHint(QPainter::Antialiasing);
         base.paint(&painter, QRect(0, 0, size, size));
         painter.scale(size / 16.0, size / 16.0);
-        // A white edge separates the red badge from both light and dark artwork.
-        // Inset by half the outline width so its outer edge meets the icon bounds.
-        const QRectF badge(8.125, 0.375, 7.5, 7.5);
+        // A white edge separates the centered red badge from both light and dark artwork.
+        const QRectF badge(4.25, 4.25, 7.5, 7.5);
         painter.setPen(QPen(Qt::white, 0.75));
         painter.setBrush(QColor(QStringLiteral("#e53935")));
         painter.drawEllipse(badge);
         painter.setPen(QPen(Qt::white, 1.15, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(QPointF(10.325, 5.675), QPointF(13.425, 2.575));
+        painter.drawLine(QPointF(6.45, 9.55), QPointF(9.55, 6.45));
         painter.end();
         result.addPixmap(pixmap);
     }
