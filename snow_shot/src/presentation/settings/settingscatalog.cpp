@@ -1284,6 +1284,24 @@ SettingsItemDefinition pinTextSelectionItem() {
          {QStringLiteral("always"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Always"))}});
 }
 
+SettingsItemDefinition pinDuplicateContentItem() {
+    return fixedSelectItem(
+        QStringLiteral("pin-to-screen.duplicate-content-action"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "When pinning duplicate content"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Choose what happens when the clipboard content or selected file is already pinned"),
+        QStringLiteral("pin_to_screen/duplicate_content_action"),
+        SettingsSelectBinding::PinDuplicateContentAction,
+        {{QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "None"))},
+         {QStringLiteral("shake_window"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Shake Window"))},
+         {QStringLiteral("restore_last_closed_window"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Restore Last Closed Window"))},
+         {QStringLiteral("repeat_action"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Repeat Action"))}});
+}
+
 SettingsItemDefinition pinAutoResizeItem() {
     return switchItem(
         QStringLiteral("pin-to-screen.auto-resize-window"),
@@ -2287,7 +2305,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                                                    "Pinned screenshot window appearance settings")),
                     SettingsSectionReset::PinToScreenBehavior,
                     {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
-                     pinAutomaticOcrItem(), pinTextSelectionItem(), pinAutoResizeItem()},
+                     pinAutomaticOcrItem(), pinTextSelectionItem(), pinAutoResizeItem(),
+                     pinDuplicateContentItem()},
                 },
                 {
                     QStringLiteral("text-recognition-settings"),
@@ -3595,6 +3614,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::PinDoubleClickAction:
                         expectedKey = QStringLiteral("pin_to_screen/double_click_action");
+                        break;
+                    case SettingsSelectBinding::PinDuplicateContentAction:
+                        expectedKey = QStringLiteral("pin_to_screen/duplicate_content_action");
                         break;
                     case SettingsSelectBinding::PinTextSelectionOnRecognitionResults:
                         expectedKey =

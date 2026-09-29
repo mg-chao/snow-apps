@@ -1169,6 +1169,10 @@
             <translation>Choose what happens automatically when text recognition completes</translation>
         </message>
         <message>
+            <source>Choose what happens when the clipboard content or selected file is already pinned</source>
+            <translation>Choose what happens when the clipboard content or selected file is already pinned</translation>
+        </message>
+        <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>Choose what left-clicking the tray icon does</translation>
         </message>
@@ -2501,6 +2505,10 @@
             <translation>Remove the oldest screenshots when this limit is exceeded</translation>
         </message>
         <message>
+            <source>Repeat Action</source>
+            <translation>Repeat Action</translation>
+        </message>
+        <message>
             <source>Reset Zoom</source>
             <translation>Reset Zoom</translation>
         </message>
@@ -2831,6 +2839,10 @@
         <message>
             <source>Settings</source>
             <translation>Settings</translation>
+        </message>
+        <message>
+            <source>Shake Window</source>
+            <translation>Shake Window</translation>
         </message>
         <message>
             <source>Shape tool</source>
@@ -3251,6 +3263,10 @@
         <message>
             <source>When copying an image to the clipboard, also save it in the selected image format and save directory</source>
             <translation>When copying an image to the clipboard, also save it in the selected image format and save directory</translation>
+        </message>
+        <message>
+            <source>When pinning duplicate content</source>
+            <translation>When pinning duplicate content</translation>
         </message>
         <message>
             <source>Window Element API</source>

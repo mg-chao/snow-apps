@@ -1169,6 +1169,10 @@
             <translation>选择文本识别完成后自动执行的操作</translation>
         </message>
         <message>
+            <source>Choose what happens when the clipboard content or selected file is already pinned</source>
+            <translation>选择剪贴板内容或所选文件已固定到屏幕时的操作</translation>
+        </message>
+        <message>
             <source>Choose what left-clicking the tray icon does</source>
             <translation>选择左键单击托盘图标时执行的操作</translation>
         </message>
@@ -2501,6 +2505,10 @@
             <translation>超过此限制时移除最早的截图</translation>
         </message>
         <message>
+            <source>Repeat Action</source>
+            <translation>重复执行</translation>
+        </message>
+        <message>
             <source>Reset Zoom</source>
             <translation>重置缩放</translation>
         </message>
@@ -2831,6 +2839,10 @@
         <message>
             <source>Settings</source>
             <translation>设置</translation>
+        </message>
+        <message>
+            <source>Shake Window</source>
+            <translation>晃动窗口</translation>
         </message>
         <message>
             <source>Shape tool</source>
@@ -3251,6 +3263,10 @@
         <message>
             <source>When copying an image to the clipboard, also save it in the selected image format and save directory</source>
             <translation>将图像复制到剪贴板时，同时按所选图像格式保存到指定目录</translation>
+        </message>
+        <message>
+            <source>When pinning duplicate content</source>
+            <translation>固定重复内容时</translation>
         </message>
         <message>
             <source>Window Element API</source>

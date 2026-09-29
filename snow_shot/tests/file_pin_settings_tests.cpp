@@ -1,3 +1,5 @@
+#include "snow_shot/presentation/screenshotpinsourcetracker.h"
+#include <QClipboard>
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -82,6 +84,60 @@ void textSelectionSettings() {
     require(backend.resetSection(settings::SettingsSectionReset::PinToScreenBehavior) &&
                 stored.textSelectionOnRecognitionResults() == QStringLiteral("only_when_displayed"),
             "pin behavior reset restores default selection policy");
+}
+
+void clipboardSourceIdentity() {
+    auto* clipboard = QApplication::clipboard();
+    ScreenshotPinSourceTracker tracker(clipboard);
+    const auto first = tracker.clipboardIdentity();
+    require(first.isValid() && tracker.clipboardIdentity() == first,
+            "reading a clipboard identity neither reads nor changes its content");
+    clipboard->setText(QStringLiteral("duplicate pin fixture"));
+    const auto second = tracker.clipboardIdentity();
+    require(second != first, "a clipboard change creates a new identity");
+    clipboard->setText(QStringLiteral("duplicate pin fixture"));
+    require(tracker.clipboardIdentity() != second, "copying identical text creates a new source");
+    ScreenshotPinSourceTracker nextSession(clipboard);
+    require(nextSession.clipboardIdentity() != tracker.clipboardIdentity(),
+            "clipboard identities cannot match a different application session");
+}
+
+void duplicateContentSettings() {
+    const storage::PinToScreenSettings stored;
+    const auto binding = settings::SettingsSelectBinding::PinDuplicateContentAction;
+    GlobalShortcutManager manager(std::make_unique<Backend>(), nullptr, [] { return false; });
+    settings::BuiltInSettingsBackend backend(manager);
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    require(stored.duplicateContentAction() == QStringLiteral("shake_window"),
+            "duplicate pins default to shaking");
+    const auto* field = settings::builtInSettingsRegistry().fieldForSelect(binding);
+    require(field && field->id == QStringLiteral("pin-to-screen.duplicate-content-action") &&
+                field->reset == settings::SettingsSectionReset::PinToScreenBehavior &&
+                field->definition->title.translated() ==
+                    QStringLiteral("When pinning duplicate content"),
+            "duplicate policy belongs to Pin to screen behavior");
+    const auto& select = std::get<settings::SettingsSelectDefinition>(field->definition->payload);
+    const QStringList values{QStringLiteral("none"), QStringLiteral("shake_window"),
+                             QStringLiteral("restore_last_closed_window"),
+                             QStringLiteral("repeat_action")};
+    const QStringList labels{QStringLiteral("None"), QStringLiteral("Shake Window"),
+                             QStringLiteral("Restore Last Closed Window"),
+                             QStringLiteral("Repeat Action")};
+    require(select.options.size() == values.size(), "duplicate policy has four choices");
+    for (int i = 0; i < values.size(); ++i) {
+        require(select.options[i].value == values[i] &&
+                    select.options[i].label.translated() == labels[i],
+                "duplicate choices retain their specified order and labels");
+        require(session.applySelectValue(binding, values[i]) &&
+                    stored.duplicateContentAction() == values[i],
+                "every duplicate policy persists through the settings backend");
+    }
+    require(!stored.setDuplicateContentAction(QStringLiteral("invalid")) &&
+                stored.duplicateContentAction() == QStringLiteral("repeat_action"),
+            "invalid duplicate policies are rejected");
+    require(backend.resetSection(settings::SettingsSectionReset::PinToScreenBehavior) &&
+                stored.duplicateContentAction() == QStringLiteral("shake_window"),
+            "pin behavior reset restores shake policy");
 }
 
 void shortcutSettings() {
@@ -176,6 +232,8 @@ int main(int argc, char** argv) {
         storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path()}).success,
         "temporary storage must initialize");
     textSelectionSettings();
+    duplicateContentSettings();
+    clipboardSourceIdentity();
     shortcutSettings();
     storage.shutdown();
     return 0;

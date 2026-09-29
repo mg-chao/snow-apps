@@ -520,8 +520,8 @@ ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
     m_restoreAlive->store(false);
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized())
-        for (const auto& id : m_restoringIds)
-            storage.pinnedWindows().cancelRestore(id);
+        for (auto it = m_restoringIds.cbegin(); it != m_restoringIds.cend(); ++it)
+            storage.pinnedWindows().cancelRestore(it.key());
     cancelClipboardPublication();
 }
 
@@ -683,6 +683,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
             coordinator->completeFirstFrame(persistenceId, success);
         }
     };
+    trackSourceWindow(pinnedWindow, config.sourceIdentity);
     const bool presented = presentPinnedWindowAndSynchronize(m_windowPool.get(), pinnedWindow,
                                                              config, m_showMainWindowRequested,
                                                              std::move(synchronizedCompletion));
@@ -774,6 +775,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
                 coordinator->completeFirstFrame(persistenceId, success);
             }
         };
+    trackSourceWindow(pinnedWindow, config.sourceIdentity);
     const bool presented = presentPinnedWindowAndSynchronize(m_windowPool.get(), pinnedWindow,
                                                              config, m_showMainWindowRequested,
                                                              std::move(synchronizedCompletion));
@@ -800,20 +802,20 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     ScreenshotClipboardOriginalContent originalContent, ScreenshotImageLoader imageLoader,
     PinnedCompletion completion,
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
-    std::optional<bool> checkerboardEnabled,
-    snow_shot::storage::PinnedWindowCreationSource source) {
+    std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
+    snow_shot::storage::PinnedSourceIdentity sourceIdentity) {
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
         nativeGeometry.isEmpty()) {
         return false;
     }
-    return presentPinnedImageOnCanvas(image, screen, nativeGeometry, initialWindowSize,
-                                      QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)),
-                                      std::move(formattedTextDocument), formattedPlainText,
-                                      formattedTextDevicePixelRatio, std::move(originalContent),
-                                      std::move(imageLoader), std::move(completion),
-                                      std::move(borderAppearance), checkerboardEnabled, source);
+    return presentPinnedImageOnCanvas(
+        image, screen, nativeGeometry, initialWindowSize,
+        QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)), std::move(formattedTextDocument),
+        formattedPlainText, formattedTextDevicePixelRatio, std::move(originalContent),
+        std::move(imageLoader), std::move(completion), std::move(borderAppearance),
+        checkerboardEnabled, source, nullptr, std::move(sourceIdentity));
 }
 
 bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
@@ -841,7 +843,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     ScreenshotImageLoader imageLoader, PinnedCompletion completion,
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
     std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
-    const ScreenshotHistoryEntry* document) {
+    const ScreenshotHistoryEntry* document,
+    snow_shot::storage::PinnedSourceIdentity sourceIdentity) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
@@ -873,6 +876,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     auto* pinnedWindow = m_windowPool != nullptr ? m_windowPool->acquire(screen) : nullptr;
     ScreenshotPinnedWindow::Config config;
     config.creationSource = source;
+    config.sourceIdentity = std::move(sourceIdentity);
     config.nativeGeometry = nativeGeometry;
     config.canvasSourceRect = canvasRect;
     config.borderAppearance = std::move(borderAppearance);
@@ -948,6 +952,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
             coordinator->completeFirstFrame(persistenceId, success);
         }
     };
+    trackSourceWindow(pinnedWindow, config.sourceIdentity);
     const bool presented = presentPinnedWindowAndSynchronize(m_windowPool.get(), pinnedWindow,
                                                              config, m_showMainWindowRequested,
                                                              std::move(synchronizedCompletion));
@@ -1002,7 +1007,8 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
         return false;
     if (!storage.pinnedWindows().beginRestore(id).success)
         return false;
-    m_restoringIds.insert(id);
+    m_restoringIds.insert(
+        id, {storage.pinnedWindows().sourceIdentity(id), found->groupId, found->createdUtc});
     if (m_groupManager) {
         if ((activateGroup && !m_groupManager->setActiveGroup(found->groupId)) ||
             found->groupId != m_groupManager->activeGroupId()) {
@@ -1095,6 +1101,8 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     }
     config.persistenceId = record.id;
     config.creationSource = record.creationSource;
+    config.sourceIdentity = record.sourceIdentity;
+    config.sourceCreatedUtc = record.createdUtc;
     config.restorePersistentState = true;
     config.persistedOpacityPercent = record.opacityPercent;
     config.persistedClickThroughOpacityPercent = record.clickThroughOpacityPercent;
@@ -1157,12 +1165,16 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
         return false;
     const QPointer<ScreenshotPendingPinCoordinator> lifetime(m_pendingPinCoordinator.get());
     const QPointer<ScreenshotPinnedWindow> windowGuard(window);
+    trackSourceWindow(window, config.sourceIdentity);
     const bool presented = presentPinnedWindowAndSynchronize(
         m_windowPool.get(), window, config, m_showMainWindowRequested,
         [this, lifetime, id = record.id, windowGuard](bool success, QImage) {
             if (lifetime.isNull())
                 return;
+            const bool attention = m_restoringIds.value(id).attentionPending;
             m_restoringIds.remove(id);
+            if (success && attention && windowGuard)
+                windowGuard->shakeForAttention();
             auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
             if (applicationStorage.isInitialized()) {
                 if (success) {
@@ -1176,6 +1188,90 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
             }
         });
     return presented;
+}
+
+void ScreenshotSelectionExportUiServices::trackSourceWindow(
+    ScreenshotPinnedWindow* window, const snow_shot::storage::PinnedSourceIdentity& identity) {
+    if (!window || !identity.isValid())
+        return;
+    auto& windows = m_sourceWindows[identity.key];
+    windows.append(window);
+    const auto remove = [this, key = identity.key, window] {
+        auto it = m_sourceWindows.find(key);
+        if (it == m_sourceWindows.end())
+            return;
+        it->removeIf([window](const auto& candidate) { return !candidate || candidate == window; });
+        if (it->isEmpty())
+            m_sourceWindows.erase(it);
+    };
+    QObject::connect(window, &QObject::destroyed, m_pendingPinCoordinator.get(), remove);
+    QObject::connect(window, &ScreenshotPinnedWindow::closingForPersistence,
+                     m_pendingPinCoordinator.get(), remove);
+}
+
+ScreenshotPinnedWindow* ScreenshotSelectionExportUiServices::findDuplicatePin(
+    const snow_shot::storage::PinnedSourceIdentity& identity) const {
+    if (!identity.isValid())
+        return nullptr;
+    const auto it = m_sourceWindows.constFind(identity.key);
+    if (it == m_sourceWindows.cend())
+        return nullptr;
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    ScreenshotPinnedWindow* newest = nullptr;
+    for (const auto& window : *it) {
+        if (window && window->sourcePinAvailable() && window->sourceIdentity() == identity &&
+            window->groupId() == group &&
+            (!newest || window->sourceCreatedUtc() >= newest->sourceCreatedUtc()))
+            newest = window;
+    }
+    return newest;
+}
+
+QSet<QString> ScreenshotSelectionExportUiServices::duplicateSourceKeys() const {
+    QSet<QString> keys;
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    for (const auto& pending : m_restoringIds) {
+        if (pending.groupId == group && pending.sourceIdentity.isValid())
+            keys.insert(pending.sourceIdentity.key);
+    }
+    for (auto it = m_sourceWindows.cbegin(); it != m_sourceWindows.cend(); ++it) {
+        if (findDuplicatePin({it.key()}))
+            keys.insert(it.key());
+    }
+    return keys;
+}
+
+bool ScreenshotSelectionExportUiServices::handleDuplicatePin(
+    const snow_shot::storage::PinnedSourceIdentity& identity, const QString& action,
+    bool& restored) {
+    if (action == QStringLiteral("repeat_action"))
+        return false;
+    if (!identity.isValid())
+        return false;
+    auto* window = findDuplicatePin(identity);
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    RestoringPin* pending = nullptr;
+    for (auto& restoring : m_restoringIds) {
+        if (restoring.sourceIdentity == identity && restoring.groupId == group &&
+            (!window || restoring.createdUtc > window->sourceCreatedUtc()) &&
+            (!pending || restoring.createdUtc > pending->createdUtc))
+            pending = &restoring;
+    }
+    if (!window && !pending)
+        return false;
+    if (action == QStringLiteral("restore_last_closed_window")) {
+        if (!std::exchange(restored, true))
+            restoreLastClosedWindow();
+    } else if (action != QStringLiteral("none")) {
+        if (pending)
+            pending->attentionPending = true;
+        else
+            window->shakeForAttention();
+    }
+    return true;
 }
 
 void ScreenshotSelectionExportUiServices::restoreLastClosedWindow() {

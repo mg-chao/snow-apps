@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDCONTENT_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDCONTENT_H
 
+#include "snow_shot/storage/pinnedsourceidentity.h"
 #include <QByteArray>
 #include <QColor>
 #include <QDateTime>
@@ -36,6 +37,7 @@ struct ScreenshotClipboardOriginalContent final {
 };
 
 struct ScreenshotClipboardContent {
+    snow_shot::storage::PinnedSourceIdentity sourceIdentity;
     ScreenshotClipboardContentKind kind = ScreenshotClipboardContentKind::Image;
     QImage image;
     std::shared_ptr<QTextDocument> formattedDocument;
@@ -64,6 +66,7 @@ struct ScreenshotClipboardLocalImage final {
     QString suffix;
     qint64 size = -1;
     QDateTime lastModifiedUtc;
+    snow_shot::storage::PinnedSourceIdentity sourceIdentity;
 };
 
 enum class ScreenshotClipboardNativeDibFormat {

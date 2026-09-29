@@ -684,6 +684,55 @@ void alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
     require(loaded.has_value() && loaded->alwaysOnTop,
             "legacy records must restore with always-on-top enabled");
 }
+void pinSourceIdentitySurvivesRestart() {
+    QTemporaryDir directory;
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(20, 10), 5));
+    const QString sourcePath = directory.filePath(QStringLiteral("original.png"));
+    require(record.image.save(sourcePath), "save original file fixture");
+    record.sourceKind = storage::PinnedWindowSourceKind::ClipboardImageFile;
+    record.originalFilePath = sourcePath;
+    record.sourceIdentity = {QStringLiteral("file:") + sourcePath};
+    const auto identity = record.sourceIdentity;
+    const QString manifest =
+        QDir(directory.path()).filePath(QStringLiteral("pinned_windows_v2/index.json"));
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "commit source identity");
+        const auto stored = repository.loadRecord(id);
+        require(stored && stored->sourceIdentity == identity &&
+                    stored->originalFilePath != sourcePath,
+                "original identity survives rewriting file paths to a private copy");
+        record.sourceIdentity = {};
+        record.nativeGeometry.translate(20, 30);
+        require(repository.updateState(record).success && repository.flush().success,
+                "ordinary state updates preserve immutable source identity");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.sourceIdentity(id) == identity,
+                "source identity is available before image loading");
+        const auto restored = repository.loadRecord(id);
+        require(restored && restored->sourceIdentity == identity,
+                "source identity survives restart");
+    }
+    auto root = QJsonDocument::fromJson(readBytes(manifest)).object();
+    auto records = root.value(QStringLiteral("records")).toArray();
+    auto item = records.first().toObject();
+    item.remove(QStringLiteral("pin_source_identity"));
+    records.replace(0, item);
+    root.insert(QStringLiteral("records"), records);
+    QFile file(manifest);
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "open legacy identity fixture");
+    file.write(QJsonDocument(root).toJson());
+    file.close();
+    storage::PinnedWindowRepository repository(directory.path());
+    const auto legacy = repository.loadRecord(id);
+    require(legacy && !legacy->sourceIdentity.isValid(),
+            "legacy records remain readable without invented identity");
+}
+
 void showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary show border storage is unavailable");
@@ -1312,6 +1361,7 @@ int main(int argc, char* argv[]) {
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
     clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
     alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
+    pinSourceIdentitySurvivesRestart();
     showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
     malformedCustomBorderRejectsRecord();
     thumbnailStateSurvivesRestartAndExit();

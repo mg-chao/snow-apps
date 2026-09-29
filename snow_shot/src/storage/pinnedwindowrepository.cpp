@@ -351,6 +351,7 @@ bool samePreviewSource(const StoredRecord& stored, const PinnedWindowRecord& inc
 }
 
 void preserveLifecycle(PinnedWindowRecord& target, const PinnedWindowRecord& source) {
+    target.sourceIdentity = source.sourceIdentity;
     target.creationSource = source.creationSource;
     target.createdUtc = source.createdUtc;
     target.lastClosedUtc = source.lastClosedUtc;
@@ -553,6 +554,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("original_file_name"), record.originalFileName},
         {QStringLiteral("updated_utc"), record.updatedUtc.toUTC().toString(Qt::ISODateWithMs)},
         {QStringLiteral("creation_source"), static_cast<int>(record.creationSource)},
+        {QStringLiteral("pin_source_identity"), record.sourceIdentity.key},
         {QStringLiteral("created_utc"), record.createdUtc.toUTC().toString(Qt::ISODateWithMs)},
         {QStringLiteral("last_closed_utc"),
          record.lastClosedUtc.toUTC().toString(Qt::ISODateWithMs)},
@@ -946,6 +948,7 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
         return false;
     }
     record.originalFileName = object.value(QStringLiteral("original_file_name")).toString();
+    record.sourceIdentity.key = object.value(QStringLiteral("pin_source_identity")).toString();
     record.updatedUtc = QDateTime::fromString(
         object.value(QStringLiteral("updated_utc")).toString(), Qt::ISODateWithMs);
     if (!record.updatedUtc.isValid() || !object.value(QStringLiteral("payloads")).isObject()) {
@@ -1407,6 +1410,14 @@ std::optional<quint64> PinnedWindowRepository::previewSourceRevision(const QStri
     const auto found = m_impl->records.constFind(id);
     return found == m_impl->records.cend() ? std::nullopt
                                            : std::optional<quint64>(found->previewSourceRevision);
+}
+
+PinnedSourceIdentity PinnedWindowRepository::sourceIdentity(const QString& id) const {
+    if (!m_impl)
+        return {};
+    std::lock_guard locker(m_impl->mutex);
+    const auto found = m_impl->records.constFind(id);
+    return found == m_impl->records.cend() ? PinnedSourceIdentity{} : found->record.sourceIdentity;
 }
 
 QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {

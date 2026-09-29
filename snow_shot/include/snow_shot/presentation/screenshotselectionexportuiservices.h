@@ -10,6 +10,8 @@
 
 #include <atomic>
 #include <QSet>
+#include <QHash>
+#include <QPointer>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -19,6 +21,7 @@ class ScreenshotOcrRecognitionPort;
 class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
 class ScreenshotPinnedWindowPool;
+class ScreenshotPinnedWindow;
 class ScreenshotPendingPinCoordinator;
 class QTextDocument;
 struct ScreenshotPinnedRecognitionProviders;
@@ -59,7 +62,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
         std::optional<bool> checkerboardEnabled = {},
         snow_shot::storage::PinnedWindowCreationSource source =
-            snow_shot::storage::PinnedWindowCreationSource::Other);
+            snow_shot::storage::PinnedWindowCreationSource::Other,
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {});
     // An already composited selection bitmap placed by screenshotSelectionPinRequest.
     [[nodiscard]] bool
     presentCompositedSelectionImage(const QImage& image,
@@ -83,12 +87,21 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     // Returns whether restoration was queued; completion and failures are asynchronous.
     bool restoreRecord(const QString& id, bool activateGroup = true);
     void restoreLastClosedWindow();
+    [[nodiscard]] ScreenshotPinnedWindow*
+    findDuplicatePin(const snow_shot::storage::PinnedSourceIdentity& identity) const;
+    [[nodiscard]] QSet<QString> duplicateSourceKeys() const;
+    // A true result consumes the request. The caller owns one restore guard per action/batch.
+    bool handleDuplicatePin(const snow_shot::storage::PinnedSourceIdentity& identity,
+                            const QString& action, bool& restored);
+
     void setRestoreFailureHandler(std::function<void()> handler) {
         m_restoreFailure = std::move(handler);
     }
     void destroyRecords(const QVector<QString>& ids);
 
   private:
+    void trackSourceWindow(ScreenshotPinnedWindow* window,
+                           const snow_shot::storage::PinnedSourceIdentity& identity);
     [[nodiscard]] bool presentRestoredRecord(snow_shot::storage::PinnedWindowRecord record);
     [[nodiscard]] bool presentPinnedImageOnCanvas(
         const QImage& image, QScreen* screen, const QRect& nativeGeometry,
@@ -100,10 +113,18 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::optional<bool> checkerboardEnabled = {},
         snow_shot::storage::PinnedWindowCreationSource source =
             snow_shot::storage::PinnedWindowCreationSource::Other,
-        const ScreenshotHistoryEntry* document = nullptr);
+        const ScreenshotHistoryEntry* document = nullptr,
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {});
 
+    QHash<QString, QList<QPointer<ScreenshotPinnedWindow>>> m_sourceWindows;
     std::function<void()> m_restoreFailure;
-    QSet<QString> m_restoringIds;
+    struct RestoringPin {
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity;
+        QString groupId;
+        QDateTime createdUtc;
+        bool attentionPending = false;
+    };
+    QHash<QString, RestoringPin> m_restoringIds;
     std::shared_ptr<std::atomic_bool> m_restoreAlive = std::make_shared<std::atomic_bool>(true);
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;

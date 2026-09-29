@@ -105,6 +105,72 @@ void mixedFilesAndLargeBatches() {
     finish(batch);
 }
 
+void duplicateFiltering() {
+    QTemporaryDir directory;
+    const QString first = imageFile(directory, QStringLiteral("first.png"));
+    const QString second = imageFile(directory, QStringLiteral("second.png"));
+    auto files = ScreenshotClipboardContentReader::snapshotLocalFiles({first, second});
+    require(files.size() == 2 && files[0].sourceIdentity.isValid(),
+            "file identities are captured with metadata");
+    const auto firstIdentity = files[0].sourceIdentity;
+    const auto alias = ScreenshotClipboardContentReader::snapshotLocalFiles(
+        {directory.filePath(QStringLiteral("./first.png"))});
+    require(alias.size() == 1 && alias[0].sourceIdentity == firstIdentity,
+            "equivalent file paths share one identity");
+    require(files[1].sourceIdentity != firstIdentity,
+            "identical images at different paths remain distinct");
+    imageFile(directory, QStringLiteral("first.png"));
+    require(ScreenshotClipboardContentReader::snapshotLocalFiles({first})[0].sourceIdentity ==
+                firstIdentity,
+            "rewriting a file does not change its source identity");
+    ScreenshotFilePinBatch batch;
+    int consumed = 0;
+    QStringList presented;
+    ScreenshotFilePinBatch::DuplicateFilter filter;
+    filter.identities.insert(firstIdentity.key);
+    filter.consume = [&](const auto& identity) {
+        require(QThread::currentThread() == qApp->thread(),
+                "duplicates are revalidated on the GUI thread");
+        require(identity == firstIdentity,
+                "duplicate callback receives the original source identity");
+        ++consumed;
+        return true;
+    };
+    // A known duplicate must be handled without attempting to decode its bytes.
+    QFile corrupt(first);
+    require(corrupt.open(QIODevice::WriteOnly | QIODevice::Truncate), "open duplicate fixture");
+    corrupt.write("invalid");
+    corrupt.close();
+    batch.start(
+        {first, second},
+        [&](ScreenshotClipboardContent content) {
+            presented.append(content.originalContent.localFilePath);
+            require(content.sourceIdentity == files[1].sourceIdentity,
+                    "decoded files carry their identities");
+            return true;
+        },
+        filter);
+    finish(batch);
+    require(consumed == 1 && presented == QStringList{second},
+            "mixed batch skips duplicate decode and pins new files");
+    imageFile(directory, QStringLiteral("first.png"));
+    filter.consume = [&](const auto&) {
+        ++consumed;
+        return false;
+    };
+    presented.clear();
+    batch.start(
+        {first, second},
+        [&](ScreenshotClipboardContent content) {
+            presented.append(content.originalContent.localFilePath);
+            return true;
+        },
+        filter);
+    finish(batch);
+    require(consumed == 2 && presented == QStringList{first, second},
+            "a closed duplicate target falls back to decoding in source order");
+}
+
 void changedFilesAndPresentationStop() {
     QTemporaryDir directory;
     const QString first = imageFile(directory, QStringLiteral("first.png"));
@@ -288,6 +354,7 @@ void clipboardFiles() {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     mixedFilesAndLargeBatches();
+    duplicateFiltering();
     changedFilesAndPresentationStop();
     prefetchKeepsPresentationOrder();
     stoppingDiscardsPrefetchedDecodes();

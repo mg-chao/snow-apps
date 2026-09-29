@@ -157,6 +157,8 @@ bool ScreenshotPinnedWindow::handleExportDrag(QObject* watched, QEvent* event) {
 }
 
 void ScreenshotPinnedWindow::reconcilePlatformEnvironment(bool layoutChanged) {
+    if (!m_platformApplying)
+        stopAttentionShake();
     if (!m_platform || !m_platform->usesControlledInteraction() || !m_presented || m_closing ||
         m_platformApplying)
         return;
@@ -223,6 +225,7 @@ void ScreenshotPinnedWindow::reconcilePlatformEnvironment(bool layoutChanged) {
 
 bool ScreenshotPinnedWindow::beginControlledInteraction(const QPointF& desktopPosition,
                                                         std::optional<int> handle) {
+    stopAttentionShake();
     if (m_interactionPlacement || m_closing || m_geometryAnimating || !screen())
         return false;
     const auto placement = m_platform->placement();

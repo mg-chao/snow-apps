@@ -12843,6 +12843,231 @@ void pinnedControlledInteractionAndGestures() {
     window.close();
 }
 
+void duplicatePinActions() {
+    IsolatedPinnedStorage isolated;
+    using namespace snow_shot;
+    auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
+    require(storage::PinToScreenSettings().setAutomaticTextRecognition(false), "disable OCR");
+    presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices service(nullptr, nullptr, nullptr, {}, {}, &groups);
+    QScreen* screen = QGuiApplication::primaryScreen();
+    QImage image(100, 60, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    const QRect geometry = physicalPinGeometry(*screen, {100, 100}, image.size());
+    const storage::PinnedSourceIdentity identity{QStringLiteral("file:duplicate-fixture.png")};
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!predicate() && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            QThread::msleep(1);
+        }
+        require(predicate(), message);
+    };
+    const auto present = [&](const storage::PinnedSourceIdentity& source) {
+        return service.presentPinnedImage(image, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                          {}, {}, {}, {},
+                                          storage::PinnedWindowCreationSource::Clipboard, source);
+    };
+    require(present(identity), "present a source-identified pin");
+    wait([&] { return repository.summaries().size() == 1; }, "first pin persisted");
+    QPointer<ScreenshotPinnedWindow> first = service.findDuplicatePin(identity);
+    require(first, "live pin enters duplicate lookup");
+    const QString firstId = first->persistenceId();
+    require(repository.loadRecord(firstId)->sourceIdentity == identity,
+            "source identity is independent of stored image payload");
+    bool restored = false;
+    require(service.handleDuplicatePin(identity, QStringLiteral("none"), restored) && !restored,
+            "None consumes duplicate without restoration");
+    require(!service.handleDuplicatePin(identity, QStringLiteral("repeat_action"), restored),
+            "Repeat Action continues the ordinary presentation path");
+    require(service.handleDuplicatePin(identity, QStringLiteral("restore_last_closed_window"),
+                                       restored) &&
+                restored && repository.summaries().size() == 1,
+            "empty restore history consumes duplicate without creating a pin");
+    restored = false;
+    const QRect baseline = first->currentNativeGeometry();
+    const auto placement = first->persistenceSnapshot().placement;
+    first->hide();
+    require(service.handleDuplicatePin(identity, QStringLiteral("none"), restored) &&
+                !first->isVisible(),
+            "None leaves a hidden duplicate untouched");
+    require(service.handleDuplicatePin(identity, QStringLiteral("shake_window"), restored),
+            "shake handles a hidden pin");
+    require(first->isVisible(), "shake reveals the existing pin");
+    auto* animation =
+        first->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"));
+    require(animation && animation->duration() == 300, "shake uses a bounded animation");
+    animation->pause();
+    animation->setCurrentTime(50);
+    require(first->currentNativeGeometry() != baseline, "shake visibly displaces the window");
+    require(first->persistenceSnapshot().nativeGeometry == baseline &&
+                first->persistenceSnapshot().placement == placement,
+            "shake offsets never leak into persisted placement");
+    first->shakeForAttention();
+    require(animation->currentTime() == 50, "repeated shake requests coalesce");
+    const auto revisionBeforeEdit = first->automationState().value(QStringLiteral("revision"));
+    QString editError;
+    require(first->automationUpdate({{QStringLiteral("opacity_percent"), 70}}, &editError),
+            "opacity can change during a shake");
+    const auto revisionAfterEdit = first->automationState().value(QStringLiteral("revision"));
+    require(revisionAfterEdit != revisionBeforeEdit,
+            "an edit during a shake advances the persistent state revision");
+    wait(
+        [&] {
+            const auto record = repository.loadRecord(firstId);
+            return record && record->opacityPercent == 70;
+        },
+        "edits persist while the attention animation is paused");
+    const auto editedRecord = repository.loadRecord(firstId);
+    require(editedRecord->nativeGeometry == baseline && editedRecord->placement == placement,
+            "saving an edit during a shake preserves the stable placement");
+    require(first->automationUpdate({{QStringLiteral("show_border"), false}}, &editError),
+            "border can change before a shake finishes");
+    animation->setCurrentTime(300);
+    require(first->currentNativeGeometry() == baseline, "shake returns to its exact origin");
+    wait(
+        [&] {
+            const auto record = repository.loadRecord(firstId);
+            return record && !record->showBorder && record->opacityPercent == 70;
+        },
+        "finishing a shake retains the pending state save");
+    require(present(identity), "repeat action may create a second matching pin");
+    wait([&] { return repository.summaries().size() == 2; }, "second pin persisted");
+    QPointer<ScreenshotPinnedWindow> second = service.findDuplicatePin(identity);
+    require(second && second != first, "newest matching pin is selected");
+    const QString secondId = second->persistenceId();
+    const storage::PinnedSourceIdentity unrelatedIdentity{
+        QStringLiteral("file:unrelated-fixture.png")};
+    require(present(unrelatedIdentity), "prepare another closed window");
+    wait([&] { return repository.summaries().size() == 3; }, "unrelated pin persisted");
+    QPointer<ScreenshotPinnedWindow> unrelated = service.findDuplicatePin(unrelatedIdentity);
+    require(unrelated, "find unrelated pin");
+    const QString unrelatedId = unrelated->persistenceId();
+    pinnedMenuActionNamed(*unrelated, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(processUntilDeleted(unrelated, 2000), "close unrelated pin before latest duplicate");
+    pinnedMenuActionNamed(*second, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+    require(service.findDuplicatePin(identity) == first,
+            "closing pins stop matching before deferred destruction");
+    require(processUntilDeleted(second, 2000), "close duplicate pin");
+    require(service.handleDuplicatePin(identity, QStringLiteral("restore_last_closed_window"),
+                                       restored) &&
+                restored,
+            "restore duplicate dispatches existing restore action");
+    require(service.handleDuplicatePin(identity, QStringLiteral("restore_last_closed_window"),
+                                       restored),
+            "a batch consumes further duplicates without restoring again");
+    wait(
+        [&] {
+            return groups.liveWindows().size() == 2 && !repository.loadRecord(secondId)->ignored;
+        },
+        "closed pin restored");
+    require(repository.loadRecord(unrelatedId)->ignored,
+            "one action restores at most one closed window");
+    const auto other = groups.createGroup(QStringLiteral("Duplicates"));
+    require(other.has_value() && groups.setActiveGroup(*other), "switch to separate group");
+    require(!service.findDuplicatePin(identity),
+            "duplicate matching stays within the active group");
+    require(processUntilDeleted(first, 2000), "inactive group closes its windows");
+    require(groups.setActiveGroup(QStringLiteral("default")), "return to original group");
+    service.restorePersistedWindows();
+    wait([&] { return service.findDuplicatePin(identity) != nullptr; },
+         "restored pins recover source identity");
+    require(service.restoreRecord(unrelatedId), "queue restoration without a live window");
+    bool reservedRestore = false;
+    require(!service.findDuplicatePin(unrelatedIdentity) &&
+                service.duplicateSourceKeys().contains(unrelatedIdentity.key) &&
+                service.handleDuplicatePin(unrelatedIdentity, QStringLiteral("shake_window"),
+                                           reservedRestore),
+            "disk restoration reserves identity before creating a window");
+    wait(
+        [&] {
+            auto* restoredWindow = service.findDuplicatePin(unrelatedIdentity);
+            return restoredWindow && restoredWindow->findChild<QVariantAnimation*>(
+                                         QStringLiteral("screenshotPinnedShakeAnimation"));
+        },
+        "duplicate request during disk load shakes the restored window");
+    service.findDuplicatePin(unrelatedIdentity)
+        ->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"))
+        ->setCurrentTime(300);
+
+    QPointer<ScreenshotPinnedWindow> edited = service.findDuplicatePin(identity);
+    QString error;
+    require(edited->automationUpdate({{QStringLiteral("rotation"), QStringLiteral("clockwise")}},
+                                     &error) &&
+                service.findDuplicatePin(identity) == edited,
+            "editing a pin retains its original identity");
+    edited->shakeForAttention();
+    auto* interrupted =
+        edited->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"));
+    wait(
+        [&] {
+            return edited->findChild<QVariantAnimation*>(
+                       QStringLiteral("screenshotPinnedShakeAnimation")) != nullptr;
+        },
+        "edited pin can shake");
+    interrupted =
+        edited->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"));
+    interrupted->pause();
+    interrupted->setCurrentTime(50);
+    const QRect editedOrigin = edited->persistenceSnapshot().nativeGeometry;
+    require(edited->automationUpdate({{QStringLiteral("rotation"), QStringLiteral("clockwise")}},
+                                     &error),
+            "geometry change interrupts a shake");
+    require(interrupted->state() == QAbstractAnimation::Stopped &&
+                edited->currentNativeGeometry().center() == editedOrigin.center(),
+            "interruption restores origin before applying geometry changes");
+
+    const storage::PinnedSourceIdentity pendingIdentity{QStringLiteral("clipboard:test-session:1")};
+    ScreenshotImageLoadCallback finishLoad;
+    require(service.presentPinnedImage(
+                {}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                [&](QObject*, ScreenshotImageLoadCallback callback) {
+                    finishLoad = std::move(callback);
+                },
+                {}, {}, {}, storage::PinnedWindowCreationSource::Clipboard, pendingIdentity),
+            "present loading pin");
+    auto* pending = service.findDuplicatePin(pendingIdentity);
+    require(pending && finishLoad, "loading window reserves its identity");
+    bool pendingRestore = false;
+    require(service.handleDuplicatePin(pendingIdentity, QStringLiteral("shake_window"),
+                                       pendingRestore) &&
+                !pending->findChild<QVariantAnimation*>(
+                    QStringLiteral("screenshotPinnedShakeAnimation")),
+            "duplicate of loading window defers its shake without another decode");
+    finishLoad(image);
+    wait(
+        [&] {
+            return pending->findChild<QVariantAnimation*>(
+                       QStringLiteral("screenshotPinnedShakeAnimation")) != nullptr;
+        },
+        "loading pin shakes after its first frame");
+    pending->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"))
+        ->setCurrentTime(300);
+    const storage::PinnedSourceIdentity failedIdentity{QStringLiteral("clipboard:test-session:2")};
+    ScreenshotImageLoadCallback failLoad;
+    require(
+        service.presentPinnedImage(
+            {}, screen, geometry, image.size(), {}, {}, 1.0, {},
+            [&](QObject*, ScreenshotImageLoadCallback callback) { failLoad = std::move(callback); },
+            {}, {}, {}, storage::PinnedWindowCreationSource::Clipboard, failedIdentity),
+        "reserve failing pin");
+    require(service.findDuplicatePin(failedIdentity) && failLoad, "failed fixture starts pending");
+    failLoad({});
+    wait([&] { return service.findDuplicatePin(failedIdentity) == nullptr; },
+         "failed pin releases duplicate identity");
+    wait([&] { return repository.loadRecord(pending->persistenceId()).has_value(); },
+         "loading pin persists");
+
+    const auto records = repository.summaries();
+    QVector<QString> ids;
+    for (const auto& record : records)
+        ids.append(record.id);
+    service.destroyRecords(ids);
+    wait([&] { return service.findDuplicatePin(identity) == nullptr; },
+         "destroyed pins leave lookup");
+}
+
 void pinnedManagementLifecycle() {
     IsolatedPinnedStorage isolated;
     using namespace snow_shot;
@@ -13231,6 +13456,11 @@ int main(int argc, char* argv[]) {
                 "original export must retain source pixels despite opacity, rotation and edits");
             require(renderedExport.size() == QSize(sourceImage.height(), sourceImage.width()),
                     "rendered export must include the user's current rotation");
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--duplicate-pin-only"))) {
+            duplicatePinActions();
+            ScreenshotExportCoordinator::shared().shutdown();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--management-only"))) {

@@ -1389,6 +1389,7 @@ ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
 }
 
 void ScreenshotPinnedWindow::setGroupId(const QString& id) {
+    stopAttentionShake();
     const QString normalized = id.trimmed();
     if (normalized.isEmpty() ||
         (m_groupManager != nullptr && !m_groupManager->contains(normalized)) ||
@@ -1451,6 +1452,7 @@ void ScreenshotPinnedWindow::removePersistence() {
 snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord() const {
     snow_shot::storage::PinnedWindowRecord record;
     record.id = m_persistenceId;
+    record.sourceIdentity = m_sourceIdentity;
     record.creationSource = m_creationSource;
     record.createdUtc = m_createdUtc;
     record.groupId = m_groupId;
@@ -1485,11 +1487,11 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
         record.screenLogicalGeometry = current->geometry();
         record.screenWindowGeometry = snow_shot::presentation::pinnedScreenGeometry(*current);
         record.screenDpi = current->devicePixelRatio();
-        record.placement =
-            (!m_platform->usesControlledInteraction() || hideToTopActive() || m_geometryAnimating)
-                ? pinned_platform::pinnedPlacement(record.nativeGeometry, *current)
-                : m_platform->placement().value_or(
-                      pinned_platform::pinnedPlacement(record.nativeGeometry, *current));
+        record.placement = (!m_platform->usesControlledInteraction() || hideToTopActive() ||
+                            m_geometryAnimating || m_attentionOrigin.isValid())
+                               ? pinned_platform::pinnedPlacement(record.nativeGeometry, *current)
+                               : m_platform->placement().value_or(pinned_platform::pinnedPlacement(
+                                     record.nativeGeometry, *current));
         record.preThumbnailPlacement =
             m_preThumbnailPlacement.isValid()
                 ? m_preThumbnailPlacement
@@ -1498,6 +1500,8 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
             pinned_platform::pinnedPlacement(record.hideToTopHandleNativeGeometry, *current);
     }
     record.scalePercent = m_scalePercent;
+    if (m_attentionOrigin.isValid() && m_attentionPlacement)
+        record.placement = *m_attentionPlacement;
     record.opacityPercent = m_opacityPercent;
     record.clickThroughOpacityPercent = m_clickThroughOpacityPercent;
     record.imageTransform = m_imageTransform;
@@ -1884,7 +1888,10 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_persistenceRemover = config.persistenceRemover;
     m_persistenceCloser = config.persistenceCloser;
     m_creationSource = config.creationSource;
-    m_createdUtc = QDateTime::currentDateTimeUtc();
+    m_sourceIdentity = config.sourceIdentity;
+    m_sourcePinAvailable = true;
+    m_createdUtc = config.sourceCreatedUtc.isValid() ? config.sourceCreatedUtc
+                                                     : QDateTime::currentDateTimeUtc();
     m_groupManager = config.groupManager;
     m_groupId = config.groupId.trimmed();
     if (m_groupId.isEmpty()) {
@@ -2124,6 +2131,8 @@ QRect ScreenshotPinnedWindow::observedNativeGeometry() const {
 }
 
 QRect ScreenshotPinnedWindow::authoritativeNativeGeometry() const {
+    if (m_attentionOrigin.isValid())
+        return m_attentionOrigin;
     return m_nativeGeometryController ? m_nativeGeometryController->authoritativeGeometry()
                                       : QRect();
 }
@@ -2317,6 +2326,8 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    stopAttentionShake();
+    m_sourcePinAvailable = false;
     bool savedForClose = false;
     if (event->spontaneous() && !m_inactiveGroupClosing &&
         m_closeIntent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
@@ -3704,6 +3715,13 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
 }
 
 void ScreenshotPinnedWindow::finishPresentation(bool succeeded, QImage image) {
+    if (!succeeded) {
+        m_sourcePinAvailable = false;
+        m_attentionPending = false;
+    } else if (m_attentionPending) {
+        m_attentionPending = false;
+        QTimer::singleShot(0, this, &ScreenshotPinnedWindow::shakeForAttention);
+    }
     if (!succeeded && m_clickThroughActive) {
         shutdownClickThrough();
     }
@@ -6300,6 +6318,7 @@ void ScreenshotPinnedWindow::restoreFromThumbnailImmediately() {
 }
 
 void ScreenshotPinnedWindow::animateGeometryTo(const QRect& nativeTarget) {
+    stopAttentionShake();
     if (!nativeTarget.isValid() || nativeTarget.isEmpty()) {
         return;
     }
@@ -6339,6 +6358,8 @@ void ScreenshotPinnedWindow::animateGeometryTo(const QRect& nativeTarget) {
 
 bool ScreenshotPinnedWindow::applyWindowGeometry(const QRect& nativeGeometry,
                                                  GeometryMutation mutation) {
+    if (mutation != GeometryMutation::Attention)
+        stopAttentionShake();
     if (!nativeGeometry.isValid() || nativeGeometry.isEmpty() ||
         m_nativeGeometryController == nullptr) {
         return false;
@@ -6364,6 +6385,7 @@ bool ScreenshotPinnedWindow::applyWindowGeometry(const QRect& nativeGeometry,
         origin = ScreenshotPinnedNativeGeometryController::Origin::HideToTop;
         break;
     case GeometryMutation::Animation:
+    case GeometryMutation::Attention:
         origin = ScreenshotPinnedNativeGeometryController::Origin::Animation;
         break;
     }
@@ -6408,7 +6430,10 @@ void ScreenshotPinnedWindow::commitNativeGeometry(bool adoptScale) {
             m_preserveScaleForSettledGeometry = false;
         scheduleNativeScaleAdoption();
     }
-    if (change.positionChanged || change.sizeChanged || change.dpiChanged)
+    // Attention offsets are transient geometry. Other state changes must still
+    // schedule saves while shaking; persistenceRecord() keeps the stable placement.
+    if (!m_attentionOrigin.isValid() &&
+        (change.positionChanged || change.sizeChanged || change.dpiChanged))
         schedulePersistence();
 }
 
@@ -6428,7 +6453,7 @@ void ScreenshotPinnedWindow::handleNativeGeometryObservation() {
         else
             static_cast<void>(restoreCommittedNativeGeometry());
     } else if (m_nativeGeometryController->phase() == Phase::Stable &&
-               observedNativeGeometry() != authoritativeNativeGeometry()) {
+               observedNativeGeometry() != m_nativeGeometryController->authoritativeGeometry()) {
         static_cast<void>(restoreCommittedNativeGeometry());
     }
 }
@@ -6609,6 +6634,71 @@ void ScreenshotPinnedWindow::requestUserClose() {
     QTimer::singleShot(0, this, [this]() { close(); });
 }
 
+void ScreenshotPinnedWindow::stopAttentionShake() {
+    m_attentionPending = false;
+    if (!m_attentionOrigin.isValid())
+        return;
+    if (m_attentionAnimation)
+        m_attentionAnimation->stop();
+    const QRect origin = m_attentionOrigin;
+    static_cast<void>(applyWindowGeometry(origin, GeometryMutation::Attention));
+    if (m_attentionPlacement && m_platform->usesControlledInteraction()) {
+        // Keep subpixel desktop placement on platforms whose stable placement
+        // has more precision than the integer geometry used by the animation.
+        const QScopedValueRollback<bool> applying(m_platformApplying, true);
+        if (m_platform->applyStablePlacement(*m_attentionPlacement, screen()))
+            m_platformPlacement = m_platform->placement();
+    }
+    m_attentionOrigin = {};
+    m_attentionPlacement.reset();
+}
+
+void ScreenshotPinnedWindow::shakeForAttention() {
+    if (!sourcePinAvailable() || m_attentionOrigin.isValid())
+        return;
+    if (!m_firstContentFramePublished) {
+        m_attentionPending = true;
+        return;
+    }
+    if (m_systemSizingActive || m_interactionPlacement ||
+        (m_nativeGeometryController && m_nativeGeometryController->hasInteractiveTransaction()))
+        return;
+    showFromManagement();
+    exitHideToTop();
+    restoreFromThumbnailImmediately();
+    m_attentionOrigin = authoritativeNativeGeometry();
+    if (!m_attentionOrigin.isValid())
+        return;
+    m_attentionPlacement = m_platform->placement();
+    if (!m_attentionAnimation) {
+        m_attentionAnimation = new QVariantAnimation(this);
+        m_attentionAnimation->setObjectName(QStringLiteral("screenshotPinnedShakeAnimation"));
+        m_attentionAnimation->setDuration(300);
+        m_attentionAnimation->setStartValue(0.0);
+        m_attentionAnimation->setKeyValueAt(1.0 / 6.0, -1.0);
+        m_attentionAnimation->setKeyValueAt(2.0 / 6.0, 1.0);
+        m_attentionAnimation->setKeyValueAt(3.0 / 6.0, -0.75);
+        m_attentionAnimation->setKeyValueAt(4.0 / 6.0, 0.5);
+        m_attentionAnimation->setKeyValueAt(5.0 / 6.0, -0.25);
+        m_attentionAnimation->setEndValue(0.0);
+        connect(m_attentionAnimation, &QVariantAnimation::valueChanged, this,
+                [this](const QVariant& value) {
+                    if (!m_attentionOrigin.isValid())
+                        return;
+                    const qreal scale = screen() && !m_platform->usesControlledInteraction()
+                                            ? screen()->devicePixelRatio()
+                                            : 1.0;
+                    const QRect target =
+                        m_attentionOrigin.translated(qRound(6.0 * scale * value.toDouble()), 0);
+                    if (!applyWindowGeometry(target, GeometryMutation::Attention))
+                        stopAttentionShake();
+                });
+        connect(m_attentionAnimation, &QVariantAnimation::finished, this,
+                &ScreenshotPinnedWindow::stopAttentionShake);
+    }
+    m_attentionAnimation->start();
+}
+
 void ScreenshotPinnedWindow::showFromManagement() {
     if (m_closing)
         return;
@@ -6622,6 +6712,7 @@ void ScreenshotPinnedWindow::showFromManagement() {
 }
 
 void ScreenshotPinnedWindow::requestDestroy() {
+    stopAttentionShake();
     if (m_groupManager)
         m_groupManager->markWindowClosing(this);
     m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Destroy;
@@ -6724,6 +6815,7 @@ bool ScreenshotPinnedWindow::moveCursorOnePixel(
 }
 
 bool ScreenshotPinnedWindow::startWindowMove() {
+    stopAttentionShake();
     if (m_platform->usesControlledInteraction()) {
         return beginControlledInteraction(
             m_platform->pointerPosition().value_or(QPointF(QCursor::pos())), {});

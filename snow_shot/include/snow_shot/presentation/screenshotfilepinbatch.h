@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/platform/selectedfiles.h"
 #include <QHash>
+#include <QSet>
 #include <QObject>
 #include <QStringList>
 
@@ -23,19 +24,25 @@ class ScreenshotFilePinBatch final : public QObject {
         std::function<snow_shot::platform::SelectedFileResult(const ScreenshotExportCancellation&)>;
     using Failure = std::function<void(snow_shot::platform::SelectedFileError)>;
 
+    struct DuplicateFilter {
+        QSet<QString> identities;
+        // Runs on the GUI thread; false means the match disappeared and must be decoded.
+        std::function<bool(const snow_shot::storage::PinnedSourceIdentity&)> consume;
+    };
     explicit ScreenshotFilePinBatch(QObject* parent = nullptr);
     ~ScreenshotFilePinBatch() override;
-    void start(QStringList paths, Present present);
+    void start(QStringList paths, Present present, DuplicateFilter filter = {});
     void startSelection(std::shared_ptr<snow_shot::platform::SelectedFileBackend> backend,
                         snow_shot::platform::SelectedFileTarget target, Present present,
-                        Failure failure = {});
+                        Failure failure = {}, DuplicateFilter filter = {});
     void cancel();
     [[nodiscard]] bool active() const {
         return m_active;
     }
 
   private:
-    void startSource(Source source, Present present, Failure failure = {});
+    void startSource(Source source, Present present, Failure failure = {},
+                     DuplicateFilter filter = {});
     void submitDecode(quint64 generation, qsizetype index);
     void submitPendingDecodes(quint64 generation);
     void dispatch(quint64 generation);
@@ -50,6 +57,8 @@ class ScreenshotFilePinBatch final : public QObject {
     qsizetype m_nextSubmit = 0;
     qsizetype m_nextPresent = 0;
     Present m_present;
+    DuplicateFilter m_duplicateFilter;
+    QSet<qsizetype> m_skippedDuplicates;
     bool m_active = false;
     bool m_dispatching = false;
     bool m_redispatch = false;

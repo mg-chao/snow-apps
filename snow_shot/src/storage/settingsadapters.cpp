@@ -1782,6 +1782,14 @@ bool PinToScreenSettings::setMouseWheelZoomMode(const QString& mode) const {
     return cache().setValue(QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"), mode);
 }
 
+QString PinToScreenSettings::duplicateContentAction() const {
+    return cache().value(QStringLiteral("pin_to_screen/duplicate_content_action")).toString();
+}
+
+bool PinToScreenSettings::setDuplicateContentAction(const QString& value) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/duplicate_content_action"), value);
+}
+
 QString PinToScreenSettings::textSelectionOnRecognitionResults() const {
     return cache()
         .value(QStringLiteral("pin_to_screen/text_selection_on_recognition_results"))

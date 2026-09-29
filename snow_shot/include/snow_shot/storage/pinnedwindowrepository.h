@@ -53,6 +53,8 @@ class PinnedWindowRepository final {
     loadPreviewSource(const QString& id) const;
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
+    // Reads source identity without materializing any persisted image payload.
+    [[nodiscard]] PinnedSourceIdentity sourceIdentity(const QString& id) const;
     [[nodiscard]] quint64 revision() const;
     // Advances only when records enter, leave, close, restore, or change groups.
     [[nodiscard]] quint64 membershipRevision() const;

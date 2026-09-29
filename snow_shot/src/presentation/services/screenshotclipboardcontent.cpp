@@ -854,7 +854,11 @@ ScreenshotClipboardContentReader::snapshotLocalFiles(const QStringList& paths,
             continue;
         }
         seen.insert(identity);
-        files.append({absolute, suffix, info.size(), info.lastModified().toUTC()});
+        files.append({absolute,
+                      suffix,
+                      info.size(),
+                      info.lastModified().toUTC(),
+                      {QStringLiteral("file:") + identity}});
     }
     return files;
 }
@@ -975,6 +979,7 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
         if (auto result = readFileImage(*snapshot.localImage, cancelled, checked, retained);
             result.has_value()) {
             result->originalContent.localFilePath = snapshot.localImage->absolutePath;
+            result->sourceIdentity = snapshot.localImage->sourceIdentity;
             return result;
         }
     }

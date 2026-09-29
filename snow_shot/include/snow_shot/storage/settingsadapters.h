@@ -461,6 +461,8 @@ class PinToScreenSettings final {
     bool setBorderActiveColor(const QColor& color) const;
     [[nodiscard]] QString mouseWheelZoomMode() const;
     bool setMouseWheelZoomMode(const QString& mode) const;
+    [[nodiscard]] QString duplicateContentAction() const;
+    bool setDuplicateContentAction(const QString& value) const;
     [[nodiscard]] QString textSelectionOnRecognitionResults() const;
     [[nodiscard]] bool setTextSelectionOnRecognitionResults(const QString& mode) const;
     [[nodiscard]] bool automaticTextRecognition() const;

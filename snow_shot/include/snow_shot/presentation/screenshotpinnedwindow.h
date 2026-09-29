@@ -110,7 +110,19 @@ class ScreenshotPinnedWindow final : public QWidget {
         return m_backgroundCanvasRect;
     }
     void requestAutoFilterSource(std::function<void(QImage)> completion);
+    [[nodiscard]] const snow_shot::storage::PinnedSourceIdentity& sourceIdentity() const {
+        return m_sourceIdentity;
+    }
+    [[nodiscard]] bool sourcePinAvailable() const {
+        return m_sourcePinAvailable && !m_closing;
+    }
+    [[nodiscard]] QDateTime sourceCreatedUtc() const {
+        return m_createdUtc;
+    }
+    void shakeForAttention();
     struct Config {
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity;
+        QDateTime sourceCreatedUtc;
         snow_shot::storage::PinnedWindowPlacement placement;
         // Pixel rectangle scoped to screen, for capture/export geometry adapters.
         QRect nativeGeometry;
@@ -236,6 +248,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         ImageTransform,
         Thumbnail,
         Animation,
+        Attention,
         HideToTop,
         ContentReplacement,
     };
@@ -382,6 +395,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void setThumbnailMode(bool enabled, bool animate = true);
     void restoreFromThumbnailImmediately();
     void animateGeometryTo(const QRect& nativeTarget);
+    void stopAttentionShake();
     bool applyWindowGeometry(const QRect& nativeGeometry, GeometryMutation mutation);
     bool applyAndVerifyNativeGeometry(const QRect& target, bool discardContents = false);
     void commitNativeGeometry(bool adoptScale = false);
@@ -516,6 +530,12 @@ class ScreenshotPinnedWindow final : public QWidget {
     QAction* m_scaleReadoutAction = nullptr;
     std::unique_ptr<ScreenshotPinnedHideToTopController> m_hideToTop;
     QVariantAnimation* m_geometryAnimation = nullptr;
+    QVariantAnimation* m_attentionAnimation = nullptr;
+    QRect m_attentionOrigin;
+    std::optional<snow_shot::storage::PinnedWindowPlacement> m_attentionPlacement;
+    bool m_attentionPending = false;
+    bool m_sourcePinAvailable = false;
+    snow_shot::storage::PinnedSourceIdentity m_sourceIdentity;
     QRectF m_canvasSourceRect;
     QRectF m_backgroundCanvasRect;
     QRectF m_resultSurfaceCanvasRect;

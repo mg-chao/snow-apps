@@ -35,6 +35,7 @@
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
+#include "snow_shot/presentation/screenshotpinsourcetracker.h"
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotdisplayconfigurationobserver.h"
 #include "snow_shot/platform/selectedfiles.h"
@@ -436,9 +437,12 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
         ScreenshotClipboardOriginalContent originalContent = {},
         ScreenshotSelectionExportDestinationPort::PinnedCompletion completion = {},
         snow_shot::storage::PinnedWindowCreationSource source =
-            snow_shot::storage::PinnedWindowCreationSource::Other);
+            snow_shot::storage::PinnedWindowCreationSource::Other,
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {});
     ScreenshotFilePinBatch::Present
-    filePinPresenter(QScreen* screen, snow_shot::storage::PinnedWindowCreationSource source);
+    filePinPresenter(QScreen* screen, snow_shot::storage::PinnedWindowCreationSource source,
+                     ScreenshotFilePinBatch::DuplicateFilter filter);
+    ScreenshotFilePinBatch::DuplicateFilter filePinDuplicateFilter(const QString& action);
     void restorePinnedWindows();
     void restoreActivePinnedGroupWindows();
     void saveSelectionToFile() override;
@@ -597,6 +601,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotExportJobHandle m_clipboardPinJob;
     ScreenshotFilePinBatch m_filePinBatch;
     quint64 m_clipboardPinGeneration = 0;
+    ScreenshotPinSourceTracker m_pinSources{QApplication::clipboard()};
+    snow_shot::storage::PinnedSourceIdentity m_pendingClipboardIdentity;
+    QString m_pendingClipboardGroup;
+    bool m_pendingClipboardShake = false;
+    bool m_clipboardDecodeBeforePresentation = false;
     struct HistoryPinRequest {
         quint64 id = 0;
         ScreenshotExportJobHandle job;
@@ -3087,13 +3096,18 @@ void ScreenshotController::Impl::cancelContentPin() {
     m_clipboardPinJob.cancel();
     m_clipboardPinJob = {};
     ++m_clipboardPinGeneration;
+    m_pendingClipboardIdentity = {};
+    m_pendingClipboardGroup.clear();
+    m_pendingClipboardShake = false;
+    m_clipboardDecodeBeforePresentation = false;
 }
 
 bool ScreenshotController::Impl::presentDecodedImageOnScreen(
     QScreen* screen, const QImage& image, qreal rasterScale, bool autoResizeWindow,
     ScreenshotClipboardOriginalContent originalContent,
     ScreenshotSelectionExportDestinationPort::PinnedCompletion completion,
-    snow_shot::storage::PinnedWindowCreationSource source) {
+    snow_shot::storage::PinnedWindowCreationSource source,
+    snow_shot::storage::PinnedSourceIdentity sourceIdentity) {
     if (screen == nullptr || image.isNull() || m_selectionExportUiServices == nullptr) {
         return false;
     }
@@ -3102,7 +3116,8 @@ bool ScreenshotController::Impl::presentDecodedImageOnScreen(
         autoResizeWindow);
     return fit.valid && m_selectionExportUiServices->presentPinnedImage(
                             image, screen, fit.nativeGeometry, fit.initialWindowSize, {}, {}, 1.0,
-                            std::move(originalContent), {}, std::move(completion), {}, {}, source);
+                            std::move(originalContent), {}, std::move(completion), {}, {}, source,
+                            std::move(sourceIdentity));
 }
 
 void ScreenshotController::Impl::cancelHistoryPins() {
@@ -3292,22 +3307,43 @@ void ScreenshotController::Impl::pinHistoryRecord(const QString& recordId) {
     m_historyPinJobs.push_back(std::move(request));
 }
 
-ScreenshotFilePinBatch::Present ScreenshotController::Impl::filePinPresenter(
-    QScreen* screen, snow_shot::storage::PinnedWindowCreationSource source) {
+ScreenshotFilePinBatch::Present
+ScreenshotController::Impl::filePinPresenter(QScreen* screen,
+                                             snow_shot::storage::PinnedWindowCreationSource source,
+                                             ScreenshotFilePinBatch::DuplicateFilter filter) {
     const QPointer<ScreenshotController> receiver(&owner);
     const QPointer<QScreen> guardedScreen(screen);
     const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
-    return [receiver, guardedScreen, autoResizeWindow, source](ScreenshotClipboardContent decoded) {
+    return [receiver, guardedScreen, autoResizeWindow, source,
+            filter = std::move(filter)](ScreenshotClipboardContent decoded) {
         if (!receiver || !receiver->m_impl || !guardedScreen) {
             return false;
         }
+        if (filter.consume && filter.consume(decoded.sourceIdentity))
+            return true;
         const qreal rasterScale = decoded.isFormattedText() ? decoded.formattedTextDevicePixelRatio
                                                             : guardedScreen->devicePixelRatio();
         static_cast<void>(receiver->m_impl->presentDecodedImageOnScreen(
             guardedScreen, decoded.image, rasterScale, autoResizeWindow,
-            std::move(decoded.originalContent), {}, source));
+            std::move(decoded.originalContent), {}, source, std::move(decoded.sourceIdentity)));
         return true;
     };
+}
+
+ScreenshotFilePinBatch::DuplicateFilter
+ScreenshotController::Impl::filePinDuplicateFilter(const QString& action) {
+    ScreenshotFilePinBatch::DuplicateFilter filter;
+    if (!m_selectionExportUiServices || action == QStringLiteral("repeat_action"))
+        return filter;
+    filter.identities = m_selectionExportUiServices->duplicateSourceKeys();
+    const QPointer<ScreenshotController> receiver(&owner);
+    const auto restored = std::make_shared<bool>(false);
+    filter.consume = [receiver, action, restored](const auto& identity) {
+        return receiver && receiver->m_impl->m_selectionExportUiServices &&
+               receiver->m_impl->m_selectionExportUiServices->handleDuplicatePin(identity, action,
+                                                                                 *restored);
+    };
+    return filter;
 }
 
 void ScreenshotController::Impl::pinSelectedFilesToScreen(
@@ -3350,10 +3386,13 @@ void ScreenshotController::Impl::pinSelectedFilesToScreen(
 #endif
         return;
     }
+    auto filter =
+        filePinDuplicateFilter(snow_shot::storage::PinToScreenSettings().duplicateContentAction());
     m_filePinBatch.startSelection(
         backend, target,
-        filePinPresenter(screen, snow_shot::storage::PinnedWindowCreationSource::SelectedFiles),
-        failure);
+        filePinPresenter(screen, snow_shot::storage::PinnedWindowCreationSource::SelectedFiles,
+                         filter),
+        failure, filter);
     if (m_selectionExportUiServices != nullptr) {
         // Built after submitting so shell construction overlaps the batch's
         // worker-side snapshot and first decode instead of delaying the first
@@ -3363,6 +3402,23 @@ void ScreenshotController::Impl::pinSelectedFilesToScreen(
 }
 
 void ScreenshotController::Impl::pinClipboardContentToScreen() {
+    const auto sourceIdentity = m_pinSources.clipboardIdentity();
+    const QString action = snow_shot::storage::PinToScreenSettings().duplicateContentAction();
+    bool restored = false;
+    if (m_selectionExportUiServices &&
+        m_selectionExportUiServices->handleDuplicatePin(sourceIdentity, action, restored))
+        return;
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    if (action != QStringLiteral("repeat_action") && m_clipboardDecodeBeforePresentation &&
+        m_clipboardPinJob.isValid() && m_pendingClipboardIdentity == sourceIdentity &&
+        m_pendingClipboardGroup == group) {
+        if (action == QStringLiteral("restore_last_closed_window"))
+            m_selectionExportUiServices->restoreLastClosedWindow();
+        else if (action == QStringLiteral("shake_window"))
+            m_pendingClipboardShake = true;
+        return;
+    }
     cancelContentPin();
     const QStringList paths =
         ScreenshotClipboardContentReader::localFilePaths(QApplication::clipboard()->mimeData());
@@ -3379,9 +3435,12 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     }
 
     if (!paths.isEmpty()) {
+        auto filter = filePinDuplicateFilter(action);
         m_filePinBatch.start(
             paths,
-            filePinPresenter(screen, snow_shot::storage::PinnedWindowCreationSource::Clipboard));
+            filePinPresenter(screen, snow_shot::storage::PinnedWindowCreationSource::Clipboard,
+                             filter),
+            filter);
         if (m_selectionExportUiServices != nullptr) {
             // Same submit-then-prewarm overlap as the selected-files path;
             // later presents rely on the pool's automatic replenishment.
@@ -3431,6 +3490,8 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
 
     const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
     const quint64 generation = m_clipboardPinGeneration;
+    m_pendingClipboardIdentity = sourceIdentity;
+    m_pendingClipboardGroup = group;
 
     // QMimeData may already expose a detached image with its final dimensions. In
     // that case the shell can be placed immediately while the clipboard decode
@@ -3519,7 +3580,7 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                         QCoreApplication::translate("ScreenshotController",
                                                     "The clipboard content could not be pinned"));
                 },
-                {}, {}, snow_shot::storage::PinnedWindowCreationSource::Clipboard);
+                {}, {}, snow_shot::storage::PinnedWindowCreationSource::Clipboard, sourceIdentity);
         SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.presented");
         if (!presented) {
             SNOW_SHOT_PIN_PERF_FINISH(false);
@@ -3531,6 +3592,7 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
         return;
     }
 
+    m_clipboardDecodeBeforePresentation = true;
     auto content = std::make_shared<std::optional<ScreenshotClipboardContent>>();
     const QPointer<ScreenshotController> receiver(&owner);
     const QPointer<QScreen> guardedScreen(screen);
@@ -3553,13 +3615,14 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
             }
             return ScreenshotExportTaskResult{};
         },
-        [receiver, guardedScreen, generation, autoResizeWindow,
+        [receiver, guardedScreen, generation, autoResizeWindow, sourceIdentity,
          content](ScreenshotExportTaskResult result) mutable {
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 generation != receiver->m_impl->m_clipboardPinGeneration) {
                 return;
             }
             receiver->m_impl->m_clipboardPinJob = {};
+            receiver->m_impl->m_clipboardDecodeBeforePresentation = false;
             if (!result.succeeded() || !content->has_value() || guardedScreen.isNull()) {
                 if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
                     receiver->m_impl->m_messages->error(
@@ -3586,11 +3649,19 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                     decoded.image, guardedScreen, fit.nativeGeometry, fit.initialWindowSize,
                     std::move(decoded.formattedDocument), decoded.plainText,
                     decoded.formattedTextDevicePixelRatio, std::move(decoded.originalContent), {},
-                    [](bool success, QImage) {
+                    [receiver, generation, sourceIdentity](bool success, QImage) {
+                        if (success && receiver &&
+                            generation == receiver->m_impl->m_clipboardPinGeneration &&
+                            std::exchange(receiver->m_impl->m_pendingClipboardShake, false)) {
+                            bool restored = false;
+                            receiver->m_impl->m_selectionExportUiServices->handleDuplicatePin(
+                                sourceIdentity, QStringLiteral("shake_window"), restored);
+                        }
                         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_complete");
                         SNOW_SHOT_PIN_PERF_FINISH(success);
                     },
-                    {}, {}, snow_shot::storage::PinnedWindowCreationSource::Clipboard)) {
+                    {}, {}, snow_shot::storage::PinnedWindowCreationSource::Clipboard,
+                    sourceIdentity)) {
                 SNOW_SHOT_PIN_PERF_FINISH(false);
                 receiver->m_impl->m_messages->error(
                     QString::fromLatin1(kPinClipboardMessageKey),

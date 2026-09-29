@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include <QWindow>
 #include <QCursor>
+#include <QTimer>
 #include <qt_windows.h>
 #include <windowsx.h>
 #include <algorithm>
@@ -284,7 +285,19 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         if (nativeMessage->message == WM_DPICHANGED &&
             window.m_nativeGeometryController != nullptr) {
             auto* suggestedRect = pointerFromLParam<RECT>(nativeMessage->lParam);
-            if (suggestedRect != nullptr && !window.m_presented) {
+            const bool shakingDuringApply =
+                window.m_attentionOrigin.isValid() && window.m_platformApplying;
+            if (!shakingDuringApply)
+                window.stopAttentionShake();
+            if (shakingDuringApply) {
+                // A transient offset can cross a display boundary. Finish the
+                // current native transaction before returning to its origin;
+                // never adopt a DPI resize as part of an attention animation.
+                if (suggestedRect)
+                    writeNativeRect(window.m_nativeGeometryController->targetGeometry(),
+                                    suggestedRect);
+                QTimer::singleShot(0, &window, [&window] { window.stopAttentionShake(); });
+            } else if (suggestedRect != nullptr && !window.m_presented) {
                 writeNativeRect(window.m_nativeGeometryController->targetGeometry(), suggestedRect);
             } else if (suggestedRect != nullptr && window.m_interactionResizeHandle) {
                 writeNativeRect(window.m_nativeGeometryController->targetGeometry(), suggestedRect);
@@ -517,6 +530,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         }
 
         if (nativeMessage->message == WM_ENTERSIZEMOVE) {
+            window.stopAttentionShake();
             if (window.m_editController != nullptr && window.m_editController->editMode()) {
                 window.m_editController->beginNativeWindowInteraction();
             }

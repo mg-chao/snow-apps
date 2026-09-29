@@ -90,6 +90,7 @@ enum class SettingsSelectBinding {
     ScreenshotMiddleClickAction,
     PinMouseWheelZoomMode,
     PinTextSelectionOnRecognitionResults,
+    PinDuplicateContentAction,
     PinDoubleClickAction,
     PinMiddleClickAction,
     ScreenRecordingClarity,

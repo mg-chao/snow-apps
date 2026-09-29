@@ -3706,6 +3706,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-management-lifecycle-tests
         COMMAND snow-shot-pinned-window-tests --management-only -platform offscreen)
+    add_test(NAME snow-shot-duplicate-pin-tests
+        COMMAND snow-shot-pinned-window-tests --duplicate-pin-only -platform offscreen)
+    set_tests_properties(snow-shot-duplicate-pin-tests PROPERTIES LABELS "unit"
+        RUN_SERIAL TRUE TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-management-lifecycle-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-hide-to-top-tests
@@ -6673,6 +6677,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
     target_link_libraries(snow-shot-clipboard-performance-benchmark PRIVATE snow_shot_image_codec
         snow_shot_diagnostics
+        adqt::widgets
         Qt6::Widgets
         snow_draw_engine_qt_canvas
         Psapi
@@ -6706,6 +6711,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     # sessions.
     add_executable(snow-shot-file-pin-batch-performance-benchmark
         tests/screenshot_file_pin_batch_performance_benchmark.cpp
+        src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
         ${SNOW_SELECTED_FILES_SOURCES}
         src/presentation/services/screenshotfilepinbatch.cpp
         include/snow_shot/presentation/components/pathinput.h

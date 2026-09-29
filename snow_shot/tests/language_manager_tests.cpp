@@ -58,6 +58,13 @@ int main(int argc, char** argv) {
             "Ant Design Qt should follow the English application locale");
 
     require(manager.setLanguage(QStringLiteral("zh_CN")), "Simplified Chinese should load");
+    require(QCoreApplication::translate("SettingsCatalog", "When pinning duplicate content") ==
+                    QString::fromUtf8("固定重复内容时") &&
+                QCoreApplication::translate("SettingsCatalog", "Shake Window") ==
+                    QString::fromUtf8("晃动窗口") &&
+                QCoreApplication::translate("SettingsCatalog", "Repeat Action") ==
+                    QString::fromUtf8("重复执行"),
+            "language changes translate duplicate pin settings and option labels");
     require(QCoreApplication::translate("ScreenshotPinnedWindow", "Decrease 10%") ==
                     QString::fromUtf8("减少 10%") &&
                 QCoreApplication::translate("SettingsCatalog", "Increase scale by 10%") ==
@@ -82,6 +89,13 @@ int main(int argc, char** argv) {
             "Simplified Chinese management should use the same window terminology");
 
     require(manager.setLanguage(QStringLiteral("zh_TW")), "Traditional Chinese should load");
+    require(QCoreApplication::translate("SettingsCatalog", "When pinning duplicate content") ==
+                    QString::fromUtf8("固定重複內容時") &&
+                QCoreApplication::translate("SettingsCatalog", "Shake Window") ==
+                    QString::fromUtf8("晃動視窗") &&
+                QCoreApplication::translate("SettingsCatalog", "Repeat Action") ==
+                    QString::fromUtf8("重複執行"),
+            "language changes translate duplicate pin settings and option labels");
     require(QCoreApplication::translate("ScreenshotPinnedWindow", "Decrease 10%") ==
                     QString::fromUtf8("減少 10%") &&
                 QCoreApplication::translate("SettingsCatalog", "Increase scale by 10%") ==
