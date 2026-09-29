@@ -104,6 +104,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
                                                const QRectF& canvasSelection);
 
     void setShowOriginalImage(bool show);
+    void setOcrCopyDefaultsEnabled(bool enabled);
     void setOcrPresentation(
         std::shared_ptr<ScreenshotOcrPresentation> presentation,
         ScreenshotOcrTextLayer::RenderingMode mode = ScreenshotOcrTextLayer::RenderingMode::Normal,
@@ -178,6 +179,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_ownedShortcutManager;
     snow_shot::presentation::WindowShortcutManager* m_shortcutManager = nullptr;
     std::shared_ptr<ScreenshotOcrPresentation> m_ocrPresentation;
+    bool m_ocrCopyDefaultsEnabled = true;
     QWidget* m_contentContainer = nullptr;
     bool m_showOriginalImage = false;
     QStackedLayout* m_stack = nullptr;

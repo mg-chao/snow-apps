@@ -32,6 +32,10 @@ class TextRecognitionSettings final {
   public:
     [[nodiscard]] bool saveRecognitionResultAsImage() const;
     bool setSaveRecognitionResultAsImage(bool enabled) const;
+    [[nodiscard]] QString defaultFormatting() const;
+    bool setDefaultFormatting(const QString& value) const;
+    [[nodiscard]] QString defaultPunctuation() const;
+    bool setDefaultPunctuation(const QString& value) const;
 };
 
 struct ScreenshotSavePathShortcut {

@@ -615,6 +615,12 @@ class ScreenshotPinnedWindowTestAccess {
     static bool hiddenSelection(const ScreenshotPinnedWindow& window) {
         return window.m_hiddenTextSelection;
     }
+    static void selectHiddenText(ScreenshotPinnedWindow& window) {
+        window.m_displayOcrPresentation->selectAll();
+    }
+    static std::unique_ptr<QMimeData> automationClipboard(const ScreenshotPinnedWindow& window) {
+        return window.automationClipboardMimeData(false);
+    }
     static bool draggableAt(const ScreenshotPinnedWindow& window, const QPoint& point) {
         return window.windowDragEnabledAt(point);
     }
@@ -10040,6 +10046,44 @@ void pinnedHiddenTextSelectionOffscreen() {
             "restore default selection setting");
 }
 
+void pinnedCopyDefaultsCoverHiddenSelectionAndAutomation() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    const snow_shot::storage::TextRecognitionSettings textSettings;
+    const QString priorFormatting = textSettings.defaultFormatting();
+    const QString priorPunctuation = textSettings.defaultPunctuation();
+    const snow_shot::storage::PinToScreenSettings pinSettings;
+    const QString priorSelection = pinSettings.textSelectionOnRecognitionResults();
+    require(textSettings.setDefaultFormatting(QStringLiteral("remove")) &&
+                textSettings.setDefaultPunctuation(QStringLiteral("full")) &&
+                pinSettings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
+            "enable hidden recognized-text copy defaults");
+    auto config = cachedOcrPinConfig(nullptr);
+    auto presentation = config.recognitionResults.text->presentation;
+    presentation->lines[0].text = QStringLiteral("A,");
+    ScreenshotOcrLine second = presentation->lines[0];
+    second.text = QStringLiteral("B!");
+    second.quad.translate(0, 40);
+    presentation->lines.append(second);
+    presentation->prepareForRendering();
+    ScreenshotPinnedWindow window;
+    auto* session = Access::hiddenSelectionOffscreen(window, config);
+    require(session != nullptr && Access::hiddenSelection(window),
+            "cached OCR installs the hidden selectable text layer");
+    Access::selectHiddenText(window);
+    Access::copyCurrentViewport(window);
+    const QString expected =
+        QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") + QChar(0xFF01);
+    require(QApplication::clipboard()->text() == expected,
+            "pinned image copy transforms the hidden OCR selection");
+    const auto automation = Access::automationClipboard(window);
+    require(automation != nullptr && automation->text() == expected,
+            "pinned automation copy uses the same transformed selection");
+    require(textSettings.setDefaultFormatting(priorFormatting) &&
+                textSettings.setDefaultPunctuation(priorPunctuation) &&
+                pinSettings.setTextSelectionOnRecognitionResults(priorSelection),
+            "restore hidden text copy settings");
+}
+
 void pinnedHiddenTextSelectionRestores() {
     const snow_shot::storage::PinToScreenSettings settings;
     require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
@@ -13381,6 +13425,7 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--hidden-text-selection-only"))) {
             pinnedHiddenTextSelectionOffscreen();
+            pinnedCopyDefaultsCoverHiddenSelectionAndAutomation();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-save-only"))) {

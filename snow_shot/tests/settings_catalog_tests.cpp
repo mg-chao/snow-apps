@@ -284,7 +284,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 196, "catalog must contain 196 shared settings on every platform");
+    require(itemIds.size() == 198, "catalog must contain 198 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -557,8 +557,8 @@ void builtInCatalogIsCompleteAndValid() {
     const auto& recognition = functionPage->sections.at(2);
     require(recognition.reset == settings::SettingsSectionReset::TextRecognitionBehavior &&
                 recognition.title.translated() == QStringLiteral("Text Recognition") &&
-                recognition.items.size() == 1,
-            "dedicated recognition save section");
+                recognition.items.size() == 3,
+            "dedicated recognition behavior section");
     const auto& recognitionSave = recognition.items.front();
     require(
         recognitionSave.title.translated() == QStringLiteral("Save recognition result as image") &&
@@ -566,6 +566,32 @@ void builtInCatalogIsCompleteAndValid() {
                 settings::SettingsSwitchBinding::SaveRecognitionResultAsImage &&
             storage::ConfigurationSchema::defaultValue(recognitionSave.configurationKey).toBool(),
         "recognition save switch must default on");
+    const auto checkRecognitionDefault = [&](qsizetype index, const QString& title,
+                                             const QString& key,
+                                             settings::SettingsSelectBinding binding,
+                                             const QStringList& values) {
+        const auto& item = recognition.items.at(index);
+        const auto& select = std::get<settings::SettingsSelectDefinition>(item.payload);
+        QStringList options;
+        for (const auto& option : select.options) {
+            options.append(option.value.toString());
+        }
+        require(item.title.translated() == title && item.configurationKey == key &&
+                    select.binding == binding && options == values &&
+                    storage::ConfigurationSchema::defaultValue(key).toString() ==
+                        QStringLiteral("none"),
+                "recognized-text defaults must expose all validated choices and default to None");
+    };
+    checkRecognitionDefault(
+        1, QStringLiteral("Default Formatting"),
+        QStringLiteral("text_recognition/default_formatting"),
+        settings::SettingsSelectBinding::OcrDefaultFormatting,
+        {QStringLiteral("none"), QStringLiteral("keep"), QStringLiteral("remove")});
+    checkRecognitionDefault(
+        2, QStringLiteral("Default Punctuation"),
+        QStringLiteral("text_recognition/default_punctuation"),
+        settings::SettingsSelectBinding::OcrDefaultPunctuation,
+        {QStringLiteral("none"), QStringLiteral("half"), QStringLiteral("full")});
     const auto* translation =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("translation-settings"),
                       QStringLiteral("translation.original-image")});

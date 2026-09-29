@@ -1239,6 +1239,33 @@ SettingsItemDefinition saveRecognitionResultAsImageItem() {
                       SettingsSwitchBinding::SaveRecognitionResultAsImage);
 }
 
+SettingsItemDefinition defaultOcrFormattingItem() {
+    return fixedSelectItem(
+        QStringLiteral("text-recognition.default-formatting"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Default Formatting"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Apply to recognized text when editing or copying"),
+        QStringLiteral("text_recognition/default_formatting"),
+        SettingsSelectBinding::OcrDefaultFormatting,
+        {{QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "None"))},
+         {QStringLiteral("keep"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Keep line breaks"))},
+         {QStringLiteral("remove"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Remove line breaks"))}});
+}
+
+SettingsItemDefinition defaultOcrPunctuationItem() {
+    return fixedSelectItem(
+        QStringLiteral("text-recognition.default-punctuation"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Default Punctuation"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Apply to recognized text when editing or copying"),
+        QStringLiteral("text_recognition/default_punctuation"),
+        SettingsSelectBinding::OcrDefaultPunctuation,
+        {{QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "None"))},
+         {QStringLiteral("half"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Half-width"))},
+         {QStringLiteral("full"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Full-width"))}});
+}
+
 SettingsItemDefinition pinAutomaticOcrItem() {
     return switchItem(
         QStringLiteral("pin-to-screen.automatic-text-recognition"),
@@ -2256,10 +2283,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                 {
                     QStringLiteral("text-recognition-settings"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text Recognition")),
-                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                                   "Text recognition image saving settings")),
+                    settingsText(
+                        QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition output settings")),
                     SettingsSectionReset::TextRecognitionBehavior,
-                    {saveRecognitionResultAsImageItem()},
+                    {saveRecognitionResultAsImageItem(), defaultOcrFormattingItem(),
+                     defaultOcrPunctuationItem()},
                 },
                 {
                     QStringLiteral("translation-settings"),
@@ -3527,6 +3555,12 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::OcrFillStyle:
                         expectedKey = QStringLiteral("text_recognition/fill_style");
+                        break;
+                    case SettingsSelectBinding::OcrDefaultFormatting:
+                        expectedKey = QStringLiteral("text_recognition/default_formatting");
+                        break;
+                    case SettingsSelectBinding::OcrDefaultPunctuation:
+                        expectedKey = QStringLiteral("text_recognition/default_punctuation");
                         break;
                     case SettingsSelectBinding::ScreenshotOcrAction:
                         expectedKey =

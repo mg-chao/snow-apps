@@ -82,6 +82,8 @@ enum class SettingsSelectBinding {
     WindowElementApi,
     ScreenshotToolbarSize,
     OcrFillStyle,
+    OcrDefaultFormatting,
+    OcrDefaultPunctuation,
     ColorPickerDisplayMode,
     ScreenshotOcrAction,
     ScreenshotDoubleClickAction,

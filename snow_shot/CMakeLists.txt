@@ -5771,6 +5771,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrtexttransform.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp
@@ -5788,6 +5789,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Widgets
         snow_draw_engine_qt_canvas
+        snow_shot_storage
         snow_shot_window_shortcuts
     )
     if(WIN32)
@@ -6001,6 +6003,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-${_original_image_test}-original-image-tests
             PROPERTIES LABELS "unit" TIMEOUT 90)
     endforeach()
+
+    add_test(NAME snow-shot-recognition-defaults-tests
+        COMMAND snow-shot-recognition-session-controller-tests --ocr-defaults-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-defaults-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_test(NAME snow-shot-recognition-image-snapshot-tests
         COMMAND snow-shot-recognition-window-tests --image-snapshot-only -platform offscreen)

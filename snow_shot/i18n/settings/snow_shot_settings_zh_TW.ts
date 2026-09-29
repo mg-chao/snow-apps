@@ -905,6 +905,10 @@
             <translation>應用快捷鍵</translation>
         </message>
         <message>
+            <source>Apply to recognized text when editing or copying</source>
+            <translation>編輯或複製辨識文字時套用</translation>
+        </message>
+        <message>
             <source>Arrow</source>
             <translation>箭頭</translation>
         </message>
@@ -1433,6 +1437,14 @@
             <translation>預設</translation>
         </message>
         <message>
+            <source>Default Formatting</source>
+            <translation>預設格式</translation>
+        </message>
+        <message>
+            <source>Default Punctuation</source>
+            <translation>預設標點</translation>
+        </message>
+        <message>
             <source>Delay %1s to execute</source>
             <translation>延遲 %1 秒執行</translation>
         </message>
@@ -1713,6 +1725,10 @@
             <translation>全螢幕畫布（開啟/關閉滑鼠穿透）</translation>
         </message>
         <message>
+            <source>Full-width</source>
+            <translation>全形</translation>
+        </message>
+        <message>
             <source>Fullscreen suppression</source>
             <translation>全螢幕抑制</translation>
         </message>
@@ -1771,6 +1787,10 @@
         <message>
             <source>H.265</source>
             <translation>H.265</translation>
+        </message>
+        <message>
+            <source>Half-width</source>
+            <translation>半形</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -1895,6 +1915,10 @@
         <message>
             <source>Keep closed windows available for restoration; disabling does not delete existing records</source>
             <translation>保留已關閉視窗以便還原；停用不會刪除現有記錄</translation>
+        </message>
+        <message>
+            <source>Keep line breaks</source>
+            <translation>保留換行</translation>
         </message>
         <message>
             <source>Keep records permanently</source>
@@ -2447,6 +2471,10 @@
         <message>
             <source>Remove leftover recording working files that are no longer needed</source>
             <translation>刪除不再需要的螢幕錄製遺留工作檔案</translation>
+        </message>
+        <message>
+            <source>Remove line breaks</source>
+            <translation>移除換行</translation>
         </message>
         <message>
             <source>Remove screenshots</source>
@@ -3021,8 +3049,8 @@
             <translation>文字辨識外觀</translation>
         </message>
         <message>
-            <source>Text recognition image saving settings</source>
-            <translation>文字辨識圖片儲存設定</translation>
+            <source>Text recognition output settings</source>
+            <translation>文字辨識輸出設定</translation>
         </message>
         <message>
             <source>Text selection on recognition results</source>

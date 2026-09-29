@@ -14,6 +14,7 @@
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QCoreApplication>
 #include <QLocale>
@@ -557,6 +558,7 @@ void ScreenshotRecognitionSessionController::resetTargetState() {
         it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
         it->hasSuccessfulTranslation = false;
         it->editing = false;
+        it->defaultTransformsApplied = false;
     }
     m_tableCache.clear();
     cancelOutstandingRequests();
@@ -711,6 +713,12 @@ void ScreenshotRecognitionSessionController::beginTextEditing() {
     auto it = m_textCache.find(m_editingKey);
     if (it != m_textCache.end()) {
         it->editing = true;
+        if (!it->formatted && !it->defaultTransformsApplied && it->editingSession != nullptr) {
+            it->defaultTransformsApplied = true;
+            const snow_shot::storage::TextRecognitionSettings settings;
+            static_cast<void>(it->editingSession->applyInitialTransforms(
+                settings.defaultFormatting(), settings.defaultPunctuation()));
+        }
         m_textDocument = it->editingSession != nullptr ? it->editingSession->document() : nullptr;
     }
     if (content() != nullptr && m_textDocument != nullptr) {
@@ -1301,6 +1309,12 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
     if (!resultAvailable) {
         return {};
     }
+    const QString key = m_textCacheKey.isEmpty() ? m_target.key : m_textCacheKey;
+    if (!editing() && !originalImageTranslationActive() && !m_textCache.value(key).formatted) {
+        const snow_shot::storage::TextRecognitionSettings settings;
+        text = snow_shot::presentation::applyOcrTextTransforms(text, settings.defaultFormatting(),
+                                                               settings.defaultPunctuation());
+    }
     mimeData->setText(text);
     return mimeData;
 }
@@ -1701,6 +1715,9 @@ void ScreenshotRecognitionSessionController::applyPresentation(
     if (presentation != nullptr) {
         prepareScreenshotOcrFillColors(*presentation, m_target.image, m_target.canvasRect,
                                        backgroundFillEnabled());
+    }
+    if (content() != nullptr) {
+        content()->setOcrCopyDefaultsEnabled(!originalImageTranslationActive());
     }
     if (m_actions.applyOcrPresentation) {
         m_actions.applyOcrPresentation(presentation);

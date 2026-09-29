@@ -33,6 +33,7 @@
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrtexttransform.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -4504,9 +4505,15 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
     }
     m_displayOcrPresentation = std::move(presentation);
     if (m_hiddenTextSelection && m_recognitionContent != nullptr) {
+        m_recognitionContent->setOcrCopyDefaultsEnabled(true);
         m_recognitionContent->setOcrPresentation(
             m_displayOcrPresentation, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly, false);
     } else if (m_ocrMode) {
+        if (m_recognitionContent != nullptr) {
+            m_recognitionContent->setOcrCopyDefaultsEnabled(
+                m_recognitionSession == nullptr ||
+                !m_recognitionSession->originalImageTranslationActive());
+        }
         // The embedded recognition window owns the translucent OCR text layer
         // for pinned windows. Keep the canvas responsible for the immutable
         // screenshot and recognition fill only; installing another translucent
@@ -4561,7 +4568,10 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     }
     invalidatePendingCopy();
     if (QClipboard* clipboard = QApplication::clipboard()) {
-        clipboard->setText(m_displayOcrPresentation->selectedText());
+        const snow_shot::storage::TextRecognitionSettings settings;
+        clipboard->setText(snow_shot::presentation::applyOcrTextTransforms(
+            m_displayOcrPresentation->selectedText(), settings.defaultFormatting(),
+            settings.defaultPunctuation()));
     }
     return true;
 }
@@ -7283,7 +7293,10 @@ ScreenshotPinnedWindow::automationClipboardMimeData(bool original) const {
             mime->setUrls({QUrl::fromLocalFile(m_originalClipboardContent.localFilePath)});
     } else if (m_hiddenTextSelection && m_displayOcrPresentation &&
                m_displayOcrPresentation->hasTextSelection()) {
-        mime->setText(m_displayOcrPresentation->selectedText());
+        const snow_shot::storage::TextRecognitionSettings settings;
+        mime->setText(snow_shot::presentation::applyOcrTextTransforms(
+            m_displayOcrPresentation->selectedText(), settings.defaultFormatting(),
+            settings.defaultPunctuation()));
     } else if (m_ocrMode && m_recognitionSession && m_recognitionSession->active()) {
         return m_recognitionSession->recognitionClipboardMimeData(m_displayOcrPresentation.get());
     } else
