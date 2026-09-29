@@ -51,11 +51,13 @@ function Assert-SnowShotScoopArchive([string]$Path) {
 }
 
 function Get-SnowShotScoopUpdateAction([string]$ExistingPath, [string]$CandidatePath) {
-    $candidateText = [IO.File]::ReadAllText($CandidatePath)
+    $candidateText = [IO.File]::ReadAllText($CandidatePath).Replace("`r`n", "`n")
     $candidate = $candidateText | ConvertFrom-Json
     $next = [System.Management.Automation.SemanticVersion]::Parse($candidate.version)
     if (-not (Test-Path -LiteralPath $ExistingPath)) { return 'update' }
-    $existingText = [IO.File]::ReadAllText($ExistingPath)
+    # Windows Git checkouts may convert committed LF files to CRLF. Compare
+    # repository content, not the checkout's platform-specific line endings.
+    $existingText = [IO.File]::ReadAllText($ExistingPath).Replace("`r`n", "`n")
     $existing = $existingText | ConvertFrom-Json
     $current = [System.Management.Automation.SemanticVersion]::Parse($existing.version)
     if ($next -lt $current) { return 'older' }

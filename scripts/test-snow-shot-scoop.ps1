@@ -122,6 +122,8 @@ try {
     Require ((Get-SnowShotScoopUpdateAction $existing $output) -ceq 'update') 'Initial manifest'
     Copy-Item $output $existing
     Require ((Get-SnowShotScoopUpdateAction $existing $output) -ceq 'unchanged') 'Idempotence'
+    [IO.File]::WriteAllText($existing, [IO.File]::ReadAllText($output).Replace("`n", "`r`n"))
+    Require ((Get-SnowShotScoopUpdateAction $existing $output) -ceq 'unchanged') 'Windows checkout idempotence'
     foreach ($pair in @(@('1.1.6', 'update'), @('1.1.7', 'older'), @('1.1.7-beta.2', 'older'),
         @('1.1.7-alpha', 'update'), @('1.1.10-beta', 'older'))) {
         $manifest = Get-Content $output -Raw | ConvertFrom-Json

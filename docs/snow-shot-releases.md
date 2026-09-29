@@ -197,7 +197,8 @@ never force-pushes, and fails visibly when branch protection or a concurrent pus
 prevents publication. It does not publish application releases.
 
 Updates are serialized and compared using semantic versions, including prerelease
-ordering. Older versions and byte-identical manifests are successful no-ops.
+ordering. Older versions and identical manifests (ignoring checkout line endings)
+are successful no-ops.
 Different content for an existing version is rejected; investigate the release
 instead of overwriting an immutable asset. Publish a higher version for corrections.
 Updates are driven by this workflow, so the manifest needs no separate Scoop
