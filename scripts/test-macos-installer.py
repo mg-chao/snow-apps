@@ -28,13 +28,23 @@ GITHUB = 'https://github.com/mg-chao/snow-apps/releases/download/' + TAG + '/' +
 GITEE = 'https://gitee.com/mg-chao/snow-apps/releases/download/' + TAG + '/' + ASSET
 
 MOCK = r'''#!/usr/bin/env python3
-import hashlib, json, os, pathlib, plistlib, shutil, subprocess, sys, time
+import hashlib, json, os, pathlib, plistlib, shutil, signal, subprocess, sys, time
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 root = pathlib.Path(os.environ['FIXTURE'])
 with (root / 'calls.jsonl').open('a') as f: f.write(json.dumps([name] + args) + '\n')
 def fail(code=1): sys.exit(code)
 if name == 'curl':
+    if args[-1] == os.environ.get('BLOCK_URL'):
+        def stopped(signum, frame):
+            (root / 'blocked-stopped').touch()
+            sys.exit(128 + signum)
+        signal.signal(signal.SIGTERM, stopped)
+        signal.alarm(10)  # Bound a failing cancellation regression without leaving an orphan.
+        (root / 'blocked-ready').write_text(str(os.getpid()))
+        while True: signal.pause()
+    if args[-1] == os.environ.get('WAIT_FOR_BLOCK_URL'):
+        while not (root / 'blocked-ready').exists(): time.sleep(0.01)
     if args[-1] == os.environ.get('DELAY_URL'): time.sleep(0.5)
     responses = json.loads((root / 'responses.json').read_text())
     entry = responses.get(args[-1])
@@ -268,6 +278,22 @@ class InstallerTests(unittest.TestCase):
         del self.responses[API]
         self.shell('obtain_package')
         self.assertIn(GITEE, [c[-1] for c in self.calls('curl')])
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_success_cancels_and_reaps_blocked_discovery(self):
+        for blocked, winner in [(GITEE_API, API), (API, GITEE_API)]:
+            with self.subTest(blocked=blocked):
+                for path in self.work.glob('*'):
+                    if path.is_dir(): shutil.rmtree(path)
+                    else: path.unlink()
+                for name in ['blocked-ready', 'blocked-stopped']:
+                    (self.root / name).unlink(missing_ok=True)
+                self.shell('obtain_package; [[ -z "$github_pid" && -z "$gitee_pid" ]]',
+                           BLOCK_URL=blocked, WAIT_FOR_BLOCK_URL=winner)
+                self.assertTrue((self.work / 'snow_shot.app/Contents/MacOS/snow_shot').is_file())
+                self.assertTrue((self.root / 'blocked-stopped').exists())
+                pid = int((self.root / 'blocked-ready').read_text())
+                with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
     def test_invalid_selected_image_falls_back_to_same_version(self):

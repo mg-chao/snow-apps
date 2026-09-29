@@ -718,6 +718,41 @@ fn transport_error(code: &'static str, message: &'static str, error: UpdateError
 }
 
 #[derive(Clone)]
+struct ReleaseEligibility {
+    variant: String,
+    observed_version: String,
+    observed_hash: String,
+}
+
+impl ReleaseEligibility {
+    fn for_service(service: &Service) -> Self {
+        Self {
+            variant: service.variant.clone(),
+            observed_version: service.persisted.observed_version.clone(),
+            observed_hash: service.persisted.observed_hash.clone(),
+        }
+    }
+
+    fn validate(&self, release: &UpdateRelease) -> Result<()> {
+        let package = release.update_package(&self.variant)?;
+        if !self.observed_version.is_empty() {
+            let order = compare_versions(&release.version, &self.observed_version)?;
+            require(
+                !order.is_lt(),
+                "release_replay",
+                "The server offered older release metadata",
+            )?;
+            require(
+                !order.is_eq() || package.sha256 == self.observed_hash,
+                "release_mutated",
+                "The server changed an already published release",
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 struct MetadataInputs {
     clock: Arc<dyn Clock>,
     network: Arc<dyn Network>,
@@ -906,6 +941,7 @@ async fn release_candidates(
 async fn source_metadata(
     inputs: &MetadataInputs,
     source: ReleaseSource,
+    eligibility: &ReleaseEligibility,
     cancellation: &CancellationToken,
     trusted_keys: Option<&[u8]>,
 ) -> Result<(UpdateRelease, Vec<u8>, ReleaseSource)> {
@@ -925,6 +961,7 @@ async fn source_metadata(
             };
             let bytes = metadata_bytes(inputs, url, cancellation).await?;
             let verified = verify_release(&bytes, trusted_keys)?;
+            eligibility.validate(&verified)?;
             let version = match source {
                 ReleaseSource::GitHub => github::version(&release),
                 ReleaseSource::Gitee => gitee::version(&release),
@@ -960,14 +997,16 @@ async fn source_metadata(
 
 async fn fetch_metadata(
     inputs: MetadataInputs,
+    eligibility: ReleaseEligibility,
     cancellation: CancellationToken,
     sender: mpsc::Sender<OperationMessage>,
 ) {
-    fetch_metadata_trusted(inputs, cancellation, sender, None).await;
+    fetch_metadata_trusted(inputs, eligibility, cancellation, sender, None).await;
 }
 
 async fn fetch_metadata_trusted(
     inputs: MetadataInputs,
+    eligibility: ReleaseEligibility,
     cancellation: CancellationToken,
     sender: mpsc::Sender<OperationMessage>,
     trusted_keys: Option<&[u8]>,
@@ -977,8 +1016,16 @@ async fn fetch_metadata_trusted(
         let inputs = inputs.clone();
         let cancellation = cancellation.clone();
         let keys = trusted_keys.map(ToOwned::to_owned);
+        let eligibility = eligibility.clone();
         tasks.spawn(async move {
-            source_metadata(&inputs, source, &cancellation, keys.as_deref()).await
+            source_metadata(
+                &inputs,
+                source,
+                &eligibility,
+                &cancellation,
+                keys.as_deref(),
+            )
+            .await
         });
     }
     tokio::task::yield_now().await;
@@ -1413,6 +1460,7 @@ fn start_check(
             installed_version: service.installed_version.clone(),
             manual: user_initiated,
         },
+        ReleaseEligibility::for_service(service),
         cancellation,
         operation_sender.clone(),
     ));
@@ -1464,19 +1512,7 @@ async fn accept_metadata(
     writer: &mut BufWriter<tokio::io::Stdout>,
 ) -> Result<()> {
     let package = release.update_package(&service.variant)?;
-    if !service.persisted.observed_version.is_empty() {
-        let order = compare_versions(&release.version, &service.persisted.observed_version)?;
-        require(
-            !order.is_lt(),
-            "release_replay",
-            "The server offered older release metadata",
-        )?;
-        require(
-            !order.is_eq() || package.sha256 == service.persisted.observed_hash,
-            "release_mutated",
-            "The server changed an already published release",
-        )?;
-    }
+    ReleaseEligibility::for_service(service).validate(&release)?;
     service
         .persisted
         .observed_version
@@ -2489,6 +2525,7 @@ mod tests {
                 installed_version: "1.2.3".to_owned(),
                 manual: true,
             },
+            fresh_eligibility(),
             CancellationToken::new(),
             sender,
         )
@@ -2528,6 +2565,7 @@ mod tests {
                 installed_version: "1.0.0".to_owned(),
                 manual: false,
             },
+            fresh_eligibility(),
             CancellationToken::new(),
             sender,
         )
@@ -2738,6 +2776,14 @@ mod tests {
         }
     }
 
+    fn fresh_eligibility() -> ReleaseEligibility {
+        ReleaseEligibility {
+            variant: "portable".to_owned(),
+            observed_version: String::new(),
+            observed_hash: String::new(),
+        }
+    }
+
     fn signed_fixture() -> &'static (Vec<u8>, Vec<u8>) {
         static FIXTURE: std::sync::OnceLock<(Vec<u8>, Vec<u8>)> = std::sync::OnceLock::new();
         FIXTURE.get_or_init(|| {
@@ -2794,6 +2840,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(4);
         fetch_metadata_trusted(
             metadata_inputs(&network),
+            fresh_eligibility(),
             CancellationToken::new(),
             sender,
             Some(keys),
@@ -2831,6 +2878,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(4);
         fetch_metadata_trusted(
             metadata_inputs(&network),
+            fresh_eligibility(),
             CancellationToken::new(),
             sender,
             Some(keys),
@@ -2840,6 +2888,100 @@ mod tests {
             receiver.recv().await,
             Some(OperationMessage::Failed { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn ineligible_first_channel_does_not_cancel_an_acceptable_release() {
+        // Hold GitHub until Gitee has delivered its signed envelope. No timing sleeps.
+        struct OrderedNetwork {
+            inner: FakeNetwork,
+            gate: CancellationToken,
+            manifest: String,
+        }
+        impl Network for OrderedNetwork {
+            fn get(
+                &self,
+                request: HttpRequest,
+            ) -> Pin<Box<dyn Future<Output = Result<HttpResponse>> + Send>> {
+                let inner = self.inner.clone();
+                let gate = self.gate.clone();
+                let wait = request.url.host_str() == Some("api.github.com");
+                let release = request.url.as_str() == self.manifest;
+                Box::pin(async move {
+                    if wait {
+                        gate.cancelled().await;
+                    }
+                    let response = inner.get(request).await;
+                    if release {
+                        gate.cancel();
+                    }
+                    response
+                })
+            }
+        }
+        let private = rsa::RsaPrivateKey::new(&mut rand::rngs::OsRng, 3072).unwrap();
+        let keys = crate::contract::tests::trusted_key(&private, None);
+        let payload = crate::contract::tests::valid_payload();
+        let signed = crate::contract::tests::sign_payload(&payload, &private, 32);
+        for mutation in [false, true] {
+            let mut rejected = payload.clone();
+            if mutation {
+                rejected["packages"][4]["sha256"] = json!("6".repeat(64));
+            } else {
+                rejected["version"] = json!("1.9.0");
+            }
+            let version = rejected["version"].as_str().unwrap();
+            let tag = format!("v{version}_snow-shot");
+            let manifest = format!(
+                "https://gitee.com/mg-chao/snow-apps/releases/download/{tag}/latest-version.json"
+            );
+            let mut files = github_fixture(version, &["latest-version.json"])["assets"].clone();
+            for file in files.as_array_mut().unwrap() {
+                file["browser_download_url"] = json!(
+                    file["browser_download_url"]
+                        .as_str()
+                        .unwrap()
+                        .replace("github.com", "gitee.com")
+                );
+            }
+            let rejected_signed = crate::contract::tests::sign_payload(&rejected, &private, 32);
+            let network = FakeNetwork::routed([
+                (format!("{}?per_page=100&page=1", github::API), vec![reply(StatusCode::OK, &serde_json::to_vec(&json!([github_fixture("2.0.0", &["latest-version.json"])] )).unwrap())]),
+                (format!("{}/releases/download/v2.0.0_snow-shot/latest-version.json", github::REPOSITORY), vec![reply(StatusCode::OK, &signed)]),
+                ("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1".to_owned(), vec![reply(StatusCode::OK, &serde_json::to_vec(&json!([{"id":123,"tag_name":tag}])).unwrap())]),
+                ("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/123/attach_files?per_page=100".to_owned(), vec![reply(StatusCode::OK, &serde_json::to_vec(&files).unwrap())]),
+                (manifest.clone(), vec![reply(StatusCode::OK, &rejected_signed)]),
+            ]);
+            let mut inputs = metadata_inputs(&network);
+            inputs.network = Arc::new(OrderedNetwork {
+                inner: network,
+                gate: CancellationToken::new(),
+                manifest,
+            });
+            let eligibility = ReleaseEligibility {
+                variant: "portable".to_owned(),
+                observed_version: "2.0.0".to_owned(),
+                observed_hash: "5".repeat(64),
+            };
+            let (sender, mut receiver) = mpsc::channel(4);
+            fetch_metadata_trusted(
+                inputs,
+                eligibility.clone(),
+                CancellationToken::new(),
+                sender,
+                Some(&keys),
+            )
+            .await;
+            match receiver.recv().await.unwrap() {
+                OperationMessage::Metadata {
+                    release, source, ..
+                } => {
+                    assert_eq!(source, ReleaseSource::GitHub);
+                    eligibility.validate(&release).unwrap();
+                }
+                _ => panic!("expected the acceptable GitHub release"),
+            }
+        }
     }
 
     #[tokio::test]
@@ -2899,6 +3041,7 @@ mod tests {
             let (sender, mut receiver) = mpsc::channel(4);
             fetch_metadata_trusted(
                 metadata_inputs(&network),
+                fresh_eligibility(),
                 CancellationToken::new(),
                 sender,
                 Some(keys),
@@ -2953,6 +3096,7 @@ mod tests {
             let (sender, mut receiver) = mpsc::channel(4);
             fetch_metadata_trusted(
                 metadata_inputs(&network),
+                fresh_eligibility(),
                 CancellationToken::new(),
                 sender,
                 Some(keys),
@@ -2999,7 +3143,13 @@ mod tests {
         let cancellation = CancellationToken::new();
         cancellation.cancel();
         let (sender, mut receiver) = mpsc::channel(4);
-        fetch_metadata(metadata_inputs(&network), cancellation, sender).await;
+        fetch_metadata(
+            metadata_inputs(&network),
+            fresh_eligibility(),
+            cancellation,
+            sender,
+        )
+        .await;
         assert!(matches!(
             receiver.recv().await,
             Some(OperationMessage::Cancelled(ActiveOperation::Check))

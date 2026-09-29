@@ -22,6 +22,7 @@ destination='/Applications/Snow Shot.app'
 previous_destination=''
 github_pid=''
 gitee_pid=''
+metadata_pid=''
 
 message() {
     local en cn tw
@@ -108,9 +109,35 @@ fetch() {
         --output "$2" "$1"
 }
 
+stop_metadata_request() {
+    if [[ -n "$metadata_pid" ]]; then
+        kill "$metadata_pid" 2>/dev/null || true
+        wait "$metadata_pid" 2>/dev/null || true
+        metadata_pid=''
+    fi
+}
+
+stop_discovery() {
+    local pid
+    for pid in "$github_pid" "$gitee_pid"; do
+        [[ -z "$pid" ]] || kill "$pid" 2>/dev/null || true
+    done
+    for pid in "$github_pid" "$gitee_pid"; do
+        [[ -z "$pid" ]] || wait "$pid" 2>/dev/null || true
+    done
+    github_pid=''; gitee_pid=''
+}
+
 fetch_metadata() {
-    run curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-        --connect-timeout 10 --max-time 30 --max-filesize 8388608 --output "$2" "$1"
+    local status=0
+    # Wait on an asynchronous curl so discovery's signal trap can interrupt it.
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+        --connect-timeout 10 --max-time 30 --max-filesize 8388608 --output "$2" "$1" \
+        >> "$work/diagnostic.log" 2>&1 &
+    metadata_pid=$!
+    wait "$metadata_pid" || status=$?
+    metadata_pid=''
+    return "$status"
 }
 
 verify_checksum() {
@@ -230,6 +257,8 @@ JXA
 }
 
 discover_channel() {
+    trap stop_metadata_request EXIT
+    trap 'exit 143' TERM INT HUP
     local channel="$1" base="$2" result candidates tag id page count file
     local -a pages=()
     for page in {1..10}; do
@@ -342,8 +371,7 @@ obtain_package() {
     say primary
     discover_release || die unavailable
     if download_selected_package "$selected_urls"; then
-        wait "$github_pid" "$gitee_pid" 2>/dev/null || true
-        github_pid=''; gitee_pid=''
+        stop_discovery
         return
     fi
     unmount_package || die invalid
@@ -367,8 +395,7 @@ obtain_package() {
         urls=$(release_urls "$work/github-releases.json" github "$tag" 2>> "$work/diagnostic.log") || die unavailable
     fi
     download_selected_package "$urls" || die unavailable
-    wait "$github_pid" "$gitee_pid" 2>/dev/null || true
-    github_pid=''; gitee_pid=''
+    stop_discovery
 }
 
 prepare_state() {
@@ -545,9 +572,8 @@ cleanup() {
     local status=$? safe_to_remove=1
     trap - EXIT ERR INT TERM HUP
     set +e
-    for pid in "$github_pid" "$gitee_pid"; do
-        if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; fi
-    done
+    stop_metadata_request
+    stop_discovery
     if [[ "$status" != 0 && -n "$work" && -s "$work/diagnostic.log" ]]; then
         tail -n 15 "$work/diagnostic.log" >&2
     fi
