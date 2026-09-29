@@ -1,6 +1,7 @@
 //! Independent codec instances share an active timeline, never H.264 parameters.
 use super::*;
 use ffmpeg::Rescale;
+use std::collections::BTreeMap;
 
 fn error(value: impl std::fmt::Display) -> RecordingExportError {
     RecordingExportError::Encode(format!("recording recovery: {value}"))
@@ -360,6 +361,81 @@ impl StreamingEncoder {
     }
 }
 
+/// MP4 sample durations describe decode order. Reconstruct presentation holds
+/// before remuxing, or a B-frame's PTS + decode duration can extend the movie.
+#[derive(Default)]
+struct RemuxVideoPackets {
+    presentation: BTreeMap<i64, ffmpeg::Packet>,
+    decode_order: VecDeque<i64>,
+    durations: VideoPacketDurations,
+}
+
+impl RemuxVideoPackets {
+    fn push(
+        &mut self,
+        mut packet: ffmpeg::Packet,
+        output: &mut ffmpeg::format::context::Output,
+    ) -> Result<()> {
+        let pts = packet.pts().ok_or_else(|| error("missing video PTS"))?;
+        let dts = packet.dts().ok_or_else(|| error("missing video DTS"))?;
+        if pts < dts {
+            return Err(error("recording video PTS precedes DTS"));
+        }
+        // Zero marks a duration whose presentation successor is not known yet.
+        packet.set_duration(0);
+        if self.presentation.insert(pts, packet).is_some() {
+            return Err(error("duplicate video PTS"));
+        }
+        self.decode_order.push_back(pts);
+        self.write_ready(output, dts, None)
+    }
+
+    fn write_ready(
+        &mut self,
+        output: &mut ffmpeg::format::context::Output,
+        watermark: i64,
+        endpoint: Option<i64>,
+    ) -> Result<()> {
+        // Packets arrive in increasing DTS, and these encoders have PTS >= DTS.
+        // Once a successor is at/below that watermark, no future packet can
+        // precede it in presentation order. Retain only this reorder window,
+        // including already resolved packets blocked by an earlier decode packet.
+        let points: Vec<_> = self.presentation.keys().copied().chain(endpoint).collect();
+        for pair in points.windows(2) {
+            if pair[1] <= watermark {
+                let packet = self
+                    .presentation
+                    .get_mut(&pair[0])
+                    .expect("queued presentation timestamp");
+                // A resolved successor may already have been written while
+                // this packet still waits behind a later presentation frame.
+                if packet.duration() == 0 {
+                    packet.set_duration((pair[1] - pair[0]).max(1));
+                }
+            }
+        }
+        while let Some(&pts) = self.decode_order.front() {
+            if self.presentation[&pts].duration() == 0 {
+                break;
+            }
+            self.decode_order.pop_front();
+            let mut packet = self
+                .presentation
+                .remove(&pts)
+                .expect("queued decode timestamp");
+            self.durations.push_back((pts, packet.duration()));
+            // Preserve the decode tail as well as the presentation endpoint,
+            // using the same final-packet policy as direct encoding.
+            self.durations.apply(
+                &mut packet,
+                endpoint.is_some() && self.decode_order.is_empty(),
+            );
+            packet.write_interleaved(output).map_err(error)?;
+        }
+        Ok(())
+    }
+}
+
 fn remux(
     video: &Path,
     audio: Option<&Path>,
@@ -401,10 +477,7 @@ fn remux(
             .ok_or_else(|| error("missing mux track"))?
             .time_base();
         let mut video_offset = None;
-        // Fragment sample durations are decode-time deltas. Hold only the last
-        // reordered group so its highest-PTS image can regain the final still
-        // duration when publishing the ordinary MP4, without another encode.
-        let mut video_tail: Vec<ffmpeg::Packet> = Vec::new();
+        let mut video_packets = RemuxVideoPackets::default();
         for (stream, mut packet) in input.packets() {
             if stream.index() != source_index {
                 continue;
@@ -420,28 +493,14 @@ fn remux(
             packet.set_stream(target_index);
             packet.set_position(-1);
             if target_index == 0 {
-                if video_tail
-                    .first()
-                    .is_some_and(|first| packet.pts() > first.pts())
-                {
-                    for previous in video_tail.drain(..) {
-                        previous.write_interleaved(&mut output).map_err(error)?;
-                    }
-                }
-                video_tail.push(packet);
+                video_packets.push(packet, &mut output)?;
             } else {
                 packet.write_interleaved(&mut output).map_err(error)?;
             }
         }
-        if let Some(last_image) = video_tail.first_mut() {
+        if target_index == 0 {
             let end = video_end.rescale((1, fps as i32), target_time_base);
-            let pts = last_image
-                .pts()
-                .ok_or_else(|| error("missing final video PTS"))?;
-            last_image.set_duration((end - pts).max(1));
-        }
-        for packet in video_tail {
-            packet.write_interleaved(&mut output).map_err(error)?;
+            video_packets.write_ready(&mut output, i64::MAX, Some(end))?;
         }
     }
     output.write_trailer().map_err(error)
@@ -836,6 +895,98 @@ mod tests {
             })
             .collect();
         assert_eq!(points, [(3, 4), (7, 3)]);
+    }
+
+    #[test]
+    fn remux_preserves_variable_holds_with_and_without_recovery() {
+        use snow_recording_model::VideoEncodingSpeed;
+
+        let directory = tempfile::tempdir().unwrap();
+        for recover in [false, true] {
+            for speed in [VideoEncodingSpeed::VeryFast, VideoEncodingSpeed::UltraFast] {
+                for count in [4, 17] {
+                    for hold in [0, count / 2, count - 1] {
+                        let case = format!("{recover}-{speed:?}-{count}-{hold}");
+                        let path = directory.path().join(format!("{case}.mp4"));
+                        let mut settings = config(path.clone());
+                        settings.width = 64;
+                        settings.height = 64;
+                        settings.encode_threads = 2;
+                        settings.video.speed = speed;
+                        settings.audio = None;
+                        let mut encoder = StreamingEncoder::builder(settings)
+                            .recoverable()
+                            .create()
+                            .unwrap();
+                        if recover {
+                            encoder.recover_to_software("injected device loss").unwrap();
+                        }
+                        let mut expected = Vec::new();
+                        let mut endpoint = 0;
+                        for index in 0..count {
+                            expected.push(endpoint as i64);
+                            // Similar images retain B-frames even across a long hold.
+                            let mut pixels = vec![80; 64 * 64 * 4];
+                            for pixel in pixels.chunks_exact_mut(4).skip(index).take(64) {
+                                pixel.copy_from_slice(&[180, 180, 180, 255]);
+                            }
+                            encoder.push_rgba_frame_at_pts(endpoint, &pixels).unwrap();
+                            endpoint += if index == hold { 100 } else { 1 };
+                        }
+                        let report = encoder.finish_at_pts(endpoint).unwrap();
+                        assert_eq!(report.encoded_frames, count as u64, "{case}");
+                        assert_eq!(report.recovery_count, u32::from(recover), "{case}");
+
+                        let mut input = ffmpeg::format::input(&path).unwrap();
+                        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+                        let base = stream.time_base();
+                        assert_eq!(
+                            stream.duration().rescale(base, (1, 10)),
+                            endpoint as i64,
+                            "track endpoint: {case}"
+                        );
+                        assert_eq!(
+                            input.duration().rescale((1, 1_000_000), (1, 10)),
+                            endpoint as i64,
+                            "movie endpoint: {case}"
+                        );
+                        let mut decoder =
+                            ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+                                .unwrap()
+                                .decoder()
+                                .video()
+                                .unwrap();
+                        let mut decoded = Vec::new();
+                        let mut receive = |decoder: &mut ffmpeg::decoder::Video| {
+                            let mut frame = ffmpeg::frame::Video::empty();
+                            while decoder.receive_frame(&mut frame).is_ok() {
+                                decoded.push(frame.pts().unwrap().rescale(base, (1, 10)));
+                            }
+                        };
+                        let mut pts = Vec::new();
+                        let mut last_dts = None;
+                        for (_, packet) in input.packets() {
+                            let dts = packet.dts().unwrap();
+                            assert!(last_dts.is_none_or(|previous| dts > previous), "{case}");
+                            assert!(dts <= packet.pts().unwrap(), "{case}");
+                            last_dts = Some(dts);
+                            pts.push(packet.pts().unwrap());
+                            decoder.send_packet(&packet).unwrap();
+                            receive(&mut decoder);
+                        }
+                        decoder.send_eof().unwrap();
+                        receive(&mut decoder);
+                        assert_eq!(decoded, expected, "decoded presentation timeline: {case}");
+                        if speed == VideoEncodingSpeed::VeryFast {
+                            assert!(
+                                pts.windows(2).any(|pair| pair[0] > pair[1]),
+                                "fixture must exercise B-frame reordering: {case}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
