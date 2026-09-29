@@ -1307,6 +1307,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
     src/presentation/pinned/screenshotpinnedclickthroughgeometry.h
     src/presentation/pinned/screenshotpinnedinteraction.cpp
+    src/presentation/pinned/screenshotpinneddragexport.cpp
     ${SNOW_PINNED_PLATFORM_SOURCES}
     src/presentation/pinned/screenshotpinnededitcontroller.cpp
     include/snow_shot/presentation/globalcanvascontroller.h
@@ -3642,6 +3643,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
+        src/presentation/pinned/screenshotpinneddragexport.cpp
         ${SNOW_PINNED_PLATFORM_SOURCES}
         src/presentation/services/languagemanager.cpp
         src/presentation/styles/buttonborder.cpp
@@ -6760,6 +6762,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
+        src/presentation/pinned/screenshotpinneddragexport.cpp
         ${SNOW_PINNED_PLATFORM_SOURCES}
         src/presentation/services/languagemanager.cpp
         src/presentation/styles/buttonborder.cpp
@@ -8123,4 +8126,15 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-macos-cursor-native-tests -platform cocoa)
     set_tests_properties(snow-shot-macos-cursor-native-tests PROPERTIES
         LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 60)
+endif()
+
+if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-drag-export-tests
+        COMMAND snow-shot-pinned-window-tests --drag-export-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-drag-export-tests PROPERTIES LABELS "unit")
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-drag-export-native-tests
+            COMMAND snow-shot-pinned-window-tests --drag-export-native-only -platform windows)
+        set_tests_properties(snow-shot-pinned-drag-export-native-tests PROPERTIES LABELS "unit;windows")
+    endif()
 endif()

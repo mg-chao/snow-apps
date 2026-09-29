@@ -81,6 +81,7 @@ class ScreenshotRecognitionSessionController;
 class ScreenshotPinnedEditController;
 class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotExportArtifact;
+class ScreenshotPinnedDragExport;
 class ScreenshotPinnedHideToTopController;
 class ScreenshotPinnedControlsPresence;
 class ScreenshotPinnedNativeGeometryController;
@@ -414,6 +415,16 @@ class ScreenshotPinnedWindow final : public QWidget {
 
     void reconcilePlatformEnvironment(bool layoutChanged = false);
     bool handleControlledPointer(QObject* watched, QEvent* event);
+    bool handleExportDrag(QObject* watched, QEvent* event);
+    bool exportDragEnabledAt(const QPoint& position) const;
+    void beginExportDrag();
+    void cancelExportDrag();
+    std::unique_ptr<ScreenshotPinnedDragExport> m_dragExport;
+    std::optional<QPoint> m_exportDragOrigin;
+    bool m_exportDragSpontaneous = false;
+    bool m_exportDragAborted = false;
+    bool m_exportDragPreparing = false;
+    quint64 m_exportDragGeneration = 0;
     void resetPinnedGestures();
     bool handlePinnedGesture(QObject* watched, QEvent* event);
     bool beginControlledInteraction(const QPointF& desktopPosition,

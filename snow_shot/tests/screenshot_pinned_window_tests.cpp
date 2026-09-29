@@ -23,6 +23,7 @@
 #include "../src/presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "../src/presentation/pinned/screenshotpinneddragexport.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
@@ -230,6 +231,29 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static ScreenshotPinnedDragExport& dragExport(ScreenshotPinnedWindow& window) {
+        if (!window.m_dragExport)
+            window.m_dragExport = std::make_unique<ScreenshotPinnedDragExport>();
+        return *window.m_dragExport;
+    }
+    static bool exportGesture(const ScreenshotPinnedWindow& window) {
+        return window.m_exportDragOrigin.has_value();
+    }
+    static void invalidateExport(ScreenshotPinnedWindow& window) {
+        window.invalidatePendingCopy();
+    }
+    static bool exportEligible(const ScreenshotPinnedWindow& window, QPoint position) {
+        return window.exportDragEnabledAt(position);
+    }
+    static bool acceptExportDrop(const ScreenshotPinnedWindow& window, const QDropEvent& event) {
+        return !window.eligibleDropPaths(event).isEmpty();
+    }
+    static QByteArray dragDocument(ScreenshotPinnedWindow& window) {
+        return window.m_runtime.serializeDocumentSession();
+    }
+    static auto viewportExport(ScreenshotPinnedWindow& window) {
+        return window.viewportArtifact();
+    }
     static void setClipboard(ScreenshotPinnedWindow& window,
                              std::unique_ptr<ScreenshotPinnedClipboard> clipboard) {
         window.m_clipboard = std::move(clipboard);
@@ -10334,6 +10358,250 @@ QImage exportedClipboardImage() {
 #endif
 }
 
+void pinnedDragExportOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    IsolatedPinnedStorage storage;
+    const snow_shot::storage::ScreenshotSettings settings;
+    require(settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("drag-result")),
+            "configure drag export");
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!predicate() && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(predicate(), message);
+    };
+    const auto normalize = [](QImage image) {
+        return image.convertToFormat(QImage::Format_ARGB32);
+    };
+    ScreenshotPinnedWindow window;
+    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    window.show();
+    waitForUi(20);
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas, "drag canvas exists");
+    const auto mouse = [&](QEvent::Type type, QPoint position, Qt::KeyboardModifiers modifiers,
+                           Qt::MouseButtons buttons) {
+        const auto button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+        QMouseEvent event(type, position, canvas->mapToGlobal(position), button, buttons,
+                          modifiers);
+        QApplication::sendEvent(canvas, &event);
+    };
+    QPoint origin = canvas->rect().center();
+    QPoint destination = origin + QPoint(QApplication::startDragDistance() + 3, 0);
+    int executions = 0;
+    QImage expected;
+    QStringList published;
+    auto& service = Access::dragExport(window);
+    service.setExecutor([&](QDrag& drag) {
+        ++executions;
+        require(drag.mimeData()->hasImage() && drag.mimeData()->urls().size() == 1,
+                "drag offers both image pixels and one file URL");
+        require(normalize(qvariant_cast<QImage>(drag.mimeData()->imageData())) ==
+                    normalize(expected),
+                "drag image matches captured viewport pixels");
+        const auto path = drag.mimeData()->urls().first().toLocalFile();
+        require(QFileInfo(path).fileName() == QStringLiteral("drag-result.png") &&
+                    normalize(QImage(path)) == normalize(expected),
+                "drag file matches viewport and configured name");
+        QDropEvent selfDrop(QPointF(origin), Qt::CopyAction, drag.mimeData(), Qt::LeftButton,
+                            Qt::ControlModifier);
+        require(!Access::acceptExportDrop(window, selfDrop), "source pin rejects its own export");
+        published.append(path);
+        return Qt::CopyAction;
+    });
+    const auto release = [&] {
+        mouse(QEvent::MouseButtonRelease, destination, Qt::ControlModifier, Qt::NoButton);
+    };
+    const auto press = [&] {
+        origin = canvas->rect().center();
+        destination = origin + QPoint(QApplication::startDragDistance() + 3, 0);
+        mouse(QEvent::MouseButtonPress, origin, Qt::ControlModifier, Qt::LeftButton);
+        require(Access::exportGesture(window), "Ctrl press reserves export gesture");
+    };
+    const auto move = [&] {
+        mouse(QEvent::MouseMove, destination, Qt::ControlModifier, Qt::LeftButton);
+    };
+    const auto capture = [&] {
+        expected = {};
+        auto artifact = Access::viewportExport(window);
+        require(artifact && artifact->requestImage(&window,
+                                                   [&](ScreenshotExportImageResult result) {
+                                                       require(result.succeeded(),
+                                                               "render expected viewport");
+                                                       expected = result.image;
+                                                   }),
+                "request expected viewport");
+        wait([&] { return !expected.isNull(); }, "expected viewport ready");
+    };
+    press();
+    mouse(QEvent::MouseMove, origin + QPoint(1, 0), Qt::ControlModifier, Qt::LeftButton);
+    require(!service.busy(), "below threshold does not prepare files");
+    release();
+    require(!Access::exportGesture(window) && executions == 0, "Ctrl click does not export");
+    require(!Access::exportEligible(window, QPoint(1, 1)), "resize border keeps precedence");
+    for (int scenario = 0; scenario < 4; ++scenario) {
+        if (scenario == 1) {
+            Access::setGeneralOpacity(window, 50);
+            Access::transformForHideTest(window, false);
+        } else if (scenario == 2) {
+            Access::scaleBorderFixture(window, 150);
+        } else if (scenario == 3) {
+            Access::thumbnailForHideTest(window, true);
+        }
+        capture();
+        const auto geometry = window.currentNativeGeometry();
+        press();
+        move();
+        wait([&] { return executions == scenario + 1; }, "native drag executor reached");
+        require(!Access::exportGesture(window) && !service.busy(), "drag releases gesture state");
+        require(window.currentNativeGeometry() == geometry, "export does not move window");
+        release();
+    }
+    Access::thumbnailForHideTest(window, false);
+    Access::editForHideTest(window);
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    require(controller &&
+                controller->toolbarWindow()->palette()->activateDrawingShortcut(
+                    QStringLiteral("shape")) &&
+                canvas->interactionEnabled() && !controller->resizeWindowToolActive(),
+            "activate shape through the editing toolbar");
+    capture();
+    const QImage beforeDrawing = expected;
+    mouse(QEvent::MouseButtonPress, canvas->rect().center() - QPoint(20, 15), Qt::NoModifier,
+          Qt::LeftButton);
+    mouse(QEvent::MouseMove, canvas->rect().center() + QPoint(20, 15), Qt::NoModifier,
+          Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, canvas->rect().center() + QPoint(20, 15), Qt::NoModifier,
+          Qt::NoButton);
+    require(canvas->canvasHistoryState().canUndo, "ordinary drag still draws a shape");
+    capture();
+    require(normalize(expected) != normalize(beforeDrawing),
+            "viewport contains current annotations");
+    const auto document = Access::dragDocument(window);
+    press();
+    move();
+    wait([&] { return executions == 5; }, "editing supports drag export");
+    release();
+    require(canvas->canvasTool() == SnowCanvasTool::Shape &&
+                Access::dragDocument(window) == document,
+            "Ctrl drag preserves drawing tool and does not create a stroke");
+    for (int cancellation = 0; cancellation < 3; ++cancellation) {
+        press();
+        move();
+        require(service.busy(), "export starts asynchronously");
+        if (cancellation == 0)
+            release();
+        else if (cancellation == 1) {
+            QKeyEvent key(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QApplication::sendEvent(canvas, &key);
+            move();
+            require(!service.busy(), "Escape cannot restart export while held");
+            QKeyEvent up(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+            QApplication::sendEvent(canvas, &up);
+        } else
+            Access::invalidateExport(window);
+        waitForUi(50);
+        require(!service.busy() && executions == 5, "cancelled preparation never starts dragging");
+        release();
+    }
+    for (const auto& path : published)
+        require(QFileInfo::exists(path), "published files remain available after drag returns");
+    require(QFileInfo(published[0]).absolutePath() != QFileInfo(published[1]).absolutePath(),
+            "repeated names use independent staging directories");
+    press();
+    move();
+    window.close();
+    waitForUi(50);
+    require(!service.busy() && executions == 5, "closing cancels pending drag");
+
+    // Exercise format selection and service lifetime without a native event loop.
+    QImage image(20, 10, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    for (const QString& format : {QStringLiteral("jpeg"), QStringLiteral("pdf")}) {
+        require(settings.setImageFormat(format), "set drag file format");
+        ScreenshotPinnedDragExport exporter;
+        bool completed = false;
+        exporter.setExecutor([&](QDrag& drag) {
+            QFile file(drag.mimeData()->urls().first().toLocalFile());
+            require(file.open(QIODevice::ReadOnly), "configured drag file exists");
+            const auto bytes = file.read(4);
+            require(format == QStringLiteral("pdf") ? bytes == QByteArrayLiteral("%PDF")
+                                                    : bytes.startsWith(QByteArray::fromHex("ffd8")),
+                    "drag uses the configured encoder");
+            return Qt::IgnoreAction;
+        });
+        exporter.start(
+            std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image)),
+            [&](QString error) {
+                require(error.isEmpty(), "drag preparation succeeds");
+                completed = true;
+            });
+        wait([&] { return completed; }, "format drag completes");
+    }
+    // Closing/destroying a source during the nested native loop must not destroy
+    // the drag object or the published file before the receiver finishes.
+    auto doomed = std::make_unique<ScreenshotPinnedDragExport>();
+    bool destroyedDuringDrag = false;
+    doomed->setExecutor([&](QDrag& drag) {
+        const auto path = drag.mimeData()->urls().first().toLocalFile();
+        doomed.reset();
+        require(QFileInfo::exists(path) && drag.mimeData()->hasImage(),
+                "payload outlives destroyed source service");
+        destroyedDuringDrag = true;
+        return Qt::IgnoreAction;
+    });
+    doomed->start(
+        std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image)),
+        [](QString) { throw std::runtime_error("destroyed source cannot receive completion"); });
+    wait([&] { return destroyedDuringDrag; }, "nested drag source destruction is safe");
+    const auto stagedDirectories = [] {
+        return QDir(QDir::tempPath()).entryList({QStringLiteral("snow-shot-drag-*")}, QDir::Dirs);
+    };
+    const auto retainedDirectories = stagedDirectories();
+    require(settings.setImageFormat(QStringLiteral("png")) &&
+                settings.setAutoSaveFilenameFormat(QString(300, QLatin1Char('x'))),
+            "configure deterministic file error");
+    ScreenshotPinnedDragExport failing;
+    bool failed = false;
+    failing.setExecutor([](QDrag&) -> Qt::DropAction {
+        throw std::runtime_error("failed export must not start native drag");
+    });
+    failing.start(
+        std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image)),
+        [&](QString error) { failed = !error.isEmpty(); });
+    wait([&] { return failed; }, "encoding failure is reported");
+    wait([&] { return stagedDirectories() == retainedDirectories; },
+         "failed unpublished files are removed");
+}
+
+#ifdef Q_OS_WIN
+void pinnedDragExportNativeHitTest() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    window.show();
+    waitForUi(20);
+    BYTE originalKeys[256]{};
+    require(GetKeyboardState(originalKeys), "capture thread keyboard state");
+    const auto restoreKeys = qScopeGuard([&] { SetKeyboardState(originalKeys); });
+    const auto hit = [&](QPoint local, bool control) {
+        BYTE keys[256]{};
+        keys[VK_CONTROL] = control ? 0x80 : 0;
+        require(SetKeyboardState(keys), "set thread-local hit-test modifier");
+        const QPoint point = Access::nativePoint(window, local);
+        return SendMessageW(toNativeHwnd(window.winId()), WM_NCHITTEST, 0,
+                            MAKELPARAM(static_cast<WORD>(point.x()), static_cast<WORD>(point.y())));
+    };
+    const auto center = window.rect().center();
+    require(hit(center, false) == HTCAPTION, "ordinary image drag uses native caption");
+    require(hit(center, true) == HTCLIENT, "Ctrl image drag is delivered to Qt");
+    require(hit(QPoint(1, 1), true) == HTTOPLEFT, "Ctrl leaves resize borders native");
+    window.close();
+}
+#endif
+
 void pinnedSharedImageExportOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     IsolatedPinnedStorage storage;
@@ -12788,6 +13056,16 @@ int main(int argc, char* argv[]) {
             require(
                 qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(), expectedDpr),
                 "pixel fixture must run at the registered DPR, independently of monitor settings");
+#ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--drag-export-native-only"))) {
+            pinnedDragExportNativeHitTest();
+            return 0;
+        }
+#endif
+        if (app.arguments().contains(QStringLiteral("--drag-export-only"))) {
+            pinnedDragExportOffscreen();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--automation-only"))) {
             ScreenshotRecognitionResults recognition;
             recognition.text.emplace();
