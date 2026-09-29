@@ -83,6 +83,26 @@ void finishNativeModalTransition() {
     loop.exec();
 }
 
+void recordingOwnsNativeGeometry() {
+    ToolFixture recording;
+    recording.setGeometry(200, 200, 320, 240);
+    recording.winId();
+    snow_shot::platform::configureScreenRecordingAreaWindow(&recording);
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        recording.show();
+        QCoreApplication::processEvents();
+        NSWindow* window = reinterpret_cast<NSView*>(recording.winId()).window;
+        require(!(window.styleMask & NSWindowStyleMaskResizable) && !window.movable &&
+                    !window.movableByWindowBackground,
+                "recording borders must reach Qt's minimum-size and edge-crossing controller");
+        recording.setGeometry(220, 210, 16, 16);
+        QCoreApplication::processEvents();
+        require(recording.geometry() == QRect(220, 210, 16, 16),
+                "disabling AppKit resizing must preserve application-controlled geometry");
+        recording.recreateSurface();
+    }
+}
+
 void captureFamiliesFollowOwnership() {
     using namespace snow_shot::platform::detail;
     const auto pinLevel = pinnedWindowLevel();
@@ -758,6 +778,7 @@ int main(int argc, char** argv) {
     @autoreleasepool {
         captureFamiliesFollowOwnership();
         if (cocoa) {
+            recordingOwnsNativeGeometry();
             captureFamiliesKeepNativeOrder();
             screenshotNativeSettingsFollowOwnership();
             screenshotPresentationFollowsOwnership();

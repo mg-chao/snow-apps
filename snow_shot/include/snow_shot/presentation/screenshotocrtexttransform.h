@@ -10,6 +10,8 @@ namespace snow_shot::presentation {
 QString originalOcrText(const ScreenshotOcrPresentation& presentation);
 QString removeOcrLineBreaks(const QString& text);
 QString convertOcrPunctuation(const QString& text, bool fullWidth);
+QString applyOcrTextTransforms(const QString& text, const QString& formatting,
+                               const QString& punctuation);
 
 } // namespace snow_shot::presentation
 

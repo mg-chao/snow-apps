@@ -320,15 +320,28 @@ int main(int argc, char** argv) {
         require(backend.applySwitchValue(recognitionSave, false) &&
                     !storage::TextRecognitionSettings().saveRecognitionResultAsImage(),
                 "recognition image export persists disabled setting");
+        const auto defaultFormatting = settings::SettingsSelectBinding::OcrDefaultFormatting;
+        const auto defaultPunctuation = settings::SettingsSelectBinding::OcrDefaultPunctuation;
+        require(backend.selectValue(defaultFormatting).toString() == QStringLiteral("none") &&
+                    backend.selectValue(defaultPunctuation).toString() == QStringLiteral("none") &&
+                    backend.applySelectValue(defaultFormatting, QStringLiteral("remove")) &&
+                    backend.applySelectValue(defaultPunctuation, QStringLiteral("full")) &&
+                    storage::TextRecognitionSettings().defaultFormatting() ==
+                        QStringLiteral("remove") &&
+                    storage::TextRecognitionSettings().defaultPunctuation() ==
+                        QStringLiteral("full"),
+                "recognized-text defaults persist through the settings backend");
         const auto oldFill =
             applicationStorage.configuration().value(QStringLiteral("text_recognition/fill_style"));
         require(applicationStorage.configuration().setValue(
                     QStringLiteral("text_recognition/fill_style"), QStringLiteral("blur")) &&
                     backend.resetSection(settings::SettingsSectionReset::TextRecognitionBehavior) &&
                     backend.switchValue(recognitionSave) &&
+                    backend.selectValue(defaultFormatting).toString() == QStringLiteral("none") &&
+                    backend.selectValue(defaultPunctuation).toString() == QStringLiteral("none") &&
                     applicationStorage.configuration().value(
                         QStringLiteral("text_recognition/fill_style")) == QStringLiteral("blur"),
-                "recognition save reset restores only its own setting");
+                "recognition behavior reset restores defaults without changing appearance");
         require(applicationStorage.configuration().setValue(
                     QStringLiteral("text_recognition/fill_style"), oldFill),
                 "restore recognition appearance fixture");

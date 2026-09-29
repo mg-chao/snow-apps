@@ -190,6 +190,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
         TranslationStatus translationStatus = TranslationStatus::Absent;
         bool hasSuccessfulTranslation = false;
         bool editing = false;
+        bool defaultTransformsApplied = false;
         OverlayTranslation overlayTranslation;
         snow_shot::storage::ScreenshotTranslationConfiguration translationConfiguration;
         bool hasTranslationConfiguration = false;

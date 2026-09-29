@@ -17,6 +17,8 @@ class QLabel;
 class QVBoxLayout;
 namespace adqt::widgets {
 class AdButton;
+class AdImageViewer;
+class AdImageListModel;
 class AdDateRangePicker;
 class AdPagination;
 class AdPopconfirm;
@@ -67,6 +69,7 @@ class PinnedWindowManagementPageWidget final : public QWidget {
   private:
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
+    void rebuildPreview();
     void updateResponsiveLayout();
     void updateHeader();
     void updateSelectionBar();
@@ -108,6 +111,9 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     QHash<QString, quint64> m_entryPreviewRevisions;
     QSet<QString> m_selected;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
+    adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
+    adqt::widgets::AdImageListModel* m_previewModel = nullptr;
+    QHash<QString, int> m_previewRows;
     bool m_updatingPagination = false;
 };
 

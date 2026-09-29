@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/automationrevision.h"
 #include "snow_shot/app/mcp/mcpstylepatch.h"
 #include "screenshotpinnedhidetotopcontroller.h"
+#include "screenshotpinneddragexport.h"
 #include "screenshotpinnedclickthroughgeometry.h"
 #include "screenshotpinnedcontrolspresence.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
@@ -32,6 +33,7 @@
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrtexttransform.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -1597,6 +1599,8 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     if (event != nullptr && event->type() == QEvent::DeferredDelete) {
         return QWidget::event(event);
     }
+    if (handleExportDrag(this, event))
+        return true;
 
     const bool pointerPresenceChanged =
         event != nullptr &&
@@ -2132,6 +2136,8 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == nullptr || !watched->isWidgetType() || event == nullptr || m_closing) {
         return QWidget::eventFilter(watched, event);
     }
+    if (handleExportDrag(watched, event))
+        return true;
     if (event->type() == QEvent::Enter || event->type() == QEvent::MouseMove ||
         event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)
         setControlsPointerInside(true);
@@ -4499,9 +4505,15 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
     }
     m_displayOcrPresentation = std::move(presentation);
     if (m_hiddenTextSelection && m_recognitionContent != nullptr) {
+        m_recognitionContent->setOcrCopyDefaultsEnabled(true);
         m_recognitionContent->setOcrPresentation(
             m_displayOcrPresentation, ScreenshotOcrTextLayer::RenderingMode::SelectionOnly, false);
     } else if (m_ocrMode) {
+        if (m_recognitionContent != nullptr) {
+            m_recognitionContent->setOcrCopyDefaultsEnabled(
+                m_recognitionSession == nullptr ||
+                !m_recognitionSession->originalImageTranslationActive());
+        }
         // The embedded recognition window owns the translucent OCR text layer
         // for pinned windows. Keep the canvas responsible for the immutable
         // screenshot and recognition fill only; installing another translucent
@@ -4556,7 +4568,10 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     }
     invalidatePendingCopy();
     if (QClipboard* clipboard = QApplication::clipboard()) {
-        clipboard->setText(m_displayOcrPresentation->selectedText());
+        const snow_shot::storage::TextRecognitionSettings settings;
+        clipboard->setText(snow_shot::presentation::applyOcrTextTransforms(
+            m_displayOcrPresentation->selectedText(), settings.defaultFormatting(),
+            settings.defaultPunctuation()));
     }
     return true;
 }
@@ -4605,6 +4620,54 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::viewportArtifa
 
     return std::make_shared<ScreenshotExportArtifact>(
         ScreenshotExportSource::fromPinnedViewport(std::move(request)));
+}
+
+void ScreenshotPinnedWindow::beginExportDrag() {
+    if (!m_exportDragOrigin || m_closing)
+        return;
+    if (m_originalImage.isNull()) {
+        m_exportDragPreparing = true;
+        const auto generation = m_exportDragGeneration;
+        requestMaterializedImage([this, generation](bool succeeded) {
+            if (generation != m_exportDragGeneration)
+                return;
+            m_exportDragPreparing = false;
+            if (succeeded && !m_exportDragAborted)
+                beginExportDrag();
+            else
+                cancelExportDrag();
+        });
+        return;
+    }
+    // Committing a pending edit can invalidate exports. Establish the new gesture
+    // only after viewportArtifact has committed and captured that edit.
+    const auto origin = m_exportDragOrigin;
+    auto artifact = viewportArtifact();
+    if (!artifact) {
+        cancelExportDrag();
+        return;
+    }
+    m_exportDragOrigin = origin;
+    qApp->installEventFilter(this);
+    if (!m_dragExport)
+        m_dragExport = std::make_unique<ScreenshotPinnedDragExport>();
+    m_dragExport->start(
+        std::move(artifact),
+        [this](QString error) {
+            cancelExportDrag();
+            if (!error.isEmpty() && !m_closing)
+                showPinnedRecognitionMessage(
+                    this,
+                    QCoreApplication::translate("ScreenshotController",
+                                                "The screenshot could not be saved: %1")
+                        .arg(error),
+                    true);
+        },
+        [this] {
+            return m_exportDragOrigin && !m_closing &&
+                   (!m_exportDragSpontaneous ||
+                    QApplication::mouseButtons().testFlag(Qt::LeftButton));
+        });
 }
 
 void ScreenshotPinnedWindow::copyCurrentViewport() {
@@ -4908,6 +4971,8 @@ void ScreenshotPinnedWindow::cancelContentReplacement() {
 }
 
 QStringList ScreenshotPinnedWindow::eligibleDropPaths(const QDropEvent& event) const {
+    if (m_dragExport && m_dragExport->dragging())
+        return {};
     if (!m_firstContentFramePublished || m_originalImage.isNull() || !isVisible() || m_closing ||
         m_clickThroughActive || !event.possibleActions().testFlag(Qt::CopyAction)) {
         return {};
@@ -5356,6 +5421,7 @@ void ScreenshotPinnedWindow::commitClipboardPayload(ScreenshotClipboardPayload p
 }
 
 void ScreenshotPinnedWindow::invalidatePendingCopy() {
+    cancelExportDrag();
     if (m_exportArtifact != nullptr) {
         m_exportArtifact->cancel();
         m_exportArtifact.reset();
@@ -7227,7 +7293,10 @@ ScreenshotPinnedWindow::automationClipboardMimeData(bool original) const {
             mime->setUrls({QUrl::fromLocalFile(m_originalClipboardContent.localFilePath)});
     } else if (m_hiddenTextSelection && m_displayOcrPresentation &&
                m_displayOcrPresentation->hasTextSelection()) {
-        mime->setText(m_displayOcrPresentation->selectedText());
+        const snow_shot::storage::TextRecognitionSettings settings;
+        mime->setText(snow_shot::presentation::applyOcrTextTransforms(
+            m_displayOcrPresentation->selectedText(), settings.defaultFormatting(),
+            settings.defaultPunctuation()));
     } else if (m_ocrMode && m_recognitionSession && m_recognitionSession->active()) {
         return m_recognitionSession->recognitionClipboardMimeData(m_displayOcrPresentation.get());
     } else

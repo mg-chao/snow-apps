@@ -402,6 +402,10 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                     }
                 }
             }
+            if (hitTest == HTCAPTION && (GetKeyState(VK_CONTROL) & 0x8000) &&
+                window.exportDragEnabledAt(mapping.localPosition(screenPosition).toPoint())) {
+                hitTest = HTCLIENT;
+            }
             if (hitTest == HTCAPTION) {
                 window.setWindowDragCursor(window.m_windowDragActive ? Qt::ClosedHandCursor
                                                                      : Qt::OpenHandCursor);

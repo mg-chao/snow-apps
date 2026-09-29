@@ -315,17 +315,17 @@ std::atomic<quint64> PinnedImageReply::s_nextRequestId{0};
 
 class PinnedImageLoader final : public adqt::widgets::AdImageLoader {
   public:
-    PinnedImageLoader(PinnedWindowManagementDataSource* source, QString id, QObject* parent)
-        : AdImageLoader(parent), m_source(source), m_id(std::move(id)) {}
+    PinnedImageLoader(PinnedWindowManagementDataSource* source, QObject* parent)
+        : AdImageLoader(parent), m_source(source) {}
 
-    adqt::widgets::AdImageReply* load(const QUrl&, const adqt::widgets::AdImageLoadOptions& options,
+    adqt::widgets::AdImageReply* load(const QUrl& source,
+                                      const adqt::widgets::AdImageLoadOptions& options,
                                       QObject* parent) override {
-        return new PinnedImageReply(m_source, m_id, options, parent);
+        return new PinnedImageReply(m_source, source.path(), options, parent);
     }
 
   private:
     QPointer<PinnedWindowManagementDataSource> m_source;
-    QString m_id;
 };
 
 } // namespace
@@ -337,6 +337,11 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
     PinnedWindowManagementDataSource* source, QWidget* parent)
     : QWidget(parent), m_source(source != nullptr ? source : new ApplicationPinnedDataSource(this)),
       m_scheme(styles::ThemeManager::instance().themeColorScheme()) {
+    m_previewViewer = new adqt::widgets::AdImageViewer(this);
+    m_previewViewer->setOwnerWindow(this);
+    m_previewViewer->setImageLoader(new PinnedImageLoader(m_source, m_previewViewer));
+    m_previewModel = new adqt::widgets::AdImageListModel(m_previewViewer);
+    m_previewViewer->setModel(m_previewModel);
     setObjectName(QStringLiteral("pinnedWindowManagementPage"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
@@ -589,7 +594,22 @@ void PinnedWindowManagementPageWidget::rebuildFilteredRecords(bool resetPage) {
     history_page::updatePagination(m_pagination, static_cast<int>(m_filteredRecords.size()),
                                    resetPage, m_updatingPagination);
     updateHeader();
+    rebuildPreview();
     rebuildEntries();
+}
+
+void PinnedWindowManagementPageWidget::rebuildPreview() {
+    m_previewViewer->close();
+    m_previewRows.clear();
+    adqt::widgets::AdImageItems items;
+    for (const auto& record : std::as_const(m_filteredRecords)) {
+        QUrl source;
+        source.setScheme(QStringLiteral("pinned"));
+        source.setPath(record.id);
+        m_previewRows.insert(record.id, static_cast<int>(items.size()));
+        items.push_back({source, tr("Pinned window image")});
+    }
+    m_previewModel->setItems(items);
 }
 
 void PinnedWindowManagementPageWidget::rebuildEntries() {
@@ -723,20 +743,12 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
             preview->setDecodePolicy(adqt::widgets::AdImage::DecodePolicy::FitWidget);
             preview->setPreferredImageSize(QSize(kPinnedPreviewWidth, kPinnedPreviewHeight));
             rowLayout->addWidget(preview, 0, Qt::AlignCenter);
-            auto* viewer = new adqt::widgets::AdImageViewer(row);
-            viewer->setOwnerWindow(preview);
-            auto* imageLoader = new PinnedImageLoader(m_source, record.id, viewer);
-            viewer->setImageLoader(imageLoader);
-            auto* previewModel = new adqt::widgets::AdImageListModel(viewer);
             QUrl imageSource;
             imageSource.setScheme(QStringLiteral("pinned"));
             imageSource.setPath(record.id);
             const QString altText = tr("Pinned window image");
-            previewModel->setItems({{imageSource, altText}});
-            viewer->setModel(previewModel);
-            preview->setViewer(viewer);
-            preview->setImageLoader(imageLoader);
-            preview->setPreviewRow(0);
+            preview->setViewer(m_previewViewer);
+            preview->setImageLoader(m_previewViewer->imageLoader());
             preview->setAltText(altText);
             preview->setSource(imageSource);
             connect(remove, &QAbstractButton::clicked, this, [this, remove, id = record.id]() {
@@ -783,14 +795,8 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         const QString altText = tr("Pinned window image");
         row->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"))
             ->setAltText(altText);
-        if (auto* viewer = row->findChild<adqt::widgets::AdImageViewer*>()) {
-            if (auto* model = qobject_cast<adqt::widgets::AdImageListModel*>(viewer->model())) {
-                QUrl imageSource;
-                imageSource.setScheme(QStringLiteral("pinned"));
-                imageSource.setPath(record.id);
-                model->setItems({{imageSource, altText}});
-            }
-        }
+        row->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"))
+            ->setPreviewRow(m_previewRows.value(record.id));
         if (layoutChanged)
             m_entryLayout->addWidget(row);
         row->show();
@@ -981,6 +987,7 @@ void PinnedWindowManagementPageWidget::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+        rebuildPreview();
         rebuildEntries();
     }
 }

@@ -26,6 +26,7 @@
 #include <QIcon>
 #include <QImageReader>
 #include <QPixmap>
+#include <QPainter>
 #include <QSet>
 #include <QSystemTrayIcon>
 #include <QVariant>
@@ -64,6 +65,30 @@ QString normalizedIconSelection(const QString& selection) {
 
 QString bundledIconResource(const QString& selection) {
     return bundledIconResources().value(normalizedIconSelection(selection));
+}
+
+QIcon withShortcutsDisabledBadge(const QIcon& base) {
+    QIcon result;
+    // Supply native tray sizes and their high-DPI counterparts to keep the badge crisp.
+    for (const int size : {16, 20, 22, 24, 32, 40, 44, 48, 64, 128, 256}) {
+        QPixmap pixmap(size, size);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        base.paint(&painter, QRect(0, 0, size, size));
+        painter.scale(size / 16.0, size / 16.0);
+        // A white edge separates the red badge from both light and dark artwork.
+        // Inset by half the outline width so its outer edge meets the icon bounds.
+        const QRectF badge(8.125, 0.375, 7.5, 7.5);
+        painter.setPen(QPen(Qt::white, 0.75));
+        painter.setBrush(QColor(QStringLiteral("#e53935")));
+        painter.drawEllipse(badge);
+        painter.setPen(QPen(Qt::white, 1.15, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(QPointF(10.325, 5.675), QPointF(13.425, 2.575));
+        painter.end();
+        result.addPixmap(pixmap);
+    }
+    return result;
 }
 
 QString normalizedClickAction(const QString& action, const char* defaultAction) {
@@ -525,11 +550,9 @@ class SystemTrayController::Impl {
     void updateIcon() {
         QIcon icon = iconCache.load(customIconPath);
         QString resolvedSource = customIconPath;
-        [[maybe_unused]] bool bundled = false;
         if (icon.isNull()) {
             resolvedSource = bundledIconResource(iconSelection);
             icon = QIcon(resolvedSource);
-            bundled = !icon.isNull();
         }
         if (icon.isNull()) {
             resolvedSource = QStringLiteral("application-window-icon");
@@ -539,8 +562,12 @@ class SystemTrayController::Impl {
             resolvedSource = QCoreApplication::applicationFilePath();
             icon = QIcon(QCoreApplication::applicationFilePath());
         }
+        if (globalShortcutsDisabled) {
+            icon = withShortcutsDisabledBadge(icon);
+        }
 #ifdef Q_OS_MACOS
-        icon.setIsMask(bundled);
+        // Template rendering discards RGB colors, including the selected bundled artwork.
+        icon.setIsMask(false);
 #endif
         trayIcon->setIcon(icon);
         trayIcon->setProperty("resolvedIconSource", resolvedSource);
@@ -577,6 +604,7 @@ class SystemTrayController::Impl {
     int screenshotDelaySeconds = 3;
     BalloonKind lastBalloonKind = BalloonKind::None;
     bool enabled = true;
+    bool globalShortcutsDisabled = false;
 };
 
 SystemTrayController::SystemTrayController(QObject* parent)
@@ -735,6 +763,11 @@ QStringList SystemTrayController::menuOptions() const {
 }
 
 void SystemTrayController::setQuickActionChecked(GlobalShortcutAction action, bool checked) {
+    if (action == GlobalShortcutAction::ToggleGlobalHotkeys &&
+        m_impl->globalShortcutsDisabled != checked) {
+        m_impl->globalShortcutsDisabled = checked;
+        m_impl->updateIcon();
+    }
     // Pure view update: owners announce changes; the checkmark only mirrors
     // them, so this must not dispatch anything.
     if (QAction* trayAction = m_impl->checkableQuickActions.value(action)) {

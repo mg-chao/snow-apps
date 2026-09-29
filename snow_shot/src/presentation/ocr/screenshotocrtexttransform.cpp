@@ -49,4 +49,15 @@ QString convertOcrPunctuation(const QString& text, bool fullWidth) {
     return result;
 }
 
+QString applyOcrTextTransforms(const QString& text, const QString& formatting,
+                               const QString& punctuation) {
+    QString result = formatting == QStringLiteral("remove") ? removeOcrLineBreaks(text) : text;
+    if (punctuation == QStringLiteral("half")) {
+        result = convertOcrPunctuation(result, false);
+    } else if (punctuation == QStringLiteral("full")) {
+        result = convertOcrPunctuation(result, true);
+    }
+    return result;
+}
+
 } // namespace snow_shot::presentation

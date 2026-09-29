@@ -218,8 +218,8 @@ void keyCommandsInsertTextAndReportEditorCommands() {
         snow_canvas_text_editor_input::handleKeyPress(&cancelEvent, draft, {});
     require(cancelResult.handled, "escape should be handled");
     require(!cancelResult.changed, "escape should not mutate draft text");
-    require(cancelResult.command == snow_canvas_text_editor_input::EventCommand::Cancel,
-            "escape should request cancel");
+    require(cancelResult.command == snow_canvas_text_editor_input::EventCommand::None,
+            "escape should not request a lifecycle or deletion command");
 }
 
 void deleteRequestsElementRemovalWhileBackspaceEditsCharacters() {
@@ -1204,6 +1204,9 @@ void cancelingAnActiveTextDraftDoesNotCommitIt() {
     beginTextDraftWithContent(canvas);
     require(!canvas.canvasHistoryState().canUndo,
             "an active text draft should remain outside history before cancellation");
+    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &escape);
+    require(canvas.hasActiveTextEditing(), "Escape must preserve a standalone text draft");
     require(canvas.cancelActiveTextEditing(),
             "canceling an active text draft should report a state change");
     require(canvas.setCanvasTool(SnowCanvasTool::Select),

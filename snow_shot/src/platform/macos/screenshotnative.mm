@@ -565,7 +565,9 @@ void configureScreenshotOverlayWindow(QWidget* widget) {
 
 void configureScreenRecordingAreaWindow(QWidget* widget) {
     macos::configureWindowCursorUpdates(widget);
-    configureControlledWindowDragging(widget);
+    // The recording controller owns minimum extents and edge crossing. AppKit's
+    // resize loop would consume border presses before that controller sees them.
+    configureControlledWindowDragging(widget, true);
     registerScreenshotLayer(widget, kOverlayLayer, CaptureFamily::Recording);
 }
 

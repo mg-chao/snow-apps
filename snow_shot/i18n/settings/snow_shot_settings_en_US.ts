@@ -909,6 +909,10 @@
             <translation>Application shortcuts</translation>
         </message>
         <message>
+            <source>Apply to recognized text when editing or copying</source>
+            <translation>Apply to recognized text when editing or copying</translation>
+        </message>
+        <message>
             <source>Arrow</source>
             <translation>Arrow</translation>
         </message>
@@ -1437,6 +1441,14 @@
             <translation>Default</translation>
         </message>
         <message>
+            <source>Default Formatting</source>
+            <translation>Default Formatting</translation>
+        </message>
+        <message>
+            <source>Default Punctuation</source>
+            <translation>Default Punctuation</translation>
+        </message>
+        <message>
             <source>Delay %1s to execute</source>
             <translation>Delay %1s to execute</translation>
         </message>
@@ -1717,6 +1729,10 @@
             <translation>Full-screen canvas (enable/disable click-through)</translation>
         </message>
         <message>
+            <source>Full-width</source>
+            <translation>Full-width</translation>
+        </message>
+        <message>
             <source>Fullscreen suppression</source>
             <translation>Fullscreen suppression</translation>
         </message>
@@ -1775,6 +1791,10 @@
         <message>
             <source>H.265</source>
             <translation>H.265</translation>
+        </message>
+        <message>
+            <source>Half-width</source>
+            <translation>Half-width</translation>
         </message>
         <message>
             <source>Hidden tools</source>
@@ -1899,6 +1919,10 @@
         <message>
             <source>Keep closed windows available for restoration; disabling does not delete existing records</source>
             <translation>Keep closed windows available for restoration; disabling does not delete existing records</translation>
+        </message>
+        <message>
+            <source>Keep line breaks</source>
+            <translation>Keep line breaks</translation>
         </message>
         <message>
             <source>Keep records permanently</source>
@@ -2451,6 +2475,10 @@
         <message>
             <source>Remove leftover recording working files that are no longer needed</source>
             <translation>Remove leftover recording working files that are no longer needed</translation>
+        </message>
+        <message>
+            <source>Remove line breaks</source>
+            <translation>Remove line breaks</translation>
         </message>
         <message>
             <source>Remove screenshots</source>
@@ -3025,8 +3053,8 @@
             <translation>Text recognition appearance</translation>
         </message>
         <message>
-            <source>Text recognition image saving settings</source>
-            <translation>Text recognition image saving settings</translation>
+            <source>Text recognition output settings</source>
+            <translation>Text recognition output settings</translation>
         </message>
         <message>
             <source>Text selection on recognition results</source>

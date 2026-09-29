@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "widgets/modal.h"
 #include "widgets/popover.h"
@@ -20,6 +21,7 @@
 #include "widgets/switch.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QImage>
@@ -301,6 +303,96 @@ makeTextSession(ControllableOcrRecognition& recognition, PromptRecorder& recorde
     target.canvasRect = QRectF(QPointF(), QSizeF(target.image.size()));
     controller->setTarget(target);
     return controller;
+}
+
+void recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy() {
+    const snow_shot::storage::TextRecognitionSettings settings;
+    const QString priorFormatting = settings.defaultFormatting();
+    const QString priorPunctuation = settings.defaultPunctuation();
+    require(settings.setDefaultFormatting(QStringLiteral("remove")) &&
+                settings.setDefaultPunctuation(QStringLiteral("full")),
+            "set OCR defaults for the recognition session");
+
+    QString selectedFormatting;
+    QString selectedPunctuation;
+    ScreenshotRecognitionWindow window({});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&window]() { return &window; };
+    actions.setTextTransformState = [&](const QString& formatting, const QString& punctuation) {
+        selectedFormatting = formatting;
+        selectedPunctuation = punctuation;
+    };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::white);
+    session.setTarget({QStringLiteral("defaults"), image, QRectF(0, 0, 80, 60)});
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = QRect(0, 0, 80, 60);
+    presentation->lines = {
+        ScreenshotOcrLine{QStringLiteral("A,"), 1.0, QPolygonF(QRectF(0, 0, 60, 20))},
+        ScreenshotOcrLine{QStringLiteral("B!"), 1.0, QPolygonF(QRectF(0, 30, 60, 20))},
+    };
+    presentation->prepareForRendering();
+    ScreenshotRecognitionResults cached;
+    cached.key = QStringLiteral("defaults");
+    cached.text = ScreenshotOcrRecognitionResult{presentation};
+    cached.translatedText = std::make_shared<ScreenshotOcrPresentation>(*presentation);
+    cached.translatedText->setLineText(0, QStringLiteral("Translated,"));
+    cached.translatedText->setLineText(1, QStringLiteral("overlay!"));
+    session.seedRecognitionResults(cached);
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    session.setShowOriginalImage(true);
+    require(window.copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() ==
+                    QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") + QChar(0xFF01),
+            "original-image window copy applies defaults before edit mode");
+    require(session.recognitionClipboardMimeData()->text() ==
+                    QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") + QChar(0xFF01) &&
+                session.originalText() == QStringLiteral("A,\nB!"),
+            "full original-image copy uses defaults without changing the OCR source");
+    presentation->beginTextSelection(ScreenshotOcrTextPosition{0, 1});
+    presentation->updateTextSelection(ScreenshotOcrTextPosition{1, 1});
+    presentation->finishTextSelection();
+    require(window.copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == QString(QChar(0xFF0C)) + QStringLiteral("B"),
+            "original-image window selection copy applies defaults");
+    require(session.recognitionClipboardMimeData(presentation.get())->text() ==
+                QString(QChar(0xFF0C)) + QStringLiteral("B"),
+            "selected original-image copy uses the same defaults");
+    presentation->clearTextSelection();
+    session.beginTextEditing();
+    require(session.textDraft() ==
+                    QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") + QChar(0xFF01) &&
+                selectedFormatting == QStringLiteral("remove") &&
+                selectedPunctuation == QStringLiteral("full"),
+            "first edit entry transforms the draft and selects both toolbar options");
+    session.undoTextEdit();
+    require(session.textDraft() == QStringLiteral("A,\nB!"),
+            "one undo reverses both default transformations");
+    session.redoTextEdit();
+    session.setTextDraft(QStringLiteral("User\n?"));
+    session.endTextEditing();
+    session.beginTextEditing();
+    require(session.textDraft() == QStringLiteral("User\n?"),
+            "re-entering edit mode preserves the manually changed draft");
+    session.endTextEditing();
+    require(session.activateCachedTextTranslation() && session.originalImageTranslationActive() &&
+                session.recognitionClipboardMimeData()->text() ==
+                    QStringLiteral("Translated,\noverlay!"),
+            "translated overlay copy bypasses OCR defaults");
+    require(window.copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == QStringLiteral("Translated,\noverlay!"),
+            "translated overlay window copy bypasses OCR defaults");
+    session.setTarget({QStringLiteral("other"), image, QRectF(0, 0, 80, 60)});
+    session.setTarget({QStringLiteral("defaults"), image, QRectF(0, 0, 80, 60)});
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    session.beginTextEditing();
+    require(session.textDraft() ==
+                QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") + QChar(0xFF01),
+            "discarding a target draft allows defaults on its next first edit entry");
+    require(settings.setDefaultFormatting(priorFormatting) &&
+                settings.setDefaultPunctuation(priorPunctuation),
+            "restore OCR defaults after the recognition session");
 }
 
 // A cached launch pays asset re-verification and helper start-up before the
@@ -788,6 +880,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--original-image-only"))) {
         originalImageOverridePreservesSessionState();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--ocr-defaults-only"))) {
+        recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

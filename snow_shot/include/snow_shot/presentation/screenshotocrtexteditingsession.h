@@ -16,6 +16,7 @@ class ScreenshotOcrTextEditingSession final {
     // Replaces the complete draft as one text-history step.
     bool replaceText(const QString& text);
     bool reset();
+    bool applyInitialTransforms(const QString& formatting, const QString& punctuation);
     bool setFormatting(const QString& value);
     bool setPunctuation(const QString& value);
     void clearTransforms();

@@ -5,6 +5,7 @@
 #include "pinnedwindowplatform.h"
 #include "screenshotpinnednativegeometrycontroller.h"
 #include "screenshotpinnedresizegeometry.h"
+#include "screenshotpinneddragexport.h"
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
@@ -74,6 +75,86 @@ Qt::CursorShape resizeCursor(int handle) {
     return Qt::ArrowCursor;
 }
 } // namespace
+
+bool ScreenshotPinnedWindow::exportDragEnabledAt(const QPoint& position) const {
+    return m_presented && !m_closing && !m_clickThroughActive && !m_geometryAnimating &&
+           !m_interactionPlacement && !m_windowDragActive && !m_ocrMode && m_canvas &&
+           rect().contains(position) && !isControlsPanelPosition(position) &&
+           (!interactiveResizingEnabled() || !resizeHandle(position, size()));
+}
+
+void ScreenshotPinnedWindow::cancelExportDrag() {
+    ++m_exportDragGeneration;
+    m_exportDragPreparing = false;
+    if (m_exportDragOrigin) {
+        m_exportDragOrigin.reset();
+        qApp->removeEventFilter(this);
+    }
+    if (m_dragExport)
+        m_dragExport->cancel();
+}
+
+bool ScreenshotPinnedWindow::handleExportDrag(QObject* watched, QEvent* event) {
+    if (!event)
+        return false;
+    // Native dragging owns Escape/release and can deactivate its source window.
+    if (m_dragExport && m_dragExport->dragging())
+        return false;
+    if (m_exportDragOrigin) {
+        if ((event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate ||
+             event->type() == QEvent::Close) &&
+            watched == this) {
+            cancelExportDrag();
+            return false;
+        }
+        if (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress ||
+            event->type() == QEvent::KeyRelease) {
+            auto* key = static_cast<QKeyEvent*>(event);
+            if (key->key() == Qt::Key_Escape) {
+                if (event->type() == QEvent::KeyRelease)
+                    cancelExportDrag();
+                else if (event->type() == QEvent::KeyPress) {
+                    m_exportDragAborted = true;
+                    if (m_dragExport)
+                        m_dragExport->cancel();
+                }
+                event->accept();
+                return true;
+            }
+        }
+        if (event->type() == QEvent::MouseButtonRelease &&
+            static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
+            cancelExportDrag();
+            return true;
+        }
+        if (event->type() == QEvent::MouseMove) {
+            auto* mouse = static_cast<QMouseEvent*>(event);
+            if (!mouse->buttons().testFlag(Qt::LeftButton)) {
+                cancelExportDrag();
+                return true;
+            }
+            if (!m_exportDragAborted && !m_exportDragPreparing &&
+                (!m_dragExport || !m_dragExport->busy()) &&
+                (mouse->globalPosition().toPoint() - *m_exportDragOrigin).manhattanLength() >=
+                    QApplication::startDragDistance())
+                beginExportDrag();
+            return true;
+        }
+        return false;
+    }
+    if ((watched != this && watched != m_canvas) || event->type() != QEvent::MouseButtonPress)
+        return false;
+    auto* mouse = static_cast<QMouseEvent*>(event);
+    if (mouse->button() != Qt::LeftButton || !mouse->modifiers().testFlag(Qt::ControlModifier) ||
+        !exportDragEnabledAt(windowPositionForEvent(watched, mouse->position()).toPoint()))
+        return false;
+    m_exportDragOrigin = mouse->globalPosition().toPoint();
+    m_exportDragAborted = false;
+    m_exportDragSpontaneous = mouse->spontaneous();
+    qApp->installEventFilter(this);
+    event->accept();
+    return true;
+}
 
 void ScreenshotPinnedWindow::reconcilePlatformEnvironment(bool layoutChanged) {
     if (!m_platform || !m_platform->usesControlledInteraction() || !m_presented || m_closing ||

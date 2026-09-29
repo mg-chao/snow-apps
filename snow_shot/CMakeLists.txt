@@ -1307,6 +1307,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
     src/presentation/pinned/screenshotpinnedclickthroughgeometry.h
     src/presentation/pinned/screenshotpinnedinteraction.cpp
+    src/presentation/pinned/screenshotpinneddragexport.cpp
     ${SNOW_PINNED_PLATFORM_SOURCES}
     src/presentation/pinned/screenshotpinnededitcontroller.cpp
     include/snow_shot/presentation/globalcanvascontroller.h
@@ -3642,6 +3643,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
+        src/presentation/pinned/screenshotpinneddragexport.cpp
         ${SNOW_PINNED_PLATFORM_SOURCES}
         src/presentation/services/languagemanager.cpp
         src/presentation/styles/buttonborder.cpp
@@ -5683,6 +5685,11 @@ if(SNOW_SHOT_BUILD_TESTS)
             ../cmake/test-support/macos_native_input.mm)
         target_include_directories(snow-shot-screen-recording-area-window-tests PRIVATE
             ../cmake/test-support)
+        add_test(NAME snow-shot-macos-recording-border-input-tests
+            COMMAND snow-shot-screen-recording-area-window-tests --native-border-input-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-recording-border-input-tests PROPERTIES
+            LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE
+            TIMEOUT 60 SKIP_RETURN_CODE 77)
         add_test(NAME snow-shot-macos-recording-cross-display-drag-tests
             COMMAND snow-shot-screen-recording-area-window-tests --native-logical-drag-only -platform cocoa)
         set_tests_properties(snow-shot-macos-recording-cross-display-drag-tests PROPERTIES
@@ -5764,6 +5771,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/monitorgeometry.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrtexttransform.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp
@@ -5781,6 +5789,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Widgets
         snow_draw_engine_qt_canvas
+        snow_shot_storage
         snow_shot_window_shortcuts
     )
     if(WIN32)
@@ -5994,6 +6003,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-${_original_image_test}-original-image-tests
             PROPERTIES LABELS "unit" TIMEOUT 90)
     endforeach()
+
+    add_test(NAME snow-shot-recognition-defaults-tests
+        COMMAND snow-shot-recognition-session-controller-tests --ocr-defaults-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-defaults-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_test(NAME snow-shot-recognition-image-snapshot-tests
         COMMAND snow-shot-recognition-window-tests --image-snapshot-only -platform offscreen)
@@ -6760,6 +6774,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
+        src/presentation/pinned/screenshotpinneddragexport.cpp
         ${SNOW_PINNED_PLATFORM_SOURCES}
         src/presentation/services/languagemanager.cpp
         src/presentation/styles/buttonborder.cpp
@@ -8149,4 +8164,15 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-macos-cursor-native-tests -platform cocoa)
     set_tests_properties(snow-shot-macos-cursor-native-tests PROPERTIES
         LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 60)
+endif()
+
+if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-drag-export-tests
+        COMMAND snow-shot-pinned-window-tests --drag-export-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-drag-export-tests PROPERTIES LABELS "unit")
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-drag-export-native-tests
+            COMMAND snow-shot-pinned-window-tests --drag-export-native-only -platform windows)
+        set_tests_properties(snow-shot-pinned-drag-export-native-tests PROPERTIES LABELS "unit;windows")
+    endif()
 endif()

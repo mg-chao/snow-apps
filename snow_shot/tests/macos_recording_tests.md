@@ -43,6 +43,19 @@ test checks native click-through, drawing input, stacking and fullscreen Space
 policies through repeated show/hide cycles. Native desktop geometry tests exercise
 mixed display density without requiring multiple physical displays.
 
+Recording border input has a focused Cocoa check (requires permission to post mouse
+events; otherwise CTest reports a skip):
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-macos-recording-border-input-tests$'
+```
+
+It drags every painted edge and corner to the ten-physical-pixel minimum, across
+the fixed boundary, and back before releasing. The same cases run offscreen in
+the area-window tests. The native overlay-initialization fixture also verifies
+that AppKit cannot take over recording geometry after native surface recreation.
+
 ## Native export probe
 
 Deploy with the normal bundle installer, then use the diagnostic entry point:

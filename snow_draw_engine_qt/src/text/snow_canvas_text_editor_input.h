@@ -15,7 +15,6 @@ namespace snow_canvas_text_editor_input {
 enum class EventCommand {
     None,
     Commit,
-    Cancel,
     DeleteElement,
 };
 

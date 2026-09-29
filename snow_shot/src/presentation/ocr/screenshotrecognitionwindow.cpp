@@ -3,7 +3,9 @@
 #include "snow_shot/platform/screenshotnative.h"
 
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrtexttransform.h"
 #include "snow_shot/presentation/screenshotocrtextlayer.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "antd_icons.h"
@@ -375,6 +377,10 @@ void ScreenshotRecognitionWindow::setShowOriginalImage(bool show) {
     if (show) {
         setFocus(Qt::OtherFocusReason);
     }
+}
+
+void ScreenshotRecognitionWindow::setOcrCopyDefaultsEnabled(bool enabled) {
+    m_ocrCopyDefaultsEnabled = enabled;
 }
 
 void ScreenshotRecognitionWindow::setOcrPresentation(
@@ -945,6 +951,11 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
                 lines.push_back(line.text);
             }
             text = lines.join(QLatin1Char('\n'));
+        }
+        if (m_ocrCopyDefaultsEnabled) {
+            const snow_shot::storage::TextRecognitionSettings settings;
+            text = snow_shot::presentation::applyOcrTextTransforms(
+                text, settings.defaultFormatting(), settings.defaultPunctuation());
         }
     }
     if (!contentAvailable) {

@@ -34,7 +34,7 @@ KeyResult handleKeyPress(QKeyEvent* event, SnowCanvasTextDraft& draft,
     result.handled = true;
     const int key = event->key();
     if (key == Qt::Key_Escape) {
-        result.command = EventCommand::Cancel;
+        // Keep Escape owned by the editor without discarding the active draft.
         return result;
     }
     if ((key == Qt::Key_Return || key == Qt::Key_Enter) &&

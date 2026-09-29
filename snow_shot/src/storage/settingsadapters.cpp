@@ -236,6 +236,22 @@ bool TextRecognitionSettings::setSaveRecognitionResultAsImage(bool enabled) cons
                             enabled);
 }
 
+QString TextRecognitionSettings::defaultFormatting() const {
+    return cache().value(QStringLiteral("text_recognition/default_formatting")).toString();
+}
+
+bool TextRecognitionSettings::setDefaultFormatting(const QString& value) const {
+    return cache().setValue(QStringLiteral("text_recognition/default_formatting"), value);
+}
+
+QString TextRecognitionSettings::defaultPunctuation() const {
+    return cache().value(QStringLiteral("text_recognition/default_punctuation")).toString();
+}
+
+bool TextRecognitionSettings::setDefaultPunctuation(const QString& value) const {
+    return cache().setValue(QStringLiteral("text_recognition/default_punctuation"), value);
+}
+
 QColor colorFromRgbaString(const QString& value) {
     const QString normalized = value.trimmed();
     if (normalized.size() != 9 || !normalized.startsWith(u'#')) {
