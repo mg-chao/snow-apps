@@ -525,11 +525,9 @@ class SystemTrayController::Impl {
     void updateIcon() {
         QIcon icon = iconCache.load(customIconPath);
         QString resolvedSource = customIconPath;
-        [[maybe_unused]] bool bundled = false;
         if (icon.isNull()) {
             resolvedSource = bundledIconResource(iconSelection);
             icon = QIcon(resolvedSource);
-            bundled = !icon.isNull();
         }
         if (icon.isNull()) {
             resolvedSource = QStringLiteral("application-window-icon");
@@ -540,7 +538,8 @@ class SystemTrayController::Impl {
             icon = QIcon(QCoreApplication::applicationFilePath());
         }
 #ifdef Q_OS_MACOS
-        icon.setIsMask(bundled);
+        // Template rendering discards RGB colors, including the selected bundled artwork.
+        icon.setIsMask(false);
 #endif
         trayIcon->setIcon(icon);
         trayIcon->setProperty("resolvedIconSource", resolvedSource);

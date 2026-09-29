@@ -103,6 +103,8 @@ int runNativeSystemTrayMenuTests(snow_shot::presentation::SystemTrayController& 
                     return false;
                 },
                 "the native tray button must appear");
+            require(button.image && ![button.image isTemplate],
+                    "the native status item must preserve the bundled icon colors");
             const NSPoint center = NSMakePoint(NSMidX(button.bounds), NSMidY(button.bounds));
 
             QObject observer;
