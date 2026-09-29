@@ -4553,6 +4553,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selection/screenshotselectiontoolbarwidgets.h
         src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
     )
+    snow_shot_import_offscreen_platform(snow-shot-screenshot-selection-toolbar-hover-tests)
     target_include_directories(snow-shot-screenshot-selection-toolbar-hover-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/selection"

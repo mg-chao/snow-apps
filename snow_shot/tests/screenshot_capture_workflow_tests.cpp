@@ -269,6 +269,30 @@ ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
     });
 }
 
+void toolbarPresentationTracksSelectionDragLifetime() {
+    for (const auto mode : {ScreenshotSelectionDragMode::Marquee, ScreenshotSelectionDragMode::All,
+                            ScreenshotSelectionDragMode::Top}) {
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        interaction.beginCapture();
+        selection.setSelectionRect(QRectF(40, 0, 100, 20));
+        require(!makeScreenshotToolbarPresentationState(interaction, selection).selectionDragging,
+                "idle capture must not disable toolbar pointer interaction");
+        require(interaction.enterSelectionDrag(mode), "selection drag must begin");
+        const auto state = makeScreenshotToolbarPresentationState(interaction, selection);
+        require(
+            state.selectionToolbarMode && state.selectionDragging,
+            "create, move and resize drags must retain the toolbar with pointer input disabled");
+        interaction.finishDrag();
+        require(!makeScreenshotToolbarPresentationState(interaction, selection).selectionDragging,
+                "release must restore toolbar pointer interaction");
+        require(interaction.enterSelectionDrag(mode), "a second drag must begin");
+        interaction.cancelDrag();
+        require(!makeScreenshotToolbarPresentationState(interaction, selection).selectionDragging,
+                "cancel must restore toolbar pointer interaction");
+    }
+}
+
 void confirmedSelectionPreservesRegionTypeInToolbarPresentation() {
     for (auto type : {ScreenshotRegionType::Rectangle, ScreenshotRegionType::Polyline,
                       ScreenshotRegionType::Curve, ScreenshotRegionType::Freehand}) {
@@ -1887,6 +1911,7 @@ void silentCaptureSuppressesAllPresentationAndRestoresVisibleMode() {
 
 int main() {
     silentCaptureSuppressesAllPresentationAndRestoresVisibleMode();
+    toolbarPresentationTracksSelectionDragLifetime();
     confirmedSelectionPreservesRegionTypeInToolbarPresentation();
     customCaptureDoesNotWaitForSelector();
     startupDisplayIdentityMatchesByNameRectOrNativeId();

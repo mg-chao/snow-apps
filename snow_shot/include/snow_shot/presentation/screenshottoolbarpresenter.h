@@ -22,6 +22,7 @@ struct ScreenshotToolbarPresentationState {
     bool inactive = true;
     bool selectionToolbarMode = false;
     bool intelligentSelecting = false;
+    bool selectionDragging = false;
     bool editing = false;
     bool ocrAvailable = true;
     bool selectionResizable = true;

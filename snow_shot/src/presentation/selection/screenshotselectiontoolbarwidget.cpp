@@ -239,6 +239,7 @@ void ScreenshotSelectionToolbarWidget::resetForNewCapture() {
     m_displayValues = {};
     m_aspectRatioLocked = false;
     m_displayMode = DisplayMode::Full;
+    m_pointerInteractionEnabled = true;
     m_cornerRadius = 0;
     m_shadowWidth = 0;
     m_canvasUsesPoints = false;
@@ -338,6 +339,9 @@ void ScreenshotSelectionToolbarWidget::moveContentTo(const QPoint& position) {
 }
 
 bool ScreenshotSelectionToolbarWidget::eventFilter(QObject* watched, QEvent* event) {
+    if (!pointerInteractionEnabled()) {
+        return QWidget::eventFilter(watched, event);
+    }
     if (watched == m_lockIconLabel && event != nullptr) {
         if (event->type() == QEvent::MouseButtonPress) {
             auto* mouseEvent = static_cast<QMouseEvent*>(event);
@@ -485,7 +489,7 @@ QWidget* ScreenshotSelectionToolbarWidget::addSeparator() {
 }
 
 void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
-    hovered = hovered && m_displayMode == DisplayMode::Full;
+    hovered = hovered && pointerInteractionEnabled();
     if (m_toolbarHovered == hovered) {
         return;
     }
@@ -530,6 +534,21 @@ bool ScreenshotSelectionToolbarWidget::fieldForObject(QObject* object, Field* ou
 
     *outField = static_cast<Field>(fieldValue);
     return true;
+}
+
+void ScreenshotSelectionToolbarWidget::setPointerInteractionEnabled(bool enabled) {
+    if (m_pointerInteractionEnabled == enabled) {
+        return;
+    }
+    m_pointerInteractionEnabled = enabled;
+    // A selection drag owns the pointer even when this moving toolbar passes
+    // underneath it. Clear preview hover before the next selection frame.
+    updateMouseEventTransparency();
+    if (!pointerInteractionEnabled()) {
+        setToolbarHovered(false);
+    } else if (isVisible()) {
+        scheduleToolbarHoverSync();
+    }
 }
 
 void ScreenshotSelectionToolbarWidget::setSelectionResizable(bool enabled) {
@@ -693,8 +712,12 @@ void ScreenshotSelectionToolbarWidget::updateDisplayMode() {
     }
 }
 
+bool ScreenshotSelectionToolbarWidget::pointerInteractionEnabled() const {
+    return m_pointerInteractionEnabled && m_displayMode == DisplayMode::Full;
+}
+
 void ScreenshotSelectionToolbarWidget::updateMouseEventTransparency() {
-    const bool transparent = m_displayMode == DisplayMode::SizeOnly;
+    const bool transparent = !pointerInteractionEnabled();
     if (transparent) {
         // WA_TransparentForMouseEvents and the input mask only redirect Qt-internal
         // hit testing for alien widgets. A native child HWND always wins OS-level

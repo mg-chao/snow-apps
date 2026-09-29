@@ -101,6 +101,7 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
         SNOW_SHOT_CAPTURE_PERF_SCOPE("toolbar.set_selection_state");
         const auto conversion = screenshotSelectionDisplayConversion(
             m_geometry, m_displaySession, state.selectionPixels, state.selectionDisplayUnit);
+        toolbarWidget->setPointerInteractionEnabled(!state.selectionDragging);
         toolbarWidget->setSelectionResizable(state.selectionResizable);
         toolbarWidget->setCornerRadiusApplicable(state.cornerRadiusApplicable);
         toolbarWidget->setSelectionState(

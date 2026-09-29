@@ -34,6 +34,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void prepareForDisplay();
     void prewarm();
     void setSelectionResizable(bool enabled);
+    void setPointerInteractionEnabled(bool enabled);
     void setCornerRadiusApplicable(bool enabled);
     void
     setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
@@ -79,6 +80,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void updateIconPixmaps();
     void updateDisplayMode();
     void updateMouseEventTransparency();
+    bool pointerInteractionEnabled() const;
     void updateWindowSize();
     QPoint contentOffset() const;
 
@@ -87,6 +89,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     QLabel* m_xLabel = nullptr;
     QLabel* m_yLabel = nullptr;
     bool m_selectionResizable = true;
+    bool m_pointerInteractionEnabled = true;
     bool m_cornerRadiusApplicable = true;
     QLabel* m_widthLabel = nullptr;
     QLabel* m_sizeUnitLabel = nullptr;

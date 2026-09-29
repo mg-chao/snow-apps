@@ -41,12 +41,14 @@ class NoOpSelectionToolbarCommands final : public ScreenshotSelectionToolbarComm
     void setSelectionShadowWidthFromToolbar(int) override {
         ++interactionCount;
     }
-    void setSelectionToolbarHovered(bool) override {
+    void setSelectionToolbarHovered(bool hovered) override {
+        toolbarHovered = hovered;
         ++interactionCount;
     }
 
     std::vector<int> lastAdjustment;
     int interactionCount = 0;
+    bool toolbarHovered = false;
 };
 
 class PixelUnitTranslator final : public QTranslator {
@@ -260,6 +262,44 @@ void selectionToolbarInputSurfaceMatchesInteractivePanel() {
     sendLeave(panel);
     require(host.childAt(QPoint(panelRect.center().x(), panelRect.bottom() + 2)) == &canvas,
             "leaving the toolbar must shrink the input surface back to the panel");
+}
+
+void selectionDragCannotActivateToolbarPreview() {
+    NoOpSelectionToolbarCommands commands;
+    QWidget host;
+    host.resize(1000, 400);
+    QWidget canvas(&host);
+    canvas.setGeometry(host.rect());
+    ScreenshotSelectionToolbarWidget toolbar(commands, &host);
+    toolbar.setSelectionState(QRect(40, 0, 100, 20), false, 0, 0);
+    toolbar.moveContentTo(QPoint(144, 0));
+    host.show();
+    toolbar.show();
+    QCoreApplication::processEvents();
+    auto* panel = toolbar.findChild<SelectionToolbarPanel*>();
+    require(panel != nullptr, "selection toolbar panel must exist");
+    sendEnter(panel);
+    require(commands.toolbarHovered, "idle toolbar hover must activate the result preview");
+    toolbar.setPointerInteractionEnabled(false);
+    require(!commands.toolbarHovered && !panel->pointerHovered(),
+            "starting a selection drag must clear the border-hiding toolbar preview");
+    const int before = commands.interactionCount;
+    sendEnter(panel);
+    toolbar.setSelectionState(QRect(40, 0, 200, 60), false, 0, 0);
+    toolbar.moveContentTo(QPoint(244, 0));
+    QCoreApplication::processEvents();
+    require(!commands.toolbarHovered && commands.interactionCount == before,
+            "a moving toolbar must not activate hover preview during a selection drag");
+    require(host.childAt(panel->mapTo(&host, panel->rect().center())) == &canvas,
+            "toolbar content must pass through pointer input while drawing a top-edge selection");
+    toolbar.setPointerInteractionEnabled(true);
+    sendEnter(panel);
+    require(commands.toolbarHovered, "ending a selection drag must restore toolbar hover");
+    toolbar.setPointerInteractionEnabled(false);
+    toolbar.hide();
+    toolbar.resetForNewCapture();
+    require(!toolbar.testAttribute(Qt::WA_TransparentForMouseEvents),
+            "capture reset must restore the toolbar interaction policy");
 }
 
 void smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles() {
@@ -570,6 +610,7 @@ void selectionToolbarUsesCanvasUnitsForEditingAndSmartSelection() {
 
 int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
+    selectionDragCannotActivateToolbarPreview();
     panelBoundaryExclusivelyOwnsToolbarHoverState();
     valueLabelPaintsFromQtHoverState();
     selectionToolbarInputSurfaceMatchesInteractivePanel();
