@@ -77,6 +77,7 @@ enum class Icon {
     ScrollingScreenshot,
     SaveAsFile,
     QuickSave,
+    Copy,
     Latex,
     Markdown,
     Html,
@@ -189,6 +190,8 @@ struct EditorDescriptor {
         {"save-as-file", "ScreenshotToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Save as file"),
          Icon::SaveAsFile},
+        {"copy", "PinnedToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Copy to clipboard"), Icon::Copy},
     };
     return value;
 }
@@ -228,14 +231,23 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
                 id == QStringLiteral("convert-to-markdown") ||
                 id == QStringLiteral("convert-to-html") ||
                 id == QStringLiteral("text-recognition") ||
-                id == QStringLiteral("text-translation")) {
+                id == QStringLiteral("text-translation") || id == QStringLiteral("save-as-file") ||
+                id == QStringLiteral("quick-save") || id == QStringLiteral("copy")) {
                 result.push_back(descriptor);
             }
         }
+        result.push_back(
+            {"separator", "DrawingToolbarEditorSettingsWidget",
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             Icon::Separator});
         return result;
     }
     if (kind == storage::ScreenshotToolbarLayoutKind::ActionTools) {
-        return actionDescriptors();
+        auto result = actionDescriptors();
+        result.removeIf([](const EditorDescriptor& descriptor) {
+            return QLatin1String(descriptor.id) == QLatin1String("copy");
+        });
+        return result;
     }
     return drawingEditorDescriptors();
 }
@@ -283,6 +295,9 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
              QStringLiteral("table-recognition")},
             {QStringLiteral("text-recognition")},
             {QStringLiteral("text-translation")},
+            {QStringLiteral("separator")},
+            {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
+            {QStringLiteral("copy")},
         };
     }
     return kind == storage::ScreenshotToolbarLayoutKind::ActionTools ? actionDefaultPositions()
@@ -625,6 +640,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ScrollingScreenshot();
     case Icon::QuickSave:
         return custom::QuickSave();
+    case Icon::Copy:
+        return adqt::icons::antd::outlined::Copy();
     case Icon::SaveAsFile:
         return custom::Save();
     }

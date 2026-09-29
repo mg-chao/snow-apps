@@ -1813,9 +1813,11 @@ void pinnedToolbarLayoutReloadsAndResetsIndependently() {
     controller.setEditMode(true);
     require(positions().isEmpty(), "lazy pinned toolbar must load the saved hidden layout");
     const storage::ScreenshotToolbarLayout custom{
-        {{QStringLiteral("text-translation"), QStringLiteral("table-recognition")}},
+        {{QStringLiteral("copy"), QStringLiteral("save-as-file"), QStringLiteral("quick-save")},
+         {QStringLiteral("text-translation"), QStringLiteral("table-recognition")}},
         {QStringLiteral("text-recognition"), QStringLiteral("barcode-recognition"),
-         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")}};
+         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
+         QStringLiteral("latex-recognition"), QStringLiteral("separator")}};
     require(toolbarSettings.setLayout(kind, custom), "must save the custom pinned layout");
     QCoreApplication::processEvents();
     require(positions() == custom.positions,
@@ -1830,7 +1832,7 @@ void pinnedToolbarLayoutReloadsAndResetsIndependently() {
     require(toolbarSettings.setLayout(kind, {}) &&
                 toolbarSettings.layout(kind) == layout::normalizedLayout({}, kind),
             "pinned toolbar defaults must be restorable");
-    require(positions().size() == 3, "restoring defaults must refresh an existing pinned toolbar");
+    require(positions().size() == 5, "restoring defaults must refresh an existing pinned toolbar");
     controller.setEditMode(false);
 }
 

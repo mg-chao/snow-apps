@@ -2076,7 +2076,7 @@ QList<adqt::widgets::AdButton*> mainActionToolbarButtons(ScreenshotToolPalette& 
         QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
         QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
         QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
-        QStringLiteral("save-as-file"),
+        QStringLiteral("save-as-file"),         QStringLiteral("copy"),
     };
     QList<adqt::widgets::AdButton*> buttons;
     for (adqt::widgets::AdButton* button : mainToolbarButtons(palette)) {
@@ -4052,12 +4052,19 @@ void pinnedActionLayoutUsesGenericStacks() {
     options.actionToolsLayoutKind = kind;
     const ScreenshotToolbarLayout previous{
         {{barcode, table}, {markdown}, {html}, {ocr}, {translation}}, {}};
-    const ScreenshotToolbarLayout expected{{{barcode, table},
-                                            {markdown, QStringLiteral("latex-recognition")},
-                                            {html},
-                                            {ocr},
-                                            {translation}},
-                                           {}};
+    ScreenshotToolbarLayout expected{{{barcode, table},
+                                      {markdown, QStringLiteral("latex-recognition")},
+                                      {html},
+                                      {ocr},
+                                      {translation}},
+                                     {}};
+    expected.positions.append({QStringLiteral("separator")});
+    expected.positions.append({QStringLiteral("quick-save"), QStringLiteral("save-as-file")});
+    expected.positions.append({QStringLiteral("copy")});
+    const auto buttonPositions = [](ScreenshotToolbarLayout value) {
+        value.positions.removeAll(QStringList{QStringLiteral("separator")});
+        return value.positions;
+    };
     options.actionToolsLayout = previous;
     require(layout::normalizedLayout(previous, kind) == expected,
             "pinned migration adds LaTeX beside Markdown without rearranging other positions");
@@ -4073,7 +4080,7 @@ void pinnedActionLayoutUsesGenericStacks() {
         }
         return result;
     };
-    require(positions() == expected.positions,
+    require(positions() == buttonPositions(expected),
             "pinned rendering must preserve configured positions");
     const auto actionButtons = mainActionToolbarButtons(palette);
     const auto ocrButton =
@@ -4109,13 +4116,13 @@ void pinnedActionLayoutUsesGenericStacks() {
     palette.setQrBusy(true);
     require(trigger->isEnabled() &&
                 trigger->property("screenshotToolbarItemId").toString() == barcode &&
-                positions() == expected.positions,
+                positions() == buttonPositions(expected),
             "recognition state changes must preserve stack membership and entry");
     palette.setTableEnabled(true);
     palette.setQrBusy(false);
     const ScreenshotToolbarLayout mixed{{{translation, table}, {barcode}}, {ocr, markdown, html}};
     palette.setActionToolsLayout(mixed);
-    require(positions() == mixed.positions,
+    require(positions() == buttonPositions(layout::normalizedLayout(mixed, kind)),
             "pinned tools must support arbitrary stacks and hidden items");
     for (const QString& hidden : {table, barcode}) {
         ScreenshotToolbarLayout separated{{{table}, {barcode}, {translation}},
@@ -4126,11 +4133,11 @@ void pinnedActionLayoutUsesGenericStacks() {
         }
         separated.hidden.append(hidden);
         palette.setActionToolsLayout(separated);
-        require(positions() == separated.positions,
+        require(positions() == buttonPositions(layout::normalizedLayout(separated, kind)),
                 "hiding a recognition tool must not restore it through its sibling");
     }
     palette.setActionToolsLayout({{}, layout::defaultOrder(kind)});
-    require(positions().isEmpty(), "all six pinned tools can be hidden without legacy restoration");
+    require(positions().isEmpty(), "all pinned tools can be hidden without legacy restoration");
     int saves = 0;
     int copies = 0;
     int confirms = 0;
@@ -4144,11 +4151,73 @@ void pinnedActionLayoutUsesGenericStacks() {
             button->accessibleName() == QStringLiteral("Confirm edit"))
             button->click();
     }
-    require(saves == 1 && copies == 1 && confirms == 1,
-            "fixed result controls must survive hiding all pinned tools");
+    require(saves == 0 && copies == 0 && confirms == 1,
+            "hiding all pinned tools must leave only the fixed Confirm control");
     palette.setActionToolsLayout({});
-    require(positions() == layout::defaultPositions(kind),
+    require(positions() == buttonPositions(layout::normalizedLayout({}, kind)),
             "pinned defaults must be restorable at runtime");
+
+    int quickSaves = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::quickSaveRequested, [&] { ++quickSaves; });
+    const QString copy = QStringLiteral("copy");
+    const QString save = QStringLiteral("save-as-file");
+    const QString quick = QStringLiteral("quick-save");
+    auto exports = ScreenshotToolbarLayout{{{copy}, {quick}, {save}}, layout::defaultOrder(kind)};
+    exports.hidden.removeAll(copy);
+    exports.hidden.removeAll(save);
+    exports.hidden.removeAll(quick);
+    palette.setActionToolsLayout(exports);
+    require(positions() == exports.positions, "export tools must support independent reordering");
+    for (auto* button : mainActionToolbarButtons(palette))
+        button->click();
+    require(saves == 1 && copies == 1 && quickSaves == 1,
+            "standalone export tools must dispatch each action exactly once");
+
+    exports.positions = {{save, quick, copy}};
+    palette.setActionToolsLayout(exports);
+    require(positions() == exports.positions, "Copy must stack with both save actions");
+    auto* exportTrigger = mainActionToolbarButtons(palette).first();
+    exportTrigger->click();
+    materializeLazyPopover(exportTrigger);
+    auto* exportPopover = popoverForTrigger(exportTrigger);
+    auto* saveOption = popoverButtonWithTooltip(exportPopover, "Save as file");
+    auto* quickOption = popoverButtonWithTooltip(exportPopover, "Quick save");
+    auto* copyOption = popoverButtonWithTooltip(exportPopover, "Copy to clipboard");
+    require(saveOption && quickOption && copyOption, "export stack must expose all three actions");
+    saveOption->click();
+    quickOption->click();
+    copyOption->click();
+    require(saves == 2 && copies == 3 && quickSaves == 2,
+            "stacked exports must dispatch the selected action exactly once");
+
+    const auto split = layout::normalizedLayout(
+        {{{copy, QStringLiteral("separator"), save}, {quick}}, exports.hidden}, kind);
+    require(split.positions ==
+                QVector<QStringList>{{copy}, {QStringLiteral("separator")}, {save}, {quick}},
+            "separator must split a malformed stack into standalone positions");
+    palette.setActionToolsLayout(split);
+    require(positions() == buttonPositions(split), "separator must not hide neighboring exports");
+    const auto dividerCount = [&]() {
+        int count = 0;
+        const auto* row = palette.mainPanel()->layout();
+        for (int index = 0; index < row->count(); ++index)
+            if (qobject_cast<QFrame*>(row->itemAt(index)->widget()))
+                ++count;
+        return count;
+    };
+    const int withSeparator = dividerCount();
+    const auto withoutSeparator =
+        layout::moveItemToHidden(split, kind, QStringLiteral("separator"), 0);
+    palette.setActionToolsLayout(withoutSeparator);
+    require(dividerCount() == withSeparator - 1,
+            "hiding the configured separator must remove exactly one divider");
+    const snow_shot::storage::ScreenshotToolbarSettings settingsStore;
+    const auto original = settingsStore.layout(kind);
+    require(settingsStore.setLayout(kind, split) && settingsStore.layout(kind) == split,
+            "storage and presentation must agree on export and separator normalization");
+    require(settingsStore.setLayout(kind, original), "restore the saved pinned toolbar layout");
+    require(palette.activateScreenshotShortcut(QStringLiteral("copy_to_clipboard")) && copies == 4,
+            "Copy shortcut must remain available after rearranging exports");
 }
 
 void quickSaveStacksAndLayoutMigration() {

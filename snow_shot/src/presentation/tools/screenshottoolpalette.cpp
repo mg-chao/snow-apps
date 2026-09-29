@@ -404,6 +404,9 @@ QString actionToolShortcutId(const QString& itemId) {
     if (itemId == QStringLiteral("quick-save")) {
         return QStringLiteral("quick_save");
     }
+    if (itemId == QStringLiteral("copy")) {
+        return QStringLiteral("copy_to_clipboard");
+    }
     return {};
 }
 
@@ -4558,6 +4561,9 @@ ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
     if (itemId == QStringLiteral("quick-save")) {
         return m_quickSaveButton;
     }
+    if (itemId == QStringLiteral("copy")) {
+        return m_copyButton;
+    }
     return nullptr;
 }
 
@@ -4625,6 +4631,8 @@ bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         emit quickSaveRequested();
     } else if (itemId == QStringLiteral("save-as-file")) {
         emit saveRequested();
+    } else if (itemId == QStringLiteral("copy")) {
+        emit copyRequested();
     }
     return true;
 }
@@ -5029,11 +5037,14 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         return;
     }
 
+    const bool configurableResultActions =
+        m_options.actionToolsLayoutKind ==
+        snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     const QVector<adqt::widgets::AdButton*> actionSources{
         m_tableButton, m_markdownButton,        m_latexButton,
         m_htmlButton,  m_screenRecordButton,    m_pinButton,
         m_ocrButton,   m_textTranslationButton, m_scrollingScreenshotButton,
-        m_saveButton,  m_quickSaveButton,
+        m_saveButton,  m_quickSaveButton,       configurableResultActions ? m_copyButton : nullptr,
     };
     for (adqt::widgets::AdButton* source : actionSources) {
         if (source != nullptr) {
@@ -5044,10 +5055,14 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     bool hasActionPositions = false;
     for (const QStringList& position : std::as_const(m_actionToolsLayout.positions)) {
-        const auto stack =
-            toolbar_layout::stackPresentation(position, [this](const QString& itemId) {
+        if (position.contains(QStringLiteral("separator"))) {
+            addSeparator();
+            continue;
+        }
+        const auto stack = toolbar_layout::stackPresentation(
+            position, [this, configurableResultActions](const QString& itemId) {
                 return toolbar_layout::actionDescriptor(itemId) != nullptr &&
-                       !(m_options.saveButtonWithResultActions &&
+                       !(m_options.saveButtonWithResultActions && !configurableResultActions &&
                          (itemId == QStringLiteral("save-as-file") ||
                           itemId == QStringLiteral("quick-save"))) &&
                        actionToolAvailable(itemId);
@@ -5074,10 +5089,10 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     QVector<QWidget*> resultActions{
         m_cancelButton,
-        m_options.saveButtonWithResultActions
+        m_options.saveButtonWithResultActions && !configurableResultActions
             ? createActionToolGroup({QStringLiteral("quick-save"), QStringLiteral("save-as-file")})
             : nullptr,
-        m_copyButton,
+        configurableResultActions ? nullptr : m_copyButton,
         m_confirmButton,
         m_globalCanvasClickThroughButton,
         m_globalCanvasExitButton,

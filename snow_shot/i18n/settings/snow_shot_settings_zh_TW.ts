@@ -561,6 +561,10 @@
     <context>
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
+            <source>Copy to clipboard</source>
+            <translation>複製到剪貼簿</translation>
+        </message>
+        <message>
             <source>Drag tools here to hide them from the pinned toolbar.</source>
             <translation>將工具拖曳到此處，即可在固定到螢幕工具列中隱藏。</translation>
         </message>

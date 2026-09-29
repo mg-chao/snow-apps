@@ -475,16 +475,16 @@ void toolbarEditorsUseSeparateDefinitionsAndRetranslate() {
     for (const QString& id :
          {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
           QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
-          QStringLiteral("text-recognition"), QStringLiteral("text-translation")}) {
+          QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
+          QStringLiteral("latex-recognition"), QStringLiteral("separator"),
+          QStringLiteral("save-as-file"), QStringLiteral("quick-save"), QStringLiteral("copy")}) {
         require(pinnedEditor->findChild<QAbstractButton*>(
                     QStringLiteral("settings-pinned-toolbar-item-%1").arg(id)) != nullptr,
-                "the pinned editor must expose each of its six tools");
+                "the pinned editor must expose each configurable tool");
     }
     require(pinnedEditor->findChild<QAbstractButton*>(
-                QStringLiteral("settings-pinned-toolbar-item-save-as-file")) == nullptr &&
-                pinnedEditor->findChild<QAbstractButton*>(
-                    QStringLiteral("settings-pinned-toolbar-item-record-screen")) == nullptr,
-            "the pinned editor must not offer fixed or screenshot-only actions");
+                QStringLiteral("settings-pinned-toolbar-item-record-screen")) == nullptr,
+            "the pinned editor must not offer screenshot-only actions");
     auto* pinnedTable = pinnedEditor->findChild<QAbstractButton*>(
         QStringLiteral("settings-pinned-toolbar-item-table-recognition"));
     require(pinnedTable->property("screenshotToolbarMainButton").toBool(),
@@ -606,6 +606,99 @@ void drawingToolbarSeparatorCanMoveAndHideByDrop() {
             "drawing toolbar editor test must restore the original layout");
 }
 
+void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
+    const auto kind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const storage::ScreenshotToolbarSettings settingsStore;
+    const storage::ScreenshotToolbarLayout original = settingsStore.layout(kind);
+    presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const auto renderer = settings::SettingsCustomRenderer::PinnedToolbarEditor;
+    const auto* field = registry.fieldForCustom(renderer);
+    require(field != nullptr, "pinned editor field must exist");
+    std::unique_ptr<SettingsCustomWidget> editor(
+        createSettingsCustomWidget(renderer, registry, *field->definition, session));
+    editor->show();
+    flushEvents();
+    auto* separator = editor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-pinned-toolbar-item-separator"));
+    auto* copy =
+        editor->findChild<QAbstractButton*>(QStringLiteral("settings-pinned-toolbar-item-copy"));
+    auto* quickSave = editor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-pinned-toolbar-item-quick-save"));
+    QWidget* surface =
+        editor->findChild<QWidget*>(QStringLiteral("settings-pinned-toolbar-surface"));
+    QWidget* hidden =
+        editor->findChild<QWidget*>(QStringLiteral("settings-pinned-toolbar-hidden-zone"));
+    require(separator != nullptr && copy != nullptr && quickSave != nullptr && surface != nullptr &&
+                hidden != nullptr &&
+                separator->accessibleName() == QStringLiteral("Separator Component"),
+            "pinned editor must expose the separator and both export actions");
+
+    const auto drop = [](QWidget* target, const QString& itemId, const QPoint& point) {
+        QMimeData mime;
+        mime.setData("application/x-snow-shot-toolbar-item", itemId.toUtf8());
+        QDragEnterEvent enter(point, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &enter);
+        QDropEvent event(QPointF(point), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &event);
+        return event.isAccepted();
+    };
+    require(drop(surface, QStringLiteral("separator"), QPoint(1, surface->height() - 1)),
+            "separator drop into the toolbar must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).positions.constFirst() ==
+                QStringList{QStringLiteral("separator")},
+            "dragging separator to the start must move its standalone position");
+    require(drop(hidden, QStringLiteral("separator"), QPoint(1, 1)),
+            "separator drop into Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("separator")) &&
+                !separator->property("screenshotToolbarMainButton").toBool(),
+            "dragging separator into Hidden tools must remove it from the preview");
+    require(drop(surface, QStringLiteral("separator"), QPoint(1, surface->height() - 1)),
+            "restoring separator from Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).positions.constFirst() ==
+                    QStringList{QStringLiteral("separator")} &&
+                separator->property("screenshotToolbarMainButton").toBool(),
+            "restored separator must return as its own toolbar position");
+
+    auto* save = editor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-pinned-toolbar-item-save-as-file"));
+    require(save != nullptr, "pinned editor must expose a target for export stacking");
+    const auto stackWithSave = [&](const QString& itemId) {
+        const QPoint aboveSave = save->mapTo(surface, QPoint(save->width() / 2, 1));
+        require(drop(surface, itemId, aboveSave), "export action stack drop must be accepted");
+        flushEvents();
+        const auto updated = backend.toolbarLayout(kind);
+        return std::any_of(updated.positions.cbegin(), updated.positions.cend(),
+                           [&itemId](const QStringList& position) {
+                               return position.contains(itemId) &&
+                                      position.contains(QStringLiteral("save-as-file"));
+                           });
+    };
+    require(stackWithSave(QStringLiteral("copy")),
+            "Copy must be draggable into an ordinary export tool stack");
+    require(drop(hidden, QStringLiteral("copy"), QPoint(1, 1)),
+            "Copy drop into Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("copy")) &&
+                !copy->property("screenshotToolbarMainButton").toBool(),
+            "dragging Copy into Hidden tools must hide it");
+    require(stackWithSave(QStringLiteral("quick-save")),
+            "Quick Save must be draggable into an ordinary export tool stack");
+    require(drop(hidden, QStringLiteral("quick-save"), QPoint(1, 1)),
+            "Quick Save drop into Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("quick-save")) &&
+                !quickSave->property("screenshotToolbarMainButton").toBool(),
+            "dragging Quick Save into Hidden tools must hide it");
+    require(settingsStore.setLayout(kind, original),
+            "pinned toolbar editor test must restore the original layout");
+}
+
 void diagnosticsStateAndCopyFeedback() {
     const auto registry = storageStatusRegistry();
     FakeSettingsBackend backend;
@@ -716,6 +809,7 @@ int main(int argc, char** argv) {
     widgetShowsScanningStateAndForwardsRefresh();
     toolbarEditorsUseSeparateDefinitionsAndRetranslate();
     drawingToolbarSeparatorCanMoveAndHideByDrop();
+    pinnedToolbarExportToolsCanMoveAndHideByDrop();
     pinnedToolbarSectionResetRefreshesEditor();
     diagnosticsStateAndCopyFeedback();
     copyPublishesStableFileAndPreservesClipboardOnFailure();

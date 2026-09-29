@@ -561,6 +561,10 @@
     <context>
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
+            <source>Copy to clipboard</source>
+            <translation>Copy to clipboard</translation>
+        </message>
+        <message>
             <source>Drag tools here to hide them from the pinned toolbar.</source>
             <translation>Drag tools here to hide them from the pinned toolbar.</translation>
         </message>

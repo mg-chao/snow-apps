@@ -85,11 +85,17 @@ QVector<QStringList> defaultActionToolbarPositions() {
     };
 }
 
-const QStringList kPinnedActionToolbarItemIds = {
-    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
-    QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
-    QStringLiteral("convert-to-html"),     QStringLiteral("text-recognition"),
-    QStringLiteral("text-translation")};
+const QStringList kPinnedActionToolbarItemIds = {QStringLiteral("barcode-recognition"),
+                                                 QStringLiteral("table-recognition"),
+                                                 QStringLiteral("convert-to-markdown"),
+                                                 QStringLiteral("latex-recognition"),
+                                                 QStringLiteral("convert-to-html"),
+                                                 QStringLiteral("text-recognition"),
+                                                 QStringLiteral("text-translation"),
+                                                 QStringLiteral("separator"),
+                                                 QStringLiteral("quick-save"),
+                                                 QStringLiteral("save-as-file"),
+                                                 QStringLiteral("copy")};
 
 QVector<QStringList> defaultPinnedActionToolbarPositions() {
     return {
@@ -98,6 +104,9 @@ QVector<QStringList> defaultPinnedActionToolbarPositions() {
          QStringLiteral("table-recognition")},
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
+        {QStringLiteral("separator")},
+        {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
+        {QStringLiteral("copy")},
     };
 }
 
