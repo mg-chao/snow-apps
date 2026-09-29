@@ -1,0 +1,36 @@
+name: Mirror main to Gitee
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-gitee-main
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Push main to Gitee
+        env:
+          GITEE_USERNAME: ${{ vars.GITEE_USERNAME || 'mg-chao' }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo 'Configure the GITEE_TOKEN repository secret with Gitee write access.' >&2
+            exit 1
+          fi
+          auth="$(printf '%s:%s' "$GITEE_USERNAME" "$GITEE_TOKEN" | base64 -w 0)"
+          git -c "http.https://gitee.com/.extraheader=Authorization: Basic $auth" \
+            push https://gitee.com/mg-chao/snow-apps.git HEAD:refs/heads/main
