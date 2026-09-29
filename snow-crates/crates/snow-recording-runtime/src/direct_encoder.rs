@@ -566,7 +566,7 @@ mod tests {
                 speed: VideoEncodingSpeed::VeryFast,
             },
             encode_threads: 1,
-            audio: None,
+            audio: Vec::new(),
         }
     }
 
@@ -575,78 +575,93 @@ mod tests {
         use ffmpeg_next::Rescale;
 
         let directory = tempfile::tempdir().unwrap();
-        for fps in [10, 30] {
-            for recover in [false, true] {
-                let path = directory
-                    .path()
-                    .join(format!("endpoint-{fps}-{recover}.mp4"));
-                let mut settings = config(path.clone());
-                settings.fps = fps;
-                settings.audio = Some(snow_recording_export::streaming::StreamingAudioConfig {
-                    sample_rate_hz: AUDIO_SAMPLE_RATE,
-                    channels: AUDIO_CHANNELS,
-                    bitrate_kbps: 128,
-                });
-                // A completed one-second active timeline followed by slow device
-                // teardown. No sleeps or hardware are needed to reproduce the
-                // old flush extending audio to the still-advancing wall clock.
-                let started = Instant::now() - Duration::from_secs(5);
-                let clock = RecordingClock::new(started);
-                clock
-                    .controller()
-                    .mark_pause(started + Duration::from_millis(400));
-                clock
-                    .controller()
-                    .mark_resume(started + Duration::from_millis(600));
-                clock
-                    .controller()
-                    .finalize(started + Duration::from_millis(1200));
-                let mut owned = OwnedEncoder::new(
-                    StreamingEncoder::builder(settings).recoverable(),
-                    None,
-                    (true, false),
-                    clock,
-                    (0, false),
-                )
-                .unwrap();
-                for pts in [0, 1] {
-                    owned
-                        .encoder
-                        .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
-                        .unwrap();
-                }
-                if recover {
-                    owned
-                        .encoder
-                        .recover_to_software("delayed shutdown fixture")
-                        .unwrap();
-                    owned
-                        .encoder
-                        .push_owned_rgba_frame_at_pts(u64::from(fps / 2), vec![90; 16 * 16 * 4])
-                        .unwrap();
-                }
-                let report = owned.finish(u64::from(fps)).unwrap();
-                assert_eq!(report.encoded_audio_frames, u64::from(AUDIO_SAMPLE_RATE));
-                assert_eq!(report.recovery_count, u32::from(recover));
-                let mut media = ffmpeg_next::format::input(&path).unwrap();
-                let mut audio_pts = Vec::new();
-                let mut audio_end = 0;
-                let mut video_end = 0;
-                for (stream, packet) in media.packets() {
-                    let end = (packet.pts().unwrap() + packet.duration())
-                        .rescale(stream.time_base(), (1, 1000));
-                    if stream.parameters().medium() == ffmpeg_next::media::Type::Audio {
-                        audio_pts.push(packet.pts().unwrap());
-                        audio_end = end;
-                    } else {
-                        video_end = end;
+        for mode in [RecordingAudioMode::Mixed, RecordingAudioMode::Separate] {
+            for fps in [10, 30] {
+                for recover in [false, true] {
+                    let path = directory
+                        .path()
+                        .join(format!("endpoint-{fps}-{recover}-{mode:?}.mp4"));
+                    let mut settings = config(path.clone());
+                    settings.fps = fps;
+                    settings.audio = mode.tracks(true, true, 128);
+                    let track_count = settings.audio.len();
+                    // A completed one-second active timeline followed by slow device
+                    // teardown. No sleeps or hardware are needed to reproduce the
+                    // old flush extending audio to the still-advancing wall clock.
+                    let started = Instant::now() - Duration::from_secs(5);
+                    let clock = RecordingClock::new(started);
+                    clock
+                        .controller()
+                        .mark_pause(started + Duration::from_millis(400));
+                    clock
+                        .controller()
+                        .mark_resume(started + Duration::from_millis(600));
+                    clock
+                        .controller()
+                        .finalize(started + Duration::from_millis(1200));
+                    let mut owned = OwnedEncoder::new(
+                        StreamingEncoder::builder(settings).recoverable(),
+                        None,
+                        (true, true),
+                        clock,
+                        (0, false),
+                    )
+                    .unwrap();
+                    for pts in [0, 1] {
+                        owned
+                            .encoder
+                            .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
+                            .unwrap();
                     }
+                    if recover {
+                        owned
+                            .encoder
+                            .recover_to_software("delayed shutdown fixture")
+                            .unwrap();
+                        owned
+                            .encoder
+                            .push_owned_rgba_frame_at_pts(u64::from(fps / 2), vec![90; 16 * 16 * 4])
+                            .unwrap();
+                    }
+                    let report = owned.finish(u64::from(fps)).unwrap();
+                    assert_eq!(
+                        report.encoded_audio_frames,
+                        u64::from(AUDIO_SAMPLE_RATE) * track_count as u64
+                    );
+                    assert_eq!(report.recovery_count, u32::from(recover));
+                    let mut media = ffmpeg_next::format::input(&path).unwrap();
+                    let mut audio_pts: BTreeMap<usize, Vec<i64>> = BTreeMap::new();
+                    let mut audio_ends = BTreeMap::new();
+                    let mut video_end = 0;
+                    for (stream, packet) in media.packets() {
+                        let end = (packet.pts().unwrap() + packet.duration())
+                            .rescale(stream.time_base(), (1, 1000));
+                        if stream.parameters().medium() == ffmpeg_next::media::Type::Audio {
+                            audio_pts
+                                .entry(stream.index())
+                                .or_default()
+                                .push(packet.pts().unwrap());
+                            audio_ends.insert(stream.index(), end);
+                        } else {
+                            video_end = end;
+                        }
+                    }
+                    assert_eq!(video_end, 1000);
+                    assert_eq!(audio_pts.len(), track_count);
+                    for points in audio_pts.values() {
+                        assert!(points.len() >= 47);
+                        assert!(points.windows(2).all(|pair| pair[1] - pair[0] == 1024));
+                    }
+                    // AAC may pad the final 1024-sample frame, at most 22 ms.
+                    for end in audio_ends.values() {
+                        assert!((1000..=1022).contains(end), "audio end {end}");
+                    }
+                    assert!(
+                        audio_ends
+                            .values()
+                            .all(|end| Some(end) == audio_ends.values().next())
+                    );
                 }
-                assert_eq!(video_end, 1000);
-                assert!(audio_pts.len() >= 47);
-                assert!(audio_pts.windows(2).all(|pair| pair[1] - pair[0] == 1024));
-                // AAC may pad the final 1024-sample frame, at most 22 ms.
-                assert!((1000..=1022).contains(&audio_end), "audio end {audio_end}");
             }
         }
     }
@@ -675,7 +690,10 @@ mod tests {
         // audio track. The stop boundary must retain already emitted video.
         owned.mixer = Some(LiveAudioMixer::new(true, false));
         let error = owned.finish(100).unwrap_err().to_string();
-        assert!(error.contains("without an audio track"), "{error}");
+        assert!(
+            error.contains("unknown streaming audio track: system"),
+            "{error}"
+        );
         assert!(error.contains("recoverable media is retained"), "{error}");
         assert!(!path.exists());
         let retained = std::fs::read_dir(directory.path())

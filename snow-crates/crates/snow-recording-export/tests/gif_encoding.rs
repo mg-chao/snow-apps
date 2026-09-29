@@ -22,7 +22,7 @@ fn config(path: &Path, width: u32, height: u32) -> StreamingEncoderConfig {
         software_h264_priority: SoftwareH264Priority::X264First,
         video: VideoEncodeConfig::default(),
         encode_threads: 1,
-        audio: None,
+        audio: Vec::new(),
     }
 }
 

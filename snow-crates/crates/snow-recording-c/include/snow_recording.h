@@ -101,7 +101,7 @@ typedef struct SnowCaptureExclusions {
 } SnowCaptureExclusions;
 #endif
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 9u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 10u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -109,6 +109,12 @@ typedef struct SnowCaptureKeyboardLabel {
     const uint8_t* utf8;
     uint32_t utf8_len;
 } SnowCaptureKeyboardLabel;
+
+/* Separate MP4 tracks use speaker audio as the default when both sources are enabled. */
+typedef enum SnowCaptureRecordingAudioMode {
+    SNOW_CAPTURE_RECORDING_AUDIO_MIXED = 0,
+    SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE = 1
+} SnowCaptureRecordingAudioMode;
 
 /* RGBA values use 0xRRGGBBAA packing. A zero alpha disables the effect. */
 typedef struct SnowCaptureDirectRecordingConfig {
@@ -161,6 +167,8 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t keyboard_font_weight;
     /* Version 9: MP4 quality, 0..100. Older versions retain the default of 80. */
     uint32_t quality;
+    /* v10: SnowCaptureRecordingAudioMode; older versions use mixed audio. */
+    uint32_t audio_mode;
 } SnowCaptureDirectRecordingConfig;
 
 /* Worker-thread query. macOS region coordinates are points; output is pixels.

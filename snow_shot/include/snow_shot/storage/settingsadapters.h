@@ -365,6 +365,8 @@ class RecordingSettings final {
     bool setAnimatedImageClarity(const QString& clarity) const;
     [[nodiscard]] int animatedImageFrameRate() const;
     bool setAnimatedImageFrameRate(int frameRate) const;
+    [[nodiscard]] bool separateAudioTracks() const;
+    bool setSeparateAudioTracks(bool enabled) const;
     [[nodiscard]] bool loopAnimatedImages() const;
     bool setLoopAnimatedImages(bool enabled) const;
     [[nodiscard]] QString outputFormat() const;

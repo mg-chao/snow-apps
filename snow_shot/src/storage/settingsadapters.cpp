@@ -1413,6 +1413,14 @@ bool RecordingSettings::setAnimatedImageFrameRate(int frameRate) const {
                             frameRate);
 }
 
+bool RecordingSettings::separateAudioTracks() const {
+    return cache().value(QStringLiteral("screen_recording/separate_audio_tracks")).toBool();
+}
+
+bool RecordingSettings::setSeparateAudioTracks(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/separate_audio_tracks"), enabled);
+}
+
 bool RecordingSettings::loopAnimatedImages() const {
     return cache().value(QStringLiteral("screen_recording/loop_animated_images")).toBool();
 }

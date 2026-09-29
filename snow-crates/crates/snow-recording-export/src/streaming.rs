@@ -41,9 +41,26 @@ pub enum GpuFailureStage {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StreamingAudioConfig {
+    /// Stable routing identity, unique within the output.
+    pub track_id: String,
+    pub title: String,
+    pub default: bool,
     pub sample_rate_hz: u32,
     pub channels: u16,
     pub bitrate_kbps: u16,
+}
+
+impl Default for StreamingAudioConfig {
+    fn default() -> Self {
+        Self {
+            track_id: "mixed".into(),
+            title: "Audio".into(),
+            default: true,
+            sample_rate_hz: 48_000,
+            channels: 2,
+            bitrate_kbps: 192,
+        }
+    }
 }
 
 impl StreamingAudioConfig {
@@ -73,7 +90,8 @@ pub struct StreamingEncoderConfig {
     pub software_h264_priority: SoftwareH264Priority,
     pub video: VideoEncodeConfig,
     pub encode_threads: u8,
-    pub audio: Option<StreamingAudioConfig>,
+    /// Ordered output tracks; an empty collection produces video only.
+    pub audio: Vec<StreamingAudioConfig>,
 }
 
 /// Startup policies separate from the stable streaming configuration. This
@@ -235,11 +253,20 @@ impl StreamingEncoderConfig {
         if self.fps == 0 {
             return Err("streaming output fps must be greater than zero".to_string());
         }
-        if let Some(audio) = &self.audio {
+        for audio in &self.audio {
             if self.format.is_animated_image() {
                 return Err("animated streaming formats do not support audio".to_string());
             }
             audio.validate()?;
+        }
+        let mut ids = std::collections::HashSet::new();
+        for audio in &self.audio {
+            if audio.track_id.is_empty() || !ids.insert(&audio.track_id) {
+                return Err("streaming audio track IDs must be nonempty and unique".into());
+            }
+        }
+        if self.audio.iter().filter(|track| track.default).count() > 1 {
+            return Err("only one streaming audio track may be the default".into());
         }
         self.video.validate("video")?;
         Ok(())
@@ -306,6 +333,7 @@ struct PendingFrame {
 }
 
 struct StreamingAudioState {
+    track_id: String,
     encoder: ffmpeg::encoder::audio::Encoder,
     stream_index: usize,
     stream_time_base: ffmpeg::Rational,
@@ -349,7 +377,7 @@ pub struct StreamingEncoder {
     admitted_frames: u64,
     spare_rgba: Vec<u8>,
     pending_timed_durations: VideoPacketDurations,
-    audio: Option<StreamingAudioState>,
+    audio: Vec<StreamingAudioState>,
     staging_path: Option<PathBuf>,
     retain_failed_output: bool,
     final_path: PathBuf,
@@ -722,12 +750,12 @@ impl StreamingEncoder {
             stream.set_parameters(&encoder);
             stream.index()
         };
-        let mut audio = create_audio_state(
+        let mut audio = create_audio_states(
             &mut output,
             &staging_path,
             config.format,
             global_header,
-            config.audio.as_ref(),
+            &config.audio,
             config.encode_threads,
         )?;
         let mut options = ffmpeg::Dictionary::new();
@@ -774,7 +802,7 @@ impl StreamingEncoder {
                     "streaming video track disappeared after header write".to_string(),
                 )
             })?;
-        if let Some(audio) = audio.as_mut() {
+        for audio in &mut audio {
             audio.stream_time_base = output
                 .stream(audio.stream_index)
                 .map(|stream| stream.time_base())
@@ -897,7 +925,7 @@ impl StreamingEncoder {
                 used_hardware_video_encoder,
                 audio_encoder: config
                     .audio
-                    .as_ref()
+                    .first()
                     .and_then(|_| choose_audio_codec(config.format))
                     .map(|codec| codec.name().to_string()),
                 ..report
@@ -1067,12 +1095,33 @@ impl StreamingEncoder {
         Ok(std::mem::take(&mut self.spare_rgba))
     }
 
+    /// Submit PCM to a single-track output. Multi-track outputs require explicit routing.
     pub fn push_audio_pcm_i16(&mut self, timestamp_ms: u64, samples: &[i16]) -> Result<()> {
-        let audio = self.audio.as_mut().ok_or_else(|| {
-            RecordingExportError::InvalidConfig(
-                "streaming encoder was created without an audio track".to_string(),
-            )
-        })?;
+        if self.audio.len() != 1 {
+            return Err(RecordingExportError::InvalidConfig(
+                "unaddressed PCM requires exactly one audio track".into(),
+            ));
+        }
+        let id = self.audio[0].track_id.clone();
+        self.push_audio_track_pcm_i16(&id, timestamp_ms, samples)
+    }
+
+    /// Submit interleaved PCM on the shared active recording timeline to one track.
+    pub fn push_audio_track_pcm_i16(
+        &mut self,
+        track_id: &str,
+        timestamp_ms: u64,
+        samples: &[i16],
+    ) -> Result<()> {
+        let audio = self
+            .audio
+            .iter_mut()
+            .find(|audio| audio.track_id == track_id)
+            .ok_or_else(|| {
+                RecordingExportError::InvalidConfig(format!(
+                    "unknown streaming audio track: {track_id}"
+                ))
+            })?;
         let output = self
             .audio_output
             .as_mut()
@@ -1083,8 +1132,12 @@ impl StreamingEncoder {
         audio.push_pcm(timestamp_ms, samples, output, &mut self.report)
     }
 
+    pub fn has_audio_track(&self, track_id: &str) -> bool {
+        self.audio.iter().any(|audio| audio.track_id == track_id)
+    }
+
     pub fn has_audio(&self) -> bool {
-        self.audio.is_some()
+        !self.audio.is_empty()
     }
 
     /// Poll asynchronous native encoders even when the desktop has not changed.
@@ -1390,8 +1443,10 @@ impl StreamingEncoder {
         let path = self.staging_path.as_ref()?.clone();
         // Best effort sealing also makes recordings interrupted during capture playable.
         let _ = self.encode_pending(1);
-        if let (Some(audio), Some(output)) = (self.audio.as_mut(), self.output.as_mut()) {
-            let _ = audio.finish(output, &mut self.report);
+        if let Some(output) = self.output.as_mut() {
+            for audio in &mut self.audio {
+                let _ = audio.finish(output, &mut self.report);
+            }
         }
         let _ = self.encoder.send_eof();
         let _ = self.drain_packets(true);
@@ -1493,7 +1548,7 @@ impl StreamingEncoder {
             .and_then(|frame| end_pts.map(|end| end.saturating_sub(frame.pts).max(1)))
             .unwrap_or(1);
         self.encode_pending(duration)?;
-        if let Some(audio) = self.audio.as_mut() {
+        for audio in &mut self.audio {
             let output = self.output.as_mut().ok_or_else(|| {
                 RecordingExportError::Encode("streaming output is already closed".to_string())
             })?;
@@ -1749,17 +1804,37 @@ pub(crate) unsafe fn configure_bt709_scaler(context: *mut ffmpeg::ffi::SwsContex
     Ok(())
 }
 
+fn create_audio_states(
+    output: &mut ffmpeg::format::context::Output,
+    output_path: &Path,
+    format: ExportFormat,
+    global_header: bool,
+    configs: &[StreamingAudioConfig],
+    encode_threads: u8,
+) -> Result<Vec<StreamingAudioState>> {
+    configs
+        .iter()
+        .map(|config| {
+            create_audio_state(
+                output,
+                output_path,
+                format,
+                global_header,
+                config,
+                encode_threads,
+            )
+        })
+        .collect()
+}
+
 fn create_audio_state(
     output: &mut ffmpeg::format::context::Output,
     output_path: &Path,
     format: ExportFormat,
     global_header: bool,
-    config: Option<&StreamingAudioConfig>,
+    config: &StreamingAudioConfig,
     encode_threads: u8,
-) -> Result<Option<StreamingAudioState>> {
-    let Some(config) = config else {
-        return Ok(None);
-    };
+) -> Result<StreamingAudioState> {
     let container_codec = output
         .format()
         .codec(output_path, ffmpeg::media::Type::Audio);
@@ -1805,6 +1880,17 @@ fn create_audio_state(
         stream.set_time_base(ffmpeg::Rational(1, output_rate as i32));
         stream.set_rate(ffmpeg::Rational(output_rate as i32, 1));
         stream.set_parameters(&encoder);
+        let mut metadata = ffmpeg::Dictionary::new();
+        metadata.set("title", &config.title);
+        metadata.set("handler_name", &config.title);
+        stream.set_metadata(metadata);
+        unsafe {
+            (*stream.as_mut_ptr()).disposition = if config.default {
+                ffmpeg::ffi::AV_DISPOSITION_DEFAULT
+            } else {
+                0
+            };
+        }
         stream.index()
     };
     let input_layout = ffmpeg::ChannelLayout::default(i32::from(config.channels));
@@ -1837,7 +1923,8 @@ fn create_audio_state(
     } else {
         encoder.frame_size() as usize
     };
-    Ok(Some(StreamingAudioState {
+    Ok(StreamingAudioState {
+        track_id: config.track_id.clone(),
         encoder,
         stream_index,
         stream_time_base: ffmpeg::Rational(1, output_rate as i32),
@@ -1850,7 +1937,7 @@ fn create_audio_state(
         pending_samples: VecDeque::with_capacity(frame_samples * usize::from(config.channels) * 2),
         next_input_frame: 0,
         next_encoder_pts: 0,
-    }))
+    })
 }
 
 impl StreamingAudioState {
@@ -2288,7 +2375,7 @@ mod tests {
                 speed: VideoEncodingSpeed::VeryFast,
             },
             encode_threads: 1,
-            audio: None,
+            audio: Vec::new(),
         }
     }
 
@@ -2696,11 +2783,12 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("recording.mp4");
         let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
-        config.audio = Some(StreamingAudioConfig {
+        config.audio = vec![StreamingAudioConfig {
             sample_rate_hz: 48_000,
             channels: 2,
             bitrate_kbps: 160,
-        });
+            ..Default::default()
+        }];
         let mut encoder = StreamingEncoder::create(config).unwrap();
         write_test_frames(&mut encoder);
         let packet = vec![1_000i16; 480 * 2];
@@ -2715,14 +2803,217 @@ mod tests {
         assert_eq!(audio.parameters().id(), ffmpeg::codec::Id::AAC);
     }
 
+    // The repository FFmpeg build has no AAC decoder. Use its existing pure-Rust
+    // test decoder to verify samples, not merely the presence of MP4 streams.
+    fn decode_aac_track(path: &Path, order: usize) -> Vec<f32> {
+        use symphonia::core::{
+            audio::SampleBuffer, codecs::CODEC_TYPE_AAC, io::MediaSourceStream, probe::Hint,
+        };
+        let source =
+            MediaSourceStream::new(Box::new(fs::File::open(path).unwrap()), Default::default());
+        let mut hint = Hint::new();
+        hint.with_extension("mp4");
+        let mut format = symphonia::default::get_probe()
+            .format(&hint, source, &Default::default(), &Default::default())
+            .unwrap()
+            .format;
+        let track = format
+            .tracks()
+            .iter()
+            .filter(|track| track.codec_params.codec == CODEC_TYPE_AAC)
+            .nth(order)
+            .unwrap();
+        let id = track.id;
+        let mut decoder = symphonia::default::get_codecs()
+            .make(&track.codec_params, &Default::default())
+            .unwrap();
+        let mut samples = Vec::new();
+        loop {
+            let packet = match format.next_packet() {
+                Ok(packet) => packet,
+                Err(symphonia::core::errors::Error::IoError(error))
+                    if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    break;
+                }
+                Err(error) => panic!("MP4 decode failed: {error}"),
+            };
+            if packet.track_id() != id {
+                continue;
+            }
+            let decoded = decoder.decode(&packet).unwrap();
+            assert_eq!(decoded.spec().rate, 48_000);
+            let channels = decoded.spec().channels.count();
+            let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+            buffer.copy_interleaved_ref(decoded);
+            samples.extend(
+                buffer
+                    .samples()
+                    .chunks_exact(channels)
+                    .map(|frame| frame[0]),
+            );
+        }
+        samples
+    }
+
+    #[test]
+    fn separate_audio_tracks_round_trip_and_survive_recovery() {
+        use ffmpeg::Rescale;
+        // Normal mux, staged mux without failure, and staged mux after device loss.
+        for recovery in 0..3 {
+            for sources in [
+                vec!["system", "microphone"],
+                vec!["system"],
+                vec!["microphone"],
+            ] {
+                let directory = tempfile::tempdir().unwrap();
+                let path = directory.path().join("separate.mp4");
+                let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
+                config.video.speed = VideoEncodingSpeed::UltraFast;
+                config.audio = sources
+                    .iter()
+                    .enumerate()
+                    .map(|(index, id)| StreamingAudioConfig {
+                        track_id: (*id).into(),
+                        title: if *id == "system" {
+                            "Speaker audio"
+                        } else {
+                            "Microphone"
+                        }
+                        .into(),
+                        default: index == 0,
+                        ..Default::default()
+                    })
+                    .collect();
+                let builder = StreamingEncoder::builder(config);
+                let mut encoder = if recovery == 0 {
+                    builder
+                } else {
+                    builder.recoverable()
+                }
+                .create()
+                .unwrap();
+                assert!(
+                    encoder
+                        .push_audio_track_pcm_i16("missing", 0, &[0; 960])
+                        .is_err()
+                );
+                if sources.len() == 2 {
+                    assert!(encoder.push_audio_pcm_i16(0, &[0; 960]).is_err());
+                }
+                for half in 0..2 {
+                    for pts in (half * 5)..(half * 5 + 5) {
+                        encoder
+                            .push_rgba_frame_at_pts(pts, &[128; 16 * 16 * 4])
+                            .unwrap();
+                    }
+                    for id in &sources {
+                        let frequency = if *id == "system" { 440.0 } else { 880.0 };
+                        let samples: Vec<i16> = (0..24_000)
+                            .flat_map(|frame| {
+                                let sample = (8_000.0
+                                    * (std::f64::consts::TAU
+                                        * frequency
+                                        * (half * 24_000 + frame) as f64
+                                        / 48_000.0)
+                                        .sin()) as i16;
+                                [sample, sample]
+                            })
+                            .collect();
+                        encoder
+                            .push_audio_track_pcm_i16(id, half * 500, &samples)
+                            .unwrap();
+                    }
+                    if half == 0 && recovery == 2 {
+                        encoder
+                            .recover_to_software("injected audio isolation test failure")
+                            .unwrap();
+                    }
+                }
+                let report = encoder.finish_at_pts(10).unwrap();
+                assert_eq!(report.recovery_count, u32::from(recovery == 2));
+                assert_eq!(report.encoded_audio_frames, 48_000 * sources.len() as u64);
+                let input = ffmpeg::format::input(&path).unwrap();
+                assert_eq!(input.nb_streams(), 1 + sources.len() as u32);
+                for (order, id) in sources.iter().enumerate() {
+                    let mut input = ffmpeg::format::input(&path).unwrap();
+                    let stream = input.stream(order + 1).unwrap();
+                    assert_eq!(stream.parameters().id(), ffmpeg::codec::Id::AAC);
+                    assert_eq!(
+                        stream.metadata().get("handler_name"),
+                        Some(if *id == "system" {
+                            "Speaker audio"
+                        } else {
+                            "Microphone"
+                        })
+                    );
+                    assert_eq!(
+                        stream
+                            .disposition()
+                            .contains(ffmpeg::format::stream::Disposition::DEFAULT),
+                        order == 0
+                    );
+                    assert!(
+                        (stream.duration().rescale(stream.time_base(), (1, 48_000)) - 48_000).abs()
+                            <= 1024
+                    );
+                    let mut timestamps = Vec::new();
+                    for (stream, packet) in input.packets() {
+                        if stream.index() == order + 1 {
+                            timestamps.push(packet.pts().unwrap());
+                        }
+                    }
+                    let decoded = decode_aac_track(&path, order);
+                    assert!(timestamps.len() > 40);
+                    assert!(timestamps.windows(2).all(|pair| pair[1] - pair[0] == 1024));
+                    assert!(decoded.len() >= 48_000);
+                    let samples = &decoded[4096..44_000];
+                    let energy = |frequency: f64| {
+                        let (mut real, mut imaginary) = (0.0, 0.0);
+                        for (index, sample) in samples.iter().enumerate() {
+                            let phase = std::f64::consts::TAU * frequency * index as f64 / 48_000.0;
+                            real += f64::from(*sample) * phase.cos();
+                            imaginary += f64::from(*sample) * phase.sin();
+                        }
+                        real * real + imaginary * imaginary
+                    };
+                    let (own, other) = if *id == "system" {
+                        (440.0, 880.0)
+                    } else {
+                        (880.0, 440.0)
+                    };
+                    assert!(
+                        energy(own) > 100.0 * energy(other),
+                        "{id}: sources must remain independent"
+                    );
+                }
+                assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn audio_track_routing_rejects_duplicate_ids_and_defaults() {
+        let mut config = encoder_config(PathBuf::from("recording.mp4"), ExportFormat::Mp4);
+        config.audio = vec![StreamingAudioConfig::default(); 2];
+        assert!(config.validate().is_err());
+        config.audio[1].track_id = "microphone".into();
+        assert!(config.validate().is_err());
+        config.audio[1].default = false;
+        assert!(config.validate().is_ok());
+        config.audio[0].track_id.clear();
+        assert!(config.validate().is_err());
+    }
+
     #[test]
     fn animated_formats_reject_audio_configuration() {
         let mut config = encoder_config(PathBuf::from("recording.gif"), ExportFormat::Gif);
-        config.audio = Some(StreamingAudioConfig {
+        config.audio = vec![StreamingAudioConfig {
             sample_rate_hz: 48_000,
             channels: 2,
             bitrate_kbps: 160,
-        });
+            ..Default::default()
+        }];
         assert!(config.validate().is_err());
     }
 
@@ -3033,11 +3324,12 @@ mod tests {
             config.execution_mode = ExportExecutionMode::HardwarePreferred;
             // Reaches resampler initialization after opening video and adding its
             // stream. FFmpeg cannot represent this input rate as a positive int.
-            config.audio = Some(StreamingAudioConfig {
+            config.audio = vec![StreamingAudioConfig {
                 sample_rate_hz: u32::MAX,
                 channels: 2,
                 bitrate_kbps: 160,
-            });
+                ..Default::default()
+            }];
             assert!(StreamingEncoder::create(config).is_err());
             assert!(!path.exists());
             assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);

@@ -168,6 +168,7 @@ pub struct SnowCaptureDirectRecordingConfig {
     keyboard_cjk_font_family_utf8: *const c_char,
     keyboard_font_weight: u32,
     quality: u32,
+    audio_mode: u32,
 }
 
 #[repr(C)]
@@ -177,7 +178,7 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 9;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 10;
 // Version 8 ended with four padding bytes now occupied by quality.
 const DIRECT_RECORDING_CONFIG_V8_SIZE: u32 = 256;
 const DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE: usize =
@@ -210,7 +211,7 @@ fn direct_config_size(version: u32) -> Result<u32, String> {
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, keyboard_font_family_utf8)
                 as u32,
         ),
-        8 => Ok(DIRECT_RECORDING_CONFIG_V8_SIZE),
+        8 | 9 => Ok(DIRECT_RECORDING_CONFIG_V8_SIZE),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -680,7 +681,17 @@ fn parse_direct_recording_config(
             std::sync::Arc::from(Vec::<i32>::new()),
         )
     };
+    let audio_mode = if config.version < 10 {
+        snow_screen_recorder::RecordingAudioMode::Mixed
+    } else {
+        match config.audio_mode {
+            0 => snow_screen_recorder::RecordingAudioMode::Mixed,
+            1 => snow_screen_recorder::RecordingAudioMode::Separate,
+            value => return Err(format!("invalid recording audio mode: {value}")),
+        }
+    };
     let direct = DirectRecordingConfig {
+        audio_mode,
         loop_animated_images,
         region: RecordingRegion::new(config.x, config.y, config.width, config.height),
         capture_backend,
@@ -1243,17 +1254,66 @@ mod tests {
     }
 
     #[test]
+    fn direct_audio_mode_is_versioned_and_validated() {
+        use snow_screen_recorder::RecordingAudioMode;
+        for version in 1..=DIRECT_RECORDING_CONFIG_VERSION {
+            let mut config = direct_config(c"recording.mp4");
+            config.version = version;
+            config.struct_size = direct_config_size(version).unwrap();
+            config.audio_mode = 1;
+            if version == 2 {
+                config.mouse_trail_duration_ms = 0;
+            }
+            // Allocate only the caller's versioned prefix to catch overreads under sanitizers.
+            let bytes = unsafe {
+                std::slice::from_raw_parts(
+                    (&raw const config).cast::<u8>(),
+                    config.struct_size as usize,
+                )
+            }
+            .to_vec();
+            let read = unsafe { read_direct_recording_config(bytes.as_ptr().cast()) }.unwrap();
+            let parsed = parse_direct_recording_config(&read).unwrap();
+            assert_eq!(
+                parsed.audio_mode,
+                if version < 10 {
+                    RecordingAudioMode::Mixed
+                } else {
+                    RecordingAudioMode::Separate
+                }
+            );
+        }
+        let mut config = direct_config(c"recording.mp4");
+        config.audio_mode = 2;
+        assert!(
+            parse_direct_recording_config(&config)
+                .unwrap_err()
+                .contains("audio mode")
+        );
+        config.audio_mode = 0;
+        assert_eq!(
+            parse_direct_recording_config(&config).unwrap().audio_mode,
+            RecordingAudioMode::Mixed
+        );
+    }
+
+    #[test]
     fn direct_recording_exclusion_abi_layout() {
-        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 9);
+        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 10);
         assert_eq!(
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, exclusions),
             192
         );
-        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 256);
+        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 264);
+        assert_eq!(direct_config_size(9).unwrap(), 256);
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureDirectRecordingConfig, audio_mode),
+            256
+        );
         assert_eq!(direct_config_size(7).unwrap(), 232);
         assert_eq!(direct_config_size(6).unwrap(), 224);
         assert_eq!(DIRECT_RECORDING_CONFIG_V5_SIZE, 192);
-        for version in [5, 6, 7, 8, 9] {
+        for version in [5, 6, 7, 8, 9, 10] {
             let header = SnowCaptureDirectRecordingConfigHeader {
                 version,
                 struct_size: 8,
@@ -1592,6 +1652,7 @@ mod tests {
     fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
         SnowCaptureDirectRecordingConfig {
             exclusions: Default::default(),
+            audio_mode: 0,
             version: DIRECT_RECORDING_CONFIG_VERSION,
             struct_size: std::mem::size_of::<SnowCaptureDirectRecordingConfig>() as u32,
             x: -100,

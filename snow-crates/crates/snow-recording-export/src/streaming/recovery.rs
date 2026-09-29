@@ -66,7 +66,7 @@ pub(super) fn create(builder: StreamingEncoderBuilder) -> Result<StreamingEncode
         current_start: None,
     };
     let mut config = builder.config;
-    config.audio = None;
+    config.audio.clear();
     config.output_path = recovery.directory.join("video-0.mp4");
     let mut encoder = segment(
         config,
@@ -75,22 +75,22 @@ pub(super) fn create(builder: StreamingEncoderBuilder) -> Result<StreamingEncode
         builder.gpu_input,
     )?;
     let audio_path = recovery.directory.join("audio.mp4");
-    if recovery.config.audio.is_some() {
+    if !recovery.config.audio.is_empty() {
         let mut output = ffmpeg::format::output(&audio_path).map_err(error)?;
         let global_header = output
             .format()
             .flags()
             .contains(ffmpeg::format::Flags::GLOBAL_HEADER);
-        let mut audio = create_audio_state(
+        let mut audio = create_audio_states(
             &mut output,
             &audio_path,
             ExportFormat::Mp4,
             global_header,
-            recovery.config.audio.as_ref(),
+            &recovery.config.audio,
             recovery.config.encode_threads,
         )?;
         output.write_header().map_err(error)?;
-        if let Some(state) = audio.as_mut() {
+        for state in &mut audio {
             state.stream_time_base = output
                 .stream(state.stream_index)
                 .ok_or_else(|| error("missing audio stream"))?
@@ -147,7 +147,7 @@ impl StreamingEncoder {
         }
         let mut config = state.config.clone();
         config.output_path = state.directory.join("video-1.mp4");
-        config.audio = None;
+        config.audio.clear();
         config.prefer_hardware_h264 = false;
         config.execution_mode = ExportExecutionMode::SoftwareOnly;
         config.software_h264_priority = SoftwareH264Priority::X264First;
@@ -171,7 +171,7 @@ impl StreamingEncoder {
         state.previous_frames += self.report.video_packets;
         state.recovered = true;
         state.current_start = None;
-        next.audio = self.audio.take();
+        next.audio = std::mem::take(&mut self.audio);
         next.audio_output = self.audio_output.take();
         next.report.audio_encoder = self.report.audio_encoder.clone();
         next.report.encoded_audio_frames = self.report.encoded_audio_frames;
@@ -254,8 +254,10 @@ impl StreamingEncoder {
         if self.staging_path.is_some() {
             let _ = self.seal_segment(false);
         }
-        if let (Some(audio), Some(output)) = (self.audio.as_mut(), self.audio_output.as_mut()) {
-            let _ = audio.finish(output, &mut self.report);
+        if let Some(output) = self.audio_output.as_mut() {
+            for audio in &mut self.audio {
+                let _ = audio.finish(output, &mut self.report);
+            }
             let _ = output.write_trailer();
         }
         self.output.take();
@@ -318,8 +320,10 @@ impl StreamingEncoder {
             self.report.recovery_reason = Some(format!("GPU stop: {cause}"));
         }
         self.seal_segment(false)?;
-        if let (Some(audio), Some(output)) = (self.audio.as_mut(), self.audio_output.as_mut()) {
-            audio.finish(output, &mut self.report)?;
+        if let Some(output) = self.audio_output.as_mut() {
+            for audio in &mut self.audio {
+                audio.finish(output, &mut self.report)?;
+            }
             output.write_trailer().map_err(error)?;
         }
         self.audio_output.take();
@@ -456,32 +460,40 @@ fn remux(
         } else {
             ffmpeg::media::Type::Audio
         };
-        let source = input
+        let mut mapping = BTreeMap::new();
+        for source in input
             .streams()
-            .best(medium)
-            .ok_or_else(|| error("missing staged track"))?;
-        let mut target = output
-            .add_stream(ffmpeg::encoder::find(ffmpeg::codec::Id::None))
-            .map_err(error)?;
-        target.set_parameters(source.parameters());
-        target.set_time_base(source.time_base());
-        unsafe {
-            (*target.parameters().as_mut_ptr()).codec_tag = 0;
+            .filter(|stream| stream.parameters().medium() == medium)
+        {
+            let mut target = output
+                .add_stream(ffmpeg::encoder::find(ffmpeg::codec::Id::None))
+                .map_err(error)?;
+            target.set_parameters(source.parameters());
+            target.set_time_base(source.time_base());
+            target.set_metadata(source.metadata().to_owned());
+            unsafe {
+                (*target.parameters().as_mut_ptr()).codec_tag = 0;
+                (*target.as_mut_ptr()).disposition = source.disposition().bits();
+            }
+            mapping.insert(source.index(), (source.time_base(), target.index()));
         }
-        streams.push((source.index(), source.time_base(), target.index()));
+        if mapping.is_empty() {
+            return Err(error("missing staged track"));
+        }
+        streams.push(mapping);
     }
     output.write_header().map_err(error)?;
-    for (input, (source_index, time_base, target_index)) in inputs.iter_mut().zip(streams) {
-        let target_time_base = output
-            .stream(target_index)
-            .ok_or_else(|| error("missing mux track"))?
-            .time_base();
+    for (input, mapping) in inputs.iter_mut().zip(streams) {
         let mut video_offset = None;
         let mut video_packets = RemuxVideoPackets::default();
         for (stream, mut packet) in input.packets() {
-            if stream.index() != source_index {
+            let Some(&(time_base, target_index)) = mapping.get(&stream.index()) else {
                 continue;
-            }
+            };
+            let target_time_base = output
+                .stream(target_index)
+                .ok_or_else(|| error("missing mux track"))?
+                .time_base();
             if target_index == 0 {
                 let offset = *video_offset.get_or_insert_with(|| {
                     video_start.rescale((1, fps as i32), time_base) - packet.pts().unwrap_or(0)
@@ -498,8 +510,12 @@ fn remux(
                 packet.write_interleaved(&mut output).map_err(error)?;
             }
         }
-        if target_index == 0 {
-            let end = video_end.rescale((1, fps as i32), target_time_base);
+        if let Some(&(_, target_index)) = mapping.values().find(|(_, target)| *target == 0) {
+            let time_base = output
+                .stream(target_index)
+                .ok_or_else(|| error("missing video track"))?
+                .time_base();
+            let end = video_end.rescale((1, fps as i32), time_base);
             video_packets.write_ready(&mut output, i64::MAX, Some(end))?;
         }
     }
@@ -516,7 +532,7 @@ fn normalize(
 ) -> Result<u64> {
     let mut settings = config.clone();
     settings.output_path = path.to_owned();
-    settings.audio = None;
+    settings.audio.clear();
     let mut output = StreamingEncoder::builder(settings)
         .software_only()
         .create()?;
@@ -660,11 +676,12 @@ mod tests {
                 speed: snow_recording_model::VideoEncodingSpeed::VeryFast,
             },
             encode_threads: 1,
-            audio: Some(StreamingAudioConfig {
+            audio: vec![StreamingAudioConfig {
                 sample_rate_hz: 48_000,
                 channels: 2,
                 bitrate_kbps: 128,
-            }),
+                ..Default::default()
+            }],
         }
     }
 
@@ -714,7 +731,7 @@ mod tests {
         settings.width = size.0;
         settings.height = size.1;
         settings.fps = 30;
-        settings.audio = None;
+        settings.audio.clear();
         settings.prefer_hardware_h264 = true;
         settings.execution_mode = ExportExecutionMode::HardwarePreferred;
         let mut encoder = StreamingEncoder::builder(settings)
@@ -837,7 +854,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("early.mp4");
         let mut settings = config(path.clone());
-        settings.audio = None;
+        settings.audio.clear();
         let mut encoder = StreamingEncoder::builder(settings)
             .recoverable()
             .create()
@@ -872,7 +889,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("late.mp4");
         let mut settings = config(path.clone());
-        settings.audio = None;
+        settings.audio.clear();
         let mut encoder = StreamingEncoder::builder(settings)
             .recoverable()
             .create()
@@ -913,7 +930,7 @@ mod tests {
                         settings.height = 64;
                         settings.encode_threads = 2;
                         settings.video.speed = speed;
-                        settings.audio = None;
+                        settings.audio.clear();
                         let mut encoder = StreamingEncoder::builder(settings)
                             .recoverable()
                             .create()

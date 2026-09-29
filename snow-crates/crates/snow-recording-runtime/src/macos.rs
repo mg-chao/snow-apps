@@ -17,8 +17,8 @@ use snow_media::{
     geometry::{DesktopTransform, PixelRect, PixelSize, aspect_fit},
 };
 use snow_recording_export::{
-    ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
-    StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
+    ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingEncoder,
+    StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
 };
 use std::{
     path::PathBuf,
@@ -37,6 +37,7 @@ pub struct NativeRecordingConfig {
     pub codec: VideoCodec,
     pub execution: ExportExecutionMode,
     pub audio: Option<AudioStreamConfig>,
+    pub audio_mode: crate::RecordingAudioMode,
     pub effects: NativeEffectsConfig,
 }
 #[derive(Clone, Debug)]
@@ -171,11 +172,18 @@ impl NativeRecordingSession {
             software_h264_priority: SoftwareH264Priority::X264First,
             video: config.video,
             encode_threads: 0,
-            audio: config.audio.as_ref().map(|_| StreamingAudioConfig {
-                sample_rate_hz: 48_000,
-                channels: 2,
-                bitrate_kbps: 192,
-            }),
+            audio: config
+                .audio
+                .as_ref()
+                .map(|audio| {
+                    let mode = if config.format == ExportFormat::Mp4 {
+                        config.audio_mode
+                    } else {
+                        crate::RecordingAudioMode::Mixed
+                    };
+                    mode.tracks(audio.system.enabled, audio.microphone.enabled, 192)
+                })
+                .unwrap_or_default(),
         };
         let (mut encoder, native) = if config.execution == ExportExecutionMode::SoftwareOnly
             || config.format.is_animated_image()
@@ -678,7 +686,7 @@ mod tests {
                     software_h264_priority: SoftwareH264Priority::X264First,
                     video: Default::default(),
                     encode_threads: 1,
-                    audio: None,
+                    audio: Vec::new(),
                     loop_animated_images: false,
                 })
                 .software_only()

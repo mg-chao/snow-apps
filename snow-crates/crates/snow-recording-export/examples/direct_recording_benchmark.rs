@@ -256,11 +256,16 @@ direct_recording_benchmark -- [options]\n\
                 speed: VideoEncodingSpeed::VeryFast,
             },
             encode_threads: 0,
-            audio: scenario.audio.then_some(StreamingAudioConfig {
-                sample_rate_hz: AUDIO_SAMPLE_RATE,
-                channels: AUDIO_CHANNELS,
-                bitrate_kbps: 160,
-            }),
+            audio: scenario
+                .audio
+                .then_some(StreamingAudioConfig {
+                    sample_rate_hz: AUDIO_SAMPLE_RATE,
+                    channels: AUDIO_CHANNELS,
+                    bitrate_kbps: 160,
+                    ..Default::default()
+                })
+                .into_iter()
+                .collect(),
         })?;
         let initialize_ms = elapsed_ms(initialize_started);
 

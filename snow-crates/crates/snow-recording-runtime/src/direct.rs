@@ -80,6 +80,53 @@ const VALIDATED_RESTORATION_DEFAULT: bool = true;
 #[cfg(feature = "bench-synthetic-input")]
 const BENCH_CURSOR_QUEUE_DEPTH: usize = 64;
 
+/// How enabled capture sources are stored in a direct recording.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RecordingAudioMode {
+    #[default]
+    Mixed,
+    Separate,
+}
+
+impl RecordingAudioMode {
+    pub(crate) fn tracks(
+        self,
+        system: bool,
+        microphone: bool,
+        bitrate_kbps: u16,
+    ) -> Vec<StreamingAudioConfig> {
+        if !system && !microphone {
+            return Vec::new();
+        }
+        let audio = StreamingAudioConfig {
+            sample_rate_hz: AUDIO_SAMPLE_RATE,
+            channels: AUDIO_CHANNELS,
+            bitrate_kbps,
+            ..Default::default()
+        };
+        if self == Self::Mixed {
+            return vec![audio];
+        }
+        let mut tracks = Vec::new();
+        if system {
+            tracks.push(StreamingAudioConfig {
+                track_id: "system".into(),
+                title: "Speaker audio".into(),
+                ..audio.clone()
+            });
+        }
+        if microphone {
+            tracks.push(StreamingAudioConfig {
+                track_id: "microphone".into(),
+                title: "Microphone".into(),
+                default: !system,
+                ..audio
+            });
+        }
+        tracks
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DirectRecordingConfig {
     /// Whether animated image outputs repeat indefinitely.
@@ -98,6 +145,7 @@ pub struct DirectRecordingConfig {
     pub prefer_hardware_encoder: bool,
     pub enable_microphone: bool,
     pub enable_system_audio: bool,
+    pub audio_mode: RecordingAudioMode,
     pub show_cursor: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
     pub mouse_trail_rgba: [u8; 4],
@@ -191,13 +239,11 @@ impl DirectRecordingConfig {
                 speed: self.preset,
             },
             encode_threads: self.automatic_encode_threads(),
-            audio: (self.format == ExportFormat::Mp4
-                && (self.enable_microphone || self.enable_system_audio))
-                .then_some(StreamingAudioConfig {
-                    sample_rate_hz: AUDIO_SAMPLE_RATE,
-                    channels: AUDIO_CHANNELS,
-                    bitrate_kbps: 160,
-                }),
+            audio: self.audio_mode.tracks(
+                self.format == ExportFormat::Mp4 && self.enable_system_audio,
+                self.format == ExportFormat::Mp4 && self.enable_microphone,
+                160,
+            ),
         }
     }
 
@@ -2067,6 +2113,21 @@ impl LiveAudioMixer {
         flush: bool,
         encoder: &mut StreamingEncoder,
     ) -> Result<()> {
+        let mixed = encoder.has_audio_track("mixed");
+        self.emit_ready_with(active_elapsed, flush, mixed, |id, timestamp, samples| {
+            encoder
+                .push_audio_track_pcm_i16(id, timestamp, samples)
+                .map_err(Into::into)
+        })
+    }
+
+    fn emit_ready_with(
+        &mut self,
+        active_elapsed: Duration,
+        flush: bool,
+        mixed: bool,
+        mut emit: impl FnMut(&str, u64, &[i16]) -> Result<()>,
+    ) -> Result<()> {
         let active_frame = duration_to_audio_frames(active_elapsed);
         let release_frame = if flush {
             active_frame
@@ -2086,18 +2147,28 @@ impl LiveAudioMixer {
             }
             let slot_index = self.next_slot;
             let slot = self.slots.remove(&slot_index).unwrap_or_default();
-            let samples = mix_audio_slot(
-                slot,
-                (if flush {
-                    self.slot_frames
-                        .min(release_frame.saturating_sub(slot_start))
-                } else {
-                    self.slot_frames
-                }) as usize
-                    * usize::from(AUDIO_CHANNELS),
-            );
+            let sample_count = (if flush {
+                self.slot_frames
+                    .min(release_frame.saturating_sub(slot_start))
+            } else {
+                self.slot_frames
+            }) as usize
+                * usize::from(AUDIO_CHANNELS);
             let timestamp_ms = slot_index.saturating_mul(AUDIO_SLOT_MS);
-            encoder.push_audio_pcm_i16(timestamp_ms, &samples)?;
+            if mixed {
+                emit("mixed", timestamp_ms, &mix_audio_slot(slot, sample_count))?;
+            } else {
+                for (id, enabled, samples) in [
+                    ("system", self.enabled_system, slot.system),
+                    ("microphone", self.enabled_microphone, slot.microphone),
+                ] {
+                    if enabled {
+                        let mut samples = samples.unwrap_or_default();
+                        samples.resize(sample_count, 0);
+                        emit(id, timestamp_ms, &samples)?;
+                    }
+                }
+            }
             self.next_slot = self.next_slot.saturating_add(1);
         }
         Ok(())
@@ -2999,6 +3070,7 @@ mod tests {
 
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
+            audio_mode: Default::default(),
             excluded_windows: Default::default(),
             excluded_processes: Default::default(),
             loop_animated_images: true,
@@ -3888,6 +3960,116 @@ mod tests {
             mixer.slots.is_empty(),
             "paused PCM must not enter the active timeline"
         );
+    }
+
+    #[test]
+    fn direct_audio_modes_respect_format_and_source_selection() {
+        for mode in [RecordingAudioMode::Mixed, RecordingAudioMode::Separate] {
+            for system in [false, true] {
+                for microphone in [false, true] {
+                    let mut config = config();
+                    config.audio_mode = mode;
+                    config.enable_system_audio = system;
+                    config.enable_microphone = microphone;
+                    let tracks = config.streaming_config().audio;
+                    let count = if mode == RecordingAudioMode::Mixed {
+                        usize::from(system || microphone)
+                    } else {
+                        usize::from(system) + usize::from(microphone)
+                    };
+                    assert_eq!(tracks.len(), count);
+                    assert!(tracks.iter().all(|track| track.bitrate_kbps == 160
+                        && track.sample_rate_hz == AUDIO_SAMPLE_RATE
+                        && track.channels == AUDIO_CHANNELS));
+                    assert_eq!(
+                        tracks.iter().filter(|track| track.default).count(),
+                        usize::from(count > 0)
+                    );
+                    if mode == RecordingAudioMode::Separate && count > 0 {
+                        assert_eq!(
+                            tracks[0].track_id,
+                            if system { "system" } else { "microphone" }
+                        );
+                    }
+                    for format in [ExportFormat::Gif, ExportFormat::Apng, ExportFormat::Webp] {
+                        config.format = format;
+                        assert!(config.streaming_config().audio.is_empty());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn live_audio_separate_sources_keep_silence_and_a_common_endpoint() {
+        // Exercise the same routing sink used by the encoder with exact PCM assertions.
+        for mixed in [false, true] {
+            let mut mixer = LiveAudioMixer::new(true, true);
+            let elapsed = Duration::from_millis(1010);
+            mixer.insert_samples(
+                AudioSourceKind::System,
+                0,
+                48_480,
+                &vec![1000; 48_480 * 2],
+                elapsed,
+            );
+            mixer.insert_samples(
+                AudioSourceKind::Microphone,
+                24_000,
+                24_480,
+                &vec![2000; 24_480 * 2],
+                elapsed,
+            );
+            let mut tracks: BTreeMap<String, Vec<i16>> = BTreeMap::new();
+            let mut timestamps: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+            mixer
+                .emit_ready_with(
+                    Duration::from_millis(1001),
+                    true,
+                    mixed,
+                    |id, timestamp, samples| {
+                        tracks
+                            .entry(id.into())
+                            .or_default()
+                            .extend_from_slice(samples);
+                        timestamps.entry(id.into()).or_default().push(timestamp);
+                        Ok(())
+                    },
+                )
+                .unwrap();
+            assert_eq!(mixer.dropped_frames, 0);
+            for samples in tracks.values() {
+                assert_eq!(samples.len(), 48_048 * 2);
+            }
+            if mixed {
+                assert_eq!(tracks.len(), 1);
+                assert!(
+                    tracks["mixed"][..48_000]
+                        .iter()
+                        .all(|sample| *sample == 1000)
+                );
+                assert!(
+                    tracks["mixed"][48_000..]
+                        .iter()
+                        .all(|sample| *sample == 3000)
+                );
+            } else {
+                assert_eq!(tracks.len(), 2);
+                assert!(tracks["system"].iter().all(|sample| *sample == 1000));
+                assert!(
+                    tracks["microphone"][..48_000]
+                        .iter()
+                        .all(|sample| *sample == 0)
+                );
+                assert!(
+                    tracks["microphone"][48_000..]
+                        .iter()
+                        .all(|sample| *sample == 2000)
+                );
+                assert_eq!(timestamps["system"], timestamps["microphone"]);
+                assert_eq!(timestamps["system"].last(), Some(&1000));
+            }
+        }
     }
 
     #[test]

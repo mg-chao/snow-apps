@@ -1422,6 +1422,13 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
                                      "Play saved GIF, APNG, and WebP recordings repeatedly."),
                    QStringLiteral("screen_recording/loop_animated_images"),
                    SettingsSwitchBinding::LoopAnimatedImages),
+        switchItem(QStringLiteral("screen-recording.separate-audio-tracks"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog", "Record separate audio tracks"),
+                   QT_TRANSLATE_NOOP("SettingsCatalog",
+                                     "Save speaker and microphone audio as separate MP4 tracks for "
+                                     "independent editing. Most players play one track at a time."),
+                   QStringLiteral("screen_recording/separate_audio_tracks"),
+                   SettingsSwitchBinding::SeparateRecordingAudioTracks),
         fixedSelectItem(
             QStringLiteral("screen-recording.encoder"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Encoder"),
@@ -3768,6 +3775,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::OriginalImageTranslation:
                         expectedKey =
                             QStringLiteral("screenshot_translation/original_image_translation");
+                        break;
+                    case SettingsSwitchBinding::SeparateRecordingAudioTracks:
+                        expectedKey = QStringLiteral("screen_recording/separate_audio_tracks");
                         break;
                     case SettingsSwitchBinding::LoopAnimatedImages:
                         expectedKey = QStringLiteral("screen_recording/loop_animated_images");

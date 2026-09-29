@@ -22,7 +22,9 @@ pub use config::{
     RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig, RecordingRegion,
     RecordingTarget, WindowId,
 };
-pub use direct::{DirectRecordingConfig, DirectRecordingReport, DirectRecordingSession};
+pub use direct::{
+    DirectRecordingConfig, DirectRecordingReport, DirectRecordingSession, RecordingAudioMode,
+};
 pub use error::{MediaPermission, ScreenRecorderError};
 pub use recording::{RecordingSession, RecordingState};
 

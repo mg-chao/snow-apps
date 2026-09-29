@@ -152,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             speed: VideoEncodingSpeed::VeryFast,
         },
         encode_threads: threads,
-        audio: None,
+        audio: Vec::new(),
     })?;
     let setup_ms = setup.elapsed().as_secs_f64() * 1000.0;
     let mut pixels = vec![0; 1920 * 1080 * 4];

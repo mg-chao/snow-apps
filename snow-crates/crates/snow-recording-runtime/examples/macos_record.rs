@@ -33,6 +33,7 @@ fn main() {
                     config
                 });
             let config = NativeRecordingConfig {
+                audio_mode: Default::default(),
                 format: snow_recording_export::ExportFormat::Mp4,
                 loop_animated_images: false,
                 video: Default::default(),

@@ -284,7 +284,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 199, "catalog must contain 199 shared settings on every platform");
+    require(itemIds.size() == 200, "catalog must contain 200 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -459,6 +459,17 @@ void builtInCatalogIsCompleteAndValid() {
                           QStringLiteral("screen-recording-settings"),
                           QStringLiteral("screen-recording.hide-toolbar")}) == nullptr,
             "the retired hide-toolbar switch must no longer appear in Function settings");
+    const auto* separateAudio = catalog.item(
+        {QStringLiteral("function-settings"), QStringLiteral("screen-recording-settings"),
+         QStringLiteral("screen-recording.separate-audio-tracks")});
+    require(
+        separateAudio != nullptr &&
+            separateAudio->configurationKey ==
+                QStringLiteral("screen_recording/separate_audio_tracks") &&
+            std::get<settings::SettingsSwitchDefinition>(separateAudio->payload).binding ==
+                settings::SettingsSwitchBinding::SeparateRecordingAudioTracks &&
+            !storage::ConfigurationSchema::defaultValue(separateAudio->configurationKey).toBool(),
+        "separate recording audio tracks must be an opt-in setting");
     const auto* loopImages = catalog.item(
         {QStringLiteral("function-settings"), QStringLiteral("screen-recording-settings"),
          QStringLiteral("screen-recording.loop-animated-images")});

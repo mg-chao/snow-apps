@@ -289,7 +289,7 @@ choices!(EncodingPreset {
 input!(RecordingOptions {
     path: Option<String>,
     format: Option<RecordingFormat>, start_delay_seconds: Option<DelaySeconds>, microphone: Option<bool>,
-    system_audio: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
+    system_audio: Option<bool>, separate_audio_tracks: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
     clarity: Option<Clarity>, animated_clarity: Option<AnimatedClarity>, encoder: Option<Encoder>,
     encoding_preset: Option<EncodingPreset>, r#loop: Option<bool>, capture_toolbar: Option<bool>,
     show_cursor: Option<bool>, show_keyboard: Option<bool>, mouse_highlight: Option<bool>,
@@ -931,6 +931,30 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn recording_accepts_only_boolean_separate_audio_tracks() {
+        for value in [serde_json::json!(true), serde_json::json!(false)] {
+            assert!(
+                schema(
+                    "snow_shot_recording_start",
+                    Some(serde_json::json!({
+                        "region": [0, 0, 320, 240], "options": {"separate_audio_tracks": value}
+                    }))
+                )
+                .is_ok()
+            );
+        }
+        assert!(
+            schema(
+                "snow_shot_recording_start",
+                Some(serde_json::json!({
+                    "region": [0, 0, 320, 240], "options": {"separate_audio_tracks": 1}
+                }))
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn all_domain_contracts_have_unique_schemas_and_mutations_are_revisioned() {
         let mut names = std::collections::HashSet::new();

@@ -86,11 +86,12 @@ fn streaming_system_audio_does_not_add_noise_to_the_source() {
             software_h264_priority: SoftwareH264Priority::X264First,
             video: VideoEncodeConfig::default(),
             encode_threads: 1,
-            audio: Some(StreamingAudioConfig {
+            audio: vec![StreamingAudioConfig {
                 sample_rate_hz,
                 channels: source.channels,
                 bitrate_kbps: 160,
-            }),
+                ..Default::default()
+            }],
         })
         .expect("streaming encoder should initialize");
         let packet_samples = sample_rate_hz as usize / 100 * usize::from(source.channels);

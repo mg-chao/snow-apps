@@ -105,6 +105,7 @@ fn native_config(
             audio
         });
     Ok(NativeRecordingConfig {
+        audio_mode: config.audio_mode,
         capture,
         output,
         output_path: config.output_path,
@@ -287,6 +288,7 @@ mod tests {
     }
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
+            audio_mode: Default::default(),
             loop_animated_images: true,
             region: crate::RecordingRegion::new(-321, -99, 641, 359),
             capture_backend: crate::CaptureBackendKind::Auto,

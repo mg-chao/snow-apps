@@ -144,6 +144,7 @@ enum class SettingsSwitchBinding {
     TranslationPageEnabled,
     JumpToTranslationPage,
     StandaloneTranslationWindow,
+    SeparateRecordingAudioTracks,
     LoopAnimatedImages,
     ScreenRecordingCaptureToolbar,
     DisableHotkeysOnFocusedFullscreen,

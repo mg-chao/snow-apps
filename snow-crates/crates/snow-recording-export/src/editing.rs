@@ -5719,7 +5719,7 @@ where
             software_h264_priority: perf_config.software_h264_priority,
             video: *video_config,
             encode_threads: perf_config.encode_threads,
-            audio: None,
+            audio: Vec::new(),
         })?;
         let rgba_len = width as usize * height as usize * 4;
         let mut rgba = vec![0u8; rgba_len];

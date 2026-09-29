@@ -82,7 +82,7 @@ pub(super) fn prepare(
     );
     let mut settings = config.streaming_config();
     settings.output_path = path.0.clone();
-    settings.audio = None;
+    settings.audio.clear();
     diagnostics.stage = Some("encoder_startup".into());
     if let Some(name) = snow_d3d11::h264_encoder(device.identity().vendor) {
         diagnostics.encoder_attempts.push(name.into());
@@ -788,6 +788,7 @@ mod tests {
 
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
+            audio_mode: Default::default(),
             excluded_windows: Default::default(),
             excluded_processes: Default::default(),
             loop_animated_images: true,

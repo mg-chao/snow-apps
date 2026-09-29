@@ -953,6 +953,7 @@ fn run_sample(
         options.duration_seconds
     };
     let config = DirectRecordingConfig {
+        audio_mode: Default::default(),
         mouse_highlight_rgba: [0; 4],
         record_mouse_clicks: false,
         show_keyboard: true,
@@ -1978,11 +1979,12 @@ mod synthetic_input_tests {
                     speed: VideoEncodingSpeed::VeryFast,
                 },
                 encode_threads: 1,
-                audio: Some(StreamingAudioConfig {
+                audio: vec![StreamingAudioConfig {
                     sample_rate_hz: 48_000,
                     channels: 2,
                     bitrate_kbps: 160,
-                }),
+                    ..Default::default()
+                }],
             })
             .unwrap();
             encoder

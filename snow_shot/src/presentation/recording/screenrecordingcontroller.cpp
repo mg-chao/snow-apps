@@ -870,6 +870,12 @@ struct ScreenRecordingController::Impl {
                 nullptr,
                 0u,
                 sessionOutputSettings.quality,
+                static_cast<uint32_t>(
+                    audioSupported &&
+                            automationOptions.value(QStringLiteral("separate_audio_tracks"))
+                                .toBool(settings.separateAudioTracks())
+                        ? SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE
+                        : SNOW_CAPTURE_RECORDING_AUDIO_MIXED),
             };
             const QString baseName =
                 ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
@@ -1471,6 +1477,7 @@ bool ScreenRecordingController::startAutomation(const QRect& region, const QJson
           QStringLiteral("veryslow"), QStringLiteral("placebo")}}};
     const QStringList booleans{QStringLiteral("microphone"),
                                QStringLiteral("system_audio"),
+                               QStringLiteral("separate_audio_tracks"),
                                QStringLiteral("loop"),
                                QStringLiteral("capture_toolbar"),
                                QStringLiteral("show_cursor"),

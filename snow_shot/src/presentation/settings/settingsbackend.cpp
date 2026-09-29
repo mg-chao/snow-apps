@@ -568,6 +568,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ExtendedFeaturesSettings().jumpToTranslationPage();
     case SettingsSwitchBinding::OriginalImageTranslation:
         return storage::ScreenshotTranslationSettings().originalImageTranslationEnabled();
+    case SettingsSwitchBinding::SeparateRecordingAudioTracks:
+        return storage::RecordingSettings().separateAudioTracks();
     case SettingsSwitchBinding::LoopAnimatedImages:
         return storage::RecordingSettings().loopAnimatedImages();
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
@@ -735,6 +737,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::OriginalImageTranslation) {
         return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(value);
     }
+    if (binding == SettingsSwitchBinding::SeparateRecordingAudioTracks) {
+        return storage::RecordingSettings().setSeparateAudioTracks(value);
+    }
     if (binding == SettingsSwitchBinding::LoopAnimatedImages) {
         return storage::RecordingSettings().setLoopAnimatedImages(value);
     }
@@ -813,6 +818,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::JumpToTranslationPage:
     case SettingsSwitchBinding::StandaloneTranslationWindow:
     case SettingsSwitchBinding::OriginalImageTranslation:
+    case SettingsSwitchBinding::SeparateRecordingAudioTracks:
     case SettingsSwitchBinding::LoopAnimatedImages:
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
@@ -1974,6 +1980,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/loop_animated_images"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/loop_animated_images"))},
+            {QStringLiteral("screen_recording/separate_audio_tracks"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/separate_audio_tracks"))},
             {QStringLiteral("screen_recording/output_format"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/output_format"))},

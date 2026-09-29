@@ -255,6 +255,8 @@ void closeAndStopHaveIndependentUiLifetimes() {
             const int previousErrors = errors.shown;
             controller.startRecording();
             waitForRecording(controller);
+            require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE,
+                    "subsequent recordings snapshot separate audio tracks");
             require(lastDirectConfig.loop_animated_images == 0,
                     "subsequent recordings must snapshot disabled looping");
             if (close) {
@@ -1838,6 +1840,11 @@ int main(int argc, char** argv) {
                     error == QStringLiteral("invalid_parameters") && !controller.isOpen(),
                 "invalid automation options must reject before opening recording UI");
         require(!controller.startAutomation(QRect(10, 10, 320, 240),
+                                            {{QStringLiteral("separate_audio_tracks"), 1}},
+                                            &error) &&
+                    error == QStringLiteral("invalid_parameters") && !controller.isOpen(),
+                "separate audio override must be a boolean");
+        require(!controller.startAutomation(QRect(10, 10, 320, 240),
                                             {{QStringLiteral("quality"), 101}}, &error) &&
                     error == QStringLiteral("invalid_parameters") && !controller.isOpen(),
                 "out-of-range video quality must reject before opening recording UI");
@@ -1865,7 +1872,8 @@ int main(int argc, char** argv) {
                                             {QStringLiteral("path"), outputPath},
                                             {QStringLiteral("start_delay_seconds"), 0},
                                             {QStringLiteral("frame_rate"), 24},
-                                            {QStringLiteral("quality"), 63}},
+                                            {QStringLiteral("quality"), 63},
+                                            {QStringLiteral("separate_audio_tracks"), true}},
                                            &error),
                 "automation start must succeed");
         waitForRecording(controller);
@@ -1873,6 +1881,9 @@ int main(int argc, char** argv) {
                 "the controller must leave output publication to the recording exporter");
         require(lastDirectConfig.capture_fps == 24,
                 "automation frame rate must reach the native capture configuration");
+        require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE &&
+                    ApplicationStorage::instance().configuration().snapshot() == saved,
+                "separate audio override reaches capture without changing preferences");
         require(lastDirectConfig.quality == 63,
                 "automation quality must reach the native capture configuration");
         const auto runningRevision =
@@ -2107,6 +2118,12 @@ int main(int argc, char** argv) {
                     lastKeyboardCjkFontFamily == expectedFont.cjkFamily &&
                     lastDirectConfig.keyboard_font_weight == expectedFont.weight,
                 "saved recordings must receive the same application font as the preview");
+        require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_MIXED,
+                "recordings default to mixed audio");
+        require(snow_shot::storage::RecordingSettings().setSeparateAudioTracks(true),
+                "enable separate tracks for subsequent recordings");
+        require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_MIXED,
+                "active recording retains its audio mode snapshot");
         require(lastDirectConfig.loop_animated_images == 1, "recordings must default to looping");
         require(snow_shot::storage::RecordingSettings().setLoopAnimatedImages(false),
                 "disable looping for subsequent recordings");
@@ -2152,6 +2169,8 @@ int main(int argc, char** argv) {
     destructionDoesNotBlockNativeWorkers();
     staleRetinaSizingCannotConfigureAnotherRegion();
 #endif
+    require(snow_shot::storage::RecordingSettings().setSeparateAudioTracks(false),
+            "restore mixed recording audio");
     permissionsAndExactLogicalRegion();
     stopAndCopyBusyIndicatorsStayOnTheInitiatingControl();
     delayCountdownBlocksTheStartUntilItElapses();

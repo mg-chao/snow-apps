@@ -391,6 +391,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Structured},
     {QStringLiteral("screen_recording/enable_microphone"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/enable_system_audio"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/separate_audio_tracks"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/clarity"),
      QStringLiteral("1080p"),
      ConfigurationValueKind::String,

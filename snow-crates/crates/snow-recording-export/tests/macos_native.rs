@@ -24,7 +24,7 @@ fn round_trip(format: PixelFormat, codec: VideoCodec) {
         software_h264_priority: SoftwareH264Priority::X264First,
         video: Default::default(),
         encode_threads: 1,
-        audio: None,
+        audio: Vec::new(),
     })
     .native_input(format)
     .create()
@@ -181,7 +181,7 @@ fn hdr_editable_round_trip(native: bool, overlays: bool) {
         software_h264_priority: SoftwareH264Priority::X264First,
         video: Default::default(),
         encode_threads: 1,
-        audio: None,
+        audio: Vec::new(),
     })
     .native_input(PixelFormat::P010);
     let mut encoder = if native {
@@ -472,7 +472,7 @@ fn software_hdr_padded_p010_round_trip_preserves_depth_color_and_timeline() {
         software_h264_priority: SoftwareH264Priority::X264First,
         video: Default::default(),
         encode_threads: 1,
-        audio: None,
+        audio: Vec::new(),
     })
     .native_input(PixelFormat::P010)
     .software_only()

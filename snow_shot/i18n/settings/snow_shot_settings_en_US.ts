@@ -2425,6 +2425,10 @@
             <translation>Record screen</translation>
         </message>
         <message>
+            <source>Record separate audio tracks</source>
+            <translation>Record separate audio tracks</translation>
+        </message>
+        <message>
             <source>Record/Copy Video</source>
             <translation>Record/Copy Video</translation>
         </message>
@@ -2587,6 +2591,10 @@
         <message>
             <source>Save recognition result as image</source>
             <translation>Save recognition result as image</translation>
+        </message>
+        <message>
+            <source>Save speaker and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time.</source>
+            <translation>Save speaker and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time.</translation>
         </message>
         <message>
             <source>Saved screenshots</source>

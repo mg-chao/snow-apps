@@ -306,6 +306,16 @@ int main(int argc, char** argv) {
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;
         settings::BuiltInSettingsBackend backend(shortcuts);
+        const auto separateAudio = settings::SettingsSwitchBinding::SeparateRecordingAudioTracks;
+        require(backend.switchEnabled(separateAudio) && !backend.switchValue(separateAudio) &&
+                    backend.applySwitchValue(separateAudio, true) &&
+                    storage::RecordingSettings().separateAudioTracks() &&
+                    backend.switchValue(separateAudio),
+                "separate audio tracks default off and persist enabled");
+        require(backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                    !backend.switchValue(separateAudio) &&
+                    !storage::RecordingSettings().separateAudioTracks(),
+                "screen recording reset restores mixed audio");
         const auto loopImages = settings::SettingsSwitchBinding::LoopAnimatedImages;
         require(backend.switchEnabled(loopImages) && backend.switchValue(loopImages) &&
                     backend.applySwitchValue(loopImages, false) &&

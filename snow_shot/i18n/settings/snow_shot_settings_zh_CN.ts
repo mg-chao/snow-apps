@@ -2425,6 +2425,10 @@
             <translation>录制屏幕</translation>
         </message>
         <message>
+            <source>Record separate audio tracks</source>
+            <translation>录制独立音轨</translation>
+        </message>
+        <message>
             <source>Record/Copy Video</source>
             <translation>录制/复制视频</translation>
         </message>
@@ -2587,6 +2591,10 @@
         <message>
             <source>Save recognition result as image</source>
             <translation>将识别结果保存为图片</translation>
+        </message>
+        <message>
+            <source>Save speaker and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time.</source>
+            <translation>将扬声器和麦克风音频保存为独立的 MP4 音轨，以便分别编辑。大多数播放器一次只播放一个音轨。</translation>
         </message>
         <message>
             <source>Saved screenshots</source>
