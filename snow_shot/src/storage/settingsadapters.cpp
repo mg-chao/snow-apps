@@ -468,6 +468,14 @@ bool ShortcutSettings::setOpenCaptureHistory(const shortcuts::ShortcutBindingLis
     return setShortcutValue(QStringLiteral("global_shortcuts/open_capture_history"), bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::switchWindowGroup() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/switch_window_group"));
+}
+
+bool ShortcutSettings::setSwitchWindowGroup(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/switch_window_group"), bindings);
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::globalCanvas() const {
     return shortcutValue(QStringLiteral("global_shortcuts/global_canvas"));
 }

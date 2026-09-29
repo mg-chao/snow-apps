@@ -251,6 +251,25 @@ class MacOSGlobalShortcutBackend final : public GlobalShortcutBackend {
         }
     }
 
+    std::optional<GlobalShortcutInputState> inputState(int id) const override {
+        if (!m_api.inputAvailable() || (id != 0 && !m_registered.contains(id)))
+            return std::nullopt;
+        const auto native = m_registered.value(id).native;
+        const auto& down = m_api.keyDown;
+        GlobalShortcutInputState state;
+        state.escapeDown = down(kVK_Escape);
+        state.escapeIsShortcutKey = id != 0 && native.keyCode == kVK_Escape;
+        state.anyShortcutKeyDown =
+            id != 0 &&
+            (down(static_cast<CGKeyCode>(native.keyCode)) ||
+             ((native.modifiers & cmdKey) != 0 && (down(kVK_Command) || down(kVK_RightCommand))) ||
+             ((native.modifiers & controlKey) != 0 &&
+              (down(kVK_Control) || down(kVK_RightControl))) ||
+             ((native.modifiers & optionKey) != 0 && (down(kVK_Option) || down(kVK_RightOption))) ||
+             ((native.modifiers & shiftKey) != 0 && (down(kVK_Shift) || down(kVK_RightShift))));
+        return state;
+    }
+
   private:
     void updateSystemReservations() {
         auto reservations = readSystemReservations(m_api);

@@ -21,6 +21,7 @@
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/windowgroupswitchercontroller.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
@@ -178,9 +179,17 @@ class ApplicationController::Impl {
                     },
                     started));
             });
-        QObject::connect(
-            &globalShortcutManager, &presentation::GlobalShortcutManager::activated, &q,
-            [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
+        QObject::connect(&globalShortcutManager, &presentation::GlobalShortcutManager::activated,
+                         &q, [this](presentation::GlobalShortcutAction action) {
+                             if (action != presentation::GlobalShortcutAction::SwitchWindowGroup)
+                                 dispatchQuickAction(action);
+                         });
+        QObject::connect(&globalShortcutManager,
+                         &presentation::GlobalShortcutManager::bindingActivated, &q,
+                         [this](presentation::GlobalShortcutAction action, int registrationId) {
+                             if (action == presentation::GlobalShortcutAction::SwitchWindowGroup)
+                                 ensureWindowGroupSwitcher().activateShortcut(registrationId);
+                         });
         QObject::connect(&globalShortcutManager, &presentation::GlobalShortcutManager::stateChanged,
                          &q,
                          [this](presentation::GlobalShortcutAction action,
@@ -1355,6 +1364,18 @@ class ApplicationController::Impl {
         return true;
     }
 
+    presentation::WindowGroupSwitcherController& ensureWindowGroupSwitcher() {
+        if (!windowGroupSwitcher) {
+            windowGroupSwitcher = std::make_unique<presentation::WindowGroupSwitcherController>(
+                globalShortcutManager, groupManager);
+            QObject::connect(
+                windowGroupSwitcher.get(),
+                &presentation::WindowGroupSwitcherController::errorOccurred, &q,
+                [](const QString& message) { adqt::widgets::AdMessageService::error(message); });
+        }
+        return *windowGroupSwitcher;
+    }
+
     void dispatchQuickAction(presentation::GlobalShortcutAction action) {
         if (!allowPermissions(
                 presentation::requiredPermissions(action, permissions.microphoneEnabled())))
@@ -1437,6 +1458,9 @@ class ApplicationController::Impl {
                                  });
             }
             globalCanvasController->activate();
+            break;
+        case presentation::GlobalShortcutAction::SwitchWindowGroup:
+            ensureWindowGroupSwitcher().openPicker();
             break;
         case presentation::GlobalShortcutAction::OpenPinToScreenManagement:
             ensureMainWindow().showPinToScreenManagement();
@@ -1591,6 +1615,7 @@ class ApplicationController::Impl {
     presentation::SystemTrayController systemTray;
     FeatureActionRouter featureRouter;
     presentation::GlobalShortcutManager globalShortcutManager;
+    std::unique_ptr<presentation::WindowGroupSwitcherController> windowGroupSwitcher;
     presentation::AppPermissionService permissions;
 #ifdef Q_OS_MACOS
     presentation::PermissionGuideController permissionGuide{permissions};

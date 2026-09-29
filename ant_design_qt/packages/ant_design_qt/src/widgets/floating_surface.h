@@ -25,6 +25,8 @@ class AdFloatingSurface : public QWidget {
   Q_PROPERTY(QColor borderColor READ borderColor WRITE setBorderColor)
 
  public:
+  enum class ShadowStyle { Custom, PopupSecondary };
+
   explicit AdFloatingSurface(QWidget* parent = nullptr);
   ~AdFloatingSurface() override;
 
@@ -42,6 +44,8 @@ class AdFloatingSurface : public QWidget {
   void setBorderColor(const QColor& value);
 
   void setShadow(qreal blurRadius, const QPointF& offset, const QColor& color);
+  void setShadowStyle(ShadowStyle style);
+  ShadowStyle shadowStyle() const;
   qreal shadowBlurRadius() const;
   QPointF shadowOffset() const;
   QColor shadowColor() const;
@@ -75,6 +79,7 @@ class AdFloatingSurface : public QWidget {
   QColor backgroundColor_ = Qt::white;
   QColor borderColor_ = Qt::transparent;
   qreal shadowBlurRadius_ = 18.0;
+  ShadowStyle shadowStyle_ = ShadowStyle::Custom;
   QPointF shadowOffset_ = QPointF(0.0, 3.0);
   QColor shadowColor_ = QColor(0, 0, 0, 90);
   std::unique_ptr<ShadowCache> shadowCache_;

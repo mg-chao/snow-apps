@@ -2373,6 +2373,10 @@
             <translation>預覽和管理已儲存的截圖歷史</translation>
         </message>
         <message>
+            <source>Preview window groups, then release the shortcut keys to switch</source>
+            <translation>預覽視窗群組，放開所有快捷鍵後切換</translation>
+        </message>
+        <message>
             <source>Previous screenshot history</source>
             <translation>上一筆截圖歷史</translation>
         </message>
@@ -3007,6 +3011,10 @@
         <message>
             <source>Storage status</source>
             <translation>儲存狀態</translation>
+        </message>
+        <message>
+            <source>Switch Window Group</source>
+            <translation>切換視窗群組</translation>
         </message>
         <message>
             <source>System</source>

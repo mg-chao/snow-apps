@@ -195,6 +195,10 @@
             <translation>尚無固定到螢幕視窗</translation>
         </message>
         <message>
+            <source>Not Closed</source>
+            <translation>未關閉</translation>
+        </message>
+        <message>
             <source>Other / legacy</source>
             <translation>其他 / 舊記錄</translation>
         </message>
@@ -217,10 +221,6 @@
         <message>
             <source>Restore</source>
             <translation>還原</translation>
-        </message>
-        <message>
-            <source>Retained</source>
-            <translation>已保留</translation>
         </message>
         <message>
             <source>Saved records and their open windows will be removed</source>
@@ -646,6 +646,33 @@
         </message>
     </context>
     <context>
+        <name>WindowGroupSwitcher</name>
+        <message>
+            <source>%1, %2 not closed windows, %3 total</source>
+            <translation>%1，%2 個未關閉視窗，共 %3 個</translation>
+        </message>
+        <message>
+            <source>Click a group to switch. Esc to cancel.</source>
+            <translation>點擊群組以切換，按 Esc 取消。</translation>
+        </message>
+        <message>
+            <source>Current</source>
+            <translation>目前</translation>
+        </message>
+        <message>
+            <source>Release shortcut keys or click a group to switch. Esc to cancel.</source>
+            <translation>放開所有快捷鍵或點擊群組以切換，按 Esc 取消。</translation>
+        </message>
+        <message>
+            <source>Switch Window Group</source>
+            <translation>切換視窗群組</translation>
+        </message>
+        <message>
+            <source>Windows · not closed / total</source>
+            <translation>視窗 · 未關閉 / 總數</translation>
+        </message>
+    </context>
+    <context>
         <name>snow_shot::presentation::PinnedWindowGroupManager</name>
         <message>
             <source>Add</source>
@@ -710,6 +737,13 @@
         <message>
             <source>This group name is already in use</source>
             <translation>此群組名稱已被使用</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::WindowGroupSwitcherController</name>
+        <message>
+            <source>Could not switch window group. Please try again.</source>
+            <translation>無法切換視窗群組，請重試。</translation>
         </message>
     </context>
 </TS>

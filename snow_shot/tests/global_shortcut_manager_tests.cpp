@@ -13,9 +13,11 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "../src/platform/windows/globalshortcutbackend_p.h"
 #endif
 
 #include <array>
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <utility>
@@ -39,6 +41,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenPinToScreenManagement,
     GlobalShortcutAction::GlobalCanvas,
+    GlobalShortcutAction::SwitchWindowGroup,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
@@ -103,6 +106,97 @@ void clearAll(GlobalShortcutManager& manager) {
         require(manager.setShortcuts(action, {}), "clear global shortcut fixture");
     }
 }
+
+void switchGroupShortcutPersistsAndReportsBinding() {
+    constexpr auto action = GlobalShortcutAction::SwitchWindowGroup;
+    const shortcuts::ShortcutBindingList keys{QStringLiteral("Ctrl+Alt+F8"),
+                                              QStringLiteral("Shift+F9")};
+    {
+        auto backend = std::make_unique<FakeBackend>();
+        auto* input = backend.get();
+        GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+        manager.initialize();
+        require(manager.state(action).shortcuts.isEmpty(), "switcher starts unset");
+        require(manager.setShortcuts(action, keys), "set both switcher bindings");
+        int received = 0;
+        int actions = 0;
+        QObject::connect(&manager, &GlobalShortcutManager::bindingActivated, &manager,
+                         [&](GlobalShortcutAction a, int id) {
+                             if (a == action)
+                                 received = id;
+                         });
+        QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                         [&](GlobalShortcutAction a) {
+                             if (a == action)
+                                 ++actions;
+                         });
+        for (auto it = input->registrations.cbegin(); it != input->registrations.cend(); ++it) {
+            if (!keys.contains(it.value()))
+                continue;
+            input->handler(it.key());
+            require(received == it.key(), "exact native binding is delivered");
+        }
+        require(actions == 2, "legacy activation remains once per press");
+    }
+    GlobalShortcutManager restored(std::make_unique<FakeBackend>(), nullptr, [] { return false; });
+    restored.initialize();
+    require(restored.state(action).shortcuts == keys, "switcher bindings survive reload");
+    require(restored.setShortcuts(action, {}), "clear switcher fixture");
+}
+#ifdef Q_OS_WIN
+UINT observedModifiers = 0;
+BOOL WINAPI fakeRegisterGroupHotkey(HWND, int, UINT modifiers, UINT) {
+    observedModifiers = modifiers;
+    return TRUE;
+}
+BOOL WINAPI fakeUnregisterGroupHotkey(HWND, int) {
+    return TRUE;
+}
+void nativeGroupKeyStateUsesEveryShortcutKey() {
+    QSet<int> down;
+    bool available = true;
+    WindowsHotKeyInputApi api;
+    api.registerHotKey = fakeRegisterGroupHotkey;
+    api.unregisterHotKey = fakeUnregisterGroupHotkey;
+    api.keyState = [&](int key) { return static_cast<SHORT>(down.contains(key) ? 0x8000 : 0); };
+    api.available = [&] { return available; };
+    auto backend = createWindowsGlobalShortcutBackend(api);
+    require(backend->registerShortcut(123, {QStringLiteral("Ctrl+Alt+Shift+Meta+F8")}).registered,
+            "register injectable shortcut");
+    require((observedModifiers & MOD_NOREPEAT) != 0, "held keys do not repeat");
+    for (int key : {VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN, VK_F8}) {
+        down = {key};
+        require(backend->inputState(123)->anyShortcutKeyDown,
+                "each required key alone keeps session alive");
+    }
+    std::array releaseOrder{VK_SHIFT, VK_CONTROL, VK_MENU, VK_F8};
+    std::sort(releaseOrder.begin(), releaseOrder.end());
+    do {
+        down = {VK_SHIFT, VK_CONTROL, VK_MENU, VK_F8};
+        for (int key : releaseOrder) {
+            down.remove(key);
+            require(backend->inputState(123)->anyShortcutKeyDown == !down.isEmpty(),
+                    "every release ordering waits for the final shortcut key");
+        }
+    } while (std::next_permutation(releaseOrder.begin(), releaseOrder.end()));
+    down = {VK_F9};
+    require(!backend->inputState(123)->anyShortcutKeyDown, "unrelated key does not delay release");
+    require(backend->registerShortcut(124, {QStringLiteral("F8")}).registered,
+            "modifierless shortcut registers");
+    down = {VK_CONTROL};
+    require(!backend->inputState(124)->anyShortcutKeyDown,
+            "unrelated modifiers do not hold a modifierless shortcut open");
+    down = {VK_F8};
+    require(backend->inputState(124)->anyShortcutKeyDown, "modifierless key is tracked");
+    down = {VK_ESCAPE};
+    require(backend->inputState(0)->escapeDown, "Escape observed without registration");
+    available = false;
+    require(!backend->inputState(123), "unobservable state is not release");
+    available = true;
+    backend->unregisterShortcut(123);
+    require(!backend->inputState(123), "removed registration is unavailable");
+}
+#endif
 
 void pinnedManagementShortcutCanBeAssignedAndRestored() {
     constexpr auto action = GlobalShortcutAction::OpenPinToScreenManagement;
@@ -705,6 +799,33 @@ void disabledMacOSSystemReservationsRemainUsable() {
     symbolicLookupStatus = noErr;
 }
 
+void macGroupInputTracksPhysicalKeys() {
+    symbolicHotKeys.clear();
+    QSet<CGKeyCode> down;
+    bool available = true;
+    MacOSHotKeyApi api{copySymbolicHotKeyFixture, registerHotKeyFixture, unregisterHotKeyFixture};
+    api.keyDown = [&](CGKeyCode key) { return down.contains(key); };
+    api.inputAvailable = [&] { return available; };
+    auto backend = createMacOSGlobalShortcutBackend(api);
+    require(backend->registerShortcut(123, {QStringLiteral("Ctrl+Alt+Shift+Meta+F8")}).registered,
+            "register injected macOS chord");
+    for (const CGKeyCode key :
+         {CGKeyCode(kVK_Command), CGKeyCode(kVK_RightCommand), CGKeyCode(kVK_Control),
+          CGKeyCode(kVK_RightControl), CGKeyCode(kVK_Option), CGKeyCode(kVK_RightOption),
+          CGKeyCode(kVK_Shift), CGKeyCode(kVK_RightShift), CGKeyCode(kVK_F8)}) {
+        down = {key};
+        require(backend->inputState(123)->anyShortcutKeyDown,
+                "each macOS chord key delays release");
+    }
+    down = {CGKeyCode(kVK_F9)};
+    require(!backend->inputState(123)->anyShortcutKeyDown,
+            "unrelated macOS key does not delay release");
+    down = {CGKeyCode(kVK_Escape)};
+    require(backend->inputState(0)->escapeDown, "macOS Escape is observable without a binding");
+    available = false;
+    require(!backend->inputState(123), "unobservable macOS input is not a release");
+}
+
 void macOSSystemReservationChangesReconcileLiveBindings() {
     symbolicHotKeys = {{kVK_ANSI_1, controlKey, false}};
     auto backend = createMacOSGlobalShortcutBackend(
@@ -874,6 +995,10 @@ int main(int argc, char** argv) {
                 .success,
             "initialize shortcut test storage");
     validationCoversSupportedAndRejectedKeys();
+    switchGroupShortcutPersistsAndReportsBinding();
+#ifdef Q_OS_WIN
+    nativeGroupKeyStateUsesEveryShortcutKey();
+#endif
     pinnedManagementShortcutCanBeAssignedAndRestored();
     globalCanvasShortcutCanBeAssignedAndRestored();
     globalCanvasFullscreenGateTracksSession();
@@ -881,6 +1006,7 @@ int main(int argc, char** argv) {
 #ifdef Q_OS_MACOS
     disabledMacOSSystemReservationsRemainUsable();
     macOSSystemReservationChangesReconcileLiveBindings();
+    macGroupInputTracksPhysicalKeys();
 #endif
     fullscreenClassificationUsesTheFocusedLayerZeroWindow();
     deterministicOwnershipPartialFailureAndSuspension();

@@ -284,7 +284,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 200, "catalog must contain 200 shared settings on every platform");
+    require(itemIds.size() == 201, "catalog must contain 201 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -1469,6 +1469,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::OpenPinToScreenManagement, "pin-to-screen", "quick.open-pin-to-screen-management",
          "global_shortcuts/open_pin_to_screen_management",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::SwitchWindowGroup, "pin-to-screen", "quick.switch-window-group",
+         "global_shortcuts/switch_window_group", settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::GlobalCanvas, "other", "quick.global-canvas", "global_shortcuts/global_canvas",
          settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::TranslateSelectedText, "other", "quick.translate-selected-text",
@@ -1523,8 +1525,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 20,
-            "the global-hotkeys catalog must expose all twenty shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 21,
+            "the global-hotkeys catalog must expose all twenty-one shortcut actions exactly once");
     const auto* pinnedManagementShortcut =
         catalog.itemForShortcut(Action::OpenPinToScreenManagement);
     const auto* pinnedManagementSchema = storage::ConfigurationSchema::entry(
@@ -1535,6 +1537,22 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 pinnedManagementSchema != nullptr &&
                 pinnedManagementSchema->defaultValue.toArray().isEmpty(),
             "Pin to Screen Management must start without an assigned global hotkey");
+    const auto* switcher = catalog.itemForShortcut(Action::SwitchWindowGroup);
+    require(switcher && switcher->title.translated() == QStringLiteral("Switch Window Group") &&
+                !std::get<settings::SettingsShortcutActionDefinition>(switcher->payload)
+                     .showInTrayMenu &&
+                storage::ConfigurationSchema::defaultValue(
+                    QStringLiteral("global_shortcuts/switch_window_group"))
+                    .toArray()
+                    .isEmpty(),
+            "group switching is unassigned and excluded from the tray");
+    for (const auto& group : catalog.trayMenuGroups())
+        for (const auto& option : group.options)
+            require(option.id != switcher->id,
+                    "group switching is not a tray customization option");
+    for (const auto& group : settings::builtInTrayCommandManifest().groups)
+        for (const auto& option : group.options)
+            require(option.id != switcher->id, "compact tray manifest excludes group switching");
     const auto* canvasItem = catalog.itemForShortcut(Action::GlobalCanvas);
     const auto* canvasSchema =
         storage::ConfigurationSchema::entry(QStringLiteral("global_shortcuts/global_canvas"));
@@ -1751,11 +1769,12 @@ void globalHotkeyShortcutsHaveStableContracts() {
     require(pinSection != nullptr && pinSection->title.source != nullptr &&
                 QString::fromLatin1(pinSection->title.source) == QStringLiteral("Pin to screen") &&
                 pinSection->reset == settings::SettingsSectionReset::GlobalPinToScreenShortcuts &&
-                pinSection->items.size() == 4 &&
+                pinSection->items.size() == 5 &&
                 pinSection->items.at(0).id == QStringLiteral("quick.pin-clipboard-content") &&
                 pinSection->items.at(1).id == QStringLiteral("quick.pin-selected-files") &&
                 pinSection->items.at(2).id == QStringLiteral("quick.restore-last-closed-windows") &&
-                pinSection->items.at(3).id ==
+                pinSection->items.at(3).id == QStringLiteral("quick.switch-window-group") &&
+                pinSection->items.at(4).id ==
                     QStringLiteral("quick.open-pin-to-screen-management") &&
                 pinSection->items.at(2).title.translated() ==
                     QStringLiteral("Restore Last Closed Window"),

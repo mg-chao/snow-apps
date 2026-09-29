@@ -140,9 +140,7 @@ bool PinnedWindowGroupManager::contains(const QString& groupId) const {
                        [&groupId](const auto& group) { return group.id == groupId; });
 }
 
-GroupWindowCounts PinnedWindowGroupManager::windowCounts(const QString& groupId) const {
-    QSet<QString> nonIgnoredPersistedIds;
-    QSet<QString> allPersistedIds;
+void PinnedWindowGroupManager::refreshPersistedCounts() const {
     if (m_repository != nullptr) {
         const quint64 repositoryRevision = m_repository->membershipRevision();
         if (repositoryRevision != m_countsRevision) {
@@ -161,6 +159,47 @@ GroupWindowCounts PinnedWindowGroupManager::windowCounts(const QString& groupId)
             }
             m_countsRevision = repositoryRevision;
         }
+    }
+}
+
+QVector<WindowGroupDisplayEntry> PinnedWindowGroupManager::displaySnapshot() const {
+    refreshPersistedCounts();
+    QHash<QString, GroupWindowCounts> counts;
+    for (const auto& group : m_groups)
+        counts.insert(group.id,
+                      {m_persistedCounts.value(group.id), m_persistedTotalCounts.value(group.id)});
+    for (auto it = m_windows.cbegin(); it != m_windows.cend(); ++it) {
+        if (!it.value())
+            continue;
+        const QString group = it.value()->groupId();
+        auto& count = counts[group];
+        if (!m_inactiveClosing.contains(it.key()) &&
+            !m_persistedIdsByGroup.value(group).contains(it.key()))
+            ++count.nonIgnored;
+        if (!m_allPersistedIdsByGroup.value(group).contains(it.key()))
+            ++count.total;
+    }
+    for (auto it = m_pendingGroups.cbegin(); it != m_pendingGroups.cend(); ++it) {
+        if (m_windows.value(it.key()))
+            continue;
+        auto& count = counts[it.value()];
+        if (!m_persistedIdsByGroup.value(it.value()).contains(it.key()))
+            ++count.nonIgnored;
+        if (!m_allPersistedIdsByGroup.value(it.value()).contains(it.key()))
+            ++count.total;
+    }
+    QVector<WindowGroupDisplayEntry> result;
+    result.reserve(m_groups.size());
+    for (const auto& group : groupsSortedForDisplay())
+        result.append({group.id, normalizedDisplayName(group), counts.value(group.id)});
+    return result;
+}
+
+GroupWindowCounts PinnedWindowGroupManager::windowCounts(const QString& groupId) const {
+    QSet<QString> nonIgnoredPersistedIds;
+    QSet<QString> allPersistedIds;
+    refreshPersistedCounts();
+    if (m_repository != nullptr) {
         nonIgnoredPersistedIds = m_persistedIdsByGroup.value(groupId);
         allPersistedIds = m_allPersistedIdsByGroup.value(groupId);
     }

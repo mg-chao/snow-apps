@@ -25,6 +25,7 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
     case Action::OpenScreenRecordingFolder:
     case Action::OpenCaptureHistory:
     case Action::GlobalCanvas:
+    case Action::SwitchWindowGroup:
     case Action::OpenPinToScreenManagement:
     case Action::OpenSettings:
     case Action::TranslateSelectedText:

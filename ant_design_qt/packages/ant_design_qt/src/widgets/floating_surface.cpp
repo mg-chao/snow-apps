@@ -1,4 +1,5 @@
 #include "floating_surface.h"
+#include "detail/popup_shadow.h"
 
 #include <QCache>
 #include <QMutex>
@@ -203,8 +204,17 @@ QPointF AdFloatingSurface::shadowOffset() const { return shadowOffset_; }
 QColor AdFloatingSurface::shadowColor() const { return shadowColor_; }
 
 QMargins AdFloatingSurface::shadowMargins() const {
+  if (shadowStyle_ == ShadowStyle::PopupSecondary) return detail::antPopupShadowSecondaryMargins();
   return shadowMarginsFor(shadowBlurRadius_, shadowOffset_);
 }
+
+void AdFloatingSurface::setShadowStyle(ShadowStyle style) {
+  if (shadowStyle_ == style) return;
+  shadowStyle_ = style;
+  invalidateSurfaceGeometry();
+}
+
+AdFloatingSurface::ShadowStyle AdFloatingSurface::shadowStyle() const { return shadowStyle_; }
 
 QRect AdFloatingSurface::bodyRect() const {
   const QMargins margins = shadowMargins();
@@ -253,7 +263,11 @@ void AdFloatingSurface::paintEvent(QPaintEvent* event) {
   painter.setCompositionMode(QPainter::CompositionMode_Source);
   painter.fillRect(rect(), Qt::transparent);
   painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
-  if (shadowColor_.alpha() > 0 && shadowBlurRadius_ >= 0.0) {
+  if (shadowStyle_ == ShadowStyle::PopupSecondary) {
+    QPainterPath path;
+    path.addRoundedRect(QRectF(bodyRect()), cornerRadius_, cornerRadius_);
+    detail::paintAntPopupBoxShadowSecondary(painter, path);
+  } else if (shadowColor_.alpha() > 0 && shadowBlurRadius_ >= 0.0) {
     const QRectF currentBodyRect = QRectF(bodyRect());
     const qreal normalizedBlur = std::max<qreal>(0.0, shadowBlurRadius_);
     const QMargins margins = shadowMarginsFor(normalizedBlur, shadowOffset_);

@@ -150,11 +150,16 @@ void shortcutSettings() {
         require(backend.resetSection(settings::SettingsSectionReset::OtherShortcuts) &&
                     manager.state(managementAction).shortcuts == managementKeys,
                 "Other reset must preserve the management shortcut in Pin to screen");
+        require(session.applyShortcuts(GlobalShortcutAction::SwitchWindowGroup,
+                                       {QStringLiteral("Ctrl+Alt+F8")}),
+                "assign group switch shortcut");
         require(backend.resetSection(settings::SettingsSectionReset::GlobalPinToScreenShortcuts),
                 "Pin to screen reset succeeds");
         require(stored.pinSelectedFiles().isEmpty() &&
                     manager.state(action).status == GlobalShortcutStatus::Unset,
                 "Pin to screen reset must clear the new shortcut");
+        require(manager.state(GlobalShortcutAction::SwitchWindowGroup).shortcuts.isEmpty(),
+                "pin section reset clears group switch shortcut");
         require(manager.state(managementAction).shortcuts.isEmpty(),
                 "Pin to screen reset must clear the management shortcut");
         require(session.applyShortcuts(action, keys), "prepare reload");

@@ -1638,6 +1638,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                       QStringLiteral("global_shortcuts/restore_last_closed_windows"));
         resetShortcut(GlobalShortcutAction::PinSelectedFiles,
                       QStringLiteral("global_shortcuts/pin_selected_files"));
+        resetShortcut(GlobalShortcutAction::SwitchWindowGroup,
+                      QStringLiteral("global_shortcuts/switch_window_group"));
         resetShortcut(GlobalShortcutAction::OpenPinToScreenManagement,
                       QStringLiteral("global_shortcuts/open_pin_to_screen_management"));
         return accepted;

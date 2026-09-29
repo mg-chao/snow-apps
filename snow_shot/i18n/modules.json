@@ -92,10 +92,12 @@
   ],
   "history": [
     "HistoryEntryWidget",
-    "ScreenshotHistoryPageWidget",
     "PinnedWindowManagementPageWidget",
+    "ScreenshotHistoryPageWidget",
     "ScreenshotPinnedWindow",
-    "snow_shot::presentation::PinnedWindowGroupManager"
+    "WindowGroupSwitcher",
+    "snow_shot::presentation::PinnedWindowGroupManager",
+    "snow_shot::presentation::WindowGroupSwitcherController"
   ],
   "updates": [
     "UpdateErrors",

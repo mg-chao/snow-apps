@@ -1,4 +1,5 @@
-#include "../../presentation/services/globalshortcutbackend_p.h"
+#include "globalshortcutbackend_p.h"
+#include <QHash>
 
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
@@ -253,7 +254,16 @@ GlobalShortcutValidationResult validation(const shortcuts::ShortcutBinding& bind
 class WindowsGlobalShortcutBackend final : public GlobalShortcutBackend,
                                            public QAbstractNativeEventFilter {
   public:
-    WindowsGlobalShortcutBackend() {
+    explicit WindowsGlobalShortcutBackend(WindowsHotKeyInputApi api) : m_inputApi(std::move(api)) {
+        if (!m_inputApi.available) {
+            m_inputApi.available = [] {
+                HDESK desktop = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+                if (desktop == nullptr)
+                    return false;
+                CloseDesktop(desktop);
+                return true;
+            };
+        }
         if (QCoreApplication::instance() != nullptr) {
             QCoreApplication::instance()->installNativeEventFilter(this);
             m_filterInstalled = true;
@@ -261,7 +271,7 @@ class WindowsGlobalShortcutBackend final : public GlobalShortcutBackend,
     }
     ~WindowsGlobalShortcutBackend() override {
         for (int registrationId : std::as_const(m_registeredIds)) {
-            UnregisterHotKey(nullptr, registrationId);
+            m_inputApi.unregisterHotKey(nullptr, registrationId);
         }
         if (m_filterInstalled && QCoreApplication::instance() != nullptr) {
             QCoreApplication::instance()->removeNativeEventFilter(this);
@@ -282,8 +292,10 @@ class WindowsGlobalShortcutBackend final : public GlobalShortcutBackend,
             return {false, GlobalShortcutFailureReason::InvalidShortcut, 0};
         }
         SetLastError(ERROR_SUCCESS);
-        if (RegisterHotKey(nullptr, registrationId, native.modifiers, native.virtualKey) != FALSE) {
+        if (m_inputApi.registerHotKey(nullptr, registrationId, native.modifiers,
+                                      native.virtualKey) != FALSE) {
             m_registeredIds.insert(registrationId);
+            m_nativeShortcuts.insert(registrationId, native);
             return {true, GlobalShortcutFailureReason::None, 0};
         }
         const DWORD error = GetLastError();
@@ -293,9 +305,26 @@ class WindowsGlobalShortcutBackend final : public GlobalShortcutBackend,
                 static_cast<qint64>(error)};
     }
     void unregisterShortcut(int registrationId) override {
+        m_nativeShortcuts.remove(registrationId);
         if (m_registeredIds.remove(registrationId)) {
-            UnregisterHotKey(nullptr, registrationId);
+            m_inputApi.unregisterHotKey(nullptr, registrationId);
         }
+    }
+    std::optional<GlobalShortcutInputState> inputState(int id) const override {
+        if (!m_inputApi.available() || (id != 0 && !m_nativeShortcuts.contains(id)))
+            return std::nullopt;
+        const auto down = [this](int key) { return (m_inputApi.keyState(key) & 0x8000) != 0; };
+        const auto native = m_nativeShortcuts.value(id);
+        GlobalShortcutInputState state;
+        state.escapeDown = down(VK_ESCAPE);
+        state.escapeIsShortcutKey = native.virtualKey == VK_ESCAPE;
+        state.anyShortcutKeyDown =
+            id != 0 && (down(static_cast<int>(native.virtualKey)) ||
+                        ((native.modifiers & MOD_CONTROL) != 0 && down(VK_CONTROL)) ||
+                        ((native.modifiers & MOD_SHIFT) != 0 && down(VK_SHIFT)) ||
+                        ((native.modifiers & MOD_ALT) != 0 && down(VK_MENU)) ||
+                        ((native.modifiers & MOD_WIN) != 0 && (down(VK_LWIN) || down(VK_RWIN))));
+        return state;
     }
     bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override {
         if (message != nullptr) {
@@ -308,6 +337,8 @@ class WindowsGlobalShortcutBackend final : public GlobalShortcutBackend,
     }
 
   private:
+    WindowsHotKeyInputApi m_inputApi;
+    QHash<int, NativeShortcut> m_nativeShortcuts;
     ActivationHandler m_handler;
     QSet<int> m_registeredIds;
     bool m_filterInstalled = false;
@@ -316,7 +347,12 @@ class WindowsGlobalShortcutBackend final : public GlobalShortcutBackend,
 } // namespace
 
 std::unique_ptr<GlobalShortcutBackend> createWindowsGlobalShortcutBackend() {
-    return std::make_unique<WindowsGlobalShortcutBackend>();
+    return createWindowsGlobalShortcutBackend(WindowsHotKeyInputApi{});
+}
+
+std::unique_ptr<GlobalShortcutBackend>
+createWindowsGlobalShortcutBackend(WindowsHotKeyInputApi api) {
+    return std::make_unique<WindowsGlobalShortcutBackend>(std::move(api));
 }
 
 } // namespace snow_shot::presentation

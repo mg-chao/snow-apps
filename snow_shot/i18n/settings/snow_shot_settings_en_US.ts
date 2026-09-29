@@ -2373,6 +2373,10 @@
             <translation>Preview and manage saved screenshot history</translation>
         </message>
         <message>
+            <source>Preview window groups, then release the shortcut keys to switch</source>
+            <translation>Preview window groups, then release the shortcut keys to switch</translation>
+        </message>
+        <message>
             <source>Previous screenshot history</source>
             <translation>Previous screenshot history</translation>
         </message>
@@ -3007,6 +3011,10 @@
         <message>
             <source>Storage status</source>
             <translation>Storage status</translation>
+        </message>
+        <message>
+            <source>Switch Window Group</source>
+            <translation>Switch Window Group</translation>
         </message>
         <message>
             <source>System</source>

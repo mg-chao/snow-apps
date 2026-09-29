@@ -126,6 +126,8 @@ class ShortcutSettings final {
     bool setOpenScreenRecordingFolder(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList openCaptureHistory() const;
     bool setOpenCaptureHistory(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList switchWindowGroup() const;
+    bool setSwitchWindowGroup(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList globalCanvas() const;
     bool setGlobalCanvas(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList openPinToScreenManagement() const;

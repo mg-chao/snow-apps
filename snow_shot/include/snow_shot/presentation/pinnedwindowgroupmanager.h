@@ -25,6 +25,12 @@ struct GroupWindowCounts final {
     int total = 0;
 };
 
+struct WindowGroupDisplayEntry final {
+    QString id;
+    QString name;
+    GroupWindowCounts counts;
+};
+
 class PinnedWindowGroupManager final : public QObject {
     Q_OBJECT
 
@@ -35,6 +41,7 @@ class PinnedWindowGroupManager final : public QObject {
     [[nodiscard]] QVector<storage::PinnedWindowGroup> groups() const;
     [[nodiscard]] QVector<storage::PinnedWindowGroup> groupsSortedForDisplay() const;
     [[nodiscard]] QString activeGroupId() const;
+    [[nodiscard]] QVector<WindowGroupDisplayEntry> displaySnapshot() const;
     [[nodiscard]] QString displayName(const QString& groupId) const;
     [[nodiscard]] bool contains(const QString& groupId) const;
     [[nodiscard]] GroupWindowCounts windowCounts(const QString& groupId) const;
@@ -78,6 +85,7 @@ class PinnedWindowGroupManager final : public QObject {
     [[nodiscard]] bool persist();
     [[nodiscard]] QString uniqueGeneratedName() const;
     void scheduleGroupsChanged();
+    void refreshPersistedCounts() const;
 
     storage::PinnedWindowRepository* m_repository = nullptr;
     QVector<storage::PinnedWindowGroup> m_groups;

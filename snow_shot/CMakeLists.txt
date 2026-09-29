@@ -1117,6 +1117,8 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotcontroller.h
     include/snow_shot/presentation/screenshotdialogowner.h
     include/snow_shot/presentation/screenshotshortcutexitconfirmation.h
+    include/snow_shot/presentation/windowgroupswitchercontroller.h
+    include/snow_shot/presentation/windowgroupswitcherpopup.h
     include/snow_shot/presentation/pinnedwindowgroupmanager.h
     include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/screenshotdefaultstyles.h
@@ -1319,6 +1321,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
+    src/presentation/services/windowgroupswitchercontroller.cpp
+    src/presentation/components/windowgroupswitcherpopup.cpp
     src/presentation/services/pinnedwindowgroupmanager.cpp
     src/presentation/services/screenshotsourceimagecomposer.cpp
     src/presentation/services/systemtraycontroller.cpp
@@ -2541,6 +2545,41 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-system-tray-menu-native-tests PROPERTIES
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
+
+    add_executable(snow-shot-window-group-switcher-tests
+        tests/window_group_switcher_tests.cpp
+        ${SNOW_SHOT_GLOBAL_SHORTCUT_SOURCES}
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+        include/snow_shot/presentation/windowgroupswitchercontroller.h
+        include/snow_shot/presentation/windowgroupswitcherpopup.h
+        include/snow_shot/presentation/pinnedwindowgroupmanager.h
+        include/snow_shot/presentation/languagemanager.h
+        src/presentation/services/windowgroupswitchercontroller.cpp
+        src/presentation/components/windowgroupswitcherpopup.cpp
+        src/presentation/services/pinnedwindowgroupmanager.cpp
+        src/presentation/services/languagemanager.cpp)
+    target_include_directories(snow-shot-window-group-switcher-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include" "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include")
+    target_link_libraries(snow-shot-window-group-switcher-tests PRIVATE snow_shot_global_mouse ant_design_qt Qt6::Widgets)
+    if(APPLE)
+        target_link_libraries(snow-shot-window-group-switcher-tests PRIVATE
+            "${SNOW_SHOT_CARBON_FRAMEWORK}" "${SNOW_SHOT_APPKIT_FRAMEWORK}" "${SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK}")
+    endif()
+    if(WIN32)
+        add_test(NAME snow-shot-window-group-switcher-native-tests
+            COMMAND snow-shot-window-group-switcher-tests --native -platform windows)
+        set_tests_properties(snow-shot-window-group-switcher-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60 SKIP_RETURN_CODE 77)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-window-group-switcher-tests)
+    snow_shot_add_translations(snow-shot-window-group-switcher-tests)
+    add_test(NAME snow-shot-window-group-switcher-tests COMMAND snow-shot-window-group-switcher-tests)
+    set_tests_properties(snow-shot-window-group-switcher-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS unit)
 
     add_executable(snow-shot-pinned-window-group-tests
         tests/pinned_window_group_tests.cpp
@@ -6444,6 +6483,22 @@ if(APPLE AND SNOW_SHOT_BUILD_BENCHMARKS)
     set_target_properties(snow-shot-permission-guide-benchmark PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.snowshot.tests.permission-guide-benchmark"
         MACOSX_BUNDLE_BUNDLE_NAME "Snow Shot Permission Guide Benchmark")
+endif()
+
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-window-group-switcher-benchmark
+        tests/window_group_switcher_benchmark.cpp
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+        include/snow_shot/presentation/windowgroupswitcherpopup.h
+        src/presentation/components/windowgroupswitcherpopup.cpp)
+    target_include_directories(snow-shot-window-group-switcher-benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-window-group-switcher-benchmark PRIVATE snow_shot_storage ant_design_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-window-group-switcher-benchmark)
+    add_test(NAME snow-shot-window-group-switcher-benchmark COMMAND snow-shot-window-group-switcher-benchmark)
+    set_tests_properties(snow-shot-window-group-switcher-benchmark PROPERTIES
+        LABELS benchmark ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
 endif()
 
 if(SNOW_SHOT_BUILD_BENCHMARKS)

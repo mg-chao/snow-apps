@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace snow_shot::presentation {
 class GlobalShortcutBackend {
@@ -28,6 +29,10 @@ class GlobalShortcutBackend {
     [[nodiscard]] virtual GlobalShortcutBackendResult
     registerShortcut(int registrationId, const snow_shot::shortcuts::ShortcutBinding& binding) = 0;
     virtual void unregisterShortcut(int registrationId) = 0;
+    // ID zero queries Escape only, for mouse-invoked pickers.
+    [[nodiscard]] virtual std::optional<GlobalShortcutInputState> inputState(int) const {
+        return std::nullopt;
+    }
 };
 
 class GlobalShortcutManager final : public QObject {
@@ -53,9 +58,12 @@ class GlobalShortcutManager final : public QObject {
     void setGlobalHotkeysEnabled(bool enabled);
     void setGlobalCanvasActive(bool active);
     [[nodiscard]] bool globalHotkeysEnabled() const;
+    [[nodiscard]] std::optional<GlobalShortcutInputState> inputState(int registrationId) const;
 
   signals:
     void activated(snow_shot::presentation::GlobalShortcutAction action);
+    void bindingActivated(snow_shot::presentation::GlobalShortcutAction action, int registrationId);
+    void registrationsSuspended();
     void stateChanged(snow_shot::presentation::GlobalShortcutAction action,
                       const snow_shot::presentation::GlobalShortcutRegistrationState& state);
     void globalHotkeysEnabledChanged(bool enabled);
