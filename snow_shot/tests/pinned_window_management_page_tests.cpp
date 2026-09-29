@@ -41,6 +41,7 @@ class Fixture final : public PinnedWindowManagementDataSource {
     QVector<QString> removed;
     QVector<QSize> previewSizes;
     int fullImageRequests = 0;
+    QString lastFullImageId;
     QVector<storage::PinnedWindowSummary> records() const override {
         return items;
     }
@@ -59,6 +60,7 @@ class Fixture final : public PinnedWindowManagementDataSource {
     }
     void requestFullImage(const QString& id, quint64 requestId) override {
         ++fullImageRequests;
+        lastFullImageId = id;
         QImage image(120, 60, QImage::Format_RGB32);
         image.fill(Qt::green);
         emit fullImageReady(id, requestId, image);
@@ -91,6 +93,46 @@ int main(int argc, char** argv) {
     second.ignored = true;
     second.creationSource = storage::PinnedWindowCreationSource::Screenshot;
     fixture.items = {first, second};
+    {
+        Fixture many;
+        for (int index = 0; index < 15; ++index) {
+            auto record = first;
+            record.id = QStringLiteral("many-%1").arg(index);
+            record.createdUtc = today.addSecs(-index);
+            record.creationSource = index % 2 == 0
+                                        ? storage::PinnedWindowCreationSource::Clipboard
+                                        : storage::PinnedWindowCreationSource::Screenshot;
+            many.items.push_back(record);
+        }
+        PinnedWindowManagementPageWidget page(&many, nullptr);
+        auto* viewer = page.findChild<adqt::widgets::AdImageViewer*>();
+        auto* pagination = page.findChild<adqt::widgets::AdPagination*>();
+        require(viewer->rowCount() == 15, "pinned viewer includes records beyond the first page");
+        viewer->openAt(9);
+        viewer->activate(1);
+        application.processEvents();
+        require(viewer->currentRow() == 10 && many.lastFullImageId == QStringLiteral("many-10"),
+                "pinned next control crosses page boundaries");
+        viewer->close();
+        pagination->setCurrentPage(2);
+        application.processEvents();
+        auto* preview =
+            page.findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
+        require(preview && preview->previewRow() == 10,
+                "second-page thumbnails use absolute preview rows");
+        auto* filter = page.findChild<adqt::widgets::AdSelect*>();
+        filter->setCurrentValues(
+            {static_cast<int>(storage::PinnedWindowCreationSource::Clipboard)});
+        application.processEvents();
+        require(viewer->rowCount() == 8 &&
+                    viewer->itemAt(1).source.path() == QStringLiteral("many-2"),
+                "pinned continuous preview follows active filters");
+        viewer->openAt(0);
+        many.items.removeFirst();
+        page.refresh();
+        require(!viewer->isVisible() && viewer->rowCount() == 7,
+                "refresh closes stale pinned preview and removes deleted records");
+    }
     {
         QStackedWidget pages;
         pages.resize(980, 640);
@@ -162,6 +204,19 @@ int main(int argc, char** argv) {
                     !fixture.previewSizes.isEmpty() && fixture.previewSizes.front().isValid() &&
                     fixture.fullImageRequests == 0,
                 "pinned thumbnails use AdImage and request bounded previews without full images");
+        auto* viewer = sharedImage->viewer();
+        require(viewer != nullptr && viewer->rowCount() == 2 && sharedImage->previewRow() == 0,
+                "pinned preview contains every record in activity order");
+        viewer->openAt(sharedImage->previewRow());
+        viewer->activate(1);
+        application.processEvents();
+        require(viewer->currentRow() == 1 && fixture.lastFullImageId == QStringLiteral("first"),
+                "next preview loads the next record, not the originally clicked record");
+        viewer->activate(-1);
+        application.processEvents();
+        require(viewer->currentRow() == 0 && fixture.lastFullImageId == QStringLiteral("second"),
+                "previous preview returns to the original record");
+        viewer->close();
         require(page.findChild<QWidget*>(QStringLiteral("pinnedManagementPageContainer")) &&
                     page.findChild<QWidget*>(QStringLiteral("pinnedManagementSelectionBar")) &&
                     page.findChild<adqt::widgets::AdPagination*>(
@@ -409,8 +464,8 @@ int main(int argc, char** argv) {
         require(imageRow != nullptr, "saved image has a management row");
         auto* imagePreview =
             imageRow->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
-        auto* viewer = imageRow->findChild<adqt::widgets::AdImageViewer*>();
-        require(imagePreview != nullptr && viewer != nullptr && viewer->rowCount() == 1,
+        auto* viewer = imagePreview->viewer();
+        require(imagePreview != nullptr && viewer != nullptr && viewer->rowCount() == 3,
                 "saved image has a preview viewer");
         const QColor idleCorner = imagePreview->grab().toImage().pixelColor(20, 20);
         const QPointF hoverPoint = imagePreview->rect().center();

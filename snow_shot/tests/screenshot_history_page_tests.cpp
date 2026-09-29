@@ -32,6 +32,7 @@
 #include <QLayout>
 #include <QTemporaryDir>
 #include <QTranslator>
+#include <QTimer>
 
 #include <algorithm>
 #include <cstdlib>
@@ -54,7 +55,7 @@ void flushEvents() {
     QCoreApplication::processEvents();
 }
 
-class MutableHistoryDataSource final : public ScreenshotHistoryPageDataSource {
+class MutableHistoryDataSource : public ScreenshotHistoryPageDataSource {
   public:
     using ScreenshotHistoryPageDataSource::ScreenshotHistoryPageDataSource;
 
@@ -110,6 +111,122 @@ QVector<storage::CaptureHistoryRecord> historyRecords(int count) {
         records.push_back(record);
     }
     return records;
+}
+
+class PreviewHistoryDataSource final : public MutableHistoryDataSource {
+  public:
+    QHash<QString, storage::CaptureHistoryAssetSet> assets;
+    QVector<QString> requested;
+    bool supportsAsyncDisplayAssets() const override {
+        return true;
+    }
+    void requestDisplayAssets(const QVector<storage::CaptureHistoryRecord>& records,
+                              quint64 generation) override {
+        QVector<ScreenshotHistoryAssetResolution> resolutions;
+        for (const auto& record : records) {
+            requested.push_back(record.id);
+            resolutions.push_back({record.id, assets.value(record.id)});
+        }
+        QTimer::singleShot(0, this, [this, generation, resolutions] {
+            emit displayAssetsReady(generation, resolutions);
+        });
+    }
+};
+
+void continuousHistoryPreview() {
+    QTemporaryDir directory;
+    PreviewHistoryDataSource source;
+    auto records = historyRecords(15);
+    for (auto& record : records) {
+        const QString path = directory.filePath(record.id + QStringLiteral(".png"));
+        QImage image(32, 24, QImage::Format_RGB32);
+        image.fill(Qt::red);
+        require(image.save(path), "save preview fixture");
+        record.result = storage::CaptureHistoryResultRecord{image.size(), 100};
+        storage::CaptureHistoryAssetSet assets;
+        assets.recordId = record.id;
+        assets.result =
+            storage::CaptureHistoryResultAsset{record.id, image.size(), QUrl::fromLocalFile(path)};
+        source.assets.insert(record.id, assets);
+    }
+    storage::CaptureHistoryDisplayRecord display;
+    display.stableId = QStringLiteral("monitor");
+    display.name = QStringLiteral("Monitor");
+    records.front().displays.push_back(display);
+    auto& firstAssets = source.assets[records.front().id];
+    firstAssets.displays.push_back({records.front().id, display.stableId, display.name,
+                                    QSize(32, 24), firstAssets.result->localFileUrl});
+    source.setRecords(records);
+    ScreenshotHistoryPageWidget page(&source, nullptr);
+    page.resize(980, 640);
+    page.setActive(true);
+    page.show();
+    for (int index = 0; index < 5; ++index)
+        flushEvents();
+    auto* viewer = page.findChild<adqt::widgets::AdImageViewer*>();
+    require(viewer && viewer->rowCount() == 16,
+            "history preview includes all filtered records and their display images");
+    const auto images =
+        page.findChild<QWidget*>(QStringLiteral("screenshotHistoryEntry-record-0"))
+            ->findChildren<adqt::widgets::AdImage*>(QStringLiteral("screenshotHistoryImage"));
+    require(images.size() == 2 &&
+                std::all_of(images.cbegin(), images.cend(),
+                            [viewer](auto* image) { return image->viewer() == viewer; }) &&
+                std::any_of(images.cbegin(), images.cend(),
+                            [](auto* image) { return image->previewRow() == 0; }) &&
+                std::any_of(images.cbegin(), images.cend(),
+                            [](auto* image) { return image->previewRow() == 1; }),
+            "history thumbnails share the continuous viewer and start at the clicked image");
+    viewer->openAt(0);
+    viewer->activate(1);
+    require(viewer->currentRow() == 1 &&
+                viewer->itemAt(1).source.fragment() == QStringLiteral("display:monitor"),
+            "history next preserves display previews within a record");
+    viewer->activate(1);
+    require(viewer->currentRow() == 2 && viewer->itemAt(2).source.path() == records[1].id,
+            "history next continues into the next record");
+    viewer->activate(-1);
+    require(viewer->currentRow() == 1, "history previous returns to the preceding image");
+    viewer->openAt(10);
+    viewer->activate(1);
+    flushEvents();
+    require(viewer->currentRow() == 11 && viewer->itemAt(11).source.path() == records[10].id,
+            "history next crosses the pagination boundary");
+    auto* reply = viewer->imageLoader()->load(viewer->itemAt(11).source, {}, &page);
+    QElapsedTimer timer;
+    timer.start();
+    while (!reply->isFinished() && timer.elapsed() < 5000)
+        flushEvents();
+    require(reply->isSuccessful() && reply->image().size() == QSize(32, 24) &&
+                source.requested.contains(records[10].id),
+            "off-page history previews resolve asynchronously and load full images");
+    delete reply;
+    auto* canceled = viewer->imageLoader()->load(viewer->itemAt(12).source, {}, &page);
+    canceled->abort();
+    flushEvents();
+    require(canceled->isFinished() && !canceled->isSuccessful(),
+            "canceled history preview cannot become a successful late reply");
+    delete canceled;
+    viewer->close();
+    auto* pagination = page.findChild<adqt::widgets::AdPagination*>();
+    pagination->setCurrentPage(2);
+    for (int index = 0; index < 5; ++index)
+        flushEvents();
+    auto* secondPageImage =
+        page.findChild<adqt::widgets::AdImage*>(QStringLiteral("screenshotHistoryImage"));
+    require(secondPageImage && secondPageImage->previewRow() == 11,
+            "second-page history thumbnail opens its absolute image row");
+    auto* filter = page.findChild<adqt::widgets::AdSelect*>();
+    filter->setCurrentValues({QStringLiteral("clipboard")});
+    flushEvents();
+    require(viewer->rowCount() == 9 && viewer->itemAt(2).source.path() == records[2].id,
+            "continuous history respects active source filters");
+    viewer->openAt(0);
+    records.removeFirst();
+    source.setRecords(records);
+    page.refresh();
+    require(!viewer->isVisible() && viewer->rowCount() == 7,
+            "history refresh closes stale preview and removes deleted images");
 }
 
 QList<adqt::widgets::AdCheckbox*> entryCheckboxes(ScreenshotHistoryPageWidget& page) {
@@ -749,6 +866,7 @@ int main(int argc, char** argv) {
                 .initialize({temporary.path(), temporary.path(), 8000})
                 .success,
             "isolated application storage must initialize");
+    continuousHistoryPreview();
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
     pageTextAndEmptyStateMatchPinnedWindowManagement();
     moreMenuOffersPinAndDelete();
