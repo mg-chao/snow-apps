@@ -94,7 +94,7 @@ if(APPLE)
         src/platform/macos/pinnedwindowplatform.mm
         src/presentation/pinned/pinnedwindowplatform.cpp)
     target_include_directories(snow_shot_macos_window_platform PRIVATE include)
-    target_link_libraries(snow_shot_macos_window_platform PUBLIC Qt6::Widgets adqt::window_context
+    target_link_libraries(snow_shot_macos_window_platform PUBLIC Qt6::Widgets
         PRIVATE Qt6::GuiPrivate snow_shot_macos_cursor "-framework AppKit" "-framework ApplicationServices")
 endif()
 
@@ -4259,6 +4259,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-export-dialog-workflow-tests PRIVATE
         snow_shot_image_codec snow_shot_settings snow_draw_engine_qt_canvas Qt6::Widgets
     )
+    if(APPLE)
+        target_sources(snow-shot-export-dialog-workflow-tests PRIVATE
+            ../cmake/test-support/macos_native_input.mm)
+        target_include_directories(snow-shot-export-dialog-workflow-tests PRIVATE ../cmake/test-support)
+        target_link_libraries(snow-shot-export-dialog-workflow-tests PRIVATE "-framework AppKit")
+    endif()
     snow_shot_import_offscreen_platform(snow-shot-export-dialog-workflow-tests)
     add_test(NAME snow-shot-pdf-dialog-tests COMMAND snow-shot-export-dialog-workflow-tests --pdf)
     set_tests_properties(snow-shot-pdf-dialog-tests PROPERTIES
@@ -7756,7 +7762,6 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         SNOW_SHOT_MACOS_INFO_PLIST="${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in")
     target_link_libraries(snow-shot-macos-shell-native-tests PRIVATE
         snow_shot_login_item Qt6::Widgets "-framework AppKit")
-    snow_shot_link_macos_window_platform(snow-shot-macos-shell-native-tests)
     add_test(NAME snow-shot-macos-shell-native-tests
         COMMAND snow-shot-macos-shell-native-tests -platform cocoa)
     set_tests_properties(snow-shot-macos-shell-native-tests PROPERTIES
@@ -7784,7 +7789,9 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-macos-pinned-window-tests --delivery -platform cocoa)
     add_test(NAME snow-shot-macos-pinned-modal-delivery-tests
         COMMAND snow-shot-macos-pinned-window-tests --modal-delivery -platform cocoa)
-    set_tests_properties(snow-shot-macos-pinned-window-tests snow-shot-macos-pinned-focus-tests snow-shot-macos-pinned-delivery-tests snow-shot-macos-pinned-modal-delivery-tests
+    add_test(NAME snow-shot-macos-pinned-application-modal-delivery-tests
+        COMMAND snow-shot-macos-pinned-window-tests --application-modal-delivery -platform cocoa)
+    set_tests_properties(snow-shot-macos-pinned-window-tests snow-shot-macos-pinned-focus-tests snow-shot-macos-pinned-delivery-tests snow-shot-macos-pinned-modal-delivery-tests snow-shot-macos-pinned-application-modal-delivery-tests
         PROPERTIES LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60 SKIP_RETURN_CODE 77)
 endif()
 
@@ -7963,7 +7970,6 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-macos-recapture-native-tests PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-macos-recapture-native-tests PRIVATE Qt6::Widgets snow_capture_c
-        snow_shot_login_item
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-recapture-native-tests COMMAND snow-shot-macos-recapture-native-tests)
     set_tests_properties(snow-shot-macos-recapture-native-tests PROPERTIES
@@ -8020,21 +8026,13 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-macos-screenshot-stacking-native-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=cocoa" LABELS "interactive;macos"
         RUN_SERIAL TRUE TIMEOUT 60)
-
-    add_executable(snow-shot-macos-screenshot-activation-tests
-        tests/macos_screenshot_activation_tests.mm
-        src/platform/macos/applicationactivation.mm
-        ../cmake/test-support/macos_native_input.mm)
-    snow_shot_link_macos_window_platform(snow-shot-macos-screenshot-activation-tests)
-    target_link_libraries(snow-shot-macos-screenshot-activation-tests PRIVATE snow_shot_login_item)
-    target_include_directories(snow-shot-macos-screenshot-activation-tests PRIVATE include src)
-    add_test(NAME snow-shot-macos-screenshot-activation-tests
-        COMMAND snow-shot-macos-screenshot-activation-tests -platform offscreen)
-    set_tests_properties(snow-shot-macos-screenshot-activation-tests PROPERTIES LABELS "unit;macos")
-    add_test(NAME snow-shot-macos-screenshot-activation-native-tests
-        COMMAND snow-shot-macos-screenshot-activation-tests -platform cocoa)
-    set_tests_properties(snow-shot-macos-screenshot-activation-native-tests PROPERTIES
-        LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 45)
+    add_test(NAME snow-shot-macos-modal-stacking-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests --modal-stacking-only -platform offscreen)
+    set_tests_properties(snow-shot-macos-modal-stacking-tests PROPERTIES LABELS "unit;macos" TIMEOUT 60)
+    add_test(NAME snow-shot-macos-modal-stacking-native-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests --modal-stacking-only -platform cocoa)
+    set_tests_properties(snow-shot-macos-modal-stacking-native-tests PROPERTIES
+        LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
 endif()
 
 # Physical cursor warps enter Qt's platform input path so Qt's pointer state and
@@ -8090,6 +8088,10 @@ if(TARGET snow-shot-recognition-session-controller-tests)
 endif()
 
 if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-template-dialog-tests
+        COMMAND snow-shot-pinned-window-tests --template-dialogs-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-template-dialog-tests PROPERTIES
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-latex-tests COMMAND snow-shot-pinned-window-tests --latex-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-latex-tests PROPERTIES LABELS "unit" TIMEOUT 60)
 endif()

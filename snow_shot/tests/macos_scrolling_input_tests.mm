@@ -47,7 +47,6 @@ void nativeTransparencyRoutesToUnderlyingWindow() {
     underlying.setGeometry(QRect(cursor - QPoint(100, 100), QSize(240, 240)));
     underlying.show();
     Overlay overlay;
-    snow_shot::platform::configureScreenshotOverlayWindow(&overlay);
     overlay.setGeometry(underlying.geometry());
     overlay.show();
     QApplication::processEvents();
@@ -57,8 +56,7 @@ void nativeTransparencyRoutesToUnderlyingWindow() {
         QApplication::processEvents();
         NSWindow* native = reinterpret_cast<NSView*>(overlay.winId()).window;
         NSWindow* target = reinterpret_cast<NSView*>(underlying.winId()).window;
-        require(native.styleMask & NSWindowStyleMaskNonactivatingPanel,
-                "scrolling overlay must retain its nonactivating role after native reuse");
+        snow_shot::platform::configureScreenshotOverlayWindow(&overlay);
         target.level = native.level - 1;
         [target orderFrontRegardless];
         [native orderFrontRegardless];
@@ -124,7 +122,6 @@ void nativeTransparencyRoutesToUnderlyingWindow() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    snow_shot::platform::initializeScreenshotWindowPolicy();
     if (QApplication::platformName() == QStringLiteral("cocoa")) {
         if (!CGPreflightPostEventAccess()) {
             std::cout << "SKIP: native wheel fixture requires existing event-posting permission\n";

@@ -390,6 +390,9 @@ void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* ov
     }
     m_toolbarStyleCanvas = nullptr;
     toolbarWindow->setOwnerWindow(overlay);
+#ifdef Q_OS_MACOS
+    snow_shot::platform::configureScreenshotToolbarWindow(toolbarWindow);
+#endif
 
     if (overlay == nullptr || overlay->canvas() == nullptr) {
         return;

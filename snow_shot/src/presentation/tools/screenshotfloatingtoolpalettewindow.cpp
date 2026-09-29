@@ -12,7 +12,6 @@
 #include "widgets/control_scale.h"
 #include "widgets/dpi_stable_window_controller.h"
 #include "widgets/button.h"
-#include "widgets/window_creation_context.h"
 #include "widgets/detail/top_level_popup_window.h"
 #if defined(Q_OS_MACOS)
 #include "widgets/detail/window_surface_mac_p.h"
@@ -190,7 +189,6 @@ void ScreenshotFloatingToolPaletteWindow::setOwnerWindow(QWidget* owner) {
 }
 
 void ScreenshotFloatingToolPaletteWindow::setTransientOwnerWindow(QWidget* owner) {
-    const adqt::widgets::ScopedWindowCreationOwner creationOwner(this, owner);
     m_transientOwnerWindow = owner;
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setWatermarkTemplateModalOwnerWindow(owner);
@@ -285,8 +283,6 @@ void ScreenshotFloatingToolPaletteWindow::restoreNativeSurface() {
         return;
     }
 
-    const adqt::widgets::ScopedWindowCreationOwner creationOwner(
-        this, m_transientOwnerWindow ? m_transientOwnerWindow.data() : parentWidget());
     applyWindowAttributes();
     resetPhysicalSizeInvariant();
     const WId paletteWindowId = winId();

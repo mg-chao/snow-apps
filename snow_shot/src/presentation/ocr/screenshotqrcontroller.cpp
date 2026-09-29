@@ -8,7 +8,6 @@
 #include "widgets/button.h"
 #include "widgets/scroll_area.h"
 #include "widgets/detail/top_level_popup_window.h"
-#include "widgets/window_creation_context.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -220,7 +219,6 @@ class ScreenshotQrPopover final : public QWidget {
     }
     void prepareNativeSurface() {
         QWidget* owner = parentWidget()->window();
-        const adqt::widgets::ScopedWindowCreationOwner creationOwner(this, owner);
         setWindowFlag(Qt::WindowStaysOnTopHint,
                       owner->windowFlags().testFlag(Qt::WindowStaysOnTopHint));
         if (!owner->windowHandle())

@@ -54,9 +54,12 @@
 #include "widgets/color_picker.h"
 #include "widgets/context_menu.h"
 #include "widgets/modal.h"
+#include "widgets/detail/window_modality.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/radio_button_group.h"
 #include "widgets/slider.h"
+#include "widgets/select.h"
+#include <QListView>
 
 #include <QAbstractButton>
 #include <QActionGroup>
@@ -9290,6 +9293,109 @@ void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
     closeRestoredPinnedWindow(restoredWindow, record.id);
 }
 
+void pinnedTemplateDialogs() {
+    const snow_shot::storage::WatermarkTemplateSettings watermarkSettings;
+    const snow_shot::storage::DrawTemplateSettings drawSettings;
+    require(watermarkSettings.setTemplates({}) && drawSettings.setTemplates({}),
+            "template libraries must start empty");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "template fixture needs a screen");
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    QImage image(400, 300, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), image.size());
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.screen = screen;
+    config.enableEditing = true;
+    config.automaticTextRecognition = false;
+    require(window.present(config), "template fixture must present");
+    buttonNamed(window, QStringLiteral("Enable drawing mode"))->click();
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    auto* palette = controller->toolbarWindow()->palette();
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Watermark),
+            "watermark tool must activate");
+    QCoreApplication::processEvents();
+    auto* select = palette->findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotWatermarkTemplateSelect"));
+    require(select != nullptr, "watermark selector must exist");
+    select->showPopup();
+    QCoreApplication::processEvents();
+    auto* add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotWatermarkTemplateAddButton"));
+    require(add != nullptr && add->isVisible(), "watermark Add must be visible");
+    add->click();
+    QCoreApplication::processEvents();
+    auto* modal = palette->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotWatermarkTemplateCreateModal"));
+    require(modal && modal->isOpen() && modal->contentWidget()->isVisible(),
+            "pinned watermark Add must open a visible editor");
+    require(modal->ownerWindow() == &window, "pinned template owner must be the pin");
+    auto* name = modal->contentWidget()->findChild<adqt::widgets::AdLineEdit*>(
+        QStringLiteral("screenshotWatermarkTemplateNameInput"));
+    auto* value = modal->contentWidget()->findChild<adqt::widgets::AdLineEdit*>(
+        QStringLiteral("screenshotWatermarkTemplateValueInput"));
+    require(name && value, "watermark editor must expose both inputs");
+    name->setText(QStringLiteral("Pinned watermark"));
+    value->setText(QStringLiteral("{text} {YYYY}"));
+    modal->acceptButton()->click();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(!modal->isOpen() && watermarkSettings.templates().size() == 1 &&
+                canvas->canvasWatermarkConfig().templateValue == QStringLiteral("{text} {YYYY}"),
+            "pinned watermark editor must save and apply the template");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Shape),
+            "template fixture must activate drawing");
+    const auto pointer = [canvas](QEvent::Type type, const QPointF& point, Qt::MouseButton button,
+                                  Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, canvas->mapToGlobal(point.toPoint()), button, buttons,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &event);
+    };
+    pointer(QEvent::MouseButtonPress, {60, 60}, Qt::LeftButton, Qt::LeftButton);
+    pointer(QEvent::MouseMove, {150, 120}, Qt::NoButton, Qt::LeftButton);
+    pointer(QEvent::MouseButtonRelease, {150, 120}, Qt::LeftButton, Qt::NoButton);
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Select),
+            "template fixture must activate selection");
+    pointer(QEvent::MouseButtonPress, {60, 90}, Qt::LeftButton, Qt::LeftButton);
+    pointer(QEvent::MouseButtonRelease, {60, 90}, Qt::LeftButton, Qt::NoButton);
+    QCoreApplication::processEvents();
+    require(canvas->canvasStyleToolbarState().selectedElementCount == 1,
+            "template fixture must select the drawn rectangle");
+    select = palette->findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotDrawTemplateSelect"));
+    require(select, "draw-template selector must exist");
+    select->showPopup();
+    QCoreApplication::processEvents();
+    add = select->view()->window()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawTemplateAddButton"));
+    require(add && add->isEnabled(), "drawing selection must enable Add Template");
+    add->click();
+    QCoreApplication::processEvents();
+    modal = palette->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotDrawTemplateCreateModal"));
+    require(modal && modal->isOpen() && modal->ownerWindow() == &window &&
+                modal->contentWidget()->isVisible(),
+            "pinned drawing Add must open a visible editor owned by the pin");
+    modal->acceptButton()->click();
+    require(!modal->isOpen() && drawSettings.templates().size() == 1 &&
+                !drawSettings.templates().first().payload.isEmpty(),
+            "pinned drawing editor must serialize and save the selected canvas elements");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(canvas->deleteAllElements(), "clear canvas before reinserting saved template");
+    emit select->selected(QVariant(QStringLiteral("draw-template:0")),
+                          QStringLiteral("Template 1"));
+    require(canvas->canvasStyleToolbarState().selectedElementCount == 1,
+            "selecting a saved drawing template must insert it into the pinned canvas");
+    require(canvas->undo() && canvas->canvasStyleToolbarState().selectedElementCount == 0,
+            "template insertion must be undoable");
+    window.close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rotateTools = false) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -10705,9 +10811,12 @@ void pinnedSaveDialogRoutingAndCancellation() {
     auto* modal = window->findChild<AdModal*>(QStringLiteral("screenshotSaveAsFileModal"));
     require(modal && modal->mode() == AdModal::Mode::Window,
             "pinned save must open Snow Shot dialog");
-    require(toolbar->isVisible() &&
-                modal->contentWidget()->window()->windowHandle()->transientParent() ==
-                    toolbar->windowHandle(),
+    require(toolbar->isVisible(), "pinned save must retain its editing toolbar");
+    require(!adqt::widgets::detail::blockingModalWindow(
+                modal->contentWidget()->window()->windowHandle()),
+            "pinned save must not block its own visible surface");
+    require(modal->contentWidget()->window()->windowHandle()->transientParent() ==
+                toolbar->windowHandle(),
             "pinned save must stay above its visible editing toolbar");
     modal->rejectButton()->click();
     waitForUi(30);
@@ -13196,6 +13305,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #endif
+        if (app.arguments().contains(QStringLiteral("--template-dialogs-only"))) {
+            pinnedTemplateDialogs();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--toolbar-parity-only"))) {
             pinnedDrawingToolbarMatchesCaptureInteractions(sourceRuntime);
             return 0;

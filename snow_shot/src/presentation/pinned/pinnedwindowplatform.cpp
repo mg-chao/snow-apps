@@ -63,7 +63,11 @@ PinnedPlacement recoverPinnedPlacement(PinnedPlacement placement, const QScreen&
 PinnedWindowPlatform::PinnedWindowPlatform(QWidget* window, Role role)
     : m_window(window), m_role(role) {
     window->installEventFilter(this);
+#ifndef Q_OS_MACOS
+    // Cocoa descendants inherit capture's shared stacking policy. Attaching a
+    // second pin platform to popups would retain pin settings after reparenting.
     qApp->installEventFilter(this);
+#endif
     const auto changed = [this](bool layoutChanged) {
         if (environmentChanged)
             environmentChanged(layoutChanged);
