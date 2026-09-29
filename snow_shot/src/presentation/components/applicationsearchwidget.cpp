@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
@@ -219,8 +220,8 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
             supportingMetrics.elidedText(description, Qt::ElideRight, contentRect.width()));
 
         if (categoryWidth > 0) {
-            const auto& colors =
-                m_categoryColors.at(std::clamp(index.data(kCategoryKindRole).toInt(), 0, 2));
+            const int categoryIndex = std::clamp(index.data(kCategoryKindRole).toInt(), 0, 2);
+            const auto& colors = m_categoryColors.at(static_cast<std::size_t>(categoryIndex));
             painter->setPen(colors.border);
             painter->setBrush(colors.background);
             painter->drawRoundedRect(QRectF(categoryRect).adjusted(0.5, 0.5, -0.5, -0.5), m_radius,
