@@ -46,7 +46,6 @@
 #endif
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/loginitemservice.h"
-#include "snow_shot/platform/screenshotnative.h"
 #include <QScopeGuard>
 #include <future>
 #include <thread>
@@ -451,9 +450,6 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setApplicationDisplayName(
         QCoreApplication::translate("AboutPageWidget", "Snow Shot"));
     QApplication app(argc, argv);
-#ifdef Q_OS_MACOS
-    snow_shot::platform::initializeScreenshotWindowPolicy();
-#endif
     adqt::widgets::initializePlatformCompatibility(app);
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.platform"),

@@ -74,6 +74,9 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
                           if (environmentChanged)
                               environmentChanged(false);
                         }] retain];
+            // Register each native surface once. Descendants then inherit the
+            // same stacking policy as recording windows, including modal sessions.
+            snow_shot::platform::detail::setPinnedWindowLayer(m_window, m_staysOnTop);
         }
         if (m_role == Role::Image) {
             // The shared pin controller owns proportional edge resizing and background
@@ -88,10 +91,8 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
             window.movableByWindowBackground = NO;
             window.hasShadow = NO;
         }
-        // Pins and their auxiliary controls cover system chrome, while capture
-        // windows retain their higher recording and screenshot bands.
-        window.level =
-            m_staysOnTop ? snow_shot::platform::detail::pinnedWindowLevel() : NSNormalWindowLevel;
+        if (!m_staysOnTop)
+            window.level = NSNormalWindowLevel;
         window.collectionBehavior =
             (window.collectionBehavior & ~(NSWindowCollectionBehaviorMoveToActiveSpace |
                                            NSWindowCollectionBehaviorFullScreenPrimary)) |
@@ -119,6 +120,7 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
             // surface. Clear our attachment first so that notification cannot
             // recursively restore a partially updated NSWindow.
             m_native = nil;
+            snow_shot::platform::detail::setPinnedWindowLayer(m_window, false);
             native.styleMask = m_styleMask;
             native.movable = m_movable;
             native.movableByWindowBackground = m_movableByWindowBackground;
@@ -201,6 +203,7 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_staysOnTop = staysOnTop;
         if (!attach())
             return false;
+        snow_shot::platform::detail::setPinnedWindowLayer(m_window, staysOnTop);
         return m_native.level == (staysOnTop ? snow_shot::platform::detail::pinnedWindowLevel()
                                              : NSNormalWindowLevel);
     }

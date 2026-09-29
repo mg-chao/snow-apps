@@ -561,10 +561,6 @@ void ScreenshotOverlayWindow::initializeScreenshotSurface() {
     setAttribute(Qt::WA_ShowWithoutActivating, true);
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
 
-#ifdef Q_OS_MACOS
-    // Nonactivating panels need their capture role before native construction.
-    snow_shot::platform::configureScreenshotOverlayWindow(this);
-#endif
     if (m_canvas == nullptr) {
         return;
     }

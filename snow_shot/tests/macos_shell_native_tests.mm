@@ -1,5 +1,4 @@
 #include "snow_shot/platform/macos/applicationactivation.h"
-#include "snow_shot/platform/screenshotnative.h"
 
 #import <AppKit/AppKit.h>
 
@@ -30,7 +29,6 @@ void flushEvents() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
-    snow_shot::platform::initializeScreenshotWindowPolicy();
 
     NSDictionary* bundleInfo =
         [NSDictionary dictionaryWithContentsOfFile:@SNOW_SHOT_MACOS_INFO_PLIST];

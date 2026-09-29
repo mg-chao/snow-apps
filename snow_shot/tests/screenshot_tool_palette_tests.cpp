@@ -7668,6 +7668,8 @@ void watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically() {
     auto* deleteModal = palette.findChild<adqt::widgets::AdModal*>(
         QStringLiteral("screenshotWatermarkTemplateDeleteModal"));
     const SnowCanvasWatermarkConfig beforeDelete = applied;
+    require(deleteModal && deleteModal->ownerWindow() == &selectionDisplayOverlay,
+            "watermark deletion must use the same display owner as creation");
     require(deleteModal != nullptr && deleteModal->isOpen() &&
                 deleteModal->mode() == adqt::widgets::AdModal::Mode::Window &&
                 deleteModal->windowModality() == Qt::ApplicationModal &&

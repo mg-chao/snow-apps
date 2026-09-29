@@ -134,10 +134,7 @@ void activateWindow(QWidget* window) {
     static_cast<void>(window->winId());
     NSView* view = reinterpret_cast<NSView*>(window->internalWinId());
     NSWindow* nativeWindow = view.window;
-    // A screenshot panel borrows keyboard focus without taking foreground
-    // activation, including when restoring focus after recapture.
-    if (!(nativeWindow.styleMask & NSWindowStyleMaskNonactivatingPanel))
-        [NSApp activate];
+    [NSApp activate];
     window->raise();
     window->activateWindow();
     if (QWindow* handle = window->windowHandle()) {

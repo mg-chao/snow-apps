@@ -1,15 +1,14 @@
 #include "presentation/pinned/pinnedwindowplatform.h"
 #include "platform/macos/capturewindowlayers_p.h"
 #include "snow_shot/presentation/mousereleaseactioncontroller.h"
-#include "snow_shot/platform/screenshotnative.h"
 #include "widgets/modal.h"
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QMouseEvent>
 #include <QProcess>
-#include <QThread>
 #include <QTimer>
 #include <QLineEdit>
 #include <QInputMethodEvent>
@@ -28,12 +27,11 @@ void require(bool condition, const char* message) {
         throw std::runtime_error(message);
 }
 void events(int milliseconds = 50) {
-    QElapsedTimer timer;
-    timer.start();
-    while (timer.elapsed() < milliseconds) {
-        qApp->processEvents();
-        QThread::msleep(1);
-    }
+    // Drive the native event loop, including its idle boundary: processEvents()
+    // alone leaves Cocoa modal cleanup and deferred owner activation pending.
+    QEventLoop loop;
+    QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
+    loop.exec();
 }
 class Receiver final : public QWidget {
   public:
@@ -147,22 +145,37 @@ void auxiliaryOwnershipRequiresARealOwner() {
                 "unrelated transparent tools must retain native click-through");
     }
 
-    QWidget ownedChild(&pin, Qt::Tool);
+    QWidget ownedChild(&pin, Qt::Tool | Qt::WindowTransparentForInput);
     ownedChild.show();
-    require(auxiliaryPlatform(ownedChild) != nullptr,
-            "a QWidget-owned auxiliary must still receive its pin's policy");
+    using namespace snow_shot::platform::detail;
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        require(captureLayer(ownedChild.windowHandle()).family == CaptureFamily::Pinned &&
+                    captureLayer(ownedChild.windowHandle()).valid(),
+                "a QWidget-owned auxiliary must inherit its pin's shared stacking policy");
+        require(reinterpret_cast<NSView*>(ownedChild.winId()).window.ignoresMouseEvents,
+                "inherited pin stacking must preserve a tool's native click-through policy");
+    }
     QWidget transient(nullptr, Qt::Tool);
     static_cast<void>(transient.winId());
     require(pin.windowHandle() != nullptr,
             "showing the owned child must create its owner's surface");
     transient.windowHandle()->setTransientParent(pin.windowHandle());
     transient.show();
-    require(auxiliaryPlatform(transient) != nullptr,
-            "a native transient auxiliary must still receive its pin's policy");
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        require(captureLayer(transient.windowHandle()).family == CaptureFamily::Pinned &&
+                    captureLayer(transient.windowHandle()).valid(),
+                "a native transient auxiliary must inherit its pin's shared stacking policy");
+    }
     QWidget other;
     other.show();
     require(auxiliaryPlatform(other) == nullptr,
             "a created pin must not adopt an unrelated top-level window either");
+    transient.windowHandle()->setTransientParent(other.windowHandle());
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        require(!captureLayer(transient.windowHandle()).valid() &&
+                    reinterpret_cast<NSView*>(transient.winId()).window.level < pinnedWindowLevel(),
+                "a pooled popup must release the pin's stacking policy when reparented");
+    }
 }
 
 void nativePolicies(bool focus) {
@@ -421,7 +434,7 @@ int delivery() {
     return 0;
 }
 
-int modalDelivery() {
+int modalDelivery(Qt::WindowModality modality = Qt::WindowModal) {
     if (sessionLocked() || !CGPreflightPostEventAccess())
         return 77;
     CGEventRef initial = CGEventCreate(nullptr);
@@ -449,6 +462,7 @@ int modalDelivery() {
     events();
     adqt::widgets::AdModal modal(&pin);
     modal.setMode(adqt::widgets::AdModal::Mode::Window);
+    modal.setWindowModality(modality);
     modal.setPreset(adqt::widgets::AdModal::Preset::Confirm);
     modal.setWindowTitle(QStringLiteral("Destroy pinned window"));
     modal.setText(QStringLiteral("Destroy this pinned window?"));
@@ -457,6 +471,24 @@ int modalDelivery() {
     QWidget* surface = modal.acceptButton()->window();
     NSWindow* nativePin = reinterpret_cast<NSView*>(pin.winId()).window;
     NSWindow* nativeModal = reinterpret_cast<NSView*>(surface->winId()).window;
+    require(nativeModal.level >= nativePin.level,
+            "owned modals must remain above the elevated pin, including application modals");
+    if (modality == Qt::ApplicationModal) {
+        require(QApplication::activeModalWidget() == surface && NSApp.modalWindow == nativeModal,
+                "pin dialogs must retain native application modality and its presentation");
+    }
+    // AppKit activation is asynchronous. Deliver native input only after this
+    // fixture owns foreground focus, rather than relying on a fixed frame delay.
+    QElapsedTimer activation;
+    activation.start();
+    const auto ready = [&] {
+        return NSApp.keyWindow == nativeModal &&
+               NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier ==
+                   NSProcessInfo.processInfo.processIdentifier;
+    };
+    while (!ready() && activation.elapsed() < 3000)
+        events(1);
+    require(ready(), "the modal must receive foreground focus before native interaction");
     require(!nativeModal.isSheet, "the confirmation must stay independently movable");
     const QRect originalGeometry = pin.geometry();
     const QPoint from = pin.mapToGlobal(QPoint(30, pin.height() - 30));
@@ -494,7 +526,6 @@ int modalDelivery() {
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    snow_shot::platform::initializeScreenshotWindowPolicy();
     QApplication::setQuitOnLastWindowClosed(false);
     if (app.arguments().contains(QStringLiteral("--receiver"))) {
         Receiver receiver;
@@ -512,6 +543,8 @@ int main(int argc, char** argv) {
                 auxiliaryOwnershipRequiresARealOwner();
             else if (app.arguments().contains(QStringLiteral("--delivery")))
                 result = delivery();
+            else if (app.arguments().contains(QStringLiteral("--application-modal-delivery")))
+                result = modalDelivery(Qt::ApplicationModal);
             else if (app.arguments().contains(QStringLiteral("--modal-delivery")))
                 result = modalDelivery();
             else if (app.arguments().contains(QStringLiteral("--focus")) && sessionLocked()) {

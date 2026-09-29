@@ -4674,7 +4674,9 @@ void ScreenshotToolPaletteStyleControls::openDeleteWatermarkTemplateModal(
     }
     auto* modal = new adqt::widgets::AdModal(m_watermarkTemplateSelect);
     modal->setObjectName(QStringLiteral("screenshotWatermarkTemplateDeleteModal"));
-    modal->setOwnerWindow(m_watermarkTemplateSelect->window());
+    modal->setOwnerWindow(m_callbacks.watermarkTemplateModalOwnerWindow
+                              ? m_callbacks.watermarkTemplateModalOwnerWindow()
+                              : m_watermarkTemplateSelect->window());
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::ApplicationModal);
     modal->setCentered(true);

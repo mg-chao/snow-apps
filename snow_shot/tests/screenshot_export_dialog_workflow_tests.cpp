@@ -25,6 +25,9 @@
 #include "widgets/slider.h"
 #include "widgets/popover.h"
 #include "theme/theme_manager.h"
+#ifdef Q_OS_MACOS
+#include "macos_native_input.h"
+#endif
 
 #include <QApplication>
 #include <QColorSpace>
@@ -244,7 +247,15 @@ void saveDialogKeepsToolbarVisible() {
                 "the screenshot toolbar must remain visible throughout Save as File");
         require(!toolbar.testAttribute(Qt::WA_DontShowOnScreen),
                 "saving must not alter the toolbar's native visibility attributes");
-        if (QApplication::platformName() != QStringLiteral("offscreen")) {
+#ifdef Q_OS_MACOS
+        if (QApplication::platformName() == QStringLiteral("cocoa")) {
+            // Cocoa's native modal ordering can differ from Qt's topLevelAt()
+            // when the dialog's transient toolbar differs from its QWidget owner.
+            require(macWindowReceivesPoint(surface, toolbar.geometry().center()),
+                    "the native save dialog must remain above its toolbar after a queued raise");
+        } else
+#endif
+            if (QApplication::platformName() != QStringLiteral("offscreen")) {
             require(QApplication::topLevelAt(toolbar.geometry().center()) == surface,
                     "the save dialog must remain above its toolbar after a queued raise");
         }

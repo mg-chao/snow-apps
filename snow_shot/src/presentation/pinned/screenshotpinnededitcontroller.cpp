@@ -331,6 +331,12 @@ void ScreenshotPinnedEditController::ensureToolbar() {
 
     if (ScreenshotToolPalette* toolbar = m_toolbarWindow->palette()) {
         new snow_shot::presentation::ScreenshotStyleBinding(*toolbar, m_canvas, toolbar);
+        toolbar->setDrawTemplateCallbacks(
+            [this]() { return m_pinnedWindow.m_runtime.serializeSelectedDrawTemplate(); },
+            [this](const QByteArray& payload) {
+                m_canvas.insertDrawTemplate(payload, m_pinnedWindow.canvasPositionForViewPosition(
+                                                         QRectF(m_canvas.rect()).center()));
+            });
         toolbar->setHistoryState(m_canvas.canvasHistoryState());
         connect(toolbar, &ScreenshotToolPalette::undoRequested, this,
                 [this]() { static_cast<void>(m_canvas.undo()); });

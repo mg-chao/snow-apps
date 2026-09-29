@@ -1,5 +1,4 @@
 #include "tooltip.h"
-#include "window_creation_context.h"
 
 #include "detail/overlay_accessibility.h"
 #include "detail/overlay_popup_controller.h"
@@ -844,7 +843,6 @@ void AdTooltipPrivate::syncTransientOwner() {
     return;
   }
 
-  const ScopedWindowCreationOwner creationOwner(popupView.surface, ownerWidget);
   ownerWidget->winId();
   popupView.surface->winId();
   QWindow* ownerWindow = ownerWidget->windowHandle();

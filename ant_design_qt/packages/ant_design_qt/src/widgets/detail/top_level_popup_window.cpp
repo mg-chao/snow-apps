@@ -1,5 +1,4 @@
 #include "top_level_popup_window.h"
-#include "../window_creation_context.h"
 
 #include <QMetaObject>
 #include <QPointer>
@@ -71,9 +70,6 @@ void constrainTopLevelToolStackingToOwner(QWidget* toolWindow, void* message) {
         owner = reinterpret_cast<HWND>(transient->winId());
       }
     }
-    if (const auto intendedOwner = ScopedWindowCreationOwner::ownerFor(toolWindow)) {
-      owner = *intendedOwner ? reinterpret_cast<HWND>((*intendedOwner)->internalWinId()) : nullptr;
-    }
   }
   constrainToolPosition(tool, owner, reinterpret_cast<WINDOWPOS*>(nativeMessage->lParam));
 #else
@@ -88,7 +84,6 @@ void setTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow) {
   if (!toolHandle || !ownerHandle || toolHandle->transientParent() == ownerHandle) {
     return;
   }
-  const ScopedWindowCreationOwner creationOwner(toolWindow, ownerWindow);
 #if defined(Q_OS_WIN)
   // QWidget initially creates unowned tools at the front. Even while hidden,
   // attaching that HWND can pull its new owner forward. Place it first.
@@ -114,8 +109,6 @@ void syncTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow) 
   if (!ownerTopLevel || ownerTopLevel == toolWindow) {
     return;
   }
-
-  const ScopedWindowCreationOwner creationOwner(toolWindow, ownerTopLevel);
 
   const bool ownerStaysOnTop = ownerTopLevel->windowFlags().testFlag(Qt::WindowStaysOnTopHint);
   if (toolWindow->windowFlags().testFlag(Qt::WindowStaysOnTopHint) != ownerStaysOnTop) {
