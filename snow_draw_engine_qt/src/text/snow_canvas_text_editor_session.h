@@ -35,7 +35,6 @@ class SnowCanvasTextEditorSession final {
     enum class EventCommand {
         None,
         Commit,
-        Cancel,
         DeleteElement,
     };
 

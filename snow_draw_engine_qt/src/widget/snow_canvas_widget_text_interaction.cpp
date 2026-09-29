@@ -785,12 +785,6 @@ SnowCanvasWidgetTextInteraction::handleKeyPress(QKeyEvent* event, SnowRuntime ru
         result.sessionEnded = commitResult.sessionEnded;
         return result;
     }
-    case SnowCanvasTextEditorSession::EventCommand::Cancel: {
-        CancelResult cancelResult = cancel(runtime, viewport, displayCache);
-        result.changedViewports = std::move(cancelResult.changedViewports);
-        result.sessionEnded = cancelResult.sessionEnded;
-        return result;
-    }
     case SnowCanvasTextEditorSession::EventCommand::None:
     default:
         break;

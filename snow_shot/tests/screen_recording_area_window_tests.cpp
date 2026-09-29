@@ -355,6 +355,24 @@ void wheelAndEscapeRespectDrawingOwnership() {
     require(deactivationRequests == 1 && deactivate.isAccepted(),
             "Escape should request pass-through after transient canvas work is canceled");
 
+    require(canvas->setCanvasTool(SnowCanvasTool::Text), "activate recording text tool");
+    sendMouseEvent(*canvas, QEvent::MouseButtonPress, QPointF(40, 40), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(*canvas, QEvent::MouseButtonRelease, QPointF(40, 40), Qt::LeftButton,
+                   Qt::NoButton);
+    PhysicalKeyEvent insert(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
+                            QStringLiteral("Preserved text"));
+    QCoreApplication::sendEvent(canvas, &insert);
+    require(canvas->hasActiveTextEditing(), "recording text draft should be active");
+    PhysicalKeyEvent preserveText(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QCoreApplication::sendEvent(canvas, &preserveText);
+    require(canvas->hasActiveTextEditing() && deactivationRequests == 1,
+            "Escape must preserve the recording text draft and drawing mode");
+    PhysicalKeyEvent commitText(QEvent::KeyPress, Qt::Key_Return, Qt::ControlModifier);
+    QCoreApplication::sendEvent(canvas, &commitText);
+    require(!canvas->hasActiveTextEditing() && canvas->canvasHistoryState().canUndo,
+            "the preserved recording text draft should still commit");
+
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
     QWheelEvent passThroughWheel(QPointF(20, 20), QPointF(20, 20), QPoint(), QPoint(0, -120),
                                  Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);

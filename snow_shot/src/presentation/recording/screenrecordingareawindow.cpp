@@ -394,7 +394,6 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
             break;
         }
         if (m_canvas->hasActiveTextEditing()) {
-            static_cast<void>(m_canvas->cancelActiveTextEditing());
             key->accept();
             return true;
         }

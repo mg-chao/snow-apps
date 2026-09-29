@@ -620,8 +620,12 @@ void widgetLifecycle() {
     const QByteArray before = runtime.serializeDocumentHistory();
     openLabel(canvas);
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("cancelled"));
+    const QImage draftBeforeEscape = canvas.grab().toImage();
     key(canvas, Qt::Key_Escape);
-    require(!canvas.hasActiveTextEditing(), "Escape closes the draft");
+    require(canvas.hasActiveTextEditing(), "Escape preserves new text editing");
+    require(canvas.grab().toImage() == draftBeforeEscape, "Escape preserves the visible draft");
+    require(canvas.cancelActiveTextEditing(), "explicit cancellation ends the draft");
+    require(!canvas.hasActiveTextEditing(), "explicit cancellation closes the draft");
     require(runtime.serializeDocumentHistory() == before,
             "cancel leaves document and history untouched");
 
@@ -657,6 +661,14 @@ void widgetLifecycle() {
     key(canvas, Qt::Key_A, Qt::ControlModifier);
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("replacement"));
     key(canvas, Qt::Key_Escape);
+    require(canvas.hasActiveTextEditing(), "Escape preserves existing label editing");
+    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+    require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                QStringLiteral("replacement"),
+            "Escape preserves edits for commit");
+    require(canvas.undo(), "restore original label after checking Escape");
+    require(canvas.editSelectedArrowText(), "reopen label for explicit cancellation");
+    require(canvas.cancelActiveTextEditing(), "explicit cancellation ends the draft");
     require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("text")) ==
                 text.value(QStringLiteral("text")),
             "cancelling existing label restores original text");
@@ -950,14 +962,14 @@ void sharedViewsAndLongOffscreenText() {
     require(second.setViewportCamera(0.0, 0.0, 0.65), "shared viewport uses an independent zoom");
     createArrow(canvas, runtime);
     openLabel(canvas);
-    key(canvas, Qt::Key_Escape);
+    require(canvas.cancelActiveTextEditing(), "explicit cancellation ends the draft");
     const QImage before = second.grab().toImage();
     const QByteArray history = runtime.serializeDocumentHistory();
     openLabel(canvas);
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("Shared draft"));
     const QImage draft = second.grab().toImage();
     require(draft != before, "draft text and arrow gap refresh other viewports");
-    key(canvas, Qt::Key_Escape);
+    require(canvas.cancelActiveTextEditing(), "explicit cancellation ends the draft");
     require(second.grab().toImage() == before, "cancellation removes shared draft and gap");
     require(runtime.serializeDocumentHistory() == history, "shared draft adds no undo records");
     openLabel(canvas);
