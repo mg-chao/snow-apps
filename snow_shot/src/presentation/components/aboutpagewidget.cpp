@@ -557,9 +557,7 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
             switch (m_ui->updates->status().state) {
             case UpdateState::Available:
 #ifdef Q_OS_MACOS
-                openProjectLink(m_ui->updates->status().downloadUrl.isEmpty()
-                                    ? QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL))
-                                    : m_ui->updates->status().downloadUrl);
+                openProjectLink(m_ui->updates->status().downloadUrl);
 #else
                 m_ui->updates->download();
 #endif
@@ -974,8 +972,8 @@ void AboutPageWidget::refreshUpdateStatus() {
     case UpdateState::Available:
         text = tr("Update available: %1").arg(status.version);
 #ifdef Q_OS_MACOS
-        action =
-            status.downloadUrl.isEmpty() ? tr("Download from website") : tr("Download from GitHub");
+        action = status.downloadUrl.host() == u"gitee.com" ? tr("Download from Gitee")
+                                                           : tr("Download from GitHub");
 #else
         action = tr("Download update");
 #endif

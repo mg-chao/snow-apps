@@ -560,9 +560,8 @@ SettingsItemDefinition updateModeItem() {
     return {QStringLiteral("updates.mode"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Updates")),
 #ifdef Q_OS_MACOS
-            settingsText(QT_TRANSLATE_NOOP(
-                "SettingsCatalog",
-                "Check for new versions and download updates from the official website")),
+            settingsText(
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Check for new versions on GitHub and Gitee")),
 #else
             settingsText(
                 QT_TRANSLATE_NOOP("SettingsCatalog",

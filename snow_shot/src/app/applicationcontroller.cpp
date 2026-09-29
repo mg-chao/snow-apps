@@ -281,7 +281,6 @@ class ApplicationController::Impl {
         updateOptions.cacheDirectory =
             QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
                 .filePath(QStringLiteral("updates/") + updateId);
-        updateOptions.baseUrl = QUrl(QStringLiteral(SNOW_SHOT_API_BASE_URL));
         updates = new update::UpdateService(std::move(updateOptions), &app);
         updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
         updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
@@ -789,13 +788,14 @@ class ApplicationController::Impl {
         };
         mcpSources.insert(key, canceled);
         const QPointer<mcp::McpDocumentService> guard(mcpDocuments.get());
-        auto sourceDone = [this, guard, key, canceled, rejected, completion = std::move(completion)](
-                              Source sourceData, QString error) mutable {
+        auto sourceDone = [this, guard, key, canceled, rejected,
+                           completion = std::move(completion)](Source sourceData,
+                                                               QString error) mutable {
             if (!guard || canceled->exchange(true))
                 return;
             mcpSources.remove(key);
-            completion(std::move(sourceData), rejected->load() ? QStringLiteral("resource_limit")
-                                                               : std::move(error));
+            completion(std::move(sourceData),
+                       rejected->load() ? QStringLiteral("resource_limit") : std::move(error));
         };
         auto done = [sourceDone](QImage image, QJsonObject metadata, QString error) mutable {
             Source sourceData;
@@ -844,8 +844,9 @@ class ApplicationController::Impl {
 #ifdef Q_OS_MACOS
                         maximumDpr = std::max(maximumDpr, screen->devicePixelRatio());
 #endif
-                        const QSize pixels(qCeil(screen->size().width() * screen->devicePixelRatio()),
-                                           qCeil(screen->size().height() * screen->devicePixelRatio()));
+                        const QSize pixels(
+                            qCeil(screen->size().width() * screen->devicePixelRatio()),
+                            qCeil(screen->size().height() * screen->devicePixelRatio()));
                         const auto bytes = rasterBytes(pixels);
                         if (bytes < 0 || !budget(captureBytes + bytes)) {
                             done({}, {}, QStringLiteral("resource_limit"));
@@ -911,9 +912,8 @@ class ApplicationController::Impl {
             ++mcpSourceWork;
             std::optional<ScreenshotClipboardContentSnapshot> clipboard;
             if (source == u"clipboard")
-                clipboard =
-                    ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1.0,
-                                                               budget);
+                clipboard = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(),
+                                                                       1.0, budget);
             std::optional<storage::PinnedWindowRecord> livePin;
             std::optional<ScreenshotRecognitionResults> liveRecognition;
             QString livePinTool;
@@ -922,9 +922,10 @@ class ApplicationController::Impl {
                         params.value(QStringLiteral("source_id")).toString())) {
                     const auto state = window->automationState();
                     const auto size = state.value(QStringLiteral("source_size")).toArray();
-                    const auto pixels = size.size() == 2
-                                            ? rasterBytes(QSize(size.at(0).toInt(), size.at(1).toInt()))
-                                            : -1;
+                    const auto pixels =
+                        size.size() == 2
+                            ? rasterBytes(QSize(size.at(0).toInt(), size.at(1).toInt()))
+                            : -1;
                     // The engine caps a serialized document session at 16 MiB.
                     // Allow both serialization buffers and the owned snapshot.
                     if (pixels < 0 || !budget(pixels + 64 * 1024 * 1024)) {
@@ -934,8 +935,7 @@ class ApplicationController::Impl {
                     }
                     livePin = window->persistenceSnapshot();
                     liveRecognition = window->recognitionSnapshot();
-                    livePinTool =
-                        state.value(QStringLiteral("active_tool")).toString();
+                    livePinTool = state.value(QStringLiteral("active_tool")).toString();
                 }
             }
             auto* watcher = new QFutureWatcher<Source>(mcpDocuments.get());
@@ -973,9 +973,8 @@ class ApplicationController::Impl {
                     if (source == u"html")
                         original.html = params.value(QStringLiteral("html")).toString();
                     result.originalContent = original;
-                    const auto content =
-                        ScreenshotClipboardContentReader::renderOriginalText(original, 1.0, {},
-                                                                             budget);
+                    const auto content = ScreenshotClipboardContentReader::renderOriginalText(
+                        original, 1.0, {}, budget);
                     if (content)
                         result.image = content->image;
                     return result;
@@ -1008,12 +1007,12 @@ class ApplicationController::Impl {
                     const auto originalPixels = result.image.size();
                     const auto transformedPixels =
                         record->imageTransform.mapRect(QRectF(QPointF(), originalPixels))
-                            .toAlignedRect().size();
+                            .toAlignedRect()
+                            .size();
                     const auto sourceBytes = rasterBytes(originalPixels);
                     const auto transformedBytes = rasterBytes(transformedPixels);
                     if (sourceBytes < 0 || transformedBytes < 0 ||
-                        !budget(sourceBytes + transformedBytes +
-                                (livePin ? 64 * 1024 * 1024 : 0) +
+                        !budget(sourceBytes + transformedBytes + (livePin ? 64 * 1024 * 1024 : 0) +
                                 8LL * (record->canvasSession.size() +
                                        record->recognitionResults.size() +
                                        record->originalHtml.size() + record->originalText.size())))
@@ -1054,10 +1053,10 @@ class ApplicationController::Impl {
                 for (const auto& record : history.records()) {
                     if (record.id != params.value(QStringLiteral("source_id")).toString())
                         continue;
-                    qint64 historyBytes = record.canvasBytes >= 0 &&
-                                                  record.canvasBytes <= 64 * 1024 * 1024
-                                              ? 8 * record.canvasBytes
-                                              : -1;
+                    qint64 historyBytes =
+                        record.canvasBytes >= 0 && record.canvasBytes <= 64 * 1024 * 1024
+                            ? 8 * record.canvasBytes
+                            : -1;
                     if (!budget(historyBytes))
                         return result;
                     const auto addImage = [&](QSize size, qint64 encodedBytes) {

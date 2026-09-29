@@ -474,13 +474,5 @@
             <source>Could not check for updates. Please try again.</source>
             <translation>Could not check for updates. Please try again.</translation>
         </message>
-        <message>
-            <source>The update check timed out. Please try again.</source>
-            <translation>The update check timed out. Please try again.</translation>
-        </message>
-        <message>
-            <source>The update server returned an invalid version.</source>
-            <translation>The update server returned an invalid version.</translation>
-        </message>
     </context>
 </TS>

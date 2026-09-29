@@ -90,8 +90,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>从 GitHub 下载</translation>
         </message>
         <message>
-            <source>Download from website</source>
-            <translation>前往官网下载</translation>
+            <source>Download from Gitee</source>
+            <translation>从 Gitee 下载</translation>
         </message>
         <message>
             <source>Download update</source>

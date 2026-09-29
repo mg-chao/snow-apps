@@ -8,101 +8,66 @@ Priorities: data preservation and authenticity > recovery > testability > mainta
 | U1 | One SemVer feed, signed metadata, no automatic downgrade | update contract tests |
 | U2 | Background check/download; explicit restart; preserve active work | update service and About tests |
 | U3 | Apply only verified owned files; journal, probe, recover | update transaction tests |
-| R1 | Windows packages plus configured macOS DMG/installer; root latest-version.txt published last | release publisher tests |
-| R2 | Private local keys/SSH settings; allowlisted, reversible deployment | signing and publisher tests |
+| R1 | Windows packages plus configured macOS DMG/installer on GitHub; Gitee mirrors published releases | publisher and mirror tests |
+| R2 | Private local signing key; immutable verified release assets | signing and publisher tests |
 
 The first updater release is `1.0.0-beta`. Binaries without an updater require one manual
 installation/replacement. This release introduces no user-data migration, delta patches,
-additional channels, macOS in-app installation, or OCR model-host deployment.
+macOS in-app installation, or OCR model-host deployment.
 
-## GitHub fallback and local publication
+## GitHub and Gitee release channels
 
-Clients try the configured official website first. Failed HTTP requests, timeouts, and
-invalid metadata fall back to published stable `v<version>_snow-shot` releases in
-`mg-chao/snow-apps`. Discovery selects the highest stable SemVer and is bounded to ten
-pages of 100 releases. A valid website response saying there is no update does not query
-GitHub. Drafts and prereleases are never offered by the fallback.
+The Windows updater starts GitHub and Gitee release discovery together. Each channel
+searches at most ten pages of 100 published releases, accepts previews, ignores drafts,
+and considers releases in descending SemVer order. A channel becomes eligible only after
+the release tag, exact asset URL, signed `latest-version.json`, and signed version have
+passed validation. The first eligible channel wins, even if the other channel later
+reports a newer version. An update is offered only when the winning version is newer
+than the installed version.
 
-Windows requires the release asset `latest-version.json`, authenticated with the existing
-embedded RSA keys. GitHub transports the same schema-1 envelope; its version must match
-the tag. Signed website package identities map to versioned GitHub assets, retaining all
-signed sizes, hashes, inventories, and downgrade protections. A failed website package
-transfer retries against the exact accepted version on GitHub. Resume validators are
-bound to the source URL and partial downloads restart when changing sources. The helper
-restores authenticated cached release state between operation-scoped processes.
+The selected channel is saved with the authenticated release. Existing cached
+`githubSource` state migrates to GitHub. Downloads use the selected channel first;
+after a package failure, the updater looks for the same release version on the other
+channel and verifies the signed package size and SHA-256. Resume data is bound to the
+package URL, so a source change starts a fresh transfer. A failed mirror never changes
+the published GitHub release.
 
-macOS requires a DMG and checksum for its architecture before announcing a GitHub update.
-About then offers **Download from GitHub**, opening the exact release page. It still does
-not install updates in-app. Intel clients require separately provided x64 assets; the
-existing remote Mac publisher produces arm64 only.
+The macOS Qt updater races the same release APIs. It requires an exact architecture DMG
+and matching `.sha256` asset before offering the update; About opens the winning
+release page. The standalone installer races both lists and downloads the chosen DMG
+and checksum, with same-version package fallback. The app does not install macOS
+updates in-app.
 
-The tag workflow continues to create drafts and never receives the private signing key.
-Finalize through the local publisher, using the same audited bytes as any existing draft:
-
-```powershell
-& scripts/publish-snow-shot-release.ps1 -Destination GitHub `
-    -SigningKeyPath C:/private/snow-shot-release/private.pem -SkipBuild
-& scripts/publish-snow-shot-release.ps1 -Destination GitHub -Operation Verify
-```
-
-`-Destination` accepts `Website` (the compatibility default), `GitHub`, or `Both`.
-The checked-in local wrapper example selects `GitHub`. `-GitHubRepository` defaults to
-`mg-chao/snow-apps`; changing the publication repository does not redirect shipped clients.
-Use an authenticated GitHub CLI with repository Contents write permission. Push the
-matching tag first: its commit must match the local source checkout. Avoid rebuilding
-an existing version with different bytes; download the draft's versioned artifacts into
-the build directory for `-SkipBuild`, or publish a new version. The local compiled updater
-is still required to audit the complete staged release.
-
-GitHub-only publication and auditing require no website settings or website access.
-They still validate the immutable OCR runtime and, when configured, use the Mac build host.
-The publisher signs locally, audits before upload, verifies all uploaded bytes, then
-publishes the draft. Stable versions become latest; beta versions remain prereleases.
-Identical retries reuse the existing authenticated envelope and assets; conflicting
-assets or incomplete already-public releases fail without overwrite. `-AuditOnly` performs
-no upload/publication, and `-WhatIf` only lists the intended assets. Existing ignored local
-wrappers are not changed automatically; add `Destination = 'GitHub'` to opt in.
-
-`Both` publishes GitHub before starting website deployment. Website failure does not undo
-GitHub publication. `Verify` checks signed Windows payloads and any macOS DMG/checksum
-pairs. GitHub rollback is unsupported; select `Website` explicitly for website rollback,
-or publish a higher corrective version. Homebrew and WinGet publication still follow
-their existing release-event workflows. When macOS is configured, its versioned DMG and
-checksum are included before the release becomes public.
-
-Legacy GitHub releases without signed metadata cannot drive Windows automatic updates.
-Clients predating this fallback require a manual upgrade while the website is unavailable.
-No production publication is needed to run the focused tests:
+The local publisher signs and audits all Windows packages, optionally packages a
+macOS DMG and standalone installer, publishes GitHub assets, verifies their bytes,
+then publishes the release. It has no website deployment or rollback operation.
+Stable releases become GitHub's latest; preview releases remain marked as previews.
+Identical retries reuse existing assets; conflicting bytes fail without overwrite.
 
 ```powershell
-& scripts/test-snow-shot-github-release.ps1
-cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib service::tests
-cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib github::tests
-ctest --preset test-windows-msvc-debug -R '^snow-shot-(macos-update|update-adapter|about-page)-tests$'
+& scripts/publish-snow-shot-release.ps1 -SigningKeyPath C:/private/snow-shot-release/private.pem
+& scripts/publish-snow-shot-release.ps1 -Operation Verify
 ```
+
+The repository's `GITEE_TOKEN` secret must have Gitee tag and release write access.
+After GitHub publishes a Snow Shot release, `.github/workflows/snow-shot-gitee-release.yml`
+synchronizes its tag, creates the matching Gitee release, copies every asset byte for
+byte with signed metadata last, and downloads assets to verify size and SHA-256.
+`workflow_dispatch` accepts a tag for backfill or retry. Identical reruns fill
+missing assets; conflicting assets fail without overwrite. Configure the secret.
+If an existing published `*_snow-shot` release is available, run the workflow
+manually for that tag before shipping an updater that discovers Gitee. Otherwise,
+publish the first eligible GitHub release and verify its automatic mirror. Confirm
+both public release pages and asset downloads before rollout.
 
 ## Release contract
 
-The Windows updater consumes `/latest-version.json`, not the unsigned text file. The root
-`/latest-version.txt` remains the compatibility endpoint for older clients and the website;
-there is deliberately no `/setup/latest-version.txt` requirement.
-
-The publisher changes only these public paths, in this order:
-
-1. `setup/snow-shot_windows-x64-offline.exe`
-2. `setup/snow-shot_windows-x64-online.exe`
-3. `setup/snow-shot_windows-x64-portable.zip`
-4. `setup/snow-shot_windows-x64-offline-update.zip`
-5. `setup/snow-shot_windows-x64-online-update.zip`
-6. `setup/snow-shot_macos-arm64.dmg` (when the Mac host is configured)
-7. `setup/snow-shot_macos-arm64.dmg.sha256` (when configured)
-8. `setup/install-snow-shot-macos.sh` (when configured)
-9. `setup/SHA256SUMS`
-10. `latest-version.json`
-11. `latest-version.txt`
-
-Other setup files, including older versioned Windows and macOS downloads, are untouched. Local build
-artifacts and GitHub assets keep versions in their names; public website URLs do not.
+GitHub and Gitee publish versioned Windows installer and update assets, their checksum
+sidecars and audit manifests, plus `latest-version.json`. When macOS packaging is
+configured, the release also includes the versioned arm64 DMG, its `.sha256` sidecar,
+and `install-snow-shot-macos.sh`. Signed metadata is uploaded last. The Windows
+updater uses the signed JSON envelope and never fetches the website's legacy update
+feed. The website homepage and unrelated application API remain configured separately.
 
 The JSON envelope is `{schema:1,keyId,payload,signature}`. `payload` and `signature` are
 Base64. The signature is RSA-3072/PSS/SHA-256 (32-byte salt) over the exact decoded UTF-8
@@ -214,7 +179,7 @@ available. Retry the workflow after correcting credentials or validation errors.
 Runs are serialized per version across both tag styles. Already merged versions and
 matching open PRs are reported and skipped; closed, unmerged submissions can be retried.
 GitHub lookup failures stop submission instead of treating a failed lookup as absence.
-This workflow neither publishes application releases nor changes the website feed.
+This workflow does not publish application releases.
 
 For local generation and validation (PowerShell 7, WinGet 1.29.380 or newer, and
 WinGetCreate 1.12.13.0):
@@ -301,142 +266,35 @@ uninstaller directly rather than claiming its missing registration is supported.
 
 ### Publisher prerequisites
 
-Use PowerShell 7 and the repository's documented Windows release toolchain. The tracked
-publisher accepts all machine-specific values as parameters. Copy
-`scripts/publish-snow-shot-release.local.example.ps1` to the ignored
-`scripts/publish-snow-shot-release.local.ps1` and supply the SSH host/user/port, key and
-known-hosts files, private signing-key path, public HTTPS origin, and web root there.
-Never put the IP, credentials, private signing key, or local wrapper in Git. SSH uses strict
-host-key checking; enroll and verify a new server's fingerprint out of band first.
+Use PowerShell 7, the documented Windows release toolchain, an authenticated GitHub
+CLI with Contents write permission, and a private release signing key outside Git.
+Copy `scripts/publish-snow-shot-release.local.example.ps1` to the ignored
+`scripts/publish-snow-shot-release.local.ps1` and set your local key path.
+The release tag must point to the local source commit. The publisher verifies the
+pinned public OCR runtime before packaging and audits each signed Windows package.
 
 ### Coordinated Windows and macOS packaging
 
-Add `MacHost`, `MacUser`, and `MacProjectDirectory` to the ignored local settings.
-`MacPort` defaults to 22; `MacIdentityFile` and `MacKnownHostsFile` are optional and
-independent of the production server's SSH credentials. If omitted, OpenSSH uses
-the local SSH config/agent and default known-hosts file. The project path must be
-an absolute POSIX path without spaces, shell metacharacters, or `..`.
-
-With a Mac host configured, the normal publish command starts an SSH packaging job
-alongside Windows packaging, then waits for both. The current macOS target is native
-Apple Silicon (`snow-shot-macos-arm64-release`). The Mac must already have the
-documented release toolchain, audited static Qt, and repository dependencies.
-Provisioning dependencies is separate from a release.
-
-The workflow builds the existing Mac checkout. It does **not** pull, reset, stash,
-or overwrite source files. Prepare both checkouts before release and set the same
-new `SNOW_SHOT_VERSION` in each. Uncommitted work is supported and recorded: the
-Mac worker checks the source version, captures HEAD and a fingerprint of tracked
-changes/untracked non-ignored files, and rejects source edits made during packaging.
-It takes an exclusive `artifacts/.macos-release.lock`, runs the audited package
-script, verifies CPack's checksum, `hdiutil verify`, and the DMG code signature,
-then copies the result into an immutable transaction directory for transfer.
-After an interrupted SSH session, confirm no packaging process remains before
-manually removing a stale empty lock directory.
-
-The Windows client verifies the downloaded DMG size and SHA-256, writes a checksum
-using the public filename, and stages the standalone installer with LF line endings
-and no BOM. Logs and a source receipt are kept under
-`artifacts/publish-<id>/setup/macos-build.{log,json}`; these are not public uploads.
-Remote transaction copies remain under `artifacts/remote-release-<id>` for diagnosis
-and may be removed after a completed release when no transfer is using them.
-
-`-SkipBuild` reuses packages on **both** platforms. On the Mac it requires the source
-receipt from a previous successful coordinated build and an identical source
-fingerprint/DMG hash. It does not repackage. `-AuditOnly` still builds unless combined
-with `-SkipBuild`; it performs verification but does not stage or publish to production.
-`-WhatIf` is the preview command with no build or SSH side effects.
-
-The DMG, checksum, and script join the same staged transaction, public HTTPS checks,
-and rollback journal as Windows. The signed Windows updater envelope stays exactly
-the same schema and still lists only its five Windows packages. Once the macOS files
-are published, the server refuses Windows-only publishing to avoid advancing the
-shared version without a matching Mac package. Older rollback journals retain their
-original Windows-only scope. A release version cannot be reused to add or change
-files: the first combined release must use a new version on both platforms.
-
-The site's English and Chinese download pages offer the installer at
-`https://snowshot.top/setup/install-snow-shot-macos.sh`, using HTTPS-only download
-followed by `bash` only if the download succeeds. Deploy the site option only after
-the first combined release makes that script and the DMG/checksum available.
-Website deployment is separate from the release publisher.
-
-Focused workflow checks (no builds, SSH, or production mutations):
+Set `MacHost`, `MacUser`, and `MacProjectDirectory` to package arm64 on a
+provisioned Mac alongside Windows. `MacPort` defaults to 22;
+`MacIdentityFile` and `MacKnownHostsFile` are optional. The Mac checkout must
+have the same source version. The packaging worker verifies the DMG and its code
+signature, then transfers the DMG and checksum. The publisher adds
+`install-snow-shot-macos.sh` as a GitHub release asset. `-SkipBuild` reuses
+audited package bytes and the Mac source receipt; it does not bypass audits.
 
 ```powershell
-python scripts/test-snow-shot-publisher.py
-python scripts/test-remote-macos-release.py
-pwsh -NoProfile -File scripts/test-remote-macos-release.ps1
-```
-
-Run the packaging entry point's static-dependency preflight before a manual application
-build. If it rejects a stale dependency prefix after syncing main, restore the checked-in
-overlay contract with `scripts/bootstrap.ps1 -VcpkgVariants Static` and rebuild; do not edit
-installed ABI receipts, component headers, or the audit expectations. vcpkg includes the
-PowerShell version in package ABIs, so a tool patch update can invalidate otherwise unchanged
-packages. Use the actual matching tool version or rebuild the affected dependency graph.
-
-```powershell
-# Preview the exact allowlist, without build, signing, SSH, or public mutations.
 & scripts/publish-snow-shot-release.local.ps1 -WhatIf
-
-# Build, audit, package, sign, upload, activate, verify through HTTPS, and commit.
 & scripts/publish-snow-shot-release.local.ps1
-
-# Retry with the exact existing audited packages. Does not rebuild or repackage.
 & scripts/publish-snow-shot-release.local.ps1 -SkipBuild
-
-# Sign and run all packaged audits; only read production state, without uploading.
 & scripts/publish-snow-shot-release.local.ps1 -SkipBuild -AuditOnly
-
-# Read current public-file size/hash metadata over authenticated SSH.
 & scripts/publish-snow-shot-release.local.ps1 -Operation Verify
-
-# Restore the previous public allowlisted files (or undo a pending activation).
-& scripts/publish-snow-shot-release.local.ps1 -Operation Rollback
 ```
 
-The source version must equal `SNOW_SHOT_VERSION` in root CMake. Do not reuse a version for
-different bytes. For an identical retry, the publisher reuses the existing authenticated
-envelope because PSS signing uses random salt. The compiled updater audits all package
-hashes, signed inventories, archive extraction, and packaged app startup probes before any
-upload. `-SkipBuild` does not bypass these audits. Installer manifests must record static
-Qt/CRT, x64, and the production release preset.
-
-Before building or SSH staging, the publisher also downloads the checked-in immutable OCR
-runtime URL and verifies its pinned size/SHA-256. This prevents releasing an online installer
-whose required runtime cannot be obtained, and catches missing assets before a long build.
-
-Application packaging imports that exact published archive, verifies every inventory entry
-before extraction, and retains the archive and runtime-manifest bytes unchanged. It still
-audits the published PE architecture/dependencies, version resources, every model set, and
-the complete checked-in manifest. Locally recompiling an immutable OCR version is not a
-reproducibility guarantee. Only the explicit `-PrepareOcrRuntimeOnly` workflow builds a new
-OCR upload candidate; it does not authorize replacing an already published runtime version.
-The application symbol archive requires matching app/helper PDBs and records the external
-OCR runtime identity instead of including an unrelated local OCR rebuild's symbols. Keep
-OCR runtime symbols with their originating OCR release; an application rebuild cannot
-reconstruct those exact PDBs.
-
-Files are uploaded into a private transaction directory beside the web root. The server
-uses a lock, verifies every upload, keeps durable backups, promotes individual files by
-atomic replacement, and publishes signed metadata and text last. Public HTTPS verification
-downloads every allowlisted file and checks size/hash before commit. Promotion is not a single
-atomic replacement of the entire website directory: a client racing publication may see a
-temporary hash mismatch and must retry metadata. Signature and hash checks prevent applying
-mixed payloads.
-
-The server retains the current transaction and two earlier successful transactions. The
-oldest retained transaction can restore its before-image, but cannot extend rollback into
-deleted transaction history. An active pending deployment has a one-hour lease; another
-publish cannot automatically roll it back during HTTPS validation. An interrupted client
-can be recovered immediately with explicit `Rollback`; a later publish can recover a stale
-lease. Upload-only failures leave private staging for inspection and never change public
-files. Operators should remove abandoned upload-only directories after verifying that no
-publisher is active. A failed public verification attempts rollback automatically.
-
-A server rollback does **not** downgrade already updated clients. Those clients reject an
-older feed; publish a higher corrective version to restore automatic forward progress.
+`-WhatIf` lists the planned assets without building or publishing.
+`-AuditOnly` signs and audits without upload. `Verify` downloads published
+GitHub assets and checks the signed Windows packages and any macOS checksum pairs.
+A corrective release uses a higher version; published assets are immutable.
 
 ## Signing keys and rotation
 
@@ -460,118 +318,44 @@ Authenticode certificate, remove SmartScreen prompts, or establish installer rep
 ## Focused validation and release gates
 
 ```powershell
-python scripts/test-snow-shot-publisher.py
-& scripts/test-snow-shot-ocr-release-runtime.ps1
-& scripts/test-snow-shot-release-symbols.ps1 `
-    -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
-& scripts/test-snow-shot-installer.ps1
-& scripts/test-snow-shot-installer-i18n.ps1
-
-cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml
-cargo clippy --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml `
-    --all-targets -- -D warnings
-
-# Production static Qt kit omits QtTest; these focused targets do not require it.
-cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
-cmake --build --preset build-snow-shot-msvc-release --target `
-    snow-shot-update-adapter-tests snow-shot-update-about-tests snow-shot-update-settings-tests
-ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release `
-    -R '^snow-shot-update-(adapter-tests|about-tests|settings-tests)$' --output-on-failure
-& scripts/test-snow-shot-update-helper.ps1
+python scripts/test-snow-shot-gitee-release.py
+node scripts/test-macos-installer-parser.js
+& scripts/test-snow-shot-github-release.ps1
+& scripts/test-remote-macos-release.ps1
+cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib service::tests
+cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib github::tests
+cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib gitee::tests
+cargo clippy --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --all-targets -- -D warnings
+cmake --build --preset build-windows-msvc-debug --target snow-shot-macos-update-tests snow-shot-update-adapter-tests snow-shot-about-page-tests snow-shot-settings-catalog-tests
+ctest --preset test-windows-msvc-debug -R '^snow-shot-(macos-update|update-adapter|about-page|settings-catalog)-tests$'
 ```
 
-The helper canary uses a native parent/relaunch fixture and the real compiled helper. It
-checks handoff cancellation, journal recovery including replacement of the installed helper,
-original-user relaunch, and preservation of
-unowned data for all three variants without launching the user's application or reading its
-settings. For interactive elevation checks, run it from a non-elevated shell with
-`-ElevationAction Cancel` and then `-ElevationAction Approve`. The operator must perform the
-requested UAC action. It temporarily registers a protected, isolated test directory under
-HKCU, refuses to replace an existing nonempty per-user installation registration, and
-restores the test ACL and registry state on exit. The machine-wide installation is untouched.
-
-Do not run the full repository test suite for this feature. Before production delivery,
-also validate real installed/portable helper handoff, UAC approval/cancellation, restart under
-the original user, the three packaged startup probes, and unchanged legacy server files.
-Cross-account UAC and physical power-loss behavior require Windows/runtime validation beyond
-the deterministic unit tests. A later update prunes generated coordinator/worker files older
-than 24 hours, skips running/locked executables, and never recursively sweeps the system temp
-directory. Transaction staging and backup payloads are replaced on the next transaction;
-download cache cleanup retains only the currently accepted release's ZIP/partial download.
-
-### Current delivery evidence (2026-09-20)
-
-- The standalone updater package passes rustfmt, 28 focused Rust tests, and Clippy for all
-  targets with warnings denied. Coverage includes RSA-3072/PSS verification, strict SemVer,
-  package and inventory identity, unsafe paths and collisions, ZIP central-directory rejection,
-  transaction commit/rollback/recovery, bounded NDJSON framing, generated coordinator paths,
-  and injected-clock/network checks for scheduling, timeouts, cancellation, retry delays,
-  strong-ETag resume, invalid ranges, and restart-on-200 behavior. Real child-process protocol
-  tests cover the Rust service handshake, duplicate IDs, fatal malformed frames, peer closure,
-  and orderly shutdown over its inherited standard streams.
-- The Debug application and updater adapter build with the ordinary Cargo `dev` profile and
-  debug CRT; production-only LTO/linker switches are absent. The focused Debug adapter and
-  unrelated administrator-settings tests pass after removal of the old privileged-pipe code.
-- The production static-Qt adapter, offscreen About-page, and settings-catalog tests pass. The
-  application-wide translation extraction finds no new strings; lrelease reports 1,618 finished
-  and zero unfinished messages for each of en_US, zh_CN, and zh_TW.
-- Eight publisher tests, the installer process suite, and all three installer-language suites
-  pass, including their CPack fixtures. Twelve real-helper canaries pass across online, offline,
-  and portable installations: cancellation, applying-journal recovery, helper replacement,
-  verified recovery failure, original-user relaunch, and preservation of unowned data.
-- Same-account UAC cancellation and approval pass from a non-elevated shell against protected
-  fixtures. Approval covers recovery after helper self-replacement, verifies original-user
-  relaunch, and creates or updates the matching 32-bit uninstall registration; cancellation
-  leaves the protected installation untouched and never relaunches a partially updated app.
-- A complete `snow-shot-msvc-release` package build passes. It collects 672 license notices for
-  316 resolved Rust packages and 41 vcpkg packages plus Qt; installs the Rust updater; validates
-  five PE binaries; verifies matching PDB identities; audits all 44 enabled FFmpeg registrations;
-  and produces the online/offline installers plus online/offline update and portable ZIPs.
-- The compiled Rust `--verify-release` and `--audit-release` commands accept the live production
-  schema-1 envelope and all five downloaded packages, including exhaustive update-archive
-  inventories and isolated startup probes. This is direct backward-compatibility evidence for
-  the last release produced with the C++ updater.
-- Reusing published version `1.0.7` with the rebuilt packages is correctly rejected because the
-  signed hashes differ. The first Rust-updater publication must increment `SNOW_SHOT_VERSION`;
-  after that explicit release decision, rerun `-AuditOnly` to sign and audit the newly versioned
-  local packages before upload.
-- The final production updater is 2,306,560 bytes (2.200 MiB), 7,154,176 bytes and 75.620% smaller
-  than the 9,460,736-byte Qt/C++ baseline. Raw sections are `.text` 1,639,424, `.rdata` 551,936,
-  `.data` 4,608, `.pdata` 56,832, `.fptable` 512, `.rsrc` 32,768, and `.reloc` 19,456 bytes.
-  Imports are Windows system DLLs only: Advapi32, the synchronization API set,
-  BcryptPrimitives, Crypt32, Kernel32, Ntdll, Ole32, OleAut32, Secur32, Shell32, and Ws2_32.
-  The matching external PDB is 33,771,520 bytes (32.207 MiB) and passes RSDS GUID/age checks.
-- Both native macOS architecture/package jobs remain platform release gates. Cross-account UAC
-  and physical power-loss behavior likewise require dedicated runtime validation.
+Run `python3 scripts/test-macos-installer.py` on macOS for the standalone
+installer's native JXA and package validation checks. The full CTest suite is
+not part of this release change. Public rollout requires a configured
+`GITEE_TOKEN`, a successful mirror for a published Snow Shot release, and
+verification of both channels' asset bytes.
 
 ## macOS version checks
 
-macOS offers only **Manual** and **Check automatically**, defaulting to automatic checks.
-Legacy `download` settings normalize to `check`, including when restoring settings. Resetting
-settings restores the platform default. Automatic checks start 30 seconds after launch and
-repeat 24 hours after completion; manual checks remain available in About. Switching to manual
-stops the schedule and cancels an active background check.
-
-The macOS Qt service first fetches `/latest-version.txt` from the configured API base URL over HTTPS,
-respects the network proxy setting, limits responses to 4 KiB, and times out after 30 seconds.
-It compares strict SemVer precedence (including prereleases and ignoring build metadata).
-This website compatibility endpoint is unsigned; it only supplies version display text and
-never supplies an executable, installation instructions, or a navigation URL. Publish the
-matching macOS installation packages before announcing a shared version on this endpoint.
-
-A newer version discovered automatically shows a system notification once per version per
-session. Clicking it opens About, where **Download from website** uses the configured official
-website URL, or **Download from GitHub** opens the exact release page when the fallback supplied the update. About retains the available version. Background failures stay quiet; manual
-failures display a retry action.
-macOS does not build or bundle the Windows updater helper and never downloads or installs an
-update in-app. The Windows signed-metadata and installation flow is unchanged.
+macOS offers **Manual** and **Check automatically**, defaulting to automatic
+checks. Automatic checks start 30 seconds after launch and repeat 24 hours
+after completion; About can trigger a manual check. The service starts GitHub
+and Gitee release requests together, accepts published previews, and ignores
+drafts. Each release must have a versioned DMG and checksum asset for the
+machine architecture with exact release download URLs. Within a channel it
+selects the newest valid SemVer release; the first validated channel wins.
+A newer winning version produces an About download action for that release
+host and a once-per-session automatic notification. Background failures
+remain quiet; manual failures offer retry. macOS does not install updates
+in-app.
 
 ## Homebrew tap publication
 
 The separate `snow-shot-homebrew.yml` workflow updates
 `mg-chao/homebrew-tap` (`main`, `Casks/snow-shot.rb`) from published **stable**
-GitHub releases. It does not change the Windows packaging workflow or website
-publisher. The tag must be `v<major>.<minor>.<patch>_snow-shot`, matching
+GitHub releases. It does not change the Windows packaging workflow or Gitee
+mirror. The tag must be `v<major>.<minor>.<patch>_snow-shot`, matching
 `SNOW_SHOT_VERSION` in its source checkout. That source must contain the installer
 with `--prepare-app` support. Old releases lacking it cannot be backfilled using
 an installer from `main`.

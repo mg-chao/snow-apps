@@ -474,13 +474,5 @@
             <source>Could not check for updates. Please try again.</source>
             <translation>无法检查更新，请重试。</translation>
         </message>
-        <message>
-            <source>The update check timed out. Please try again.</source>
-            <translation>检查更新超时，请重试。</translation>
-        </message>
-        <message>
-            <source>The update server returned an invalid version.</source>
-            <translation>更新服务器返回了无效的版本号。</translation>
-        </message>
     </context>
 </TS>

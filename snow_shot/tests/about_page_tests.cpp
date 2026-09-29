@@ -342,22 +342,27 @@ void updatePolicyAndUnavailableCopy() {
     require(child<adqt::widgets::AdButton>(page, "aboutUpdateAction")->isEnabled(),
             "macOS can check without installation metadata");
     auto& status = const_cast<snow_shot::update::UpdateStatus&>(updates.status());
-    status = {snow_shot::update::UpdateState::Available, QStringLiteral("2.0.0"), {}, 0, 0};
+    status = {
+        snow_shot::update::UpdateState::Available,
+        QStringLiteral("2.0.0"),
+        {},
+        0,
+        0,
+        QUrl(QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"))};
     updates.statusChanged();
     auto* action = child<adqt::widgets::AdButton>(page, "aboutUpdateAction");
-    require(action->text() == QStringLiteral("Download from website"),
+    require(action->text() == QStringLiteral("Download from GitHub"),
             "About explains external download");
     action->click();
-    require(opened == QList<QUrl>{QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
-            "About opens configured website");
+    require(opened == QList<QUrl>{status.downloadUrl}, "About opens the exact GitHub release");
     status.downloadUrl =
-        QUrl(QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"));
+        QUrl(QStringLiteral("https://gitee.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"));
     emit updates.statusChanged();
     flushEvents();
-    require(action->text() == QStringLiteral("Download from GitHub"),
-            "About identifies GitHub fallback");
+    require(action->text() == QStringLiteral("Download from Gitee"),
+            "About identifies Gitee release");
     action->click();
-    require(opened.last() == status.downloadUrl, "About opens the exact fallback release");
+    require(opened.last() == status.downloadUrl, "About opens the exact Gitee release");
 #else
     require(backend.selectValue(binding).toString() == QStringLiteral("download"),
             "automatic download is the default update policy");

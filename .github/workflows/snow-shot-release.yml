@@ -89,13 +89,17 @@ jobs:
       - name: Verify focused updater and installer behavior
         shell: pwsh
         run: |
-          python scripts/test-snow-shot-publisher.py
-          if ($LASTEXITCODE -ne 0) { throw "Publisher tests failed." }
+          python scripts/test-snow-shot-gitee-release.py
+          if ($LASTEXITCODE -ne 0) { throw "Gitee mirror tests failed." }
+          node scripts/test-macos-installer-parser.js
+          if ($LASTEXITCODE -ne 0) { throw "macOS installer parser tests failed." }
           & scripts/test-snow-shot-github-release.ps1
           cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib service::tests
           if ($LASTEXITCODE -ne 0) { throw "Updater fallback tests failed." }
           cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib github::tests
           if ($LASTEXITCODE -ne 0) { throw "GitHub transport tests failed." }
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib gitee::tests
+          if ($LASTEXITCODE -ne 0) { throw "Gitee transport tests failed." }
           & scripts/test-snow-shot-ocr-release-runtime.ps1
           & scripts/test-snow-shot-release-symbols.ps1 -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
           & scripts/test-snow-shot-installer.ps1

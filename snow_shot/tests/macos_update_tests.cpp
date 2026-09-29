@@ -3,12 +3,12 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
-#include <QPointer>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
@@ -43,14 +43,12 @@ void pump(int milliseconds) {
 }
 struct Server {
     QTcpServer server;
-    QByteArray body = "2.0.0\n";
-    QByteArray request;
-    int count = 0;
+    QHash<QByteArray, QByteArray> bodies;
+    QList<QByteArray> requests;
     int delay = 0;
     int status = 200;
-    bool omitLength = false;
     Server() {
-        require(server.listen(QHostAddress::LocalHost), "local version server starts");
+        require(server.listen(QHostAddress::LocalHost), "release server starts");
         QObject::connect(&server, &QTcpServer::newConnection, &server, [this] {
             while (auto* socket = server.nextPendingConnection()) {
                 QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
@@ -61,14 +59,14 @@ struct Server {
                         if (!buffer.contains("\r\n\r\n") || socket->property("responded").toBool())
                             return;
                         socket->setProperty("responded", true);
-                        request = buffer;
-                        ++count;
+                        const QByteArray path =
+                            buffer.split('\n').first().split(' ').at(1).split('?').first();
+                        requests.append(path);
+                        const QByteArray body = bodies.value(path, "[]");
                         const QByteArray response =
-                            "HTTP/1.1 " + QByteArray::number(status) + " Test\r\n" +
-                            (omitLength
-                                 ? QByteArray()
-                                 : "Content-Length: " + QByteArray::number(body.size()) + "\r\n") +
-                            "Connection: close\r\n\r\n" + body;
+                            "HTTP/1.1 " + QByteArray::number(status) +
+                            " Test\r\nContent-Length: " + QByteArray::number(body.size()) +
+                            "\r\nConnection: close\r\n\r\n" + body;
                         QTimer::singleShot(delay, socket, [socket, response] {
                             socket->write(response);
                             socket->disconnectFromHost();
@@ -77,102 +75,31 @@ struct Server {
             }
         });
     }
-    UpdateService::Options options() const {
-        UpdateService::Options result;
-        result.baseUrl =
-            QUrl(QStringLiteral("http://127.0.0.1:%1/ignored/").arg(server.serverPort()));
-        result.githubApiUrl =
-            QUrl(QStringLiteral("http://127.0.0.1:%1/releases").arg(server.serverPort()));
-        result.allowLocalHttp = true;
-        result.installedVersion = QStringLiteral("1.0.0");
-        result.startupCheckDelay = 10ms;
-        result.automaticCheckInterval = 80ms;
-        return result;
+    QUrl api() const {
+        return QUrl(QStringLiteral("http://127.0.0.1:%1/releases").arg(server.serverPort()));
     }
 };
-
-void versionsAndTransport() {
-    Server server;
-    for (const auto& pair : {std::pair{"1.0.0", UpdateState::Idle},
-                             {"0.9.0", UpdateState::Idle},
-                             {"1.0.0+build.42", UpdateState::Idle},
-                             {"1.0.0-rc.1", UpdateState::Idle},
-                             {"1.1.0-beta.1", UpdateState::Available},
-                             {"2.0.0\n", UpdateState::Available},
-                             {"999999999999999999999999.0.0", UpdateState::Available},
-                             {"01.0.0", UpdateState::Failed},
-                             {"1.0", UpdateState::Failed},
-                             {"1.0.0-01", UpdateState::Failed},
-                             {"v2.0.0", UpdateState::Failed},
-                             {"2.0.0\n3.0.0", UpdateState::Failed},
-                             {"<html>error</html>", UpdateState::Failed},
-                             {"", UpdateState::Failed}}) {
-        server.body = pair.first;
-        UpdateService service(server.options());
-        service.check();
-        waitFor([&] { return service.status().state != UpdateState::Checking; });
-        require(service.status().state == pair.second, pair.first);
-        require(server.request.startsWith(pair.second == UpdateState::Failed
-                                              ? "GET /releases?"
-                                              : "GET /latest-version.txt HTTP/1.1"),
-                "uses root version endpoint");
-    }
-    for (const auto& pair : {std::pair{"1.0.0-beta.2", "1.0.0-beta.11"},
-                             {"1.0.0-beta.11", "1.0.0-rc.1"},
-                             {"1.0.0-rc.1", "1.0.0"},
-                             {"1.0.0-1", "1.0.0-alpha"},
-                             {"1.0.0-alpha", "1.0.0-alpha.1"}}) {
-        auto options = server.options();
-        options.installedVersion = QString::fromLatin1(pair.first);
-        server.body = pair.second;
-        UpdateService service(options);
-        service.check();
-        waitFor([&] { return service.status().state != UpdateState::Checking; });
-        require(service.status().state == UpdateState::Available, "SemVer prerelease precedence");
-    }
-    for (bool omitLength : {false, true}) {
-        server.omitLength = omitLength;
-        server.body = QByteArray(4097, '1');
-        UpdateService service(server.options());
-        service.check();
-        waitFor([&] { return service.status().state != UpdateState::Checking; });
-        require(service.status().state == UpdateState::Failed,
-                "reject oversized version, with or without length");
-    }
-    server.omitLength = false;
-    server.body = "2.0.0";
-    server.status = 404;
-    UpdateService failed(server.options());
-    failed.check();
-    waitFor([&] { return failed.status().state != UpdateState::Checking; });
-    require(failed.status().state == UpdateState::Failed,
-            "HTTP errors fail visibly for manual checks");
-    server.status = 200;
-    failed.check();
-    waitFor([&] { return failed.status().state != UpdateState::Checking; });
-    require(failed.status().state == UpdateState::Available, "manual retry recovers");
-
-    auto options = server.options();
-    options.allowLocalHttp = false;
-    UpdateService insecure(options);
-    insecure.check();
-    require(insecure.status().state == UpdateState::Failed, "production rejects HTTP");
-    options.allowLocalHttp = true;
-    options.baseUrl = QUrl(QStringLiteral("http://example.com"));
-    UpdateService remoteHttp(options);
-    remoteHttp.check();
-    require(remoteHttp.status().state == UpdateState::Failed,
-            "test HTTP permission is loopback only");
+UpdateService::Options options(const Server& github, const Server& gitee) {
+    UpdateService::Options value;
+    value.githubApiUrl = github.api();
+    value.giteeApiUrl = gitee.api();
+    value.allowLocalHttp = true;
+    value.installedVersion = QStringLiteral("1.0.0");
+    value.startupCheckDelay = 10ms;
+    value.automaticCheckInterval = 80ms;
+    return value;
 }
-
-QJsonObject releaseFixture(const QString& version) {
+QString assetName(const QString& version) {
 #if defined(Q_PROCESSOR_ARM_64)
     const QString arch = QStringLiteral("arm64");
 #else
-    const QString arch = QStringLiteral("x64");
+    const QString arch = QStringLiteral("x86_64");
 #endif
+    return QStringLiteral("snow-shot-%1-macos-%2.dmg").arg(version, arch);
+}
+QJsonObject githubRelease(const QString& version, bool draft = false) {
     const QString tag = QStringLiteral("v%1_snow-shot").arg(version);
-    const QString name = QStringLiteral("snow-shot-%1-macos-%2.dmg").arg(version, arch);
+    const QString name = assetName(version);
     QJsonArray assets;
     for (const QString& asset : {name, name + QStringLiteral(".sha256")})
         assets.append(QJsonObject{
@@ -181,146 +108,157 @@ QJsonObject releaseFixture(const QString& version) {
              QStringLiteral("https://github.com/mg-chao/snow-apps/releases/download/%1/%2")
                  .arg(tag, asset)}});
     return {{QStringLiteral("tag_name"), tag},
-            {QStringLiteral("draft"), false},
-            {QStringLiteral("prerelease"), false},
+            {QStringLiteral("draft"), draft},
+            {QStringLiteral("prerelease"), version.contains(u'-')},
             {QStringLiteral("assets"), assets}};
 }
-
-void githubFallback() {
-    Server website;
-    Server github;
-    auto options = website.options();
-    options.githubApiUrl = github.options().githubApiUrl;
-    auto stable = releaseFixture(QStringLiteral("2.0.0"));
-    auto draft = releaseFixture(QStringLiteral("9.0.0"));
-    draft[QStringLiteral("draft")] = true;
-    auto beta = releaseFixture(QStringLiteral("8.0.0-beta"));
-    beta[QStringLiteral("prerelease")] = true;
-    github.body = QJsonDocument(QJsonArray{draft, stable, beta}).toJson();
-    UpdateService service(options);
-    service.check();
-    waitFor([&] { return service.status().state == UpdateState::Available; });
-    require(github.count == 0, "valid website response never contacts GitHub");
-    website.status = 503;
-    service.check();
-    waitFor([&] { return service.status().state == UpdateState::Available; });
-    require(github.count == 1 && service.status().version == u"2.0.0",
-            "fallback selects stable release");
-    require(service.status().downloadUrl ==
-                QUrl(QStringLiteral(
-                    "https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot")),
-            "fallback links to exact release");
-    website.status = 200;
-    website.body = "<html>Suspended</html>";
-    service.check();
-    waitFor([&] { return service.status().state == UpdateState::Available; });
-    require(github.count == 2, "invalid website metadata falls back");
-    stable[QStringLiteral("assets")] = QJsonArray{};
-    github.body = QJsonDocument(QJsonArray{stable}).toJson();
-    service.check();
-    waitFor([&] { return service.status().state == UpdateState::Failed; });
-    require(service.status().downloadUrl.isEmpty() ||
-                service.status().downloadUrl.host() == u"github.com",
-            "missing platform assets are never announced");
-    github.body = QJsonDocument(QJsonArray{releaseFixture(QStringLiteral("2.0.0"))}).toJson();
-    website.delay = 100;
-    const int requests = github.count;
-    service.check();
-    service.cancel();
-    pump(120);
-    require(github.count == requests, "cancellation does not trigger fallback");
-    website.delay = 0;
-    QJsonArray full;
-    for (int i = 0; i < 100; ++i)
-        full.append(releaseFixture(QStringLiteral("2.0.0")));
-    github.body = QJsonDocument(full).toJson();
-    service.check();
-    waitFor([&] { return service.status().state == UpdateState::Failed; });
-    require(github.count == requests + 10, "release pagination stops at ten full pages");
+QJsonObject giteeRelease(const QString& version) {
+    return {{QStringLiteral("id"), 123},
+            {QStringLiteral("tag_name"), QStringLiteral("v%1_snow-shot").arg(version)}};
 }
+QJsonArray giteeAssets(const QString& version) {
+    const QString name = assetName(version);
+    QJsonArray assets;
+    for (const QString& asset : {name, name + QStringLiteral(".sha256")})
+        assets.append(QJsonObject{
+            {QStringLiteral("name"), asset},
+            {QStringLiteral("browser_download_url"),
+             QStringLiteral(
+                 "https://gitee.com/mg-chao/snow-apps/releases/download/v%1_snow-shot/%2")
+                 .arg(version, asset)}});
+    return assets;
+}
+void setGithub(Server& server, const QJsonArray& releases) {
+    server.bodies.insert("/releases", QJsonDocument(releases).toJson());
+}
+void setGitee(Server& server, const QJsonArray& releases, const QJsonArray& assets) {
+    server.bodies.insert("/releases", QJsonDocument(releases).toJson());
+    server.bodies.insert("/releases/123/attach_files", QJsonDocument(assets).toJson());
+}
+void releaseRaceAndValidation() {
+    Server github;
+    Server gitee;
+    setGithub(github, {githubRelease(QStringLiteral("2.0.0"))});
+    setGitee(gitee, {giteeRelease(QStringLiteral("3.0.0"))}, giteeAssets(QStringLiteral("3.0.0")));
+    gitee.delay = 40;
+    UpdateService service(options(github, gitee));
+    service.check();
+    waitFor([&] { return service.status().state != UpdateState::Checking; });
+    require(service.status().version == u"2.0.0" &&
+                service.status().downloadUrl.host() == u"github.com",
+            "first validated GitHub release wins even when Gitee has a newer version");
+    require(!github.requests.isEmpty() && !gitee.requests.isEmpty(), "both channels start");
 
-void scheduling() {
-    Server server;
-    UpdateService service(server.options());
+    github.delay = 40;
+    gitee.delay = 0;
+    service.check();
+    waitFor([&] { return service.status().state != UpdateState::Checking; });
+    require(service.status().version == u"3.0.0" &&
+                service.status().downloadUrl.host() == u"gitee.com",
+            "first validated Gitee release wins");
+
+    setGitee(gitee, {giteeRelease(QStringLiteral("9.0.0"))}, {});
+    github.delay = 0;
+    service.check();
+    waitFor([&] { return service.status().state != UpdateState::Checking; });
+    require(service.status().version == u"2.0.0", "incomplete Gitee release cannot win");
+
+    auto incompleteGitee = giteeRelease(QStringLiteral("9.0.0"));
+    incompleteGitee.insert(QStringLiteral("id"), 124);
+    setGitee(gitee, {incompleteGitee, giteeRelease(QStringLiteral("3.0.0"))},
+             giteeAssets(QStringLiteral("3.0.0")));
+    gitee.bodies.insert("/releases/124/attach_files", "[]");
+    github.delay = 80;
+    service.check();
+    waitFor([&] { return service.status().state != UpdateState::Checking; });
+    require(service.status().version == u"3.0.0" &&
+                service.status().downloadUrl.host() == u"gitee.com",
+            "Gitee skips an incomplete newer release");
+
+    auto foreignAssets = giteeAssets(QStringLiteral("3.0.0"));
+    auto foreignDmg = foreignAssets[0].toObject();
+    foreignDmg.insert(QStringLiteral("browser_download_url"),
+                      QStringLiteral("https://example.invalid/package.dmg"));
+    foreignAssets.replace(0, foreignDmg);
+    setGitee(gitee, {giteeRelease(QStringLiteral("3.0.0"))}, foreignAssets);
+    github.delay = 40;
+    service.check();
+    waitFor([&] { return service.status().state != UpdateState::Checking; });
+    require(service.status().version == u"2.0.0" &&
+                service.status().downloadUrl.host() == u"github.com",
+            "foreign Gitee attachment URL cannot win");
+
+    auto incompleteGithub = githubRelease(QStringLiteral("9.0.0"));
+    incompleteGithub.insert(QStringLiteral("assets"), QJsonArray{});
+    setGithub(github, {incompleteGithub, githubRelease(QStringLiteral("2.0.0"))});
+    setGitee(gitee, {}, {});
+    github.delay = 0;
+    service.check();
+    waitFor([&] { return service.status().state != UpdateState::Checking; });
+    require(service.status().version == u"2.0.0" &&
+                service.status().downloadUrl.host() == u"github.com",
+            "GitHub skips an incomplete newer release");
+
+    setGithub(github, {githubRelease(QStringLiteral("8.0.0"), true),
+                       githubRelease(QStringLiteral("2.0.0-beta"))});
+    setGitee(gitee, {}, {});
+    service.check();
+    waitFor([&] { return service.status().state != UpdateState::Checking; });
+    require(service.status().version == u"2.0.0-beta",
+            "published previews qualify but drafts do not");
+}
+void schedulingAndFailures() {
+    Server github;
+    Server gitee;
+    setGithub(github, {githubRelease(QStringLiteral("2.0.0"))});
+    setGitee(gitee, {}, {});
+    UpdateService service(options(github, gitee));
     int notices = 0;
     QObject::connect(&service, &UpdateService::automaticUpdateAvailable, &service,
-                     [&](const QString& version) {
-                         require(version == u"2.0.0", "notice includes version");
-                         ++notices;
-                     });
+                     [&](const QString&) { ++notices; });
     service.setMode(QStringLiteral("manual"));
-    service.start();
     service.start();
     pump(30);
-    require(server.count == 0, "manual startup does not contact server or probe a helper");
+    require(github.requests.isEmpty() && gitee.requests.isEmpty(), "manual mode does not check");
     service.setMode(QStringLiteral("download"));
     waitFor([&] { return notices == 1; });
-    waitFor([&] { return server.count >= 2 && service.status().state == UpdateState::Available; });
-    require(notices == 1, "automatic checks notify once per version per session");
+    require(service.status().state == UpdateState::Available, "automatic check finds release");
     service.setMode(QStringLiteral("manual"));
-    const int stopped = server.count;
+    const int count = github.requests.size() + gitee.requests.size();
     pump(120);
-    require(server.count == stopped, "switching to manual stops periodic checks");
+    require(github.requests.size() + gitee.requests.size() == count,
+            "manual mode stops scheduled checks");
     service.download();
     service.beginApply();
     service.requestRestart();
-    require(service.status().state == UpdateState::Available && server.count == stopped,
-            "macOS never downloads or applies updates");
+    require(service.status().state == UpdateState::Available, "macOS does not install in app");
 
-    server.delay = 40;
-    service.setMode(QStringLiteral("check"));
-    waitFor([&] { return service.status().state == UpdateState::Checking; });
-    service.setMode(QStringLiteral("manual"));
-    require(service.status().state == UpdateState::Available,
-            "cancel background check preserves available update");
-    pump(60);
-    require(notices == 1, "cancelled check cannot deliver notice");
-    const int before = server.count;
-    service.check();
-    service.check();
-    service.check(false);
-    waitFor([&] { return service.status().state == UpdateState::Available; });
-    require(server.count == before + 1 && notices == 1,
-            "overlapping manual checks coalesce without notice");
-}
-
-void failuresAndProxy() {
-    Server server;
-    auto options = server.options();
-    options.requestTimeout = 15ms;
-    server.delay = 100;
-    UpdateService service(options);
+    github.status = 503;
+    gitee.status = 503;
     service.check();
     waitFor([&] { return service.status().state == UpdateState::Failed; });
-    require(service.status().error.contains(u"timed out"), "wall-clock timeout is bounded");
-    server.delay = 0;
-    service.check();
-    waitFor([&] { return service.status().state == UpdateState::Available; });
-    server.body = "invalid";
-    service.check(false);
-    waitFor([&] { return service.status().state != UpdateState::Checking; });
-    require(service.status().state == UpdateState::Available && service.status().error.isEmpty(),
-            "background failures preserve the prior update without error UI");
+    require(!service.status().error.isEmpty(), "both failing channels report a manual error");
     auto* network = service.findChild<QNetworkAccessManager*>();
     require(network && network->proxy().type() == QNetworkProxy::NoProxy, "proxy defaults to none");
     service.setSystemProxy(true);
-    require(network->proxyFactory() != nullptr, "system proxy uses per-request system lookup");
+    require(network->proxyFactory() != nullptr, "system proxy is configurable");
     service.setSystemProxy(false);
-    require(network->proxyFactory() == nullptr && network->proxy().type() == QNetworkProxy::NoProxy,
-            "turning off system proxy restores direct networking");
-    server.delay = 5;
-    service.check(false);
-    service.check(true);
-    waitFor([&] { return service.status().state == UpdateState::Failed; });
-    require(!service.status().error.isEmpty(),
-            "manual check joins automatic request with visible errors");
+    require(network->proxyFactory() == nullptr, "direct networking restored");
+
+    github.status = 200;
+    gitee.status = 200;
+    github.delay = 80;
+    gitee.delay = 80;
+    service.check();
+    service.cancel();
+    require(!service.busy(), "cancellation aborts both channels");
+    pump(100);
+    require(service.status().state == UpdateState::Failed, "late responses cannot replace status");
 }
 } // namespace
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
-    versionsAndTransport();
-    githubFallback();
-    scheduling();
-    failuresAndProxy();
+    releaseRaceAndValidation();
+    schedulingAndFailures();
     return 0;
 }

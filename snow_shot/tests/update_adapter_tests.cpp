@@ -95,7 +95,8 @@ int incrementCounter(const QString& path) {
 }
 
 int fakeSidecar(int argc, char** argv) {
-    const QString scenario = QUrl(argument(argc, argv, "--base-url")).path().mid(1);
+    const QString scenario = QUrl(argument(argc, argv, "--github-api-url")).path().mid(1);
+    require(!argument(argc, argv, "--gitee-api-url").isEmpty(), "Gitee endpoint supplied");
     const QString cache = argument(argc, argv, "--cache");
     incrementCounter(QDir(cache).filePath(QStringLiteral("launch-count")));
     if (scenario == u"unsupported-handshake") {
@@ -305,7 +306,8 @@ int main(int argc, char** argv) {
         value.applicationDirectory = QDir(root).filePath(QStringLiteral("bin"));
         value.root = root;
         value.cacheDirectory = directory.filePath(QStringLiteral("cache-%1").arg(++cacheIndex));
-        value.baseUrl = QUrl(QStringLiteral("https://updates.example.test/") + scenario);
+        value.githubApiUrl = QUrl(QStringLiteral("https://updates.example.test/") + scenario);
+        value.giteeApiUrl = QUrl(QStringLiteral("https://updates.example.test/") + scenario);
         return value;
     };
 

@@ -19,19 +19,23 @@ SCRIPT = Path(__file__).resolve().with_name('install-snow-shot-macos.sh')
 PREFLIGHT = SCRIPT.with_name('prepare-snow-shot-homebrew.sh')
 FINGERPRINT = 'A' * 40
 REQUIREMENT = 'identifier "com.snowshot.snow_shot" and anchor = H"' + FINGERPRINT + '"'
-PRIMARY = 'https://snowshot.top/setup/snow-shot_macos-arm64.dmg'
-API = 'https://api.github.com/repos/mg-chao/snow-apps/releases/latest'
+API = 'https://api.github.com/repos/mg-chao/snow-apps/releases?per_page=100&page=1'
+GITEE_API = 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1'
+GITEE_ATTACH = 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/123/attach_files?per_page=100'
 ASSET = 'snow-shot-1.2.3-macos-arm64.dmg'
-GITHUB = 'https://github.com/mg-chao/snow-apps/releases/download/v1.2.3/' + ASSET
+TAG = 'v1.2.3_snow-shot'
+GITHUB = 'https://github.com/mg-chao/snow-apps/releases/download/' + TAG + '/' + ASSET
+GITEE = 'https://gitee.com/mg-chao/snow-apps/releases/download/' + TAG + '/' + ASSET
 
 MOCK = r'''#!/usr/bin/env python3
-import hashlib, json, os, pathlib, plistlib, shutil, subprocess, sys
+import hashlib, json, os, pathlib, plistlib, shutil, subprocess, sys, time
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 root = pathlib.Path(os.environ['FIXTURE'])
 with (root / 'calls.jsonl').open('a') as f: f.write(json.dumps([name] + args) + '\n')
 def fail(code=1): sys.exit(code)
 if name == 'curl':
+    if args[-1] == os.environ.get('DELAY_URL'): time.sleep(0.5)
     responses = json.loads((root / 'responses.json').read_text())
     entry = responses.get(args[-1])
     if entry is None: fail(22)
@@ -87,7 +91,7 @@ elif name == 'pgrep':
     if os.environ.get('RUNNING'): print('54321')
     else: fail()
 elif name == 'osascript':
-    if args[-1].endswith('.json') or (len(args) > 4 and args[-2].endswith('.json')):
+    if len(args) >= 4 and args[:3] == ['-l', 'JavaScript', '-'] and args[3].endswith('.json'):
         # Exercise the actual shipped JSON parser, never a Python reimplementation.
         if sys.platform != 'darwin': fail(77)
         sys.exit(subprocess.run(['/usr/bin/osascript'] + args, input=sys.stdin.buffer.read()).returncode)
@@ -136,11 +140,23 @@ class InstallerTests(unittest.TestCase):
         self.sum = self.root / 'package.dmg.sha256'
         self.sum.write_text(hashlib.sha256(self.dmg.read_bytes()).hexdigest() + '  package.dmg\n')
         self.release = self.root / 'metadata.json'
-        self.metadata = dict(draft=False, prerelease=False, assets=[
+        self.metadata = dict(tag_name=TAG, draft=False, prerelease=False, assets=[
             dict(name=ASSET, browser_download_url=GITHUB),
             dict(name=ASSET+'.sha256', browser_download_url=GITHUB+'.sha256')])
-        self.release.write_text(json.dumps(self.metadata))
-        self.responses = {PRIMARY: str(self.dmg), PRIMARY+'.sha256': str(self.sum), API: str(self.release), GITHUB: str(self.dmg), GITHUB+'.sha256': str(self.sum)}
+        self.release.write_text(json.dumps([self.metadata]))
+        self.gitee_release = self.root / 'gitee-metadata.json'
+        self.gitee_metadata = json.loads(json.dumps(self.metadata))
+        self.gitee_metadata['id'] = 123
+        attachments = self.gitee_metadata.pop('assets')
+        for asset in attachments:
+            asset['browser_download_url'] = asset['browser_download_url'].replace('github.com', 'gitee.com')
+        self.gitee_release.write_text(json.dumps([self.gitee_metadata]))
+        self.gitee_attachments = self.root / 'gitee-attachments.json'
+        self.gitee_attachments.write_text(json.dumps(attachments))
+        self.responses = {API: str(self.release), GITEE_API: str(self.gitee_release),
+                          GITEE_ATTACH: str(self.gitee_attachments),
+                          GITHUB: str(self.dmg), GITHUB+'.sha256': str(self.sum),
+                          GITEE: str(self.dmg), GITEE+'.sha256': str(self.sum)}
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.mock = self.bin / 'mock'
@@ -230,35 +246,41 @@ class InstallerTests(unittest.TestCase):
             self.sum.write_text(value)
             self.shell('verify_checksum "$FIXTURE/package.dmg" "$FIXTURE/package.dmg.sha256"', success=False)
 
-    def test_primary_download_and_validation(self):
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_release_download_and_validation(self):
         self.shell('obtain_package')
-        self.assertEqual([c[-1] for c in self.calls('curl')], [PRIMARY, PRIMARY+'.sha256'])
+        calls = [c[-1] for c in self.calls('curl')]
+        self.assertIn(API, calls)
+        self.assertIn(GITEE_API, calls)
+        self.assertTrue(GITHUB in calls or GITEE in calls)
         self.assertTrue((self.work / 'snow_shot.app').is_dir())
         self.assertFalse((self.root / 'mounted').exists())
         self.assertFalse(self.calls('security'))
 
     def test_detach_does_not_depend_on_mount_path_spelling(self):
-        self.shell('work="$FIXTURE//work"; obtain_package', CANONICAL_MOUNT_PATH='1')
+        self.shell('work="$FIXTURE//work"; local_dmg="$FIXTURE/package.dmg"; obtain_package', CANONICAL_MOUNT_PATH='1')
         self.assertFalse((self.root / 'mounted').exists())
         self.assertEqual(len([call for call in self.calls('hdiutil') if call[1] == 'detach']), 1)
         self.assertFalse(self.calls('mount'))
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
-    def test_missing_primary_falls_back_to_github(self):
-        del self.responses[PRIMARY]
+    def test_missing_github_uses_gitee(self):
+        del self.responses[API]
         self.shell('obtain_package')
-        self.assertEqual([c[-1] for c in self.calls('curl')], [PRIMARY, API, GITHUB, GITHUB+'.sha256'])
+        self.assertIn(GITEE, [c[-1] for c in self.calls('curl')])
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
-    def test_invalid_primary_image_falls_back(self):
+    def test_invalid_selected_image_falls_back_to_same_version(self):
         bad = self.root / 'bad.dmg'
         bad.write_bytes(b'BAD disk image')
         checksum = self.root / 'bad.sha256'
         checksum.write_text(hashlib.sha256(bad.read_bytes()).hexdigest())
-        self.responses[PRIMARY] = str(bad)
-        self.responses[PRIMARY+'.sha256'] = str(checksum)
-        self.shell('obtain_package')
-        self.assertIn(API, [c[-1] for c in self.calls('curl')])
+        self.responses[GITHUB] = str(bad)
+        self.responses[GITHUB+'.sha256'] = str(checksum)
+        # Delay Gitee metadata so GitHub is always selected first.
+        self.responses[GITEE_API] = str(self.gitee_release)
+        self.shell('obtain_package', DELAY_URL=GITEE_API)
+        self.assertIn(GITEE, [c[-1] for c in self.calls('curl')])
 
     def test_unavailable_download_preserves_installation_and_cleans_up(self):
         self.previous()
@@ -271,19 +293,42 @@ class InstallerTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
     def test_real_release_parser_rejects_missing_ambiguous_and_foreign_assets(self):
-        for mutation in ['missing', 'duplicate', 'foreign', 'prerelease', 'malformed']:
+        for mutation in ['missing', 'duplicate', 'foreign', 'draft', 'malformed']:
             metadata = json.loads(json.dumps(self.metadata))
             if mutation == 'missing': metadata['assets'].pop()
             if mutation == 'duplicate': metadata['assets'].append(metadata['assets'][0])
             if mutation == 'foreign': metadata['assets'][0]['browser_download_url'] = 'https://example.com/a.dmg'
-            if mutation == 'prerelease': metadata['prerelease'] = True
-            self.release.write_text('{' if mutation == 'malformed' else json.dumps(metadata))
-            self.shell('github_urls "$FIXTURE/metadata.json"', success=False)
+            if mutation == 'draft': metadata['draft'] = True
+            self.release.write_text('{' if mutation == 'malformed' else json.dumps([metadata]))
+            self.shell('release_urls "$FIXTURE/metadata.json" github', success=False)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_preview_and_newest_semver(self):
+        preview = json.loads(json.dumps(self.metadata))
+        preview['tag_name'] = 'v2.0.0-beta_snow-shot'
+        preview['prerelease'] = True
+        for asset in preview['assets']:
+            asset['name'] = asset['name'].replace('1.2.3', '2.0.0-beta')
+            asset['browser_download_url'] = asset['browser_download_url'].replace('v1.2.3/', 'v2.0.0-beta_snow-shot/').replace('1.2.3', '2.0.0-beta')
+        self.release.write_text(json.dumps([self.metadata, preview]))
+        result = self.shell('release_urls "$FIXTURE/metadata.json" github')
+        self.assertTrue(result.stdout.startswith('v2.0.0-beta_snow-shot\n'))
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_gitee_attachment_validation_and_exact_version(self):
+        result = self.shell('release_urls "$FIXTURE/gitee-metadata.json" gitee-list')
+        self.assertEqual(result.stdout.strip(), TAG + ' 123')
+        result = self.shell('release_urls "$FIXTURE/gitee-metadata.json" gitee "' + TAG + '" "$FIXTURE/gitee-attachments.json"')
+        self.assertIn(GITEE, result.stdout)
+        attachments = json.loads(self.gitee_attachments.read_text())
+        attachments[0]['browser_download_url'] = 'https://evil.invalid/package.dmg'
+        self.gitee_attachments.write_text(json.dumps(attachments))
+        self.shell('release_urls "$FIXTURE/gitee-metadata.json" gitee "' + TAG + '" "$FIXTURE/gitee-attachments.json"', success=False)
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
     def test_real_release_parser_intel(self):
-        self.release.write_text(json.dumps(self.metadata).replace('arm64', 'x86_64'))
-        result = self.shell('asset_arch=x86_64; github_urls "$FIXTURE/metadata.json"')
+        self.release.write_text(json.dumps([self.metadata]).replace('arm64', 'x86_64'))
+        result = self.shell('asset_arch=x86_64; release_urls "$FIXTURE/metadata.json" github')
         self.assertIn('macos-x86_64.dmg', result.stdout)
 
     def test_local_package_never_downloads(self):

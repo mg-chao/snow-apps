@@ -45,7 +45,6 @@ void runMcpApplicationTests() {
     updateOptions.root = updateDirectory.path();
     updateOptions.cacheDirectory = updateDirectory.filePath(QStringLiteral("cache"));
     // macOS rejects non-HTTPS before network access; Windows lacks its packaged helper here.
-    updateOptions.baseUrl = QUrl(QStringLiteral("http://updates.example.invalid"));
     update::UpdateService updates(std::move(updateOptions));
     translation_tests::Server provider;
     SnowShotApiClient api(provider.url());

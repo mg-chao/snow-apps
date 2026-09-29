@@ -94,14 +94,14 @@ checks and requires real release assets and interactive Keychain/privacy consent
 ## Install a packaged release (no build tools required)
 
 The standalone installer supports macOS 15+, Apple Silicon (including a terminal
-running under Rosetta), and Intel. It uses only macOS system tools. After this
-script and the release assets are published, download it and run it as your normal
-desktop user:
+running under Rosetta), and Intel. It uses only macOS system tools. After the
+release assets are published, choose a Snow Shot release tag and run its installer
+asset as your normal desktop user:
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output install-snow-shot-macos.sh \
-  https://raw.githubusercontent.com/mg-chao/snow-apps/main/scripts/install-snow-shot-macos.sh
+  "https://github.com/mg-chao/snow-apps/releases/download/v<version>_snow-shot/install-snow-shot-macos.sh"
 bash install-snow-shot-macos.sh --lang en
 ```
 
@@ -120,7 +120,7 @@ Language is detected automatically without `--lang`. Supported overrides are
 `--dmg "/path/to/package.dmg"` to use a local DMG with a required adjacent
 `package.dmg.sha256`. Use `--help` for the complete interface. System diagnostics
 and macOS authentication dialogs use the system's own language. Missing uploads,
-invalid packages, and GitHub rate limits produce a nonzero exit without replacing
+invalid packages, and release API limits produce a nonzero exit without replacing
 the installed application.
 
 ### 中文安装说明
@@ -132,7 +132,7 @@ the installed application.
 bash install-snow-shot-macos.sh --lang zh-CN
 ```
 
-脚本会自动识别芯片架构，优先从官网下载安装包，失败时尝试 GitHub Releases，
+脚本会自动识别芯片架构，并行检查 GitHub 和 Gitee Releases，优先使用先完成验证的渠道，
 验证后安装到 `/Applications/Snow Shot.app`（已有旧路径安装会迁移到新名称）。仅在替换应用需要管理员权限时请求密码，
 无需在命令前添加 `sudo`。首次创建签名身份时，系统可能要求确认钥匙串访问或代码签名信任。
 首次安装或从旧签名迁移后，仍需按系统提示授予屏幕录制和辅助功能权限。
@@ -152,7 +152,7 @@ bash install-snow-shot-macos.sh --lang zh-TW
 ```
 
 不需要 Homebrew、Python、Xcode 或 Apple 開發者會員。指令碼會自動辨識晶片架構，
-優先從官網下載，失敗時改用 GitHub Releases，驗證後安裝到
+並行檢查 GitHub 與 Gitee Releases，優先使用先完成驗證的管道，驗證後安裝到
 `/Applications/Snow Shot.app`（既有舊路徑安裝會遷移至新名稱）。不必加上 `sudo`；需要管理員權限時才會要求密碼。
 首次建立簽署身分時，系統可能要求確認鑰匙圈存取或程式碼簽署信任。首次安裝或從舊簽署遷移後，
 請依系統提示授予螢幕錄製和輔助使用權限。之後請繼續使用此指令碼更新，以保留本機簽署身分；
@@ -163,23 +163,24 @@ bash install-snow-shot-macos.sh --lang zh-TW
 
 ### Installer publishing contract
 
-Publish the latest stable DMG and its SHA-256 sidecar at each applicable pair of
-URLs. These are macOS endpoints; the Windows portable ZIP is not used.
+The local publisher includes `install-snow-shot-macos.sh`, a versioned DMG,
+and its matching `.sha256` asset in the GitHub release when macOS packaging
+is configured. The Gitee release workflow mirrors these exact bytes after
+GitHub publication.
 
-| Architecture | Primary DMG URL | GitHub release asset |
-| --- | --- | --- |
-| Apple Silicon | `https://snowshot.top/setup/snow-shot_macos-arm64.dmg` | `snow-shot-<version>-macos-arm64.dmg` |
-| Intel | `https://snowshot.top/setup/snow-shot_macos-x64.dmg` | `snow-shot-<version>-macos-x86_64.dmg` |
+| Architecture | Release asset |
+| --- | --- |
+| Apple Silicon | `snow-shot-<version>-macos-arm64.dmg` |
+| Intel | `snow-shot-<version>-macos-x86_64.dmg` |
 
-Append `.sha256` to each URL or asset name for its checksum. Each sidecar must
-contain exactly one nonempty line beginning with the 64-character SHA-256 digest;
-CPack's checksum format is supported even when the primary mirror renames the
-DMG. Publish matching DMG/checksum pairs together. The installer treats the primary
-endpoint as authoritative for the latest stable version; it does not compare its
-version with GitHub. GitHub fallback uses `/repos/mg-chao/snow-apps/releases/latest`
-and requires exactly one matching architecture DMG and checksum asset. Pre-release
-and draft assets are not selected. Checksums detect corruption; they are downloaded
-over HTTPS from the same release source, not a separate publisher-signature system.
+Append `.sha256` for each checksum asset. A sidecar has exactly one nonempty
+line beginning with the 64-character SHA-256 digest. The standalone installer
+races the GitHub and Gitee release lists, includes published previews, and
+ignores drafts. It selects the newest valid SemVer release within each channel.
+A channel is ready only when it has exact architecture DMG and sidecar asset
+names and release download URLs. The first ready channel provides the package;
+if download or validation fails, the installer tries the same version on the
+other channel. The checksum and DMG come from one channel over HTTPS.
 
 The DMG contains `Snow Shot.app` at its root (the installer also accepts legacy
 `snow_shot.app` packages), with bundle ID

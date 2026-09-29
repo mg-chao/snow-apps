@@ -1,8 +1,9 @@
-//! GitHub is a transport mirror, never a replacement for signed update metadata.
+//! GitHub publishes releases, while signed update metadata remains authoritative.
 use crate::error::{Result, UpdateError, require};
 use reqwest::Url;
 use serde_json::Value;
 
+#[cfg(test)]
 pub const API: &str = "https://api.github.com/repos/mg-chao/snow-apps/releases";
 pub const REPOSITORY: &str = "https://github.com/mg-chao/snow-apps";
 
@@ -14,7 +15,7 @@ pub fn error() -> UpdateError {
 }
 
 pub fn version(release: &Value) -> Option<semver::Version> {
-    if release.get("draft")?.as_bool()? || release.get("prerelease")?.as_bool()? {
+    if release.get("draft")?.as_bool()? || !release.get("prerelease")?.is_boolean() {
         return None;
     }
     let text = release
@@ -23,7 +24,7 @@ pub fn version(release: &Value) -> Option<semver::Version> {
         .strip_prefix('v')?
         .strip_suffix("_snow-shot")?;
     let version = semver::Version::parse(text).ok()?;
-    version.pre.is_empty().then_some(version)
+    Some(version)
 }
 
 pub fn asset(release: &Value, name: &str) -> Result<Url> {
@@ -110,11 +111,15 @@ mod tests {
     use serde_json::json;
     #[test]
     fn stable_tags_and_exact_assets_only() {
-        for tag in ["v2.0.0-beta_snow-shot", "v2.0.0_other", "v02.0.0_snow-shot"] {
+        for tag in ["v2.0.0_other", "v02.0.0_snow-shot"] {
             assert!(version(&json!({"tag_name":tag,"draft":false,"prerelease":false})).is_none());
         }
         assert!(
             version(&json!({"tag_name":"v2.0.0_snow-shot","draft":false,"prerelease":false}))
+                .is_some()
+        );
+        assert!(
+            version(&json!({"tag_name":"v2.0.0-beta_snow-shot","draft":false,"prerelease":true}))
                 .is_some()
         );
         let mut release = json!({"tag_name":"v2.0.0_snow-shot","assets":[{"name":"latest-version.json",

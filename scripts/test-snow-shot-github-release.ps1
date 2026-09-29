@@ -11,8 +11,6 @@ function Must-Fail([scriptblock]$Action) {
 }
 $root = Join-Path ([IO.Path]::GetTempPath()) ("snow-github-tests-$([guid]::NewGuid().ToString('N'))")
 $null = New-Item -ItemType Directory -Path $root
-$originalPath = $env:PATH
-$originalSshLog = $env:SNOW_GITHUB_TEST_SSH_LOG
 $global:SnowGitHubTestFailDownload = $false
 $global:SnowGitHubTestRelease = $null
 $global:SnowGitHubTestBytes = @{}
@@ -99,7 +97,7 @@ try {
     $packaging = Join-Path $fixture 'snow_shot/packaging'
     $build = Join-Path $fixture 'build'
     foreach ($directory in @($fixtureScripts, $resources, $packaging, $build)) { $null = New-Item -ItemType Directory -Force -Path $directory }
-    foreach ($name in @('publish-snow-shot-release.ps1','snow-shot-github-release.ps1','snow-shot-publish-server.py')) {
+    foreach ($name in @('publish-snow-shot-release.ps1','snow-shot-github-release.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $fixtureScripts
     }
     Set-Content -LiteralPath (Join-Path $fixture 'CMakeLists.txt') -Value 'set(SNOW_SHOT_VERSION "2.0.0")'
@@ -148,57 +146,21 @@ try {
     $global:SnowGitHubTestRelease = $null
     $global:SnowGitHubTestBytes = @{}
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -Destination GitHub -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild
     Require ($global:SnowGitHubTestEvents[0] -eq 'audit' -and $global:SnowGitHubTestEvents[-1] -eq 'edit') 'GitHub-only publication audits before publishing.'
     Require ($global:SnowGitHubTestBytes.ContainsKey('latest-version.json') -and $global:SnowGitHubTestBytes.Count -eq 16) 'Publish all five packages, sidecars, audit manifests, and signed feed.'
     $previousEnvelope = [Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json'])
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -Destination GitHub -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -AuditOnly
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -AuditOnly
     Require (-not $global:SnowGitHubTestEvents.Contains('upload') -and -not $global:SnowGitHubTestEvents.Contains('edit')) 'AuditOnly never mutates GitHub.'
     Require ([Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json']) -ceq $previousEnvelope) 'Retry preserves authenticated envelope.'
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -Destination GitHub -WhatIf
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -WhatIf
     Require ($global:SnowGitHubTestEvents.Count -eq 0) 'WhatIf does not build, sign, or contact GitHub.'
-    Must-Fail { & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -Destination GitHub -Operation Rollback }
-    # A tiny failing SSH executable exercises Both's actual process boundary without
-    # a network connection. GitHub must remain published after website staging fails.
-    $sshSource = Join-Path $root 'ssh.cs'
-    $sshExecutable = Join-Path $root 'ssh.exe'
-    @"
-using System;
-using System.IO;
-using System.Text;
-class FixtureSsh {
-    static int Main(string[] args) {
-        Console.In.ReadToEnd();
-        string command = args[args.Length - 1];
-        string request = Encoding.UTF8.GetString(Convert.FromBase64String(command.Substring(command.LastIndexOf(' ') + 1)));
-        bool begin = request.Contains("\"operation\":\"begin\"");
-        File.AppendAllText(Environment.GetEnvironmentVariable("SNOW_GITHUB_TEST_SSH_LOG"), begin ? "begin\n" : "verify\n");
-        if (begin) { Console.Error.WriteLine("injected website staging failure"); return 1; }
-        Console.WriteLine("{}"); return 0;
-    }
-}
-"@ | Set-Content -LiteralPath $sshSource -Encoding utf8NoBOM
-    $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-    & $compiler /nologo /target:exe "/out:$sshExecutable" $sshSource
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to compile isolated SSH fixture.' }
-    $env:PATH = "$root;$originalPath"
-    $env:SNOW_GITHUB_TEST_SSH_LOG = Join-Path $root 'ssh.log'
-    $global:SnowGitHubTestRelease = $null
-    $global:SnowGitHubTestBytes = @{}
-    $global:SnowGitHubTestEvents.Clear()
-    Must-Fail {
-        & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -Destination Both -BuildDirectory $build `
-            -SigningKeyPath $keyPath -SkipBuild -ServerHost 'fixture.invalid' -PublicBaseUrl 'https://fixture.invalid'
-    }
-    Require ($global:SnowGitHubTestEvents.Contains('edit') -and -not $global:SnowGitHubTestRelease.draft) 'Website failure preserves published GitHub release.'
-    Require ((Get-Content -Raw -LiteralPath $env:SNOW_GITHUB_TEST_SSH_LOG).Replace("`r", '') -ceq "verify`nbegin`n") 'Website begins only after GitHub publication.'
+    Must-Fail { & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -Operation Rollback }
     $global:SnowGitHubTestRsa.Dispose()
     Write-Output 'PASS: GitHub release publication, retries, conflicts, classification, local signing, audit ordering, and dry runs.'
 } finally {
-    $env:PATH = $originalPath
-    $env:SNOW_GITHUB_TEST_SSH_LOG = $originalSshLog
     foreach ($name in @('gh','git','Invoke-WebRequest','Start-Process')) { Remove-Item "Function:/$name" -ErrorAction SilentlyContinue }
     Remove-Variable -Scope Global -Name 'SnowGitHubTest*' -ErrorAction SilentlyContinue
     $resolved = [IO.Path]::GetFullPath($root)

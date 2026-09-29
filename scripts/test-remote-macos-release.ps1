@@ -9,12 +9,13 @@ foreach ($name in @('publish-snow-shot-release.ps1', 'package-snow-shot-remote-m
     if ($errors.Count) { throw ($errors | Out-String) }
 }
 $publisher = Join-Path $PSScriptRoot 'publish-snow-shot-release.ps1'
-$settings = @{ ServerHost = 'production.invalid'; PublicBaseUrl = 'https://production.invalid'; WhatIf = $true }
+$version = [regex]::Match((Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'CMakeLists.txt')), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
+$settings = @{ WhatIf = $true }
 $windows = @(& $publisher @settings)
-if ($windows.Count -ne 8 -or $windows -contains 'setup/snow-shot_macos-arm64.dmg') { throw 'Windows preview changed unexpectedly.' }
+if ($windows.Count -ne 16 -or $windows -contains "snow-shot-$version-macos-arm64.dmg") { throw 'Windows preview changed unexpectedly.' }
 $combined = @(& $publisher @settings -MacHost 'mac.invalid' -MacUser 'test' -MacProjectDirectory '/Users/test/snow-apps')
-if ($combined.Count -ne 11 -or $combined[-1] -cne 'latest-version.txt') { throw 'Combined preview has the wrong file order/count.' }
-foreach ($name in @('setup/snow-shot_macos-arm64.dmg', 'setup/snow-shot_macos-arm64.dmg.sha256', 'setup/install-snow-shot-macos.sh')) {
+if ($combined.Count -ne 19 -or $combined[-1] -cne 'install-snow-shot-macos.sh') { throw 'Combined preview has the wrong file order/count.' }
+foreach ($name in @("snow-shot-$version-macos-arm64.dmg", "snow-shot-$version-macos-arm64.dmg.sha256", 'install-snow-shot-macos.sh')) {
     if ($combined -cnotcontains $name) { throw "Missing macOS artifact: $name" }
 }
 try {

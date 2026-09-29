@@ -337,8 +337,10 @@ struct UpdateService::Impl {
             options.root,
             QStringLiteral("--cache"),
             options.cacheDirectory,
-            QStringLiteral("--base-url"),
-            options.baseUrl.toString(QUrl::FullyEncoded),
+            QStringLiteral("--github-api-url"),
+            options.githubApiUrl.toString(QUrl::FullyEncoded),
+            QStringLiteral("--gitee-api-url"),
+            options.giteeApiUrl.toString(QUrl::FullyEncoded),
             QStringLiteral("--parent"),
             QString::number(QCoreApplication::applicationPid()),
         };

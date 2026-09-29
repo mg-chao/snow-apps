@@ -1,17 +1,9 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [ValidateSet('Publish', 'Verify', 'Rollback')][string]$Operation = 'Publish',
-    [ValidateSet('Website', 'GitHub', 'Both')][string]$Destination = 'Website',
+    [ValidateSet('Publish', 'Verify')][string]$Operation = 'Publish',
     [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string]$GitHubRepository = 'mg-chao/snow-apps',
     [string]$Version = '',
     [string]$BuildDirectory = 'build/snow-shot-msvc-release',
-    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ServerHost,
-    [ValidatePattern('^[A-Za-z0-9_-]+$')][string]$ServerUser = 'root',
-    [ValidateRange(1, 65535)][int]$ServerPort = 22,
-    [string]$IdentityFile,
-    [string]$KnownHostsFile,
-    [string]$RemoteWebRoot = '/var/www/html',
-    [uri]$PublicBaseUrl,
     [string]$SigningKeyPath,
     [switch]$SkipBuild,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$MacHost,
@@ -26,34 +18,20 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($AuditOnly -and $Operation -ne 'Publish') { throw 'AuditOnly can only be used with Publish.' }
-$websiteEnabled = $Destination -in @('Website', 'Both')
-$githubEnabled = $Destination -in @('GitHub', 'Both')
-if ($githubEnabled -and $Operation -eq 'Rollback') { throw 'GitHub rollback is unsupported. Select Website explicitly or publish a higher corrective version.' }
-if ($websiteEnabled -and (-not $ServerHost -or -not $PublicBaseUrl)) { throw 'Website publication requires ServerHost and PublicBaseUrl.' }
 . (Join-Path $PSScriptRoot 'snow-shot-github-release.ps1')
 $repo = Split-Path -Parent $PSScriptRoot
 $publicKeys = Join-Path $repo 'snow_shot/resources/update-trusted-keys.json'
 $sourceVersion = [regex]::Match((Get-Content -Raw (Join-Path $repo 'CMakeLists.txt')), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
 if (-not $Version) { $Version = $sourceVersion }
 if ($Version -cne $sourceVersion) { throw 'The requested version must match SNOW_SHOT_VERSION in CMakeLists.txt.' }
-if ($websiteEnabled -and ($PublicBaseUrl.Scheme -ne 'https' -or $PublicBaseUrl.UserInfo)) { throw 'PublicBaseUrl must use HTTPS without credentials.' }
-if ($RemoteWebRoot -notmatch '^/[A-Za-z0-9_./-]+$' -or $RemoteWebRoot.Contains('..')) { throw 'Invalid remote web root.' }
-$allowed = @('setup/snow-shot_windows-x64-offline.exe', 'setup/snow-shot_windows-x64-online.exe',
-    'setup/snow-shot_windows-x64-portable.zip', 'setup/snow-shot_windows-x64-offline-update.zip',
-    'setup/snow-shot_windows-x64-online-update.zip')
 if ($MacHost) {
     if (-not $MacProjectDirectory) { throw 'MacProjectDirectory is required with MacHost.' }
     if (-not $MacUser) { throw 'MacUser is required with MacHost.' }
     if ($MacProjectDirectory -notmatch '^/[A-Za-z0-9_./-]+$' -or $MacProjectDirectory.Contains('..')) {
         throw 'MacProjectDirectory must be an absolute POSIX path without spaces or traversal.'
     }
-    $allowed += @('setup/snow-shot_macos-arm64.dmg', 'setup/snow-shot_macos-arm64.dmg.sha256',
-        'setup/install-snow-shot-macos.sh')
 } elseif ($MacProjectDirectory) { throw 'MacHost is required with MacProjectDirectory.' }
-$allowed += @('setup/SHA256SUMS', 'latest-version.json', 'latest-version.txt')
-if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version; destination $Destination", $Operation)) {
-    if ($websiteEnabled) { $allowed | ForEach-Object { Write-Output $_ } }
-    if ($githubEnabled) {
+if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version on GitHub", $Operation)) {
         foreach ($variant in @('online', 'offline', 'portable')) {
             $base = "snow-shot-$Version-windows-x64-$variant"
             $suffixes = if ($variant -eq 'portable') { @('.zip', '.zip.sha256', '.manifest.json') }
@@ -61,36 +39,10 @@ if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version; destination $Destination",
             $suffixes | ForEach-Object { Write-Output "$base$_" }
         }
         Write-Output 'latest-version.json'
-        if ($MacHost) { Write-Output "snow-shot-$Version-macos-arm64.dmg"; Write-Output "snow-shot-$Version-macos-arm64.dmg.sha256" }
-    }
+        if ($MacHost) { Write-Output "snow-shot-$Version-macos-arm64.dmg"; Write-Output "snow-shot-$Version-macos-arm64.dmg.sha256"; Write-Output 'install-snow-shot-macos.sh' }
     return
 }
-$sshArguments = @('-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UpdateHostKeys=no',
-    '-o', 'ConnectTimeout=15', '-p', "$ServerPort")
-if ($IdentityFile) { $sshArguments += @('-i', [IO.Path]::GetFullPath($IdentityFile), '-o', 'IdentitiesOnly=yes') }
-if ($KnownHostsFile) { $sshArguments += @('-o', "UserKnownHostsFile=$([IO.Path]::GetFullPath($KnownHostsFile))") }
-$sshDestination = "$ServerUser@$ServerHost"
-function Invoke-PublishRemote([hashtable]$Request) {
-    $Request.webRoot = $RemoteWebRoot
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($Request | ConvertTo-Json -Depth 12 -Compress)))
-    $info = [Diagnostics.ProcessStartInfo]::new('ssh')
-    $info.UseShellExecute = $false
-    $info.RedirectStandardInput = $true
-    $info.RedirectStandardOutput = $true
-    $info.RedirectStandardError = $true
-    foreach ($arg in ($sshArguments + @($sshDestination, "python3 - $encoded"))) { $info.ArgumentList.Add($arg) }
-    $process = [Diagnostics.Process]::Start($info)
-    $output = $process.StandardOutput.ReadToEndAsync()
-    $errors = $process.StandardError.ReadToEndAsync()
-    $process.StandardInput.Write((Get-Content -Raw (Join-Path $PSScriptRoot 'snow-shot-publish-server.py')))
-    $process.StandardInput.Close()
-    if (-not $process.WaitForExit(600000)) { $process.Kill($true); throw 'Remote publish operation timed out.' }
-    if ($process.ExitCode -ne 0) { throw "Remote publish operation failed: $($errors.GetAwaiter().GetResult())" }
-    return $output.GetAwaiter().GetResult() | ConvertFrom-Json -AsHashtable
-}
-if ($Operation -eq 'Rollback') { Invoke-PublishRemote @{ operation = 'rollback' }; return }
 if ($Operation -eq 'Verify') {
-    if ($githubEnabled) {
         if (-not [IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory = Join-Path $repo $BuildDirectory }
         $release = Get-SnowGitHubRelease $GitHubRepository $Version
         if (-not $release -or $release.draft) { throw 'Expected a published GitHub release.' }
@@ -122,13 +74,11 @@ if ($Operation -eq 'Verify') {
             }
         }
         Write-Output "Verified signed GitHub packages for $Version."
-    }
-    if ($websiteEnabled) { Invoke-PublishRemote @{ operation = 'verify' } }
     return
 }
 if (-not $SigningKeyPath -or -not (Test-Path -LiteralPath $SigningKeyPath -PathType Leaf)) { throw 'A local release signing key is required.' }
 # Online installations must be able to obtain the immutable runtime advertised by this
-# source release. Fail before an expensive build or any SSH staging if it is unavailable.
+# source release. Fail before an expensive build if it is unavailable.
 $ocrManifest = Get-Content -Raw (Join-Path $repo 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json') | ConvertFrom-Json
 $runtimePreflight = Join-Path ([IO.Path]::GetTempPath()) ("snow-shot-ocr-preflight-$([guid]::NewGuid().ToString('N')).zip")
 try {
@@ -201,7 +151,6 @@ foreach ($variant in @('online', 'offline', 'portable')) {
         if ($hash -cne $descriptor.Sha256 -or (Get-Item -LiteralPath $source).Length -ne $descriptor.Bytes) { throw 'Package audit manifest mismatch.' }
         $path = "setup/snow-shot_windows-x64-$variant$suffix"
         Copy-Item -LiteralPath $source -Destination (Join-Path $releaseDirectory $path)
-        if ($githubEnabled) {
             $githubDirectory = Join-Path $releaseDirectory 'github-assets'
             $null = New-Item -ItemType Directory -Force -Path $githubDirectory
             $githubPackage = Join-Path $githubDirectory "$base$suffix"
@@ -215,7 +164,6 @@ foreach ($variant in @('online', 'offline', 'portable')) {
             if ($sum[0].ToLowerInvariant() -cne $hash) { throw 'Package checksum sidecar mismatch.' }
             [IO.File]::WriteAllText("$githubPackage.sha256", "$hash  $base$suffix`n", [Text.UTF8Encoding]::new($false))
             $githubAssets["$base$suffix.sha256"] = "$githubPackage.sha256"
-        }
         $package = [ordered]@{ variant = $variant; kind = $kind; path = $path; size = $descriptor.Bytes; sha256 = $hash }
         if ($kind -ne 'installer') {
             $package.files = @($manifest.InstallFiles | ForEach-Object {
@@ -243,48 +191,23 @@ try {
 } finally { $rsa.Dispose() }
 # PSS signatures contain random salt. Reuse the authenticated published envelope
 # when its version and complete package contract are identical, making retries idempotent.
-$published = @{}
-if ($Destination -eq 'Website') { $published = Invoke-PublishRemote @{ operation = 'verify' } }
-# Prefer an existing GitHub envelope for GitHub-only retries; the compiled auditor below
+$published = $null
+# Prefer an existing GitHub envelope for retries; the compiled auditor below
 # authenticates it and the complete package contract before any upload.
-if ($githubEnabled) {
-    $githubRelease = Get-SnowGitHubRelease $GitHubRepository $Version
-    if ($githubRelease -and @($githubRelease.assets | Where-Object { $_.name -ceq 'latest-version.json' }).Count -eq 1) {
-        $existing = Get-SnowGitHubAsset $GitHubRepository $Version 'latest-version.json' (Join-Path $releaseDirectory 'existing-github')
-        $published = @{
-            'latest-version.txt' = @{ contentBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Version)) }
-            'latest-version.json' = @{ contentBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($existing)) }
-        }
-    }
+$githubRelease = Get-SnowGitHubRelease $GitHubRepository $Version
+if ($githubRelease -and @($githubRelease.assets | Where-Object { $_.name -ceq 'latest-version.json' }).Count -eq 1) {
+    $existing = Get-SnowGitHubAsset $GitHubRepository $Version 'latest-version.json' (Join-Path $releaseDirectory 'existing-github')
+    $published = [IO.File]::ReadAllBytes($existing)
 }
-if ($published.ContainsKey('latest-version.txt') -and $published.ContainsKey('latest-version.json')) {
-    $publishedVersion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($published['latest-version.txt'].contentBase64)).Trim()
-    if ($publishedVersion -ceq $Version) {
-        $previousBytes = [Convert]::FromBase64String($published['latest-version.json'].contentBase64)
-        $previousEnvelope = [Text.Encoding]::UTF8.GetString($previousBytes) | ConvertFrom-Json
+if ($published) {
+        $previousEnvelope = [Text.Encoding]::UTF8.GetString($published) | ConvertFrom-Json
         $previousPayload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($previousEnvelope.payload)) | ConvertFrom-Json
         if ($previousPayload.version -cne $Version -or
             ($previousPayload.packages | ConvertTo-Json -Depth 12 -Compress) -cne ($packages | ConvertTo-Json -Depth 12 -Compress)) {
             throw 'This version is already published with different packages. Increase SNOW_SHOT_VERSION.'
         }
         # The compiled auditor below verifies this envelope before anything is uploaded.
-        [IO.File]::WriteAllBytes((Join-Path $releaseDirectory 'latest-version.json'), $previousBytes)
-    }
-}
-[IO.File]::WriteAllText((Join-Path $releaseDirectory 'latest-version.txt'), $Version, [Text.UTF8Encoding]::new($false))
-$checksums = @($packages | ForEach-Object { "$($_.sha256)  $([IO.Path]::GetFileName($_.path))" })
-if ($MacHost) {
-    foreach ($name in @('snow-shot_macos-arm64.dmg', 'install-snow-shot-macos.sh')) {
-        $hash = (Get-FileHash -LiteralPath (Join-Path $releaseDirectory "setup/$name") -Algorithm SHA256).Hash.ToLowerInvariant()
-        $checksums += "$hash  $name"
-    }
-}
-$checksums -join "`n" |
-    Set-Content -LiteralPath (Join-Path $releaseDirectory 'setup/SHA256SUMS') -Encoding ascii
-$files = @{}
-foreach ($name in $allowed) {
-    $path = Join-Path $releaseDirectory $name
-    $files[$name] = @{ size = (Get-Item -LiteralPath $path).Length; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+        [IO.File]::WriteAllBytes((Join-Path $releaseDirectory 'latest-version.json'), $published)
 }
 $auditor = Join-Path $BuildDirectory 'snow_shot/Release/snow-shot-updater.exe'
 $auditErrors = Join-Path $releaseDirectory 'audit-errors.log'
@@ -299,7 +222,6 @@ if ($AuditOnly) {
     Write-Output "Audited Snow Shot $Version without staging or publishing. Signed release: $releaseDirectory"
     return
 }
-if ($githubEnabled) {
     $githubAssets['latest-version.json'] = Join-Path $releaseDirectory 'latest-version.json'
     if ($MacHost) {
         $name = "snow-shot-$Version-macos-arm64.dmg"
@@ -309,6 +231,8 @@ if ($githubEnabled) {
         [IO.File]::WriteAllText("$path.sha256", "$hash  $name`n", [Text.UTF8Encoding]::new($false))
         $githubAssets[$name] = $path
         $githubAssets["$name.sha256"] = "$path.sha256"
+        $githubAssets['install-snow-shot-macos.sh'] =
+            Join-Path $releaseDirectory 'setup/install-snow-shot-macos.sh'
     }
     # The remote tag must refer to this checkout, including when reusing a CI draft.
     $head = (& git -C $repo rev-parse HEAD).Trim()
@@ -317,67 +241,4 @@ if ($githubEnabled) {
     $tagCommit = (Invoke-SnowGitHub @('api', "repos/$GitHubRepository/commits/$tag", '--jq', '.sha')).Trim()
     if ($tagCommit -cne $head) { throw 'GitHub release tag does not match the audited source checkout.' }
     Publish-SnowGitHubRelease $GitHubRepository $Version $githubAssets (Join-Path $releaseDirectory 'verify-github')
-}
-if (-not $websiteEnabled) { return }
-try {
-    if ($Destination -eq 'Both') {
-        # Each destination may already have an equivalent PSS envelope with a different
-        # random salt. Preserve the website's authenticated bytes on same-version retries.
-        $websitePublished = Invoke-PublishRemote @{ operation = 'verify' }
-        if ($websitePublished.ContainsKey('latest-version.txt') -and $websitePublished.ContainsKey('latest-version.json')) {
-            $websiteVersion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($websitePublished['latest-version.txt'].contentBase64)).Trim()
-            if ($websiteVersion -ceq $Version) {
-                $websiteBytes = [Convert]::FromBase64String($websitePublished['latest-version.json'].contentBase64)
-                $websiteEnvelope = [Text.Encoding]::UTF8.GetString($websiteBytes) | ConvertFrom-Json
-                $websitePayload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($websiteEnvelope.payload)) | ConvertFrom-Json
-                if ($websitePayload.version -cne $Version -or
-                    ($websitePayload.packages | ConvertTo-Json -Depth 12 -Compress) -cne ($packages | ConvertTo-Json -Depth 12 -Compress)) {
-                    throw 'The website already has different packages under this version.'
-                }
-                $websiteManifest = Join-Path $releaseDirectory 'latest-version.json'
-                [IO.File]::WriteAllBytes($websiteManifest, $websiteBytes)
-                & $auditor --verify-release --manifest $websiteManifest
-                if ($LASTEXITCODE -ne 0) { throw 'Website envelope signature verification failed.' }
-                $files['latest-version.json'] = @{ size = $websiteBytes.Length;
-                    sha256 = (Get-FileHash -LiteralPath $websiteManifest -Algorithm SHA256).Hash.ToLowerInvariant() }
-            }
-        }
-    }
-    $stage = Invoke-PublishRemote @{ operation = 'begin'; id = $transaction }
-}
-catch {
-    if ($githubEnabled) { Write-Warning 'GitHub publication succeeded; website deployment failed. The GitHub release remains published.' }
-    throw
-}
-$scpArguments = @('-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UpdateHostKeys=no', '-P', "$ServerPort")
-if ($IdentityFile) { $scpArguments += @('-i', [IO.Path]::GetFullPath($IdentityFile), '-o', 'IdentitiesOnly=yes') }
-if ($KnownHostsFile) { $scpArguments += @('-o', "UserKnownHostsFile=$([IO.Path]::GetFullPath($KnownHostsFile))") }
-foreach ($name in $allowed) {
-    & scp @scpArguments (Join-Path $releaseDirectory $name) "$sshDestination`:$($stage.uploadDirectory)/$name"
-    if ($LASTEXITCODE -ne 0) {
-        if ($githubEnabled) { Write-Warning 'GitHub publication succeeded; website upload failed. The GitHub release remains published.' }
-        throw "Upload failed for $name. Website public files have not been changed."
-    }
-}
-$activated = $false
-try {
-    $result = Invoke-PublishRemote @{ operation = 'activate'; id = $transaction; version = $Version; files = $files }
-    $activated = $true
-    foreach ($name in $allowed) {
-        $download = Join-Path $releaseDirectory ('verify-' + [IO.Path]::GetFileName($name))
-        $uri = [uri]::new($PublicBaseUrl, "/$name")
-        Invoke-WebRequest -Uri $uri -OutFile $download -TimeoutSec 600 -Headers @{ 'Cache-Control' = 'no-cache' }
-        if ((Get-Item -LiteralPath $download).Length -ne $files[$name].size -or
-            (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -cne $files[$name].sha256) {
-            throw "Public HTTPS verification failed for $name"
-        }
-    }
-    if (-not $result.ContainsKey('idempotent')) { Invoke-PublishRemote @{ operation = 'commit'; id = $transaction } }
-    Write-Output "Published and verified Snow Shot $Version. Public filenames are unchanged."
-} catch {
-    if ($githubEnabled) { Write-Warning 'GitHub publication succeeded; website deployment failed. The GitHub release remains published.' }
-    if ($activated -and -not $result.ContainsKey('idempotent')) {
-        Invoke-PublishRemote @{ operation = 'rollback'; id = $transaction } | Out-Null
-    }
-    throw
-}
+Write-Output "Published and verified Snow Shot $Version on GitHub."

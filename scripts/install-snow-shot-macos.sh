@@ -20,6 +20,8 @@ had_previous=0
 needs_sudo=0
 destination='/Applications/Snow Shot.app'
 previous_destination=''
+github_pid=''
+gitee_pid=''
 
 message() {
     local en cn tw
@@ -30,8 +32,8 @@ message() {
         platform) en='Snow Shot requires macOS 15 or later on Apple Silicon or Intel.'; cn='Snow Shot 需要运行 macOS 15 或更新版本的 Apple Silicon 或 Intel Mac。'; tw='Snow Shot 需要執行 macOS 15 或更新版本的 Apple Silicon 或 Intel Mac。' ;;
         root) en='Run this script as your desktop user, without sudo. Administrator access is requested only when needed.'; cn='请以当前桌面用户运行脚本，不要直接使用 root。仅在需要时请求管理员权限。'; tw='請以目前桌面使用者執行指令碼，不要直接使用 root。僅在需要時請求管理員權限。' ;;
         primary) en='[1/5] Downloading the latest macOS package…'; cn='[1/5] 正在下载最新 macOS 安装包…'; tw='[1/5] 正在下載最新 macOS 安裝套件…' ;;
-        fallback) en='Primary download unavailable or invalid; trying GitHub Releases…'; cn='主下载源不可用或验证失败，正在尝试 GitHub Releases…'; tw='主要下載來源無法使用或驗證失敗，正在嘗試 GitHub Releases…' ;;
-        unavailable) en='No valid package is available. The release or checksum may not be uploaded, your architecture may be missing, or GitHub may be rate-limiting requests. Retry later; the installed app has not changed.'; cn='未找到有效安装包。可能尚未上传安装包或校验文件、缺少当前架构版本，或 GitHub 请求受到限流。请稍后重试；已安装的应用未被更改。'; tw='找不到有效安裝套件。可能尚未上傳安裝套件或校驗檔案、缺少目前架構版本，或 GitHub 請求受到限流。請稍後重試；已安裝的應用程式未被更改。' ;;
+        fallback) en='Selected download unavailable or invalid; trying the same release on the other channel…'; cn='所选下载源不可用或验证失败，正在从另一渠道获取相同版本…'; tw='所選下載來源無法使用或驗證失敗，正在從另一管道取得相同版本…' ;;
+        unavailable) en='No valid package is available from GitHub or Gitee. Retry later; the installed app has not changed.'; cn='GitHub 和 Gitee 均无有效安装包。请稍后重试；已安装的应用未被更改。'; tw='GitHub 和 Gitee 均無有效安裝套件。請稍後重試；已安裝的應用程式未被變更。' ;;
         verify) en='[2/5] Verifying the package and application…'; cn='[2/5] 正在验证安装包和应用…'; tw='[2/5] 正在驗證安裝套件與應用程式…' ;;
         invalid) en='Package validation failed. Download the matching macOS DMG and its .sha256 file again.'; cn='安装包验证失败。请重新下载匹配的 macOS DMG 及其 .sha256 文件。'; tw='安裝套件驗證失敗。請重新下載相符的 macOS DMG 及其 .sha256 檔案。' ;;
         signing) en='[3/5] Signing with your persistent local identity…'; cn='[3/5] 正在使用持久本地身份签名…'; tw='[3/5] 正在使用持久本機身分簽署…' ;;
@@ -106,6 +108,11 @@ fetch() {
         --output "$2" "$1"
 }
 
+fetch_metadata() {
+    run curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+        --connect-timeout 10 --max-time 30 --max-filesize 8388608 --output "$2" "$1"
+}
+
 verify_checksum() {
     local expected actual
     [[ -f "$1" && -f "$2" ]] || return 1
@@ -116,28 +123,181 @@ verify_checksum() {
 }
 
 # JXA uses system Foundation for JSON; no Python, jq, or developer tools needed.
-github_urls() {
-    osascript -l JavaScript - "$1" "$asset_arch" <<'JXA'
+release_urls() {
+    osascript -l JavaScript - "$1" "$asset_arch" "$2" "${3:-}" "${4:-}" <<'JXA'
 ObjC.import('Foundation');
 function run(argv) {
     const data = $.NSData.dataWithContentsOfFile(argv[0]);
     if (!data) throw Error('Missing release metadata');
     const json = ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding));
-    const release = JSON.parse(json);
-    if (release.draft || release.prerelease || !Array.isArray(release.assets)) throw Error('No stable release');
-    const pattern = new RegExp('^snow-shot-[0-9][A-Za-z0-9.+-]*-macos-' + argv[1] + '\\.dmg$');
-    const images = release.assets.filter(a => pattern.test(a.name));
-    if (images.length !== 1) throw Error('Expected one matching architecture asset');
-    const sums = release.assets.filter(a => a.name === images[0].name + '.sha256');
-    if (sums.length !== 1) throw Error('Missing or ambiguous checksum asset');
-    const urls = [images[0].browser_download_url, sums[0].browser_download_url];
-    urls.forEach(u => {
-        if (typeof u !== 'string' || !/^https:\/\/github\.com\/mg-chao\/snow-apps\/releases\/download\/[^\s]+$/.test(u))
-            throw Error('Unexpected release asset URL');
-    });
-    return urls.join('\n');
+    const releases = JSON.parse(json);
+    if (!Array.isArray(releases)) throw Error('Expected release list');
+    const tagPattern = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?_snow-shot$/;
+    function valid(match) {
+        if (!match) return false;
+        return !match[4] || match[4].split('.').every(id => !/^\d+$/.test(id) || id === '0' || id[0] !== '0');
+    }
+    function compareNumeric(a, b) {
+        if (a.length !== b.length) return a.length < b.length ? -1 : 1;
+        return a < b ? -1 : a > b ? 1 : 0;
+    }
+    function compare(a, b) {
+        for (let i = 1; i <= 3; i++) {
+            const difference = compareNumeric(a[i], b[i]);
+            if (difference) return difference;
+        }
+        if (!a[4] && b[4]) return 1;
+        if (a[4] && !b[4]) return -1;
+        const left = a[4] ? a[4].split('.') : [];
+        const right = b[4] ? b[4].split('.') : [];
+        for (let i = 0; i < Math.min(left.length, right.length); i++) {
+            const ln = /^\d+$/.test(left[i]);
+            const rn = /^\d+$/.test(right[i]);
+            if (ln !== rn) return ln ? -1 : 1;
+            const difference = ln ? compareNumeric(left[i], right[i]) :
+                (left[i] < right[i] ? -1 : left[i] > right[i] ? 1 : 0);
+            if (difference) return difference;
+        }
+        return left.length < right.length ? -1 : left.length > right.length ? 1 : 0;
+    }
+    let best = null;
+    const candidates = [];
+    for (const release of releases) {
+        if (release.draft) continue;
+        const tag = typeof release.tag_name === 'string' && tagPattern.exec(release.tag_name);
+        if (!valid(tag) || (argv[3] && release.tag_name !== argv[3])) continue;
+        if (argv[2] === 'gitee-list') {
+            if (Number.isSafeInteger(release.id) && release.id > 0)
+                candidates.push({tag: tag, releaseTag: release.tag_name, id: release.id});
+            continue;
+        }
+        let assets = release.assets;
+        if (argv[2] === 'gitee') {
+            const attachmentData = $.NSData.dataWithContentsOfFile(argv[4]);
+            if (!attachmentData) continue;
+            assets = JSON.parse(ObjC.unwrap($.NSString.alloc.initWithDataEncoding(attachmentData, $.NSUTF8StringEncoding)));
+        }
+        if (!Array.isArray(assets) || assets.length >= 100) continue;
+        const version = release.tag_name.slice(1, -'_snow-shot'.length);
+        const name = 'snow-shot-' + version + '-macos-' + argv[1] + '.dmg';
+        const image = assets.filter(a => a.name === name);
+        const sum = assets.filter(a => a.name === name + '.sha256');
+        if (image.length !== 1 || sum.length !== 1) continue;
+        const origin = argv[2] === 'github' ? 'https://github.com' : 'https://gitee.com';
+        const prefix = origin + '/mg-chao/snow-apps/releases/download/' + release.tag_name + '/';
+        if (image[0].browser_download_url !== prefix + name || sum[0].browser_download_url !== prefix + name + '.sha256') continue;
+        if (!best || compare(tag, best.tag) > 0) best = {tag: tag, version: version, image: image[0], sum: sum[0], releaseTag: release.tag_name};
+    }
+    if (argv[2] === 'gitee-list') {
+        candidates.sort((a, b) => compare(b.tag, a.tag));
+        if (!candidates.length) throw Error('No Gitee release candidates');
+        return candidates.map(candidate => candidate.releaseTag + ' ' + candidate.id).join('\n');
+    }
+    if (!best) throw Error('No valid release');
+    return [best.releaseTag, best.image.browser_download_url, best.sum.browser_download_url].join('\n');
 }
 JXA
+}
+
+release_page_count() {
+    osascript -l JavaScript - "$1" <<'JXA'
+ObjC.import('Foundation');
+function run(argv) {
+    const data = $.NSData.dataWithContentsOfFile(argv[0]);
+    if (!data) throw Error('Missing release page');
+    const releases = JSON.parse(ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding)));
+    if (!Array.isArray(releases) || releases.length > 100) throw Error('Invalid release page');
+    return String(releases.length);
+}
+JXA
+}
+
+merge_release_pages() {
+    osascript -l JavaScript - "$@" <<'JXA'
+ObjC.import('Foundation');
+function run(argv) {
+    let releases = [];
+    for (const path of argv) {
+        const data = $.NSData.dataWithContentsOfFile(path);
+        if (!data) throw Error('Missing release page');
+        const page = JSON.parse(ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding)));
+        if (!Array.isArray(page) || page.length > 100) throw Error('Invalid release page');
+        releases = releases.concat(page);
+    }
+    return JSON.stringify(releases);
+}
+JXA
+}
+
+discover_channel() {
+    local channel="$1" base="$2" result candidates tag id page count file
+    local -a pages=()
+    for page in {1..10}; do
+        file="$work/$channel-page-$page.json"
+        if ! fetch_metadata "$base?per_page=100&page=$page" "$file"; then break; fi
+        pages+=("$file")
+        count=$(release_page_count "$file" 2>> "$work/diagnostic.log") || break
+        [[ "$count" == 100 ]] || break
+    done
+    if [[ "${#pages[@]}" == 0 || -z "${count:-}" || "$count" == 100 ]] ||
+       ! merge_release_pages "${pages[@]}" > "$work/$channel-releases.json" 2>> "$work/diagnostic.log"; then
+        printf 'failed\n' > "$work/$channel-status.tmp"
+        mv "$work/$channel-status.tmp" "$work/$channel-status"
+        return
+    fi
+    if [[ "$channel" == github ]]; then
+        result=$(release_urls "$work/github-releases.json" github 2>> "$work/diagnostic.log") || result=''
+    else
+        candidates=$(release_urls "$work/gitee-releases.json" gitee-list 2>> "$work/diagnostic.log") || candidates=''
+        result=''
+        while read -r tag id; do
+            [[ -n "$tag" && "$id" =~ ^[0-9]+$ ]] || continue
+            fetch_metadata "https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/$id/attach_files?per_page=100" \
+                "$work/gitee-attachments.json" || continue
+            result=$(release_urls "$work/gitee-releases.json" gitee "$tag" \
+                "$work/gitee-attachments.json" 2>> "$work/diagnostic.log") && break
+        done <<< "$candidates"
+    fi
+    if [[ -n "$result" ]]; then
+        printf '%s\n' "$result" > "$work/$channel-result"
+        printf 'ok\n' > "$work/$channel-status.tmp"
+    else
+        printf 'failed\n' > "$work/$channel-status.tmp"
+    fi
+    mv "$work/$channel-status.tmp" "$work/$channel-status"
+}
+
+discover_release() {
+    local channel
+    discover_channel github 'https://api.github.com/repos/mg-chao/snow-apps/releases' &
+    github_pid=$!
+    discover_channel gitee 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases' &
+    gitee_pid=$!
+    while :; do
+        for channel in github gitee; do
+            [[ -f "$work/$channel-status" && ! -f "$work/$channel-checked" ]] || continue
+            : > "$work/$channel-checked"
+            if [[ "$(cat "$work/$channel-status")" == ok ]]; then
+                selected_channel="$channel"
+                selected_urls=$(cat "$work/$channel-result")
+                return 0
+            fi
+        done
+        [[ -f "$work/github-checked" && -f "$work/gitee-checked" ]] && return 1
+        sleep 0.1
+    done
+}
+
+download_selected_package() {
+    local urls="$1" rest dmg_url sum_url
+    rest=${urls#*$'\n'}
+    [[ "$rest" != "$urls" ]] || return 1
+    dmg_url=${rest%%$'\n'*}
+    sum_url=${rest#*$'\n'}
+    [[ "$sum_url" != "$rest" && "$sum_url" != *$'\n'* ]] || return 1
+    fetch "$dmg_url" "$work/package.dmg" && fetch "$sum_url" "$work/package.dmg.sha256" || return 1
+    say verify
+    validate_and_stage "$work/package.dmg" "$work/package.dmg.sha256"
 }
 
 unmount_package() {
@@ -173,29 +333,42 @@ validate_and_stage() {
 }
 
 obtain_package() {
-    local primary="https://snowshot.top/setup/snow-shot_macos-$arch.dmg" urls dmg_url sum_url
+    local other tag urls candidate id
     if [[ -n "$local_dmg" ]]; then
         say verify
         validate_and_stage "$local_dmg" "$local_dmg.sha256" || die invalid
         return
     fi
     say primary
-    if fetch "$primary" "$work/package.dmg" && fetch "$primary.sha256" "$work/package.dmg.sha256"; then
-        say verify
-        if validate_and_stage "$work/package.dmg" "$work/package.dmg.sha256"; then return; fi
+    discover_release || die unavailable
+    if download_selected_package "$selected_urls"; then
+        wait "$github_pid" "$gitee_pid" 2>/dev/null || true
+        github_pid=''; gitee_pid=''
+        return
     fi
-    # Detach before attempting another image; never delete an active mount point.
     unmount_package || die invalid
     rm -rf -- "$work/snow_shot.app"
     say fallback
-    fetch 'https://api.github.com/repos/mg-chao/snow-apps/releases/latest' "$work/release.json" || die unavailable
-    urls=$(github_urls "$work/release.json" 2>> "$work/diagnostic.log") || die unavailable
-    dmg_url=${urls%%$'\n'*}; sum_url=${urls#*$'\n'}
-    [[ "$dmg_url" != "$sum_url" && "$sum_url" != *$'\n'* ]] || die unavailable
-    fetch "$dmg_url" "$work/package.dmg" || die unavailable
-    fetch "$sum_url" "$work/package.dmg.sha256" || die unavailable
-    say verify
-    validate_and_stage "$work/package.dmg" "$work/package.dmg.sha256" || die unavailable
+    tag=${selected_urls%%$'\n'*}
+    other=github
+    [[ "$selected_channel" == github ]] && other=gitee
+    if [[ "$other" == github ]]; then wait "$github_pid" 2>/dev/null || true
+    else wait "$gitee_pid" 2>/dev/null || true; fi
+    [[ "$(cat "$work/$other-status" 2>/dev/null)" == ok ]] || die unavailable
+    if [[ "$other" == gitee ]]; then
+        candidate=$(release_urls "$work/gitee-releases.json" gitee-list "$tag" 2>> "$work/diagnostic.log") || die unavailable
+        id=${candidate#* }
+        [[ "$id" =~ ^[0-9]+$ ]] || die unavailable
+        fetch_metadata "https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/$id/attach_files?per_page=100" \
+            "$work/gitee-attachments.json" || die unavailable
+        urls=$(release_urls "$work/gitee-releases.json" gitee "$tag" \
+            "$work/gitee-attachments.json" 2>> "$work/diagnostic.log") || die unavailable
+    else
+        urls=$(release_urls "$work/github-releases.json" github "$tag" 2>> "$work/diagnostic.log") || die unavailable
+    fi
+    download_selected_package "$urls" || die unavailable
+    wait "$github_pid" "$gitee_pid" 2>/dev/null || true
+    github_pid=''; gitee_pid=''
 }
 
 prepare_state() {
@@ -372,6 +545,9 @@ cleanup() {
     local status=$? safe_to_remove=1
     trap - EXIT ERR INT TERM HUP
     set +e
+    for pid in "$github_pid" "$gitee_pid"; do
+        if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; fi
+    done
     if [[ "$status" != 0 && -n "$work" && -s "$work/diagnostic.log" ]]; then
         tail -n 15 "$work/diagnostic.log" >&2
     fi

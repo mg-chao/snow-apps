@@ -1049,8 +1049,8 @@
             <translation>自动检查</translation>
         </message>
         <message>
-            <source>Check for new versions and download updates from the official website</source>
-            <translation>检查新版本并从官方网站下载更新</translation>
+            <source>Check for new versions on GitHub and Gitee</source>
+            <translation>在 GitHub 和 Gitee 上检查新版本</translation>
         </message>
         <message>
             <source>Child elements</source>

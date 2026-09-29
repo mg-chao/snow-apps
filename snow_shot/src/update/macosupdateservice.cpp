@@ -13,13 +13,12 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QTimer>
+#include <QVector>
 #include <optional>
 #include <algorithm>
 
 namespace snow_shot::update {
 namespace {
-constexpr qint64 kMaximumVersionBytes = 4096;
-
 struct Version {
     QStringList core;
     QStringList prerelease;
@@ -86,76 +85,84 @@ class SystemProxyFactory final : public QNetworkProxyFactory {
 } // namespace
 
 struct UpdateService::Impl {
+    enum class Source { GitHub, Gitee };
+    enum class Stage { Releases, Attachments };
+
+    struct Channel {
+        explicit Channel(QObject* parent) : deadline(parent) {
+            deadline.setSingleShot(true);
+        }
+        QTimer deadline;
+        QPointer<QNetworkReply> reply;
+        QByteArray bytes;
+        QJsonObject bestRelease;
+        QString bestVersion;
+        QVector<QPair<QString, QJsonObject>> candidates;
+        qsizetype candidateIndex = 0;
+        int page = 1;
+        Stage stage = Stage::Releases;
+        bool active = false;
+    };
+
     Impl(UpdateService& owner, Options value)
-        : q(owner), options(std::move(value)), network(&owner), schedule(&owner), deadline(&owner) {
+        : q(owner), options(std::move(value)), network(&owner), schedule(&owner), github(&owner),
+          gitee(&owner) {
         status.state = UpdateState::Idle;
         if (options.installedVersion.isEmpty())
             options.installedVersion = QStringLiteral(SNOW_SHOT_VERSION);
         schedule.setSingleShot(true);
-        deadline.setSingleShot(true);
         QObject::connect(&schedule, &QTimer::timeout, &q, [this] { check(false); });
-        QObject::connect(&deadline, &QTimer::timeout, &q, [this] {
-            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "The update check timed out. Please try again."));
-        });
+        QObject::connect(&github.deadline, &QTimer::timeout, &q,
+                         [this] { sourceFailure(Source::GitHub); });
+        QObject::connect(&gitee.deadline, &QTimer::timeout, &q,
+                         [this] { sourceFailure(Source::Gitee); });
         network.setProxy(QNetworkProxy::NoProxy);
     }
 
+    Channel& channel(Source source) {
+        return source == Source::GitHub ? github : gitee;
+    }
+    bool busy() const {
+        return github.active || gitee.active;
+    }
     void arm(std::chrono::milliseconds delay) {
         if (started && mode == u"check")
             schedule.start(delay);
     }
-
-    void stopReply() {
-        deadline.stop();
-        if (reply) {
-            auto* finished = reply.data();
-            reply.clear();
-            finished->disconnect(&q);
-            finished->abort();
-            finished->deleteLater();
+    void stop(Channel& source) {
+        source.deadline.stop();
+        source.active = false;
+        if (source.reply) {
+            auto* reply = source.reply.data();
+            source.reply.clear();
+            reply->disconnect(&q);
+            reply->abort();
+            reply->deleteLater();
         }
     }
-
-    void finishFailure(const char* source) {
-        stopReply();
+    void stopAll() {
+        stop(github);
+        stop(gitee);
+    }
+    void finishFailure(const char* error) {
+        stopAll();
         status = previous;
         errorSource = previousErrorSource;
         if (manual) {
-            errorSource = source;
+            errorSource = error;
             status.state = UpdateState::Failed;
-            status.error = QCoreApplication::translate("UpdateService", source);
+            status.error = QCoreApplication::translate("UpdateService", error);
         }
         arm(options.automaticCheckInterval);
         emit q.statusChanged();
         emit q.operationFinished(QStringLiteral("check"), QStringLiteral("failed"));
     }
-
-    void sourceFailure(const char* source) {
-        stopReply();
-        if (!github) {
-            github = true;
-            page = 1;
-            bestRelease = {};
-            request();
-        } else {
-            finishFailure(source);
-        }
+    void sourceFailure(Source source) {
+        stop(channel(source));
+        if (!busy())
+            finishFailure(QT_TRANSLATE_NOOP("UpdateService",
+                                            "Could not check for updates. Please try again."));
     }
-
-    qint64 byteLimit() const {
-        return github ? 8 * 1024 * 1024 : kMaximumVersionBytes;
-    }
-
-    void read() {
-        if (!reply)
-            return;
-        bytes += reply->read(byteLimit() + 1 - bytes.size());
-        if (bytes.size() > byteLimit())
-            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "The update server returned an invalid version."));
-    }
-
     bool validUrl(const QUrl& url) const {
         const bool local =
             options.allowLocalHttp && url.scheme() == u"http" &&
@@ -163,19 +170,26 @@ struct UpdateService::Impl {
         return url.isValid() && !url.host().isEmpty() && (url.scheme() == u"https" || local) &&
                url.userInfo().isEmpty();
     }
-
-    void complete(const QString& text, const QUrl& downloadUrl = {}) {
+    void complete(Source source, const QString& text) {
         const auto version = parseVersion(text);
         if (!version) {
-            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "The update server returned an invalid version."));
+            sourceFailure(source);
             return;
         }
         const bool available =
             compareVersions(*version, *parseVersion(options.installedVersion)) > 0;
-        stopReply();
-        status = {
-            available ? UpdateState::Available : UpdateState::Idle, text, {}, 0, 0, downloadUrl};
+        const QString tag = QStringLiteral("v%1_snow-shot").arg(text);
+        const QString root =
+            source == Source::GitHub
+                ? QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/")
+                : QStringLiteral("https://gitee.com/mg-chao/snow-apps/releases/tag/");
+        stopAll();
+        status = {available ? UpdateState::Available : UpdateState::Idle,
+                  text,
+                  {},
+                  0,
+                  0,
+                  QUrl(root + tag)};
         const bool notify = available && !manual && mode == u"check" && !notified.contains(text);
         if (notify)
             notified.insert(text);
@@ -185,138 +199,201 @@ struct UpdateService::Impl {
         if (notify)
             emit q.automaticUpdateAvailable(text);
     }
-
-    void githubResponse() {
+    bool validAssets(Source source, const QJsonArray& assets, const QString& text) const {
+#if defined(Q_PROCESSOR_ARM_64)
+        const QString arch = QStringLiteral("arm64");
+#else
+        const QString arch = QStringLiteral("x86_64");
+#endif
+        const QString tag = QStringLiteral("v%1_snow-shot").arg(text);
+        const QString name = QStringLiteral("snow-shot-%1-macos-%2.dmg").arg(text, arch);
+        for (const QString& assetName : {name, name + QStringLiteral(".sha256")}) {
+            int matches = 0;
+            for (const auto& value : assets) {
+                const auto asset = value.toObject();
+                if (asset.value(QStringLiteral("name")).toString() != assetName)
+                    continue;
+                ++matches;
+                const QUrl url(asset.value(QStringLiteral("browser_download_url")).toString());
+                if (source == Source::GitHub) {
+                    const QUrl expected(
+                        QStringLiteral(
+                            "https://github.com/mg-chao/snow-apps/releases/download/%1/%2")
+                            .arg(tag, assetName));
+                    if (url != expected)
+                        return false;
+                } else {
+                    const QUrl expected(
+                        QStringLiteral(
+                            "https://gitee.com/mg-chao/snow-apps/releases/download/%1/%2")
+                            .arg(tag, assetName));
+                    if (url != expected)
+                        return false;
+                }
+            }
+            if (matches != 1)
+                return false;
+        }
+        return true;
+    }
+    void releasesResponse(Source source) {
+        auto& state = channel(source);
         QJsonParseError error;
-        const auto document = QJsonDocument::fromJson(bytes, &error);
+        const auto document = QJsonDocument::fromJson(state.bytes, &error);
         if (error.error != QJsonParseError::NoError || !document.isArray() ||
             document.array().size() > 100) {
-            sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "The update server returned an invalid version."));
+            sourceFailure(source);
             return;
         }
         for (const auto& value : document.array()) {
             const auto release = value.toObject();
-            if (!release.value(QStringLiteral("draft")).isBool() ||
-                release.value(QStringLiteral("draft")).toBool() ||
-                !release.value(QStringLiteral("prerelease")).isBool() ||
-                release.value(QStringLiteral("prerelease")).toBool())
+            if (release.value(QStringLiteral("draft")).toBool() ||
+                (source == Source::GitHub && !release.value(QStringLiteral("draft")).isBool()))
                 continue;
             const QString tag = release.value(QStringLiteral("tag_name")).toString();
             if (!tag.startsWith(u'v') || !tag.endsWith(u"_snow-shot"))
                 continue;
             const QString text = tag.mid(1, tag.size() - 11);
             const auto version = parseVersion(text);
-            if (!version || !version->prerelease.isEmpty())
+            if (!version)
                 continue;
-            if (bestVersion.isEmpty() ||
-                compareVersions(*version, *parseVersion(bestVersion)) > 0) {
-                bestVersion = text;
-                bestRelease = release;
-            }
+            if (source == Source::GitHub &&
+                !validAssets(source, release.value(QStringLiteral("assets")).toArray(), text))
+                continue;
+            if (source == Source::Gitee &&
+                release.value(QStringLiteral("id")).toVariant().toLongLong() <= 0)
+                continue;
+            state.candidates.append({text, release});
         }
         if (document.array().size() == 100) {
-            if (page == 10) {
-                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                                "The update server returned an invalid version."));
+            if (state.page == 10) {
+                sourceFailure(source);
                 return;
             }
-            ++page;
-            request();
+            ++state.page;
+            request(source);
             return;
         }
-#if defined(Q_PROCESSOR_ARM_64)
-        const QString arch = QStringLiteral("arm64");
-#else
-        const QString arch = QStringLiteral("x64");
-#endif
-        const QString name = QStringLiteral("snow-shot-%1-macos-%2.dmg").arg(bestVersion, arch);
-        const QString root = QStringLiteral("https://github.com/mg-chao/snow-apps/releases/");
-        const QString tag = bestRelease.value(QStringLiteral("tag_name")).toString();
-        for (const QString& assetName : {name, name + QStringLiteral(".sha256")}) {
-            int matches = 0;
-            for (const auto& value : bestRelease.value(QStringLiteral("assets")).toArray()) {
-                const auto asset = value.toObject();
-                if (asset.value(QStringLiteral("name")).toString() == assetName) {
-                    ++matches;
-                    if (QUrl(asset.value(QStringLiteral("browser_download_url")).toString()) !=
-                        QUrl(root + QStringLiteral("download/") + tag + u'/' + assetName)) {
-                        sourceFailure(QT_TRANSLATE_NOOP(
-                            "UpdateService", "The update server returned an invalid version."));
-                        return;
-                    }
-                }
-            }
-            if (matches != 1) {
-                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                                "The update server returned an invalid version."));
-                return;
-            }
+        if (state.candidates.isEmpty()) {
+            sourceFailure(source);
+            return;
         }
-        complete(bestVersion, QUrl(root + QStringLiteral("tag/") + tag));
+        std::sort(state.candidates.begin(), state.candidates.end(),
+                  [](const auto& left, const auto& right) {
+                      return compareVersions(*parseVersion(left.first),
+                                             *parseVersion(right.first)) > 0;
+                  });
+        state.candidateIndex = 0;
+        state.bestVersion = state.candidates.front().first;
+        state.bestRelease = state.candidates.front().second;
+        if (source == Source::GitHub) {
+            complete(source, state.bestVersion);
+        } else {
+            state.stage = Stage::Attachments;
+            request(source);
+        }
     }
-
-    void request() {
-        stopReply();
-        QUrl url = github ? options.githubApiUrl
-                          : options.baseUrl.resolved(QUrl(QStringLiteral("/latest-version.txt")));
-        if (!validUrl(url)) {
-            finishFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                            "Could not check for updates. Please try again."));
+    void attachmentsResponse() {
+        QJsonParseError error;
+        const auto document = QJsonDocument::fromJson(gitee.bytes, &error);
+        if (error.error != QJsonParseError::NoError || !document.isArray() ||
+            document.array().size() >= 100) {
+            sourceFailure(Source::Gitee);
             return;
         }
-        if (github) {
-            QUrlQuery query;
-            query.addQueryItem(QStringLiteral("per_page"), QStringLiteral("100"));
-            query.addQueryItem(QStringLiteral("page"), QString::number(page));
-            url.setQuery(query);
+        if (!validAssets(Source::Gitee, document.array(), gitee.bestVersion)) {
+            ++gitee.candidateIndex;
+            if (gitee.candidateIndex >= gitee.candidates.size()) {
+                sourceFailure(Source::Gitee);
+                return;
+            }
+            gitee.bestVersion = gitee.candidates[gitee.candidateIndex].first;
+            gitee.bestRelease = gitee.candidates[gitee.candidateIndex].second;
+            request(Source::Gitee);
+            return;
         }
-        bytes.clear();
+        complete(Source::Gitee, gitee.bestVersion);
+    }
+    void read(Source source) {
+        auto& state = channel(source);
+        if (!state.reply)
+            return;
+        constexpr qint64 limit = 8 * 1024 * 1024;
+        state.bytes += state.reply->read(limit + 1 - state.bytes.size());
+        if (state.bytes.size() > limit)
+            sourceFailure(source);
+    }
+    void request(Source source) {
+        auto& state = channel(source);
+        stop(state);
+        QUrl url = source == Source::GitHub ? options.githubApiUrl : options.giteeApiUrl;
+        if (state.stage == Stage::Attachments) {
+            QString path = url.path();
+            if (path.endsWith(u'/'))
+                path.chop(1);
+            url.setPath(
+                path + u'/' +
+                QString::number(
+                    state.bestRelease.value(QStringLiteral("id")).toVariant().toLongLong()) +
+                QStringLiteral("/attach_files"));
+        }
+        QUrlQuery query;
+        query.addQueryItem(QStringLiteral("per_page"), QStringLiteral("100"));
+        if (state.stage == Stage::Releases)
+            query.addQueryItem(QStringLiteral("page"), QString::number(state.page));
+        url.setQuery(query);
+        if (!validUrl(url)) {
+            sourceFailure(source);
+            return;
+        }
+        state.bytes.clear();
         QNetworkRequest request(url);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                              QNetworkRequest::SameOriginRedirectPolicy);
         request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
                              QNetworkRequest::AlwaysNetwork);
-        request.setRawHeader("Accept", github ? "application/vnd.github+json" : "text/plain");
+        request.setRawHeader("Accept", source == Source::GitHub ? "application/vnd.github+json"
+                                                                : "application/json");
         request.setRawHeader("User-Agent", "SnowShot/" + options.installedVersion.toUtf8());
         request.setRawHeader("Cache-Control", "no-cache");
-        reply = network.get(request);
-        reply->setReadBufferSize(byteLimit() + 1);
-        const QPointer<QNetworkReply> current = reply;
-        QObject::connect(reply, &QNetworkReply::metaDataChanged, &q, [this, current] {
-            if (reply == current && reply &&
-                reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() > byteLimit())
-                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                                "The update server returned an invalid version."));
+        state.active = true;
+        state.reply = network.get(request);
+        state.reply->setReadBufferSize(8 * 1024 * 1024 + 1);
+        const QPointer<QNetworkReply> current = state.reply;
+        QObject::connect(state.reply, &QNetworkReply::metaDataChanged, &q, [this, source, current] {
+            auto& state = channel(source);
+            if (state.reply == current && state.reply &&
+                state.reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() >
+                    8 * 1024 * 1024)
+                sourceFailure(source);
         });
-        QObject::connect(reply, &QNetworkReply::readyRead, &q, [this, current] {
-            if (reply == current)
-                read();
+        QObject::connect(state.reply, &QNetworkReply::readyRead, &q, [this, source, current] {
+            if (channel(source).reply == current)
+                read(source);
         });
-        QObject::connect(reply, &QNetworkReply::finished, &q, [this, current] {
-            if (reply != current)
+        QObject::connect(state.reply, &QNetworkReply::finished, &q, [this, source, current] {
+            auto& state = channel(source);
+            if (state.reply != current)
                 return;
-            read();
-            if (!reply || reply != current)
+            read(source);
+            if (!state.reply || state.reply != current)
                 return;
-            if (reply->error() != QNetworkReply::NoError ||
-                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 200) {
-                sourceFailure(QT_TRANSLATE_NOOP("UpdateService",
-                                                "Could not check for updates. Please try again."));
+            if (state.reply->error() != QNetworkReply::NoError ||
+                state.reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 200) {
+                sourceFailure(source);
                 return;
             }
-            if (github)
-                githubResponse();
+            if (state.stage == Stage::Releases)
+                releasesResponse(source);
             else
-                complete(QString::fromUtf8(bytes).trimmed());
+                attachmentsResponse();
         });
-        deadline.start(options.requestTimeout);
+        state.deadline.start(options.requestTimeout);
     }
-
     void check(bool user) {
         if (!user && mode == u"manual")
             return;
-        if (reply) {
+        if (busy()) {
             manual = manual || user;
             return;
         }
@@ -325,25 +402,32 @@ struct UpdateService::Impl {
         previous = status;
         previousErrorSource = errorSource;
         errorSource.clear();
-        if (!parseVersion(options.installedVersion) || !validUrl(options.baseUrl)) {
+        if (!parseVersion(options.installedVersion) || !validUrl(options.githubApiUrl) ||
+            !validUrl(options.giteeApiUrl)) {
             finishFailure(QT_TRANSLATE_NOOP("UpdateService",
                                             "Could not check for updates. Please try again."));
             return;
         }
-        github = false;
-        bestVersion.clear();
+        for (Channel* state : {&github, &gitee}) {
+            state->page = 1;
+            state->stage = Stage::Releases;
+            state->bestVersion.clear();
+            state->bestRelease = {};
+            state->candidates.clear();
+            state->candidateIndex = 0;
+        }
         status = {UpdateState::Checking, {}, {}, 0, 0};
-        request();
         emit q.statusChanged();
+        request(Source::GitHub);
+        request(Source::Gitee);
     }
 
     UpdateService& q;
     Options options;
     QNetworkAccessManager network;
     QTimer schedule;
-    QTimer deadline;
-    QPointer<QNetworkReply> reply;
-    QByteArray bytes;
+    Channel github;
+    Channel gitee;
     QByteArray errorSource;
     QByteArray previousErrorSource;
     UpdateStatus status;
@@ -352,10 +436,6 @@ struct UpdateService::Impl {
     QString mode = QStringLiteral("check");
     bool started = false;
     bool manual = false;
-    bool github = false;
-    int page = 1;
-    QString bestVersion;
-    QJsonObject bestRelease;
 };
 
 UpdateService::UpdateService(Options options, QObject* parent)
@@ -363,13 +443,13 @@ UpdateService::UpdateService(Options options, QObject* parent)
     setObjectName(QStringLiteral("snowShotUpdateService"));
 }
 UpdateService::~UpdateService() {
-    m_impl->stopReply();
+    m_impl->stopAll();
 }
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
 }
 bool UpdateService::busy() const {
-    return !m_impl->reply.isNull();
+    return m_impl->busy();
 }
 void UpdateService::start() {
     if (m_impl->started)
@@ -384,7 +464,7 @@ void UpdateService::setMode(const QString& value) {
     m_impl->mode = mode;
     if (mode == u"manual") {
         m_impl->schedule.stop();
-        if (m_impl->reply && !m_impl->manual)
+        if (m_impl->busy() && !m_impl->manual)
             cancel();
     } else {
         m_impl->arm(m_impl->options.startupCheckDelay);
@@ -400,9 +480,9 @@ void UpdateService::check(bool manual) {
     m_impl->check(manual);
 }
 void UpdateService::cancel() {
-    if (!m_impl->reply)
+    if (!m_impl->busy())
         return;
-    m_impl->stopReply();
+    m_impl->stopAll();
     m_impl->status = m_impl->previous;
     m_impl->errorSource = m_impl->previousErrorSource;
     m_impl->arm(m_impl->options.automaticCheckInterval);

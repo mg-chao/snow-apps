@@ -1,0 +1,44 @@
+name: Mirror Snow Shot release to Gitee
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published Snow Shot release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snow-shot-gitee-release-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: startsWith(inputs.tag || github.event.release.tag_name, 'v') && endsWith(inputs.tag || github.event.release.tag_name, '_snow-shot')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify Gitee mirror logic
+        run: python3 scripts/test-snow-shot-gitee-release.py
+      - name: Mirror published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_USERNAME: ${{ vars.GITEE_USERNAME || 'mg-chao' }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          cd release-source
+          python3 ../scripts/mirror-snow-shot-gitee-release.py --tag "$RELEASE_TAG"
