@@ -350,6 +350,38 @@ void screenshotNativeSettingsFollowOwnership() {
     }
 }
 
+void screenshotPresentationFollowsOwnership() {
+    OverlayFixture overlay;
+    ToolFixture ordinaryOwner;
+    ToolFixture dialog;
+    dialog.setWindowFlags(Qt::Dialog | Qt::WindowTitleHint);
+    overlay.show();
+    ordinaryOwner.show();
+    for (int surface = 0; surface != 2; ++surface) {
+        dialog.show();
+        dialog.windowHandle()->setTransientParent(ordinaryOwner.windowHandle());
+        NSWindow* native = reinterpret_cast<NSView*>(dialog.winId()).window;
+        native.animationBehavior = NSWindowAnimationBehaviorDefault;
+        dialog.windowHandle()->setTransientParent(overlay.windowHandle());
+        require(native.animationBehavior == NSWindowAnimationBehaviorDocumentWindow,
+                "elevating a titled window must preserve the normal level's default animation");
+        for (auto explicitBehavior :
+             {NSWindowAnimationBehaviorNone, NSWindowAnimationBehaviorUtilityWindow}) {
+            native.animationBehavior = explicitBehavior;
+            overlay.raise();
+            require(native.animationBehavior == explicitBehavior,
+                    "capture stacking must respect explicit animation choices");
+        }
+        native.animationBehavior = NSWindowAnimationBehaviorDefault;
+        require(native.animationBehavior == NSWindowAnimationBehaviorDocumentWindow,
+                "resetting animation to default must retain presentation at the capture level");
+        dialog.windowHandle()->setTransientParent(ordinaryOwner.windowHandle());
+        require(native.animationBehavior == NSWindowAnimationBehaviorDefault,
+                "leaving capture must restore the requested default animation policy");
+        dialog.recreateSurface();
+    }
+}
+
 void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
     OverlayFixture overlay;
     overlay.resize(64, 64);
@@ -434,10 +466,12 @@ void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
         if (cocoa) {
             NSWindow* nativeModal = reinterpret_cast<NSView*>(surface->winId()).window;
             require(attempt < 2 ? NSApp.modalWindow == nativeModal
-                                : !nativeModal.isSheet &&
-                                      nativeModal.parentWindow ==
-                                          reinterpret_cast<NSView*>(overlay.winId()).window,
-                    "application modals must use Cocoa presentation; window modals stay movable");
+                                : !nativeModal.isSheet && nativeModal.movable &&
+                                      nativeModal.parentWindow == nil &&
+                                      nativeModal.animationBehavior ==
+                                          NSWindowAnimationBehaviorDocumentWindow,
+                    "application modals must use Cocoa presentation; window modals must retain "
+                    "independent movement and presentation animation");
             require(level(*surface) > level(recognition) && level(*surface) > level(toolbar) &&
                         level(*surface) > level(nestedPopup),
                     "the selection modal must cover OCR results, toolbars, and their popups");
@@ -654,6 +688,14 @@ void adqtPopupPreservesScreenshotLayers(bool cocoa) {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     const bool cocoa = QGuiApplication::platformName() == QStringLiteral("cocoa");
+    if (app.arguments().contains(QStringLiteral("--presentation-policy-only"))) {
+        if (cocoa) {
+            @autoreleasepool {
+                screenshotPresentationFollowsOwnership();
+            }
+        }
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--modal-stacking-only"))) {
         @autoreleasepool {
             screenshotWindowsKeepTheirStackingOrder(cocoa);
@@ -718,6 +760,7 @@ int main(int argc, char** argv) {
         if (cocoa) {
             captureFamiliesKeepNativeOrder();
             screenshotNativeSettingsFollowOwnership();
+            screenshotPresentationFollowsOwnership();
         }
         screenshotWindowsKeepTheirStackingOrder(cocoa);
         adqtPopupPreservesScreenshotLayers(cocoa);

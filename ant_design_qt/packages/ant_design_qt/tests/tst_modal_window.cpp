@@ -1,4 +1,6 @@
 #include <QApplication>
+#include <QAbstractEventDispatcher>
+#include <QEventLoop>
 #include <QLayout>
 #include <QPointer>
 #include <QPushButton>
@@ -12,6 +14,7 @@
 
 #ifdef Q_OS_MACOS
 #import <AppKit/AppKit.h>
+#import <objc/runtime.h>
 #endif
 
 #ifdef Q_OS_WIN
@@ -25,6 +28,42 @@ using adqt::widgets::AdModal;
 namespace {
 
 constexpr auto kOverlayObjectName = "ad-modal-overlay";
+
+#ifdef Q_OS_MACOS
+struct NativeOrderRecord {
+  QString title;
+  NSWindowOrderingMode mode;
+  NSInteger relative;
+  NSWindowAnimationBehavior animation;
+};
+QList<NativeOrderRecord> nativeOrders;
+
+void observeNativeOrdering() {
+  static const bool installed = [] {
+    const SEL selector = @selector(orderWindow:relativeTo:);
+    const Method method = class_getInstanceMethod(NSWindow.class, selector);
+    const IMP original = method_getImplementation(method);
+    method_setImplementation(
+        method, imp_implementationWithBlock(^(NSWindow* window, NSWindowOrderingMode mode,
+                                              NSInteger relative) {
+          nativeOrders.append(
+              {QString::fromNSString(window.title), mode, relative, window.animationBehavior});
+          reinterpret_cast<void (*)(id, SEL, NSWindowOrderingMode, NSInteger)>(original)(
+              window, selector, mode, relative);
+        }));
+    return true;
+  }();
+  Q_UNUSED(installed)
+  nativeOrders.clear();
+}
+
+bool orderedAbove(NSWindow* window, NSWindow* owner) {
+  NSArray<NSNumber*>* windows = [NSWindow windowNumbersWithOptions:0];
+  const NSUInteger windowIndex = [windows indexOfObject:@(window.windowNumber)];
+  const NSUInteger ownerIndex = [windows indexOfObject:@(owner.windowNumber)];
+  return windowIndex != NSNotFound && ownerIndex != NSNotFound && windowIndex < ownerIndex;
+}
+#endif
 
 class SurfaceLifecycleObserver : public QObject {
  public:
@@ -106,6 +145,13 @@ class TstModalWindow : public QObject {
   Q_OBJECT
 
  private slots:
+  void initTestCase() {
+#ifdef Q_OS_MACOS
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      observeNativeOrdering();
+    }
+#endif
+  }
   // Guard the precondition shared by the tests below: no ambient window
   // state that resolveOwnerWindow() could pick up.
   void init() {
@@ -133,8 +179,212 @@ class TstModalWindow : public QObject {
   }
 
 #ifdef Q_OS_MACOS
-  void macOwnerModalMovesIndependentlyAndBlocksOnlyOwner() {
+  void macOwnerModalPreservesDefaultPresentation_data() {
+    QTest::addColumn<bool>("confirm");
+    QTest::addColumn<bool>("elevated");
+    QTest::addColumn<bool>("nonmodal");
+    QTest::newRow("regular-modal") << false << false << false;
+    QTest::newRow("destroy-confirm") << true << false << false;
+    QTest::newRow("elevated-modal") << false << true << false;
+    QTest::newRow("elevated-confirm") << true << true << false;
+    QTest::newRow("elevated-nonmodal") << false << true << true;
+  }
+
+  void macOwnerModalPreservesDefaultPresentation() {
+    QFETCH(bool, confirm);
+    QFETCH(bool, elevated);
+    QFETCH(bool, nonmodal);
     QWidget owner;
+    if (elevated) {
+      owner.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    }
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    AdModal modal(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.setPreset(confirm ? AdModal::Preset::Confirm : AdModal::Preset::Plain);
+    if (nonmodal) {
+      modal.setWindowModality(Qt::NonModal);
+    }
+    modal.setWindowTitle(QStringLiteral("Default modal presentation"));
+    modal.setText(QStringLiteral("Destroy this pinned window?"));
+    const auto verifyPresentation = [&] {
+      QWidget* surface = visibleOverlaySurface(modal.windowTitle());
+      QVERIFY(surface);
+      QVERIFY(QTest::qWaitForWindowExposed(surface));
+      if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        NSWindow* window = reinterpret_cast<NSView*>(surface->winId()).window;
+        NSWindow* nativeOwner = reinterpret_cast<NSView*>(owner.winId()).window;
+        // AppKit starts a normal order-in animation for this independent window.
+        // addChildWindow after show cancels it; attaching before show suppresses it.
+        QVERIFY(window.parentWindow == nil);
+        QCOMPARE(window.animationBehavior, NSWindowAnimationBehaviorDefault);
+        QVERIFY(orderedAbove(window, nativeOwner));
+        bool presented = false;
+        for (const auto& order : nativeOrders) {
+          if (order.title == modal.windowTitle() && order.mode == NSWindowAbove) {
+            presented = true;
+            QCOMPARE(order.animation, NSWindowAnimationBehaviorDocumentWindow);
+          }
+        }
+        QVERIFY(presented);
+        if (!nonmodal) {
+          [nativeOwner orderFront:nil];
+          QVERIFY(orderedAbove(window, nativeOwner));
+        }
+      }
+      nativeOrders.clear();
+    };
+    nativeOrders.clear();
+    modal.open();
+    verifyPresentation();
+    modal.close();
+    modal.open();
+    verifyPresentation();
+    modal.setWindowTaskbarVisible(true);
+    verifyPresentation();
+    modal.setWindowTaskbarVisible(false);
+    verifyPresentation();
+    modal.close();
+  }
+
+  void macPresentationRespectsExplicitAnimationAndRestoresDefault() {
+    QWidget owner;
+    owner.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    AdModal modal(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowTitle(QStringLiteral("Explicit presentation"));
+    modal.open();
+    QWidget* surface = modal.acceptButton()->window();
+    QVERIFY(QTest::qWaitForWindowExposed(surface));
+    if (QGuiApplication::platformName() != QStringLiteral("cocoa")) {
+      return;
+    }
+    NSWindow* window = reinterpret_cast<NSView*>(surface->winId()).window;
+    for (auto behavior : {NSWindowAnimationBehaviorNone, NSWindowAnimationBehaviorUtilityWindow,
+                          NSWindowAnimationBehaviorDefault}) {
+      window.animationBehavior = behavior;
+      nativeOrders.clear();
+      modal.close();
+      modal.open();
+      QVERIFY(QTest::qWaitForWindowExposed(surface));
+      bool shown = false;
+      bool hidden = false;
+      for (const auto& order : nativeOrders) {
+        if (order.title != modal.windowTitle()) {
+          continue;
+        }
+        shown |= order.mode == NSWindowAbove;
+        hidden |= order.mode == NSWindowOut;
+        QCOMPARE(order.animation, behavior == NSWindowAnimationBehaviorDefault
+                                      ? NSWindowAnimationBehaviorDocumentWindow
+                                      : behavior);
+      }
+      QVERIFY(shown);
+      QVERIFY(hidden);
+      QCOMPARE(window.animationBehavior, behavior);
+    }
+    modal.close();
+    QCOMPARE(window.animationBehavior, NSWindowAnimationBehaviorDefault);
+  }
+
+  void macApplicationModalPreservesNativeAnimationPolicy() {
+    QWidget owner;
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    AdModal modal(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModality(Qt::ApplicationModal);
+    modal.setWindowTitle(QStringLiteral("Application modal presentation"));
+    nativeOrders.clear();
+    modal.open();
+    QVERIFY(QTest::qWaitForWindowExposed(modal.acceptButton()->window()));
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      // Cocoa begins application modality at the event-loop boundary and can
+      // present through its own modal-session API rather than orderWindow.
+      QEventLoop loop;
+      connect(QAbstractEventDispatcher::instance(), &QAbstractEventDispatcher::aboutToBlock, &loop,
+              &QEventLoop::quit, Qt::QueuedConnection);
+      loop.exec();
+      NSWindow* window = reinterpret_cast<NSView*>(modal.acceptButton()->window()->winId()).window;
+      QCOMPARE(NSApp.modalWindow, window);
+      QCOMPARE(window.animationBehavior, NSWindowAnimationBehaviorDefault);
+      [window orderFront:nil];
+      bool presented = false;
+      for (const auto& order : nativeOrders) {
+        if (order.title == modal.windowTitle() && order.mode == NSWindowAbove) {
+          presented = true;
+          QCOMPARE(order.animation, NSWindowAnimationBehaviorDefault);
+        }
+      }
+      QVERIFY(presented);
+    }
+  }
+
+  void macOwnerOrderingDoesNotPromoteModalAboveUnrelatedWindows() {
+    QWidget owner;
+    owner.setWindowTitle(QStringLiteral("Ordering owner"));
+    QWidget unrelated;
+    owner.show();
+    unrelated.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&owner));
+    QVERIFY(QTest::qWaitForWindowExposed(&unrelated));
+    AdModal modal(&owner);
+    modal.setMode(AdModal::Mode::Window);
+    modal.open();
+    QWidget* surface = modal.acceptButton()->window();
+    QVERIFY(QTest::qWaitForWindowExposed(surface));
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      NSWindow* window = reinterpret_cast<NSView*>(surface->winId()).window;
+      NSWindow* nativeOwner = reinterpret_cast<NSView*>(owner.winId()).window;
+      NSWindow* nativeUnrelated = reinterpret_cast<NSView*>(unrelated.winId()).window;
+      QCOMPARE(window.level, nativeOwner.level);
+      [nativeUnrelated makeKeyAndOrderFront:nil];
+      QVERIFY(orderedAbove(nativeUnrelated, window));
+      nativeOrders.clear();
+      [nativeOwner orderFront:nil];
+      // Verify the ordering passed to AppKit, before any update notification can
+      // repair an inverted order. The owner must never cover its modal for a frame.
+      bool orderedOwner = false;
+      for (const auto& order : nativeOrders) {
+        if (order.title == owner.windowTitle()) {
+          orderedOwner = true;
+          QCOMPARE(order.mode, NSWindowBelow);
+          QCOMPARE(order.relative, window.windowNumber);
+        }
+      }
+      QVERIFY(orderedOwner);
+      QVERIFY(orderedAbove(window, nativeOwner));
+      QVERIFY(orderedAbove(nativeUnrelated, window));
+      [nativeOwner makeKeyAndOrderFront:nil];
+      QVERIFY(NSApp.keyWindow != nativeOwner);
+      QVERIFY(orderedAbove(window, nativeOwner));
+      [nativeUnrelated makeKeyAndOrderFront:nil];
+      QVERIFY(orderedAbove(nativeUnrelated, window));
+      [window orderBack:nil];
+      QVERIFY(orderedAbove(window, nativeOwner));
+      QVERIFY(orderedAbove(nativeUnrelated, window));
+      modal.close();
+      [nativeOwner makeKeyAndOrderFront:nil];
+      QVERIFY(orderedAbove(nativeOwner, nativeUnrelated));
+    }
+  }
+
+  void macOwnerModalMovesIndependentlyAndBlocksOnlyOwner_data() {
+    QTest::addColumn<bool>("expandedOwner");
+    QTest::newRow("ordinary-owner") << false;
+    QTest::newRow("main-window-owner") << true;
+  }
+
+  void macOwnerModalMovesIndependentlyAndBlocksOnlyOwner() {
+    QFETCH(bool, expandedOwner);
+    QWidget owner;
+    if (expandedOwner) {
+      owner.setWindowFlags(owner.windowFlags() | Qt::ExpandedClientAreaHint |
+                           Qt::NoTitleBarBackgroundHint);
+    }
     QWidget unrelated;
     QPushButton ownerButton(QStringLiteral("Owner"), &owner);
     QPushButton unrelatedButton(QStringLiteral("Unrelated"), &unrelated);
@@ -172,9 +422,10 @@ class TstModalWindow : public QObject {
       NSWindow* nativeOwner = reinterpret_cast<NSView*>(owner.winId()).window;
       QVERIFY(!window.isSheet);
       QVERIFY(window.movable);
-      QCOMPARE(window.parentWindow, nativeOwner);
+      QVERIFY(orderedAbove(window, nativeOwner));
       [nativeOwner makeKeyAndOrderFront:nil];
       QVERIFY(NSApp.keyWindow != nativeOwner);
+      QVERIFY(orderedAbove(window, nativeOwner));
     }
     QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, Qt::NoModifier,
                       ownerButton.geometry().center());
@@ -242,8 +493,8 @@ class TstModalWindow : public QObject {
     QVERIFY(ownerState.blocked);
     if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
       QWidget* surface = modal->acceptButton()->window();
-      QCOMPARE(reinterpret_cast<NSView*>(surface->winId()).window.parentWindow,
-               reinterpret_cast<NSView*>(owner.winId()).window);
+      QVERIFY(orderedAbove(reinterpret_cast<NSView*>(surface->winId()).window,
+                           reinterpret_cast<NSView*>(owner.winId()).window));
     }
     modal.reset();
     QVERIFY(!ownerState.blocked);
@@ -274,7 +525,15 @@ class TstModalWindow : public QObject {
       NSWindow* nativeOuter = reinterpret_cast<NSView*>(outerSurface->winId()).window;
       NSWindow* nativeInner =
           reinterpret_cast<NSView*>(inner.acceptButton()->window()->winId()).window;
-      QCOMPARE(nativeInner.parentWindow, nativeOuter);
+      QVERIFY(orderedAbove(nativeInner, nativeOuter));
+      NSWindow* nativeOwner = reinterpret_cast<NSView*>(owner.winId()).window;
+      [nativeOwner orderFront:nil];
+      QVERIFY(orderedAbove(nativeOuter, nativeOwner));
+      QVERIFY(orderedAbove(nativeInner, nativeOuter));
+      [nativeOwner orderWindow:NSWindowAbove relativeTo:nativeInner.windowNumber];
+      [nativeInner orderBack:nil];
+      QVERIFY(orderedAbove(nativeOuter, nativeOwner));
+      QVERIFY(orderedAbove(nativeInner, nativeOuter));
       [nativeOuter makeKeyAndOrderFront:nil];
       QVERIFY(NSApp.keyWindow != nativeOuter);
     }

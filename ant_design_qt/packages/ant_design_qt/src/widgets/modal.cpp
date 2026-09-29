@@ -301,26 +301,29 @@ class ModalOverlayWidget final : public QWidget {
 
 #ifdef Q_OS_MACOS
   void setVisible(bool visible) override {
-    if (!visible) {
-      macModalSession_.reset();
-    }
     if (visible && windowModalBlocker_) {
       winId();
       windowModalBlocker_->winId();
       windowHandle()->setTransientParent(windowModalBlocker_->windowHandle());
       windowModalBlocker_->show();
     }
+    if (visible && windowModeChromeEnabled_ && !macModalSession_ &&
+        QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+      winId();
+      // Register before native order-in so elevated owners retain animation on
+      // the first presentation. Keep the session alive through native order-out.
+      macModalSession_ = detail::createMacModalSession(this, windowModalBlocker_);
+    }
     QWidget::setVisible(visible);
+    if (!visible) {
+      macModalSession_.reset();
+    }
     if (!visible && windowModalBlocker_) {
       windowModalBlocker_->hide();
     }
     if (visible) {
       // Cocoa can replace the NSWindow when showing a new surface type.
       applyWindowModeNativeChrome();
-      if (windowModalBlocker_ && !macModalSession_ &&
-          QGuiApplication::platformName() == QStringLiteral("cocoa")) {
-        macModalSession_ = detail::createMacModalSession(this, windowModalBlocker_);
-      }
     }
   }
 #endif

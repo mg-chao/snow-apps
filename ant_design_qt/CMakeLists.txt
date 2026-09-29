@@ -333,6 +333,13 @@ if(ADQT_BUILD_TESTS)
         set_tests_properties(adqt-modal-window-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
 
+    if(APPLE)
+        add_test(NAME adqt-modal-window-native-tests
+            COMMAND adqt-modal-window-tests -platform cocoa)
+        set_tests_properties(adqt-modal-window-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+
     add_executable(adqt-modal-popup-interaction-tests
         packages/ant_design_qt/tests/modal_popup_interaction_tests.cpp)
     target_link_libraries(adqt-modal-popup-interaction-tests PRIVATE adqt::widgets Qt6::Test)

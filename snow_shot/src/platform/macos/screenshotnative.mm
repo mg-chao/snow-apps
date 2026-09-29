@@ -26,6 +26,7 @@ struct ScreenshotNativeSettings {
     NSInteger level;
     NSWindowCollectionBehavior collectionBehavior;
     BOOL hidesOnDeactivate;
+    NSWindowAnimationBehavior animationBehavior;
 };
 } // namespace
 
@@ -38,6 +39,7 @@ struct ScreenshotNativeSettings {
     ScreenshotNativeSettings requested;
     bool applying;
     bool unconstrainedFrame;
+    NSWindowAnimationBehavior defaultAnimation;
 }
 @end
 @implementation SnowScreenshotWindowPolicy
@@ -54,16 +56,26 @@ SnowScreenshotWindowPolicy* nativePolicyState(NSWindow* window) {
         objc_getAssociatedObject(window, &nativePolicyKey));
 }
 
+NSWindowAnimationBehavior managedAnimation(SnowScreenshotWindowPolicy* state) {
+    return state->requested.animationBehavior == NSWindowAnimationBehaviorDefault
+               ? state->defaultAnimation
+               : state->requested.animationBehavior;
+}
+
 template <typename Value>
 void installNativeSettingPolicy(Class windowClass, SEL selector,
                                 Value ScreenshotNativeSettings::* setting,
-                                Value (^readSetting)(NSWindow*)) {
+                                Value (^readSetting)(NSWindow*),
+                                Value (^resolveRequired)(SnowScreenshotWindowPolicy*) = nil) {
     const Method method = class_getInstanceMethod(windowClass, selector);
     const IMP originalSetter = method_getImplementation(method);
     const IMP setter = imp_implementationWithBlock(^(NSWindow* receiver, Value requested) {
       if (auto* state = nativePolicyState(receiver)) {
-          if (!state->applying)
+          if (!state->applying) {
               state->requested.*setting = requested;
+              if (resolveRequired)
+                  state->required.*setting = resolveRequired(state);
+          }
           requested = state->required.*setting;
           if (readSetting(receiver) == requested)
               return;
@@ -98,6 +110,14 @@ void attachNativeWindowPolicy(NSWindow* window) {
                                ^BOOL(NSWindow* receiver) {
                                  return receiver.hidesOnDeactivate;
                                });
+    installNativeSettingPolicy(
+        windowClass, @selector(setAnimationBehavior:), &ScreenshotNativeSettings::animationBehavior,
+        ^NSWindowAnimationBehavior(NSWindow* receiver) {
+          return receiver.animationBehavior;
+        },
+        ^NSWindowAnimationBehavior(SnowScreenshotWindowPolicy* state) {
+          return managedAnimation(state);
+        });
     const SEL constrain = @selector(constrainFrameRect:toScreen:);
     const Method method = class_getInstanceMethod(windowClass, constrain);
     const IMP original = method_getImplementation(method);
@@ -120,25 +140,31 @@ void applyNativeSettings(NSWindow* window, const ScreenshotNativeSettings& setti
         window.collectionBehavior = settings.collectionBehavior;
     if (window.hidesOnDeactivate != settings.hidesOnDeactivate)
         window.hidesOnDeactivate = settings.hidesOnDeactivate;
+    if (window.animationBehavior != settings.animationBehavior)
+        window.animationBehavior = settings.animationBehavior;
 }
 
-void applyNativeWindowPolicy(NSWindow* window, NSInteger level, bool enforceQtSettings = true) {
+void applyNativeWindowPolicy(
+    NSWindow* window, NSInteger level, bool enforceQtSettings = true,
+    NSWindowAnimationBehavior defaultAnimation = NSWindowAnimationBehaviorDefault) {
     if (!window)
         return;
     auto* state = nativePolicyState(window);
     if (!state) {
         state = [SnowScreenshotWindowPolicy new];
-        state->requested = {window.level, window.collectionBehavior, window.hidesOnDeactivate};
+        state->requested = {window.level, window.collectionBehavior, window.hidesOnDeactivate,
+                            window.animationBehavior};
         objc_setAssociatedObject(window, &nativePolicyKey, state,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [state release];
         if (enforceQtSettings)
             attachNativeWindowPolicy(window);
     }
+    state->defaultAnimation = defaultAnimation;
     state->required = {level,
                        NSWindowCollectionBehaviorCanJoinAllSpaces |
                            NSWindowCollectionBehaviorFullScreenAuxiliary,
-                       NO};
+                       NO, managedAnimation(state)};
     const QScopedValueRollback guard(state->applying, true);
     applyNativeSettings(window, state->required);
 }
@@ -187,7 +213,15 @@ void applyScreenshotLayer(QWidget* widget, const ModalFloors& floors) {
         return;
     }
     const NSInteger level = captureWindowLevel(role);
-    applyNativeWindowPolicy(window, level);
+    // AppKit's default nonmodal animation is inferred from the native level:
+    // elevating an otherwise ordinary titled window changes it from DocumentWindow
+    // to None. Preserve presentation while changing stacking, without overriding
+    // explicit animation choices or native sheet/application-modal presentation.
+    const auto defaultAnimation =
+        handle->modality() == Qt::NonModal && (window.styleMask & NSWindowStyleMaskTitled)
+            ? NSWindowAnimationBehaviorDocumentWindow
+            : NSWindowAnimationBehaviorDefault;
+    applyNativeWindowPolicy(window, level, true, defaultAnimation);
     // AppKit otherwise constrains a screen-sized panel to the visible/safe frame,
     // shifting its top edge below the menu bar or camera housing. Only the canvas
     // surface owns the entire display; its tools keep normal frame constraints.

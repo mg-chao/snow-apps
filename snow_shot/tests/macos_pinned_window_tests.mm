@@ -473,6 +473,10 @@ int modalDelivery(Qt::WindowModality modality = Qt::WindowModal) {
     NSWindow* nativeModal = reinterpret_cast<NSView*>(surface->winId()).window;
     require(nativeModal.level >= nativePin.level,
             "owned modals must remain above the elevated pin, including application modals");
+    require(nativeModal.animationBehavior == (modality == Qt::ApplicationModal
+                                                  ? NSWindowAnimationBehaviorDefault
+                                                  : NSWindowAnimationBehaviorDocumentWindow),
+            "elevating a movable confirmation must preserve its normal presentation animation");
     if (modality == Qt::ApplicationModal) {
         require(QApplication::activeModalWidget() == surface && NSApp.modalWindow == nativeModal,
                 "pin dialogs must retain native application modality and its presentation");
