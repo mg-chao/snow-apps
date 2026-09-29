@@ -1,3 +1,4 @@
+#include "../pinned/screenshotclipboardplacementgeometry.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -139,11 +140,13 @@ class ScreenshotExportWorker final : public QObject {
     ScreenshotSelectionClipboardResult prepareSelectionClipboard(
         const QByteArray& documentSession, const SnowCanvasSmartEraseSnapshot& smartErase,
         const QRect& selection, const ScreenshotResultStyle& style,
-        const QList<CanvasExportSource>& sources, const ScreenshotSelectionRenderSpec& spec) {
+        const QList<CanvasExportSource>& sources, const ScreenshotSelectionRenderSpec& spec,
+        std::optional<ScreenshotClipboardPlacement> placement) {
         ScreenshotSelectionClipboardResult result;
         result.image =
             renderSelection(documentSession, smartErase, selection, style, sources, spec);
-        result.payload = ScreenshotClipboardService::prepareImage(result.image);
+        result.payload =
+            ScreenshotClipboardService::prepareImage(result.image, {}, std::move(placement));
         return result;
     }
 
@@ -277,6 +280,7 @@ bool ScreenshotExportService::requestSelectionClipboard(const QRect& selection,
     }
 
     const snow_shot::presentation::clipboard_perf::Stopwatch requestTimer;
+    const auto placement = prepareClipboardPlacement(selection, style);
     const auto smartErase = m_context.runtime.smartEraseSnapshot();
     QByteArray documentSession;
     {
@@ -305,13 +309,13 @@ bool ScreenshotExportService::requestSelectionClipboard(const QRect& selection,
     const bool scheduled = QMetaObject::invokeMethod(
         worker,
         [worker, guardedReceiver, guardedCompletionContext, documentSession, smartErase, selection,
-         style, sources, spec, requestTimer, workerQueueTimer,
+         style, sources, spec, placement, requestTimer, workerQueueTimer,
          callback = std::move(callback)]() mutable {
             snow_shot::presentation::clipboard_perf::duration(
                 "export.worker_queue_delay", workerQueueTimer.elapsedNanoseconds());
             auto result = std::make_shared<ScreenshotSelectionClipboardResult>(
                 worker->prepareSelectionClipboard(documentSession, smartErase, selection, style,
-                                                  sources, spec));
+                                                  sources, spec, placement));
             if (guardedReceiver.isNull() || guardedCompletionContext.isNull()) {
                 SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
                 return;
@@ -353,6 +357,16 @@ ScreenshotExportService::preparePinnedSelection(const QRect& selection,
         return std::nullopt;
     }
     return request;
+}
+
+std::optional<ScreenshotClipboardPlacement>
+ScreenshotExportService::prepareClipboardPlacement(const QRect& selection,
+                                                   const ScreenshotResultStyle& style) const {
+    const auto request = preparePinnedSelection(selection, style);
+    return request
+               ? screenshotClipboardSelectionPlacement(request->geometry.nativeGeometry,
+                                                       request->initialWindowSize, request->screen)
+               : std::nullopt;
 }
 
 bool ScreenshotExportService::schedulePinnedSelection(ScreenshotPinnedSelectionRequest request,

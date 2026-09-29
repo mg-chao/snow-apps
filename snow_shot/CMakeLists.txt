@@ -8182,3 +8182,67 @@ if(TARGET snow-shot-pinned-window-tests)
         set_tests_properties(snow-shot-pinned-drag-export-native-tests PROPERTIES LABELS "unit;windows")
     endif()
 endif()
+
+# Shared clipboard metadata must have one native MIME converter per process.
+add_library(snow_shot_clipboard_placement STATIC
+    src/presentation/services/screenshotclipboardplacement.cpp)
+target_include_directories(snow_shot_clipboard_placement PUBLIC include)
+target_link_libraries(snow_shot_clipboard_placement PUBLIC Qt6::Gui)
+if(APPLE)
+    target_sources(snow_shot_clipboard_placement PRIVATE src/platform/macos/clipboardrevision.mm)
+    target_link_libraries(snow_shot_clipboard_placement PRIVATE "-framework AppKit")
+elseif(WIN32)
+    target_link_libraries(snow_shot_clipboard_placement PRIVATE user32)
+endif()
+get_property(_snow_clipboard_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_target IN LISTS _snow_clipboard_consumers)
+    get_target_property(_snow_sources ${_snow_target} SOURCES)
+    if("${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_clipboard_placement)
+    endif()
+endforeach()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-clipboard-placement-tests
+        tests/screenshot_clipboard_placement_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp)
+    target_include_directories(snow-shot-clipboard-placement-tests PRIVATE include src/image)
+    target_link_libraries(snow-shot-clipboard-placement-tests PRIVATE
+        snow_shot_clipboard_placement snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-clipboard-placement-tests)
+    add_test(NAME snow-shot-clipboard-placement-tests COMMAND snow-shot-clipboard-placement-tests)
+    snow_shot_offscreen_qpa_environment(_snow_clipboard_placement_qpa_environment)
+    set_tests_properties(snow-shot-clipboard-placement-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_snow_clipboard_placement_qpa_environment}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    unset(_snow_clipboard_placement_qpa_environment)
+    if(APPLE OR WIN32)
+        add_test(NAME snow-shot-clipboard-placement-native-tests
+            COMMAND snow-shot-clipboard-placement-tests --native-roundtrip)
+        set_tests_properties(snow-shot-clipboard-placement-native-tests PROPERTIES
+            LABELS "interactive" RUN_SERIAL TRUE TIMEOUT 60)
+        if(APPLE)
+            set_tests_properties(snow-shot-clipboard-placement-native-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
+        else()
+            target_link_libraries(snow-shot-clipboard-placement-tests PRIVATE user32)
+            set_tests_properties(snow-shot-clipboard-placement-native-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows")
+        endif()
+    endif()
+endif()
+
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-clipboard-placement-benchmark
+        tests/screenshot_clipboard_placement_benchmark.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp)
+    target_include_directories(snow-shot-clipboard-placement-benchmark PRIVATE include src/image)
+    target_link_libraries(snow-shot-clipboard-placement-benchmark PRIVATE
+        snow_shot_clipboard_placement snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-clipboard-placement-benchmark)
+    if(WIN32)
+        target_link_libraries(snow-shot-clipboard-placement-benchmark PRIVATE user32)
+    endif()
+endif()
