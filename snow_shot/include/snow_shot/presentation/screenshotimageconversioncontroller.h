@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSIONCONTROLLER_H
 
 #include "snow_shot/presentation/screenshotimageconversion.h"
+#include "snow_shot/app/edition.h"
 
 #include <QTimer>
 
@@ -14,6 +15,7 @@ class ScreenshotImageConversionController final : public QObject {
     Q_OBJECT
   public:
     enum class State { Idle, LoadingModels, Converting, Completed, Failed };
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     explicit ScreenshotImageConversionController(QObject* parent = nullptr);
     ~ScreenshotImageConversionController() override;
     void setProvider(SnowShotApiClient* provider);
@@ -25,6 +27,20 @@ class ScreenshotImageConversionController final : public QObject {
     void openSettings(QWidget* owner);
     void seed(const QString& key, const QVector<ScreenshotImageConversionEntry>& entries);
     [[nodiscard]] QVector<ScreenshotImageConversionEntry> entries(const QString& key) const;
+#else
+    explicit ScreenshotImageConversionController(QObject* parent = nullptr) : QObject(parent) {}
+    ~ScreenshotImageConversionController() override = default;
+    void setProvider(SnowShotApiClient*) {}
+    void activate(QString, QImage, SnowShotImageConversionFormat) {}
+    void deactivate() {}
+    void invalidate() {}
+    void retry() {}
+    void openSettings(QWidget*) {}
+    void seed(const QString&, const QVector<ScreenshotImageConversionEntry>&) {}
+    [[nodiscard]] QVector<ScreenshotImageConversionEntry> entries(const QString&) const {
+        return {};
+    }
+#endif
     [[nodiscard]] State state() const {
         return m_state;
     }

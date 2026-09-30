@@ -5,12 +5,16 @@ on:
     branches: ['codex/winget-*']
     paths:
       - 'scripts/*winget*.ps1'
+      - 'scripts/snow-shot-editions.ps1'
+      - 'scripts/test-snow-shot-mini-release.ps1'
       - '.github/workflows/snow-shot-winget*.yml'
       - 'cmake/SnowShotInstaller.cmake'
       - 'snow_shot/tests/installer_packaging/**'
   pull_request:
     paths:
       - 'scripts/*winget*.ps1'
+      - 'scripts/snow-shot-editions.ps1'
+      - 'scripts/test-snow-shot-mini-release.ps1'
       - '.github/workflows/snow-shot-winget*.yml'
       - 'cmake/SnowShotInstaller.cmake'
       - 'snow_shot/tests/installer_packaging/**'
@@ -38,7 +42,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test release and submission fixtures
         shell: pwsh
-        run: ./scripts/test-snow-shot-winget.ps1
+        run: |
+          ./scripts/test-snow-shot-winget.ps1
+          ./scripts/test-snow-shot-mini-release.ps1
       - name: Verify submission credentials without submitting
         if: github.event_name != 'pull_request'
         shell: pwsh
@@ -61,6 +67,15 @@ jobs:
         run: |
           ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG `
             -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease
+          . scripts/snow-shot-winget.ps1
+          $current = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:RELEASE_TAG"
+          $previous = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:PREVIOUS_TAG"
+          $currentEditions = @(Get-SnowShotReleaseEditions $current (Get-SnowShotWingetVersion $env:RELEASE_TAG))
+          $previousEditions = @(Get-SnowShotReleaseEditions $previous (Get-SnowShotWingetVersion $env:PREVIOUS_TAG))
+          if ('Mini' -in $currentEditions -and 'Mini' -in $previousEditions) {
+            ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG -Edition Mini `
+              -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease
+          }
       - name: Verify generated installer quiet registration through WinGet
         if: github.event_name != 'push'
         shell: pwsh

@@ -471,6 +471,10 @@
     <context>
         <name>LoginItemService</name>
         <message>
+            <source>%1 needs a valid code signature to use launch at login. Reinstall the signed app.</source>
+            <translation>%1 需要有效的程式碼簽章才能在登入時啟動。請重新安裝已簽章的應用程式。</translation>
+        </message>
+        <message>
             <source>A launch-at-login change is already in progress.</source>
             <translation>正在變更登入時啟動設定。</translation>
         </message>
@@ -491,12 +495,20 @@
             <translation>無法儲存登入時啟動偏好設定。顯示的 macOS 狀態仍為目前狀態。</translation>
         </message>
         <message>
+            <source>Move the signed %1 app to /Applications or ~/Applications to use launch at login.</source>
+            <translation>請將已簽章的 %1 應用程式移至 /Applications 或 ~/Applications，以便在登入時啟動。</translation>
+        </message>
+        <message>
             <source>Move the signed Snow Shot app to /Applications or ~/Applications to use launch at login.</source>
             <translation>請將已簽署的 Snow Shot App 移至 /Applications 或 ~/Applications，以使用登入時啟動功能。</translation>
         </message>
         <message>
             <source>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</source>
             <translation>Snow Shot 需要有效的程式碼簽章才能使用登入時啟動功能。請重新安裝已簽署的 App。</translation>
+        </message>
+        <message>
+            <source>macOS could not find %1's login item. Reinstall the app in Applications.</source>
+            <translation>macOS 找不到 %1 的登入項目。請將應用程式重新安裝到 Applications。</translation>
         </message>
         <message>
             <source>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</source>
@@ -591,6 +603,10 @@
     </context>
     <context>
         <name>ScreenshotMcpSettings</name>
+        <message>
+            <source>Add this configuration to your MCP client, then restart the client to connect. Keep %1 running while using MCP.</source>
+            <translation>將此設定加入您的 MCP 用戶端，然後重新啟動用戶端以連線。使用 MCP 時請保持 %1 執行。</translation>
+        </message>
         <message>
             <source>Add this configuration to your MCP client, then restart the client to connect. Keep Snow Shot running while using MCP.</source>
             <translation>將此設定加入 MCP 用戶端，然後重新啟動用戶端以連線。使用 MCP 時請保持 Snow Shot 執行。</translation>

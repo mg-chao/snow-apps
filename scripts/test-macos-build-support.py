@@ -17,6 +17,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MacOSBundleMetadata(unittest.TestCase):
+    def test_mini_product_metadata_and_native_translations(self):
+        resources = ROOT / 'snow_shot/packaging/macos'
+        plist = plistlib.loads((resources / 'Info-mini.plist.in').read_bytes())
+        self.assertEqual(plist['CFBundleName'], 'Snow Shot Mini')
+        self.assertEqual(plist['CFBundleDisplayName'], 'Snow Shot Mini')
+        self.assertEqual(plist['CFBundleIdentifier'], 'com.snowshot.snow_shot_mini')
+        self.assertEqual(plist['CFBundleExecutable'], '${MACOSX_BUNDLE_EXECUTABLE_NAME}')
+        for language in plist['CFBundleLocalizations']:
+            strings = (resources / 'mini' / (language + '.lproj') / 'InfoPlist.strings').read_text(encoding='utf-8')
+            self.assertIn('Snow Shot Mini', strings)
+        instructions = (resources / 'dmg-mini-background.svg').read_text(encoding='utf-8')
+        self.assertIn('Snow Shot Mini', instructions)
+        self.assertIn('Snow Shot Mini.app', (resources / 'dmg-mini-layout.applescript').read_text(encoding='utf-8'))
+
     def test_dmg_instructions_cover_all_bundle_languages(self):
         resources = ROOT / 'snow_shot/packaging/macos'
         plist = plistlib.loads((resources / 'Info.plist.in').read_bytes())
@@ -57,32 +71,37 @@ class MacOSBundleMetadata(unittest.TestCase):
                 self.assertIn('"' + key + '" = "', strings)
         main = (ROOT / 'snow_shot/src/app/main.cpp').read_text()
         self.assertIn('setApplicationDisplayName(', main)
-        self.assertIn('QString applicationName = QStringLiteral("snow_shot")', main)
+        self.assertIn('QString applicationName = snow_shot::app::edition::applicationName()', main)
+        edition = (ROOT / 'snow_shot/include/snow_shot/app/edition.h').read_text(encoding='utf-8')
+        self.assertIn('QStringLiteral("snow_shot_mini") : QStringLiteral("snow_shot")', edition)
 
     def test_dmg_staging_preserves_bundle_contents(self):
         cmake = ROOT / '.tools/macos-dev/bin/cmake'
         cmake = str(cmake) if cmake.is_file() else shutil.which('cmake')
         self.assertIsNotNone(cmake)
-        with tempfile.TemporaryDirectory(prefix='snow dmg staging ') as directory:
-            stage = Path(directory)
-            bundle = stage / 'snow_shot.app'
-            files = {'Contents/Info.plist': b'plist',
-                     'Contents/MacOS/snow_shot': b'executable',
-                     'Contents/_CodeSignature/CodeResources': b'signature'}
-            for name, content in files.items():
-                path = bundle / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(content)
-            binary = bundle / 'Contents/MacOS/snow_shot'
-            binary.chmod(0o755)
-            result = subprocess.run([cmake, '-DCPACK_TEMPORARY_DIRECTORY=' + str(stage),
-                                     '-P', str(ROOT / 'cmake/PrepareSnowShotMacOSDmg.cmake')],
-                                    text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse(bundle.exists())
-            for name, content in files.items():
-                self.assertEqual((stage / 'Snow Shot.app' / name).read_bytes(), content)
-            self.assertTrue(os.access(stage / 'Snow Shot.app/Contents/MacOS/snow_shot', os.X_OK))
+        for target, product in [('snow_shot', 'Snow Shot'), ('snow_shot_mini', 'Snow Shot Mini')]:
+            with self.subTest(product=product), tempfile.TemporaryDirectory(prefix='snow dmg staging ') as directory:
+                stage = Path(directory)
+                bundle = stage / (target + '.app')
+                files = {'Contents/Info.plist': b'plist',
+                         'Contents/MacOS/' + target: b'executable',
+                         'Contents/_CodeSignature/CodeResources': b'signature'}
+                for name, content in files.items():
+                    path = bundle / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(content)
+                binary = bundle / 'Contents/MacOS' / target
+                binary.chmod(0o755)
+                result = subprocess.run([cmake, '-DCPACK_TEMPORARY_DIRECTORY=' + str(stage),
+                                         '-DCPACK_SNOW_SHOT_BUNDLE_NAME=' + target,
+                                         '-DCPACK_SNOW_SHOT_PRODUCT_NAME=' + product,
+                                         '-P', str(ROOT / 'cmake/PrepareSnowShotMacOSDmg.cmake')],
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(bundle.exists())
+                for name, content in files.items():
+                    self.assertEqual((stage / (product + '.app') / name).read_bytes(), content)
+                self.assertTrue(os.access(stage / (product + '.app') / 'Contents/MacOS' / target, os.X_OK))
 
     def test_finder_automation_has_usage_description(self):
         plist = plistlib.loads((ROOT / 'snow_shot/packaging/macos/Info.plist.in').read_bytes())
@@ -152,6 +171,11 @@ if name == 'cmake' and '--preset' in sys.argv and '--build' not in sys.argv:
         f'VCPKG_INSTALLED_DIR:PATH={installed}',
         f'CMAKE_HOME_DIRECTORY:INTERNAL={root}', 'CMAKE_GENERATOR:INTERNAL=Ninja',
     ]
+    mini = 'ON' if arch == 'arm64' else 'OFF'
+    for argument in sys.argv:
+        if argument.startswith('-DSNOW_APPS_BUILD_SNOW_SHOT_MINI='):
+            mini = argument.split('=', 1)[1]
+    entries.append(f'SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL={mini}')
     if preset.endswith('-release'):
         entries += ['CMAKE_BUILD_TYPE:STRING=Release', 'SNOW_APPS_BUILD_TESTS:BOOL=OFF',
                     'SNOW_APPS_BUILD_BENCHMARKS:BOOL=OFF', 'SNOW_APPS_RELEASE_STATIC:BOOL=ON',
@@ -237,7 +261,13 @@ if name == 'openssl':
     def test_default_build_and_empty_array_on_system_bash(self):
         calls = self.run_script("build.sh")
         self.assertIn(["cmake", "--build", "--preset", "build-snow-shot-macos-arm64-debug",
+                       "--target", "snow_shot", "snow_shot_mini", "--parallel"], calls)
+
+    def test_default_build_respects_disabled_mini(self):
+        calls = self.run_script("build.sh", "--", "-DSNOW_APPS_BUILD_SNOW_SHOT_MINI=OFF")
+        self.assertIn(["cmake", "--build", "--preset", "build-snow-shot-macos-arm64-debug",
                        "--target", "snow_shot", "--parallel"], calls)
+        self.assertFalse(any('snow_shot_mini' in call for call in calls))
 
     def test_stale_cache_is_reconfigured_from_fresh_state(self):
         cache = self.root / 'build/snow-shot-macos-arm64-debug/CMakeCache.txt'
@@ -282,7 +312,20 @@ if name == 'openssl':
         self.assertLess(build, symbols)
         self.assertLess(symbols, pack)
         self.assertEqual(calls[pack], ['cpack', '--preset', 'package-snow-shot-macos-arm64-release'])
+        self.assertTrue(any(call[0] == 'cpack' and
+                            any(arg.endswith('CPackSnowShotMiniConfig.cmake') for arg in call)
+                            for call in calls))
         self.assertFalse(stale.exists())
+
+    def test_arm_release_rejects_disabled_mini_before_packaging(self):
+        self.run_script("package-snow-shot.sh")
+        cache = self.root / 'build/snow-shot-macos-arm64-release/CMakeCache.txt'
+        cache.write_text(cache.read_text().replace('SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=ON',
+                                                  'SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=OFF'))
+        self.log.unlink()
+        calls = self.run_script("package-snow-shot.sh", "--skip-build", success=False)
+        self.assertFalse(any(call[0] == 'cpack' for call in calls))
+        self.assertIn('Coordinated ARM64 packaging requires', self.last_result.stderr)
 
     def test_skip_build_packages_existing_symbols_without_rebuilding(self):
         # Provision the fixture's release cache, then package it without a build.
@@ -290,6 +333,8 @@ if name == 'openssl':
         self.log.unlink()
         calls = self.run_script("package-snow-shot.sh", "--skip-build")
         self.assertFalse(any('--build' in call for call in calls))
+        self.assertTrue(any(any(arg.endswith('GenerateSnowShotMiniDiagnosticsSymbols-Release.cmake')
+                               for arg in call) for call in calls))
         self.assertTrue(any(any(arg.endswith('GenerateSnowShotDiagnosticsSymbols-Release.cmake')
                                     for arg in call) for call in calls))
 

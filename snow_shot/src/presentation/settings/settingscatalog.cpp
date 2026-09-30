@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "antd_icons.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/configurationschema.h"
@@ -3132,6 +3134,42 @@ SettingsCatalog::SettingsCatalog(QVector<SettingsPageDefinition> pages,
                                  SettingsLocation defaultLocation)
     : m_pages(std::move(pages)), m_navigation(std::move(navigation)),
       m_defaultLocation(std::move(defaultLocation)) {
+    if constexpr (!app::edition::qrRecognition || !app::edition::tableRecognition ||
+                  !app::edition::imageConversion || !app::edition::latexRecognition ||
+                  !app::edition::textTranslation || !app::edition::apiConfiguration ||
+                  !app::edition::extendedFeatures) {
+        const auto pageAvailable = [](const QString& id) {
+            return (app::edition::textTranslation || id != QStringLiteral("translation")) &&
+                   (app::edition::apiConfiguration || id != QStringLiteral("api-configuration")) &&
+                   (app::edition::extendedFeatures || id != QStringLiteral("extended-features"));
+        };
+        m_pages.removeIf([&pageAvailable](const SettingsPageDefinition& page) {
+            return !pageAvailable(page.id);
+        });
+        for (auto& page : m_pages) {
+            for (auto& section : page.sections) {
+                section.items.removeIf([](const SettingsItemDefinition& item) {
+                    return !item.configurationKey.isEmpty() &&
+                           !editionConfigurationKeyAvailable(item.configurationKey);
+                });
+            }
+            page.sections.removeIf(
+                [](const SettingsSectionDefinition& section) { return section.items.isEmpty(); });
+        }
+        for (auto& node : m_navigation) {
+            if (auto* group = std::get_if<SettingsNavigationGroupDefinition>(&node)) {
+                group->pages.removeIf(
+                    [&pageAvailable](const SettingsNavigationPageDefinition& page) {
+                        return !pageAvailable(page.pageId);
+                    });
+            }
+        }
+        m_navigation.removeIf([&pageAvailable](const SettingsNavigationNode& node) {
+            const auto* page = std::get_if<SettingsNavigationPageDefinition>(&node);
+            return page != nullptr && !pageAvailable(page->pageId);
+        });
+    }
+
     // Compile the authoring tree once.  Consumers can now resolve routes and
     // fields in constant-time without repeatedly walking every page.
     for (int pageIndex = 0; pageIndex < m_pages.size(); ++pageIndex) {
@@ -3452,6 +3490,18 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
            GlobalShortcutAction::Screenshot,
            []() { return custom_outlined_icons::Exit(); }}}}};
 
+    if constexpr (!app::edition::textTranslation) {
+        for (auto& group : manifest.groups) {
+            group.options.removeIf([](const SettingsTrayMenuOptionDefinition& option) {
+                return option.shortcutAction == GlobalShortcutAction::ScreenshotTranslation ||
+                       option.shortcutAction == GlobalShortcutAction::TranslateSelectedText;
+            });
+        }
+        manifest.shortcutAdjustments.remove(
+            static_cast<int>(GlobalShortcutAction::ScreenshotTranslation));
+        manifest.shortcutAdjustments.remove(
+            static_cast<int>(GlobalShortcutAction::TranslateSelectedText));
+    }
     return manifest;
 }
 

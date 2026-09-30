@@ -3,6 +3,8 @@
 #include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
 #include "snow_shot/presentation/screenshotocrlayout.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrvisuals.h"
 #include "snow_shot/presentation/screenshotocrtexteditingsession.h"
@@ -134,14 +136,18 @@ void ScreenshotRecognitionSessionController::setProviders(
         connect(recognition, &QObject::destroyed, this,
                 [this]() { handleRecognitionProviderDestroyed(Mode::Text); });
     }
-    if (m_qrRecognition == nullptr && qrRecognition != nullptr) {
+    if (snow_shot::app::edition::qrRecognition && m_qrRecognition == nullptr &&
+        qrRecognition != nullptr) {
         m_qrRecognition = qrRecognition;
         connect(qrRecognition, &QObject::destroyed, this,
                 [this]() { handleRecognitionProviderDestroyed(Mode::Qr); });
     }
     if (m_tableRecognition == nullptr && tableRecognition != nullptr) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_LATEX_RECOGNITION || SNOW_SHOT_ENABLE_IMAGE_CONVERSION
         m_tableRecognition = tableRecognition;
         m_conversion->setProvider(tableRecognition);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         m_translationService = &TranslationService::forClient(
             *tableRecognition, snow_shot::storage::ApplicationStorage::instance().configuration(),
             snow_shot::presentation::LanguageManager::instance().currentLocale());
@@ -183,10 +189,13 @@ void ScreenshotRecognitionSessionController::setProviders(
                         showStatus(TranslationService::modelConfigurationChangedText(), true);
                     emit recognitionResultsChanged();
                 });
+#endif
+
         connect(tableRecognition, &QObject::destroyed, this, [this]() {
             handleRecognitionProviderDestroyed(Mode::Table);
             handleRecognitionProviderDestroyed(Mode::Latex);
         });
+#endif
     }
 }
 
@@ -214,6 +223,7 @@ void ScreenshotRecognitionSessionController::setTarget(ScreenshotRecognitionTarg
 
 void ScreenshotRecognitionSessionController::seedRecognitionResults(
     ScreenshotRecognitionResults results) {
+    sanitizeEditionRecognitionResults(results);
     if (!hasTarget() || !results.isValidFor(m_target.key)) {
         return;
     }
@@ -252,12 +262,14 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
 
     if (results.table.has_value() && results.table->succeeded() &&
         !m_tableCache.contains(m_target.key)) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         ScreenshotTableDocument document = ScreenshotTableDocument::fromHtml(results.table->html);
         if (!document.empty()) {
             m_tableResults.insert(m_target.key, *results.table);
             m_tableCache.insert(
                 m_target.key, std::make_shared<ScreenshotTableEditingSession>(std::move(document)));
         }
+#endif
     }
 
     if (results.qr.has_value() && results.qr->error.isEmpty() && !results.qr->contents.isEmpty() &&
@@ -352,6 +364,8 @@ void ScreenshotRecognitionSessionController::prefetchText() {
 }
 
 void ScreenshotRecognitionSessionController::activate(Mode mode) {
+    if (!snow_shot::presentation::editionRecognitionModeAvailable(static_cast<int>(mode)))
+        return;
     if (!hasTarget()) {
         showStatus(tr("Unable to read the selected screenshot"), true);
         return;
@@ -425,6 +439,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
             startTextRecognition(ScreenshotOcrRequestPriority::Interactive);
         }
     } else if (mode == Mode::Table) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         setPendingTextRecognitionRendering(false);
         auto cached = m_tableCache.constFind(m_target.key);
         if (cached == m_tableCache.cend()) {
@@ -444,6 +459,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         } else {
             startTableRecognition();
         }
+#endif
     } else if (mode == Mode::Latex) {
         setPendingTextRecognitionRendering(false);
         if (m_latexResults.contains(m_target.key)) {
@@ -545,11 +561,14 @@ void ScreenshotRecognitionSessionController::resetTargetState() {
         if (it->editingSession != nullptr) {
             it->editingSession->establishHistory(it->editingSession->originalText());
         }
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         if (it->translationJob != nullptr) {
             it->translationJob->cancel();
             it->translationJob->deleteLater();
             it->translationJob = nullptr;
         }
+#endif
+
         it->translationSession.reset();
         it->overlayTranslation = {};
         it->hasTranslationConfiguration = false;
@@ -652,33 +671,43 @@ void ScreenshotRecognitionSessionController::updateConversionMessage() {
 }
 
 void ScreenshotRecognitionSessionController::mergeTableSelection() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (tableModeActive() && content() != nullptr) {
         content()->mergeTableSelection();
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::splitTableSelection() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (tableModeActive() && content() != nullptr) {
         content()->splitTableSelection();
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::resetTable() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (tableModeActive() && content() != nullptr) {
         content()->resetTable();
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::undoTableEdit() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (tableModeActive() && content() != nullptr) {
         content()->undoTableEdit();
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::redoTableEdit() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (tableModeActive() && content() != nullptr) {
         content()->redoTableEdit();
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::undoTextEdit() {
@@ -733,6 +762,7 @@ void ScreenshotRecognitionSessionController::beginTextEditing() {
 }
 
 void ScreenshotRecognitionSessionController::beginTextTranslation() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     m_workflowError.clear();
     if (!m_active || m_mode != Mode::Text || !hasTextResult() || m_translating) {
         return;
@@ -801,9 +831,11 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
         it->translationStatus == TextCacheEntry::TranslationStatus::Failed) {
         startTranslation();
     }
+#endif
 }
 
 bool ScreenshotRecognitionSessionController::activateCachedTextTranslation() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (!m_active || m_mode != Mode::Text) {
         return false;
     }
@@ -827,6 +859,9 @@ bool ScreenshotRecognitionSessionController::activateCachedTextTranslation() {
     emit textEditingChanged(false);
     synchronizeUiState();
     return true;
+#else
+    return false;
+#endif
 }
 
 void ScreenshotRecognitionSessionController::synchronizeUiState() const {
@@ -892,6 +927,7 @@ void ScreenshotRecognitionSessionController::resetTextEditing() {
 }
 
 void ScreenshotRecognitionSessionController::openTranslationSettings() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (m_translationService == nullptr) {
         showStatus(tr("Translation service is unavailable"), true);
         return;
@@ -918,9 +954,11 @@ void ScreenshotRecognitionSessionController::openTranslationSettings() {
         });
     connect(m_translationSettingsModal, &adqt::widgets::AdModal::finished, this,
             [this] { m_translationSettingsModal = nullptr; });
+#endif
 }
 
 void ScreenshotRecognitionSessionController::startTranslation() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     auto it = m_textCache.find(m_translationKey);
     if (it == m_textCache.end())
         return;
@@ -1012,9 +1050,11 @@ void ScreenshotRecognitionSessionController::startTranslation() {
             handleTranslationFinished(generation, key, job->result());
     });
     job->retry();
+#endif
 }
 
 void ScreenshotRecognitionSessionController::prepareOverlayTranslation(TextCacheEntry& entry) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     auto& overlay = entry.overlayTranslation;
     if (overlay.presentation != nullptr || entry.presentation == nullptr) {
         return;
@@ -1028,9 +1068,13 @@ void ScreenshotRecognitionSessionController::prepareOverlayTranslation(TextCache
             : snow_shot::presentation::mergeOcrLayout(entry.presentation->lines,
                                                       entry.presentation->selection.topLeft());
     overlay.presentation->prepareForRendering();
+#else
+    Q_UNUSED(entry)
+#endif
 }
 
 void ScreenshotRecognitionSessionController::reportOverlayTranslationFailure() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (!m_active || m_mode != Mode::Text || !originalImageTranslationActive()) {
         return;
     }
@@ -1041,9 +1085,11 @@ void ScreenshotRecognitionSessionController::reportOverlayTranslationFailure() {
         it->overlayTranslation.failureReported = true;
         showStatus(tr("Some text could not be translated"), true);
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::failTranslationPreparation(const QString& message) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     auto it = m_textCache.find(m_translationKey);
     if (it == m_textCache.end()) {
         return;
@@ -1061,25 +1107,34 @@ void ScreenshotRecognitionSessionController::failTranslationPreparation(const QS
         }
     }
     updateTextState();
+#else
+    Q_UNUSED(message)
+#endif
 }
 
 void ScreenshotRecognitionSessionController::cancelTranslationRequests() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     ++m_translationGeneration;
     auto it = m_textCache.find(m_translationKey);
     if (it == m_textCache.end())
         return;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (it->translationJob != nullptr) {
         disconnect(it->translationJob, nullptr, this, nullptr);
         it->translationJob->cancel();
     }
+#endif
+
     if (it->translationStatus == TextCacheEntry::TranslationStatus::Streaming)
         it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
     if (it->overlayTranslation.status == TextCacheEntry::TranslationStatus::Streaming)
         it->overlayTranslation.status = TextCacheEntry::TranslationStatus::Failed;
+#endif
 }
 
 void ScreenshotRecognitionSessionController::handleTranslationFinished(
     quint64 generation, const QString& key, SnowShotTranslationResult result) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (generation != m_translationGeneration) {
         return;
     }
@@ -1103,18 +1158,27 @@ void ScreenshotRecognitionSessionController::handleTranslationFinished(
         content()->setTextEditorStreaming(false);
     }
     updateTextState();
+#else
+    Q_UNUSED(generation)
+    Q_UNUSED(key)
+    Q_UNUSED(result)
+#endif
 }
 
 void ScreenshotRecognitionSessionController::invalidateCurrentTranslation(bool restartIfVisible) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     auto it = m_textCache.find(m_translationKey.isEmpty() ? m_textCacheKey : m_translationKey);
     if (it == m_textCache.end()) {
         return;
     }
     cancelTranslationRequests();
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (it->translationJob != nullptr) {
         it->translationJob->deleteLater();
         it->translationJob = nullptr;
     }
+#endif
+
     it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
     it->translationText.clear();
     it->successfulTranslation.clear();
@@ -1134,6 +1198,9 @@ void ScreenshotRecognitionSessionController::invalidateCurrentTranslation(bool r
     if (restartIfVisible) {
         startTranslation();
     }
+#else
+    Q_UNUSED(restartIfVisible)
+#endif
 }
 
 void ScreenshotRecognitionSessionController::applyTextFormatting(const QString& value) {
@@ -1275,10 +1342,12 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
         return mimeData;
     }
     if (m_mode == Mode::Table) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         if (m_tableSession == nullptr || m_tableSession->document.empty()) {
             return {};
         }
         return m_tableSession->document.toClipboardMimeData();
+#endif
     }
 
     QString text;
@@ -1452,6 +1521,7 @@ void ScreenshotRecognitionSessionController::startTextRender() {
 }
 
 void ScreenshotRecognitionSessionController::startTableRecognition() {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (!hasTarget() || m_tableRecognition == nullptr || m_tableRequestToken != 0 ||
         !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
         if (m_tableRecognition == nullptr) {
@@ -1480,9 +1550,11 @@ void ScreenshotRecognitionSessionController::startTableRecognition() {
         showStatus(tr("Table recognition request could not be prepared"), true);
         hideRecognitionMessage();
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::startLatexRecognition() {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (!hasTarget() || m_tableRecognition == nullptr || m_latexRequestToken != 0 ||
         !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
         if (m_tableRecognition == nullptr) {
@@ -1511,6 +1583,7 @@ void ScreenshotRecognitionSessionController::startLatexRecognition() {
         showStatus(tr("LaTeX recognition request could not be prepared"), true);
         hideRecognitionMessage();
     }
+#endif
 }
 
 void ScreenshotRecognitionSessionController::startQrRecognition() {
@@ -1593,6 +1666,7 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
 void ScreenshotRecognitionSessionController::handleTableOutput(quint64 generation,
                                                                const QString& key,
                                                                SnowShotTableResult result) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (generation != m_tableGeneration || key != m_target.key) {
         return;
     }
@@ -1624,6 +1698,11 @@ void ScreenshotRecognitionSessionController::handleTableOutput(quint64 generatio
     hideRecognitionMessage();
     updateBusyState();
     emit recognitionResultsChanged();
+#else
+    Q_UNUSED(generation)
+    Q_UNUSED(key)
+    Q_UNUSED(result)
+#endif
 }
 
 void ScreenshotRecognitionSessionController::handleLatexOutput(quint64 generation,
@@ -1735,6 +1814,7 @@ void ScreenshotRecognitionSessionController::applyPresentation(
 
 void ScreenshotRecognitionSessionController::applyTableSession(
     const std::shared_ptr<ScreenshotTableEditingSession>& session) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (session == nullptr || session->document.empty()) {
         return;
     }
@@ -1744,6 +1824,9 @@ void ScreenshotRecognitionSessionController::applyTableSession(
         content()->setTableSession(session);
         updateTableState(content()->tableCommandState());
     }
+#else
+    Q_UNUSED(session)
+#endif
 }
 
 void ScreenshotRecognitionSessionController::applyQrContents(const QStringList& contents) {
@@ -1875,7 +1958,7 @@ void ScreenshotRecognitionSessionController::updateTextState() const {
             m_editing && entry.editingSession != nullptr && entry.editingSession->canUndo(),
             m_editing && entry.editingSession != nullptr && entry.editingSession->canRedo());
     }
-    if (m_actions.setTextTranslationState) {
+    if (snow_shot::app::edition::textTranslation && m_actions.setTextTranslationState) {
         m_actions.setTextTranslationState(
             available, m_translating, streaming,
             m_translating && !overlay && !streaming && entry.translationSession != nullptr &&
@@ -1974,8 +2057,11 @@ void ScreenshotRecognitionSessionController::showStatus(const QString& message, 
 
 void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
     cancelTranslationRequests();
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_tableRecognition && m_latexRequestToken)
         m_tableRecognition->cancel(m_latexRequestToken);
+#endif
+
     m_latexRequestToken = 0;
     ++m_latexGeneration;
     if (m_recognition != nullptr && m_textRequestToken != 0) {
@@ -1988,7 +2074,9 @@ void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
         m_qrRecognition->cancel(m_qrRequestToken);
     }
     if (m_tableRecognition != nullptr && m_tableRequestToken != 0) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         m_tableRecognition->cancel(m_tableRequestToken);
+#endif
     }
     m_textRequestToken = 0;
     m_textRenderRequestToken = 0;
@@ -2115,6 +2203,7 @@ QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
             }
         result.insert(QStringLiteral("lines"), lines);
     } else if (m_mode == Mode::Table && m_tableSession) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         const auto& document = m_tableSession->document;
         QJsonArray cells;
         for (int row = 0; row < document.rowCount(); ++row)
@@ -2135,6 +2224,7 @@ QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
                   {QStringLiteral("cells"), cells},
                   {QStringLiteral("html"), document.toHtml()},
                   {QStringLiteral("text"), document.toPlainText()}};
+#endif
     } else if (m_mode == Mode::Latex && m_latexResults.contains(m_target.key)) {
         result = {{QStringLiteral("kind"), QStringLiteral("latex")},
                   {QStringLiteral("text"), m_latexResults.value(m_target.key).latex}};
@@ -2190,6 +2280,7 @@ bool ScreenshotRecognitionSessionController::editWorkflow(const QJsonObject& par
             return false;
         return true;
     }
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (m_mode != Mode::Table || !m_tableSession)
         return false;
     auto& table = *m_tableSession;
@@ -2233,6 +2324,9 @@ bool ScreenshotRecognitionSessionController::editWorkflow(const QJsonObject& par
         content()->setTableSession(m_tableSession);
     emit recognitionResultsChanged();
     return true;
+#else
+    return false;
+#endif
 }
 void ScreenshotRecognitionSessionController::cancelWorkflow() {
     cancelOutstandingRequests();

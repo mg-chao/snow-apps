@@ -58,21 +58,25 @@ pub fn asset(release: &Value, name: &str) -> Result<Url> {
 pub fn package_name(version: &str, path: &str) -> Result<String> {
     crate::contract::parse_version(version)?;
     let suffix = path
-        .strip_prefix("setup/snow-shot_windows-x64-")
+        .strip_prefix(crate::edition::PACKAGE_PREFIX)
         .ok_or_else(error)?;
     require(
-        matches!(
-            suffix,
-            "online.exe"
-                | "offline.exe"
-                | "online-update.zip"
-                | "offline-update.zip"
-                | "portable.zip"
-        ),
+        (!crate::edition::MINI || !suffix.starts_with("offline"))
+            && matches!(
+                suffix,
+                "online.exe"
+                    | "offline.exe"
+                    | "online-update.zip"
+                    | "offline-update.zip"
+                    | "portable.zip"
+            ),
         "metadata_download_failed",
         "Could not download signed update metadata",
     )?;
-    Ok(format!("snow-shot-{version}-windows-x64-{suffix}"))
+    Ok(format!(
+        "{}-{version}-windows-x64-{suffix}",
+        crate::edition::PRODUCT
+    ))
 }
 
 pub fn asset_origin(url: &Url) -> bool {
@@ -129,8 +133,15 @@ mod tests {
             json!("https://evil.test/latest-version.json");
         assert!(asset(&release, "latest-version.json").is_err());
         assert_eq!(
-            package_name("2.0.0", "setup/snow-shot_windows-x64-online-update.zip").unwrap(),
-            "snow-shot-2.0.0-windows-x64-online-update.zip"
+            package_name(
+                "2.0.0",
+                &format!("{}online-update.zip", crate::edition::PACKAGE_PREFIX)
+            )
+            .unwrap(),
+            format!(
+                "{}-2.0.0-windows-x64-online-update.zip",
+                crate::edition::PRODUCT
+            )
         );
         assert!(package_name("2.0.0", "../evil.zip").is_err());
     }

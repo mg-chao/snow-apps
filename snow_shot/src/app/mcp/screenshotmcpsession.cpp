@@ -1,3 +1,4 @@
+#include "snow_shot/app/mcp/mcpedition.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/app/mcp/mcpimageexportoptions.h"
 #include <QApplication>
@@ -59,7 +60,9 @@ const QStringList tools = {QStringLiteral("snow_shot_mcp_status"),
                            QStringLiteral("snow_shot_screenshot_scrolling"),
                            QStringLiteral("snow_shot_screenshot_scroll_once"),
                            QStringLiteral("snow_shot_screenshot_recognize"),
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                            QStringLiteral("snow_shot_screenshot_translate"),
+#endif
                            QStringLiteral("snow_shot_screenshot_auto_filter"),
                            QStringLiteral("snow_shot_screenshot_operation"),
                            QStringLiteral("snow_shot_screenshot_edit_recognition"),
@@ -300,6 +303,10 @@ void ScreenshotMcpSession::request(const ScreenshotMcpRequest& r,
     };
     if (!tools.contains(r.method)) {
         reject(QStringLiteral("method_not_found"));
+        return;
+    }
+    if (!editionRequestEnabled(r.method, r.params)) {
+        reject(QStringLiteral("unsupported"));
         return;
     }
     if (!readOnly(r.method)) {

@@ -26,9 +26,9 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snow-installer-parser-'
 try {
     const releaseFile = path.join(directory, 'releases.json');
     const attachmentFile = path.join(directory, 'attachments.json');
-    const asset = (version, host, suffix = '') => {
+    const asset = (version, host, suffix = '', product = 'snow-shot') => {
         const tag = `v${version}_snow-shot`;
-        const name = `snow-shot-${version}-macos-arm64.dmg${suffix}`;
+        const name = `${product}-${version}-macos-arm64.dmg${suffix}`;
         return {name, browser_download_url:
             `https://${host}/mg-chao/snow-apps/releases/download/${tag}/${name}`};
     };
@@ -60,6 +60,29 @@ try {
     giteeOlder.assets[0].browser_download_url = 'https://example.invalid/package.dmg';
     fs.writeFileSync(attachmentFile, JSON.stringify(giteeOlder.assets));
     assert.throws(() => releaseUrls([releaseFile, 'arm64', 'gitee', giteeOlder.tag_name, attachmentFile]));
+
+    const paired = release('3.0.0-beta.2', 'github.com', 456);
+    paired.assets.push(asset('3.0.0-beta.2', 'github.com', '', 'snow-shot-mini'),
+        asset('3.0.0-beta.2', 'github.com', '.sha256', 'snow-shot-mini'));
+    fs.writeFileSync(releaseFile, JSON.stringify([older, paired]));
+    const miniSelected = releaseUrls([releaseFile, 'arm64', 'github', '', '', 'snow-shot-mini']);
+    assert(miniSelected.startsWith(`${paired.tag_name}\n`));
+    assert(miniSelected.includes('/snow-shot-mini-3.0.0-beta.2-macos-arm64.dmg\n'));
+    assert(!miniSelected.includes('/snow-shot-3.0.0-beta.2-macos-arm64.dmg\n'));
+    assert.throws(() => releaseUrls([releaseFile, 'arm64', 'github', older.tag_name, '', 'snow-shot-mini']));
+    paired.assets.pop();
+    fs.writeFileSync(releaseFile, JSON.stringify([older, paired]));
+    assert.throws(() => releaseUrls([releaseFile, 'arm64', 'github', '', '', 'snow-shot-mini']));
+
+    const miniGitee = release('3.0.0-beta.2', 'gitee.com', 456);
+    miniGitee.assets.push(asset('3.0.0-beta.2', 'gitee.com', '', 'snow-shot-mini'),
+        asset('3.0.0-beta.2', 'gitee.com', '.sha256', 'snow-shot-mini'));
+    fs.writeFileSync(attachmentFile, JSON.stringify(miniGitee.assets));
+    assert(releaseUrls([releaseFile, 'arm64', 'gitee', miniGitee.tag_name, attachmentFile, 'snow-shot-mini'])
+        .includes('/snow-shot-mini-3.0.0-beta.2-macos-arm64.dmg\n'));
+    // Preserve the original pagination fixture below.
+    fs.writeFileSync(releaseFile, JSON.stringify([giteeOlder, giteeNewer].map(
+        ({assets, ...metadata}) => metadata)));
 
     const count = parser('release_page_count');
     assert.equal(count([releaseFile]), '2');

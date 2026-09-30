@@ -241,6 +241,43 @@ load ARGV[0]
         self.assertTrue(self.current.is_file())
         self.assertTrue((self.tap / 'README.md').is_file())
 
+    def add_mini(self):
+        name = 'snow-shot-mini-1.2.3-macos-arm64.dmg'
+        (self.assets / name).write_bytes(b'mini dmg')
+        sha = brew.digest(self.assets / name)
+        (self.assets / (name + '.sha256')).write_text(sha + '  ' + name + '\n')
+        self.release['assets'] += [dict(name=name), dict(name=name + '.sha256')]
+
+    def test_mini_identity_and_paired_publication(self):
+        self.add_mini()
+        archive, cask = brew.package(self.release, self.source, self.assets, self.output,
+                                    self.tap / 'Casks/snow-shot-mini.rb', 'mini')
+        self.assertEqual(archive.name, 'snow-shot-mini-1.2.3-macos-arm64-homebrew.tar.gz')
+        self.assertIn('cask "snow-shot-mini"', cask)
+        self.assertIn('app "Snow Shot Mini.app"', cask)
+        self.assertIn('"mini"]', cask)
+        self.assertIn('/v#{version}_snow-shot/', cask)
+        self.assertIn('Support/Snow Shot Mini/Installer', cask)
+        beta = brew.cask('1.2.3-beta', '0' * 64, edition='mini')
+        self.assertIn('conflicts_with cask: "snow-shot-mini"', beta)
+        self.assertNotIn('conflicts_with cask: "snow-shot"', beta)
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            brew.publish('v1.2.3_snow-shot', self.source, self.tap, self.output)
+        commands = [call.args for call in run.call_args_list]
+        uploads = [i for i, args in enumerate(commands) if args[:3] == ('gh', 'release', 'upload')]
+        commit = next(i for i, args in enumerate(commands) if args[:2] == ('git', 'add'))
+        self.assertEqual(len(uploads), 2)
+        self.assertLess(max(uploads), commit)
+        self.assertTrue((self.tap / 'Casks/snow-shot-mini.rb').is_file())
+
+    def test_partial_paired_release_never_publishes(self):
+        self.add_mini()
+        self.release['assets'] = [a for a in self.release['assets'] if a['name'] != self.name]
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run, self.assertRaises(ValueError):
+            brew.publish('v1.2.3_snow-shot', self.source, self.tap, self.output)
+        self.assertEqual(run.call_count, 1)
+        self.assertFalse(self.tap.exists())
+
     def test_missing_assets_leave_tap_and_release_unchanged(self):
         self.release['assets'] = []
         with patch.object(brew, 'run', side_effect=self.fake_run) as run, self.assertRaises(ValueError):

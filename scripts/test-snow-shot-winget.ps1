@@ -52,9 +52,9 @@ function Invoke-FixtureSubmit {
     Require (-not ($args -contains '--replace')) 'Submission must not replace versions'
     $global:LASTEXITCODE = $script:submitExitCode
 }
-function Set-FixtureRelease([string]$Tag) {
+function Set-FixtureRelease([string]$Tag, [string]$Edition = 'Full') {
     $version = Get-SnowShotWingetVersion $Tag
-    $name = "snow-shot-$version-windows-x64-offline.exe"
+    $name = if ($Edition -eq 'Mini') { "snow-shot-mini-$version-windows-x64-online.exe" } else { "snow-shot-$version-windows-x64-offline.exe" }
     $script:release = @{
         tag_name = $Tag; draft = $false; prerelease = $true
         published_at = '2026-09-28T01:30:00+02:00'
@@ -64,6 +64,12 @@ function Set-FixtureRelease([string]$Tag) {
     }
 }
 try {
+    Set-FixtureRelease 'v1.2.0_snow-shot' Mini
+    $miniDirectory = New-SnowShotWingetManifest 'v1.2.0_snow-shot' $root Mini
+    $miniInstaller = Get-Content (Join-Path $miniDirectory 'mg-chao.snow-shot-mini.installer.yaml') -Raw
+    Require ($miniInstaller.Contains('ProductCode: SnowShotMini') -and $miniInstaller.Contains('snow-shot-mini-1.2.0-windows-x64-online.exe')) 'Mini WinGet has its own registration and online installer.'
+    $miniLocale = Get-Content (Join-Path $miniDirectory 'mg-chao.snow-shot-mini.locale.en-US.yaml') -Raw
+    Require ($miniLocale.Contains('PackageName: Snow Shot Mini') -and -not $miniLocale.Contains('  - translate')) 'Mini metadata must describe retained features.'
     foreach ($tag in @('v1.1.5-beta', 'v1.1.5-beta_snow-shot', 'v1.2.0', 'v1.2.0_snow-shot')) {
         Set-FixtureRelease $tag
         $directory = New-SnowShotWingetManifest $tag $root

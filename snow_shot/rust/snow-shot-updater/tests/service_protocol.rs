@@ -26,15 +26,16 @@ impl ServiceProcess {
             std::fs::write(cache.join("result.txt"), result).unwrap();
         }
         std::fs::create_dir_all(root.join("bin")).unwrap();
-        std::fs::write(root.join("bin/snow_shot.exe"), []).unwrap();
+        std::fs::write(root.join(snow_shot_updater::edition::APP_PATH), []).unwrap();
         std::fs::write(
-            root.join("snow-shot-installation.json"),
+            root.join(snow_shot_updater::edition::INSTALLATION_RECORD),
             serde_json::to_vec(&json!({
                 "schema": 1,
+                "product": snow_shot_updater::edition::PRODUCT,
                 "variant": "portable",
                 "version": "1.0.0",
                 "files": [{
-                    "path": "bin/snow_shot.exe",
+                    "path": snow_shot_updater::edition::APP_PATH,
                     "size": 0,
                     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                 }]

@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/network/snowshotapiclient.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/apppermissionservice.h"
 #include "widgets/alert.h"
@@ -739,8 +741,11 @@ class SettingsPageWidget::Impl {
                     control->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Medium);
                     control->setAllowClear(payload.binding ==
                                            settings::SettingsTextBinding::ServerUrl);
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     if (payload.binding == settings::SettingsTextBinding::ServerUrl)
                         control->setPlaceholderText(SnowShotApiClient::configuredBaseUrl());
+#endif
+
                     control->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
                     runtime.textControl = control;

@@ -1,4 +1,5 @@
-﻿#include "snow_shot/presentation/components/titlebarwidget.h"
+#include "snow_shot/app/edition.h"
+#include "snow_shot/presentation/components/titlebarwidget.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -317,6 +318,10 @@ void TitleBarWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void TitleBarWidget::retranslateUi() {
+    if (snow_shot::app::edition::isMini) {
+        setAccessibleName(snow_shot::app::edition::productName());
+        window()->setWindowTitle(snow_shot::app::edition::productName());
+    }
 #ifndef Q_OS_MACOS
     m_closeButton->setToolTip(tr("Close"));
     m_closeButton->setAccessibleName(tr("Close"));
@@ -333,6 +338,20 @@ void TitleBarWidget::paintEvent(QPaintEvent* event) {
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    if (snow_shot::app::edition::isMini) {
+        QFont brandFont = font();
+        brandFont.setPixelSize(m_logoHeight + 3);
+        brandFont.setWeight(QFont::DemiBold);
+        painter.setFont(brandFont);
+        painter.setPen(m_logoColor);
+#ifdef Q_OS_WIN
+        painter.drawText(QRect(48, 0, std::max(0, m_minimizeButton->x() - 64), height()),
+                         Qt::AlignLeft | Qt::AlignVCenter, snow_shot::app::edition::productName());
+#else
+        painter.drawText(rect(), Qt::AlignCenter, snow_shot::app::edition::productName());
+#endif
+        return;
+    }
 
 #ifdef Q_OS_WIN
     const QColor color = window()->isActiveWindow()

@@ -157,6 +157,66 @@ class PublisherTests(unittest.TestCase):
                 publisher.publish(self.release, assets, "test-token", "test-user")
             self.assertEqual(events, ["tag"])
 
+    def paired_windows_release(self):
+        self.release['assets'] = []
+        for product, feed in (('snow-shot', 'latest-version.json'),
+                              ('snow-shot-mini', 'latest-version-mini.json')):
+            packages = []
+            kinds = [('online', 'installer'), ('online', 'update'), ('portable', 'portable')]
+            if product == 'snow-shot':
+                kinds += [('offline', 'installer'), ('offline', 'update')]
+            for variant, kind in kinds:
+                suffix = '.exe' if kind == 'installer' else '-update.zip' if kind == 'update' else '.zip'
+                path = self.add_asset(f'{product}-1.2.3-windows-x64-{variant}{suffix}', b'fixture')
+                packages.append({'variant': variant, 'kind': kind,
+                                 'path': f'setup/{product}_windows-x64-{variant}{suffix}',
+                                 'size': path.stat().st_size, 'sha256': publisher.sha256(path)})
+            payload = {'version': '1.2.3', 'product': product, 'packages': packages}
+            self.add_asset(feed, json.dumps({'payload': base64.b64encode(
+                json.dumps(payload).encode()).decode()}).encode())
+        auditors = [self.directory / 'full-auditor.exe', self.directory / 'mini-auditor.exe']
+        for auditor in auditors:
+            auditor.write_bytes(b'fixture')
+        return publisher.local_assets(self.release), auditors
+
+    def test_paired_release_uses_each_compiled_product_auditor(self):
+        assets, auditors = self.paired_windows_release()
+        with patch.object(publisher, 'run', side_effect=['', '', 'a' * 40]) as invoke:
+            publisher.verify_local_release(self.release, assets, *auditors)
+        self.assertEqual(invoke.call_args_list[0].args,
+                         (str(auditors[0]), '--verify-release', '--manifest',
+                          str(assets['latest-version.json'])))
+        self.assertEqual(invoke.call_args_list[1].args,
+                         (str(auditors[1]), '--verify-release', '--manifest',
+                          str(assets['latest-version-mini.json'])))
+        self.assertEqual(invoke.call_args_list[2].args, ('git', 'rev-list', '-n', '1', TAG))
+
+    def test_paired_release_rejects_missing_mini_feed_or_auditor(self):
+        assets, auditors = self.paired_windows_release()
+        with patch.object(publisher, 'run') as invoke:
+            with self.assertRaisesRegex(ValueError, 'signed Mini metadata'):
+                publisher.verify_local_release(self.release, assets, auditors[0])
+            assets.pop('latest-version-mini.json')
+            with self.assertRaisesRegex(ValueError, 'signed Mini metadata'):
+                publisher.verify_local_release(self.release, assets, *auditors)
+            invoke.assert_not_called()
+
+    def test_mini_feed_rejects_wrong_product_or_offline_package(self):
+        for failure in ('product', 'offline'):
+            with self.subTest(failure=failure):
+                assets, auditors = self.paired_windows_release()
+                envelope = json.loads(assets['latest-version-mini.json'].read_text())
+                payload = json.loads(base64.b64decode(envelope['payload']))
+                if failure == 'product':
+                    payload['product'] = 'snow-shot'
+                else:
+                    payload['packages'][0]['variant'] = 'offline'
+                envelope['payload'] = base64.b64encode(json.dumps(payload).encode()).decode()
+                assets['latest-version-mini.json'].write_text(json.dumps(envelope))
+                with patch.object(publisher, 'run', return_value=''):
+                    with self.assertRaisesRegex(ValueError, 'incorrect product|three Windows'):
+                        publisher.verify_local_release(self.release, assets, *auditors)
+
     def test_differing_release_notes_reject_uploads(self):
         remote = {"id": 7, "tag_name": TAG, "name": self.release["title"], "body": "Other notes"}
         with patch.object(publisher, "existing_release", return_value=remote), \

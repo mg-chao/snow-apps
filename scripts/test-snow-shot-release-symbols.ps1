@@ -1,6 +1,8 @@
 [CmdletBinding()]
-param([string]$ReleaseHelperPath = '')
+param([string]$ReleaseHelperPath = '', [ValidateSet('Full', 'Mini')][string]$Edition = 'Full')
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'snow-shot-editions.ps1')
+$product = Get-SnowShotEdition $Edition
 $repo = Split-Path -Parent $PSScriptRoot
 $root = Join-Path $repo "build/release-symbol-tests-$([guid]::NewGuid().ToString('N'))"
 $stage = Join-Path $root 'stage'
@@ -41,27 +43,36 @@ foreach ($pdbAgeOffset in $pdbAgeOffsets) {
 [IO.File]::WriteAllBytes($fixturePdbPath, $fixturePdb)
 Copy-Item -LiteralPath (Join-Path $bin 'snow_shot.exe') -Destination (Join-Path $bin 'snow-shot-updater.exe')
 Copy-Item -LiteralPath (Join-Path $bin 'snow_shot.exe') -Destination (Join-Path $bin 'snow-ocr-process.exe')
+if ($Edition -eq 'Mini') {
+    Move-Item -LiteralPath (Join-Path $bin 'snow_shot.exe') -Destination (Join-Path $bin 'snow_shot_mini.exe')
+    Move-Item -LiteralPath (Join-Path $bin 'snow-shot-updater.exe') -Destination (Join-Path $bin 'snow-shot-mini-updater.exe')
+    Remove-Item -LiteralPath (Join-Path $bin 'snow-ocr-process.exe')
+}
 foreach ($external in @($false, $true)) {
     $options = @{}
     if ($external) { $options.OcrAssetManifest = Join-Path $repo 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json' }
-    & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage @options
-    $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $root 'snow-shot-symbols-windows-x64.zip'))
+    & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage -Edition $Edition @options
+    $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $root "$($product.Product)-symbols-windows-x64.zip"))
     try {
         $reader = [IO.StreamReader]::new($archive.GetEntry('manifest.json').Open())
         try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
-        $expected = if ($external) { 2 } else { 3 }
+        $expected = if ($external -or $Edition -eq 'Mini') { 2 } else { 3 }
         if ($manifest.binaries.Count -ne $expected -or @($manifest.binaries | Where-Object { -not $_.pdb }).Count) {
             throw 'Symbol inventory is incomplete.'
         }
         if ($external -and ($null -ne $archive.GetEntry('snow-ocr-process/snow-ocr-process.exe') -or
             $manifest.externalOcrRuntime.version -cne '1.0.8')) { throw 'External OCR runtime was misrepresented as a local build.' }
+        if ($manifest.product -cne $product.Product -or
+            $null -eq $archive.GetEntry("$($product.Executable)/$($product.Executable).exe")) {
+            throw 'Symbols archive has the wrong edition identity.'
+        }
     } finally { $archive.Dispose() }
     Write-Output "PASS: matching release PDBs; external OCR = $external"
 }
 # A missing or mismatched app/helper PDB must still stop a release.
 Move-Item -LiteralPath (Join-Path $root 'fixture.pdb') -Destination (Join-Path $root 'saved-fixture.pdb')
 $rejected = $false
-try { & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage @options }
+try { & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage -Edition $Edition @options }
 catch { $rejected = $true }
 if (-not $rejected) { throw 'Missing release PDB was accepted.' }
 Write-Output 'PASS: missing app/helper PDB is rejected'
@@ -71,7 +82,8 @@ if ($ReleaseHelperPath) {
     # compiled with /DEBUG cannot detect missing symbol flags on the production target.
     $resolvedHelper = (Resolve-Path -LiteralPath $ReleaseHelperPath).Path
     $helperBuildRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $resolvedHelper))
-    $helperPdbs = @(Get-ChildItem -LiteralPath (Join-Path $helperBuildRoot 'cargo') `
+    $cargoDirectory = if ($Edition -eq 'Mini') { 'cargo-mini' } else { 'cargo' }
+    $helperPdbs = @(Get-ChildItem -LiteralPath (Join-Path $helperBuildRoot $cargoDirectory) `
         -Filter 'snow_shot_updater.pdb' -File -Recurse | Where-Object {
             Test-Path -LiteralPath (Join-Path $_.DirectoryName 'snow-shot-updater.exe') -PathType Leaf
         })
@@ -81,8 +93,8 @@ if ($ReleaseHelperPath) {
     $realStage = Join-Path $root 'release-helper'
     $realBin = Join-Path $realStage 'bin'
     $null = New-Item -ItemType Directory -Path $realBin
-    Copy-Item -LiteralPath $resolvedHelper -Destination (Join-Path $realBin 'snow-shot-updater.exe')
+    Copy-Item -LiteralPath $resolvedHelper -Destination (Join-Path $realBin "$($product.Product)-updater.exe")
     & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root `
-        -InstallDirectory $realStage -UpdaterProfileDirectory $helperPdbs[0].DirectoryName
+        -InstallDirectory $realStage -Edition $Edition -UpdaterProfileDirectory $helperPdbs[0].DirectoryName
     Write-Output 'PASS: actual Release updater has a matching PDB'
 }

@@ -1,3 +1,4 @@
+#include "snow_shot/app/mcp/mcpedition.h"
 #include "snow_shot/app/mcp/mcpmediaservice.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenrecordingcontroller.h"
@@ -502,6 +503,10 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
             waiter(response);
         completion(std::move(response));
     };
+    if (!editionRequestEnabled(r.method, r.params)) {
+        reply({}, QStringLiteral("unsupported"));
+        return;
+    }
     if (s.stopped) {
         reply({}, QStringLiteral("unavailable"));
         return;

@@ -102,8 +102,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Gitee transport tests failed." }
           & scripts/test-snow-shot-ocr-release-runtime.ps1
           & scripts/test-snow-shot-release-symbols.ps1 -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
+          & scripts/test-snow-shot-release-symbols.ps1 -Edition Mini -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot_mini/Release/snow-shot-mini-updater.exe
           & scripts/test-snow-shot-installer.ps1
           & scripts/test-snow-shot-installer-i18n.ps1
+          & scripts/test-snow-shot-installer-i18n.ps1 -Edition Mini
+          & scripts/test-snow-shot-mini-release.ps1
           . scripts/snow-build-environment.ps1
           $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
           cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
@@ -123,13 +126,16 @@ jobs:
             throw "Unexpected release tag: $env:GITHUB_REF_NAME"
           }
           $names = @()
-          foreach ($variant in @('online', 'offline')) {
-            $base = "snow-shot-$version-windows-x64-$variant"
-            $names += @("$base.exe", "$base.exe.sha256", "$base.manifest.json",
-              "$base-update.zip", "$base-update.zip.sha256", "$base-update.manifest.json")
+          foreach ($prefix in @('snow-shot', 'snow-shot-mini')) {
+            $variants = if ($prefix -eq 'snow-shot-mini') { @('online') } else { @('online', 'offline') }
+            foreach ($variant in $variants) {
+              $base = "$prefix-$version-windows-x64-$variant"
+              $names += @("$base.exe", "$base.exe.sha256", "$base.manifest.json",
+                "$base-update.zip", "$base-update.zip.sha256", "$base-update.manifest.json")
+            }
+            $base = "$prefix-$version-windows-x64-portable"
+            $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
           }
-          $base = "snow-shot-$version-windows-x64-portable"
-          $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
           $runtime = (Get-Content -Raw snow_shot/packaging/snow-shot-ocr-asset-manifest.json | ConvertFrom-Json).runtime.version
           $base = "snow-ocr-runtime-$runtime-windows-x64"
           $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
@@ -146,6 +152,8 @@ jobs:
           path: |
             build/snow-shot-msvc-release/snow-shot-symbols-windows-x64.zip
             build/snow-shot-msvc-release/snow-shot-symbols-windows-x64.zip.sha256
+            build/snow-shot-msvc-release/snow-shot-mini-symbols-windows-x64.zip
+            build/snow-shot-msvc-release/snow-shot-mini-symbols-windows-x64.zip.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -164,4 +172,4 @@ jobs:
             --draft `
             @releaseFlags `
             --generate-notes `
-            --title "Snow Shot $env:GITHUB_REF_NAME"
+            --title "Snow Shot and Snow Shot Mini $env:GITHUB_REF_NAME"

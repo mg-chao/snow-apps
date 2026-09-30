@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONRESULTS_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONRESULTS_H
 
+#include "snow_shot/app/edition.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
@@ -31,5 +32,23 @@ struct ScreenshotRecognitionResults {
         return !key.isEmpty() && key == targetKey;
     }
 };
+
+inline void sanitizeEditionRecognitionResults(ScreenshotRecognitionResults& results) {
+    using namespace snow_shot::app;
+    if constexpr (!edition::tableRecognition)
+        results.table.reset();
+    if constexpr (!edition::qrRecognition)
+        results.qr.reset();
+    if constexpr (!edition::latexRecognition) {
+        results.latex.reset();
+        results.visibleLatex = false;
+    }
+    if constexpr (!edition::imageConversion) {
+        results.conversions.clear();
+        results.visibleConversion.reset();
+    }
+    if constexpr (!edition::textTranslation)
+        results.translatedText.reset();
+}
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONRESULTS_H

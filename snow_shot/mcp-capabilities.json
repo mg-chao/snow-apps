@@ -180,7 +180,8 @@
         "DrawingToolbarEditor",
         "ScreenshotToolbarEditor",
         "PinnedToolbarEditor",
-        "TrayMenuOptions"
+        "TrayMenuOptions",
+        "TextTranslationConfigurations"
       ]
     },
     "canvas_style_sources": {
@@ -262,7 +263,9 @@
         "keyboard_foreground",
         "mouse_trail",
         "mouse_click",
-        "mouse_highlight_color"
+        "mouse_highlight_color",
+        "quality",
+        "separate_audio_tracks"
       ]
     },
     "settings_shortcut_adjustments": {
@@ -275,8 +278,18 @@
     "recognition_actions": {
       "adapter": "Actual headless recognition text/table editing controller and typed Rust actions; covered by recognition IPC workflows",
       "members": [
-        "set_text", "reset_text", "format", "punctuation", "select_cells", "set_cell",
-        "merge_cells", "split_cells", "reset_table", "show_original", "undo", "redo"
+        "set_text",
+        "reset_text",
+        "format",
+        "punctuation",
+        "select_cells",
+        "set_cell",
+        "merge_cells",
+        "split_cells",
+        "reset_table",
+        "show_original",
+        "undo",
+        "redo"
       ]
     }
   }

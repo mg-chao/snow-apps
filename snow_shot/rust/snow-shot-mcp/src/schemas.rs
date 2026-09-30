@@ -466,9 +466,13 @@ struct Scrolling {
 #[serde(rename_all = "snake_case")]
 enum RecognitionKind {
     Text,
+    #[cfg(not(feature = "mini"))]
     Table,
+    #[cfg(not(feature = "mini"))]
     Qr,
+    #[cfg(not(feature = "mini"))]
     Markdown,
+    #[cfg(not(feature = "mini"))]
     Html,
 }
 #[derive(Deserialize, JsonSchema)]
@@ -552,11 +556,17 @@ enum RecognitionAction {
     ResetText,
     Format,
     Punctuation,
+    #[cfg(not(feature = "mini"))]
     SelectCells,
+    #[cfg(not(feature = "mini"))]
     SetCell,
+    #[cfg(not(feature = "mini"))]
     MergeCells,
+    #[cfg(not(feature = "mini"))]
     SplitCells,
+    #[cfg(not(feature = "mini"))]
     ResetTable,
+    #[cfg(not(feature = "mini"))]
     ShowOriginal,
     Undo,
     Redo,
@@ -604,7 +614,9 @@ enum RecognitionOutput {
 #[serde(rename_all = "snake_case")]
 enum RecognitionFormat {
     Text,
+    #[cfg(not(feature = "mini"))]
     Html,
+    #[cfg(not(feature = "mini"))]
     Markdown,
     Json,
 }
@@ -808,6 +820,15 @@ fn model<T: JsonSchema + DeserializeOwned>(
         .clone())
 }
 pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, serde_json::Error> {
+    if !crate::edition::method_enabled(name)
+        || input
+            .as_ref()
+            .is_some_and(|value| !crate::edition::input_enabled(name, value))
+    {
+        return Err(serde::de::Error::custom(
+            "This operation is unavailable in the compiled edition",
+        ));
+    }
     match name {
         "snow_shot_mcp_status" => model::<Empty>(input),
         "snow_shot_screenshot_set_selection_style" => model::<Mutation<SelectionStyle>>(input),
@@ -853,6 +874,9 @@ mod tests {
         let mut covered = std::collections::HashSet::new();
         for case in fixture["fixtures"].as_array().unwrap() {
             let name = case["name"].as_str().unwrap();
+            if !crate::edition::method_enabled(name) {
+                continue;
+            }
             assert!(covered.insert(name), "duplicate contract: {name}");
             assert!(
                 schema(name, Some(case["arguments"].clone())).is_ok(),
@@ -871,6 +895,7 @@ mod tests {
             covered,
             crate::server::TOOLS
                 .iter()
+                .filter(|(name, _, _)| crate::edition::method_enabled(name))
                 .map(|(name, _, _)| *name)
                 .collect()
         );
@@ -911,7 +936,7 @@ mod tests {
             )
             .is_err()
         );
-        assert!(schema("snow_shot_screenshot_edit_recognition", Some(json!({"session_id":"s","expected_revision":1,"action":"set_cell","row":0,"column":1,"text":"value"}))).is_ok());
+        assert_eq!(schema("snow_shot_screenshot_edit_recognition", Some(json!({"session_id":"s","expected_revision":1,"action":"set_cell","row":0,"column":1,"text":"value"}))).is_ok(), !crate::edition::MINI);
         assert!(
             schema(
                 "snow_shot_screenshot_undo",

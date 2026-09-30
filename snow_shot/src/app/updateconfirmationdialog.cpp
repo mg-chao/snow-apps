@@ -1,4 +1,5 @@
 #include "snow_shot/app/updateconfirmationdialog.h"
+#include "snow_shot/app/edition.h"
 
 #include <QAbstractButton>
 #include <QCoreApplication>
@@ -12,10 +13,16 @@ bool confirmRestartAndUpdate(QWidget* owner) {
     const QString title = translated(
         QT_TRANSLATE_NOOP("snow_shot::app::ApplicationController", "Restart and update"));
 
-    QMessageBox dialog(QMessageBox::Question, title,
-                       translated(QT_TRANSLATE_NOOP(
-                           "snow_shot::app::ApplicationController",
-                           "Snow Shot will close and restart to install the update. Continue?")),
+    const QString message =
+        edition::isMini
+            ? translated(
+                  QT_TRANSLATE_NOOP("snow_shot::app::ApplicationController",
+                                    "%1 will close and restart to install the update. Continue?"))
+                  .arg(edition::productName())
+            : translated(QT_TRANSLATE_NOOP(
+                  "snow_shot::app::ApplicationController",
+                  "Snow Shot will close and restart to install the update. Continue?"));
+    QMessageBox dialog(QMessageBox::Question, title, message,
                        QMessageBox::Yes | QMessageBox::Cancel, owner);
     dialog.setOption(QMessageBox::Option::DontUseNativeDialog);
     dialog.button(QMessageBox::Yes)->setText(title);

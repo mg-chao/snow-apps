@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/update/updateservice.h"
 
 #include <QCoreApplication>
@@ -219,7 +220,8 @@ struct UpdateService::Impl {
         const QString arch = QStringLiteral("x86_64");
 #endif
         const QString tag = QStringLiteral("v%1_snow-shot").arg(text);
-        const QString name = QStringLiteral("snow-shot-%1-macos-%2.dmg").arg(text, arch);
+        const QString name =
+            (app::edition::productId() + QStringLiteral("-%1-macos-%2.dmg")).arg(text, arch);
         for (const QString& assetName : {name, name + QStringLiteral(".sha256")}) {
             int matches = 0;
             for (const auto& value : assets) {

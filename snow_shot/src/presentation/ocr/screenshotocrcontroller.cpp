@@ -5,6 +5,8 @@
 #include <QDataStream>
 #include <QIODevice>
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -107,7 +109,7 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
           m_context.displaySession, m_context.geometry, m_context.selection,
           [this]() { return m_context.overlayCoordinator.toolbar(); })) {
     m_session = std::make_unique<ScreenshotRecognitionSessionController>(
-        &m_context.recognition, &m_context.qrRecognition, m_context.tableRecognition,
+        &m_context.recognition, m_context.qrRecognition, m_context.tableRecognition,
         ScreenshotRecognitionSessionActions{
             [this]() -> ScreenshotRecognitionWindow* {
                 if (m_context.captureState.presentationSuppressed)
@@ -352,6 +354,14 @@ QString ScreenshotOcrController::currentCacheKey() const {
 }
 
 void ScreenshotOcrController::activateMode(Mode mode) {
+    const int sessionMode = mode == Mode::Text       ? 0
+                            : mode == Mode::Table    ? 1
+                            : mode == Mode::Qr       ? 2
+                            : mode == Mode::Markdown ? 3
+                            : mode == Mode::Html     ? 4
+                                                     : 5;
+    if (!snow_shot::presentation::editionRecognitionModeAvailable(sessionMode))
+        return;
     const QRect selection = m_context.selection.pixelSelection();
     if (selection.width() < 1 || selection.height() < 1) {
         if (ScreenshotToolbarWindow* toolbar = m_context.overlayCoordinator.toolbar()) {

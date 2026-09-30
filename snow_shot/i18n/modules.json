@@ -3,6 +3,7 @@
     "AboutPageWidget",
     "ApplicationRestart",
     "DiagnosticsService",
+    "EditionMetadata",
     "LanguageCatalog",
     "MainContentHeaderWidget",
     "MainWindow",

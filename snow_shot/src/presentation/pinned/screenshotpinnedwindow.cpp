@@ -17,6 +17,8 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "screenshotpinnednativegeometrycontroller.h"
 #include "screenshotpinnedgeometrymapping.h"
 #include <QScopedValueRollback>
@@ -1897,7 +1899,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_initialRecognitionVisible = config.restorePersistentState ? config.persistedRecognitionVisible
                                                                 : config.recognitionVisible;
     m_initialTranslationVisible =
-        m_initialRecognitionVisible &&
+        snow_shot::app::edition::textTranslation && m_initialRecognitionVisible &&
         (config.restorePersistentState ? config.persistedTranslationVisible
                                        : config.translationVisible);
     m_formattedTextDocument = config.formattedTextDocument;
@@ -1916,8 +1918,12 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_mouseWheelZoomMode = config.mouseWheelZoomMode;
     m_imageTransform.reset();
     m_recognition = config.recognition;
-    m_qrRecognition = config.qrRecognition;
-    m_tableRecognition = config.tableRecognition;
+    m_qrRecognition = snow_shot::app::edition::qrRecognition ? config.qrRecognition : nullptr;
+    m_tableRecognition =
+        (snow_shot::app::edition::tableRecognition || snow_shot::app::edition::latexRecognition ||
+         snow_shot::app::edition::imageConversion || snow_shot::app::edition::textTranslation)
+            ? config.tableRecognition
+            : nullptr;
     m_recognitionProvider = config.recognitionProvider;
     m_recognitionResults = config.recognitionResults;
     if (!config.persistedRecognitionResults.isEmpty()) {
@@ -1927,6 +1933,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
             m_recognitionResults = restored;
         }
     }
+    sanitizeEditionRecognitionResults(m_recognitionResults);
     m_persistenceWriter = config.persistenceWriter;
     m_replacementPersistenceWriter = config.replacementPersistenceWriter;
     m_persistenceRemover = config.persistenceRemover;
@@ -3957,6 +3964,8 @@ void ScreenshotPinnedWindow::updateRecognitionContentGeometry() {
 }
 
 void ScreenshotPinnedWindow::activateRecognitionMode(int mode, bool showToolbar) {
+    if (!snow_shot::presentation::editionRecognitionModeAvailable(mode))
+        return;
     m_automationRecognition = false;
     if (m_clickThroughActive && !setClickThroughMode(false)) {
         return;
@@ -4000,18 +4009,23 @@ void ScreenshotPinnedWindow::activateRecognitionMode(int mode, bool showToolbar)
 }
 
 void ScreenshotPinnedWindow::ensureRecognitionProviders() {
+    constexpr bool remoteRecognition =
+        snow_shot::app::edition::tableRecognition || snow_shot::app::edition::latexRecognition ||
+        snow_shot::app::edition::imageConversion || snow_shot::app::edition::textTranslation;
     if (!m_recognitionProvider ||
-        (m_recognition != nullptr && m_qrRecognition != nullptr && m_tableRecognition != nullptr)) {
+        (m_recognition != nullptr &&
+         (!snow_shot::app::edition::qrRecognition || m_qrRecognition != nullptr) &&
+         (!remoteRecognition || m_tableRecognition != nullptr))) {
         return;
     }
     const ScreenshotPinnedRecognitionProviders providers = m_recognitionProvider();
     if (m_recognition == nullptr) {
         m_recognition = providers.recognition;
     }
-    if (m_qrRecognition == nullptr) {
+    if (snow_shot::app::edition::qrRecognition && m_qrRecognition == nullptr) {
         m_qrRecognition = providers.qrRecognition;
     }
-    if (m_tableRecognition == nullptr) {
+    if (remoteRecognition && m_tableRecognition == nullptr) {
         m_tableRecognition = providers.tableRecognition;
     }
     if (m_recognitionSession != nullptr) {
@@ -4033,6 +4047,8 @@ void ScreenshotPinnedWindow::deactivateRecognition() {
 }
 
 bool ScreenshotPinnedWindow::recognitionModeAvailable(int mode) const {
+    if (!snow_shot::presentation::editionRecognitionModeAvailable(mode))
+        return false;
     const auto results = m_recognitionTargetReady && m_recognitionSession != nullptr
                              ? m_recognitionSession->cachedRecognitionResults()
                              : m_recognitionResults;
@@ -4105,6 +4121,7 @@ void ScreenshotPinnedWindow::handleTextEditingRequested() {
 }
 
 void ScreenshotPinnedWindow::handleTextTranslationRequested() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (m_recognitionSession != nullptr) {
         if (m_recognitionSession->translating()) {
             m_recognitionSession->endTextEditing();
@@ -4112,6 +4129,7 @@ void ScreenshotPinnedWindow::handleTextTranslationRequested() {
             m_recognitionSession->beginTextTranslation();
         }
     }
+#endif
 }
 
 void ScreenshotPinnedWindow::handleTextResetRequested() {
@@ -4121,9 +4139,11 @@ void ScreenshotPinnedWindow::handleTextResetRequested() {
 }
 
 void ScreenshotPinnedWindow::handleTextSettingsRequested() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (m_recognitionSession != nullptr) {
         m_recognitionSession->openTranslationSettings();
     }
+#endif
 }
 
 void ScreenshotPinnedWindow::handleTextFormattingRequested(const QString& value) {
@@ -4860,6 +4880,7 @@ void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportA
 }
 
 void ScreenshotPinnedWindow::activateTextTranslation() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     m_automationRecognition = false;
     if (m_closing || m_recognitionSession == nullptr ||
         (!m_ocrSupported && !m_formattedTextAvailable)) {
@@ -4878,6 +4899,7 @@ void ScreenshotPinnedWindow::activateTextTranslation() {
         m_translateAfterRecognition = false;
         m_recognitionSession->beginTextTranslation();
     }
+#endif
 }
 
 void ScreenshotPinnedWindow::copyOriginalContent() {
@@ -7313,10 +7335,14 @@ QJsonObject ScreenshotPinnedWindow::automationEdit(const QString& action,
         const qsizetype mode = kinds.indexOf(payload.value(QStringLiteral("kind")).toString());
         if (mode < 0)
             return fail("invalid_parameters");
+        if (!snow_shot::presentation::editionRecognitionModeAvailable(static_cast<int>(mode)))
+            return fail("action_unavailable");
         ensureRecognitionProviders();
         activateRecognitionMode(static_cast<int>(mode), false);
         m_automationRecognition = true;
     } else if (action == QStringLiteral("translate")) {
+        if (!snow_shot::app::edition::textTranslation)
+            return fail("action_unavailable");
         ensureRecognitionProviders();
         activateTextTranslation();
         m_automationRecognition = true;
@@ -7460,7 +7486,9 @@ ScreenshotRecognitionResults ScreenshotPinnedWindow::recognitionSnapshot() const
 
 ScreenshotRecognitionResults
 ScreenshotPinnedWindow::decodeRecognitionSnapshot(const QByteArray& data) {
-    return deserializeRecognitionResults(data);
+    auto results = deserializeRecognitionResults(data);
+    sanitizeEditionRecognitionResults(results);
+    return results;
 }
 
 ScreenshotRecognitionResults ScreenshotPinnedWindow::transformedRecognitionSnapshot(

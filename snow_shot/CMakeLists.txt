@@ -17,6 +17,7 @@ include(RustStaticLibrary)
 set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME SnowShot)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8471,3 +8472,5 @@ foreach(_snow_target IN LISTS _snow_clipboard_consumers)
         target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
     endif()
 endforeach()
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

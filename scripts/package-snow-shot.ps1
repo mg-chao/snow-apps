@@ -247,6 +247,7 @@ $requiredCacheEntries = @(
     "SNOW_APPS_RELEASE_STATIC:BOOL=ON",
     "SNOW_APPS_QT_STATIC:BOOL=ON",
     "SNOW_APPS_PACKAGE_SNOW_SHOT:BOOL=ON",
+    "SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=ON",
     "SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC:INTERNAL=ON",
     "QT_FEATURE_static:INTERNAL=ON"
 )
@@ -258,7 +259,7 @@ foreach ($entry in $requiredCacheEntries) {
 }
 
 if (-not $SkipBuild) {
-    & cmake --build $buildDirectory --config Release --target snow_shot --parallel $Parallelism
+    & cmake --build $buildDirectory --config Release --target snow_shot snow_shot_mini --parallel $Parallelism
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release build failed."
     }
@@ -299,7 +300,7 @@ if (Test-Path -LiteralPath $installDirectory) {
 }
 New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
 
-& cmake --install $buildDirectory --config Release --prefix $installDirectory
+& cmake --install $buildDirectory --config Release --component SnowShot --prefix $installDirectory
 if ($LASTEXITCODE -ne 0) {
     throw "Snow Shot install step failed."
 }
@@ -1374,3 +1375,5 @@ Write-Output "Snow Shot audited install tree: $installDirectory"
 Write-Output "OCR runtime upload artifact: $runtimeArchivePath"
 Write-Output "OCR runtime checksum: $runtimeArchiveChecksum"
 Write-Output "OCR runtime manifest: $runtimeReleaseManifest"
+
+. (Join-Path $PSScriptRoot "package-snow-shot-mini.ps1")

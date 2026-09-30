@@ -1,5 +1,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -60,35 +62,42 @@ const QStringList& drawingShortcutToolIds() {
 }
 
 const QStringList& screenshotShortcutActionIds() {
-    static const QStringList ids = {
-        QStringLiteral("move_tool"),
-        QStringLiteral("move_cursor_up"),
-        QStringLiteral("move_cursor_down"),
-        QStringLiteral("move_cursor_left"),
-        QStringLiteral("move_cursor_right"),
-        QStringLiteral("move_entire_selection"),
-        QStringLiteral("keep_selection_width_and_height_consistent"),
-        QStringLiteral("switch_selection_between_window_and_window_sub_element"),
-        QStringLiteral("previous_screenshot_history"),
-        QStringLiteral("next_screenshot_history"),
-        QStringLiteral("select_previously_selected_area"),
-        QStringLiteral("recapture"),
-        QStringLiteral("copy_color"),
-        QStringLiteral("toggle_coordinate_mode"),
-        QStringLiteral("table_recognition"),
-        QStringLiteral("qr_code_recognition"),
-        QStringLiteral("video_recording"),
-        QStringLiteral("text_recognition"),
-        QStringLiteral("text_translation"),
-        QStringLiteral("scrolling_screenshot"),
-        QStringLiteral("quick_save"),
-        QStringLiteral("save_as_file"),
-        QStringLiteral("pin_to_screen"),
-        QStringLiteral("cancel_screenshot"),
-        QStringLiteral("copy_to_clipboard"),
-        QStringLiteral("undo"),
-        QStringLiteral("redo"),
-    };
+    static const QStringList ids = [] {
+        QStringList result = {
+            QStringLiteral("move_tool"),
+            QStringLiteral("move_cursor_up"),
+            QStringLiteral("move_cursor_down"),
+            QStringLiteral("move_cursor_left"),
+            QStringLiteral("move_cursor_right"),
+            QStringLiteral("move_entire_selection"),
+            QStringLiteral("keep_selection_width_and_height_consistent"),
+            QStringLiteral("switch_selection_between_window_and_window_sub_element"),
+            QStringLiteral("previous_screenshot_history"),
+            QStringLiteral("next_screenshot_history"),
+            QStringLiteral("select_previously_selected_area"),
+            QStringLiteral("recapture"),
+            QStringLiteral("copy_color"),
+            QStringLiteral("toggle_coordinate_mode"),
+            QStringLiteral("table_recognition"),
+            QStringLiteral("qr_code_recognition"),
+            QStringLiteral("video_recording"),
+            QStringLiteral("text_recognition"),
+            QStringLiteral("text_translation"),
+            QStringLiteral("scrolling_screenshot"),
+            QStringLiteral("quick_save"),
+            QStringLiteral("save_as_file"),
+            QStringLiteral("pin_to_screen"),
+            QStringLiteral("cancel_screenshot"),
+            QStringLiteral("copy_to_clipboard"),
+            QStringLiteral("undo"),
+            QStringLiteral("redo"),
+        };
+        result.removeIf([](const QString& id) {
+            return !snow_shot::presentation::editionConfigurationKeyAvailable(
+                QStringLiteral("screenshot_shortcuts/") + id);
+        });
+        return result;
+    }();
     return ids;
 }
 

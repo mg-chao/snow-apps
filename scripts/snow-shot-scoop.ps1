@@ -2,6 +2,7 @@
 # Dot-sourcing defines helpers only; release downloads happen in the generator.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'snow-shot-editions.ps1')
 
 function Get-SnowShotScoopVersion([string]$Tag) {
     if ($Tag -cnotmatch '^v(?<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?)(?:_snow-shot)?\z') {
@@ -28,7 +29,8 @@ function Get-SnowShotScoopAsset($Release, [string]$Name, [string]$Tag, [switch]$
     return $assets[0]
 }
 
-function Assert-SnowShotScoopArchive([string]$Path) {
+function Assert-SnowShotScoopArchive([string]$Path, [string]$Edition = 'Full') {
+    $product = Get-SnowShotEdition $Edition
     $zip = [IO.Compression.ZipFile]::OpenRead($Path)
     try {
         $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -39,10 +41,10 @@ function Assert-SnowShotScoopArchive([string]$Path) {
                 throw "Unsafe or duplicate archive path: $name"
             }
         }
-        $exe = $zip.GetEntry('bin/snow_shot.exe')
-        $marker = $zip.GetEntry('bin/__data_directory')
+        $exe = $zip.GetEntry("bin/$($product.Executable).exe")
+        $marker = $zip.GetEntry("bin/$($product.Marker)")
         if (-not $exe -or $exe.Length -eq 0 -or -not $marker) {
-            throw 'Portable archive must contain bin/snow_shot.exe and bin/__data_directory.'
+            throw "Portable archive must contain bin/$($product.Executable).exe and bin/$($product.Marker)."
         }
         $reader = [IO.StreamReader]::new($marker.Open())
         try { $value = $reader.ReadToEnd().Trim() } finally { $reader.Dispose() }
@@ -50,18 +52,19 @@ function Assert-SnowShotScoopArchive([string]$Path) {
     } finally { $zip.Dispose() }
 }
 
-function New-SnowShotScoopManifestObject([string]$Version, [string]$Url, [string]$Hash) {
+function New-SnowShotScoopManifestObject([string]$Version, [string]$Url, [string]$Hash, [string]$Edition = 'Full') {
+    $product = Get-SnowShotEdition $Edition
     # Keep the install contract and upstream maintenance metadata in one place.
     # checkver scripts also run under Windows PowerShell 5.1 in Scoop's tooling.
-    return [ordered]@{
+    $manifest = [ordered]@{
         version = $Version
         description = 'A screenshot utility for capturing, annotating, pinning, and recognizing screen content.'
         homepage = 'https://snowshot.top'
         license = 'GPL-3.0-or-later'
-        notes = 'Quit Snow Shot before upgrading. Use scoop update snowshot instead of the built-in updater.'
+        notes = "Quit $($product.Name) before upgrading. Use scoop update $($product.Scoop) instead of the built-in updater."
         architecture = [ordered]@{ '64bit' = [ordered]@{ url = $Url; hash = $Hash } }
-        bin = ,@('bin\snow_shot.exe', 'snowshot')
-        shortcuts = ,@('bin\snow_shot.exe', 'Snow Shot')
+        bin = ,@("bin\$($product.Executable).exe", $product.Scoop)
+        shortcuts = ,@("bin\$($product.Executable).exe", $product.Name)
         persist = 'bin\portable'
         checkver = [ordered]@{
             url = 'https://api.github.com/repos/mg-chao/snow-apps/releases?per_page=100'
@@ -86,15 +89,22 @@ function New-SnowShotScoopManifestObject([string]$Version, [string]$Url, [string
             }
         }
     }
+    if ($Edition -eq 'Mini') {
+        $manifest.checkver.script = @($manifest.checkver.script | ForEach-Object { $_.Replace('snow-shot-$version-', 'snow-shot-mini-$version-') })
+        $manifest.checkver.regex = $manifest.checkver.regex.Replace('/snow-shot-', '/snow-shot-mini-')
+        $manifest.autoupdate.architecture.'64bit'.url = $manifest.autoupdate.architecture.'64bit'.url.Replace('/snow-shot-', '/snow-shot-mini-')
+    }
+    return $manifest
 }
 
-function New-SnowShotScoopManifest([string]$Tag, [string]$OutputPath) {
+function New-SnowShotScoopManifest([string]$Tag, [string]$OutputPath, [string]$Edition = 'Full') {
+    $product = Get-SnowShotEdition $Edition
     $version = Get-SnowShotScoopVersion $Tag
     if ($version.Contains('-')) { throw 'Scoop Extras requires a stable release version.' }
     $release = Invoke-SnowShotScoopRelease $Tag
     if ($release.draft -or $release.tag_name -cne $Tag) { throw 'Expected the requested published release.' }
     if ($release.prerelease) { throw 'Scoop Extras requires a stable published release.' }
-    $name = "snow-shot-$version-windows-x64-portable.zip"
+    $name = "$($product.Product)-$version-windows-x64-portable.zip"
     $asset = Get-SnowShotScoopAsset $release $name $Tag
     $sidecar = Get-SnowShotScoopAsset $release "$name.sha256" $Tag -Optional
     $temp = Join-Path ([IO.Path]::GetTempPath()) "snow-shot-scoop-$([guid]::NewGuid().ToString('N')).zip"
@@ -122,8 +132,8 @@ function New-SnowShotScoopManifest([string]$Tag, [string]$OutputPath) {
         foreach ($expected in $checksums) {
             if ($hash -cne $expected) { throw 'Portable ZIP SHA-256 mismatch.' }
         }
-        Assert-SnowShotScoopArchive $temp
-        $manifest = New-SnowShotScoopManifestObject $version $asset.browser_download_url $hash
+        Assert-SnowShotScoopArchive $temp $Edition
+        $manifest = New-SnowShotScoopManifestObject $version $asset.browser_download_url $hash $Edition
         $output = [IO.Path]::GetFullPath($OutputPath)
         $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
         [IO.File]::WriteAllText($output, (($manifest | ConvertTo-Json -Depth 8).Replace("`r`n", "`n") + "`n"),

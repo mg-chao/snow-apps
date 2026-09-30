@@ -9,13 +9,13 @@ snow_require_macos
 preset=''
 if [[ $# -gt 0 && "$1" != --* ]]; then preset="$1"; shift; fi
 snow_select_preset "$preset"
-target=snow_shot
+targets=()
 parallelism=''
 clean=0
 skip_bootstrap=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --target) [[ $# -ge 2 ]] || snow_die '--target needs a target'; target="$2"; shift 2 ;;
+        --target) [[ $# -ge 2 ]] || snow_die '--target needs a target'; targets+=("$2"); shift 2 ;;
         --parallel) [[ $# -ge 2 ]] || snow_die '--parallel needs a positive integer'; parallelism="$2"; shift 2 ;;
         --clean) clean=1; shift ;;
         --skip-bootstrap) skip_bootstrap=1; shift ;;
@@ -48,6 +48,12 @@ if [[ -f "$snow_build_dir/CMakeCache.txt" ]]; then
     fi
 fi
 cmake "${configure[@]}" "$@"
-build=(--build --preset "build-$snow_preset" --target "$target" --parallel)
+if [[ ${#targets[@]} == 0 ]]; then
+    targets=(snow_shot)
+    if grep -Eq '^SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=(ON|TRUE|1)$' "$snow_build_dir/CMakeCache.txt"; then
+        targets+=(snow_shot_mini)
+    fi
+fi
+build=(--build --preset "build-$snow_preset" --target "${targets[@]}" --parallel)
 if [[ -n "$parallelism" ]]; then build+=("$parallelism"); fi
 cmake "${build[@]}"

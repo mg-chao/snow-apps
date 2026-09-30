@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/components/aboutpagewidget.h"
 #include "widgets/detail/pointer_region.h"
 
@@ -145,7 +146,10 @@ class AboutArtwork final : public QWidget {
         const auto translated = [](const char* source) {
             return QCoreApplication::translate("AboutPageWidget", source).toHtmlEscaped().toUtf8();
         };
-        svg.replace("{{product}}", translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Snow Shot")));
+        svg.replace("{{product}}",
+                    snow_shot::app::edition::isMini
+                        ? snow_shot::app::edition::productName().toHtmlEscaped().toUtf8()
+                        : translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Snow Shot")));
         svg.replace("{{moment}}",
                     translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Make every moment clear.")));
         svg.replace("{{ocr}}",
@@ -762,9 +766,13 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
 void AboutPageWidget::retranslateUi() {
     refreshUpdateStatus();
     const bool hasVersion = !m_version.trimmed().isEmpty();
-    setAccessibleName(tr("About Snow Shot"));
-    m_ui->productName->setText(tr("Snow Shot"));
-    m_ui->logo->setAccessibleName(tr("Snow Shot logo"));
+    setAccessibleName(snow_shot::app::edition::isMini
+                          ? tr("About %1").arg(snow_shot::app::edition::productName())
+                          : tr("About Snow Shot"));
+    m_ui->productName->setText(snow_shot::app::edition::productName());
+    m_ui->logo->setAccessibleName(snow_shot::app::edition::isMini
+                                      ? tr("%1 logo").arg(snow_shot::app::edition::productName())
+                                      : tr("Snow Shot logo"));
     m_ui->openSource->setText(tr("Free · Open source"));
     const QColor violet(m_ui->scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec"
                                                                                  : "#7052d8");
@@ -820,7 +828,10 @@ void AboutPageWidget::retranslateUi() {
                           tr("Free and open-source software. Distributed without any warranty.")));
     m_ui->copyright->setText(
         tr("Copyright © %1 %2").arg(QStringLiteral("2025–2026"), QStringLiteral("mg-chao")));
-    m_ui->slogan->setText(tr("Snow Shot · Make expression clearer"));
+    m_ui->slogan->setText(
+        snow_shot::app::edition::isMini
+            ? tr("%1 · Make expression clearer").arg(snow_shot::app::edition::productName())
+            : tr("Snow Shot · Make expression clearer"));
     m_ui->linkError->setText(m_failedUrl.isEmpty()
                                  ? QString()
                                  : tr("Could not open the link. Open %1 in your browser.")
@@ -958,7 +969,10 @@ void AboutPageWidget::refreshUpdateStatus() {
         text = tr("Automatic updates are unavailable for this copy.");
         break;
     case UpdateState::Idle:
-        text = status.version.isEmpty() ? tr("Check for a newer version of Snow Shot.")
+        text = status.version.isEmpty() ? (snow_shot::app::edition::isMini
+                                               ? tr("Check for a newer version of %1.")
+                                                     .arg(snow_shot::app::edition::productName())
+                                               : tr("Check for a newer version of Snow Shot."))
                                         : tr("You are up to date.");
         if (!status.version.isEmpty()) {
             statusIcon = outlined::CheckCircle();

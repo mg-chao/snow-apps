@@ -4,6 +4,8 @@
 #include "snow_shot/customaimodelconfiguration.h"
 #include "snow_shot/texttranslationconfiguration.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
@@ -24,6 +26,20 @@
 
 namespace snow_shot::storage {
 namespace {
+QStringList editionActionIds(QStringList ids) {
+    ids.removeIf([](const QString& id) { return !presentation::editionActionToolAvailable(id); });
+    return ids;
+}
+QVector<QStringList> editionActionPositions(QVector<QStringList> positions) {
+    for (QStringList& position : positions) {
+        position.removeIf([](const QString& id) {
+            return !presentation::editionActionToolAvailable(id) ||
+                   (app::edition::isMini && id == QStringLiteral("text-recognition"));
+        });
+    }
+    positions.removeIf([](const QStringList& position) { return position.isEmpty(); });
+    return positions;
+}
 const QStringList kDrawingToolIds = {
     QStringLiteral("shape"),     QStringLiteral("arrow"),         QStringLiteral("line"),
     QStringLiteral("free-draw"), QStringLiteral("highlighter"),   QStringLiteral("spotlight"),
@@ -35,14 +51,20 @@ const QStringList kDrawingToolbarItemIds =
     QStringList{QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")};
 const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolIds;
 
-const QStringList kActionToolbarItemIds = {
-    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
-    QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
-    QStringLiteral("convert-to-html"),     QStringLiteral("record-screen"),
-    QStringLiteral("pin-to-screen"),       QStringLiteral("text-recognition"),
-    QStringLiteral("text-translation"),    QStringLiteral("scrolling-screenshot"),
-    QStringLiteral("quick-save"),          QStringLiteral("save-as-file"),
-};
+const QStringList kActionToolbarItemIds = editionActionIds({
+    QStringLiteral("barcode-recognition"),
+    QStringLiteral("table-recognition"),
+    QStringLiteral("convert-to-markdown"),
+    QStringLiteral("latex-recognition"),
+    QStringLiteral("convert-to-html"),
+    QStringLiteral("record-screen"),
+    QStringLiteral("pin-to-screen"),
+    QStringLiteral("text-recognition"),
+    QStringLiteral("text-translation"),
+    QStringLiteral("scrolling-screenshot"),
+    QStringLiteral("quick-save"),
+    QStringLiteral("save-as-file"),
+});
 
 QJsonArray jsonArray(const QStringList& values) {
     QJsonArray result;
@@ -72,7 +94,7 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
 }
 
 QVector<QStringList> defaultActionToolbarPositions() {
-    return {
+    return editionActionPositions({
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
          QStringLiteral("table-recognition")},
@@ -82,23 +104,18 @@ QVector<QStringList> defaultActionToolbarPositions() {
         {QStringLiteral("text-translation")},
         {QStringLiteral("scrolling-screenshot")},
         {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
-    };
+    });
 }
 
-const QStringList kPinnedActionToolbarItemIds = {QStringLiteral("barcode-recognition"),
-                                                 QStringLiteral("table-recognition"),
-                                                 QStringLiteral("convert-to-markdown"),
-                                                 QStringLiteral("latex-recognition"),
-                                                 QStringLiteral("convert-to-html"),
-                                                 QStringLiteral("text-recognition"),
-                                                 QStringLiteral("text-translation"),
-                                                 QStringLiteral("separator"),
-                                                 QStringLiteral("quick-save"),
-                                                 QStringLiteral("save-as-file"),
-                                                 QStringLiteral("copy")};
+const QStringList kPinnedActionToolbarItemIds = editionActionIds(
+    {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+     QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
+     QStringLiteral("convert-to-html"), QStringLiteral("text-recognition"),
+     QStringLiteral("text-translation"), QStringLiteral("separator"), QStringLiteral("quick-save"),
+     QStringLiteral("save-as-file"), QStringLiteral("copy")});
 
 QVector<QStringList> defaultPinnedActionToolbarPositions() {
-    return {
+    return editionActionPositions({
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
          QStringLiteral("table-recognition")},
@@ -107,12 +124,14 @@ QVector<QStringList> defaultPinnedActionToolbarPositions() {
         {QStringLiteral("separator")},
         {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
         {QStringLiteral("copy")},
-    };
+    });
 }
 
-QJsonObject defaultToolbarLayout(const QVector<QStringList>& positions) {
+QJsonObject defaultToolbarLayout(const QVector<QStringList>& positions, bool actionTools = false) {
     return {{QStringLiteral("positions"), jsonArray(positions)},
-            {QStringLiteral("hidden"), QJsonArray()}};
+            {QStringLiteral("hidden"), actionTools && app::edition::isMini
+                                           ? QJsonArray{QStringLiteral("text-recognition")}
+                                           : QJsonArray()}};
 }
 
 QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
@@ -933,10 +952,11 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("screenshot_toolbar/layout"),
      defaultToolbarLayout(defaultDrawingToolbarPositions()), ConfigurationValueKind::Structured},
     {QStringLiteral("pin_to_screen/action_tools_layout"),
-     defaultToolbarLayout(defaultPinnedActionToolbarPositions()),
+     defaultToolbarLayout(defaultPinnedActionToolbarPositions(), true),
      ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_toolbar/action_tools_layout"),
-     defaultToolbarLayout(defaultActionToolbarPositions()), ConfigurationValueKind::Structured},
+     defaultToolbarLayout(defaultActionToolbarPositions(), true),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_ui/toolbar_size"),
      QStringLiteral("normal"),
      ConfigurationValueKind::String,
@@ -1005,7 +1025,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
       QStringLiteral("hide_to_top"), QStringLiteral("close")}},
-    {QStringLiteral("pin_to_screen/automatic_text_recognition"), true,
+    {QStringLiteral("pin_to_screen/automatic_text_recognition"), !app::edition::isMini,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("pin_to_screen/text_selection_on_recognition_results"),
      QStringLiteral("only_when_displayed"),
@@ -1276,6 +1296,18 @@ QVector<ConfigurationSchemaEntry> buildEntries() {
     replaceDefault(QStringLiteral("global_shortcuts/pin_clipboard_content"),
                    macGlobalShortcutDefault(QStringLiteral("Meta+3"), 20));
 #endif
+    result.removeIf([](const ConfigurationSchemaEntry& entry) {
+        return !presentation::editionConfigurationKeyAvailable(entry.key);
+    });
+    if constexpr (!app::edition::textTranslation) {
+        for (auto& entry : result) {
+            if (entry.key == QStringLiteral("tray/menu_options")) {
+                entry.allowedStringValues.removeAll(QStringLiteral("quick.screenshot-translation"));
+                entry.allowedStringValues.removeAll(
+                    QStringLiteral("quick.translate-selected-text"));
+            }
+        }
+    }
     return result;
 }
 
@@ -1675,6 +1707,12 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         return {};
     }
 
+    if (app::edition::isMini && known.contains(QStringLiteral("text-recognition")) &&
+        !positioned.contains(QStringLiteral("text-recognition")) &&
+        !hiddenSet.contains(QStringLiteral("text-recognition"))) {
+        appendHidden({QStringLiteral("text-recognition")});
+    }
+
     if (known.contains(QStringLiteral("quick-save")) &&
         !positioned.contains(QStringLiteral("quick-save")) &&
         !hiddenSet.contains(QStringLiteral("quick-save"))) {
@@ -1847,6 +1885,8 @@ const QVector<ConfigurationSchemaEntry>& ConfigurationSchema::entries() {
 }
 
 const ConfigurationSchemaEntry* ConfigurationSchema::entry(const QString& key) {
+    if (!presentation::editionConfigurationKeyAvailable(key))
+        return nullptr;
     const auto found = entryIndex().constFind(key);
     return found == entryIndex().cend() ? nullptr : &kEntries.at(found.value());
 }
@@ -2061,7 +2101,7 @@ int ConfigurationSchema::currentVersion() {
 
 QJsonObject ConfigurationSchema::completeDefaultDocument() {
     QJsonObject root;
-    for (const ConfigurationSchemaEntry& entry : kEntries) {
+    for (const ConfigurationSchemaEntry& entry : entries()) {
         insertPath(&root, entry.key, entry.defaultValue);
     }
     return root;

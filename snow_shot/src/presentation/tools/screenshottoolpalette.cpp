@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "screenshottoolbarperfinstrumentation.h"
 #include "../recording/screenrecordingperfinstrumentation.h"
 
@@ -1652,6 +1654,8 @@ bool ScreenshotToolPalette::finishStyleControlsActivation(Tool destinationTool) 
 }
 
 void ScreenshotToolPalette::setActiveTool(Tool tool) {
+    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
+        return;
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_active_tool");
     if (m_releasingSecondaryResources) {
         return;
@@ -2533,7 +2537,7 @@ void ScreenshotToolPalette::setJumpToTranslationPageVisible(bool visible) {
     if (m_jumpToTranslationPageVisible == visible) {
         return;
     }
-    m_jumpToTranslationPageVisible = visible;
+    m_jumpToTranslationPageVisible = visible && snow_shot::app::edition::textTranslation;
     if (m_jumpToTranslationPageButton == nullptr) {
         return;
     }
@@ -4005,8 +4009,11 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
 
     const bool hasEditingTools = addMainToolButtons(options, panelLayout);
     const bool hasSecondaryTools =
-        options.showScreenRecordButton || options.showOcrTool || options.showTextTranslationTool ||
-        options.showTableTool || options.showQrTool || options.showImageConversionTools ||
+        options.showScreenRecordButton || options.showOcrTool ||
+        (options.showTextTranslationTool && snow_shot::app::edition::textTranslation) ||
+        (options.showTableTool && snow_shot::app::edition::tableRecognition) ||
+        (options.showQrTool && snow_shot::app::edition::qrRecognition) ||
+        (options.showImageConversionTools && snow_shot::app::edition::imageConversion) ||
         options.showScrollingScreenshotTool ||
         (options.showSaveButton && !options.saveButtonWithResultActions) ||
         (!options.showRecordingControls && (options.actions & PinAction) != 0);
@@ -4321,6 +4328,8 @@ bool ScreenshotToolPalette::canActivateToolShortcut(Tool tool) const {
 }
 
 bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
+    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
+        return false;
     tool = rememberedDrawingMode(tool);
     if (!canActivateToolShortcut(tool)) {
         return false;
@@ -4581,11 +4590,13 @@ adqt::widgets::AdButton* ScreenshotToolPalette::actionToolEntryButton(const QStr
 }
 
 bool ScreenshotToolPalette::actionToolAvailable(const QString& itemId) const {
+    if (!snow_shot::presentation::editionActionToolAvailable(itemId))
+        return false;
     if (itemId == QStringLiteral("barcode-recognition")) {
-        return m_options.showQrTool;
+        return (m_options.showQrTool && snow_shot::app::edition::qrRecognition);
     }
     if (itemId == QStringLiteral("table-recognition")) {
-        return m_options.showTableTool;
+        return (m_options.showTableTool && snow_shot::app::edition::tableRecognition);
     }
     return actionToolSourceButton(itemId) != nullptr;
 }
@@ -4839,7 +4850,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
         availableItemIds.size() == 1 &&
         (availableItemIds.constFirst() == QStringLiteral("barcode-recognition") ||
          availableItemIds.constFirst() == QStringLiteral("table-recognition")) &&
-        m_options.showTableTool && m_options.showQrTool;
+        (m_options.showTableTool && snow_shot::app::edition::tableRecognition) &&
+        (m_options.showQrTool && snow_shot::app::edition::qrRecognition);
 
     if (nativeRecognitionGroup) {
         group.trigger = m_tableButton;
@@ -5346,7 +5358,8 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         hasButton = true;
     };
 
-    if (options.showTableTool && options.showQrTool) {
+    if ((options.showTableTool && snow_shot::app::edition::tableRecognition) &&
+        (options.showQrTool && snow_shot::app::edition::qrRecognition)) {
         m_tableButton =
             addToolButton("Table recognition", custom_outlined_icons::TableRecognition());
         applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("Table recognition"),
@@ -5364,7 +5377,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateActionTool(actionToolItemId(m_tableQrEntryTool)); });
         refreshTableQrTrigger();
         updateTableQrBusy();
-    } else if (options.showTableTool) {
+    } else if ((options.showTableTool && snow_shot::app::edition::tableRecognition)) {
         m_tableQrEntryTool = Tool::Table;
         m_tableButton =
             addToolButton("Table recognition", custom_outlined_icons::TableRecognition());
@@ -5375,7 +5388,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         addButton(m_tableButton);
         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("table-recognition")); });
-    } else if (options.showQrTool) {
+    } else if ((options.showQrTool && snow_shot::app::edition::qrRecognition)) {
         m_tableQrEntryTool = Tool::Qr;
         m_tableButton = addToolButton("Barcode recognition", custom_outlined_icons::ScanQrcode());
         applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("Barcode recognition"),
@@ -5387,7 +5400,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateActionTool(QStringLiteral("barcode-recognition")); });
     }
 
-    if (options.showImageConversionTools) {
+    if ((options.showImageConversionTools && snow_shot::app::edition::imageConversion)) {
         m_latexButton =
             addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "LaTeX Formula Recognition"),
                           adqt::icons::antd::outlined::Function());
@@ -5443,7 +5456,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateActionTool(QStringLiteral("text-recognition")); });
     }
 
-    if (options.showTextTranslationTool) {
+    if ((options.showTextTranslationTool && snow_shot::app::edition::textTranslation)) {
         m_textTranslationButton =
             addToolButton("Text translation", custom_outlined_icons::OcrTranslate());
         applyScreenshotShortcutTooltip(m_textTranslationButton, QStringLiteral("Text translation"),
@@ -5546,6 +5559,8 @@ bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
 }
 
 bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
+    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
+        return false;
     const QString actionId = actionToolItemId(tool);
     // Named shortcuts select the same item as the corresponding toolbar menu option.
     return actionId.isEmpty() ? activateToolFromToolbar(tool, false)
@@ -7469,6 +7484,7 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     };
     m_textEditButton =
         addButton("Edit", outlined_icons::Edit(), QStringLiteral("screenshotOcrTextEditButton"));
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textTranslateButton = addButton("Text translation", custom_outlined_icons::OcrTranslate(),
                                       QStringLiteral("screenshotOcrTextTranslateButton"));
@@ -7478,6 +7494,8 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
         addButton("Jump to Translation Page", custom_outlined_icons::JumpTranslate(),
                   QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
+#endif
+
     ScreenshotToolPaletteSelectEditorConfig formattingConfig;
     formattingConfig.objectName = QStringLiteral("screenshotOcrTextFormattingSelect");
     formattingConfig.placeholder = QStringLiteral("Formatting");
@@ -7510,19 +7528,30 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),
                                   QStringLiteral("screenshotOcrTextResetButton"));
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textSettingsButton = addButton("Translation settings", outlined_icons::Setting(),
                                      QStringLiteral("screenshotOcrTextSettingsButton"));
+#endif
+
     connect(m_textEditButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textEditRequested);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     connect(m_textTranslateButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textTranslateRequested);
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     connect(m_jumpToTranslationPageButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::jumpToTranslationPageRequested);
+#endif
+
     connect(m_textResetButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textResetRequested);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     connect(m_textSettingsButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textSettingsRequested);
+#endif
+
     connect(m_textFormattingSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
             [this](const QVariant& value) {
                 if (!m_replayingMaterializedState) {

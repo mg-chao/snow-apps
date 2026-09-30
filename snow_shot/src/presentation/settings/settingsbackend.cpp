@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/fontfamilies.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
@@ -63,6 +64,16 @@ shortcuts::ShortcutBindingList shortcutListDefault(const QString& key) {
     const bool allowModifierOnlyShift = key.startsWith(QStringLiteral("screenshot_shortcuts/"));
     return shortcuts::shortcutBindingsFromJson(storage::ConfigurationSchema::defaultValue(key),
                                                allowModifierOnlyShift, 2);
+}
+
+bool resetAvailableConfigurationValues(QMap<QString, QJsonValue> values) {
+    for (auto it = values.begin(); it != values.end();) {
+        if (!storage::ConfigurationSchema::contains(it.key()))
+            it = values.erase(it);
+        else
+            ++it;
+    }
+    return storage::ApplicationStorage::instance().configuration().setValues(values);
 }
 
 QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortcutId) {
@@ -1581,7 +1592,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         bool accepted = true;
         const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,
                                                      const QString& key) {
-            accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
+            if (storage::ConfigurationSchema::contains(key))
+                accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
         };
         resetShortcut(GlobalShortcutAction::Screenshot,
                       QStringLiteral("global_shortcuts/screenshot"));
@@ -1616,7 +1628,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               SettingsGlobalMouseAction::ScreenshotQuickSave,
               SettingsGlobalMouseAction::ScreenRecording}) {
             const QString key = globalMouseKey(action);
-            values.insert(key, storage::ConfigurationSchema::defaultValue(key));
+            if (storage::ConfigurationSchema::contains(key))
+                values.insert(key, storage::ConfigurationSchema::defaultValue(key));
         }
         return storage::ApplicationStorage::instance().configuration().setValues(values);
     }
@@ -1624,7 +1637,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         bool accepted = true;
         const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,
                                                      const QString& key) {
-            accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
+            if (storage::ConfigurationSchema::contains(key))
+                accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
         };
         resetShortcut(GlobalShortcutAction::OpenCaptureHistory,
                       QStringLiteral("global_shortcuts/open_capture_history"));
@@ -1643,7 +1657,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         bool accepted = true;
         const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,
                                                      const QString& key) {
-            accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
+            if (storage::ConfigurationSchema::contains(key))
+                accepted = applyShortcuts(action, shortcutListDefault(key)) && accepted;
         };
         resetShortcut(GlobalShortcutAction::PinClipboardContent,
                       QStringLiteral("global_shortcuts/pin_clipboard_content"));
@@ -1693,7 +1708,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    storage::ConfigurationSchema::defaultValue(
                        QStringLiteral("screenshot_selection/smart_selection"))
                        .toBool()) &&
-               storage::ApplicationStorage::instance().configuration().setValues({
+               resetAvailableConfigurationValues({
                    {QStringLiteral("screenshot/shutter_sound_notification"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/shutter_sound_notification"))},
@@ -1753,6 +1768,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::ScreenshotInterfaceSettings:
         return storage::ApplicationStorage::instance().configuration().setValues({
+#if SNOW_SHOT_EDITION_MINI
+            {QStringLiteral("screenshot_toolbar/action_tools_layout"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_toolbar/action_tools_layout"))},
+#endif
             {QStringLiteral("screenshot_ui/selection_transition_animation"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/selection_transition_animation"))},
@@ -1842,8 +1862,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("save_as_file"),
               QStringLiteral("cancel_screenshot"),
               QStringLiteral("copy_to_clipboard")}) {
-            defaults.insert(
-                actionId, shortcutListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
+            const QString key = QStringLiteral("screenshot_shortcuts/") + actionId;
+            if (storage::ConfigurationSchema::contains(key))
+                defaults.insert(actionId, shortcutListDefault(key));
         }
         shortcuts::ShortcutBindingMap all = storage::ScreenshotShortcutSettings().allShortcuts();
         for (auto it = defaults.cbegin(); it != defaults.cend(); ++it) {
@@ -1857,8 +1878,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              {QStringLiteral("table_recognition"), QStringLiteral("qr_code_recognition"),
               QStringLiteral("text_recognition"), QStringLiteral("text_translation"),
               QStringLiteral("undo"), QStringLiteral("redo")}) {
-            defaults.insert(
-                actionId, shortcutListDefault(QStringLiteral("screenshot_shortcuts/") + actionId));
+            const QString key = QStringLiteral("screenshot_shortcuts/") + actionId;
+            if (storage::ConfigurationSchema::contains(key))
+                defaults.insert(actionId, shortcutListDefault(key));
         }
         shortcuts::ShortcutBindingMap all = storage::ScreenshotShortcutSettings().allShortcuts();
         for (auto it = defaults.cbegin(); it != defaults.cend(); ++it) {

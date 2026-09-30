@@ -10,11 +10,15 @@ on:
   pull_request:
     paths:
       - scripts/*scoop*.ps1
+      - scripts/snow-shot-editions.ps1
+      - scripts/test-snow-shot-mini-release.ps1
       - .github/workflows/snow-shot-scoop.yml
   push:
     branches: [main]
     paths:
       - scripts/*scoop*.ps1
+      - scripts/snow-shot-editions.ps1
+      - scripts/test-snow-shot-mini-release.ps1
       - .github/workflows/snow-shot-scoop.yml
 
 permissions:
@@ -36,10 +40,14 @@ jobs:
           persist-credentials: false
       - name: Verify manifest generation and schema
         shell: pwsh
-        run: ./scripts/test-snow-shot-scoop.ps1 -SchemaPath build/scoop-runtime/schema.json
+        run: |
+          ./scripts/test-snow-shot-scoop.ps1 -SchemaPath build/scoop-runtime/schema.json
+          ./scripts/test-snow-shot-mini-release.ps1
       - name: Verify isolated Scoop lifecycle
         shell: pwsh
-        run: ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime
+        run: |
+          ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime
+          ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime -Edition Mini
       - name: Generate verified manifest for upstream submission
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
@@ -47,14 +55,19 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          ./scripts/new-snow-shot-scoop-manifest.ps1 -Tag $env:RELEASE_TAG
-          if (-not (Test-Json -Json (Get-Content build/scoop/snowshot.json -Raw) -SchemaFile build/scoop-runtime/schema.json)) {
-            throw 'Scoop schema validation failed.'
+          . ./scripts/snow-shot-scoop.ps1
+          $version = Get-SnowShotScoopVersion $env:RELEASE_TAG
+          $release = Invoke-SnowShotScoopRelease $env:RELEASE_TAG
+          foreach ($edition in @(Get-SnowShotReleaseEditions $release $version)) {
+            $path = ./scripts/new-snow-shot-scoop-manifest.ps1 -Tag $env:RELEASE_TAG -Edition $edition
+            if (-not (Test-Json -Json (Get-Content $path -Raw) -SchemaFile build/scoop-runtime/schema.json)) {
+              throw 'Scoop schema validation failed.'
+            }
           }
       - name: Preserve manifest for upstream submission
         if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: snow-shot-scoop-manifest
-          path: build/scoop/snowshot.json
+          path: build/scoop/*.json
           if-no-files-found: warn

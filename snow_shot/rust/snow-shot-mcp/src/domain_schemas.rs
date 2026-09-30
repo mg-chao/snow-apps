@@ -9,10 +9,10 @@ macro_rules! input {
     };
 }
 macro_rules! choices {
-    ($name:ident { $($variant:ident),* $(,)? }) => {
+    ($name:ident { $($(#[$attribute:meta])* $variant:ident),* $(,)? }) => {
         #[derive(Deserialize, JsonSchema)]
         #[serde(rename_all = "snake_case")]
-        enum $name { $($variant),* }
+        enum $name { $($(#[$attribute])* $variant),* }
     };
 }
 macro_rules! limited_integer {
@@ -104,6 +104,7 @@ choices!(AppAction {
     ShowSettings,
     ShowHistory,
     ShowPinned,
+    #[cfg(not(feature = "mini"))]
     ShowTranslation,
     Restart,
     Quit
@@ -238,9 +239,13 @@ input!(OriginalContentOutput { output: RecognitionOutput, format: Option<Origina
 input!(DocumentSelection { operation: Option<RegionOperation>, r#type: Option<RegionType>, bounds: Option<[f64; 4]>, points: Option<Vec<[f64; 2]>> });
 choices!(RecognitionKind {
     Text,
+    #[cfg(not(feature = "mini"))]
     Table,
+    #[cfg(not(feature = "mini"))]
     Qr,
+    #[cfg(not(feature = "mini"))]
     Markdown,
+    #[cfg(not(feature = "mini"))]
     Html
 });
 input!(DocumentRecognize {
@@ -288,7 +293,7 @@ choices!(EncodingPreset {
 });
 input!(RecordingOptions {
     path: Option<String>,
-    format: Option<RecordingFormat>, start_delay_seconds: Option<DelaySeconds>, microphone: Option<bool>,
+    format: Option<RecordingFormat>, quality: Option<Percentage>, start_delay_seconds: Option<DelaySeconds>, microphone: Option<bool>,
     system_audio: Option<bool>, separate_audio_tracks: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
     clarity: Option<Clarity>, animated_clarity: Option<AnimatedClarity>, encoder: Option<Encoder>,
     encoding_preset: Option<EncodingPreset>, r#loop: Option<bool>, capture_toolbar: Option<bool>,
@@ -360,6 +365,7 @@ choices!(PinnedEditAction {
     Redo,
     Reset,
     Recognize,
+    #[cfg(not(feature = "mini"))]
     Translate,
     RecognitionEdit,
     Duplicate,
@@ -790,6 +796,15 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
 ];
 
 pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, serde_json::Error> {
+    if !crate::edition::method_enabled(name)
+        || input
+            .as_ref()
+            .is_some_and(|value| !crate::edition::input_enabled(name, value))
+    {
+        return Err(serde::de::Error::custom(
+            "This operation is unavailable in the compiled edition",
+        ));
+    }
     match name {
         "snow_shot_artifact_list" => model::<Empty>(input),
         "snow_shot_artifact_read" => model::<ArtifactRead>(input),
@@ -958,7 +973,10 @@ mod tests {
     #[test]
     fn all_domain_contracts_have_unique_schemas_and_mutations_are_revisioned() {
         let mut names = std::collections::HashSet::new();
-        for (name, _, _) in TOOLS {
+        for (name, _, _) in TOOLS
+            .iter()
+            .filter(|(name, _, _)| crate::edition::method_enabled(name))
+        {
             assert!(names.insert(name), "{name}");
             assert!(
                 schema(name, None).unwrap().get("type") == Some(&json!("object")),
@@ -1026,10 +1044,13 @@ mod tests {
             )
             .is_ok()
         );
-        let input = json!({"region":[0,0,1920,1080],"options":{"frame_rate":60,"clarity":"1080p","keyboard_size":32,"path":"C:/capture.mp4"}});
+        let input = json!({"region":[0,0,1920,1080],"options":{"frame_rate":60,"clarity":"1080p","keyboard_size":32,"quality":100,"path":"C:/capture.mp4"}});
         assert!(schema("snow_shot_recording_start", Some(input.clone())).is_ok());
         for (key, value) in [
             ("frame_rate", json!(240)),
+            ("quality", json!(101)),
+            ("quality", json!(-1)),
+            ("quality", json!(1.5)),
             ("clarity", json!("8k")),
             ("keyboard_size", json!(256)),
             ("surprise", json!(true)),
@@ -1106,19 +1127,21 @@ mod tests {
             )
             .is_ok()
         );
-        assert!(
+        assert_eq!(
             schema(
                 "snow_shot_translation_start",
                 Some(json!({"source":"selection"}))
             )
-            .is_ok()
+            .is_ok(),
+            !crate::edition::MINI
         );
-        assert!(
+        assert_eq!(
             schema(
                 "snow_shot_translation_start",
                 Some(json!({"retry_job_id":"prior"}))
             )
-            .is_ok()
+            .is_ok(),
+            !crate::edition::MINI
         );
         assert!(
             schema(
