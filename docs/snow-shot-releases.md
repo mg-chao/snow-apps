@@ -62,6 +62,9 @@ the local machine; there is no GitHub release synchronization workflow. Main bra
 source mirroring remains separate. `-SkipGitee` explicitly selects GitHub-only
 publication; `-AuditOnly` and `-WhatIf` do not contact Gitee or require a token.
 
+Gitee API reads use the local publication token to avoid anonymous rate limits.
+Transient HTTP 502/503/504 read failures receive at most three short retries;
+upload POST requests are never automatically repeated after an ambiguous response.
 Gitee retries verify all existing bytes before filling missing assets, upload signed
 metadata last, and download each attachment to check its size and SHA-256. Conflicting
 bytes, source tags, titles, or notes fail without overwrite. Resume an interrupted
@@ -73,7 +76,8 @@ python scripts/publish-snow-shot-gitee-release.py --manifest artifacts/publish-T
 python scripts/publish-snow-shot-gitee-release.py --manifest artifacts/publish-TRANSACTION/local-release.json --auditor build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe --verify-only
 ```
 
-`--verify-only` requires no token and performs no uploads. Keep the local manifest and
+`--verify-only` requires no token and performs no uploads; it uses a locally configured
+token when available for authenticated reads. Keep the local manifest and
 all referenced files until both public release pages and asset downloads are verified.
 
 ## Release contract

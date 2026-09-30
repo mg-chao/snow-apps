@@ -3,11 +3,13 @@
 
 import base64
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 
 SCRIPT = Path(__file__).with_name("publish-snow-shot-gitee-release.py")
@@ -130,7 +132,7 @@ class PublisherTests(unittest.TestCase):
              patch.object(publisher, "sync_tag", side_effect=lambda *args: events.append("tag")), \
              patch.object(publisher, "existing_release", side_effect=lambda *args: remote if files else None), \
              patch.object(publisher, "post_form", side_effect=fake_post), \
-             patch.object(publisher, "attachments", side_effect=lambda _: list(files.values())), \
+             patch.object(publisher, "attachments", side_effect=lambda _, token="": list(files.values())), \
              patch.object(publisher, "verify_attachment", side_effect=fake_verify):
             publisher.publish(self.release, assets, "test-token", "test-user")
             self.assertEqual(events, ["tag", "create", "package.zip", "verify:package.zip",
@@ -178,6 +180,38 @@ class PublisherTests(unittest.TestCase):
             publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), self.directory)
         self.assertEqual(self.release["assets"][-1], first)
         self.assertEqual(first["name"], "snow-shot-1.2.3-macos-arm64-homebrew.tar.gz")
+
+    def test_api_reads_authenticate_and_retry_only_transient_read_failures(self):
+        url = publisher.GITEE_API + "?per_page=100"
+        response = io.BytesIO(b'[]')
+        output = io.StringIO()
+        with patch.object(publisher, "urlopen", side_effect=[
+                HTTPError(url, 502, "Bad Gateway", {}, None), response]) as request, \
+             patch.object(publisher.time, "sleep") as sleep, \
+             patch("sys.stdout", output):
+            self.assertEqual(publisher.api_json(url, "secret-token"), [])
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_args.args[0], url + "&access_token=secret-token")
+        sleep.assert_called_once_with(2)
+        self.assertNotIn("secret-token", output.getvalue())
+        with patch.object(publisher, "urlopen", side_effect=HTTPError(url, 403, "Forbidden", {}, None)) as request, \
+             patch.object(publisher.time, "sleep") as sleep:
+            with self.assertRaises(HTTPError):
+                publisher.api_json(url, "secret-token")
+            request.assert_called_once()
+            sleep.assert_not_called()
+        with patch.object(publisher, "urlopen", side_effect=HTTPError(url, 502, "Bad Gateway", {}, None)) as request, \
+             patch.object(publisher.time, "sleep"), patch("sys.stdout", io.StringIO()):
+            with self.assertRaises(HTTPError):
+                publisher.api_json(url)
+            self.assertEqual(request.call_count, 4)
+
+    def test_release_listings_use_the_publication_token(self):
+        with patch.object(publisher, "api_json", return_value=[]) as api:
+            publisher.attachments(7, "secret-token")
+            self.assertEqual(api.call_args.args[1], "secret-token")
+            publisher.existing_release(TAG, "secret-token")
+            self.assertEqual(api.call_args.args[1], "secret-token")
 
 
 if __name__ == "__main__":

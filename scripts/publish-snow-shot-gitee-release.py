@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -27,14 +28,23 @@ def run(*args: str) -> str:
     return subprocess.check_output(args, text=True).strip()
 
 
-def api_json(url: str):
-    try:
-        with urlopen(url, timeout=30) as response:
-            return json.load(response)
-    except HTTPError as error:
-        if error.code == 404:
-            return None
-        raise
+def api_json(url: str, token: str = ""):
+    if token:
+        url += ("&" if "?" in url else "?") + urlencode({"access_token": token})
+    # Retry only idempotent reads after temporary gateway/service failures.
+    # Never log the request URL: authenticated Gitee requests carry a token.
+    for attempt in range(4):
+        try:
+            with urlopen(url, timeout=30) as response:
+                return json.load(response)
+        except HTTPError as error:
+            if error.code == 404:
+                return None
+            if error.code not in (502, 503, 504) or attempt == 3:
+                raise
+            print(f"Transient Gitee API read failure (HTTP {error.code}); retrying read",
+                  flush=True)
+            time.sleep(2 * (attempt + 1))
 
 
 def checked_tag(tag: str) -> str:
@@ -101,17 +111,17 @@ def post_form(url: str, fields: dict[str, str], token: str, file: Path | None = 
     return json.loads(subprocess.check_output(command, input=config, text=True))
 
 
-def attachments(release_id: int) -> list[dict]:
-    files = api_json(f"{GITEE_API}/{release_id}/attach_files?per_page=100")
+def attachments(release_id: int, token: str = "") -> list[dict]:
+    files = api_json(f"{GITEE_API}/{release_id}/attach_files?per_page=100", token)
     if not isinstance(files, list) or len(files) >= 100:
         raise ValueError("Gitee attachment listing is incomplete")
     return files
 
 
-def existing_release(tag: str):
+def existing_release(tag: str, token: str = ""):
     found = None
     for page in range(1, 11):
-        releases = api_json(f"{GITEE_API}?per_page=100&page={page}")
+        releases = api_json(f"{GITEE_API}?per_page=100&page={page}", token)
         if not isinstance(releases, list) or len(releases) > 100:
             raise ValueError("Gitee release listing is invalid")
         for release in releases:
@@ -157,7 +167,7 @@ def load_token() -> str:
 
 def check_auth(token: str) -> None:
     try:
-        account = api_json("https://gitee.com/api/v5/user?" + urlencode({"access_token": token}))
+        account = api_json("https://gitee.com/api/v5/user", token)
     except HTTPError as error:
         raise ValueError(f"Gitee API authentication failed (HTTP {error.code})") from None
     if not isinstance(account, dict) or not account.get("login"):
@@ -275,7 +285,7 @@ def publish(release: dict, assets: dict[str, Path], token: str, username: str,
         if not token:
             raise ValueError("Configure GITEE_TOKEN with release write access")
         sync_tag(tag, release["sourceCommit"], token, username)
-    remote = existing_release(tag)
+    remote = existing_release(tag, token)
     if remote is None:
         if verify_only:
             raise ValueError("Expected a published Gitee release")
@@ -297,7 +307,7 @@ def publish(release: dict, assets: dict[str, Path], token: str, username: str,
         raise ValueError("Gitee release has no id")
     with tempfile.TemporaryDirectory(prefix="snow-gitee-release-") as temporary:
         directory = Path(temporary)
-        files = attachments(release_id)
+        files = attachments(release_id, token)
         names = [file.get("name") for file in files]
         if len(names) != len(set(names)) or set(names) - set(assets):
             raise ValueError("Gitee has duplicate or unexpected release assets")
@@ -317,13 +327,13 @@ def publish(release: dict, assets: dict[str, Path], token: str, username: str,
             check_local_asset(descriptors[name], assets[name])
             print(f"Uploading local {name} ({assets[name].stat().st_size} bytes)", flush=True)
             post_form(f"{GITEE_API}/{release_id}/attach_files", {}, token, assets[name])
-            existing = [file for file in attachments(release_id) if file.get("name") == name]
+            existing = [file for file in attachments(release_id, token) if file.get("name") == name]
             if len(existing) != 1:
                 raise ValueError(f"Gitee upload did not produce exactly one asset: {name}")
             print(f"Verifying {name}", flush=True)
             verify_attachment(existing[0], tag, name, assets[name], directory)
             print(f"Verified {name}", flush=True)
-        final_files = attachments(release_id)
+        final_files = attachments(release_id, token)
         if (len(final_files) != len(assets) or
                 {file.get("name") for file in final_files} != set(assets)):
             raise ValueError("Final Gitee asset listing differs from local release")
@@ -354,7 +364,14 @@ if __name__ == "__main__":
                 arguments.manifest.write_text(json.dumps(release, ensure_ascii=False, indent=2) + "\n",
                                                encoding="utf-8")
             else:
-                token = "" if arguments.verify_only else load_token()
+                token = ""
+                if arguments.verify_only:
+                    try:
+                        token = load_token()
+                    except ValueError:
+                        pass  # Public verification remains available without credentials.
+                else:
+                    token = load_token()
                 if token:
                     check_auth(token)
                 publish(release, assets, token, os.environ.get("GITEE_USERNAME", "mg-chao"),
