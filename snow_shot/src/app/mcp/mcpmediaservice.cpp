@@ -90,7 +90,7 @@ class McpMediaService::Impl {
     QHash<QString, Pending> pending;
     QHash<quint64, QSet<QString>> recognitionOwners;
     QHash<quint64, QList<std::shared_ptr<ScreenshotExportArtifact>>> exports;
-    QHash<quint64, QList<ScreenshotClipboardCommitHandle>> clipboardCommits;
+    QHash<quint64, std::shared_ptr<ScreenshotClipboardCommitScope>> clipboardScopes;
     QHash<QString, std::function<void()>> cancellations;
     struct Cached {
         QByteArray fingerprint;
@@ -105,6 +105,14 @@ class McpMediaService::Impl {
     QHash<QString, InflightReplay> inflightReplay;
     QStringList replayOrder;
     qsizetype replayBytes = 0;
+
+    ScreenshotClipboardCommitScope& clipboardScope(quint64 connection) {
+        auto& scope = clipboardScopes[connection];
+        if (!scope) {
+            scope = std::make_shared<ScreenshotClipboardCommitScope>();
+        }
+        return *scope;
+    }
 
     quint64 observe(const QString& key, QJsonObject state) {
         state.remove(QStringLiteral("duration_ms"));
@@ -731,12 +739,15 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
         const bool original = p.value(QStringLiteral("original")).toBool();
         if (output == QStringLiteral("copy")) {
             if (auto mime = window->automationClipboardMimeData(original)) {
-                auto commit = ScreenshotClipboardService::commitMimeData(
-                    QApplication::clipboard(), this, mime.release(),
-                    [reply](ScreenshotClipboardCommitResult result) {
-                        reply({{QStringLiteral("copied"), result.succeeded()}},
-                              result.succeeded() ? QString() : QStringLiteral("clipboard_failed"));
-                    });
+                auto commit =
+                    s.clipboardScope(r.connectionId)
+                        .commitMimeData(QApplication::clipboard(), this, mime.release(),
+                                        [reply](ScreenshotClipboardCommitResult result) {
+                                            reply({{QStringLiteral("copied"), result.succeeded()}},
+                                                  result.succeeded()
+                                                      ? QString()
+                                                      : QStringLiteral("clipboard_failed"));
+                                        });
                 if (!commit.isValid()) {
                     reply({}, QStringLiteral("clipboard_failed"));
                     return;
@@ -746,10 +757,6 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
                                            commit.cancel();
                                            reply({}, QStringLiteral("cancelled"));
                                        });
-                auto& commits = s.clipboardCommits[r.connectionId];
-                commits.append(std::move(commit));
-                while (commits.size() > 32)
-                    commits.removeFirst();
                 return;
             }
         } else if (!original) {
@@ -822,14 +829,16 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
                             complete({}, QStringLiteral("export_failed"));
                             return;
                         }
-                        auto commit = ScreenshotClipboardService::commit(
-                            QApplication::clipboard(), guard, std::move(result.payload),
-                            [complete](ScreenshotClipboardCommitResult committed) {
-                                complete({{QStringLiteral("copied"), committed.succeeded()}},
-                                         committed.succeeded()
-                                             ? QString()
-                                             : QStringLiteral("clipboard_failed"));
-                            });
+                        auto commit =
+                            guard->m_impl->clipboardScope(connection)
+                                .commit(QApplication::clipboard(), guard, std::move(result.payload),
+                                        [complete](ScreenshotClipboardCommitResult committed) {
+                                            complete(
+                                                {{QStringLiteral("copied"), committed.succeeded()}},
+                                                committed.succeeded()
+                                                    ? QString()
+                                                    : QStringLiteral("clipboard_failed"));
+                                        });
                         if (!commit.isValid())
                             complete({}, QStringLiteral("clipboard_failed"));
                         else {
@@ -842,10 +851,6 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
                                         guard->m_impl->exports[connection].removeAll(artifact);
                                     reply({}, QStringLiteral("cancelled"));
                                 });
-                            auto& commits = guard->m_impl->clipboardCommits[connection];
-                            commits.append(std::move(commit));
-                            while (commits.size() > 32)
-                                commits.removeFirst();
                         }
                     }))
                 complete({}, QStringLiteral("queue_full"));
@@ -914,8 +919,7 @@ void McpMediaService::disconnected(quint64 connection) {
             window->cancelAutomationRecognition();
     for (const auto& artifact : s.exports.take(connection))
         artifact->cancel();
-    for (const auto& commit : s.clipboardCommits.take(connection))
-        commit.cancel();
+    s.clipboardScopes.remove(connection);
     if (s.recordingOwner == connection && s.recording) {
         s.recording->detachAutomation();
         s.recordingOwner = 0;
@@ -949,10 +953,7 @@ void McpMediaService::shutdown() {
         for (const auto& artifact : list)
             artifact->cancel();
     s.exports.clear();
-    for (const auto& commits : s.clipboardCommits)
-        for (const auto& commit : commits)
-            commit.cancel();
-    s.clipboardCommits.clear();
+    s.clipboardScopes.clear();
     for (const auto& ids : s.recognitionOwners)
         for (const auto& id : ids)
             if (auto* window = s.groups.liveWindow(id))

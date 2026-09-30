@@ -18,6 +18,8 @@ class QClipboard;
 class QMimeData;
 class QObject;
 struct ScreenshotClipboardPayloadTestAccess;
+struct ScreenshotClipboardCommitState;
+struct ScreenshotClipboardCommitScopeState;
 
 class ScreenshotClipboardPayload final {
   public:
@@ -75,11 +77,13 @@ class ScreenshotClipboardCommitHandle final {
     void cancel() const;
     [[nodiscard]] bool isValid() const;
     [[nodiscard]] bool isCancellationRequested() const;
+    [[nodiscard]] bool isFinished() const;
 
   private:
     friend class ScreenshotClipboardService;
-    explicit ScreenshotClipboardCommitHandle(std::shared_ptr<std::atomic_bool> cancelled);
-    std::shared_ptr<std::atomic_bool> m_cancelled;
+    friend class ScreenshotClipboardCommitScope;
+    explicit ScreenshotClipboardCommitHandle(std::shared_ptr<ScreenshotClipboardCommitState> state);
+    std::shared_ptr<ScreenshotClipboardCommitState> m_state;
 };
 
 class ScreenshotClipboardService final {
@@ -110,6 +114,32 @@ class ScreenshotClipboardService final {
                    PublicationId publicationId, CommitCompletion completion);
     [[nodiscard]] static bool publish(QClipboard* clipboard, ScreenshotClipboardPayload payload);
     [[nodiscard]] static bool publishImage(QClipboard* clipboard, const QImage& image);
+};
+
+// Owns cancellation for a set of publications on the GUI thread. Terminal operations
+// leave the scope before notifying their receivers. Cancellation and destruction
+// suppress remaining callbacks; the scope can be reused after cancelAll().
+class ScreenshotClipboardCommitScope final {
+  public:
+    ScreenshotClipboardCommitScope() = default;
+    ~ScreenshotClipboardCommitScope();
+    ScreenshotClipboardCommitScope(const ScreenshotClipboardCommitScope&) = delete;
+    ScreenshotClipboardCommitScope& operator=(const ScreenshotClipboardCommitScope&) = delete;
+
+    [[nodiscard]] ScreenshotClipboardCommitHandle
+    commit(QClipboard* clipboard, QObject* receiver, ScreenshotClipboardPayload payload,
+           ScreenshotClipboardService::CommitCompletion completion,
+           ScreenshotClipboardService::PublicationId publicationId = 0);
+    [[nodiscard]] ScreenshotClipboardCommitHandle
+    commitMimeData(QClipboard* clipboard, QObject* receiver, QMimeData* mimeData,
+                   ScreenshotClipboardService::CommitCompletion completion,
+                   ScreenshotClipboardService::PublicationId publicationId = 0);
+    void cancelAll();
+    [[nodiscard]] qsizetype pendingCount() const;
+
+  private:
+    void track(const ScreenshotClipboardCommitHandle& handle);
+    std::shared_ptr<ScreenshotClipboardCommitScopeState> m_state;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDSERVICE_H

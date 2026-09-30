@@ -332,7 +332,6 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void detachCaptureForExport(ExportDetachMode mode = ExportDetachMode::Immediate);
     void scheduleDeferredExportCleanup();
     void trackExportJob(const ScreenshotExportJobHandle& handle);
-    void trackClipboardCommit(const ScreenshotClipboardCommitHandle& handle);
     void completeScrollingResultExport(quint64 generation);
     void restoreToolUiAfterScrollingCapture(bool scrollingCaptureStopped);
     [[nodiscard]] bool resetCanvasEditingState();
@@ -595,9 +594,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     quint64 m_captureEpoch = 0;
     ScreenshotExportJobHandle m_exportJob;
     std::vector<std::weak_ptr<ScreenshotExportArtifact>> m_saveArtifacts;
-    ScreenshotClipboardCommitHandle m_clipboardCommit;
     std::vector<ScreenshotExportJobHandle> m_exportJobs;
-    std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
+    ScreenshotClipboardCommitScope m_clipboardScope;
     ScreenshotExportJobHandle m_clipboardPinJob;
     ScreenshotFilePinBatch m_filePinBatch;
     quint64 m_clipboardPinGeneration = 0;
@@ -2724,19 +2722,11 @@ void ScreenshotController::Impl::trackExportJob(const ScreenshotExportJobHandle&
     }
 }
 
-void ScreenshotController::Impl::trackClipboardCommit(
-    const ScreenshotClipboardCommitHandle& handle) {
-    if (handle.isValid()) {
-        m_clipboardCommits.push_back(handle);
-    }
-}
-
 void ScreenshotController::Impl::completeScrollingResultExport(quint64 generation) {
     if (!finishImageExport(generation)) {
         return;
     }
     m_exportJob = {};
-    m_clipboardCommit = {};
 }
 
 void ScreenshotController::Impl::restoreToolUiAfterScrollingCapture(bool scrollingCaptureStopped) {
@@ -4404,7 +4394,7 @@ void ScreenshotController::Impl::saveArtifactForCopy(
             }
             auto* mime = new QMimeData();
             mime->setUrls({QUrl::fromLocalFile(QFileInfo(result.savedPath).absoluteFilePath())});
-            impl.m_clipboardCommit = ScreenshotClipboardService::commitMimeData(
+            const auto handle = impl.m_clipboardScope.commitMimeData(
                 QApplication::clipboard(), receiver, mime,
                 [receiver, artifact, generation, historySource, historyCandidate,
                  scrolling](ScreenshotClipboardCommitResult commit) mutable {
@@ -4423,8 +4413,7 @@ void ScreenshotController::Impl::saveArtifactForCopy(
                                                          historySource, historyCandidate, scrolling,
                                                          artifact);
                 });
-            impl.trackClipboardCommit(impl.m_clipboardCommit);
-            if (!impl.m_clipboardCommit.isValid()) {
+            if (!handle.isValid()) {
                 impl.completeCopyExport(false, generation, historySource, historyCandidate,
                                         scrolling, artifact);
             }
@@ -4477,7 +4466,7 @@ void ScreenshotController::Impl::copyArtifactToClipboard(
                                                      historyCandidate, scrolling, artifact);
                 return;
             }
-            receiver->m_impl->m_clipboardCommit = ScreenshotClipboardService::commit(
+            const auto handle = receiver->m_impl->m_clipboardScope.commit(
                 QApplication::clipboard(), receiver, std::move(result.payload),
                 [receiver, artifact, generation, historySource, historyCandidate,
                  scrolling](ScreenshotClipboardCommitResult commit) mutable {
@@ -4497,8 +4486,7 @@ void ScreenshotController::Impl::copyArtifactToClipboard(
                                                          historySource, historyCandidate, scrolling,
                                                          artifact);
                 });
-            receiver->m_impl->trackClipboardCommit(receiver->m_impl->m_clipboardCommit);
-            if (!receiver->m_impl->m_clipboardCommit.isValid()) {
+            if (!handle.isValid()) {
                 if (receiver->m_impl->imageExportNotificationCurrent(generation)) {
                     receiver->m_impl->m_messages->error(
                         QString::fromLatin1(kCopyMessageKey),
@@ -4531,7 +4519,6 @@ void ScreenshotController::Impl::completeCopyExport(
         return;
     }
     m_exportJob = {};
-    m_clipboardCommit = {};
     if (success) {
         publishHistoryResult(std::move(historyCandidate), historySource, std::move(artifact));
     } else if (notify) {
@@ -5205,9 +5192,7 @@ void ScreenshotController::Impl::shutdown() {
     for (const auto& handle : m_exportJobs) {
         handle.cancel();
     }
-    for (const auto& handle : m_clipboardCommits) {
-        handle.cancel();
-    }
+    m_clipboardScope.cancelAll();
     m_exportJob.cancel();
     m_exportJob = {};
     for (const auto& weak : m_saveArtifacts) {
@@ -5215,8 +5200,6 @@ void ScreenshotController::Impl::shutdown() {
             artifact->cancel();
     }
     m_saveArtifacts.clear();
-    m_clipboardCommit.cancel();
-    m_clipboardCommit = {};
     if (m_selectionExportUiServices != nullptr) {
         m_selectionExportUiServices->cancelClipboardPublication();
     }

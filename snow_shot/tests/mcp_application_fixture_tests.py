@@ -553,6 +553,58 @@ def exercise(client, directory):
             "scope": "Isolated app storage and local HTTP provider; no external providers or recording devices"}
 
 
+def exercise_clipboard(client, directory):
+    source = directory / "clipboard-source.png"
+    png(source)
+    pins = []
+    for kind, value in (("file", str(source)), ("text", "Scoped clipboard publication")):
+        key = "path" if kind == "file" else kind
+        pin = client.tool("snow_shot_pinned_create", {"source": {"kind": kind, key: value}})
+        identifier = pin["result"]["id"]
+        pins.append(identifier)
+
+        def arguments(original):
+            current = client.tool("snow_shot_pinned_get", {"id": identifier})
+            return {"id": identifier, "expected_revision": current["revision"],
+                    "output": "copy", "original": original}
+
+        def copy(original):
+            for _ in range(5):
+                response = client.request("tools/call", {"name": "snow_shot_pinned_export",
+                                          "arguments": arguments(original)})
+                result = response["structuredContent"]
+                if not response.get("isError", False):
+                    assert result["result"]["copied"], result
+                    return
+                assert result["error"]["code"] == "stale_revision", response
+            raise AssertionError("clipboard pin never reached a stable revision")
+
+        # Exercise both direct MIME publication and rendered image publication
+        # beyond the former 32-handle retention cap on a persistent connection.
+        for cycle in range(36):
+            original = kind == "text" or cycle % 2 == 0
+            copy(original)
+
+        for cycle in range(9):
+            params = arguments(kind == "text")
+            client.sequence += 1
+            request_id = client.sequence
+            client.send({"jsonrpc": "2.0", "id": request_id, "method": "tools/call", "params": {
+                "name": "snow_shot_pinned_export", "arguments": params}})
+            client.send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                         "params": {"requestId": request_id}})
+            client.tool("snow_shot_pinned_get", {"id": identifier})
+        copy(kind == "text")
+
+    for identifier in pins:
+        current = client.tool("snow_shot_pinned_get", {"id": identifier})
+        client.tool("snow_shot_pinned_action", {"id": identifier,
+                    "expected_revision": current["revision"], "action": "destroy"})
+    return {"domains": ["scoped_mime_publication", "scoped_image_publication",
+                        "clipboard_cancellation", "clipboard_scope_reuse", "quit_acknowledgement"],
+            "scope": "Isolated production router with repeated clipboard exports and cancellation"}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bridge", type=lambda value: Path(value).resolve(strict=True))
@@ -564,6 +616,8 @@ def main():
                         help="Capture, render and save native screenshots without changing the clipboard")
     parser.add_argument("--disable-mcp", action="store_true",
                         help="Verify disabling acknowledges before private IPC teardown")
+    parser.add_argument("--clipboard-only", action="store_true",
+                        help="Exercise only repeated media clipboard publication and cancellation")
     args = parser.parse_args()
     if (args.recording or args.native_capture) and args.platform == "offscreen":
         parser.error("native capture and recording require --platform windows or --platform cocoa")
@@ -585,8 +639,11 @@ def main():
                                               (directory / "application.log").read_text(encoding="utf-8"))
                 client = Client(args.bridge, descriptor)
                 try:
-                    report = exercise(client, directory)
-                    exercise_modern_administration(args.bridge, descriptor)
+                    if args.clipboard_only:
+                        report = exercise_clipboard(client, directory)
+                    else:
+                        report = exercise(client, directory)
+                        exercise_modern_administration(args.bridge, descriptor)
                     if args.native_capture:
                         exercise_native_capture(client, directory)
                         report["domains"].append("native_screenshot_render_save_and_direct_capture")

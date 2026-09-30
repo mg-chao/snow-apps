@@ -522,6 +522,58 @@ void exportWorkerReleasesSharedDerivedContours() {
     }
 }
 
+void exportWorkerReleasesDocumentSnapshotsBeforeCompletion() {
+    ExportFixture fixture;
+    const QRect selection(0, 0, 40, 30);
+    const auto expected = fixture.displaySnapshot().copy(selection);
+    for (int mode = 0; mode < 3; ++mode) {
+        auto snapshot = fixture.runtime().smartEraseSnapshot();
+        const std::weak_ptr<const SnowCanvasSmartEraseSnapshot::Data> lifetime = snapshot.data;
+        fixture.runtime().restoreSmartEraseSnapshot(snapshot);
+        snapshot = {};
+        const auto result = waitForResult(
+            [&](QObject* receiver, auto callback) {
+                bool scheduled = false;
+                if (mode == 0) {
+                    scheduled = fixture.service().requestSelectionResult(selection, {}, receiver,
+                                                                         std::move(callback));
+                } else if (mode == 1) {
+                    scheduled = fixture.service().requestSelectionClipboard(
+                        selection, {}, receiver,
+                        [callback = std::move(callback)](ScreenshotSelectionClipboardResult value) {
+                            callback(std::move(value.image));
+                        });
+                } else {
+                    const auto request = fixture.service().preparePinnedSelection(selection, {});
+                    require(request.has_value(), "prepare snapshot lifetime pin request");
+                    scheduled = fixture.service().schedulePinnedSelection(
+                        *request, receiver,
+                        [receiver, callback = std::move(callback)](
+                            ScreenshotPinnedSelectionRequest,
+                            ScreenshotPinnedSelectionResultHandle value) {
+                            require(value.subscribe(
+                                        receiver,
+                                        [callback](bool success, QImage image) {
+                                            require(success,
+                                                    "snapshot lifetime pin export must succeed");
+                                            callback(std::move(image));
+                                        }),
+                                    "subscribe snapshot lifetime pin result");
+                        });
+                }
+                require(fixture.runtime().clearDocumentPreservingViewports(),
+                        "retire the capture document while its export is queued");
+                return scheduled;
+            },
+            [&](QImage image) {
+                require(lifetime.expired(),
+                        "completed exports must release worker and request snapshot ownership");
+                return image;
+            });
+        require(hasSamePixels(result, expected), "released export state must leave output intact");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     if (app.arguments().contains(QStringLiteral("--fractional-dpi"))) {
@@ -530,6 +582,7 @@ int main(int argc, char** argv) {
     }
     fractionalDpiExportsPreserveCapturePixels();
     exportWorkerReleasesSharedDerivedContours();
+    exportWorkerReleasesDocumentSnapshotsBeforeCompletion();
     compoundExportsSnapshotTheirGeometry();
     pointSelectionRetainsBackingPixelsAndScalesEffects();
     styledClipboardResultRetainsPngTransparency();

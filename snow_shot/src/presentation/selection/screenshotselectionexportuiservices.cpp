@@ -536,36 +536,19 @@ bool ScreenshotSelectionExportUiServices::publishClipboard(QObject* receiver,
                                                            ScreenshotClipboardPayload payload,
                                                            ClipboardCompletion completion,
                                                            quint64 publicationId) {
-    if (publicationId == 0) {
-        publicationId = ScreenshotClipboardService::reservePublication();
-    }
-    auto completionEnabled = std::make_shared<std::atomic_bool>(true);
-    m_clipboardCompletionEnabled.push_back(completionEnabled);
-    auto commit = ScreenshotClipboardService::commit(
-        QApplication::clipboard(), receiver, std::move(payload), publicationId,
-        [completionEnabled,
-         completion = std::move(completion)](ScreenshotClipboardCommitResult result) mutable {
-            if (completionEnabled->exchange(false, std::memory_order_acq_rel)) {
+    const auto commit = m_clipboardScope.commit(
+        QApplication::clipboard(), receiver, std::move(payload),
+        [completion = std::move(completion)](ScreenshotClipboardCommitResult result) mutable {
+            if (completion) {
                 completion(result.succeeded());
             }
-        });
-    if (commit.isValid()) {
-        m_clipboardCommits.push_back(commit);
-    }
+        },
+        publicationId);
     return commit.isValid();
 }
 
 void ScreenshotSelectionExportUiServices::cancelClipboardPublication() {
-    for (const auto& completionEnabled : m_clipboardCompletionEnabled) {
-        if (completionEnabled != nullptr) {
-            completionEnabled->store(false, std::memory_order_release);
-        }
-    }
-    for (const auto& commit : m_clipboardCommits) {
-        commit.cancel();
-    }
-    m_clipboardCompletionEnabled.clear();
-    m_clipboardCommits.clear();
+    m_clipboardScope.cancelAll();
 }
 
 void ScreenshotSelectionExportUiServices::prewarmPinnedWindow(QScreen* screen) {

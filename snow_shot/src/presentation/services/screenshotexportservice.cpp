@@ -94,7 +94,11 @@ class ScreenshotExportWorker final : public QObject {
                            const ScreenshotSelectionRenderSpec& spec = {}) {
         // This thread outlives captures. Release caches on the owning thread,
         // including failure exits, before publishing the completed result.
-        const auto releaseCaches = qScopeGuard([&style] {
+        const auto releaseCaches = qScopeGuard([this, &style] {
+            if (m_runtime != nullptr && !m_runtime->clearDocumentPreservingViewports()) {
+                // An invalid runtime must not retain the previous export's document.
+                m_runtime.reset();
+            }
             ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
             if (style.region)
                 style.region->clearDerivedCache();
@@ -197,7 +201,7 @@ bool ScreenshotExportService::requestSelectionResultAtScale(const QRect& selecti
         return false;
     }
     const snow_shot::presentation::clipboard_perf::Stopwatch requestTimer;
-    const auto smartErase = m_context.runtime.smartEraseSnapshot();
+    auto smartErase = m_context.runtime.smartEraseSnapshot();
     QByteArray documentSession;
     {
         SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.serialize_document");
@@ -237,6 +241,9 @@ bool ScreenshotExportService::requestSelectionResultAtScale(const QRect& selecti
                     "export.worker_queue_delay", workerQueueTimer.elapsedNanoseconds());
                 QImage image = worker->renderSelection(documentSession, smartErase, selection,
                                                        style, sources, spec);
+                smartErase = {};
+                documentSession.clear();
+                sources.clear();
                 if (guardedReceiver.isNull() || guardedCompletionContext.isNull()) {
                     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
                     return;
@@ -277,7 +284,7 @@ bool ScreenshotExportService::requestSelectionClipboard(const QRect& selection,
     }
 
     const snow_shot::presentation::clipboard_perf::Stopwatch requestTimer;
-    const auto smartErase = m_context.runtime.smartEraseSnapshot();
+    auto smartErase = m_context.runtime.smartEraseSnapshot();
     QByteArray documentSession;
     {
         SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.serialize_document");
@@ -312,6 +319,9 @@ bool ScreenshotExportService::requestSelectionClipboard(const QRect& selection,
             auto result = std::make_shared<ScreenshotSelectionClipboardResult>(
                 worker->prepareSelectionClipboard(documentSession, smartErase, selection, style,
                                                   sources, spec));
+            smartErase = {};
+            documentSession.clear();
+            sources.clear();
             if (guardedReceiver.isNull() || guardedCompletionContext.isNull()) {
                 SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
                 return;
@@ -370,7 +380,7 @@ bool ScreenshotExportService::schedulePinnedSelection(ScreenshotPinnedSelectionR
         return false;
     }
 
-    const auto smartErase = m_context.runtime.smartEraseSnapshot();
+    auto smartErase = m_context.runtime.smartEraseSnapshot();
     QByteArray documentSession;
     {
         SNOW_SHOT_PIN_PERF_SCOPE("export.serialize_document");
@@ -399,6 +409,9 @@ bool ScreenshotExportService::schedulePinnedSelection(ScreenshotPinnedSelectionR
             SNOW_SHOT_PIN_PERF_MILESTONE("export.render_started");
             QImage image = guardedWorker->renderSelection(documentSession, smartErase, selection,
                                                           style, sources, renderSpec);
+            smartErase = {};
+            documentSession.clear();
+            sources.clear();
             SNOW_SHOT_PIN_PERF_MILESTONE("export.render_finished");
             SNOW_SHOT_PIN_PERF_MILESTONE("export.result_published");
             const bool succeeded = !image.isNull();

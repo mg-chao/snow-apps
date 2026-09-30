@@ -478,6 +478,17 @@ if(ADQT_BUILD_TESTS)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     if(APPLE)
+        add_executable(adqt-widget-surface-lifecycle-tests
+            packages/ant_design_qt/tests/widget_surface_lifecycle_tests.mm)
+        target_link_libraries(adqt-widget-surface-lifecycle-tests PRIVATE adqt::widgets
+            Qt6::Widgets "-framework AppKit")
+        add_test(NAME adqt-widget-surface-lifecycle-tests
+            COMMAND adqt-widget-surface-lifecycle-tests -platform offscreen)
+        add_test(NAME adqt-widget-surface-lifecycle-native-tests
+            COMMAND adqt-widget-surface-lifecycle-tests -platform cocoa)
+        set_tests_properties(adqt-widget-surface-lifecycle-tests PROPERTIES LABELS "unit;macos")
+        set_tests_properties(adqt-widget-surface-lifecycle-native-tests PROPERTIES
+            LABELS "unit;macos" RUN_SERIAL TRUE)
         add_executable(adqt-widget-accessibility-repair-tests
             packages/ant_design_qt/tests/widget_accessibility_repair_tests.mm)
         target_link_libraries(adqt-widget-accessibility-repair-tests PRIVATE adqt::widgets Qt6::Widgets)

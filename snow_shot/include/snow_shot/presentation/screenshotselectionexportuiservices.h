@@ -4,6 +4,7 @@
 #include "snow_shot/storage/pinnedwindowtypes.h"
 
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotselectionexportworkflowports.h"
@@ -14,7 +15,6 @@
 #include <QPointer>
 #include <functional>
 #include <memory>
-#include <vector>
 
 class QScreen;
 class ScreenshotOcrRecognitionPort;
@@ -134,8 +134,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     std::unique_ptr<ScreenshotPendingPinCoordinator> m_pendingPinCoordinator;
-    std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
-    std::vector<std::shared_ptr<std::atomic_bool>> m_clipboardCompletionEnabled;
+    ScreenshotClipboardCommitScope m_clipboardScope;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H

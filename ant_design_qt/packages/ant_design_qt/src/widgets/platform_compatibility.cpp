@@ -3,6 +3,7 @@
 #include <QApplication>
 
 #if defined(Q_OS_MACOS)
+#include "detail/window_surface_mac_p.h"
 #include <QAccessible>
 #include <QEvent>
 #include <QPointer>
@@ -23,13 +24,16 @@ class WidgetAccessibilityRepair final : public QObject {
 
  protected:
   bool eventFilter(QObject* object, QEvent* event) override {
-    if (event->type() != QEvent::PlatformSurface ||
-        static_cast<QPlatformSurfaceEvent*>(event)->surfaceEventType() !=
-            QPlatformSurfaceEvent::SurfaceCreated) {
+    if (event->type() != QEvent::PlatformSurface) {
       return false;
     }
     auto* window = qobject_cast<QWindow*>(object);
     if (!window) {
+      return false;
+    }
+    if (static_cast<QPlatformSurfaceEvent*>(event)->surfaceEventType() ==
+        QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {
+      detail::releaseMacWindowSurfaceCursor(window);
       return false;
     }
     QWidget* widget = nullptr;

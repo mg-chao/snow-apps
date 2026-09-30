@@ -13306,6 +13306,54 @@ void pinnedManagementLifecycle() {
     service.destroyRecords({preservedId});
 }
 
+void selectionClipboardPublicationLifetime() {
+    QObject receiver;
+    auto services = std::make_unique<ScreenshotSelectionExportUiServices>();
+    for (int cycle = 0; cycle < 16; ++cycle) {
+        QEventLoop loop;
+        bool completed = false;
+        auto resource = std::make_shared<int>(cycle);
+        const std::weak_ptr<int> lifetime(resource);
+        require(services->publishClipboard(
+                    &receiver, {},
+                    [&, resource](bool success) {
+                        require(!success && *resource == cycle,
+                                "selection destination must report invalid clipboard input");
+                        completed = true;
+                        loop.quit();
+                    }),
+                "selection destination must schedule clipboard completion");
+        resource.reset();
+        QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+        loop.exec();
+        require(completed && lifetime.expired(),
+                "selection destination must release completed callback resources");
+    }
+
+    for (int outcome = 0; outcome < 3; ++outcome) {
+        auto* callbackReceiver = new QObject;
+        auto resource = std::make_shared<int>(outcome);
+        const std::weak_ptr<int> lifetime(resource);
+        bool called = false;
+        require(services->publishClipboard(callbackReceiver, {},
+                                           [&, resource](bool) { called = true; }),
+                "selection destination must schedule work before owner retirement");
+        resource.reset();
+        if (outcome == 0) {
+            services->cancelClipboardPublication();
+        } else if (outcome == 1) {
+            delete std::exchange(callbackReceiver, nullptr);
+        } else {
+            services.reset();
+        }
+        QCoreApplication::processEvents();
+        require(
+            !called && lifetime.expired(),
+            "cancelled, abandoned and destroyed destinations must suppress and release callbacks");
+        delete callbackReceiver;
+    }
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -13322,6 +13370,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--clipboard-publication-only"))) {
+            selectionClipboardPublicationLifetime();
+            return 0;
+        }
         const double expectedDpr = qEnvironmentVariable("SNOW_PIN_TEST_DPR").toDouble();
         if (expectedDpr > 0)
             require(
