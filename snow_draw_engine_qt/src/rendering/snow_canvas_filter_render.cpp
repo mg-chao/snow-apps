@@ -564,7 +564,8 @@ std::size_t verticalBoxBlur(const QImage& source, QImage& destination, int radiu
         return 0;
     }
     return parallelRows(height, width, singleThreaded, [&](int begin, int end) {
-        thread_local std::vector<int> sums;
+        // Pool threads outlive captures; keep pixel scratch within this operation.
+        std::vector<int> sums;
         sums.assign(static_cast<std::size_t>(width) * 4u, 0);
         auto* alpha = sums.data();
         auto* red = alpha + width;
@@ -742,8 +743,8 @@ void prepareAxisSamples(std::vector<AxisSample>& samples, int firstCoordinate, i
 template <int Factor>
 std::size_t upsampleBilinearImpl(const QImage& source, QImage& destination, bool singleThreaded,
                                  bool useAvx2, bool* avx2Executed) {
-    thread_local std::vector<AxisSample> xSamples;
-    thread_local std::vector<AxisSample> ySamples;
+    std::vector<AxisSample> xSamples;
+    std::vector<AxisSample> ySamples;
     prepareAxisSamples<Factor>(xSamples, 0, destination.width(), source.width());
     prepareAxisSamples<Factor>(ySamples, 0, destination.height(), source.height());
     const AxisSample* const horizontalSamples = xSamples.data();
@@ -751,8 +752,8 @@ std::size_t upsampleBilinearImpl(const QImage& source, QImage& destination, bool
     std::atomic_bool executed = false;
     const std::size_t jobs = parallelRows(
         destination.height(), destination.width(), singleThreaded, [&](int begin, int end) {
-            thread_local std::vector<QRgb> firstExpanded;
-            thread_local std::vector<QRgb> secondExpanded;
+            std::vector<QRgb> firstExpanded;
+            std::vector<QRgb> secondExpanded;
             firstExpanded.resize(static_cast<std::size_t>(destination.width()));
             secondExpanded.resize(static_cast<std::size_t>(destination.width()));
             int firstSourceRow = -1;
@@ -833,8 +834,8 @@ std::size_t upsampleBilinearCompositedImpl(const QImage& source, QImage& destina
                                            bool singleThreaded, bool useAvx2, bool* avx2Executed) {
     const ConstImageView sourceView = view(source);
     const ImageView destinationView = view(destination);
-    thread_local std::vector<AxisSample> xSamples;
-    thread_local std::vector<AxisSample> ySamples;
+    std::vector<AxisSample> xSamples;
+    std::vector<AxisSample> ySamples;
     prepareAxisSamples<Factor>(xSamples, destinationPixels.left() - sourcePixels.left(),
                                destinationPixels.width(), source.width());
     prepareAxisSamples<Factor>(ySamples, destinationPixels.top() - sourcePixels.top(),
@@ -845,8 +846,8 @@ std::size_t upsampleBilinearCompositedImpl(const QImage& source, QImage& destina
     const std::size_t jobs = parallelRows(
         destinationPixels.height(), destinationPixels.width(), singleThreaded,
         [&](int begin, int end) {
-            thread_local std::vector<QRgb> firstExpanded;
-            thread_local std::vector<QRgb> secondExpanded;
+            std::vector<QRgb> firstExpanded;
+            std::vector<QRgb> secondExpanded;
             firstExpanded.resize(static_cast<std::size_t>(destinationPixels.width()));
             secondExpanded.resize(static_cast<std::size_t>(destinationPixels.width()));
             int firstSourceRow = -1;

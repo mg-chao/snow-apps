@@ -2,7 +2,9 @@
 
 #include "snow_canvas_changed_viewports.h"
 #include "snow_canvas_ffi_handles.h"
+#include "snow_canvas_fill_render.h"
 #include "snow_canvas_type_conversions.h"
+#include "snow_canvas_watermark_renderer.h"
 
 #include <future>
 #include <limits>
@@ -10,6 +12,12 @@
 
 namespace snow_canvas_runtime {
 namespace {
+
+void clearDrawingCachesForCurrentThread() {
+    // Export sessions have no canvas clients, and their threads outlive the document.
+    snow_canvas_fill_render::resetHatchTextureCacheForCurrentThread();
+    snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
+}
 
 bool toEngineRuntimeConfig(const SnowCanvasRuntimeConfig& config, SnowStyleDefaults& styleDefaults,
                            SnowRuntimeConfig& engineConfig) {
@@ -143,6 +151,7 @@ RuntimeSession::RuntimeSession(const SnowCanvasRuntimeConfig& config)
 RuntimeSession::~RuntimeSession() {
     m_runtime.reset();
     waitForPendingDestroy();
+    clearDrawingCachesForCurrentThread();
 }
 
 bool RuntimeSession::isValid() const {
@@ -150,7 +159,11 @@ bool RuntimeSession::isValid() const {
 }
 
 bool RuntimeSession::reset() {
-    return replaceRuntime(createRuntime(m_config));
+    if (!replaceRuntime(createRuntime(m_config))) {
+        return false;
+    }
+    clearDrawingCachesForCurrentThread();
+    return true;
 }
 
 bool RuntimeSession::cloneDocumentSessionFrom(const RuntimeSession& source) {
@@ -259,6 +272,7 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
     m_smartErase.reset();
     m_clients.clearRenderState();
     syncChangedViewports(changedViewports.get());
+    clearDrawingCachesForCurrentThread();
     return true;
 }
 
@@ -342,6 +356,7 @@ bool RuntimeSession::replaceRuntime(ScopedRuntimeHandle replacement) {
 void RuntimeSession::destroyRuntimeAsync() {
     waitForPendingDestroy();
     m_pendingDestroy = startAsyncDestroy(m_runtime.release());
+    clearDrawingCachesForCurrentThread();
 }
 
 void RuntimeSession::waitForPendingDestroy() {

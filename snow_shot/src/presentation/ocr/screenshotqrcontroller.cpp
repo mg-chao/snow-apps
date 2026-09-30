@@ -188,6 +188,17 @@ class ScreenshotQrPopover final : public QWidget {
         copy->setAccentRole(url.isEmpty() ? AdButton::AccentRole::Primary
                                           : AdButton::AccentRole::Neutral);
     }
+    void clearDetection() {
+        text->clear();
+        url = {};
+        status->clear();
+        status->hide();
+        open->hide();
+        lastAnchor = {};
+        lastAvailable = {};
+        // The popover is reused, but its native backing surface belongs to this capture.
+        destroy();
+    }
     void place(const QRect& anchor, const QRect& available) {
         lastAnchor = anchor;
         lastAvailable = available;
@@ -450,8 +461,13 @@ void ScreenshotQrController::invalidate() {
     m_request = 0;
     m_busy = false;
     m_error.clear();
-    m_detections.clear();
+    m_detections = {};
+    m_bounds = {};
+    m_sourceSelection = {};
+    m_selection = {};
     dismissPopover();
+    if (m_popover)
+        m_popover->clearDetection();
     clearMarkers();
     emit stateChanged();
 }

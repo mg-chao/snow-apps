@@ -75,6 +75,7 @@ std::size_t watermarkLayoutCacheBuildCountForCurrentThread();
 std::size_t watermarkDirectFallbackCountForCurrentThread();
 std::size_t watermarkPatternCacheEntryCountForCurrentThread();
 std::size_t watermarkPatternCacheBytesForCurrentThread();
+std::size_t watermarkPlacementWorkspaceBytesForCurrentThread();
 WatermarkRenderDiagnostics watermarkRenderDiagnosticsForCurrentThread();
 void resetWatermarkRenderDiagnosticsForCurrentThread();
 void resetWatermarkRenderCacheForCurrentThread();

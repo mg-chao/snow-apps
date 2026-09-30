@@ -934,6 +934,12 @@ std::size_t watermarkPatternCacheBytesForCurrentThread() {
     return g_cache.bytes;
 }
 
+std::size_t watermarkPlacementWorkspaceBytesForCurrentThread() {
+    return g_workspace.placements.capacity() * sizeof(Placement) +
+           g_workspace.fragments.capacity() * sizeof(Fragment) +
+           g_workspace.pixmapFragments.capacity() * sizeof(QPainter::PixmapFragment);
+}
+
 WatermarkRenderDiagnostics watermarkRenderDiagnosticsForCurrentThread() {
     return g_diagnostics;
 }
@@ -949,6 +955,7 @@ void resetWatermarkRenderCacheForCurrentThread() {
         removed.swap(g_cache.entries);
         g_cache.bytes = 0;
     }
+    g_workspace = PlacementWorkspace{};
     g_fallbackCount = 0;
 }
 

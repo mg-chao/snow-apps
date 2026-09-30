@@ -18,5 +18,6 @@ void drawTextBackgroundFill(QPainter& painter, const QPainterPath& path, const S
                             SnowFillStyle style, double fontSize, double coordinateScale = 1.0);
 
 std::size_t hatchTextureCacheEntryCountForCurrentThread();
+void resetHatchTextureCacheForCurrentThread();
 
 } // namespace snow_canvas_fill_render

@@ -5,23 +5,33 @@
 #include "snow_canvas_input_adapter.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_renderer.h"
+#include "snow_canvas_fill_render.h"
+#include "snow_canvas_watermark_renderer.h"
 #include "icons/draw_engine_icons.h"
 #include "icon_renderer.h"
 
 #include <QApplication>
+#include <QByteArray>
 #include <QColor>
 #include <QCursor>
+#include <QFontDatabase>
 #include <QImage>
 #include <QEventLoop>
 #include <QTimer>
+#include <QThread>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
+#include <thread>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -434,6 +444,77 @@ void canvasContentVisibilityPreservesCustomRenderingAndState() {
     canvas.setCustomRenderer(nullptr);
 }
 
+QImage populateDrawingCaches() {
+    QImage image(320, 180, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    WatermarkDisplayInfo info{};
+    info.surface_width = image.width();
+    info.surface_height = image.height();
+    info.watermark_color = SnowColorRgba8{20, 40, 60, 255};
+    const QByteArray payload("session watermark");
+    std::copy(payload.begin(), payload.end(), info.watermark_text.begin());
+    info.watermark_text_len = static_cast<std::uint16_t>(payload.size());
+    info.watermark_font_size = 21;
+    info.watermark_gap = 40;
+    info.watermark_opacity = 0.5;
+    snow_canvas_renderer::renderWatermark(painter, info);
+    QPainterPath path;
+    path.addRect(QRectF(10, 10, 100, 80));
+    snow_canvas_fill_render::drawStyledFill(painter, path, SnowColorRgba8{40, 80, 120, 255},
+                                            SNOW_FILL_STYLE_CROSS_LINE, 3.0);
+    painter.end();
+    require(snow_canvas_renderer::watermarkPatternCacheEntryCountForCurrentThread() > 0 &&
+                snow_canvas_renderer::watermarkPatternCacheBytesForCurrentThread() > 0 &&
+                snow_canvas_renderer::watermarkPlacementWorkspaceBytesForCurrentThread() > 0 &&
+                snow_canvas_fill_render::hatchTextureCacheEntryCountForCurrentThread() > 0,
+            "rendering must populate watermark and hatch caches before document cleanup");
+    return image;
+}
+
+void requireDrawingCachesReleased() {
+    require(snow_canvas_renderer::watermarkPatternCacheEntryCountForCurrentThread() == 0 &&
+                snow_canvas_renderer::watermarkPatternCacheBytesForCurrentThread() == 0 &&
+                snow_canvas_renderer::watermarkPlacementWorkspaceBytesForCurrentThread() == 0 &&
+                snow_canvas_fill_render::hatchTextureCacheEntryCountForCurrentThread() == 0,
+            "document cleanup must release shared and owning-thread drawing caches");
+}
+
+void documentResetReleasesDrawingCaches() {
+    const auto exercise = [](bool attachCanvas) {
+        SnowCanvasRuntime runtime;
+        std::unique_ptr<SnowCanvasWidget> canvas;
+        if (attachCanvas)
+            canvas = std::make_unique<SnowCanvasWidget>(runtime);
+        for (const bool resetRuntime : {false, true}) {
+            const QImage before = populateDrawingCaches();
+            require(resetRuntime ? runtime.reset() : runtime.clearDocumentPreservingViewports(),
+                    "document cleanup must succeed with and without canvas clients");
+            requireDrawingCachesReleased();
+            require(populateDrawingCaches() == before,
+                    "rebuilding released caches must preserve drawing output");
+        }
+        runtime.destroyAsync();
+        requireDrawingCachesReleased();
+        {
+            SnowCanvasRuntime scopedRuntime;
+            populateDrawingCaches();
+        }
+        requireDrawingCachesReleased();
+    };
+    exercise(true);
+    std::atomic<bool> completed{false};
+    std::thread exportWorker([&] {
+        exercise(false);
+        completed.store(true, std::memory_order_release);
+    });
+    while (!completed.load(std::memory_order_acquire)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        QThread::msleep(1);
+    }
+    exportWorker.join();
+}
+
 void documentResetClearsElementsAndPreservesViews() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -837,12 +918,18 @@ void rotationHandleCursorMatchesTheReferencePlatformBehavior() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+#ifdef Q_OS_WIN
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "load Segoe UI for offscreen drawing cache checks");
+    application.setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
     if (application.arguments().contains(QStringLiteral("--stroke-cursor-only"))) {
         strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--document-reset-only"))) {
         documentResetClearsElementsAndPreservesViews();
+        documentResetReleasesDrawingCaches();
         return 0;
     }
     freeDrawContinuationRendersOneStrokeAndActivatedEndpoint();
@@ -852,6 +939,7 @@ int main(int argc, char** argv) {
     runtimeExportUsesTheRequestedCanvasOrigin();
     canvasContentVisibilityPreservesCustomRenderingAndState();
     documentResetClearsElementsAndPreservesViews();
+    documentResetReleasesDrawingCaches();
     coalescedSceneRevisionsInvalidateEveryDirtyRegion();
     rectangleStrokeStylesRenderDistinctPatterns();
     highlightItemsRenderWithMultiplyBlendMode();

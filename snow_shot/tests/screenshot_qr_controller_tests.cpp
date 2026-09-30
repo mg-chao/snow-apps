@@ -14,6 +14,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QTextEdit>
+#include <QTextDocument>
 #include <QThread>
 #include <QWindow>
 #ifdef Q_OS_WIN
@@ -506,6 +507,40 @@ void visiblePopoverRelayoutDoesNotRaise() {
     require(events.count == 0, "QR popover geometry updates must not raise its native window");
 }
 
+void invalidationClearsPopoverContentAndAllowsReuse() {
+    Fixture f;
+    f.start();
+    const QString payload = QStringLiteral("https://example.com/session-qr");
+    f.complete({{payload, quad(50, 60)}});
+    f.marker(0)->click();
+    auto* popover = f.popover();
+    auto* text = popover->findChild<QTextEdit*>();
+    auto* open =
+        popover->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotQrOpenUrlButton"));
+    require(text->toPlainText() == payload && open->isVisible(),
+            "the completed session must have visible QR payload and URL action");
+    text->selectAll();
+    f.controller.invalidate();
+    require(!f.controller.available() && f.markers().isEmpty() && !popover->isVisible(),
+            "invalidating must remove QR results and presentation");
+    require(!popover->testAttribute(Qt::WA_WState_Created),
+            "invalidating must release the native popover surface");
+    require(text->toPlainText().isEmpty() && !text->textCursor().hasSelection() &&
+                !text->document()->isUndoAvailable() && !open->isVisible(),
+            "invalidating must release retained QR text, selection, undo and URL action");
+    f.decoder.callbacks.last()({{}, {}, {{payload, quad(50, 60)}}});
+    require(!f.controller.available() && text->toPlainText().isEmpty(),
+            "late recognition results must not restore an invalidated payload");
+    f.start();
+    f.complete({{QStringLiteral("new session"), quad(50, 60)}});
+    f.marker(0)->click();
+    require(f.popover() == popover && popover->isVisible() &&
+                text->toPlainText() == QStringLiteral("new session") && !open->isVisible(),
+            "the cleared popover must be reusable for a fresh non-URL result");
+    f.controller.invalidate();
+    require(text->toPlainText().isEmpty(), "repeated session completion must clear QR data");
+}
+
 void popoverActionsAndHover() {
     Fixture f;
     f.start();
@@ -722,6 +757,7 @@ int runTests(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--stacking-only"))) {
         hoverPopoverPreservesOwnerStacking();
+        invalidationClearsPopoverContentAndAllowsReuse();
         return 0;
     }
     hoverPopoverPreservesOwnerStacking();
@@ -737,6 +773,7 @@ int runTests(int argc, char** argv) {
     popoverCreationPreservesCanvasChildren();
     popoverRelayoutPreservesPendingHover();
     popoverRelayoutPreservesDismissal();
+    invalidationClearsPopoverContentAndAllowsReuse();
     popoverActionsAndHover();
     return 0;
 }
