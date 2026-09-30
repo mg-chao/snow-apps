@@ -8168,6 +8168,69 @@ void pinnedClickThroughOffscreen() {
     require(guardedExit.isNull(), "closing the pin must destroy the separate exit surface");
 }
 
+void verifyPinnedWindowManagementShortcut(ScreenshotPinnedWindow& window, QAction& action,
+                                          const QString& actionId, Qt::Key key,
+                                          bool snow_shot::storage::PinnedWindowRecord::* state) {
+    const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
+    const auto original = shortcuts.shortcuts(actionId);
+    const auto checkState = [&](bool enabled) {
+        require(action.isChecked() == enabled && window.persistenceSnapshot().*state == enabled,
+                "window management shortcuts must synchronize menu and persisted state");
+    };
+    const auto checkDisplay = [&](const auto& bindings) {
+        require(
+            action.text().endsWith(QStringLiteral("\t") +
+                                   snow_shot::shortcuts::formatShortcutListDisplayText(bindings)),
+            "window management menus must display their configured shortcuts");
+    };
+    checkDisplay(original);
+    checkState(true);
+    sendShortcut(window, key);
+    checkState(false);
+    sendShortcut(window, key);
+    checkState(true);
+
+    QLineEdit textInput(&window);
+    textInput.show();
+    window.activateWindow();
+    textInput.setFocus();
+    waitForUi(20);
+    require(textInput.hasFocus(), "window management typing guard must own focus");
+    sendShortcut(textInput, key);
+    checkState(true);
+    textInput.hide();
+    window.setFocus();
+
+    const auto remapped = snow_shot::shortcuts::bindingsFromPortableText(
+        {QStringLiteral("Ctrl+Alt+") + QKeySequence(key).toString(QKeySequence::PortableText)});
+    require(shortcuts.setShortcuts(actionId, remapped),
+            "window management shortcuts must be remappable");
+    checkDisplay(remapped);
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    checkDisplay(remapped);
+    sendShortcut(window, key);
+    checkState(true);
+    sendShortcut(window, key, Qt::ControlModifier | Qt::AltModifier);
+    checkState(false);
+    sendShortcut(window, key, Qt::ControlModifier | Qt::AltModifier);
+    checkState(true);
+
+    require(shortcuts.setShortcuts(actionId, {}),
+            "window management shortcuts must support disabling");
+    require(!action.text().contains(QLatin1Char('\t')),
+            "disabling a shortcut must clear its menu hint");
+    sendShortcut(window, key, Qt::ControlModifier | Qt::AltModifier);
+    checkState(true);
+    require(shortcuts.setShortcuts(actionId, original),
+            "restore the original window management shortcut");
+    checkDisplay(original);
+    sendShortcut(window, key);
+    checkState(false);
+    sendShortcut(window, key);
+    checkState(true);
+}
+
 void pinnedAlwaysOnTopOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -8224,6 +8287,9 @@ void pinnedAlwaysOnTopOffscreen() {
             "re-checking must restore the topmost band for the pin and its click-through controls");
     static_cast<void>(Access::setClickThrough(window, false));
 
+    verifyPinnedWindowManagementShortcut(window, *alwaysOnTop, QStringLiteral("always_on_top"),
+                                         Qt::Key_T,
+                                         &snow_shot::storage::PinnedWindowRecord::alwaysOnTop);
     window.close();
 
     // A restored pin adopts its saved stacking band before the menu opens.
@@ -8817,6 +8883,9 @@ void pinnedShowBorderOffscreen() {
                      QColor(QStringLiteral("#DBDBDB")), 0,
                      "re-checking must repaint the border rim");
 
+    verifyPinnedWindowManagementShortcut(window, *showBorder, QStringLiteral("show_border"),
+                                         Qt::Key_B,
+                                         &snow_shot::storage::PinnedWindowRecord::showBorder);
     window.close();
 
     // A restored pin adopts its saved border visibility before the menu opens.
@@ -9608,6 +9677,15 @@ void pinnedDrawingShortcutsToggleActiveTool() {
                 palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
                 !canvas->interactionEnabled(),
             "M must reactivate Resize window and disable canvas interaction");
+    const bool alwaysOnTop = window->persistenceSnapshot().alwaysOnTop;
+    pressKey(Qt::Key_T);
+    require(canvas->canvasTool() == SnowCanvasTool::Text &&
+                window->persistenceSnapshot().alwaysOnTop == alwaysOnTop,
+            "the drawing Text shortcut must take precedence over Always on Top");
+    pressKey(Qt::Key_T);
+    require(canvas->canvasTool() == SnowCanvasTool::Select &&
+                window->persistenceSnapshot().alwaysOnTop == alwaysOnTop,
+            "toggling the Text tool off must preserve the pin's stacking state");
     for (const auto& [key, tool] : {std::pair{Qt::Key_P, SnowCanvasTool::FreeDraw},
                                     std::pair{Qt::Key_1, SnowCanvasTool::Shape}}) {
         pressKey(key);

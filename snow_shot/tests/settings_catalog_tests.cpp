@@ -284,9 +284,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 202,
+    require(itemIds.size() == 204,
             qPrintable(QStringLiteral(
-                           "catalog must contain 202 shared settings on every platform; found %1")
+                           "catalog must contain 204 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1135,7 +1135,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 24 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 26 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -1167,10 +1167,22 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("Click-through") &&
             pinToScreenShortcuts->items.at(8).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/toggle_click_through") &&
+            pinToScreenShortcuts->items.at(9).id ==
+                QStringLiteral("pin-to-screen-shortcut.always_on_top") &&
+            pinToScreenShortcuts->items.at(9).title.translated() ==
+                QStringLiteral("Always on Top") &&
+            pinToScreenShortcuts->items.at(9).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/always_on_top") &&
             pinToScreenShortcuts->items.at(10).id ==
-                QStringLiteral("pin-to-screen-shortcut.destroy_window") &&
-            pinToScreenShortcuts->items.at(10).title.translated() == QStringLiteral("Destroy") &&
+                QStringLiteral("pin-to-screen-shortcut.show_border") &&
+            pinToScreenShortcuts->items.at(10).title.translated() ==
+                QStringLiteral("Show border") &&
             pinToScreenShortcuts->items.at(10).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/show_border") &&
+            pinToScreenShortcuts->items.at(12).id ==
+                QStringLiteral("pin-to-screen-shortcut.destroy_window") &&
+            pinToScreenShortcuts->items.at(12).title.translated() == QStringLiteral("Destroy") &&
+            pinToScreenShortcuts->items.at(12).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/destroy_window") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
                 pinToScreenShortcuts->items.at(8).payload)

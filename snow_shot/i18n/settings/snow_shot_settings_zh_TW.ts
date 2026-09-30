@@ -865,6 +865,10 @@
             <translation>一律隱藏</translation>
         </message>
         <message>
+            <source>Always on Top</source>
+            <translation>永遠置於最上層</translation>
+        </message>
+        <message>
             <source>Always show</source>
             <translation>一律顯示</translation>
         </message>
@@ -2887,6 +2891,10 @@
         <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>在文字辨識工具列中顯示一個按鈕，將辨識出的文字傳送到翻譯頁面。</translation>
+        </message>
+        <message>
+            <source>Show border</source>
+            <translation>顯示邊框</translation>
         </message>
         <message>
             <source>Show main interface</source>

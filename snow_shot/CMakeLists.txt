@@ -2324,6 +2324,24 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     snow_shot_import_offscreen_platform(snow-shot-screen-recording-shortcut-settings-tests)
 
+    add_executable(snow-shot-pin-to-screen-shortcut-settings-tests
+        tests/pin_to_screen_shortcut_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-pin-to-screen-shortcut-settings-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-pin-to-screen-shortcut-settings-tests
+             COMMAND snow-shot-pin-to-screen-shortcut-settings-tests)
+    set_tests_properties(snow-shot-pin-to-screen-shortcut-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-pin-to-screen-shortcut-settings-tests)
+
     add_executable(snow-shot-translation-settings-tests
         tests/translation_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp

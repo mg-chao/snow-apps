@@ -103,6 +103,8 @@ const QStringList& pinToScreenShortcutActionIds() {
         QStringLiteral("thumbnail_mode"),
         QStringLiteral("hide_to_top"),
         QStringLiteral("toggle_click_through"),
+        QStringLiteral("always_on_top"),
+        QStringLiteral("show_border"),
         QStringLiteral("close_window"),
         QStringLiteral("destroy_window"),
         QStringLiteral("move_cursor_up"),
