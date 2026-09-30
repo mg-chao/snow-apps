@@ -77,6 +77,7 @@ class ScreenshotPinnedEditController final : public QObject {
     bool eventFilter(QObject* watched, QEvent* event) override;
     void ensureToolbar();
     void destroyToolbar();
+    void resetAutoFilterSession();
     void registerDrawingShortcuts();
     void reloadDrawingShortcuts();
     void registerRecognitionShortcuts();

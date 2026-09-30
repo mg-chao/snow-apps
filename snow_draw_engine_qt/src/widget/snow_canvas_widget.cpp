@@ -12,6 +12,7 @@
 #include "snow_canvas_lifecycle.h"
 #include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_render_geometry.h"
+#include "snow_canvas_reference_scene.h"
 #include "snow_canvas_state.h"
 #include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_measurement.h"
@@ -504,6 +505,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     std::optional<QRectF> configuredSpotlightRenderArea;
     snow_canvas_filter_render::RenderWorkspace filterWorkspace;
     snow_canvas_pen_mask::PenMaskAtlas penMaskAtlas;
+    SnowCanvasReferenceScene referenceScene;
     SnowCanvasWidgetTextInteraction textInteraction;
     std::optional<QPointF> middleClickPressPosition;
     bool middleClickCandidate = false;
@@ -1460,6 +1462,7 @@ void SnowCanvasWidget::Impl::setCustomRenderer(SnowCanvasCustomRenderer* rendere
     if (installedCustomRenderer == renderer) {
         return;
     }
+    referenceScene.reset();
     installedCustomRenderer = renderer;
     snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     widget.update();
@@ -1523,6 +1526,7 @@ void SnowCanvasWidget::Impl::attachRuntime(SnowRuntime runtime) {
 }
 
 void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
+    referenceScene.reset();
     if (pendingLiveStrokePreservesEverySample && hasViewport()) {
         flushLiveStrokeMoves();
     }
@@ -1554,6 +1558,7 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
 }
 
 void SnowCanvasWidget::Impl::clearRenderState() {
+    referenceScene.clearRenderState();
     displayState.displayCache().clearRenderState();
     snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     filterWorkspace.clear();
@@ -2131,17 +2136,10 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
     painter.setClipRegion(exposedRegion);
     snow_canvas_compositor::Frame frame = buildPaintFrame();
     if (canvasContentIsVisible) {
-        const SceneDisplayInfo& sceneInfo = cache.sceneInfo();
-        const std::uint64_t contentKey =
-            sceneCacheContentKey(sceneInfo, installedCustomRenderer, canvasClearBackgroundEnabled,
-                                 painterDevicePixelRatio(painter, widget), widget.size());
-
         const SnowCanvasRenderContext tileContext = renderContext(painter, exposedRegion);
-        const bool filterVisible = hasFilter(frame.sceneItems, frame.sceneItemCount);
-        if (!filterVisible) {
-            snow_canvas_compositor::clearSurface(painter, frame);
-            renderBeforeCanvas(painter, tileContext);
-        }
+        const auto reference = installedCustomRenderer != nullptr
+                                   ? installedCustomRenderer->filterRenderReference()
+                                   : std::nullopt;
         snow_canvas_renderer::SceneRenderRequest sceneRequest{
             &painter,
             &cache.sceneInfo(),
@@ -2151,8 +2149,8 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
             nullptr,
             0,
             frame.backgroundImage,
-            filterVisible ? installedCustomRenderer : nullptr,
-            filterVisible ? &tileContext : nullptr,
+            installedCustomRenderer,
+            &tileContext,
             frame.displayCache,
             frame.workspace,
             {},
@@ -2160,13 +2158,30 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
             &widget,
             frame.penMaskAtlas,
             true,
-            static_cast<std::uint64_t>(contentKey),
+            0,
             QPoint(),
             canvasClearBackgroundEnabled,
         };
         if (auto* owner = runtimeBinding.runtimeOwner())
             sceneRequest.smartErase = owner->smartEraseSnapshot();
-        snow_canvas_renderer::renderSceneItemsTiled(sceneRequest);
+        if (!reference.has_value())
+            referenceScene.reset();
+        const bool referenceRendered =
+            reference.has_value() &&
+            referenceScene.render(runtimeBinding.engine(), *reference, sceneRequest,
+                                  tileContext.canvasToViewTransform);
+        if (!referenceRendered) {
+            sceneRequest.filterTileContentKey = sceneCacheContentKey(
+                cache.sceneInfo(), installedCustomRenderer, canvasClearBackgroundEnabled,
+                painterDevicePixelRatio(painter, widget), widget.size());
+            if (!hasFilter(frame.sceneItems, frame.sceneItemCount)) {
+                snow_canvas_compositor::clearSurface(painter, frame);
+                renderBeforeCanvas(painter, tileContext);
+                sceneRequest.backgroundRenderer = nullptr;
+                sceneRequest.backgroundContext = nullptr;
+            }
+            snow_canvas_renderer::renderSceneItemsTiled(sceneRequest);
+        }
         painter.save();
         snow_canvas_compositor::renderDocumentDecorations(painter, frame);
         snow_canvas_compositor::renderEditorOverlays(painter, frame);

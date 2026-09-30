@@ -3474,6 +3474,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-direct-capture-history-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
+    add_test(NAME snow-shot-pinned-filter-reference-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --pinned-filter-reference-only -platform offscreen)
     add_test(NAME snow-shot-fractional-dpi-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --fractional-dpi)
     set_tests_properties(snow-shot-fractional-dpi-rendering-tests PROPERTIES

@@ -46,6 +46,8 @@ set(SNOW_CANVAS_QT_SOURCES
     src/rendering/snow_canvas_compositor.cpp
     src/rendering/snow_canvas_compositor.h
     src/rendering/snow_canvas_custom_renderer.cpp
+    src/rendering/snow_canvas_reference_scene.cpp
+    src/rendering/snow_canvas_reference_scene.h
     src/rendering/snow_canvas_display_cache.cpp
     src/rendering/snow_canvas_display_cache.h
     src/rendering/snow_canvas_display_item.cpp

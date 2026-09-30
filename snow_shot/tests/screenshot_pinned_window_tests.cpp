@@ -103,6 +103,7 @@
 #include <QScreen>
 #include <QScopeGuard>
 #include <QScopedValueRollback>
+#include <QSemaphore>
 #include <QTemporaryDir>
 #include <QTableView>
 #include <QThread>
@@ -12140,6 +12141,85 @@ void pinnedAutoFilterPreservesBackgroundAndSession() {
             "changed background dimensions make record stale without clearing it");
 }
 
+void pinnedDrawingExitCancelsPendingAutoFilterAutomation() {
+    QImage background(120, 80, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(20, 40, 60));
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(0, 0, 120, 80);
+    config.canvasSourceRect = QRectF(10, 20, 120, 80);
+    config.initialWindowSize = background.size();
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    ScreenshotPinnedWindow window;
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    ScreenshotPinnedWindowTestAccess::editForHideTest(window);
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    auto* edit = window.findChild<ScreenshotPinnedEditController*>();
+    auto* detection = window.findChild<ScreenshotAutoFilterController*>();
+    require(canvas && edit && detection, "pinned editor owns Auto Filter automation state");
+
+    // Keep detection queued so cancellation never races the real detector's completion.
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    QObject receiver;
+    const auto started = std::make_shared<QSemaphore>();
+    const auto gate = std::make_shared<QSemaphore>();
+    const int workers = std::clamp(QThread::idealThreadCount(), 1, 2);
+    auto releaseWorkers = qScopeGuard([gate, workers] { gate->release(workers); });
+    for (int index = 0; index < workers; ++index) {
+        require(coordinator
+                    .submit(
+                        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                        [started, gate](const ScreenshotExportCancellation&) {
+                            started->release();
+                            gate->acquire();
+                            return ScreenshotExportTaskResult{};
+                        },
+                        [](ScreenshotExportTaskResult) {})
+                    .isValid(),
+                "block Auto Filter workers");
+    }
+    require(started->tryAcquire(workers, 5000), "Auto Filter workers must be blocked");
+    require(edit->automationAutoFilter({QStringLiteral("text")}) && detection->detecting() &&
+                edit->automationAutoFilterState().value(QStringLiteral("busy")).toBool(),
+            "automation detection must be pending before leaving drawing mode");
+    edit->setEditMode(false);
+    require(
+        !detection->detecting() &&
+            !edit->automationAutoFilterState().value(QStringLiteral("busy")).toBool() &&
+            edit->automationAutoFilterState().value(QStringLiteral("error")).toString().isEmpty(),
+        "drawing exit must synchronously clear detection and automation busy state");
+    require(coordinator.pendingJobCount() == workers,
+            "drawing exit must release the canceled detection's queue slot");
+    require(edit->automationAutoFilter({QStringLiteral("text")}) && detection->detecting(),
+            "a new automation request must be accepted after drawing exit");
+    edit->cancelAutomationAutoFilter();
+    require(!detection->detecting() &&
+                !edit->automationAutoFilterState().value(QStringLiteral("busy")).toBool(),
+            "explicit automation cancellation must clear the same pending state");
+
+    require(canvas->setCanvasTool(SnowCanvasTool::Select) &&
+                canvas->setCanvasTool(SnowCanvasTool::AutoFilter) && detection->detecting(),
+            "manual detection must be pending without automation categories");
+    edit->cancelAutomationAutoFilter();
+    require(detection->detecting(),
+            "canceling idle automation must preserve independently started manual detection");
+    edit->setEditMode(true);
+    edit->setEditMode(false);
+    require(!detection->detecting(), "drawing exit must also cancel manual detection");
+
+    gate->release(workers);
+    releaseWorkers.dismiss();
+    QElapsedTimer timeout;
+    timeout.start();
+    while (coordinator.pendingJobCount() != 0 && timeout.elapsed() < 5000) {
+        QApplication::processEvents();
+        QThread::msleep(1);
+    }
+    QApplication::processEvents();
+    require(coordinator.pendingJobCount() == 0 && !canvas->autoFilterRegions() &&
+                !edit->automationAutoFilterState().value(QStringLiteral("busy")).toBool(),
+            "canceled completions must not restore automation categories or filter regions");
+}
+
 QImage pinnedPixelPattern(const QSize& size) {
     QImage image(size, QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < image.height(); ++y) {
@@ -13886,6 +13966,7 @@ int main(int argc, char* argv[]) {
 #endif
         if (app.arguments().contains(QStringLiteral("--auto-filter-only"))) {
             pinnedAutoFilterPreservesBackgroundAndSession();
+            pinnedDrawingExitCancelsPendingAutoFilterAutomation();
             return 0;
         }
         SnowCanvasRuntime sourceRuntime;
