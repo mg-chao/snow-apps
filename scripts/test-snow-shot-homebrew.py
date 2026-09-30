@@ -23,9 +23,10 @@ class HomebrewTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.source = self.root / 'source'
         (self.source / 'scripts').mkdir(parents=True)
-        self.installer = Path(__file__).with_name('install-snow-shot-macos.sh').read_bytes()
+        # Model the tagged LF source used by packaging, even on core.autocrlf Windows checkouts.
+        self.installer = Path(__file__).with_name('install-snow-shot-macos.sh').read_bytes().replace(b'\r\n', b'\n')
         (self.source / 'scripts/install-snow-shot-macos.sh').write_bytes(self.installer)
-        self.preflight = Path(__file__).with_name('prepare-snow-shot-homebrew.sh').read_bytes()
+        self.preflight = Path(__file__).with_name('prepare-snow-shot-homebrew.sh').read_bytes().replace(b'\r\n', b'\n')
         (self.source / 'scripts/prepare-snow-shot-homebrew.sh').write_bytes(self.preflight)
         (self.source / 'CMakeLists.txt').write_text('set(SNOW_SHOT_VERSION "1.2.3")\n')
         self.assets = self.root / 'assets'

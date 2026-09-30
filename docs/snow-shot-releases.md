@@ -8,7 +8,7 @@ Priorities: data preservation and authenticity > recovery > testability > mainta
 | U1 | One SemVer feed, signed metadata, no automatic downgrade | update contract tests |
 | U2 | Background check/download; explicit restart; preserve active work | update service and About tests |
 | U3 | Apply only verified owned files; journal, probe, recover | update transaction tests |
-| R1 | Windows packages plus configured macOS DMG/installer on GitHub; Gitee mirrors published releases | publisher and mirror tests |
+| R1 | Audited local Windows/macOS packages published directly to GitHub and Gitee | publisher tests |
 | R2 | Private local signing key; immutable verified release assets | signing and publisher tests |
 
 The first updater release is `1.0.0-beta`. Binaries without an updater require one manual
@@ -45,20 +45,36 @@ Stable releases become GitHub's latest; preview releases remain marked as previe
 Identical retries reuse existing assets; conflicting bytes fail without overwrite.
 
 ```powershell
-& scripts/publish-snow-shot-release.ps1 -SigningKeyPath C:/private/snow-shot-release/private.pem
+& scripts/publish-snow-shot-release.ps1 -SigningKeyPath C:/private/snow-shot-release/private.pem -ReleaseNotesPath artifacts/release-notes.md
 & scripts/publish-snow-shot-release.ps1 -Operation Verify
 ```
 
-The repository's `GITEE_TOKEN` secret must have Gitee tag and release write access.
-After GitHub publishes a Snow Shot release, `.github/workflows/snow-shot-gitee-release.yml`
-synchronizes its tag, creates the matching Gitee release, copies every asset byte for
-byte with signed metadata last, and downloads assets to verify size and SHA-256.
-`workflow_dispatch` accepts a tag for backfill or retry. Identical reruns fill
-missing assets; conflicting assets fail without overwrite. Configure the secret.
-If an existing published `*_snow-shot` release is available, run the workflow
-manually for that tag before shipping an updater that discovers Gitee. Otherwise,
-publish the first eligible GitHub release and verify its automatic mirror. Confirm
-both public release pages and asset downloads before rollout.
+Configure `GITEE_TOKEN` locally with Gitee tag and release write access. The publisher
+reads the process environment, then the Windows user/system environment when the
+running shell predates the setting. Never paste tokens into release notes, command
+arguments, or checked-in configuration. Optional `GITEE_USERNAME` defaults to `mg-chao`.
+
+The default publisher authenticates Gitee before building. After the compiled updater
+audits the signed packages, it saves `artifacts/publish-*/local-release.json`, prepares
+the reproducible Homebrew archive from the local DMG and tagged source, and publishes
+the same local files and detailed notes to both destinations. Gitee uploads run on
+the local machine; there is no GitHub release synchronization workflow. Main branch
+source mirroring remains separate. `-SkipGitee` explicitly selects GitHub-only
+publication; `-AuditOnly` and `-WhatIf` do not contact Gitee or require a token.
+
+Gitee retries verify all existing bytes before filling missing assets, upload signed
+metadata last, and download each attachment to check its size and SHA-256. Conflicting
+bytes, source tags, titles, or notes fail without overwrite. Resume an interrupted
+publication with its saved local manifest, without rebuilding or downloading GitHub
+packages:
+
+```powershell
+python scripts/publish-snow-shot-gitee-release.py --manifest artifacts/publish-TRANSACTION/local-release.json --auditor build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
+python scripts/publish-snow-shot-gitee-release.py --manifest artifacts/publish-TRANSACTION/local-release.json --auditor build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe --verify-only
+```
+
+`--verify-only` requires no token and performs no uploads. Keep the local manifest and
+all referenced files until both public release pages and asset downloads are verified.
 
 ## Release contract
 

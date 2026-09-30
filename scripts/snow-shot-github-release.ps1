@@ -30,10 +30,16 @@ function Test-SnowGitHubBytes([string]$Expected, [string]$Downloaded) {
 }
 
 function Publish-SnowGitHubRelease([string]$Repository, [string]$Version, [hashtable]$Assets,
-    [string]$VerificationDirectory, [switch]$VerifyOnly) {
+    [string]$VerificationDirectory, [switch]$VerifyOnly, [string]$NotesPath) {
     $release = Get-SnowGitHubRelease $Repository $Version
     $tag = "v${Version}_snow-shot"
     $prerelease = ($Version -split '\+')[0].Contains('-')
+    if ($NotesPath) {
+        $notes = [IO.File]::ReadAllText($NotesPath)
+        if ($release -and -not $release.draft -and $release.body.Trim() -cne $notes.Trim()) {
+            throw 'Published GitHub release notes differ from the local release.'
+        }
+    }
     if ($release -and [bool]$release.prerelease -ne $prerelease) { throw 'GitHub prerelease classification does not match the version.' }
     # Validate every existing asset before uploading anything, including CI-created drafts.
     foreach ($name in $Assets.Keys) {
@@ -52,8 +58,9 @@ function Publish-SnowGitHubRelease([string]$Repository, [string]$Version, [hasht
     }
     if (-not $release) {
         $flags = if ($prerelease) { @('--prerelease') } else { @() }
+        $notesFlags = if ($NotesPath) { @('--notes-file', $NotesPath) } else { @('--generate-notes') }
         Invoke-SnowGitHub (@('release', 'create', $tag, '--repo', $Repository, '--verify-tag', '--draft',
-            '--title', "Snow Shot $Version", '--generate-notes') + $flags) | Out-Null
+            '--title', "Snow Shot $Version") + $notesFlags + $flags) | Out-Null
         $release = Get-SnowGitHubRelease $Repository $Version
         if (-not $release -or -not $release.draft) { throw 'Could not confirm the GitHub draft.' }
     }
@@ -68,6 +75,7 @@ function Publish-SnowGitHubRelease([string]$Repository, [string]$Version, [hasht
         Test-SnowGitHubBytes $Assets[$name] $download
     }
     if ($release.draft) {
+        if ($NotesPath) { Invoke-SnowGitHub @('release', 'edit', $tag, '--repo', $Repository, '--notes-file', $NotesPath) | Out-Null }
         $latest = if ($prerelease) { '--latest=false' } else { '--latest' }
         Invoke-SnowGitHub @('release', 'edit', $tag, '--repo', $Repository, '--draft=false', $latest) | Out-Null
     }

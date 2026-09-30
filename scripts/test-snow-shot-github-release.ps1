@@ -30,6 +30,9 @@ function global:gh {
         create {
             Require (-not $global:SnowGitHubTestRelease) 'Do not create a duplicate release.'
             $global:SnowGitHubTestRelease = @{ tag_name = $arguments[2]; draft = $true; prerelease = ($arguments -contains '--prerelease'); assets = @() }
+            if ($arguments -contains '--notes-file') {
+                $global:SnowGitHubTestRelease.body = [IO.File]::ReadAllText($arguments[[array]::IndexOf($arguments, '--notes-file') + 1])
+            }
         }
         upload {
             $path = $arguments[3]
@@ -146,7 +149,7 @@ try {
     $global:SnowGitHubTestRelease = $null
     $global:SnowGitHubTestBytes = @{}
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -SkipGitee
     Require ($global:SnowGitHubTestEvents[0] -eq 'audit' -and $global:SnowGitHubTestEvents[-1] -eq 'edit') 'GitHub-only publication audits before publishing.'
     Require ($global:SnowGitHubTestBytes.ContainsKey('latest-version.json') -and $global:SnowGitHubTestBytes.Count -eq 16) 'Publish all five packages, sidecars, audit manifests, and signed feed.'
     $previousEnvelope = [Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json'])
@@ -154,6 +157,40 @@ try {
     & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -AuditOnly
     Require (-not $global:SnowGitHubTestEvents.Contains('upload') -and -not $global:SnowGitHubTestEvents.Contains('edit')) 'AuditOnly never mutates GitHub.'
     Require ([Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json']) -ceq $previousEnvelope) 'Retry preserves authenticated envelope.'
+    # Exercise the default two-channel orchestration with isolated local files.
+    $notesPath = Join-Path $root 'notes.md'
+    [IO.File]::WriteAllText($notesPath, "Detailed release notes.`n")
+    $global:SnowGitHubTestNotes = [IO.File]::ReadAllText($notesPath)
+    function global:python {
+        $arguments = @($args)
+        $global:LASTEXITCODE = 0
+        Require ($arguments[0].EndsWith('publish-snow-shot-gitee-release.py')) 'Use the direct local Gitee publisher.'
+        if ($arguments -contains '--check-auth') {
+            Require (-not $global:SnowGitHubTestEvents.Contains('audit')) 'Credentials must be checked before packaging.'
+            $global:SnowGitHubTestEvents.Add('gitee-auth')
+            return
+        }
+        $manifest = Get-Content -Raw -LiteralPath $arguments[[array]::IndexOf($arguments, '--manifest') + 1] | ConvertFrom-Json
+        Require ($manifest.body -ceq $global:SnowGitHubTestNotes) 'Both destinations use identical local notes.'
+        Require ($manifest.sourceCommit -ceq ('a' * 40) -and $manifest.assets.Count -eq 16) 'Preserve the complete audited source and asset contract.'
+        foreach ($asset in $manifest.assets) {
+            Require ((Get-FileHash -LiteralPath $asset.path).Hash.ToLowerInvariant() -ceq $asset.sha256) 'Gitee files must match local audited bytes.'
+        }
+        if ($arguments -contains '--prepare-homebrew') {
+            Require ($global:SnowGitHubTestEvents.Contains('audit') -and -not $global:SnowGitHubTestEvents.Contains('upload')) 'Prepare distribution assets after auditing and before uploads.'
+            $global:SnowGitHubTestEvents.Add('gitee-prepare')
+        } else {
+            Require ($global:SnowGitHubTestEvents.Contains('edit')) 'Publish Gitee after GitHub has been verified and published.'
+            Require ($global:SnowGitHubTestRelease.body -ceq $manifest.body) 'GitHub notes must equal local Gitee notes.'
+            $global:SnowGitHubTestEvents.Add('gitee-publish')
+        }
+    }
+    $global:SnowGitHubTestEvents.Clear()
+    $global:SnowGitHubTestRelease = $null
+    $global:SnowGitHubTestBytes = @{}
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -ReleaseNotesPath $notesPath
+    Require ($global:SnowGitHubTestEvents[0] -eq 'gitee-auth' -and $global:SnowGitHubTestEvents[-1] -eq 'gitee-publish') 'Default publication preflights local credentials and publishes directly to Gitee.'
+    Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' @{ 'latest-version.json' = $path } $verify -NotesPath $keyPath }
     $global:SnowGitHubTestEvents.Clear()
     & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -WhatIf
     Require ($global:SnowGitHubTestEvents.Count -eq 0) 'WhatIf does not build, sign, or contact GitHub.'
@@ -161,7 +198,7 @@ try {
     $global:SnowGitHubTestRsa.Dispose()
     Write-Output 'PASS: GitHub release publication, retries, conflicts, classification, local signing, audit ordering, and dry runs.'
 } finally {
-    foreach ($name in @('gh','git','Invoke-WebRequest','Start-Process')) { Remove-Item "Function:/$name" -ErrorAction SilentlyContinue }
+    foreach ($name in @('gh','git','python','Invoke-WebRequest','Start-Process')) { Remove-Item "Function:/$name" -ErrorAction SilentlyContinue }
     Remove-Variable -Scope Global -Name 'SnowGitHubTest*' -ErrorAction SilentlyContinue
     $resolved = [IO.Path]::GetFullPath($root)
     $temporary = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
