@@ -270,9 +270,6 @@ impl CaptureSessionBuilder {
         let excluded_windows = self.excluded_windows.clone();
         let excluded_processes = self.excluded_processes.clone();
         let (target, backend, config) = self.resolve_backend_and_config()?;
-        if config.mode == CaptureMode::Continuous {
-            crate::convert::warmup();
-        }
         let native = backend.create_target_capturer(
             &target,
             CaptureOptions {
@@ -287,7 +284,7 @@ impl CaptureSessionBuilder {
             },
         )?;
         let runtime = CaptureSessionRuntime::for_target(&target);
-        Ok(CaptureSession {
+        let mut session = CaptureSession {
             target,
             backend,
             config,
@@ -297,7 +294,11 @@ impl CaptureSessionBuilder {
             cursor_projector: CursorProjector::new(),
             latest_cursor_shape: None,
             native,
-        })
+        };
+        if config.mode == CaptureMode::Continuous {
+            session.warmup_runtime();
+        }
+        Ok(session)
     }
 
     pub(crate) fn build(self) -> CaptureResult<CaptureSession> {
@@ -834,8 +835,13 @@ impl CaptureSession {
         &self.target
     }
 
+    /// Warm the shared conversion runtime only for sessions that use it.
     pub fn warmup_runtime(&mut self) {
-        crate::convert::warmup();
+        // Native target capturers own their pixel processing. Only the legacy
+        // pipeline needs the shared conversion tables and persistent workers.
+        if self.native.is_none() {
+            crate::convert::warmup();
+        }
     }
 
     /// Prepare resources that are safe to retain between one-shot captures.
@@ -845,7 +851,9 @@ impl CaptureSession {
             // Snapshot warm-up must stay allocation-light. SIMD dispatch and
             // lookup tables are cheap to retain; the conversion worker pool
             // is created only when a real capture needs it.
-            crate::convert::warmup_dispatch();
+            if self.native.is_none() {
+                crate::convert::warmup_dispatch();
+            }
         } else {
             self.warmup_runtime();
         }
@@ -1876,11 +1884,13 @@ mod tests {
         capture_calls: usize,
         release_calls: usize,
         fail_capture: bool,
+        cursor_visibility: Vec<bool>,
     }
 
     struct LifecycleBackend {
         monitor: MonitorId,
         state: Arc<Mutex<LifecycleState>>,
+        native: bool,
     }
 
     struct LifecycleCapturer {
@@ -1908,6 +1918,11 @@ mod tests {
     }
 
     impl MonitorCapturer for LifecycleCapturer {
+        fn set_cursor_visible(&mut self, visible: bool) -> CaptureResult<()> {
+            self.state.lock().unwrap().cursor_visibility.push(visible);
+            Ok(())
+        }
+
         fn backend_kind(&self) -> crate::backend::CaptureBackendKind {
             crate::backend::CaptureBackendKind::Gdi
         }
@@ -1947,6 +1962,18 @@ mod tests {
     }
 
     impl CaptureBackend for LifecycleBackend {
+        fn create_target_capturer(
+            &self,
+            _target: &CaptureTarget,
+            _options: CaptureOptions,
+        ) -> CaptureResult<Option<Box<dyn MonitorCapturer>>> {
+            Ok(self.native.then(|| {
+                Box::new(LifecycleCapturer {
+                    state: Arc::clone(&self.state),
+                }) as Box<dyn MonitorCapturer>
+            }))
+        }
+
         fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
             Ok(vec![self.monitor.clone()])
         }
@@ -2063,6 +2090,7 @@ mod tests {
         let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
             monitor: MonitorId::from_parts(41, 43, 0, "lifecycle-monitor", true),
             state,
+            native: false,
         });
         CaptureSession::builder()
             .target(CaptureTarget::PrimaryMonitor)
@@ -2412,6 +2440,129 @@ mod tests {
             virtual_width: width,
             virtual_height: height,
         }
+    }
+
+    // The pool is process-global. Isolate these lifecycle checks from conversion
+    // tests that legitimately initialize it on other test-runner threads.
+    fn in_fresh_test_process(name: &str, check: impl FnOnce()) {
+        const CHILD_TEST: &str = "SNOW_CAPTURE_POOL_LIFECYCLE_TEST";
+        let test = format!("capture_session::tests::{name}");
+        if std::env::var_os(CHILD_TEST).as_deref() == Some(std::ffi::OsStr::new(&test)) {
+            check();
+            return;
+        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &test, "--nocapture"])
+            .env(CHILD_TEST, &test)
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "isolated pool lifecycle check failed: {test}"
+        );
+    }
+
+    #[test]
+    fn native_capture_does_not_initialize_conversion_pool() {
+        in_fresh_test_process("native_capture_does_not_initialize_conversion_pool", || {
+            assert!(!crate::convert::pool_initialized());
+            for mode in [CaptureMode::Snapshot, CaptureMode::Continuous] {
+                let state = Arc::new(Mutex::new(LifecycleState::default()));
+                let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
+                    monitor: MonitorId::from_parts(41, 43, 0, "native-monitor", true),
+                    state: Arc::clone(&state),
+                    native: true,
+                });
+                let mut session = CaptureSession::builder()
+                    .target(CaptureTarget::PrimaryMonitor)
+                    .with_backend(backend)
+                    .capture_mode(mode)
+                    .build()
+                    .unwrap();
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native session creation"
+                );
+                session.warmup_runtime();
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "explicit native warmup"
+                );
+                assert_eq!(session.prepare_target().unwrap().width, 4);
+                session.prewarm_environment().unwrap();
+                assert!(!crate::convert::pool_initialized(), "native preparation");
+
+                let frame = session.capture_frame(None).unwrap();
+                assert_eq!(frame.dimensions(), (4, 4));
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native cursor-hidden capture"
+                );
+                let frame = session.capture_reuse(frame).unwrap();
+                assert_eq!(frame.dimensions(), (4, 4));
+                assert_eq!(state.lock().unwrap().cursor_visibility, [false, true]);
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native cursor-visible capture"
+                );
+                session.release_capture_access();
+
+                if mode == CaptureMode::Snapshot {
+                    for include_cursor in [false, true] {
+                        let frame = session
+                            .capture_snapshot(include_cursor, Default::default())
+                            .unwrap();
+                        assert_eq!(frame.dimensions(), (4, 4));
+                        assert_eq!(session.active_capture_access_count(), 0);
+                    }
+                    assert_eq!(session.capture_once().unwrap().dimensions(), (4, 4));
+                    assert_eq!(session.active_capture_access_count(), 0);
+                    state.lock().unwrap().fail_capture = true;
+                    assert!(session.capture_snapshot(false, Default::default()).is_err());
+                    assert_eq!(session.active_capture_access_count(), 0);
+                    session.reset_to_prepared().unwrap();
+                }
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native completion/reset"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn snapshot_conversion_pool_is_warmed_only_for_capture() {
+        in_fresh_test_process(
+            "snapshot_conversion_pool_is_warmed_only_for_capture",
+            || {
+                let state = Arc::new(Mutex::new(LifecycleState::default()));
+                let mut session = lifecycle_session(state).unwrap();
+                session.prewarm_environment().unwrap();
+                assert!(!crate::convert::pool_initialized());
+                let frame = session.capture_snapshot(false, Default::default()).unwrap();
+                assert_eq!(frame.dimensions(), (4, 4));
+                assert_eq!(session.active_capture_access_count(), 0);
+                assert!(crate::convert::pool_initialized());
+            },
+        );
+    }
+
+    #[test]
+    fn continuous_conversion_pool_is_warmed_on_build() {
+        in_fresh_test_process("continuous_conversion_pool_is_warmed_on_build", || {
+            let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
+                monitor: MonitorId::from_parts(41, 43, 0, "lifecycle-monitor", true),
+                state: Arc::new(Mutex::new(LifecycleState::default())),
+                native: false,
+            });
+            let _session = CaptureSession::builder()
+                .target(CaptureTarget::PrimaryMonitor)
+                .with_backend(backend)
+                .capture_mode(CaptureMode::Continuous)
+                .build()
+                .unwrap();
+            assert!(crate::convert::pool_initialized());
+        });
     }
 
     #[test]

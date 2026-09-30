@@ -77,7 +77,10 @@ impl Compositor {
                 "GPU pool capacity must be 2..=16".into(),
             ));
         }
-        unsafe {
+        // Native constructors autorelease internal objects even when their
+        // returned handles are retained. Drain those references here so replacing
+        // a compositor does not retain its context until the capture worker exits.
+        objc2::rc::autoreleasepool(|_| unsafe {
             let (fourcc, color, space) = match format {
                 PixelFormat::Bgra8 => (
                     kCVPixelFormatType_32BGRA,
@@ -166,7 +169,7 @@ impl Compositor {
                 color,
                 color_space,
             })
-        }
+        })
     }
 
     /// Bit-exact detach of a same-size buffer into the output pool.
@@ -499,6 +502,42 @@ fn metal_texture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recreated_contexts_are_released_before_worker_pool_drains() {
+        std::thread::spawn(|| {
+            // A capture worker can have a pool spanning multiple compositor
+            // replacements. Each constructor must drain its own autoreleases.
+            objc2::rc::autoreleasepool(|_| {
+                let size = PixelSize::new(32, 18).unwrap();
+                for cache_intermediates in [true, false] {
+                    for _ in 0..3 {
+                        let mut compositor = Compositor::with_intermediate_cache(
+                            size,
+                            PixelFormat::Bgra8,
+                            4,
+                            cache_intermediates,
+                        )
+                        .expect("metal compositor");
+                        let context = objc2::rc::Weak::from_retained(&compositor.context);
+                        let frame = compositor
+                            .compose(&[], true)
+                            .expect("retained context renders");
+                        assert_eq!(frame.size(), size);
+                        drop(frame);
+                        drop(compositor);
+                        assert!(
+                            context.load().is_none(),
+                            "dropped compositor context outlived its owner"
+                        );
+                    }
+                }
+            });
+        })
+        .join()
+        .unwrap();
+    }
+
     #[test]
     fn rejects_overflowing_and_empty_layers() {
         let size = PixelSize::new(10, 10).unwrap();

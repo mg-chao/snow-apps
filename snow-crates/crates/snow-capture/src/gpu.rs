@@ -267,8 +267,8 @@ fn project_cursor(
     target: &CursorTargetInfo,
     snapshot: snow_cursor::CursorSnapshot,
 ) -> snow_cursor::AttachedCursorSample {
-    // Retain before deduplication: A -> B -> A returns Cached(A), even if the
-    // bounded queue dropped A. Embedded shapes share their immutable Arc bytes.
+    // Repeated observations may reference the current shape even if the bounded
+    // queue dropped its transition. Share the pixels with every delivered frame.
     if let Some(shape) = snapshot.shape.shape() {
         *retained = Some(shape.clone());
     }

@@ -2274,6 +2274,106 @@ fn is_direct_staging_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffmpeg::codec::packet::Mut;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    unsafe extern "C" fn release_tracked_gif_packet(opaque: *mut std::ffi::c_void, bytes: *mut u8) {
+        unsafe {
+            ffmpeg::ffi::av_free(bytes.cast());
+            let releases = Arc::<AtomicUsize>::from_raw(opaque.cast());
+            releases.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn gif_encoder_with_tracked_packet(
+        destination: PathBuf,
+        releases: &Arc<AtomicUsize>,
+    ) -> StreamingEncoder {
+        let mut encoder =
+            StreamingEncoder::create(encoder_config(destination, ExportFormat::Gif)).unwrap();
+        let mut packet = ffmpeg::Packet::empty();
+        unsafe {
+            let allocation_size = 1 + ffmpeg::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize;
+            let bytes = ffmpeg::ffi::av_mallocz(allocation_size).cast::<u8>();
+            assert!(!bytes.is_null());
+            let opaque = Arc::into_raw(releases.clone()).cast_mut().cast();
+            let buffer = ffmpeg::ffi::av_buffer_create(
+                bytes,
+                allocation_size,
+                Some(release_tracked_gif_packet),
+                opaque,
+                0,
+            );
+            if buffer.is_null() {
+                release_tracked_gif_packet(opaque, bytes);
+            }
+            assert!(!buffer.is_null());
+            let raw = packet.as_mut_ptr();
+            (*raw).buf = buffer;
+            (*raw).data = bytes;
+            (*raw).size = 1;
+        }
+        packet.set_stream(0);
+        packet.set_pts(Some(0));
+        packet.set_dts(Some(0));
+        packet.set_duration(1);
+        // The GIF muxer retains its first packet until another packet or trailer
+        // determines its delay. A malformed first packet also exercises aborts
+        // without requiring a hardware encoder or allocator instrumentation.
+        packet
+            .write_interleaved(encoder.output.as_mut().unwrap())
+            .unwrap();
+        drop(packet);
+        assert_eq!(releases.load(Ordering::SeqCst), 0);
+        encoder
+    }
+
+    #[test]
+    fn aborted_gif_encoder_releases_the_muxer_packet_without_publication() {
+        for cancel in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let destination = directory.path().join("recording.gif");
+            let releases = Arc::new(AtomicUsize::new(0));
+            let encoder = gif_encoder_with_tracked_packet(destination.clone(), &releases);
+            if cancel {
+                let cancellation = snow_core::cancellation::CancellationToken::default();
+                cancellation.cancel();
+                assert!(matches!(
+                    encoder.finish_at_pts_cancelable(1, &cancellation),
+                    Err(RecordingExportError::ExportCanceled)
+                ));
+            } else {
+                drop(encoder);
+            }
+            assert_eq!(releases.load(Ordering::SeqCst), 1);
+            assert_eq!(Arc::strong_count(&releases), 1);
+            assert!(!destination.exists());
+            assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+        }
+    }
+
+    #[test]
+    fn failed_gif_muxing_releases_the_retained_packet() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("recording.gif");
+        let releases = Arc::new(AtomicUsize::new(0));
+        let mut encoder = gif_encoder_with_tracked_packet(destination.clone(), &releases);
+        let mut packet = ffmpeg::Packet::new(1);
+        packet.set_stream(0);
+        packet.set_pts(Some(1));
+        packet.set_dts(Some(1));
+        assert!(
+            packet
+                .write_interleaved(encoder.output.as_mut().unwrap())
+                .is_err()
+        );
+        assert_eq!(releases.load(Ordering::SeqCst), 0);
+        drop(encoder);
+        assert_eq!(releases.load(Ordering::SeqCst), 1);
+        assert!(!destination.exists());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
 
     #[test]
     fn publication_never_replaces_an_existing_destination() {

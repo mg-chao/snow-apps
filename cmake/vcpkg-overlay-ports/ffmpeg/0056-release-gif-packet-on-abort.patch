@@ -1,0 +1,28 @@
+The GIF muxer retains the previous packet to determine its duration. A canceled
+or failed recording frees the format context without writing a trailer, so its
+deinit callback must release the packet and its compressed payload as well.
+
+--- a/libavformat/gif.c
++++ b/libavformat/gif.c
+@@ -178,6 +178,13 @@
+     av_packet_free(&gif->prev_pkt);
+ 
+     return 0;
++}
++
++static void gif_deinit(AVFormatContext *s)
++{
++    GIFContext *gif = s->priv_data;
++
++    av_packet_free(&gif->prev_pkt);
+ }
+ 
+ #define OFFSET(x) offsetof(GIFContext, x)
+@@ -209,6 +216,7 @@
+     .flags_internal   = FF_OFMT_FLAG_MAX_ONE_OF_EACH |
+                         FF_OFMT_FLAG_ONLY_DEFAULT_CODECS,
+     .init             = gif_init,
++    .deinit           = gif_deinit,
+     .write_packet   = gif_write_packet,
+     .write_trailer  = gif_write_trailer,
+     .p.priv_class   = &gif_muxer_class,

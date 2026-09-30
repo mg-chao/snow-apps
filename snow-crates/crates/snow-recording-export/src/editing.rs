@@ -716,6 +716,50 @@ impl Drop for HardwareDecodeState {
     }
 }
 
+struct SourceVideoDecoder<Decoder = ffmpeg::decoder::Video> {
+    // Fields drop in declaration order. Codec shutdown joins decoding threads
+    // before the hardware state's selection, referenced by AVCodecContext::opaque,
+    // can be released.
+    decoder: Decoder,
+    hardware: Option<HardwareDecodeState>,
+}
+
+fn prepare_hardware_decoder_context(
+    mut hardware: HardwareDecodeState,
+    perf_config: &ExportPerformanceConfig,
+    create_context: impl FnOnce() -> std::result::Result<ffmpeg::codec::context::Context, ffmpeg::Error>,
+) -> Result<SourceVideoDecoder<ffmpeg::codec::context::Context>> {
+    // Own the device before any fallible decoder setup. Both context creation and
+    // codec opening can fail after native hardware resources have been allocated.
+    let mut context = create_context().map_err(|err| {
+        ScreenRecorderError::Export(format!(
+            "failed to create source video decoder context: {err}"
+        ))
+    })?;
+    configure_codec_threads(
+        &mut context,
+        perf_config.decode_threads,
+        ffmpeg::codec::threading::Type::Frame,
+    );
+    unsafe {
+        let device_ref = ffmpeg::ffi::av_buffer_ref(hardware.device_ctx);
+        if device_ref.is_null() {
+            return Err(ScreenRecorderError::Export(
+                "failed to retain source video decoder device".into(),
+            ));
+        }
+        let codec_ctx = context.as_mut_ptr();
+        (*codec_ctx).get_format = Some(select_hardware_decoder_pixel_format);
+        (*codec_ctx).opaque =
+            hardware._selection.as_mut() as *mut HardwareDecodeSelection as *mut c_void;
+        (*codec_ctx).hw_device_ctx = device_ref;
+    }
+    Ok(SourceVideoDecoder {
+        decoder: context,
+        hardware: Some(hardware),
+    })
+}
+
 unsafe extern "C" fn select_hardware_decoder_pixel_format(
     codec_ctx: *mut ffmpeg::ffi::AVCodecContext,
     pixel_formats: *const ffmpeg::ffi::AVPixelFormat,
@@ -802,7 +846,7 @@ fn find_hardware_decoder_pixel_format(
 fn try_open_hardware_video_decoder(
     parameters: &ffmpeg::codec::Parameters,
     perf_config: &ExportPerformanceConfig,
-) -> Result<Option<(ffmpeg::decoder::Video, HardwareDecodeState)>> {
+) -> Result<Option<SourceVideoDecoder>> {
     if !hardware_video_decode_allowed(perf_config.mode) {
         return Ok(None);
     }
@@ -816,41 +860,31 @@ fn try_open_hardware_video_decoder(
             continue;
         };
 
-        let mut device_ctx = ptr::null_mut();
+        let mut hardware = HardwareDecodeState {
+            device_ctx: ptr::null_mut(),
+            _selection: Box::new(HardwareDecodeSelection { hw_pix_fmt }),
+            hw_pixel_format: ffmpeg::format::Pixel::from(hw_pix_fmt),
+            device_name,
+        };
         let create_status = unsafe {
             ffmpeg::ffi::av_hwdevice_ctx_create(
-                &mut device_ctx,
+                &mut hardware.device_ctx,
                 *device_type,
                 ptr::null(),
                 ptr::null_mut(),
                 0,
             )
         };
-        if create_status < 0 || device_ctx.is_null() {
+        if create_status < 0 || hardware.device_ctx.is_null() {
             continue;
         }
 
-        let mut selection = Box::new(HardwareDecodeSelection { hw_pix_fmt });
-        let mut decode_context = ffmpeg::codec::context::Context::from_parameters(
-            parameters.clone(),
-        )
-        .map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to create source video decoder context: {err}"
-            ))
+        let SourceVideoDecoder {
+            decoder: decode_context,
+            hardware,
+        } = prepare_hardware_decoder_context(hardware, perf_config, || {
+            ffmpeg::codec::context::Context::from_parameters(parameters.clone())
         })?;
-        configure_codec_threads(
-            &mut decode_context,
-            perf_config.decode_threads,
-            ffmpeg::codec::threading::Type::Frame,
-        );
-
-        unsafe {
-            let codec_ctx = decode_context.as_mut_ptr();
-            (*codec_ctx).get_format = Some(select_hardware_decoder_pixel_format);
-            (*codec_ctx).opaque = selection.as_mut() as *mut HardwareDecodeSelection as *mut c_void;
-            (*codec_ctx).hw_device_ctx = ffmpeg::ffi::av_buffer_ref(device_ctx);
-        }
 
         let decoder = match decode_context
             .decoder()
@@ -858,23 +892,10 @@ fn try_open_hardware_video_decoder(
             .and_then(|opened| opened.video())
         {
             Ok(decoder) => decoder,
-            Err(_) => {
-                unsafe {
-                    ffmpeg::ffi::av_buffer_unref(&mut device_ctx);
-                }
-                continue;
-            }
+            Err(_) => continue,
         };
 
-        return Ok(Some((
-            decoder,
-            HardwareDecodeState {
-                device_ctx,
-                _selection: selection,
-                hw_pixel_format: ffmpeg::format::Pixel::from(hw_pix_fmt),
-                device_name,
-            },
-        )));
+        return Ok(Some(SourceVideoDecoder { decoder, hardware }));
     }
 
     Ok(None)
@@ -884,11 +905,11 @@ fn open_source_video_decoder(
     parameters: &ffmpeg::codec::Parameters,
     perf_config: &ExportPerformanceConfig,
     allow_hardware_decode: bool,
-) -> Result<(ffmpeg::decoder::Video, Option<HardwareDecodeState>)> {
+) -> Result<SourceVideoDecoder> {
     if allow_hardware_decode
-        && let Some((decoder, hw_state)) = try_open_hardware_video_decoder(parameters, perf_config)?
+        && let Some(decoder) = try_open_hardware_video_decoder(parameters, perf_config)?
     {
-        return Ok((decoder, Some(hw_state)));
+        return Ok(decoder);
     }
 
     let mut decode_context = ffmpeg::codec::context::Context::from_parameters(parameters.clone())
@@ -905,7 +926,10 @@ fn open_source_video_decoder(
     let decoder = decode_context.decoder().video().map_err(|err| {
         ScreenRecorderError::Export(format!("failed to open source video decoder: {err}"))
     })?;
-    Ok((decoder, None))
+    Ok(SourceVideoDecoder {
+        decoder,
+        hardware: None,
+    })
 }
 
 fn decoder_software_output_format(
@@ -1296,11 +1320,39 @@ enum DecodedFrameMessage {
     Error(String),
 }
 
+#[derive(Clone)]
+struct DecodeWorkerControl {
+    export_canceled: Arc<AtomicBool>,
+    stopped: Arc<AtomicBool>,
+}
+
+impl DecodeWorkerControl {
+    fn new(export_canceled: Arc<AtomicBool>) -> Self {
+        Self {
+            export_canceled,
+            stopped: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn check_canceled(&self) -> Result<()> {
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(ScreenRecorderError::ExportCanceled);
+        }
+        check_canceled(&self.export_canceled)
+    }
+
+    fn stop(&self) {
+        self.stopped.store(true, Ordering::Release);
+    }
+}
+
 struct StreamingVideoFrameSource {
-    rx: Receiver<DecodedFrameMessage>,
+    rx: Option<Receiver<DecodedFrameMessage>>,
     recycle_tx: Sender<Vec<u8>>,
     current_index: Option<usize>,
     current_frame: Option<StoredFrame>,
+    control: DecodeWorkerControl,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 impl StreamingVideoFrameSource {
@@ -1319,7 +1371,9 @@ impl StreamingVideoFrameSource {
             let _ = recycle_tx.try_send(Vec::new());
         }
         let path = video_path.to_path_buf();
-        std::thread::Builder::new()
+        let control = DecodeWorkerControl::new(cancel_flag);
+        let worker_control = control.clone();
+        let worker = std::thread::Builder::new()
             .name("snow-screen-recorder-export-decode".to_string())
             .spawn(move || {
                 decode_video_stream_worker(
@@ -1327,17 +1381,19 @@ impl StreamingVideoFrameSource {
                     required_indices,
                     fallback_fps,
                     decode_threads,
-                    cancel_flag,
+                    worker_control,
                     tx,
                     recycle_rx,
                 )
             })
             .map_err(|err| ScreenRecorderError::Io(std::io::Error::other(err)))?;
         Ok(Self {
-            rx,
+            rx: Some(rx),
             recycle_tx,
             current_index: None,
             current_frame: None,
+            control,
+            worker: Some(worker),
         })
     }
 
@@ -1356,9 +1412,14 @@ impl StreamingVideoFrameSource {
     }
 
     fn read_next(&mut self) -> Result<()> {
-        let msg = self.rx.recv().map_err(|_| {
-            ScreenRecorderError::Export("decode worker stopped unexpectedly".to_string())
-        })?;
+        let msg = self
+            .rx
+            .as_ref()
+            .expect("decode source receiver must exist before shutdown")
+            .recv()
+            .map_err(|_| {
+                ScreenRecorderError::Export("decode worker stopped unexpectedly".to_string())
+            })?;
         match msg {
             DecodedFrameMessage::Frame {
                 source_index,
@@ -1379,16 +1440,30 @@ impl StreamingVideoFrameSource {
     }
 }
 
+impl Drop for StreamingVideoFrameSource {
+    fn drop(&mut self) {
+        // Releasing the receiver wakes a decoder blocked on a full frame or
+        // terminal-message queue. The local stop flag also ends active decoding
+        // without canceling an export that has consumed all requested frames.
+        self.control.stop();
+        drop(self.rx.take());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 fn decode_video_stream_worker(
     path: std::path::PathBuf,
     required_indices: Vec<usize>,
     fallback_fps: u32,
     decode_threads: u8,
-    cancel_flag: Arc<AtomicBool>,
+    control: DecodeWorkerControl,
     tx: crossbeam_channel::Sender<DecodedFrameMessage>,
     recycle_rx: crossbeam_channel::Receiver<Vec<u8>>,
 ) {
     let result = (|| -> Result<()> {
+        control.check_canceled()?;
         ensure_ffmpeg_initialized()?;
         let mut input = ffmpeg::format::input(&path).map_err(|err| {
             ScreenRecorderError::Export(format!(
@@ -1441,9 +1516,7 @@ fn decode_video_stream_worker(
         }
 
         for (stream, packet) in input.packets() {
-            if cancel_flag.load(Ordering::Acquire) {
-                return Err(ScreenRecorderError::ExportCanceled);
-            }
+            control.check_canceled()?;
             if stream.index() != stream_index {
                 continue;
             }
@@ -1453,6 +1526,7 @@ fn decode_video_stream_worker(
                 ))
             })?;
             loop {
+                control.check_canceled()?;
                 match decoder.receive_frame(&mut decoded) {
                     Ok(()) => {
                         if required_indices
@@ -1495,15 +1569,14 @@ fn decode_video_stream_worker(
             }
         }
 
+        control.check_canceled()?;
         decoder.send_eof().map_err(|err| {
             ScreenRecorderError::Export(format!(
                 "failed to flush temporary recording video decoder: {err}"
             ))
         })?;
         loop {
-            if cancel_flag.load(Ordering::Acquire) {
-                return Err(ScreenRecorderError::ExportCanceled);
-            }
+            control.check_canceled()?;
             match decoder.receive_frame(&mut decoded) {
                 Ok(()) => {
                     if required_indices
@@ -6200,8 +6273,11 @@ fn export_video_generated_from_source(
         })?;
     let input_video_stream_index = input_video_stream.index();
     let input_video_parameters = input_video_stream.parameters();
-    let (mut decoder, hw_decode_state) =
-        open_source_video_decoder(&input_video_parameters, perf_config, true)?;
+    let mut source_decoder = open_source_video_decoder(&input_video_parameters, perf_config, true)?;
+    let SourceVideoDecoder {
+        decoder,
+        hardware: hw_decode_state,
+    } = &mut source_decoder;
 
     let mut output = ffmpeg::format::output(output_path).map_err(|err| {
         ScreenRecorderError::Export(format!("failed to create ffmpeg output context: {err}"))
@@ -6232,7 +6308,7 @@ fn export_video_generated_from_source(
     let decoder_output_format = if source_hdr && !output_hdr {
         ffmpeg::format::Pixel::RGBA
     } else {
-        decoder_software_output_format(&decoder, hw_decode_state.as_ref())
+        decoder_software_output_format(decoder, hw_decode_state.as_ref())
     };
     let mut pixel_format = choose_video_pixel_format(
         format,
@@ -6876,8 +6952,12 @@ fn export_video_generated_from_source_with_overlay(
         })?;
     let input_video_stream_index = input_video_stream.index();
     let input_video_parameters = input_video_stream.parameters();
-    let (mut decoder, hw_decode_state) =
+    let mut source_decoder =
         open_source_video_decoder(&input_video_parameters, perf_config, false)?;
+    let SourceVideoDecoder {
+        decoder,
+        hardware: hw_decode_state,
+    } = &mut source_decoder;
 
     let mut output = ffmpeg::format::output(output_path).map_err(|err| {
         ScreenRecorderError::Export(format!("failed to create ffmpeg output context: {err}"))
@@ -8897,6 +8977,270 @@ mod tests {
         LocalRecordingPaths,
     };
     use tempfile::tempdir;
+
+    fn test_hardware_decode_state() -> (HardwareDecodeState, *mut ffmpeg::ffi::AVBufferRef) {
+        unsafe {
+            let device_ctx = ffmpeg::ffi::av_buffer_alloc(1);
+            assert!(!device_ctx.is_null());
+            let witness = ffmpeg::ffi::av_buffer_ref(device_ctx);
+            assert!(!witness.is_null());
+            (
+                HardwareDecodeState {
+                    device_ctx,
+                    _selection: Box::new(HardwareDecodeSelection {
+                        hw_pix_fmt: ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_NONE,
+                    }),
+                    hw_pixel_format: ffmpeg::format::Pixel::None,
+                    device_name: "test",
+                },
+                witness,
+            )
+        }
+    }
+
+    #[test]
+    fn hardware_decoder_context_creation_failure_releases_device() {
+        let (hardware, mut witness) = test_hardware_decode_state();
+        let result =
+            prepare_hardware_decoder_context(hardware, &ExportPerformanceConfig::default(), || {
+                Err(ffmpeg::Error::InvalidData)
+            });
+        assert!(matches!(result, Err(ScreenRecorderError::Export(_))));
+        unsafe {
+            assert_eq!(ffmpeg::ffi::av_buffer_get_ref_count(witness), 1);
+            ffmpeg::ffi::av_buffer_unref(&mut witness);
+        }
+    }
+
+    #[test]
+    fn hardware_decoder_context_owns_an_independent_device_reference() {
+        let (hardware, mut witness) = test_hardware_decode_state();
+        let context =
+            prepare_hardware_decoder_context(hardware, &ExportPerformanceConfig::default(), || {
+                Ok(ffmpeg::codec::context::Context::new())
+            })
+            .unwrap();
+        unsafe {
+            assert_eq!(ffmpeg::ffi::av_buffer_get_ref_count(witness), 3);
+        }
+        drop(context);
+        unsafe {
+            assert_eq!(ffmpeg::ffi::av_buffer_get_ref_count(witness), 1);
+            ffmpeg::ffi::av_buffer_unref(&mut witness);
+        }
+    }
+
+    struct DecoderShutdownWitness {
+        device: *mut ffmpeg::ffi::AVBufferRef,
+        references_at_shutdown: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    unsafe extern "C" fn observe_decoder_shutdown(opaque: *mut c_void, bytes: *mut u8) {
+        unsafe {
+            let witness = Box::from_raw(opaque.cast::<DecoderShutdownWitness>());
+            witness.references_at_shutdown.store(
+                ffmpeg::ffi::av_buffer_get_ref_count(witness.device) as usize,
+                Ordering::SeqCst,
+            );
+            ffmpeg::ffi::av_free(bytes.cast());
+        }
+    }
+
+    #[test]
+    fn hardware_decoder_context_shuts_down_before_hardware_state() {
+        let (hardware, mut witness) = test_hardware_decode_state();
+        let mut context =
+            prepare_hardware_decoder_context(hardware, &ExportPerformanceConfig::default(), || {
+                Ok(ffmpeg::codec::context::Context::new())
+            })
+            .unwrap();
+        let references_at_shutdown = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        unsafe {
+            let bytes = ffmpeg::ffi::av_malloc(1).cast::<u8>();
+            assert!(!bytes.is_null());
+            let observer = Box::new(DecoderShutdownWitness {
+                device: witness,
+                references_at_shutdown: references_at_shutdown.clone(),
+            });
+            let observer = Box::into_raw(observer).cast();
+            let buffer = ffmpeg::ffi::av_buffer_create(
+                bytes,
+                1,
+                Some(observe_decoder_shutdown),
+                observer,
+                0,
+            );
+            if buffer.is_null() {
+                observe_decoder_shutdown(observer, bytes);
+            }
+            assert!(!buffer.is_null());
+            // FFmpeg releases hw_frames_ctx during codec shutdown, before its
+            // device reference. This observes the real native destructor without
+            // a hardware decoder or dereferencing a possibly freed selection.
+            (*context.decoder.as_mut_ptr()).hw_frames_ctx = buffer;
+        }
+        drop(context);
+        assert_eq!(
+            references_at_shutdown.load(Ordering::SeqCst),
+            3,
+            "hardware state and its selection must remain owned during codec shutdown"
+        );
+        unsafe {
+            assert_eq!(ffmpeg::ffi::av_buffer_get_ref_count(witness), 1);
+            ffmpeg::ffi::av_buffer_unref(&mut witness);
+        }
+    }
+
+    fn test_streaming_frame_source(
+        rx: Receiver<DecodedFrameMessage>,
+        control: DecodeWorkerControl,
+        worker: thread::JoinHandle<()>,
+    ) -> StreamingVideoFrameSource {
+        let (recycle_tx, _) = crossbeam_channel::bounded(1);
+        StreamingVideoFrameSource {
+            rx: Some(rx),
+            recycle_tx,
+            current_index: None,
+            current_frame: None,
+            control,
+            worker: Some(worker),
+        }
+    }
+
+    #[test]
+    fn streaming_video_frame_source_drop_joins_blocked_worker() {
+        let canceled = Arc::new(AtomicBool::new(false));
+        let control = DecodeWorkerControl::new(canceled.clone());
+        let resource = Arc::new(());
+        let worker_resource = resource.clone();
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let (started_tx, started_rx) = crossbeam_channel::bounded(1);
+        let (finished_tx, finished_rx) = crossbeam_channel::bounded(1);
+        let worker = thread::spawn(move || {
+            tx.send(DecodedFrameMessage::Frame {
+                source_index: 0,
+                frame: StoredFrame {
+                    timestamp_ms: 0,
+                    duration_ms: 33,
+                    width: 2,
+                    height: 2,
+                    rgba: vec![0x40; 16],
+                },
+            })
+            .unwrap();
+            started_tx.send(()).unwrap();
+            // The queue remains full until source shutdown releases its receiver.
+            let disconnected = tx.send(DecodedFrameMessage::End).is_err();
+            drop(worker_resource);
+            finished_tx.send(disconnected).unwrap();
+        });
+        let source = test_streaming_frame_source(rx, control.clone(), worker);
+        started_rx.recv().unwrap();
+        let (dropped_tx, dropped_rx) = crossbeam_channel::bounded(1);
+        let resource_witness = resource.clone();
+        let dropper = thread::spawn(move || {
+            drop(source);
+            dropped_tx
+                .send(Arc::strong_count(&resource_witness))
+                .unwrap();
+        });
+        let remaining_owners = dropped_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("source shutdown must unblock the full decode queue");
+        dropper.join().unwrap();
+        assert!(finished_rx.recv().unwrap());
+        assert_eq!(remaining_owners, 2, "source Drop must join worker cleanup");
+        assert!(control.stopped.load(Ordering::Acquire));
+        assert!(!canceled.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn streaming_video_frame_source_drop_stops_and_joins_active_worker() {
+        let canceled = Arc::new(AtomicBool::new(false));
+        let control = DecodeWorkerControl::new(canceled.clone());
+        let worker_control = control.clone();
+        let resource = Arc::new(());
+        let worker_resource = resource.clone();
+        let (_, rx) = crossbeam_channel::bounded(1);
+        let (started_tx, started_rx) = crossbeam_channel::bounded(1);
+        let worker = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            while worker_control.check_canceled().is_ok() {
+                thread::yield_now();
+            }
+            drop(worker_resource);
+        });
+        let source = test_streaming_frame_source(rx, control.clone(), worker);
+        started_rx.recv().unwrap();
+        let (dropped_tx, dropped_rx) = crossbeam_channel::bounded(1);
+        let resource_witness = resource.clone();
+        let dropper = thread::spawn(move || {
+            drop(source);
+            dropped_tx
+                .send(Arc::strong_count(&resource_witness))
+                .unwrap();
+        });
+        let remaining_owners = dropped_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("source shutdown must stop active decode work");
+        dropper.join().unwrap();
+        // Also release a worker if a regression removes the local stop signal.
+        control.stop();
+        assert_eq!(remaining_owners, 2, "source Drop must join worker cleanup");
+        assert!(!canceled.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn streaming_video_frame_source_preserves_frames_and_end_message() {
+        let canceled = Arc::new(AtomicBool::new(false));
+        let control = DecodeWorkerControl::new(canceled.clone());
+        let (tx, rx) = crossbeam_channel::bounded(2);
+        let worker = thread::spawn(move || {
+            tx.send(DecodedFrameMessage::Frame {
+                source_index: 0,
+                frame: StoredFrame {
+                    timestamp_ms: 42,
+                    duration_ms: 33,
+                    width: 2,
+                    height: 2,
+                    rgba: vec![0x40; 16],
+                },
+            })
+            .unwrap();
+            tx.send(DecodedFrameMessage::End).unwrap();
+        });
+        let mut source = test_streaming_frame_source(rx, control, worker);
+        let frame = source.frame_at(0).unwrap();
+        assert_eq!(frame.timestamp_ms, 42);
+        assert_eq!(frame.rgba, vec![0x40; 16]);
+        let err = source.frame_at(1).unwrap_err();
+        assert!(
+            matches!(err, ScreenRecorderError::Export(message) if message == "decode stream ended before requested frame")
+        );
+        drop(source);
+        assert!(!canceled.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn streaming_video_frame_source_preserves_decoder_error() {
+        let directory = tempdir().unwrap();
+        let canceled = Arc::new(AtomicBool::new(false));
+        let mut source = StreamingVideoFrameSource::spawn(
+            &directory.path().join("missing-source.mkv"),
+            vec![0],
+            30,
+            1,
+            1,
+            canceled.clone(),
+        )
+        .unwrap();
+        let err = source.frame_at(0).unwrap_err();
+        assert!(
+            matches!(err, ScreenRecorderError::Export(message) if message.contains("failed to open temporary recording video") && message.contains("missing-source.mkv"))
+        );
+        drop(source);
+        assert!(!canceled.load(Ordering::Acquire));
+    }
 
     fn test_track(
         track_id: &str,

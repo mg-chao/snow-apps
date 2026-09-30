@@ -533,16 +533,7 @@ impl GpuVisualCompositor {
         if config.show_cursor
             && let Some(cursor) = cursor
         {
-            let shape = match &cursor.shape {
-                CursorShapeState::Embedded(shape) => {
-                    state
-                        .cursor_shapes
-                        .insert(shape.shape_id.get(), shape.clone());
-                    Some(shape.clone())
-                }
-                CursorShapeState::Cached(id) => state.cursor_shapes.get(&id.get()).cloned(),
-                CursorShapeState::Unavailable => None,
-            };
+            let shape = resolve_cursor_shape(&mut state.cursor_shape, cursor).cloned();
             if cursor.visible
                 && let Some(shape) = shape
             {
@@ -1220,7 +1211,7 @@ mod tests {
                         shape: CursorShapeState::Embedded(shape.clone()),
                     };
                     let mut expected = reference.clone();
-                    draw_cursor(&mut expected, size, source, &sample, &mut HashMap::new());
+                    draw_cursor(&mut expected, size, source, &sample, &mut None);
                     compositor.cursor(&background, &sample, &shape, source)?;
                     unsafe {
                         device

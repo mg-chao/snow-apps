@@ -22,6 +22,7 @@ vcpkg_from_github(
         0053-compile-out-disabled-codec-references.patch
         0054-fix-shared-libwebp-animation-link.patch
         0055-release-amf-frames-on-abort.patch
+        0056-release-gif-packet-on-abort.patch
 )
 
 if(SOURCE_PATH MATCHES " ")

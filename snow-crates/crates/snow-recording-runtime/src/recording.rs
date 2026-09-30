@@ -1015,7 +1015,15 @@ fn new_recording_worker(
             }
         }
 
-        if fatal_error || invalid_config_error || control_stop || video_ended {
+        // The drop receiver keeps the queue connected even after the encoder
+        // exits. Observe the worker directly so its failure also stops capture
+        // while recording is paused or no further frames arrive.
+        if fatal_error
+            || invalid_config_error
+            || control_stop
+            || video_ended
+            || video_handle.is_finished()
+        {
             break;
         }
 
@@ -1089,6 +1097,9 @@ fn new_recording_worker(
 
     let _ = multiplexer.send_command(MuxCommand::Stop);
     while let Ok(event) = multiplexer.try_recv() {
+        if video_handle.is_finished() {
+            break;
+        }
         match event {
             snow_pipeline::PipelineEvent::Video(te) => match te.event {
                 CaptureEvent::Frame(frame) => {
@@ -1156,8 +1167,13 @@ fn new_recording_worker(
         &mut last_observed_ts_ms,
         clock.active_elapsed_ms(finalize_at),
     );
-    let video_outcome =
-        finalize_video_worker(&video_tx, video_handle, final_ts_ms, enqueue_error.take())?;
+    let video_outcome = finalize_video_worker(
+        video_tx,
+        video_drop_rx,
+        video_handle,
+        final_ts_ms,
+        enqueue_error.take(),
+    )?;
 
     let mouse_store = cursor.into_mouse_store();
     let audio_artifact = finish_audio_recording_if_available(audio_recording);
@@ -1203,8 +1219,13 @@ fn enqueue_video_frame(
     }
 }
 
-/// Send the finalize command, join the video worker, and surface the most
-/// informative failure.
+/// Release the producer's drop receiver, send the finalize command, join the
+/// video worker, and surface the most informative failure.
+///
+/// Only the video worker may retain a receiver during finalization. Otherwise
+/// an encoder failure leaves a connected, full queue whose blocking send can
+/// never complete. Consuming both producer endpoints also releases every
+/// queued frame before returning, including on an encoder error or panic.
 ///
 /// `enqueue_error` carries a failure observed while feeding frames (the queue
 /// disconnecting after a worker error, or staying full after a drop). When the
@@ -1212,11 +1233,13 @@ fn enqueue_video_frame(
 /// cause; when the worker finalized cleanly, a pending enqueue error still
 /// fails the recording because frames were lost.
 fn finalize_video_worker(
-    video_tx: &Sender<VideoWorkerCommand>,
+    video_tx: Sender<VideoWorkerCommand>,
+    video_drop_rx: Receiver<VideoWorkerCommand>,
     video_handle: JoinHandle<Result<VideoWorkerOutcome>>,
     final_ts_ms: u64,
     enqueue_error: Option<ScreenRecorderError>,
 ) -> Result<VideoWorkerOutcome> {
+    drop(video_drop_rx);
     let finalize_delivered = video_tx
         .send(VideoWorkerCommand::Finalize { final_ts_ms })
         .is_ok();
@@ -1411,14 +1434,22 @@ mod tests {
     #[test]
     fn finalize_video_worker_returns_outcome_on_success() {
         let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        let video_drop_rx = video_rx.clone();
+        let frames = queued_video_frames(&video_tx, 8);
         let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
+            let mut frame_count = 0;
             while let Ok(command) = video_rx.recv() {
-                if matches!(command, VideoWorkerCommand::Finalize { .. }) {
-                    return Ok(VideoWorkerOutcome {
-                        geometry: vec![],
-                        width: 1920,
-                        height: 1080,
-                    });
+                match command {
+                    VideoWorkerCommand::Frame { .. } => frame_count += 1,
+                    VideoWorkerCommand::Finalize { final_ts_ms } => {
+                        assert_eq!(frame_count, 8, "finalization must preserve queued frames");
+                        assert_eq!(final_ts_ms, 42);
+                        return Ok(VideoWorkerOutcome {
+                            geometry: vec![],
+                            width: 1920,
+                            height: 1080,
+                        });
+                    }
                 }
             }
             Err(ScreenRecorderError::Encode(
@@ -1426,23 +1457,26 @@ mod tests {
             ))
         });
 
-        let outcome = finalize_video_worker(&video_tx, handle, 42, None).unwrap();
+        let outcome = finalize_video_worker(video_tx, video_drop_rx, handle, 42, None).unwrap();
 
         assert_eq!((outcome.width, outcome.height), (1920, 1080));
+        require_video_frames_released(frames);
     }
 
     #[test]
     fn finalize_video_worker_prefers_the_worker_error() {
         let (video_tx, video_rx) = crossbeam_channel::bounded(8);
-        // Dropping the receiver models a video worker that already exited, so
-        // the finalize command cannot be delivered.
+        let video_drop_rx = video_rx.clone();
+        // A failed worker has released its receiver, but the producer still
+        // retains the drop receiver until finalization takes ownership.
         drop(video_rx);
         let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
             Err(ScreenRecorderError::Encode("encoder exploded".to_string()))
         });
 
         let err = finalize_video_worker(
-            &video_tx,
+            video_tx,
+            video_drop_rx,
             handle,
             42,
             Some(ScreenRecorderError::Encode(
@@ -1460,6 +1494,7 @@ mod tests {
     #[test]
     fn finalize_video_worker_fails_after_enqueue_error_despite_clean_finalize() {
         let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        let video_drop_rx = video_rx.clone();
         let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
             while let Ok(command) = video_rx.recv() {
                 if matches!(command, VideoWorkerCommand::Finalize { .. }) {
@@ -1476,7 +1511,8 @@ mod tests {
         });
 
         let err = finalize_video_worker(
-            &video_tx,
+            video_tx,
+            video_drop_rx,
             handle,
             42,
             Some(ScreenRecorderError::Encode(
@@ -1496,6 +1532,7 @@ mod tests {
     #[test]
     fn finalize_video_worker_reports_stalled_worker() {
         let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        let video_drop_rx = video_rx.clone();
         drop(video_rx);
         // A worker that returns Ok without receiving Finalize cannot happen
         // through run_video_worker; it pins down the defensive arm of the
@@ -1508,7 +1545,7 @@ mod tests {
             })
         });
 
-        let err = finalize_video_worker(&video_tx, handle, 42, None).unwrap_err();
+        let err = finalize_video_worker(video_tx, video_drop_rx, handle, 42, None).unwrap_err();
 
         match err {
             ScreenRecorderError::Encode(message) => {
@@ -1516,6 +1553,135 @@ mod tests {
             }
             other => panic!("expected the stalled-worker error, got: {other:?}"),
         }
+    }
+
+    fn queued_video_frames(
+        video_tx: &Sender<VideoWorkerCommand>,
+        count: usize,
+    ) -> Vec<CapturedFrame> {
+        (0..count)
+            .map(|index| {
+                let frame = CapturedFrame::from(
+                    snow_capture::frame::Frame::from_rgba8(16, 16, vec![0; 16 * 16 * 4]).unwrap(),
+                );
+                assert!(
+                    video_tx
+                        .try_send(VideoWorkerCommand::Frame {
+                            frame: frame.clone(),
+                            ts_ms: index as u64,
+                        })
+                        .is_ok()
+                );
+                frame
+            })
+            .collect()
+    }
+
+    fn require_video_frames_released(frames: Vec<CapturedFrame>) {
+        for frame in frames {
+            assert!(
+                frame.into_owned().is_ok(),
+                "finalization retained a queued frame"
+            );
+        }
+    }
+
+    #[test]
+    fn finalize_video_worker_reclaims_full_queue_after_encoder_failure() {
+        let output = tempfile::tempdir().unwrap();
+        let video_path = output.path().join("missing-parent").join("video.mkv");
+        let index_path = output.path().join("video.idx");
+        let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        let video_drop_rx = video_rx.clone();
+        let mut frames = queued_video_frames(&video_tx, 8);
+        let (worker_finished_tx, worker_finished_rx) = crossbeam_channel::bounded(1);
+        let handle = std::thread::spawn(move || {
+            let result = run_video_worker(
+                30,
+                IntermediateRecordingProfile::EditFast,
+                VideoEncodeConfig::default(),
+                video_path,
+                index_path,
+                video_rx,
+            );
+            worker_finished_tx.send(()).unwrap();
+            result
+        });
+        worker_finished_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("encoder failure must stop the worker");
+        // The real encoder consumed its first frame before failing. The drop
+        // receiver masks disconnection, so refill the queue to reproduce the
+        // original blocking Finalize send after an encoder failure.
+        frames.extend(queued_video_frames(&video_tx, 1));
+        assert!(video_tx.is_full());
+        let (finished_tx, finished_rx) = crossbeam_channel::bounded(1);
+        let finalizer = std::thread::spawn(move || {
+            finished_tx
+                .send(finalize_video_worker(
+                    video_tx,
+                    video_drop_rx,
+                    handle,
+                    42,
+                    None,
+                ))
+                .unwrap();
+        });
+        let err = finished_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("finalization must not block on a failed encoder")
+            .unwrap_err();
+        finalizer.join().unwrap();
+        match err {
+            ScreenRecorderError::Encode(message) => {
+                assert!(message.starts_with("failed to create temporary video output "));
+                assert!(message.contains("missing-parent"));
+            }
+            other => panic!("expected the original encoder error, got: {other:?}"),
+        }
+        require_video_frames_released(frames);
+    }
+
+    #[test]
+    fn finalize_video_worker_unblocks_full_queue_when_worker_panics() {
+        let (video_tx, video_rx) = crossbeam_channel::bounded(8);
+        let video_drop_rx = video_rx.clone();
+        let frames = queued_video_frames(&video_tx, 8);
+        let (panic_tx, panic_rx) = crossbeam_channel::bounded(1);
+        let handle = std::thread::spawn(move || -> Result<VideoWorkerOutcome> {
+            panic_rx.recv().unwrap();
+            // Keep the encoder's receiver alive until the panic unwinds.
+            let _video_rx = video_rx;
+            panic!("injected video worker panic");
+        });
+        let (started_tx, started_rx) = crossbeam_channel::bounded(1);
+        let (finished_tx, finished_rx) = crossbeam_channel::bounded(1);
+        let finalizer = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            finished_tx
+                .send(finalize_video_worker(
+                    video_tx,
+                    video_drop_rx,
+                    handle,
+                    42,
+                    None,
+                ))
+                .unwrap();
+        });
+        started_rx.recv().unwrap();
+        panic_tx.send(()).unwrap();
+        let err = finished_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("worker panic must unblock finalization")
+            .unwrap_err();
+        finalizer.join().unwrap();
+        match err {
+            ScreenRecorderError::Encode(message) => {
+                assert_eq!(message, "video worker thread panicked");
+            }
+            other => panic!("expected the worker panic, got: {other:?}"),
+        }
+        require_video_frames_released(frames);
     }
 
     #[test]

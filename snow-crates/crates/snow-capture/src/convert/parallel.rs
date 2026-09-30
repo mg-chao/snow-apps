@@ -1,13 +1,18 @@
 use std::sync::OnceLock;
 
 const PARALLEL_CHUNK_ALIGNMENT_PIXELS: usize = 256;
+static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn pool_initialized() -> bool {
+    POOL.get().is_some()
+}
 
 /// Pre-initialize the conversion thread pool so the first capture doesn't
 /// pay the pool-creation cost (~10-50 ms).  Safe to call multiple times;
 /// only the first call has any effect.
 pub(crate) fn warmup_pool(max_workers: usize) {
-    // Force the OnceLock inside install_conversion_pool to initialise by
-    // running a trivial no-op job.
+    // Force the shared pool to initialize by running a trivial no-op job.
     install_conversion_pool(max_workers, || {});
 }
 
@@ -91,7 +96,6 @@ pub(crate) fn install_conversion_pool<F>(max_workers: usize, job: F)
 where
     F: FnOnce() + Send,
 {
-    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
     if let Some(pool) = POOL
         .get_or_init(|| {
             let workers = conversion_workers(max_workers);

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 #[cfg(feature = "bench-synthetic-input")]
 use std::sync::atomic::AtomicU64;
@@ -2430,7 +2430,7 @@ struct VisualCompositor {
     output_history: Option<History>,
     trail: LaserTrail,
     clicks: VecDeque<RenderClick>,
-    cursor_shapes: HashMap<u64, CursorShape>,
+    cursor_shape: Option<CursorShape>,
     keyboard: Option<KeyboardOverlay>,
     pending_keys: VecDeque<KeyEvent>,
     mouse_input_style: Option<KeyboardOverlayConfig>,
@@ -2463,7 +2463,7 @@ impl VisualCompositor {
             output_history: None,
             trail: LaserTrail::default(),
             clicks: VecDeque::new(),
-            cursor_shapes: HashMap::new(),
+            cursor_shape: None,
             keyboard: None,
             pending_keys: VecDeque::new(),
             mouse_input_style: None,
@@ -2768,7 +2768,7 @@ impl VisualCompositor {
                 self.output_size,
                 source_size,
                 cursor,
-                &mut self.cursor_shapes,
+                &mut self.cursor_shape,
             );
             if partial_overlays {
                 // Cursor coverage includes masked/XOR pixels, not only alpha.
@@ -2776,7 +2776,7 @@ impl VisualCompositor {
                     touched.as_mut().unwrap(),
                     source_size,
                     cursor,
-                    &self.cursor_shapes,
+                    &self.cursor_shape,
                 );
             }
         }
@@ -2883,11 +2883,11 @@ fn mark_cursor_rows(
     rows: &mut Rows,
     source_size: (u32, u32),
     cursor: &AttachedCursorSample,
-    shapes: &HashMap<u64, CursorShape>,
+    retained: &Option<CursorShape>,
 ) {
     let shape = match &cursor.shape {
         CursorShapeState::Embedded(shape) => Some(shape),
-        CursorShapeState::Cached(id) => shapes.get(&id.get()),
+        CursorShapeState::Cached(id) => retained.as_ref().filter(|shape| shape.shape_id == *id),
         CursorShapeState::Unavailable => None,
     };
     let Some(shape) = shape else {
@@ -2923,21 +2923,30 @@ fn mark_cursor_rows(
     }
 }
 
+// Capture observations include the current Arc-backed bitmap. Cached references
+// can therefore reuse one shape instead of retaining every shape in a recording.
+fn resolve_cursor_shape<'a>(
+    retained: &'a mut Option<CursorShape>,
+    cursor: &AttachedCursorSample,
+) -> Option<&'a CursorShape> {
+    match &cursor.shape {
+        CursorShapeState::Embedded(shape) => {
+            *retained = Some(shape.clone());
+            retained.as_ref()
+        }
+        CursorShapeState::Cached(id) => retained.as_ref().filter(|shape| shape.shape_id == *id),
+        CursorShapeState::Unavailable => None,
+    }
+}
+
 fn draw_cursor(
     rgba: &mut [u8],
     output_size: (u32, u32),
     source_size: (u32, u32),
     cursor: &AttachedCursorSample,
-    shapes: &mut HashMap<u64, CursorShape>,
+    retained: &mut Option<CursorShape>,
 ) {
-    let shape = match &cursor.shape {
-        CursorShapeState::Embedded(shape) => {
-            shapes.insert(shape.shape_id.get(), shape.clone());
-            Some(shape)
-        }
-        CursorShapeState::Cached(shape_id) => shapes.get(&shape_id.get()),
-        CursorShapeState::Unavailable => None,
-    };
+    let shape = resolve_cursor_shape(retained, cursor);
     let Some(shape) = shape else {
         return;
     };
@@ -3052,11 +3061,124 @@ mod tests {
             visible: false,
             shape: CursorShapeState::Embedded(shape.clone()),
         };
-        let mut shapes = HashMap::new();
+        let mut shapes = None;
         let mut pixels = [10, 20, 30, 255];
         draw_cursor(&mut pixels, (1, 1), (1, 1), &sample, &mut shapes);
         assert_eq!(pixels, [10, 20, 30, 255]);
-        assert_eq!(shapes.get(&shape.shape_id.get()), Some(&shape));
+        assert_eq!(shapes.as_ref(), Some(&shape));
+    }
+
+    #[test]
+    fn changing_cursor_shapes_release_previous_pixels_and_render_cached_current_shape() {
+        use snow_cursor::{CursorProjector, CursorShapeCapture, CursorSnapshot, CursorTargetInfo};
+        let mut projector = CursorProjector::new();
+        let target = CursorTargetInfo {
+            origin_x: 0,
+            origin_y: 0,
+            width: 1,
+            height: 1,
+        };
+        let mut retained = None;
+        let mut previous_pixels: Option<std::sync::Weak<[u8]>> = None;
+        for index in 0..1024_u32 {
+            let expected = [index as u8, (index >> 8) as u8, 50, 255];
+            let shape = CursorShape::from_rgba(
+                0,
+                0,
+                1,
+                1,
+                CursorCompositionMode::AlphaBlend,
+                expected.to_vec(),
+            );
+            let weak = Arc::downgrade(&shape.shape_rgba);
+            for _ in 0..2 {
+                let sample = projector.project(
+                    &target,
+                    CursorSnapshot {
+                        absolute_x: 0,
+                        absolute_y: 0,
+                        visible: true,
+                        shape: CursorShapeCapture::Captured(shape.clone()),
+                    },
+                );
+                let mut pixels = [0, 0, 0, 255];
+                draw_cursor(&mut pixels, (1, 1), (1, 1), &sample, &mut retained);
+                assert_eq!(pixels, expected);
+            }
+            if let Some(previous) = previous_pixels {
+                assert!(previous.upgrade().is_none());
+            }
+            previous_pixels = Some(weak);
+        }
+        let previous = previous_pixels.unwrap();
+        assert!(previous.upgrade().is_some());
+        drop(retained);
+        assert!(previous.upgrade().is_none());
+    }
+
+    #[test]
+    fn revisited_cursor_shapes_render_and_unavailable_samples_keep_only_current_pixels() {
+        use snow_cursor::{CursorProjector, CursorShapeCapture, CursorSnapshot, CursorTargetInfo};
+        let mut projector = CursorProjector::new();
+        let target = CursorTargetInfo {
+            origin_x: 0,
+            origin_y: 0,
+            width: 1,
+            height: 1,
+        };
+        let a = CursorShape::from_rgba(
+            0,
+            0,
+            1,
+            1,
+            CursorCompositionMode::AlphaBlend,
+            vec![10, 20, 30, 255],
+        );
+        let b = CursorShape::from_rgba(
+            0,
+            0,
+            1,
+            1,
+            CursorCompositionMode::MaskedColor,
+            vec![200, 150, 100, 0],
+        );
+        let mut retained = None;
+        for (shape, expected) in [
+            (&a, [10, 20, 30, 255]),
+            (&b, [200, 150, 100, 255]),
+            (&a, [10, 20, 30, 255]),
+        ] {
+            let sample = projector.project(
+                &target,
+                CursorSnapshot {
+                    absolute_x: 0,
+                    absolute_y: 0,
+                    visible: true,
+                    shape: CursorShapeCapture::Captured(shape.clone()),
+                },
+            );
+            let mut pixels = [0, 0, 0, 255];
+            draw_cursor(&mut pixels, (1, 1), (1, 1), &sample, &mut retained);
+            assert_eq!(pixels, expected);
+        }
+        let sample = projector.project(
+            &target,
+            CursorSnapshot {
+                absolute_x: 0,
+                absolute_y: 0,
+                visible: true,
+                shape: CursorShapeCapture::Unavailable,
+            },
+        );
+        let mut pixels = [0, 0, 0, 255];
+        draw_cursor(&mut pixels, (1, 1), (1, 1), &sample, &mut retained);
+        assert_eq!(pixels, [10, 20, 30, 255]);
+        let unknown = AttachedCursorSample {
+            shape: CursorShapeState::Cached(b.shape_id),
+            ..sample
+        };
+        assert!(resolve_cursor_shape(&mut retained, &unknown).is_none());
+        assert_eq!(retained.as_ref(), Some(&a));
     }
 
     #[test]
@@ -3802,7 +3924,7 @@ mod tests {
             shape: CursorShapeState::Embedded(shape),
         };
         let mut rgba = vec![0u8; 2 * 2 * 4];
-        let mut shapes = HashMap::new();
+        let mut shapes = None;
         draw_cursor(&mut rgba, (2, 2), (2, 2), &cursor, &mut shapes);
         let index = (2 + 1) * 4;
         assert_eq!(&rgba[index..index + 4], &[0, 255, 0, 255]);
@@ -3840,7 +3962,7 @@ mod tests {
                 }
                 let shape = CursorShape::from_rgba(0, 0, 1, 1, mode, pixel.to_vec());
                 let shape_id = shape.shape_id;
-                let mut shapes = HashMap::new();
+                let mut shapes = None;
                 for state in [
                     CursorShapeState::Embedded(shape),
                     CursorShapeState::Cached(shape_id),
@@ -3887,7 +4009,7 @@ mod tests {
         let mut rgba = background.repeat(4);
         let mut expected = rgba.clone();
         expected[..4].copy_from_slice(&[218, 164, 92, 255]);
-        draw_cursor(&mut rgba, (2, 2), (2, 2), &cursor, &mut HashMap::new());
+        draw_cursor(&mut rgba, (2, 2), (2, 2), &cursor, &mut None);
         assert_eq!(rgba, expected);
     }
 

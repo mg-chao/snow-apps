@@ -66,10 +66,20 @@ pub struct ExportProgress {
     pub peak_memory_mb: u32,
 }
 
+/// Owns the export worker. Dropping an unawaited task cancels and joins it.
 pub struct ExportTask {
     cancel_flag: Arc<AtomicBool>,
     progress_rx: crossbeam_channel::Receiver<ExportProgress>,
     join: Option<JoinHandle<Result<ExportResult>>>,
+}
+
+impl Drop for ExportTask {
+    fn drop(&mut self) {
+        if let Some(worker) = self.join.take() {
+            self.cancel();
+            let _ = worker.join();
+        }
+    }
 }
 
 impl ExportTask {
@@ -100,5 +110,56 @@ impl ExportTask {
         handle
             .join()
             .map_err(|_| ScreenRecorderError::Export("export task panicked".to_string()))?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    #[test]
+    fn dropping_export_task_cancels_and_joins_its_worker() {
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let worker_flag = cancel_flag.clone();
+        let resource = Arc::new(());
+        let worker_resource = resource.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let (_, progress_rx) = crossbeam_channel::unbounded();
+        let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            while !worker_flag.load(Ordering::Acquire) {
+                std::thread::yield_now();
+            }
+            drop(worker_resource);
+            finished_tx.send(()).unwrap();
+            Err(ScreenRecorderError::ExportCanceled)
+        });
+        started_rx.recv().unwrap();
+        drop(ExportTask::new(cancel_flag.clone(), progress_rx, worker));
+        let canceled_on_drop = cancel_flag.load(Ordering::Acquire);
+        let released_on_drop = Arc::strong_count(&resource) == 1;
+        // Release a detached worker even when the old behavior fails this test.
+        cancel_flag.store(true, Ordering::Release);
+        finished_rx.recv().unwrap();
+        assert!(canceled_on_drop, "dropping a task must cancel its worker");
+        assert!(
+            released_on_drop,
+            "dropping a task must join resource cleanup"
+        );
+    }
+
+    #[test]
+    fn waiting_for_export_task_preserves_the_worker_result() {
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let (_, progress_rx) = crossbeam_channel::unbounded();
+        let worker =
+            std::thread::spawn(|| Err(ScreenRecorderError::Export("original failure".into())));
+        let result = ExportTask::new(cancel_flag.clone(), progress_rx, worker).wait();
+        assert!(
+            matches!(result, Err(ScreenRecorderError::Export(message)) if message == "original failure")
+        );
+        assert!(!cancel_flag.load(Ordering::Acquire));
     }
 }
