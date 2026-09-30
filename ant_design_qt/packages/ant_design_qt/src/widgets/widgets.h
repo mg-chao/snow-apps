@@ -23,6 +23,7 @@
 #include "pagination.h"
 #include "popover.h"
 #include "popconfirm.h"
+#include "progress.h"
 #include "popup_types.h"
 #include "radio.h"
 #include "radio_button_group.h"
