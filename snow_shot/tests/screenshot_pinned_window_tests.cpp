@@ -369,6 +369,9 @@ class ScreenshotPinnedWindowTestAccess {
     static QByteArray drawingHistory(const ScreenshotPinnedWindow& window) {
         return window.m_runtime.serializeDocumentHistory();
     }
+    static ScreenshotCanvasRenderer& renderer(ScreenshotPinnedWindow& window) {
+        return *window.m_screenshotRenderer;
+    }
     static void transformReplacement(ScreenshotPinnedWindow& window) {
         window.applyImageOperation(QTransform().rotate(90).scale(-1, 1), 1);
     }
@@ -9650,6 +9653,65 @@ void pinnedDrawingShortcutsToggleActiveTool() {
     require(processUntilDeleted(guardedWindow, 2000), "shortcut test pin should close");
 }
 
+void pinnedDrawingExitReleasesRendererCaches() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    Access::editForHideTest(window);
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(controller && controller->editMode() && canvas,
+            "render cleanup fixture must enter pinned drawing mode");
+    auto watermark = canvas->canvasWatermarkConfig();
+    watermark.text = QStringLiteral("Retained drawing history");
+    require(canvas->setCanvasWatermarkConfig(watermark) && canvas->canvasHistoryState().canUndo,
+            "render cleanup fixture must have an undoable document edit");
+    require(canvas->setCanvasTool(SnowCanvasTool::Select),
+            "render cleanup fixture must leave no active drawing interaction");
+
+    // Prime the real installed renderer's derived caches through its public rendering contract.
+    // A renderer can retain these capture-mode caches after returning to pinned presentation.
+    auto& renderer = Access::renderer(window);
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::Standard);
+    renderer.setMaskVisible(true);
+    ScreenshotSelectionVisualState state;
+    const QRegion contour = QRegion(QRect(20, 20, 180, 150)).subtracted(QRect(70, 60, 60, 50)) +
+                            QRegion(QRect(240, 40, 60, 80)) + QRegion(QRect(240, 150, 60, 30)) +
+                            QRegion(QRect(20, 200, 180, 20));
+    state.region = ScreenshotRegionGeometry(contour);
+    state.confirmedRegion = *state.region;
+    state.bounds = contour.boundingRect();
+    state.present = true;
+    state.cornerRadius = 12;
+    state.shadowWidth = 8;
+    renderer.applySelectionState(state);
+    QImage frame(320, 240, QImage::Format_ARGB32_Premultiplied);
+    frame.fill(Qt::transparent);
+    const SnowCanvasRenderContext context{frame.rect(), QRegion(frame.rect()), QTransform(), 1.0};
+    {
+        QPainter painter(&frame);
+        renderer.renderAfterCanvas(painter, context);
+        renderer.setSelectionToolbarHovered(true);
+        renderer.renderAfterCanvas(painter, context);
+    }
+    require(renderer.selectionOutlineCacheBytes() > 0 && renderer.selectionMaskCacheBytes() > 0 &&
+                renderer.selectionRegionHoverCacheBytes() > 0,
+            "render cleanup fixture must retain outline, mask and hover rasters");
+    renderer.clearSelection();
+    renderer.setMaskVisible(false);
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::PinnedResult);
+    const auto document = Access::dragDocument(window);
+    const auto history = Access::drawingHistory(window);
+    controller->setEditMode(false);
+    require(renderer.selectionOutlineCacheBytes() == 0 && renderer.selectionMaskCacheBytes() == 0 &&
+                renderer.selectionRegionHoverCacheBytes() == 0,
+            "drawing exit must synchronously release the installed renderer's derived rasters");
+    require(Access::dragDocument(window) == document && Access::drawingHistory(window) == history &&
+                canvas->canvasWatermarkConfig().text == watermark.text &&
+                canvas->canvasHistoryState().canUndo,
+            "drawing cache cleanup must preserve the document, watermark and undo history");
+}
+
 void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -10410,6 +10472,183 @@ QImage exportedClipboardImage() {
 #else
     return QApplication::clipboard()->image();
 #endif
+}
+
+void pinnedDragFileRetention() {
+    using Retention = screenshot_pinned_drag_export::FileRetention;
+    qint64 now = 1000;
+    const auto makeDirectory = [] {
+        auto directory = std::make_shared<QTemporaryDir>(
+            QDir::temp().filePath(QStringLiteral("snow-shot-drag-retention-tests-XXXXXX")));
+        require(directory->isValid(), "create retained drag file fixture");
+        QFile file(directory->filePath(QStringLiteral("transfer.png")));
+        require(file.open(QIODevice::WriteOnly) && file.write("transfer") == 8,
+                "write retained drag file fixture");
+        return directory;
+    };
+    const auto pathFor = [](const auto& directory) {
+        return directory->filePath(QStringLiteral("transfer.png"));
+    };
+    {
+        Retention retention(nullptr, [&] { return now; });
+        auto directory = makeDirectory();
+        const auto path = pathFor(directory);
+        auto lease = retention.reserve(directory, 8);
+        require(bool(lease), "ignored drag must reserve a pending transfer slot");
+        directory.reset();
+        retention.complete(lease, Qt::IgnoreAction);
+        lease.reset();
+        require(retention.retainedFileCount() == 0 && retention.retainedBytes() == 0 &&
+                    !QFileInfo::exists(path),
+                "ignored drags must release their files and both budgets");
+    }
+    {
+        Retention retention(nullptr, [&] { return now; });
+        auto directory = makeDirectory();
+        const auto path = pathFor(directory);
+        auto lease = retention.reserve(directory, 8);
+        require(bool(lease), "accepted drag must reserve a transfer slot");
+        retention.complete(lease, Qt::CopyAction);
+        directory.reset();
+        lease.reset();
+        now += Retention::TransferGraceMilliseconds - 1;
+        retention.expire();
+        require(QFileInfo::exists(path) && retention.retainedFileCount() == 1,
+                "accepted URL files must outlive their source throughout the transfer grace");
+        ++now;
+        retention.expire();
+        require(!QFileInfo::exists(path) && retention.retainedFileCount() == 0 &&
+                    retention.retainedBytes() == 0,
+                "accepted URL files must release at the transfer deadline");
+    }
+    {
+        Retention retention(nullptr, [&] { return now; });
+        auto directory = makeDirectory();
+        const auto path = pathFor(directory);
+        auto lease = retention.reserve(directory, 8);
+        require(bool(lease), "long-running native drag must reserve a transfer slot");
+        directory.reset();
+        now += 2 * Retention::TransferGraceMilliseconds;
+        retention.expire();
+        require(QFileInfo::exists(path) && retention.retainedFileCount() == 1,
+                "pending native drags must retain files without consuming transfer grace");
+        retention.complete(lease, Qt::CopyAction);
+        lease.reset();
+        now += Retention::TransferGraceMilliseconds - 1;
+        retention.expire();
+        require(QFileInfo::exists(path), "receiver grace must start after native drag completion");
+        ++now;
+        retention.expire();
+        require(!QFileInfo::exists(path),
+                "completed long drags must eventually reclaim their file");
+    }
+    for (const auto action : {Qt::CopyAction, Qt::IgnoreAction}) {
+        bool locked = true;
+        int removalAttempts = 0;
+        Retention retention(
+            nullptr, [&] { return now; },
+            [&](QTemporaryDir& directory) {
+                ++removalAttempts;
+                return !locked && directory.remove();
+            });
+        auto directory = makeDirectory();
+        const auto path = pathFor(directory);
+        auto lease = retention.reserve(directory, Retention::MaximumBytes);
+        require(bool(lease), "locked transfer fixture must reserve the byte budget");
+        retention.complete(lease, action);
+        directory.reset();
+        lease.reset();
+        if (action == Qt::CopyAction) {
+            require(removalAttempts == 0, "accepted files must keep their transfer grace");
+            now += Retention::TransferGraceMilliseconds;
+            retention.expire();
+        }
+        require(removalAttempts == 1 && QFileInfo::exists(path) &&
+                    retention.retainedFileCount() == 1 &&
+                    retention.retainedBytes() == Retention::MaximumBytes &&
+                    !retention.reserve(makeDirectory(), 1),
+                "failed accepted or ignored cleanup must retain files and both budgets");
+        locked = false;
+        now += 60 * 1000 - 1;
+        retention.expire();
+        require(removalAttempts == 1 && QFileInfo::exists(path) &&
+                    retention.retainedFileCount() == 1 &&
+                    retention.retainedBytes() == Retention::MaximumBytes,
+                "failed removal must preserve its budget until the retry deadline");
+        ++now;
+        retention.expire();
+        require(removalAttempts == 2 && !QFileInfo::exists(path) &&
+                    retention.retainedFileCount() == 0 && retention.retainedBytes() == 0,
+                "successful cleanup retry must release files and both budgets");
+        auto recovered = retention.reserve(makeDirectory(), 1);
+        require(bool(recovered), "successful cleanup retry must admit another transfer");
+        retention.complete(recovered, Qt::IgnoreAction);
+    }
+    {
+        Retention retention(nullptr, [&] { return now; });
+        QStringList paths;
+        for (int index = 0; index < Retention::MaximumFileCount; ++index) {
+            auto directory = makeDirectory();
+            paths.append(pathFor(directory));
+            auto lease = retention.reserve(directory, 8);
+            require(bool(lease), "file count budget must admit its supported transfer count");
+            retention.complete(lease, Qt::CopyAction);
+        }
+        auto rejected = makeDirectory();
+        const auto rejectedPath = pathFor(rejected);
+        require(!retention.reserve(rejected, 8) &&
+                    retention.retainedFileCount() == Retention::MaximumFileCount,
+                "a full file count budget must reject another native drag");
+        rejected.reset();
+        require(!QFileInfo::exists(rejectedPath), "rejected files must not enter retention");
+        for (const auto& path : paths)
+            require(QFileInfo::exists(path), "count pressure must not evict accepted files early");
+        now += Retention::TransferGraceMilliseconds;
+        retention.expire();
+        for (const auto& path : paths)
+            require(!QFileInfo::exists(path), "expired count-limited transfers must reclaim files");
+        require(retention.retainedFileCount() == 0 && retention.retainedBytes() == 0,
+                "expiry must recover the count and byte budgets");
+        auto recovered = retention.reserve(makeDirectory(), 8);
+        require(bool(recovered), "expiry must admit another transfer");
+        retention.complete(recovered, Qt::IgnoreAction);
+    }
+    {
+        Retention retention(nullptr, [&] { return now; });
+        auto directory = makeDirectory();
+        const auto path = pathFor(directory);
+        auto lease = retention.reserve(directory, Retention::MaximumBytes);
+        require(bool(lease), "byte budget must admit its exact supported size");
+        retention.complete(lease, Qt::CopyAction);
+        directory.reset();
+        lease.reset();
+        require(!retention.reserve(makeDirectory(), 1) && QFileInfo::exists(path) &&
+                    retention.retainedBytes() == Retention::MaximumBytes,
+                "byte pressure must reject new transfers without evicting accepted files");
+        now += Retention::TransferGraceMilliseconds;
+        retention.expire();
+        require(!QFileInfo::exists(path) && retention.retainedBytes() == 0,
+                "byte-limited transfers must recover their budget on expiry");
+        require(!retention.reserve(makeDirectory(), Retention::MaximumBytes + 1) &&
+                    !retention.reserve(makeDirectory(), -1),
+                "oversized or invalid files must not start a native transfer");
+    }
+    QString shutdownPath;
+    {
+        auto owner = std::make_unique<QObject>();
+        auto* retention = new Retention(owner.get(), [&] { return now; });
+        auto directory = makeDirectory();
+        shutdownPath = pathFor(directory);
+        auto lease = retention->reserve(directory, 8);
+        require(bool(lease), "shutdown fixture must reserve a transfer slot");
+        retention->complete(lease, Qt::CopyAction);
+        directory.reset();
+        lease.reset();
+        require(QFileInfo::exists(shutdownPath), "shutdown fixture file must remain leased");
+        owner.reset();
+    }
+    require(!QFileInfo::exists(shutdownPath),
+            "application-owned retention destruction must remove accepted temporary files");
 }
 
 void pinnedDragExportOffscreen() {
@@ -13443,6 +13682,7 @@ int main(int argc, char* argv[]) {
         }
 #endif
         if (app.arguments().contains(QStringLiteral("--drag-export-only"))) {
+            pinnedDragFileRetention();
             pinnedDragExportOffscreen();
             return 0;
         }
@@ -13819,6 +14059,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--toolbar-lifecycle-only"))) {
+            pinnedDrawingExitReleasesRendererCaches();
             pinnedEditToolbarControlsCanvasHistory(sourceRuntime);
             return 0;
         }

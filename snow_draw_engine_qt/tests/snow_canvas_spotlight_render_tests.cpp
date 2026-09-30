@@ -255,6 +255,66 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
             "DPR changes must refresh physical filter parameters");
     require(cache.executionPlan(1.25).buildCount == 2,
             "unchanged fractional DPR must reuse the plan");
+
+    ScopedChangedViewportList filterToolChange;
+    require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(),
+                                             SNOW_ACTIVE_TOOL_RECTANGLE_FILTER,
+                                             filterToolChange.outParam()) == SNOW_OK,
+            "filter tool setup must succeed");
+    pointer(SNOW_POINTER_EVENT_DOWN, 20.0, 20.0, 1);
+    pointer(SNOW_POINTER_EVENT_MOVE, 60.0, 60.0, 1);
+    pointer(SNOW_POINTER_EVENT_UP, 60.0, 60.0, 0);
+    require(cache.sync(runtime.get(), viewport.get()), "filter scene sync must succeed");
+    const auto& retainedPlan = cache.executionPlan(1.25);
+    require(retainedPlan.filters.size() == 1 && !retainedPlan.passes.empty(),
+            "a filter scene must retain a nonempty execution plan");
+    const auto originalPlan = retainedPlan;
+    const SnowPatchCursor cursorBeforeClear = cache.patchCursor();
+    const auto* sceneBeforeClear = cache.sceneItems();
+    const auto sceneCountBeforeClear = cache.sceneItemCount();
+    const auto* spotlightBeforeClear = cache.spotlightCutouts();
+    const auto spotlightCountBeforeClear = cache.spotlightCutoutCount();
+    const auto* renderPlanBeforeClear = cache.renderPlan().data();
+    const auto renderPlanSizeBeforeClear = cache.renderPlan().size();
+
+    cache.clearRenderState();
+    require(retainedPlan.passes.capacity() == 0 && retainedPlan.filters.capacity() == 0 &&
+                retainedPlan.filterForItem.capacity() == 0 &&
+                retainedPlan.passForItem.capacity() == 0 &&
+                retainedPlan.filterIndices.capacity() == 0,
+            "clearing render state must release execution-plan allocations");
+    require(cache.patchCursor().scene_revision == cursorBeforeClear.scene_revision &&
+                cache.patchCursor().decoration_revision == cursorBeforeClear.decoration_revision &&
+                cache.patchCursor().overlay_revision == cursorBeforeClear.overlay_revision,
+            "clearing derived render state must preserve every patch cursor");
+    require(cache.sceneItems() == sceneBeforeClear &&
+                cache.sceneItemCount() == sceneCountBeforeClear &&
+                cache.spotlightCutouts() == spotlightBeforeClear &&
+                cache.spotlightCutoutCount() == spotlightCountBeforeClear &&
+                cache.renderPlan().data() == renderPlanBeforeClear &&
+                cache.renderPlan().size() == renderPlanSizeBeforeClear,
+            "clearing derived render state must preserve current scene and decoration storage");
+
+    const auto& rebuiltPlan = cache.executionPlan(1.25);
+    require(rebuiltPlan.buildCount == 1 && rebuiltPlan.revision == originalPlan.revision &&
+                rebuiltPlan.dpr == originalPlan.dpr &&
+                rebuiltPlan.passForItem == originalPlan.passForItem &&
+                rebuiltPlan.filterForItem == originalPlan.filterForItem &&
+                rebuiltPlan.filterIndices == originalPlan.filterIndices &&
+                rebuiltPlan.passes.size() == originalPlan.passes.size() &&
+                rebuiltPlan.filters.size() == originalPlan.filters.size(),
+            "the next paint must lazily rebuild equivalent scene execution mappings");
+    const auto& originalFilter = originalPlan.filters.front();
+    const auto& rebuiltFilter = rebuiltPlan.filters.front();
+    require(rebuiltFilter.effective == originalFilter.effective &&
+                rebuiltFilter.logicalSamplingRadius == originalFilter.logicalSamplingRadius &&
+                rebuiltFilter.axisAlignedRect == originalFilter.axisAlignedRect &&
+                rebuiltFilter.devicePixelAlignedRect == originalFilter.devicePixelAlignedRect &&
+                rebuiltFilter.clipPath == originalFilter.clipPath &&
+                rebuiltFilter.logicalBounds == originalFilter.logicalBounds,
+            "rebuilding must preserve physical filter parameters and clipping geometry");
+    require(cache.executionPlan(1.25).buildCount == 1,
+            "the rebuilt plan must remain reusable for unchanged paints");
 }
 
 void unchangedRenderAreaDoesNotScheduleRepaint() {

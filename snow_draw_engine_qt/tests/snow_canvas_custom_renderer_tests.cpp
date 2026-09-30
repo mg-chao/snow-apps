@@ -50,6 +50,9 @@ void requireNear(qreal actual, qreal expected, const char* message) {
 
 class RecordingRenderer final : public SnowCanvasCustomRenderer {
   public:
+    void clearRenderState() override {
+        ++clearCalls;
+    }
     void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override {
         ++beforeCalls;
         beforeContext = context;
@@ -67,6 +70,7 @@ class RecordingRenderer final : public SnowCanvasCustomRenderer {
     }
 
     int beforeCalls = 0;
+    int clearCalls = 0;
     int afterCalls = 0;
     bool painterStateRestored = false;
     SnowCanvasRenderContext beforeContext;
@@ -515,6 +519,46 @@ void documentResetReleasesDrawingCaches() {
     exportWorker.join();
 }
 
+void renderStateCleanupPreservesDocument() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(320, 180);
+    canvas.show();
+    QApplication::processEvents();
+    RecordingRenderer renderer;
+    canvas.setCustomRenderer(&renderer);
+    require(canvas.setViewportCamera(160, 90, 1), "set the cache-release fixture camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "activate the cache-release shape tool");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, QPointF(40, 40), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseMove, QPointF(140, 100), Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, QPointF(140, 100), Qt::LeftButton,
+                   Qt::NoButton);
+    const QImage before = renderCanvas(canvas);
+    const QByteArray document = runtime.serializeDocumentSession();
+    const QByteArray history = runtime.serializeDocumentHistory();
+    const QTransform camera = canvas.canvasToViewTransform();
+    const auto viewport = canvas.viewportId();
+    require(runtime.canUndo(), "the drawing must have undo history before cache cleanup");
+    const QImage patterns = populateDrawingCaches();
+    const int clearedBefore = renderer.clearCalls;
+    runtime.clearRenderState();
+    requireDrawingCachesReleased();
+    require(renderer.clearCalls == clearedBefore + 1,
+            "runtime cleanup must release borrowed custom renderer caches");
+    require(runtime.serializeDocumentSession() == document &&
+                runtime.serializeDocumentHistory() == history && canvas.viewportId() == viewport &&
+                canvas.canvasToViewTransform() == camera,
+            "cache cleanup must preserve document, history, viewport identity, and camera");
+    require(renderCanvas(canvas) == before && populateDrawingCaches() == patterns,
+            "rebuilding released drawing caches must preserve all rendered pixels");
+    require(runtime.undo() && runtime.canRedo(), "undo must remain available after cache cleanup");
+    require(renderCanvas(canvas) != before, "undo must still remove the committed shape");
+    require(runtime.redo() && renderCanvas(canvas) == before,
+            "redo must restore the exact drawing after cache cleanup");
+    canvas.setCustomRenderer(nullptr);
+}
+
 void documentResetClearsElementsAndPreservesViews() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -932,6 +976,10 @@ int main(int argc, char** argv) {
         documentResetReleasesDrawingCaches();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--render-state-only"))) {
+        renderStateCleanupPreservesDocument();
+        return 0;
+    }
     freeDrawContinuationRendersOneStrokeAndActivatedEndpoint();
     strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
     rotationHandleCursorMatchesTheReferencePlatformBehavior();
@@ -940,6 +988,7 @@ int main(int argc, char** argv) {
     canvasContentVisibilityPreservesCustomRenderingAndState();
     documentResetClearsElementsAndPreservesViews();
     documentResetReleasesDrawingCaches();
+    renderStateCleanupPreservesDocument();
     coalescedSceneRevisionsInvalidateEveryDirtyRegion();
     rectangleStrokeStylesRenderDistinctPatterns();
     highlightItemsRenderWithMultiplyBlendMode();

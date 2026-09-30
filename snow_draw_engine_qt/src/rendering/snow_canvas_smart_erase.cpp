@@ -204,6 +204,13 @@ void Coordinator::reset() {
     ++state.sourceRevision;
 }
 
+void Coordinator::clearCache() {
+    auto& state = *m_impl;
+    state.cache.clear();
+    std::vector<QByteArray>().swap(state.cacheOrder);
+    state.retainedBytes = 0;
+}
+
 void Coordinator::sync(SnowRuntime runtime) {
     auto& state = *m_impl;
     if (state.frozen.data || !runtime)

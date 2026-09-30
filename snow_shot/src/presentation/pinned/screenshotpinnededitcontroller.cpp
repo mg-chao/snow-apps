@@ -532,6 +532,8 @@ void ScreenshotPinnedEditController::setEditMode(bool enabled) {
         }
     }
     destroyToolbar();
+    m_autoFilterController->resetSession();
+    m_pinnedWindow.m_runtime.clearRenderState();
     emit editModeChanged(false);
 }
 

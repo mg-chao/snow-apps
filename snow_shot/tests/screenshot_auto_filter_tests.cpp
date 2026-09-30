@@ -6,8 +6,14 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMouseEvent>
+#include <QSemaphore>
+#include <QThread>
+#include <QElapsedTimer>
+#include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -245,6 +251,116 @@ void destroyedReceiverIgnoresCompletion() {
     done({}, {});
 }
 
+QImage trackedImage(std::atomic_int& released) {
+    struct Pixels {
+        std::unique_ptr<uchar[]> bytes;
+        std::atomic_int& released;
+    };
+    auto* pixels = new Pixels{std::make_unique<uchar[]>(100 * 100 * 4), released};
+    QImage image(
+        pixels->bytes.get(), 100, 100, QImage::Format_RGB32,
+        [](void* info) {
+            const std::unique_ptr<Pixels> owner(static_cast<Pixels*>(info));
+            owner->released.fetch_add(1);
+        },
+        pixels);
+    image.fill(Qt::white);
+    return image;
+}
+
+struct QueuedFixture {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas{runtime};
+    ScreenshotAutoFilterController controller;
+    int failures = 0;
+
+    explicit QueuedFixture(std::atomic_int& released)
+        : controller([] { return QRectF(0, 0, 100, 100); },
+                     [&released](auto done) { done(trackedImage(released)); }) {
+        controller.attachCanvas(&canvas);
+        QObject::connect(&controller, &ScreenshotAutoFilterController::detectionFailed, &controller,
+                         [this](const QString&) { ++failures; });
+        require(canvas.setCanvasTool(SnowCanvasTool::AutoFilter), "activate queued detector");
+    }
+};
+
+void queuedDetectionResourcesAreOwnedAndBounded() {
+    auto& coordinator = ScreenshotExportCoordinator::shared();
+    QObject receiver;
+    QSemaphore started;
+    QSemaphore release;
+    const int workers = std::clamp(QThread::idealThreadCount(), 1, 2);
+    for (int index = 0; index < workers; ++index) {
+        require(coordinator
+                    .submit(
+                        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                        [&started, &release](const ScreenshotExportCancellation&) {
+                            started.release();
+                            require(release.tryAcquire(1, 5000), "release blocked worker");
+                            return ScreenshotExportTaskResult{};
+                        },
+                        [](ScreenshotExportTaskResult) {})
+                    .isValid(),
+                "block detector executor");
+    }
+    require(started.tryAcquire(workers, 5000), "executor workers are blocked");
+
+    std::atomic_int released = 0;
+    auto reset = std::make_unique<QueuedFixture>(released);
+    require(reset->controller.detecting() && released == 0, "queued detection owns source pixels");
+    reset->controller.resetSession();
+    require(!reset->controller.detecting() && released == 1,
+            "reset immediately releases queued pixels before workers resume");
+    {
+        QueuedFixture destroyed(released);
+        require(destroyed.controller.detecting(), "destruction fixture is queued");
+    }
+    require(released == 2, "controller destruction immediately releases queued pixels");
+
+    std::vector<std::unique_ptr<QueuedFixture>> pending;
+    int accepted = 0;
+    for (int index = 0; index < 20; ++index) {
+        auto fixture = std::make_unique<QueuedFixture>(released);
+        if (fixture->controller.detecting()) {
+            ++accepted;
+            require(fixture->failures == 0, "accepted detection stays pending");
+        } else {
+            require(fixture->failures == 1, "queue rejection clears busy state with one failure");
+        }
+        pending.push_back(std::move(fixture));
+    }
+    require(accepted > 0 && accepted <= 16 - workers,
+            "detector jobs share the bounded export queue");
+    require(released == 22 - accepted, "rejected detections immediately release source pixels");
+    pending.clear();
+    require(released == 22 && coordinator.pendingJobCount() == workers,
+            "destroying queued controllers releases every source and queue slot");
+
+    release.release(workers);
+    QElapsedTimer timer;
+    timer.start();
+    while (coordinator.pendingJobCount() != 0 && timer.elapsed() < 5000) {
+        QApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(coordinator.pendingJobCount() == 0, "blocked workers finish");
+    QApplication::processEvents();
+    require(!reset->canvas.autoFilterRegions() && reset->failures == 0,
+            "canceled detector completion cannot restore records or report errors");
+
+    QueuedFixture completed(released);
+    timer.restart();
+    while (coordinator.pendingJobCount() != 0 && timer.elapsed() < 5000) {
+        QThread::msleep(1);
+    }
+    require(coordinator.pendingJobCount() == 0 && completed.controller.detecting(),
+            "worker result waits for GUI publication");
+    completed.controller.resetSession();
+    QApplication::processEvents();
+    require(released == 23 && !completed.canvas.autoFilterRegions() && completed.failures == 0,
+            "reset rejects a finished worker result waiting for publication");
+}
+
 void styles() {
     Fixture f;
     f.activate();
@@ -277,5 +393,6 @@ int main(int argc, char** argv) {
     renderingAndExport();
     fallbackGesturesAndUnrelatedEdits();
     destroyedReceiverIgnoresCompletion();
+    queuedDetectionResourcesAreOwnedAndBounded();
     std::cout << "Auto Filter lifecycle, races, mapping, history, and styles passed\n";
 }

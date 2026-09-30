@@ -276,6 +276,12 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
     return true;
 }
 
+void RuntimeSession::clearRenderState() {
+    m_smartErase.clearCache();
+    m_clients.clearRenderState();
+    clearDrawingCachesForCurrentThread();
+}
+
 bool RuntimeSession::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {
     if (m_runtime.get() == nullptr) {
         return false;

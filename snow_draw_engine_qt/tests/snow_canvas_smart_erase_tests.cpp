@@ -9,10 +9,12 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QThread>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 
 namespace {
 void require(bool value, const char* message) {
@@ -63,6 +65,22 @@ snow_canvas_smart_erase::Result fakeResult(const SnowCanvasSceneItem& item) {
     QImage filled = base;
     filled.fill(Qt::blue);
     return {base, filled, snow_canvas_smart_erase::path(item).boundingRect(), true};
+}
+QImage trackedResultImage(std::atomic_int& released, QRgb color) {
+    struct Pixels {
+        explicit Pixels(std::atomic_int& counter) : released(counter) {}
+        ~Pixels() {
+            ++released;
+        }
+        std::array<QRgb, 12 * 12> values;
+        std::atomic_int& released;
+    };
+    auto pixels = std::make_unique<Pixels>(released);
+    pixels->values.fill(color);
+    auto* data = reinterpret_cast<uchar*>(pixels->values.data());
+    return QImage(
+        data, 12, 12, 12 * static_cast<int>(sizeof(QRgb)), QImage::Format_ARGB32,
+        [](void* context) { delete static_cast<Pixels*>(context); }, pixels.release());
 }
 void placeholders() {
     auto rect = rectangle();
@@ -179,6 +197,65 @@ void asynchronousLifecycle() {
     require(exported.size() == 1 &&
                 render(exported.front(), worker.snapshot()).pixelColor(32, 32) == Qt::blue,
             "worker restoration must preserve ready appearance without computation");
+}
+void historicalCacheCleanup() {
+    using namespace snow_canvas_smart_erase;
+    std::array<std::atomic_int, 3> originalReleased{};
+    std::array<std::atomic_int, 3> filledReleased{};
+    const std::array<QRgb, 3> colors{qRgb(0, 0, 255), qRgb(0, 255, 0), qRgb(255, 0, 0)};
+    std::atomic_int calls{0};
+    int repaints = 0;
+    Coordinator coordinator(
+        [&] { ++repaints; },
+        [&](const auto& item, const auto&, const std::atomic_bool& cancelled) {
+            require(!cancelled.load(), "cache cleanup must not cancel current reconstruction");
+            const auto index = static_cast<std::size_t>(calls.fetch_add(1));
+            require(index < colors.size(), "cache cleanup must only reconstruct evicted geometry");
+            return Result{trackedResultImage(originalReleased[index], qRgb(255, 255, 255)),
+                          trackedResultImage(filledReleased[index], colors[index]),
+                          path(item).boundingRect(), true};
+        });
+    QImage base(64, 64, QImage::Format_ARGB32);
+    base.fill(Qt::white);
+    coordinator.setSources(&coordinator, {{base, QRectF(0, 0, 64, 64), {}}});
+    repaints = 0;
+    auto original = rectangle();
+    coordinator.syncItems({original});
+    until([&] { return calls == 1 && repaints == 1; });
+    require(render(original, coordinator.snapshot()).pixelColor(32, 32) == Qt::blue,
+            "first reconstruction must render before becoming historical");
+    auto current = original;
+    current.center_x += 4;
+    coordinator.syncItems({current});
+    until([&] { return calls == 2 && repaints == 2; });
+    require(originalReleased[0] == 0 && filledReleased[0] == 0,
+            "historical cache must retain both result images before cleanup");
+    auto currentSnapshot = coordinator.snapshot();
+    coordinator.clearCache();
+    require(originalReleased[0] == 1 && filledReleased[0] == 1,
+            "cache cleanup must release both obsolete result images immediately");
+    require(originalReleased[1] == 0 && filledReleased[1] == 0,
+            "cache cleanup must preserve current reconstruction images");
+    require(render(current, coordinator.snapshot()).pixelColor(36, 32) == Qt::green &&
+                render(current, currentSnapshot).pixelColor(36, 32) == Qt::green,
+            "current drawing and captured export must survive cache cleanup");
+    coordinator.syncItems({current});
+    require(calls == 2, "current reconstruction must remain reusable after cache cleanup");
+    coordinator.syncItems({original});
+    until([&] { return calls == 3 && repaints == 3; });
+    require(render(original, coordinator.snapshot()).pixelColor(32, 32) == Qt::red,
+            "returning to evicted geometry must render its newly computed result");
+    require(render(current, currentSnapshot).pixelColor(36, 32) == Qt::green,
+            "captured current result must remain immutable after recomputation");
+    currentSnapshot = {};
+    require(originalReleased[1] == 1 && filledReleased[1] == 1,
+            "replaced current result must release when its final export snapshot is dropped");
+    coordinator.clearCache();
+    require(originalReleased[2] == 0 && filledReleased[2] == 0,
+            "recomputed current result must survive subsequent cache cleanup");
+    coordinator.reset();
+    require(originalReleased[2] == 1 && filledReleased[2] == 1,
+            "reset must release the final current result after cache cleanup");
 }
 void reconstruction() {
     using namespace snow_canvas_smart_erase;
@@ -360,6 +437,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     placeholders();
     asynchronousLifecycle();
+    historicalCacheCleanup();
     reconstruction();
     widgetAndWorkerExport();
     std::cout << "Smart Erase tests passed\n";

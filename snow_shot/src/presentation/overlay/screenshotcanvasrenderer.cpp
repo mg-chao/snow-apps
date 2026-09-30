@@ -1522,13 +1522,7 @@ void ScreenshotCanvasRenderer::clearOcrPresentation() {
 void ScreenshotCanvasRenderer::reset() {
     // Pinned/export snapshots can share geometry with the ending capture.
     // Release only derived data, leaving those snapshots fully usable.
-    if (m_selectionState.region)
-        m_selectionState.region->clearDerivedCache();
-    m_selectionState.confirmedRegion.clearDerivedCache();
-    if (m_regionHoverCacheRegion)
-        m_regionHoverCacheRegion->clearDerivedCache();
-    if (m_pinnedResultStyle.region)
-        m_pinnedResultStyle.region->clearDerivedCache();
+    clearRenderState();
     setOcrVisible(true);
     const bool hadCachedContent =
         m_imageSource.isValid() || !m_imageViewportPhysicalSize.isEmpty() ||
@@ -1546,10 +1540,6 @@ void ScreenshotCanvasRenderer::reset() {
     m_pinnedResultStyle = {};
     m_pinnedBackgroundColor = {};
     m_bakedSelectionPath = {};
-    m_regionHoverCacheRegion.reset();
-    m_regionHoverCache = {};
-    m_outlineCache = {};
-    m_maskCache = {};
     m_pinnedCheckerboardEnabled = false;
     m_selectionState = ScreenshotSelectionVisualState{};
     m_renderMode = RenderMode::Standard;
@@ -1570,6 +1560,21 @@ void ScreenshotCanvasRenderer::reset() {
     if (hadState) {
         m_canvas.update();
     }
+}
+
+void ScreenshotCanvasRenderer::clearRenderState() {
+    if (m_selectionState.region)
+        m_selectionState.region->clearDerivedCache();
+    m_selectionState.confirmedRegion.clearDerivedCache();
+    if (m_regionHoverCacheRegion)
+        m_regionHoverCacheRegion->clearDerivedCache();
+    if (m_pinnedResultStyle.region)
+        m_pinnedResultStyle.region->clearDerivedCache();
+    m_regionHoverCacheRegion.reset();
+    m_regionHoverCache = {};
+    m_outlineCache = {};
+    m_maskCache = {};
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
 }
 
 std::uint64_t ScreenshotCanvasRenderer::contentRevision() const {

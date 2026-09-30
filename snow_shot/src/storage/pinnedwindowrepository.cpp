@@ -35,6 +35,7 @@ constexpr auto kDefaultGroupName = "Default";
 constexpr int kMaximumGroups = PinnedWindowRepository::maximumGroupCount();
 constexpr qint64 kMaximumImageBytes = 256LL * 1024LL * 1024LL;
 constexpr qint64 kMaximumPayloadBytes = 32LL * 1024LL * 1024LL;
+constexpr qint64 kResidentPayloadWriteThreshold = 64LL * 1024LL * 1024LL;
 constexpr auto kManifestName = "index.json";
 
 QString sourceKindToString(PinnedWindowSourceKind kind) {
@@ -582,12 +583,20 @@ void clearResidentPayload(PinnedWindowRecord* record) {
     record->recognitionResults.clear();
 }
 
-// Demotes a committed record to its lazy form: the on-disk descriptor and the
+// Demotes a fully written record to its lazy form: the on-disk descriptor and the
 // payload signature replace the resident payload data.
-void demoteCommittedRecord(StoredRecord& stored) {
+void demoteWrittenRecord(StoredRecord& stored) {
     stored.payloads = payloadsDescriptor(stored);
     clearResidentPayload(&stored.record);
     stored.preparedSource.reset();
+}
+
+qint64 residentPayloadBytes(const StoredRecord& stored) {
+    const auto& record = stored.record;
+    return record.image.sizeInBytes() + 2 * record.originalHtml.size() +
+           2 * record.originalText.size() + record.resultStyle.size() +
+           record.canvasSession.size() + record.recognitionResults.size() +
+           (stored.preparedSource ? stored.preparedSource->bytes().size() : 0);
 }
 
 void clearResidentImmutableSource(PinnedWindowRecord* record) {
@@ -784,8 +793,9 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
     const QString directory = payloadDirectory(root, record->id);
     if (record->sourceKind == PinnedWindowSourceKind::ImageData) {
         const QString fileName = payloads.value(QStringLiteral("image")).toString();
-        record->image =
-            decodeImage(QDir(directory).filePath(fileName), QStringLiteral("png"), allocationCheck);
+        if (record->image.isNull())
+            record->image = decodeImage(QDir(directory).filePath(fileName), QStringLiteral("png"),
+                                        allocationCheck);
         if (record->image.isNull() || record->image.sizeInBytes() > kMaximumImageBytes) {
             return false;
         }
@@ -794,7 +804,8 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
         const QString imagePath = QDir(directory).filePath(fileName);
         record->originalFileName = fileName;
         record->originalFilePath = imagePath;
-        record->image = decodeImage(imagePath, QFileInfo(imagePath).suffix(), allocationCheck);
+        if (record->image.isNull())
+            record->image = decodeImage(imagePath, QFileInfo(imagePath).suffix(), allocationCheck);
         if (record->image.isNull() || record->image.sizeInBytes() > kMaximumImageBytes) {
             return false;
         }
@@ -803,7 +814,7 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
         return true;
     }
     const auto readText = [&directory, &payloads](const QString& key, QString* target) {
-        if (!payloads.contains(key) || target == nullptr) {
+        if (!payloads.contains(key) || target == nullptr || !target->isEmpty()) {
             return true;
         }
         QFile file(QDir(directory).filePath(payloads.value(key).toString()));
@@ -835,7 +846,7 @@ bool loadPayloads(const QString& root, const QJsonObject& payloads, PinnedWindow
     };
     for (const auto& blob : blobs) {
         const QString key = QString::fromLatin1(blob.first);
-        if (payloads.contains(key) &&
+        if (blob.second->isEmpty() && payloads.contains(key) &&
             !readBlob(QDir(directory).filePath(payloads.value(key).toString()), blob.second)) {
             return false;
         }
@@ -994,16 +1005,27 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
 
 bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
                     QHash<QString, quint64>* committedPayloadRevisions,
+                    QHash<QString, quint64>* writtenPayloadRevisions,
                     QSet<QString>* changedPayloadIds) {
-    if (committedPayloadRevisions == nullptr || changedPayloadIds == nullptr ||
+    if (committedPayloadRevisions == nullptr || writtenPayloadRevisions == nullptr ||
+        changedPayloadIds == nullptr ||
         !QDir().mkpath(QDir(root).filePath(QStringLiteral("pins")))) {
         return false;
     }
     for (const StoredRecord& stored : snapshot.records) {
         if (committedPayloadRevisions->value(stored.record.id, 0) != stored.payloadRevision) {
             changedPayloadIds->insert(stored.record.id);
+        }
+        if (writtenPayloadRevisions->value(stored.record.id, 0) != stored.payloadRevision) {
+            // Remember partially written directories so a later successful
+            // manifest removal also reclaims their files.
+            if (!writtenPayloadRevisions->contains(stored.record.id))
+                writtenPayloadRevisions->insert(stored.record.id, 0);
             if (!writePayload(root, stored, snapshot.compressionLevel))
                 return false;
+            // Every payload file for this revision is available for lazy reload.
+            // The manifest can fail independently without requiring resident copies.
+            writtenPayloadRevisions->insert(stored.record.id, stored.payloadRevision);
         }
     }
     QJsonArray groups;
@@ -1037,14 +1059,15 @@ bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
         retainedIds.insert(stored.record.id);
         committedPayloadRevisions->insert(stored.record.id, stored.payloadRevision);
     }
-    for (auto it = committedPayloadRevisions->begin(); it != committedPayloadRevisions->end();) {
+    for (auto it = writtenPayloadRevisions->begin(); it != writtenPayloadRevisions->end();) {
         if (retainedIds.contains(it.key())) {
             ++it;
             continue;
         }
         const QString obsoleteDirectory = payloadDirectory(root, it.key());
         if (QDir(obsoleteDirectory).removeRecursively() || !QFileInfo::exists(obsoleteDirectory)) {
-            it = committedPayloadRevisions->erase(it);
+            committedPayloadRevisions->remove(it.key());
+            it = writtenPayloadRevisions->erase(it);
         } else {
             ++it;
         }
@@ -1099,15 +1122,42 @@ struct PinnedWindowRepository::Impl final {
     // Group counts do not depend on geometry, opacity, or mutable source payloads.
     quint64 membershipRevision = 0;
     bool dirty = false;
+    std::chrono::steady_clock::time_point dirtySince;
     bool flushRequested = false;
     bool stopping = false;
     bool activeWrite = false;
     std::condition_variable condition;
     std::thread writer;
     QHash<QString, quint64> committedPayloadRevisions;
+    QHash<QString, quint64> writtenPayloadRevisions;
+    qint64 pendingPayloadBytes = 0;
     QCache<QString, CachedPayloadBytes> payloadSizeCache{512};
     quint64 nextPayloadRevision = 1;
     quint64 nextPreviewSourceRevision = 1;
+
+    void insertRecordLocked(const QString& id, StoredRecord stored) {
+        const auto existing = records.constFind(id);
+        if (existing != records.cend())
+            pendingPayloadBytes -= residentPayloadBytes(*existing);
+        pendingPayloadBytes += residentPayloadBytes(stored);
+        records.insert(id, std::move(stored));
+        if (pendingPayloadBytes >= kResidentPayloadWriteThreshold)
+            flushRequested = true;
+    }
+
+    QHash<QString, StoredRecord>::iterator
+    removeRecordLocked(QHash<QString, StoredRecord>::iterator record) {
+        pendingPayloadBytes -= residentPayloadBytes(*record);
+        return records.erase(record);
+    }
+
+    bool removeRecordLocked(const QString& id) {
+        const auto record = records.find(id);
+        if (record == records.end())
+            return false;
+        removeRecordLocked(record);
+        return true;
+    }
 
     Snapshot snapshotLocked() const {
         Snapshot snapshot;
@@ -1132,6 +1182,8 @@ struct PinnedWindowRepository::Impl final {
         ++revision;
         if (membershipChanged)
             ++membershipRevision;
+        if (!dirty)
+            dirtySince = std::chrono::steady_clock::now();
         dirty = true;
         condition.notify_one();
         if (changed)
@@ -1227,13 +1279,14 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
                         previewRevision = ++m_impl->nextPreviewSourceRevision;
                     m_impl->nextPreviewSourceRevision =
                         std::max(m_impl->nextPreviewSourceRevision, previewRevision);
-                    m_impl->records.insert(id, StoredRecord{std::move(record),
-                                                            1,
-                                                            std::move(payloads),
-                                                            signature,
-                                                            {},
-                                                            previewRevision});
+                    m_impl->insertRecordLocked(id, StoredRecord{std::move(record),
+                                                                1,
+                                                                std::move(payloads),
+                                                                signature,
+                                                                {},
+                                                                previewRevision});
                     m_impl->committedPayloadRevisions.insert(id, 1);
+                    m_impl->writtenPayloadRevisions.insert(id, 1);
                 }
             }
         }
@@ -1252,12 +1305,12 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
                     continue;
                 }
                 if (!impl->flushRequested && impl->debounceMilliseconds > 0) {
-                    const quint64 observedRevision = impl->revision;
-                    const auto deadline = std::chrono::steady_clock::now() +
-                                          std::chrono::milliseconds(impl->debounceMilliseconds);
-                    if (impl->condition.wait_until(lock, deadline, [impl, observedRevision]() {
-                            return impl->stopping || impl->flushRequested || !impl->dirty ||
-                                   impl->revision != observedRevision;
+                    // A batch has a fixed deadline. New state changes must not keep
+                    // an earlier image payload resident indefinitely.
+                    const auto deadline =
+                        impl->dirtySince + std::chrono::milliseconds(impl->debounceMilliseconds);
+                    if (impl->condition.wait_until(lock, deadline, [impl]() {
+                            return impl->stopping || impl->flushRequested || !impl->dirty;
                         })) {
                         continue;
                     }
@@ -1266,29 +1319,33 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
                 impl->activeWrite = true;
                 lock.unlock();
                 QSet<QString> changedPayloadIds;
-                const bool success = snapshotToDisk(
-                    impl->root, snapshot, &impl->committedPayloadRevisions, &changedPayloadIds);
+                const bool success =
+                    snapshotToDisk(impl->root, snapshot, &impl->committedPayloadRevisions,
+                                   &impl->writtenPayloadRevisions, &changedPayloadIds);
                 lock.lock();
                 for (const QString& id : std::as_const(changedPayloadIds))
                     impl->payloadSizeCache.remove(id);
+                // Reclaim complete payload revisions even when a later payload or
+                // the manifest fails. Never demote a newer in-memory revision.
+                for (auto it = impl->records.begin(); it != impl->records.end(); ++it) {
+                    if (impl->writtenPayloadRevisions.value(it.key(), 0) == it->payloadRevision) {
+                        impl->pendingPayloadBytes -= residentPayloadBytes(*it);
+                        demoteWrittenRecord(*it);
+                    }
+                }
+                // Snapshots share the original buffers. Release those references
+                // before a failed write enters its retry backoff.
+                snapshot.records.clear();
                 impl->activeWrite = false;
                 ++impl->attemptCount;
                 if (success) {
                     retryMilliseconds = 0;
                     impl->error.clear();
-                    // The payloads are on disk now, so the records that were
-                    // part of this commit release their resident copies; a
-                    // record upserted with a newer payload keeps its data
-                    // until that payload is committed.
-                    for (auto it = impl->records.begin(); it != impl->records.end(); ++it) {
-                        if (impl->committedPayloadRevisions.value(it.key(), 0) ==
-                            it->payloadRevision) {
-                            demoteCommittedRecord(*it);
-                        }
-                    }
                     if (impl->revision == snapshot.revision) {
                         impl->dirty = false;
                         impl->flushRequested = false;
+                    } else {
+                        impl->dirtySince = std::chrono::steady_clock::now();
                     }
                 } else {
                     impl->error = QStringLiteral("Pinned-window index could not be saved");
@@ -1633,7 +1690,7 @@ StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& group
     bool changed = false;
     for (auto it = m_impl->records.begin(); it != m_impl->records.end();) {
         if (it->record.groupId == groupId) {
-            it = m_impl->records.erase(it);
+            it = m_impl->removeRecordLocked(it);
             changed = true;
         } else {
             ++it;
@@ -1722,7 +1779,7 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
     const QString id = record.id;
     StoredRecord stored{std::move(record), payloadRevision, {}, signature, std::move(sourceImage)};
     stored.previewSourceRevision = ++m_impl->nextPreviewSourceRevision;
-    m_impl->records.insert(id, std::move(stored));
+    m_impl->insertRecordLocked(id, std::move(stored));
     m_impl->markDirtyLocked(true);
     return StorageResult::ok();
 }
@@ -1799,7 +1856,7 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
     const QString id = record.id;
     StoredRecord stored{std::move(record), payloadRevision, {}, signature, {}};
     stored.previewSourceRevision = ++m_impl->nextPreviewSourceRevision;
-    m_impl->records.insert(id, std::move(stored));
+    m_impl->insertRecordLocked(id, std::move(stored));
     m_impl->markDirtyLocked(true);
     return StorageResult::ok();
 }
@@ -1905,7 +1962,7 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
         }
     }
     const QString id = updated.record.id;
-    m_impl->records.insert(id, std::move(updated));
+    m_impl->insertRecordLocked(id, std::move(updated));
     m_impl->markDirtyLocked(groupChanged);
     return StorageResult::ok();
 }
@@ -2001,11 +2058,11 @@ StorageResult PinnedWindowRepository::upsertImpl(PinnedWindowRecord record, bool
         StoredRecord stored{std::move(record), payloadRevision, existing->payloads, signature};
         stored.previewSourceRevision = previewSourceRevision;
         clearResidentPayload(&stored.record);
-        m_impl->records.insert(id, std::move(stored));
+        m_impl->insertRecordLocked(id, std::move(stored));
     } else {
         StoredRecord stored{std::move(record), payloadRevision, {}, signature, {}};
         stored.previewSourceRevision = previewSourceRevision;
-        m_impl->records.insert(id, std::move(stored));
+        m_impl->insertRecordLocked(id, std::move(stored));
     }
     m_impl->markDirtyLocked(isNew || groupChanged);
     return StorageResult::ok();
@@ -2039,7 +2096,7 @@ StorageResult PinnedWindowRepository::removeMany(const QVector<QString>& ids) {
             m_impl->pendingCloses.remove(id);
             m_impl->pendingCreations.remove(id);
             m_impl->restoringIds.remove(id);
-            changed |= m_impl->records.remove(id);
+            changed |= m_impl->removeRecordLocked(id);
         }
         if (changed) {
             m_impl->markDirtyLocked(true);
@@ -2106,7 +2163,7 @@ StorageResult PinnedWindowRepository::markClosedImpl(const QString& id, QDateTim
             membershipChanged = m_impl->records.contains(id);
             m_impl->pendingCloses.remove(id);
             m_impl->pendingCreations.remove(id);
-            m_impl->records.remove(id);
+            m_impl->removeRecordLocked(id);
         } else {
             const quint64 sequence = ++m_impl->nextActivitySequence;
             auto it = m_impl->records.find(id);
@@ -2287,7 +2344,7 @@ StorageResult PinnedWindowRepository::enforcePolicy(QDateTime now) {
         qsizetype count = candidates.size();
         bool changed = false;
         const auto removeCandidate = [&](const Candidate& candidate) {
-            m_impl->records.remove(candidate.id);
+            m_impl->removeRecordLocked(candidate.id);
             bytes -= candidate.bytes;
             --count;
             changed = true;
@@ -2321,7 +2378,7 @@ StorageResult PinnedWindowRepository::clearClosed() {
     std::lock_guard lock(m_impl->mutex);
     for (auto it = m_impl->records.begin(); it != m_impl->records.end();) {
         if (it->record.ignored) {
-            it = m_impl->records.erase(it);
+            it = m_impl->removeRecordLocked(it);
         } else
             ++it;
     }

@@ -213,6 +213,10 @@ void SnowCanvasDisplayCache::reset(const SnowColorRgba8& clearColor) {
     m_overlayDisplayInfo = OverlayDisplayInfo{};
 }
 
+void SnowCanvasDisplayCache::clearRenderState() {
+    m_executionPlan = {};
+}
+
 void SnowCanvasDisplayCache::setClearColor(const SnowColorRgba8& clearColor) {
     m_sceneDisplayInfo.clear_color = clearColor;
 }

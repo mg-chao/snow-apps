@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <functional>
 #include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_shot/presentation/screenshotexportcoordinator.h"
 
 class QWidget;
 class QTimer;
@@ -62,6 +63,7 @@ class ScreenshotAutoFilterController final : public QObject {
     std::function<QRectF()> m_bounds;
     Source m_source;
     Detector m_detector;
+    ScreenshotExportJobHandle m_detectionJob;
     QList<QPointer<SnowCanvasWidget>> m_canvases;
     QList<QPointer<QWidget>> m_visuals;
     QTimer* m_timer = nullptr;

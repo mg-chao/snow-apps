@@ -41,6 +41,8 @@ class SnowCanvasRuntime {
     bool restoreDocumentHistory(const QByteArray& payload);
     bool restoreDocumentHistoryPreservingEditorStyles(const QByteArray& payload);
     bool clearDocumentPreservingViewports();
+    // Releases derived drawing caches without changing the document, history, or viewports.
+    void clearRenderState();
     bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     QByteArray applyAnnotationTransaction(const QByteArray& payload);
     bool undo();

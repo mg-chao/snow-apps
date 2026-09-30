@@ -4,6 +4,8 @@ std::uint64_t SnowCanvasCustomRenderer::contentRevision() const {
     return 0;
 }
 
+void SnowCanvasCustomRenderer::clearRenderState() {}
+
 void SnowCanvasCustomRenderer::renderBeforeCanvas(QPainter& painter,
                                                   const SnowCanvasRenderContext& context) {
     Q_UNUSED(painter);

@@ -72,6 +72,8 @@ class SnowCanvasDisplayCache {
     SnowCanvasDisplayCache();
 
     void reset(const SnowColorRgba8& clearColor);
+    // Releases the derived execution plan while preserving the current scene snapshot.
+    void clearRenderState();
     void setClearColor(const SnowColorRgba8& clearColor);
     bool sync(SnowRuntime runtime, SnowViewport viewport);
 

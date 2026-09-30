@@ -323,9 +323,13 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         NAME snow-canvas-document-reset-tests
         COMMAND snow-canvas-custom-renderer-tests --document-reset-only
     )
+    add_test(
+        NAME snow-canvas-render-state-tests
+        COMMAND snow-canvas-custom-renderer-tests --render-state-only
+    )
     snow_shot_import_offscreen_platform(snow-canvas-custom-renderer-tests)
     snow_shot_offscreen_qpa_environment(_snow_canvas_reset_qpa_environment)
-    set_tests_properties(snow-canvas-document-reset-tests PROPERTIES
+    set_tests_properties(snow-canvas-document-reset-tests snow-canvas-render-state-tests PROPERTIES
         ENVIRONMENT "${_snow_canvas_reset_qpa_environment}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"

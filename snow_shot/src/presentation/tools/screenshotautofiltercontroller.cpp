@@ -5,7 +5,6 @@
 #include <QDebug>
 #include <QEvent>
 #include <QPainter>
-#include <QThreadPool>
 #include <QTimer>
 #include <cmath>
 #include <memory>
@@ -13,45 +12,68 @@
 namespace {
 constexpr const char* kCategories[] = {"text", "text_in_box", "image",     "avatar",
                                        "icon", "message_box", "text_block"};
-void detect(QImage image, ScreenshotAutoFilterController::Completion completion) {
-    QThreadPool::globalInstance()->start([image = std::move(image),
-                                          completion = std::move(completion)]() mutable {
-        image = image.convertToFormat(QImage::Format_BGR888);
-        SnowDetectedRegions* raw = nullptr;
-        const int status = snow_detect_visual_regions(
-            image.constBits(), static_cast<size_t>(image.sizeInBytes()),
-            static_cast<uint32_t>(image.width()), static_cast<uint32_t>(image.height()),
-            static_cast<size_t>(image.bytesPerLine()), &raw);
-        const std::unique_ptr<SnowDetectedRegions, decltype(&snow_detected_regions_release)> result(
-            raw, snow_detected_regions_release);
-        QList<SnowCanvasAutoFilterRegion> regions;
-        size_t count = 0;
-        const SnowDetectedRegion* data = snow_detected_regions_data(result.get(), &count);
-        for (size_t i = 0; i < count; ++i) {
-            const auto& region = data[i];
-            if (region.category < std::size(kCategories)) {
-                regions.append({static_cast<quint64>(i + 1),
-                                QRectF(region.x, region.y, region.width, region.height),
-                                QString::fromLatin1(kCategories[region.category])});
+QString detectionError() {
+    return QCoreApplication::translate("ScreenshotAutoFilterController",
+                                       "Region identification failed. Try Auto Filter again.");
+}
+ScreenshotExportJobHandle detect(QObject* receiver, QImage image,
+                                 ScreenshotAutoFilterController::Completion completion) {
+    auto regions = std::make_shared<QList<SnowCanvasAutoFilterRegion>>();
+    auto job = ScreenshotExportCoordinator::shared().submit(
+        receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [image = std::move(image),
+         regions](const ScreenshotExportCancellation& cancellation) mutable {
+            if (cancellation.isCancellationRequested()) {
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
             }
-        }
-        QMetaObject::invokeMethod(
-            QCoreApplication::instance(),
-            [completion = std::move(completion), regions = std::move(regions), status]() mutable {
-                completion(std::move(regions),
-                           status == 0
-                               ? QString()
-                               : QCoreApplication::translate(
-                                     "ScreenshotAutoFilterController",
-                                     "Region identification failed. Try Auto Filter again."));
-            },
-            Qt::QueuedConnection);
-    });
+            image = image.convertToFormat(QImage::Format_BGR888);
+            if (cancellation.isCancellationRequested()) {
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
+            }
+            SnowDetectedRegions* raw = nullptr;
+            const int status = snow_detect_visual_regions(
+                image.constBits(), static_cast<size_t>(image.sizeInBytes()),
+                static_cast<uint32_t>(image.width()), static_cast<uint32_t>(image.height()),
+                static_cast<size_t>(image.bytesPerLine()), &raw);
+            const std::unique_ptr<SnowDetectedRegions, decltype(&snow_detected_regions_release)>
+                result(raw, snow_detected_regions_release);
+            if (cancellation.isCancellationRequested()) {
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
+                                                           {});
+            }
+            if (status != 0) {
+                return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Render,
+                                                           {});
+            }
+            size_t count = 0;
+            const SnowDetectedRegion* data = snow_detected_regions_data(result.get(), &count);
+            for (size_t i = 0; i < count; ++i) {
+                const auto& region = data[i];
+                if (region.category < std::size(kCategories)) {
+                    regions->append({static_cast<quint64>(i + 1),
+                                     QRectF(region.x, region.y, region.width, region.height),
+                                     QString::fromLatin1(kCategories[region.category])});
+                }
+            }
+            return ScreenshotExportTaskResult{};
+        },
+        [regions, completion](ScreenshotExportTaskResult result) mutable {
+            if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+                completion(std::move(*regions), result.succeeded() ? QString() : detectionError());
+            }
+        });
+    if (!job.isValid()) {
+        completion({}, detectionError());
+    }
+    return job;
 }
 } // namespace
 
 void ScreenshotAutoFilterController::detectRegions(QImage image, Completion completion) {
-    detect(std::move(image), std::move(completion));
+    static_cast<void>(
+        detect(QCoreApplication::instance(), std::move(image), std::move(completion)));
 }
 
 class ScreenshotAutoFilterVisual final : public QWidget {
@@ -130,7 +152,7 @@ ScreenshotAutoFilterController::ScreenshotAutoFilterController(std::function<QRe
                                                                Detector detector,
                                                                std::function<qint64()> clock)
     : QObject(parent), m_bounds(std::move(bounds)), m_source(std::move(source)),
-      m_detector(detector ? std::move(detector) : detect), m_clock(std::move(clock)) {
+      m_detector(std::move(detector)), m_clock(std::move(clock)) {
     m_elapsed.start();
     m_timer = new QTimer(this);
     m_timer->setInterval(16);
@@ -207,6 +229,8 @@ void ScreenshotAutoFilterController::refresh() {
 }
 void ScreenshotAutoFilterController::resetSession() {
     ++m_session;
+    m_detectionJob.cancel();
+    m_detectionJob = {};
     m_busy = false;
     m_flashUntil = 0;
     m_flashRegions.clear();
@@ -244,13 +268,17 @@ void ScreenshotAutoFilterController::validate() {
             return;
         }
         const QSize pixels = image.size();
-        receiver->m_detector(std::move(image), [receiver, generation, session, bounds,
-                                                pixels](QList<SnowCanvasAutoFilterRegion> regions,
-                                                        QString error) {
+        auto completion = [receiver, generation, session, bounds,
+                           pixels](QList<SnowCanvasAutoFilterRegion> regions, QString error) {
             if (receiver) {
                 receiver->finish(session, generation, bounds, pixels, std::move(regions), error);
             }
-        });
+        };
+        if (receiver->m_detector) {
+            receiver->m_detector(std::move(image), std::move(completion));
+        } else {
+            receiver->m_detectionJob = detect(receiver, std::move(image), std::move(completion));
+        }
     });
 }
 void ScreenshotAutoFilterController::finish(quint64 session, quint64 generation, QRectF bounds,
@@ -259,6 +287,7 @@ void ScreenshotAutoFilterController::finish(quint64 session, quint64 generation,
     if (session != m_session) {
         return;
     }
+    m_detectionJob = {};
     const qint64 arrived = elapsed();
     m_busy = false;
     auto* target = canvas();
@@ -300,6 +329,8 @@ void ScreenshotAutoFilterController::fillCategory(const QString& category) {
 }
 
 ScreenshotAutoFilterController::~ScreenshotAutoFilterController() {
+    ++m_session;
+    m_detectionJob.cancel();
     for (const auto& visual : m_visuals) {
         delete visual.data();
     }

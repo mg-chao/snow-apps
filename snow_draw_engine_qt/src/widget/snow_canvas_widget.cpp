@@ -1554,9 +1554,13 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
 }
 
 void SnowCanvasWidget::Impl::clearRenderState() {
+    displayState.displayCache().clearRenderState();
     snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     filterWorkspace.clear();
     penMaskAtlas.clear();
+    if (installedCustomRenderer != nullptr) {
+        installedCustomRenderer->clearRenderState();
+    }
 }
 
 bool SnowCanvasWidget::Impl::hasViewport() const {
