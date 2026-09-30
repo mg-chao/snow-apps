@@ -1887,18 +1887,10 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         return storage::ScreenRecordingShortcutSettings().setAllShortcutsAtomic(defaults);
     }
     case SettingsSectionReset::PinToScreenShortcuts: {
-        shortcuts::ShortcutBindingMap defaults;
-        for (const QString& actionId :
-             {QStringLiteral("copy_to_clipboard"), QStringLiteral("copy_original_content"),
-              QStringLiteral("save_as_file"), QStringLiteral("show_text_recognition_results"),
-              QStringLiteral("drawing_mode"), QStringLiteral("resize_window"),
-              QStringLiteral("thumbnail_mode"), QStringLiteral("hide_to_top"),
-              QStringLiteral("toggle_click_through"), QStringLiteral("close_window"),
-              QStringLiteral("destroy_window"), QStringLiteral("move_cursor_up"),
-              QStringLiteral("move_cursor_down"), QStringLiteral("move_cursor_left"),
-              QStringLiteral("move_cursor_right")}) {
-            defaults.insert(actionId, shortcutListDefault(
-                                          QStringLiteral("pin_to_screen_shortcuts/") + actionId));
+        shortcuts::ShortcutBindingMap defaults =
+            storage::PinToScreenShortcutSettings().allShortcuts();
+        for (auto it = defaults.begin(); it != defaults.end(); ++it) {
+            it.value() = shortcutListDefault(QStringLiteral("pin_to_screen_shortcuts/") + it.key());
         }
         return storage::PinToScreenShortcutSettings().setAllShortcutsAtomic(defaults);
     }

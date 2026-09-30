@@ -15,6 +15,8 @@ param(
     [switch]$AuditOnly,
     [string]$ReleaseNotesPath,
     [switch]$SkipGitee,
+    [switch]$DeployWebsite,
+    [string]$WebsiteDirectory = 'D:/snow-apps-site',
     [ValidateRange(1, 256)][int]$Parallelism = 4
 )
 $ErrorActionPreference = 'Stop'
@@ -42,6 +44,9 @@ if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version on $destinations", $Operati
             $suffixes | ForEach-Object { Write-Output "$base$_" }
         }
         Write-Output 'latest-version.json'
+        if ($DeployWebsite -and $Operation -eq 'Publish' -and -not $AuditOnly) {
+            Write-Output "Then commit/push, build and deploy website $Version from $WebsiteDirectory."
+        }
         if ($MacHost) { Write-Output "snow-shot-$Version-macos-arm64.dmg"; Write-Output "snow-shot-$Version-macos-arm64.dmg.sha256"; Write-Output 'install-snow-shot-macos.sh' }
     return
 }
@@ -280,3 +285,6 @@ if ($AuditOnly) {
         if ($LASTEXITCODE -ne 0) { throw "Local Gitee publication failed. Retry with the audited manifest: $localManifestPath" }
     }
 Write-Output "Published and verified Snow Shot $Version on $destinations."
+if ($DeployWebsite) {
+    & (Join-Path $PSScriptRoot 'publish-snow-shot-website.ps1') -Version $Version -WebsiteDirectory $WebsiteDirectory
+}

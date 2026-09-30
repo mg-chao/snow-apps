@@ -40,7 +40,8 @@ updates in-app.
 
 The local publisher signs and audits all Windows packages, optionally packages a
 macOS DMG and standalone installer, publishes GitHub assets, verifies their bytes,
-then publishes the release. It has no website deployment or rollback operation.
+then publishes the release. With `-DeployWebsite`, it then runs the separate official
+website workflow after both release destinations are published and verified.
 Stable releases become GitHub's latest; preview releases remain marked as previews.
 Identical retries reuse existing assets; conflicting bytes fail without overwrite.
 
@@ -410,6 +411,33 @@ audited package bytes and the Mac source receipt; it does not bypass audits.
 `-AuditOnly` signs and audits without upload. `Verify` downloads published
 GitHub assets and checks the signed Windows packages and any macOS checksum pairs.
 A corrective release uses a higher version; published assets are immutable.
+
+## Official website deployment
+
+After publishing the release, use the website workflow separately or pass
+`-DeployWebsite` to the release publisher:
+
+```powershell
+& scripts/publish-snow-shot-website.ps1
+& scripts/publish-snow-shot-release.local.ps1 -ReleaseNotesPath artifacts/release-notes.md -DeployWebsite
+```
+
+The target comes from `SNOW_SHOT_VERSION` and must match any explicit `-Version`.
+`WebsiteDirectory` defaults to `D:/snow-apps-site`. The website checkout must be clean
+and contain `scripts/publish-release.ps1`. That workflow updates the download version,
+commits any version change, pushes and verifies the website branch, then builds and
+deploys to `root@120.79.232.67:/var/www/html` using local OpenSSH settings. A push
+failure stops before building or deploying. Matching versions reuse their existing
+commit. `Verify`, `AuditOnly`, and `WhatIf` do not deploy.
+
+Only Rspress pages, icons, `static/`, `images/`, and `zh/` are replaced; `setup/`,
+`npm/`, `plugins/`, legacy update feeds, and other server files are preserved.
+SHA-256 checks cover the upload and every built file. Previous website files remain
+under `/var/www/snow-shot-website-backups/`; replacement errors restore those files.
+Public English/Chinese pages and `/website-release.json` are checked after deployment.
+For a website-only retry, rerun `publish-snow-shot-website.ps1` without republishing
+release packages. Server settings can be overridden on that command. Focused website
+workflow tests and their commands are documented in the website repository README.
 
 ## Signing keys and rotation
 

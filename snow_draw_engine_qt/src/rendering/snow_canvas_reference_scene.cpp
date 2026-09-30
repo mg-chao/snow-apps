@@ -123,11 +123,10 @@ bool SnowCanvasReferenceScene::render(SnowRuntime runtime,
     QPainter& painter = *request.painter;
     painter.save();
     painter.setClipRegion(request.exposedRegion, Qt::IntersectClip);
-    // Match pinned image sampling: linear reduction, exact pixels at 100% and above.
+    // Match pinned image sampling: pixel-exact at 1:1, linear at every other scale.
     const QRectF deviceTarget = painter.deviceTransform().mapRect(target);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform,
-                          deviceTarget.width() < pixelSize.width() - 0.001 ||
-                              deviceTarget.height() < pixelSize.height() - 0.001);
+    const QSize deviceSize(qRound(deviceTarget.width()), qRound(deviceTarget.height()));
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, deviceSize != pixelSize);
     painter.setCompositionMode(QPainter::CompositionMode_Source);
     if (request.backgroundContext != nullptr) {
         painter.fillRect(

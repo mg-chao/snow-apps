@@ -865,6 +865,10 @@
             <translation>始终隐藏</translation>
         </message>
         <message>
+            <source>Always on Top</source>
+            <translation>始终置顶</translation>
+        </message>
+        <message>
             <source>Always show</source>
             <translation>始终显示</translation>
         </message>
@@ -2887,6 +2891,10 @@
         <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>在文本识别工具栏中显示一个按钮，将识别出的文本发送到翻译页面。</translation>
+        </message>
+        <message>
+            <source>Show border</source>
+            <translation>显示边框</translation>
         </message>
         <message>
             <source>Show main interface</source>

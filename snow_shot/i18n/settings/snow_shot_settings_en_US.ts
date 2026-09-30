@@ -865,6 +865,10 @@
             <translation>Always hide</translation>
         </message>
         <message>
+            <source>Always on Top</source>
+            <translation>Always on Top</translation>
+        </message>
+        <message>
             <source>Always show</source>
             <translation>Always show</translation>
         </message>
@@ -2887,6 +2891,10 @@
         <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</translation>
+        </message>
+        <message>
+            <source>Show border</source>
+            <translation>Show border</translation>
         </message>
         <message>
             <source>Show main interface</source>

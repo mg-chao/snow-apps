@@ -1229,6 +1229,41 @@ void ScreenshotRecognitionWindow::mousePressEvent(QMouseEvent* event) {
     QWidget::mousePressEvent(event);
 }
 
+void ScreenshotRecognitionWindow::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event == nullptr) {
+        return;
+    }
+    if (event->button() == Qt::LeftButton &&
+        (m_selectionResizeActive || selectionResizeDragModeAtLocalPoint(event->position()) !=
+                                        ScreenshotSelectionDragMode::None)) {
+        event->accept();
+        return;
+    }
+    if (event->button() != Qt::LeftButton || m_showOriginalImage || m_ocrPresentation == nullptr ||
+        m_stack->currentWidget() != m_textLayer) {
+        QWidget::mouseDoubleClickEvent(event);
+        return;
+    }
+
+    const ScreenshotOcrTextPosition position =
+        m_textLayer->textPositionAt(canvasPositionForLocalPoint(event->position()), false);
+    if (!position.valid() || m_ocrPresentation->lines.at(position.lineIndex).text.isEmpty()) {
+        QWidget::mouseDoubleClickEvent(event);
+        return;
+    }
+
+    setFocus(Qt::MouseFocusReason);
+    m_ocrPresentation->beginTextSelection(ScreenshotOcrTextPosition{position.lineIndex, 0});
+    m_ocrPresentation->updateTextSelection(ScreenshotOcrTextPosition{
+        position.lineIndex,
+        static_cast<int>(m_ocrPresentation->lines.at(position.lineIndex).text.size()),
+    });
+    m_ocrPresentation->finishTextSelection();
+    m_textLayer->updateSelection();
+    static_cast<void>(copyVisibleContentToClipboard());
+    event->accept();
+}
+
 bool ScreenshotRecognitionWindow::isOcrBackgroundAt(const QPointF& localPosition) const {
     return !m_showOriginalImage && m_ocrPresentation != nullptr &&
            m_stack->currentWidget() == m_textLayer && !m_ocrPresentation->textSelectionActive() &&

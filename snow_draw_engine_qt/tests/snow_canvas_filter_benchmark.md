@@ -94,6 +94,9 @@ background `contentRevision()` changes, reference-grid changes, and explicit ren
 clearing replace the image. Hosts must increment their content revision for every
 background appearance change.
 
+Presentation matches ordinary pinned images: source pixels stay exact at 1:1 in device
+pixels, and both reduction and enlargement use linear sampling without rerunning filters.
+
 `snow-canvas-reference-scene-tests` checks rectangle and pen effects against the 100%
 render, mixed source passes, transparent partial paints, DPR changes, panning, background
 replacement, undo/redo, and runtime replacement. Warm presentation diagnostics require

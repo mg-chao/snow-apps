@@ -14,9 +14,8 @@ QImage scaledReference(const Fixture& fixture, const QImage& reference, double d
     const QRectF target =
         fixture.canvas.canvasToViewTransform().mapRect(fixture.renderer.reference.canvasRect);
     const QRectF deviceTarget = painter.deviceTransform().mapRect(target);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform,
-                          deviceTarget.width() < reference.width() - 0.001 ||
-                              deviceTarget.height() < reference.height() - 0.001);
+    const QSize deviceSize(qRound(deviceTarget.width()), qRound(deviceTarget.height()));
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, deviceSize != reference.size());
     painter.setCompositionMode(QPainter::CompositionMode_Source);
     painter.drawImage(target, reference);
     return output;
@@ -141,13 +140,15 @@ void partialPaintsPreserveAlphaAndUnexposedPixels() {
     const auto reference = fixture.render();
     fixture.renderer.enabled = true;
     require(fixture.render() == reference, "transparent filter backdrop matches 100% output");
-    fixture.zoom(0.75);
     // QWidget::render places source-region bounds at targetOffset; use a region
     // starting at the origin to retain the same coordinates as normal paint events.
     const QRegion exposed = QRegion(QRect(0, 0, 40, 30)) | QRegion(QRect(70, 40, 12, 10));
-    require(fixture.render(1.25, exposed) == scaledReference(fixture, reference, 1.25, exposed),
-            "partial paints must scale reference alpha and leave unexposed pixels untouched");
-    requireReuse(snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
+    for (const double zoom : {0.75, 1.5}) {
+        fixture.zoom(zoom);
+        require(fixture.render(1.25, exposed) == scaledReference(fixture, reference, 1.25, exposed),
+                "partial paints must scale reference alpha and leave unexposed pixels untouched");
+        requireReuse(snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
+    }
 }
 
 void changingTheReferenceGridRebuildsOnce() {

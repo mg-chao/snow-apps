@@ -103,6 +103,12 @@ try {
     foreach ($name in @('publish-snow-shot-release.ps1','snow-shot-github-release.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $fixtureScripts
     }
+    @'
+param($Version, $WebsiteDirectory)
+Require ($Version -ceq '2.0.0' -and $WebsiteDirectory -ceq 'fixture-site') 'Forward the release website identity.'
+Require ($global:SnowGitHubTestEvents.Contains('edit')) 'Deploy website after verified GitHub publication.'
+$global:SnowGitHubTestEvents.Add('website')
+'@ | Set-Content -LiteralPath (Join-Path $fixtureScripts 'publish-snow-shot-website.ps1')
     Set-Content -LiteralPath (Join-Path $fixture 'CMakeLists.txt') -Value 'set(SNOW_SHOT_VERSION "2.0.0")'
     $global:SnowGitHubTestRsa = [Security.Cryptography.RSA]::Create(3072)
     $keyPath = Join-Path $root 'test-key.pem'
@@ -154,8 +160,9 @@ try {
     Require ($global:SnowGitHubTestBytes.ContainsKey('latest-version.json') -and $global:SnowGitHubTestBytes.Count -eq 16) 'Publish all five packages, sidecars, audit manifests, and signed feed.'
     $previousEnvelope = [Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json'])
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -AuditOnly
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -AuditOnly -DeployWebsite -WebsiteDirectory 'fixture-site'
     Require (-not $global:SnowGitHubTestEvents.Contains('upload') -and -not $global:SnowGitHubTestEvents.Contains('edit')) 'AuditOnly never mutates GitHub.'
+    Require (-not $global:SnowGitHubTestEvents.Contains('website')) 'AuditOnly never deploys the website.'
     Require ([Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json']) -ceq $previousEnvelope) 'Retry preserves authenticated envelope.'
     # Exercise the default two-channel orchestration with isolated local files.
     $notesPath = Join-Path $root 'notes.md'
@@ -188,11 +195,12 @@ try {
     $global:SnowGitHubTestEvents.Clear()
     $global:SnowGitHubTestRelease = $null
     $global:SnowGitHubTestBytes = @{}
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -ReleaseNotesPath $notesPath
-    Require ($global:SnowGitHubTestEvents[0] -eq 'gitee-auth' -and $global:SnowGitHubTestEvents[-1] -eq 'gitee-publish') 'Default publication preflights local credentials and publishes directly to Gitee.'
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -ReleaseNotesPath $notesPath -DeployWebsite -WebsiteDirectory 'fixture-site'
+    Require ($global:SnowGitHubTestEvents[0] -eq 'gitee-auth' -and $global:SnowGitHubTestEvents[-2] -eq 'gitee-publish' -and
+        $global:SnowGitHubTestEvents[-1] -eq 'website') 'Website deployment follows verified publication to both release destinations.'
     Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' @{ 'latest-version.json' = $path } $verify -NotesPath $keyPath }
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -WhatIf
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -WhatIf -DeployWebsite -WebsiteDirectory 'fixture-site'
     Require ($global:SnowGitHubTestEvents.Count -eq 0) 'WhatIf does not build, sign, or contact GitHub.'
     Must-Fail { & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -Operation Rollback }
     $global:SnowGitHubTestRsa.Dispose()

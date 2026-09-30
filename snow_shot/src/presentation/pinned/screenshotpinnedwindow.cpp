@@ -1131,6 +1131,28 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("toggle_click_through"),
                                     m_shortcutManager->addBinding(this, std::move(clickThrough)));
 
+    ShortcutManager::Binding alwaysOnTop;
+    alwaysOnTop.id = QStringLiteral("pinned.always_on_top");
+    alwaysOnTop.priority = ShortcutManager::StandardPriority::ContextualFallback;
+    alwaysOnTop.canActivate = localCommandsAllowed;
+    alwaysOnTop.activate = [this](const auto&) {
+        toggleAlwaysOnTop();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("always_on_top"),
+                                    m_shortcutManager->addBinding(this, std::move(alwaysOnTop)));
+
+    ShortcutManager::Binding showBorder;
+    showBorder.id = QStringLiteral("pinned.show_border");
+    showBorder.priority = ShortcutManager::StandardPriority::ContextualFallback;
+    showBorder.canActivate = localCommandsAllowed;
+    showBorder.activate = [this](const auto&) {
+        toggleShowBorder();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("show_border"),
+                                    m_shortcutManager->addBinding(this, std::move(showBorder)));
+
     ShortcutManager::Binding closeWindow;
     closeWindow.id = QStringLiteral("pinned.close");
     closeWindow.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
@@ -1285,6 +1307,8 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"thumbnail_mode", "screenshotPinnedThumbnailAction"},
         {"hide_to_top", "screenshotPinnedHideToTopAction"},
         {"toggle_click_through", "screenshotPinnedClickThroughAction"},
+        {"always_on_top", "screenshotPinnedAlwaysOnTopAction"},
+        {"show_border", "screenshotPinnedShowBorderAction"},
         {"close_window", "screenshotPinnedCloseAction"},
         {"destroy_window", "screenshotPinnedDestroyAction"},
         {"increase_opacity", "screenshotPinnedIncreaseOpacityAction"},

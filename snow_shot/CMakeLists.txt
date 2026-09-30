@@ -2324,6 +2324,24 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     snow_shot_import_offscreen_platform(snow-shot-screen-recording-shortcut-settings-tests)
 
+    add_executable(snow-shot-pin-to-screen-shortcut-settings-tests
+        tests/pin_to_screen_shortcut_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-pin-to-screen-shortcut-settings-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-pin-to-screen-shortcut-settings-tests
+             COMMAND snow-shot-pin-to-screen-shortcut-settings-tests)
+    set_tests_properties(snow-shot-pin-to-screen-shortcut-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-pin-to-screen-shortcut-settings-tests)
+
     add_executable(snow-shot-translation-settings-tests
         tests/translation_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
@@ -3478,6 +3496,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-canvas-renderer-tests --pinned-filter-reference-only -platform offscreen)
     add_test(NAME snow-shot-fractional-dpi-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --fractional-dpi)
+    add_test(NAME snow-shot-pinned-result-scaling-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --pinned-result-scaling -platform offscreen)
+    set_tests_properties(snow-shot-pinned-result-scaling-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     set_tests_properties(snow-shot-fractional-dpi-rendering-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -3881,6 +3906,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --double-click-only)
     set_tests_properties(snow-shot-pinned-double-click-offscreen-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-text-double-click-tests
+        COMMAND snow-shot-pinned-window-tests --text-double-click-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-text-double-click-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-save-dialog-tests
         COMMAND snow-shot-pinned-window-tests --save-dialog-only)
     set_tests_properties(snow-shot-pinned-save-dialog-tests PROPERTIES TIMEOUT 90)
@@ -5902,6 +5932,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-recognition-window-tests --context-menu-only -platform offscreen)
     set_tests_properties(snow-shot-recognition-context-menu-tests PROPERTIES
         LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recognition-double-click-tests
+        COMMAND snow-shot-recognition-window-tests --ocr-double-click-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-double-click-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-recognition-selection-only-rendering-tests
         COMMAND snow-shot-recognition-window-tests --selection-only-rendering -platform offscreen)
     add_test(NAME snow-shot-recognition-ocr-hover-tests
@@ -8295,6 +8330,9 @@ if(TARGET snow-shot-pinned-window-tests)
         COMMAND snow-shot-pinned-window-tests --drag-export-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-drag-export-tests PROPERTIES LABELS "unit")
     if(WIN32)
+        add_test(NAME snow-shot-pinned-ctrl-hover-tests
+            COMMAND snow-shot-pinned-window-tests --ctrl-hover-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-ctrl-hover-tests PROPERTIES LABELS "unit;windows")
         add_test(NAME snow-shot-pinned-drag-export-native-tests
             COMMAND snow-shot-pinned-window-tests --drag-export-native-only -platform windows)
         set_tests_properties(snow-shot-pinned-drag-export-native-tests PROPERTIES LABELS "unit;windows")

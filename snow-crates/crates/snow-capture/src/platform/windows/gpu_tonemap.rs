@@ -154,7 +154,7 @@ fn compile_shader_runtime_with_entry(entry: &[u8]) -> CaptureResult<Vec<u8>> {
 struct GpuParams {
     sdr_white_nits: f32,
     hdr_peak_nits: f32,
-    sdr_identity_eps: f32,
+    _pad0: f32,
     flags: u32,
     tex_width: u32,
     tex_height: u32,
@@ -540,7 +540,7 @@ impl GpuTonemapper {
         let gpu_params = GpuParams {
             sdr_white_nits: params.sdr_white_nits,
             hdr_peak_nits: params.hdr_peak_nits,
-            sdr_identity_eps: 1e-3,
+            _pad0: 0.0,
             flags,
             tex_width: width,
             tex_height: height,
@@ -616,7 +616,7 @@ impl GpuF16Converter {
         let gpu_params = GpuParams {
             sdr_white_nits: 0.0,
             hdr_peak_nits: 0.0,
-            sdr_identity_eps: 0.0,
+            _pad0: 0.0,
             flags: 0,
             tex_width: width,
             tex_height: height,
@@ -674,6 +674,16 @@ mod tests {
                 .map(|v| half::f16::from_f32(v).to_bits())
             })
             .collect();
+        hdr_source_from_pixels(device, width, height, &pixels)
+    }
+
+    fn hdr_source_from_pixels(
+        device: &ID3D11Device,
+        width: u32,
+        height: u32,
+        pixels: &[[u16; 4]],
+    ) -> anyhow::Result<(ID3D11Texture2D, D3D11_TEXTURE2D_DESC)> {
+        assert_eq!(pixels.len(), (width * height) as usize);
         let desc = D3D11_TEXTURE2D_DESC {
             Width: width,
             Height: height,
@@ -768,6 +778,92 @@ mod tests {
             )?;
             Ok(())
         }
+    }
+
+    #[test]
+    fn hdr_highlight_gradients_are_continuous_in_both_shader_dispatches() -> anyhow::Result<()> {
+        use crate::convert::hdr_tests::{
+            HIGHLIGHT_RAMP_HEIGHT, HIGHLIGHT_RAMP_WIDTH, assert_smooth_highlight_rows,
+            highlight_ramp,
+        };
+        let mut device = None;
+        let mut context = None;
+        unsafe {
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_WARP,
+                windows::Win32::Foundation::HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                Some(&[D3D_FEATURE_LEVEL_11_0]),
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                None,
+                Some(&mut context),
+            )?;
+        }
+        let device = device.unwrap();
+        let context = context.unwrap();
+        for sdr_white_nits in [80.0, 160.0, 280.0] {
+            let pixels = highlight_ramp(sdr_white_nits);
+            let (source, desc) = hdr_source_from_pixels(
+                &device,
+                HIGHLIGHT_RAMP_WIDTH as u32,
+                HIGHLIGHT_RAMP_HEIGHT as u32,
+                &pixels,
+            )?;
+            let src: Vec<u8> = pixels
+                .iter()
+                .flat_map(|px| px.iter().flat_map(|v| v.to_ne_bytes()))
+                .collect();
+            for use_1d in [true, false] {
+                let mut mapper = GpuTonemapper::new(&device)?;
+                if use_1d {
+                    assert!(mapper.pass.cs_1d.is_some());
+                } else {
+                    mapper.pass.cs_1d = None;
+                }
+                let mut readback =
+                    Readback::new(&device, desc.Width, desc.Height, CapturePixelFormat::Rgba8)?;
+                for hdr_peak_nits in [400.0, 1000.0, 4000.0] {
+                    for tonemap_use_lut in [false, true] {
+                        let params = HdrFrameContext {
+                            sdr_white_nits,
+                            hdr_peak_nits,
+                            tonemap_use_lut,
+                            ..Default::default()
+                        };
+                        let output =
+                            mapper.tonemap(&device, &context, &source, &desc, params, None)?;
+                        readback.copy(&context, output, 0, 0)?;
+                        let actual = readback.frame.as_bytes();
+                        assert_smooth_highlight_rows(
+                            actual,
+                            &format!(
+                                "GPU 1D={use_1d}, white={sdr_white_nits}, peak={hdr_peak_nits}, LUT={tonemap_use_lut}"
+                            ),
+                        );
+                        let mut expected = vec![0u8; actual.len()];
+                        crate::convert::convert_row_to_rgba_with_options(
+                            crate::convert::SurfacePixelFormat::Rgba16Float,
+                            &src,
+                            &mut expected,
+                            pixels.len(),
+                            crate::convert::SurfaceConversionOptions {
+                                hdr_to_sdr: Some(params),
+                                ..Default::default()
+                            },
+                        );
+                        for (i, (a, b)) in actual.iter().zip(&expected).enumerate() {
+                            assert!(
+                                a.abs_diff(*b) <= 1,
+                                "GPU at byte {i}: {a} != {b}, 1D={use_1d}, white={sdr_white_nits}, peak={hdr_peak_nits}, LUT={tonemap_use_lut}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     #[test]

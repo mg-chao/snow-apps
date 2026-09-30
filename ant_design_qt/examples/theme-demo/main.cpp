@@ -3,6 +3,8 @@
 #include <QAbstractItemModel>
 #include <QButtonGroup>
 #include <QComboBox>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QFrame>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -45,6 +47,7 @@
 #include "pagination_docs_page.h"
 #include "popconfirm_docs_page.h"
 #include "popover_docs_page.h"
+#include "progress_docs_page.h"
 #include "radio_docs_page.h"
 #include "segmented_docs_page.h"
 #include "select_docs_page.h"
@@ -1085,6 +1088,14 @@ class DemoWindow final : public QWidget {
     applyThemeFromControls();
   }
 
+ protected:
+  void changeEvent(QEvent* event) override {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+      QTimer::singleShot(0, this, [this]() { rebuildNavMenuItems(); });
+    }
+  }
+
  private:
   enum class DocsKind {
     Button,
@@ -1103,6 +1114,7 @@ class DemoWindow final : public QWidget {
     Select,
     Slider,
     Spin,
+    Progress,
     Pagination,
     Tabs,
     Carousel,
@@ -1165,6 +1177,9 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Spin) {
       return QStringLiteral("spin-docs");
+    }
+    if (kind == DocsKind::Progress) {
+      return QStringLiteral("progress-docs");
     }
     if (kind == DocsKind::Pagination) {
       return QStringLiteral("pagination-docs");
@@ -1238,6 +1253,8 @@ class DemoWindow final : public QWidget {
       prefix = QStringLiteral("slider");
     } else if (kind == DocsKind::Spin) {
       prefix = QStringLiteral("spin");
+    } else if (kind == DocsKind::Progress) {
+      prefix = QStringLiteral("progress");
     } else if (kind == DocsKind::Pagination) {
       prefix = QStringLiteral("pagination");
     } else if (kind == DocsKind::Tabs) {
@@ -1603,6 +1620,20 @@ class DemoWindow final : public QWidget {
       }
       return false;
     }
+    if (key.startsWith(QStringLiteral("progress-section-"))) {
+      bool ok = false;
+      const int value = key.mid(QStringLiteral("progress-section-").size()).toInt(&ok);
+      if (ok) {
+        if (kind) {
+          *kind = DocsKind::Progress;
+        }
+        if (row) {
+          *row = value;
+        }
+        return true;
+      }
+      return false;
+    }
     if (key.startsWith(QStringLiteral("spin-section-"))) {
       bool ok = false;
       const int value = key.mid(QStringLiteral("spin-section-").size()).toInt(&ok);
@@ -1745,6 +1776,12 @@ class DemoWindow final : public QWidget {
       }
       return true;
     }
+    if (key == docsRootKey(DocsKind::Progress)) {
+      if (kind) {
+        *kind = DocsKind::Progress;
+      }
+      return true;
+    }
     if (key == docsRootKey(DocsKind::Pagination)) {
       if (kind) {
         *kind = DocsKind::Pagination;
@@ -1822,13 +1859,16 @@ class DemoWindow final : public QWidget {
 
   bool parseDocsGroupKey(const QString& key, DocsKind* kind) const {
     for (const DocsKind candidate :
-         {DocsKind::Button,       DocsKind::Alert,   DocsKind::Input,       DocsKind::Form,
-          DocsKind::Descriptions, DocsKind::Divider, DocsKind::InputNumber, DocsKind::Switch,
-          DocsKind::Segmented,    DocsKind::Menu,    DocsKind::Message,     DocsKind::Notification,
-          DocsKind::Modal,        DocsKind::Select,  DocsKind::Slider,      DocsKind::Spin,
-          DocsKind::Pagination,   DocsKind::Tabs,    DocsKind::Carousel,    DocsKind::ColorPicker,
-          DocsKind::DatePicker,   DocsKind::Image,   DocsKind::Popover,     DocsKind::Popconfirm,
-          DocsKind::Tooltip,      DocsKind::Radio,   DocsKind::Checkbox,    DocsKind::Tag}) {
+         {DocsKind::Button,      DocsKind::Alert,        DocsKind::Input,
+          DocsKind::Form,        DocsKind::Descriptions, DocsKind::Divider,
+          DocsKind::InputNumber, DocsKind::Switch,       DocsKind::Segmented,
+          DocsKind::Menu,        DocsKind::Message,      DocsKind::Notification,
+          DocsKind::Modal,       DocsKind::Select,       DocsKind::Slider,
+          DocsKind::Spin,        DocsKind::Progress,     DocsKind::Pagination,
+          DocsKind::Tabs,        DocsKind::Carousel,     DocsKind::ColorPicker,
+          DocsKind::DatePicker,  DocsKind::Image,        DocsKind::Popover,
+          DocsKind::Popconfirm,  DocsKind::Tooltip,      DocsKind::Radio,
+          DocsKind::Checkbox,    DocsKind::Tag}) {
       if (key == docsGroupKey(candidate)) {
         if (kind) {
           *kind = candidate;
@@ -1888,6 +1928,9 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Spin && spinPage_) {
       return spinPage_->sectionAnchors();
+    }
+    if (kind == DocsKind::Progress && progressPage_) {
+      return progressPage_->sectionAnchors();
     }
     if (kind == DocsKind::Pagination && paginationPage_) {
       return paginationPage_->sectionAnchors();
@@ -1977,6 +2020,10 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Spin && spinPage_) {
       return spinPage_->sectionTitles();
+    }
+    if (kind == DocsKind::Progress) {
+      return progressPage_ ? progressPage_->sectionTitles()
+                           : ProgressDocsPage::defaultSectionTitles();
     }
     if (kind == DocsKind::Pagination && paginationPage_) {
       return paginationPage_->sectionTitles();
@@ -2069,6 +2116,9 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Spin) {
       return spinPage_ != nullptr;
+    }
+    if (kind == DocsKind::Progress) {
+      return progressPage_ != nullptr;
     }
     if (kind == DocsKind::Pagination) {
       return paginationPage_ != nullptr;
@@ -2260,6 +2310,8 @@ class DemoWindow final : public QWidget {
     appendRoot(DocsKind::Select, QStringLiteral("Select"), outlined_icons::Select());
     appendRoot(DocsKind::Slider, QStringLiteral("Slider"), outlined_icons::Sliders());
     appendRoot(DocsKind::Spin, QStringLiteral("Spin"), outlined_icons::Loading());
+    appendRoot(DocsKind::Progress, QCoreApplication::translate("ProgressDocsPage", "Progress"),
+               outlined_icons::Dashboard());
     appendRoot(DocsKind::Pagination, QStringLiteral("Pagination"), outlined_icons::More());
     appendRoot(DocsKind::Tabs, QStringLiteral("Tabs"), outlined_icons::FolderOpen());
     appendRoot(DocsKind::Carousel, QStringLiteral("Carousel"), outlined_icons::Picture());
@@ -2409,6 +2461,13 @@ class DemoWindow final : public QWidget {
         created = true;
       }
       target = spinPage_;
+    } else if (kind == DocsKind::Progress) {
+      if (!progressPage_) {
+        progressPage_ = new ProgressDocsPage();
+        docsStack_->addWidget(progressPage_);
+        created = true;
+      }
+      target = progressPage_;
     } else if (kind == DocsKind::Pagination) {
       if (!paginationPage_) {
         paginationPage_ = new PaginationDocsPage();
@@ -2608,6 +2667,7 @@ class DemoWindow final : public QWidget {
   SelectDocsPage* selectPage_ = nullptr;
   SliderDocsPage* sliderPage_ = nullptr;
   SpinDocsPage* spinPage_ = nullptr;
+  ProgressDocsPage* progressPage_ = nullptr;
   PaginationDocsPage* paginationPage_ = nullptr;
   TabsDocsPage* tabsPage_ = nullptr;
   CarouselDocsPage* carouselPage_ = nullptr;

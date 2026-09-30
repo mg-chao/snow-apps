@@ -803,7 +803,6 @@ const HDR_PQ_C3: f32 = 18.687_5;
 const HDR_PQ_ABSOLUTE_NITS: f32 = 10_000.0;
 const HDR_SDR_REFERENCE_WHITE_NITS: f32 = 80.0;
 const HDR_INPUT_BLACK_NITS: f32 = 0.001;
-const HDR_SDR_IDENTITY_EPS: f32 = 1e-3;
 const HDR_EPSILON: f32 = 1e-6;
 const HDR_SRGB_GAMMA_EXP: f32 = 1.0 / 2.4;
 // 32px unrolling improves AVX-512 throughput on large frames but can hurt
@@ -820,9 +819,132 @@ unsafe fn fmadd_ps(
     _mm256_fmadd_ps(a, b, c)
 }
 
+// Evaluate the four PQ powers without leaving SIMD. PQ supplies positive normal
+// arguments (the smallest forward input is 0.001/10000) or zero after inverse
+// black subtraction; finite results stay in the normal f32 range. This is not a
+// general-purpose powf implementation for subnormal arguments/results.
+//
+// Reduce the mantissa to [1/sqrt(2), sqrt(2)] so |z| <= 0.172 in
+// ln(m) = 2*z*(1 + z^2/3 + ... + z^8/9), z = (m-1)/(m+1). Reduce exp's
+// argument to [-ln(2)/2, ln(2)/2] for its seventh-degree Taylor polynomial.
+// Range reduction bounds truncation error before f32 rounding; HDR kernel tests
+// enforce the final <=1 encoded RGB byte budget against the scalar curve.
+#[target_feature(enable = "avx2")]
+unsafe fn hdr_pow_ps(value: std::arch::x86_64::__m256, exponent: f32) -> std::arch::x86_64::__m256 {
+    use std::arch::x86_64::*;
+    let one = _mm256_set1_ps(1.0);
+    let x = _mm256_min_ps(
+        _mm256_max_ps(value, _mm256_set1_ps(f32::MIN_POSITIVE)),
+        _mm256_set1_ps(f32::MAX),
+    );
+    let bits = _mm256_castps_si256(x);
+    let e = _mm256_sub_epi32(_mm256_srli_epi32(bits, 23), _mm256_set1_epi32(127));
+    let m = _mm256_castsi256_ps(_mm256_or_si256(
+        _mm256_and_si256(bits, _mm256_set1_epi32(0x7fffff)),
+        _mm256_set1_epi32(0x3f800000),
+    ));
+    let adjust = _mm256_cmp_ps(m, _mm256_set1_ps(std::f32::consts::SQRT_2), _CMP_GT_OQ);
+    let m = _mm256_blendv_ps(m, _mm256_mul_ps(m, _mm256_set1_ps(0.5)), adjust);
+    let e = _mm256_cvtepi32_ps(_mm256_add_epi32(
+        e,
+        _mm256_and_si256(_mm256_castps_si256(adjust), _mm256_set1_epi32(1)),
+    ));
+    let z = _mm256_div_ps(_mm256_sub_ps(m, one), _mm256_add_ps(m, one));
+    let z2 = _mm256_mul_ps(z, z);
+    let mut poly = _mm256_set1_ps(1.0 / 9.0);
+    for coefficient in [1.0 / 7.0, 1.0 / 5.0, 1.0 / 3.0, 1.0] {
+        poly = _mm256_add_ps(_mm256_mul_ps(poly, z2), _mm256_set1_ps(coefficient));
+    }
+    let log2 = _mm256_add_ps(
+        e,
+        _mm256_mul_ps(
+            _mm256_mul_ps(z, poly),
+            _mm256_set1_ps(2.0 * std::f32::consts::LOG2_E),
+        ),
+    );
+    let power = _mm256_max_ps(
+        _mm256_min_ps(
+            _mm256_mul_ps(log2, _mm256_set1_ps(exponent)),
+            _mm256_set1_ps(127.0),
+        ),
+        _mm256_set1_ps(-126.0),
+    );
+    let integer = _mm256_round_ps::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(power);
+    let fraction = _mm256_mul_ps(
+        _mm256_sub_ps(power, integer),
+        _mm256_set1_ps(std::f32::consts::LN_2),
+    );
+    let mut exp = _mm256_set1_ps(1.0 / 5040.0);
+    for coefficient in [
+        1.0 / 720.0,
+        1.0 / 120.0,
+        1.0 / 24.0,
+        1.0 / 6.0,
+        0.5,
+        1.0,
+        1.0,
+    ] {
+        exp = _mm256_add_ps(_mm256_mul_ps(exp, fraction), _mm256_set1_ps(coefficient));
+    }
+    let scale = _mm256_castsi256_ps(_mm256_slli_epi32(
+        _mm256_add_epi32(_mm256_cvttps_epi32(integer), _mm256_set1_epi32(127)),
+        23,
+    ));
+    let result = _mm256_mul_ps(exp, scale);
+    // Preserve infinity through forward PQ. Nonpositive/NaN arguments become
+    // zero, matching the scalar max(0).powf behavior for these positive powers.
+    let infinity = _mm256_set1_ps(f32::INFINITY);
+    let result = _mm256_blendv_ps(result, infinity, _mm256_cmp_ps(value, infinity, _CMP_EQ_OQ));
+    _mm256_and_ps(
+        result,
+        _mm256_cmp_ps(value, _mm256_setzero_ps(), _CMP_GT_OQ),
+    )
+}
+
+#[target_feature(enable = "avx2,f16c")]
+unsafe fn hdr_srgb_bytes_ps(
+    value: std::arch::x86_64::__m256,
+    lut: *const i32,
+) -> std::arch::x86_64::__m256i {
+    use std::arch::x86_64::*;
+    unsafe {
+        let clamped = _mm256_min_ps(
+            _mm256_max_ps(value, _mm256_setzero_ps()),
+            _mm256_set1_ps(1.0),
+        );
+        // Half rounding contributes at most one encoded byte of error, including
+        // dark values. Bit-pattern power approximations are much less accurate.
+        let half = _mm256_cvtps_ph::<_MM_FROUND_TO_NEAREST_INT>(clamped);
+        let indices = _mm256_cvtepu16_epi32(half);
+        let words = _mm256_i32gather_epi32(lut, _mm256_srli_epi32(indices, 2), 4);
+        let shifts = _mm256_slli_epi32(_mm256_and_si256(indices, _mm256_set1_epi32(3)), 3);
+        _mm256_and_si256(_mm256_srlv_epi32(words, shifts), _mm256_set1_epi32(255))
+    }
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn scale_hdr_rgb_ps(
+    rgb: [std::arch::x86_64::__m256; 3],
+    y_in: std::arch::x86_64::__m256,
+    y_out: std::arch::x86_64::__m256,
+) -> [std::arch::x86_64::__m256; 3] {
+    use std::arch::x86_64::*;
+    let one = _mm256_set1_ps(1.0);
+    let eps = _mm256_set1_ps(HDR_EPSILON);
+    let max_rgb = _mm256_max_ps(rgb[0], _mm256_max_ps(rgb[1], rgb[2]));
+    // Combine exposure y_out/y_in and gamut compression 1/max_rgb into one
+    // division. Luma is <= max_rgb, so y_out >= 1 always needs compression;
+    // cap it at 1 first to avoid overflowing max_rgb*y_out for large inputs.
+    let y_out = _mm256_min_ps(y_out, one);
+    let denom = _mm256_max_ps(_mm256_max_ps(y_in, eps), _mm256_mul_ps(max_rgb, y_out));
+    let scale = _mm256_div_ps(y_out, denom);
+    let scale = _mm256_andnot_ps(_mm256_cmp_ps(y_in, eps, _CMP_LE_OQ), scale);
+    rgb.map(|channel| _mm256_mul_ps(channel, scale))
+}
+
 // F16 HDR->sRGB via AVX2 + F16C.
 // This path keeps the entire per-pixel hot loop in SIMD (except scalar tail),
-// including inverse boost, SDR/HDR split, BT.2390 mapping, and sRGB encode.
+// including inverse boost, continuous BT.2390 mapping, and sRGB encode.
 
 #[target_feature(enable = "avx2,f16c")]
 pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_prepared_unchecked(
@@ -1002,7 +1124,6 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
         let v_half = _mm256_set1_ps(0.5);
         let v_255 = _mm256_set1_ps(255.0);
         let v_inv_boost = _mm256_set1_ps(inv_boost);
-        let v_sdr_threshold = _mm256_set1_ps(1.0 + HDR_SDR_IDENTITY_EPS);
         let v_eps = _mm256_set1_ps(HDR_EPSILON);
         let v_pq_abs_inv = _mm256_set1_ps(1.0 / HDR_PQ_ABSOLUTE_NITS);
         let v_pq_abs = _mm256_set1_ps(HDR_PQ_ABSOLUTE_NITS);
@@ -1025,43 +1146,13 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
         let v_luma_r = _mm256_set1_ps(0.2126);
         let v_luma_g = _mm256_set1_ps(0.7152);
         let v_luma_b = _mm256_set1_ps(0.0722);
-        let v_srgb_threshold = _mm256_set1_ps(0.003_130_8_f32);
-        let v_srgb_linear_scale = _mm256_set1_ps(12.92);
-        let v_srgb_a = _mm256_set1_ps(1.055);
-        let v_srgb_b = _mm256_set1_ps(-0.055);
         let v_lut_input_max = _mm256_set1_ps(lut_input_max);
         let v_lut_inv_step = _mm256_set1_ps(lut_inv_step);
         let v_lut_last_idx = _mm256_set1_epi32((super::f16::HDR_LUMA_LUT_SIZE - 1) as i32);
         let v_i32_one = _mm256_set1_epi32(1);
 
-        let pow_bias_f = 0x3F80_0000u32 as f32;
-        let v_pow_pq_m1_scale = _mm256_set1_ps(HDR_PQ_M1);
-        let v_pow_pq_m1_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_M1)));
-        let v_pow_pq_m2_scale = _mm256_set1_ps(HDR_PQ_M2);
-        let v_pow_pq_m2_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_M2)));
-        let v_pow_pq_inv_m2_scale = _mm256_set1_ps(HDR_PQ_INV_M2);
-        let v_pow_pq_inv_m2_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_INV_M2)));
-        let v_pow_pq_inv_m1_scale = _mm256_set1_ps(HDR_PQ_INV_M1);
-        let v_pow_pq_inv_m1_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_INV_M1)));
-        let v_pow_srgb_scale = _mm256_set1_ps(HDR_SRGB_GAMMA_EXP);
-        let v_pow_srgb_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_SRGB_GAMMA_EXP)));
+        let srgb_lut_ptr = super::f16::hdr_srgb_lut().as_ptr();
         let perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
-
-        macro_rules! fast_pow_ps_precomputed {
-            ($x:expr, $p_scale:expr, $p_offset_i:expr) => {{
-                let xi = _mm256_castps_si256($x);
-                let pow_i = _mm256_add_epi32(
-                    _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_cvtepi32_ps(xi), $p_scale)),
-                    $p_offset_i,
-                );
-                _mm256_castsi256_ps(pow_i)
-            }};
-        }
 
         macro_rules! mul_add_ps {
             ($a:expr, $b:expr, $c:expr) => {{
@@ -1076,57 +1167,32 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
         macro_rules! nits_to_pq_ps {
             ($nits:expr) => {{
                 let norm = _mm256_mul_ps(_mm256_max_ps($nits, v_zero), v_pq_abs_inv);
-                let p = fast_pow_ps_precomputed!(norm, v_pow_pq_m1_scale, v_pow_pq_m1_offset_i);
+                let p = hdr_pow_ps(norm, HDR_PQ_M1);
                 let num = mul_add_ps!(v_c2, p, v_c1);
                 let den = mul_add_ps!(v_c3, p, v_one);
                 let ratio = _mm256_div_ps(num, den);
-                fast_pow_ps_precomputed!(ratio, v_pow_pq_m2_scale, v_pow_pq_m2_offset_i)
+                hdr_pow_ps(ratio, HDR_PQ_M2)
             }};
         }
 
         macro_rules! pq_to_nits_ps {
             ($v:expr) => {{
-                let p = fast_pow_ps_precomputed!(
-                    _mm256_max_ps($v, v_zero),
-                    v_pow_pq_inv_m2_scale,
-                    v_pow_pq_inv_m2_offset_i
-                );
+                let p = hdr_pow_ps(_mm256_max_ps($v, v_zero), HDR_PQ_INV_M2);
                 let num = _mm256_max_ps(_mm256_sub_ps(p, v_c1), v_zero);
                 let den = _mm256_max_ps(_mm256_sub_ps(v_c2, _mm256_mul_ps(v_c3, p)), v_eps);
                 let ratio = _mm256_div_ps(num, den);
                 _mm256_mul_ps(
-                    fast_pow_ps_precomputed!(
-                        _mm256_max_ps(ratio, v_zero),
-                        v_pow_pq_inv_m1_scale,
-                        v_pow_pq_inv_m1_offset_i
-                    ),
+                    hdr_pow_ps(_mm256_max_ps(ratio, v_zero), HDR_PQ_INV_M1),
                     v_pq_abs,
                 )
             }};
         }
 
-        macro_rules! srgb_gamma_ps {
-            ($v:expr) => {{
-                let clamped = _mm256_min_ps(_mm256_max_ps($v, v_zero), v_one);
-                let lin = _mm256_mul_ps(clamped, v_srgb_linear_scale);
-                let pow_approx =
-                    fast_pow_ps_precomputed!(clamped, v_pow_srgb_scale, v_pow_srgb_offset_i);
-                let gamma = mul_add_ps!(v_srgb_a, pow_approx, v_srgb_b);
-                let mask = _mm256_cmp_ps(clamped, v_srgb_threshold, _CMP_GT_OQ);
-                let encoded = _mm256_blendv_ps(lin, gamma, mask);
-                mul_add_ps!(encoded, v_255, v_half)
-            }};
-        }
-
         macro_rules! pack_store_rgba_ps {
             ($r:expr, $g:expr, $b:expr, $a:expr, $dst:expr) => {{
-                let r_srgb = srgb_gamma_ps!($r);
-                let g_srgb = srgb_gamma_ps!($g);
-                let b_srgb = srgb_gamma_ps!($b);
-
-                let r_i = _mm256_cvttps_epi32(r_srgb);
-                let g_i = _mm256_cvttps_epi32(g_srgb);
-                let b_i = _mm256_cvttps_epi32(b_srgb);
+                let r_i = hdr_srgb_bytes_ps($r, srgb_lut_ptr);
+                let g_i = hdr_srgb_bytes_ps($g, srgb_lut_ptr);
+                let b_i = hdr_srgb_bytes_ps($b, srgb_lut_ptr);
 
                 let g_shifted = _mm256_slli_epi32(g_i, 8);
                 let b_shifted = _mm256_slli_epi32(b_i, 16);
@@ -1193,18 +1259,6 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
             g = _mm256_mul_ps(g, v_inv_boost);
             b = _mm256_mul_ps(b, v_inv_boost);
 
-            let max_rgb = _mm256_max_ps(r, _mm256_max_ps(g, b));
-            let sdr_mask_ps = _mm256_cmp_ps(max_rgb, v_sdr_threshold, _CMP_LE_OQ);
-            let sdr_mask_bits = _mm256_movemask_ps(sdr_mask_ps);
-            if sdr_mask_bits == 0xFF {
-                pack_store_rgba_ps!(r, g, b, a, dst_ptr);
-                src_ptr = src_ptr.add(32);
-                dst_ptr = dst_ptr.add(32);
-                remaining -= 8;
-                continue;
-            }
-            let all_hdr = sdr_mask_bits == 0;
-
             let rg_luma = mul_add_ps!(v_luma_g, g, _mm256_mul_ps(r, v_luma_r));
             let y_in = mul_add_ps!(v_luma_b, b, rg_luma);
             let y_in_pos = _mm256_max_ps(y_in, v_zero);
@@ -1268,51 +1322,8 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
                 )
             };
 
-            let safe_y_in = _mm256_max_ps(y_in_pos, v_eps);
-            let scale = _mm256_div_ps(y_out, safe_y_in);
-            let mut r_hdr = _mm256_mul_ps(r, scale);
-            let mut g_hdr = _mm256_mul_ps(g, scale);
-            let mut b_hdr = _mm256_mul_ps(b, scale);
-
-            let low_luma_mask = _mm256_cmp_ps(y_in_pos, v_eps, _CMP_LE_OQ);
-            let low_luma_bits = _mm256_movemask_ps(low_luma_mask);
-            if low_luma_bits != 0 {
-                if low_luma_bits == 0xFF {
-                    r_hdr = v_zero;
-                    g_hdr = v_zero;
-                    b_hdr = v_zero;
-                } else {
-                    r_hdr = _mm256_blendv_ps(r_hdr, v_zero, low_luma_mask);
-                    g_hdr = _mm256_blendv_ps(g_hdr, v_zero, low_luma_mask);
-                    b_hdr = _mm256_blendv_ps(b_hdr, v_zero, low_luma_mask);
-                }
-            }
-
-            let max_hdr = _mm256_max_ps(r_hdr, _mm256_max_ps(g_hdr, b_hdr));
-            let compress_mask = _mm256_cmp_ps(max_hdr, v_one, _CMP_GT_OQ);
-            let compress_bits = _mm256_movemask_ps(compress_mask);
-            if compress_bits != 0 {
-                let inv_max_hdr = _mm256_div_ps(v_one, _mm256_max_ps(max_hdr, v_one));
-                if compress_bits == 0xFF {
-                    r_hdr = _mm256_mul_ps(r_hdr, inv_max_hdr);
-                    g_hdr = _mm256_mul_ps(g_hdr, inv_max_hdr);
-                    b_hdr = _mm256_mul_ps(b_hdr, inv_max_hdr);
-                } else {
-                    let compress_scale = _mm256_blendv_ps(v_one, inv_max_hdr, compress_mask);
-                    r_hdr = _mm256_mul_ps(r_hdr, compress_scale);
-                    g_hdr = _mm256_mul_ps(g_hdr, compress_scale);
-                    b_hdr = _mm256_mul_ps(b_hdr, compress_scale);
-                }
-            }
-
-            if all_hdr {
-                pack_store_rgba_ps!(r_hdr, g_hdr, b_hdr, a, dst_ptr);
-            } else {
-                let r_final = _mm256_blendv_ps(r_hdr, r, sdr_mask_ps);
-                let g_final = _mm256_blendv_ps(g_hdr, g, sdr_mask_ps);
-                let b_final = _mm256_blendv_ps(b_hdr, b, sdr_mask_ps);
-                pack_store_rgba_ps!(r_final, g_final, b_final, a, dst_ptr);
-            }
+            let [r_hdr, g_hdr, b_hdr] = scale_hdr_rgb_ps([r, g, b], y_in_pos, y_out);
+            pack_store_rgba_ps!(r_hdr, g_hdr, b_hdr, a, dst_ptr);
 
             src_ptr = src_ptr.add(32);
             dst_ptr = dst_ptr.add(32);
@@ -1742,7 +1753,6 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_inner<
         let v_half = _mm256_set1_ps(0.5);
         let v_255 = _mm256_set1_ps(255.0);
         let v_inv_boost = _mm256_set1_ps(inv_boost);
-        let v_sdr_threshold = _mm256_set1_ps(1.0 + HDR_SDR_IDENTITY_EPS);
         let v_eps = _mm256_set1_ps(HDR_EPSILON);
         let v_pq_abs_inv = _mm256_set1_ps(1.0 / HDR_PQ_ABSOLUTE_NITS);
         let v_pq_abs = _mm256_set1_ps(HDR_PQ_ABSOLUTE_NITS);
@@ -1765,43 +1775,13 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_inner<
         let v_luma_r = _mm256_set1_ps(0.2126);
         let v_luma_g = _mm256_set1_ps(0.7152);
         let v_luma_b = _mm256_set1_ps(0.0722);
-        let v_srgb_threshold = _mm256_set1_ps(0.003_130_8_f32);
-        let v_srgb_linear_scale = _mm256_set1_ps(12.92);
-        let v_srgb_a = _mm256_set1_ps(1.055);
-        let v_srgb_b = _mm256_set1_ps(-0.055);
         let v_lut_input_max = _mm256_set1_ps(lut_input_max);
         let v_lut_inv_step = _mm256_set1_ps(lut_inv_step);
         let v_lut_last_idx = _mm256_set1_epi32((super::f16::HDR_LUMA_LUT_SIZE - 1) as i32);
         let v_i32_one = _mm256_set1_epi32(1);
 
-        let pow_bias_f = 0x3F80_0000u32 as f32;
-        let v_pow_pq_m1_scale = _mm256_set1_ps(HDR_PQ_M1);
-        let v_pow_pq_m1_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_M1)));
-        let v_pow_pq_m2_scale = _mm256_set1_ps(HDR_PQ_M2);
-        let v_pow_pq_m2_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_M2)));
-        let v_pow_pq_inv_m2_scale = _mm256_set1_ps(HDR_PQ_INV_M2);
-        let v_pow_pq_inv_m2_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_INV_M2)));
-        let v_pow_pq_inv_m1_scale = _mm256_set1_ps(HDR_PQ_INV_M1);
-        let v_pow_pq_inv_m1_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_PQ_INV_M1)));
-        let v_pow_srgb_scale = _mm256_set1_ps(HDR_SRGB_GAMMA_EXP);
-        let v_pow_srgb_offset_i =
-            _mm256_cvtps_epi32(_mm256_set1_ps(pow_bias_f * (1.0 - HDR_SRGB_GAMMA_EXP)));
+        let srgb_lut_ptr = super::f16::hdr_srgb_lut().as_ptr();
         let perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
-
-        macro_rules! fast_pow_ps_precomputed {
-            ($x:expr, $p_scale:expr, $p_offset_i:expr) => {{
-                let xi = _mm256_castps_si256($x);
-                let pow_i = _mm256_add_epi32(
-                    _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_cvtepi32_ps(xi), $p_scale)),
-                    $p_offset_i,
-                );
-                _mm256_castsi256_ps(pow_i)
-            }};
-        }
 
         macro_rules! mul_add_ps {
             ($a:expr, $b:expr, $c:expr) => {{
@@ -1816,59 +1796,37 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_inner<
         macro_rules! nits_to_pq_ps {
             ($nits:expr) => {{
                 let norm = _mm256_mul_ps(_mm256_max_ps($nits, v_zero), v_pq_abs_inv);
-                let p = fast_pow_ps_precomputed!(norm, v_pow_pq_m1_scale, v_pow_pq_m1_offset_i);
+                let p = hdr_pow_ps(norm, HDR_PQ_M1);
                 let num = mul_add_ps!(v_c2, p, v_c1);
                 let den = mul_add_ps!(v_c3, p, v_one);
                 let ratio = _mm256_div_ps(num, den);
-                fast_pow_ps_precomputed!(ratio, v_pow_pq_m2_scale, v_pow_pq_m2_offset_i)
+                hdr_pow_ps(ratio, HDR_PQ_M2)
             }};
         }
 
         macro_rules! pq_to_nits_ps {
             ($v:expr) => {{
-                let p = fast_pow_ps_precomputed!(
-                    _mm256_max_ps($v, v_zero),
-                    v_pow_pq_inv_m2_scale,
-                    v_pow_pq_inv_m2_offset_i
-                );
+                let p = hdr_pow_ps(_mm256_max_ps($v, v_zero), HDR_PQ_INV_M2);
                 let num = _mm256_max_ps(_mm256_sub_ps(p, v_c1), v_zero);
                 let den = _mm256_max_ps(_mm256_sub_ps(v_c2, _mm256_mul_ps(v_c3, p)), v_eps);
                 let ratio = _mm256_div_ps(num, den);
                 _mm256_mul_ps(
-                    fast_pow_ps_precomputed!(
-                        _mm256_max_ps(ratio, v_zero),
-                        v_pow_pq_inv_m1_scale,
-                        v_pow_pq_inv_m1_offset_i
-                    ),
+                    hdr_pow_ps(_mm256_max_ps(ratio, v_zero), HDR_PQ_INV_M1),
                     v_pq_abs,
                 )
             }};
         }
 
-        macro_rules! srgb_gamma_ps {
-            ($v:expr) => {{
-                let clamped = _mm256_min_ps(_mm256_max_ps($v, v_zero), v_one);
-                let lin = _mm256_mul_ps(clamped, v_srgb_linear_scale);
-                let pow_approx =
-                    fast_pow_ps_precomputed!(clamped, v_pow_srgb_scale, v_pow_srgb_offset_i);
-                let gamma = mul_add_ps!(v_srgb_a, pow_approx, v_srgb_b);
-                let mask = _mm256_cmp_ps(clamped, v_srgb_threshold, _CMP_GT_OQ);
-                let encoded = _mm256_blendv_ps(lin, gamma, mask);
-                mul_add_ps!(encoded, v_255, v_half)
-            }};
-        }
-
         macro_rules! pack_rgba_ps {
             ($r:expr, $g:expr, $b:expr, $a:expr) => {{
-                let r_srgb = srgb_gamma_ps!($r);
-                let g_srgb = srgb_gamma_ps!($g);
-                let b_srgb = srgb_gamma_ps!($b);
-                let a_srgb = mul_add_ps!($a, v_255, v_half);
-
-                let r_i = _mm256_cvttps_epi32(r_srgb);
-                let g_i = _mm256_cvttps_epi32(g_srgb);
-                let b_i = _mm256_cvttps_epi32(b_srgb);
-                let a_i = _mm256_cvttps_epi32(a_srgb);
+                let r_i = hdr_srgb_bytes_ps($r, srgb_lut_ptr);
+                let g_i = hdr_srgb_bytes_ps($g, srgb_lut_ptr);
+                let b_i = hdr_srgb_bytes_ps($b, srgb_lut_ptr);
+                let a_i = if FORCE_OPAQUE_ALPHA {
+                    _mm256_set1_epi32(255)
+                } else {
+                    _mm256_cvttps_epi32(mul_add_ps!($a, v_255, v_half))
+                };
 
                 let g_shifted = _mm256_slli_epi32(g_i, 8);
                 let b_shifted = _mm256_slli_epi32(b_i, 16);
@@ -1919,131 +1877,74 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_inner<
                 g = _mm256_mul_ps(g, v_inv_boost);
                 b = _mm256_mul_ps(b, v_inv_boost);
 
-                let max_rgb = _mm256_max_ps(r, _mm256_max_ps(g, b));
-                let sdr_mask_ps = _mm256_cmp_ps(max_rgb, v_sdr_threshold, _CMP_LE_OQ);
-                let sdr_mask_bits = _mm256_movemask_ps(sdr_mask_ps);
-                if sdr_mask_bits == 0xFF {
-                    pack_rgba_ps!(r, g, b, a)
+                let rg_luma = mul_add_ps!(v_luma_g, g, _mm256_mul_ps(r, v_luma_r));
+                let y_in = mul_add_ps!(v_luma_b, b, rg_luma);
+                let y_in_pos = _mm256_max_ps(y_in, v_zero);
+                let y_out = if USE_LUT {
+                    let lut_idx_f =
+                        _mm256_mul_ps(_mm256_min_ps(y_in_pos, v_lut_input_max), v_lut_inv_step);
+                    let lut_idx = _mm256_cvttps_epi32(lut_idx_f);
+                    let lut_idx_next =
+                        _mm256_min_epi32(_mm256_add_epi32(lut_idx, v_i32_one), v_lut_last_idx);
+                    let lut_frac = _mm256_sub_ps(lut_idx_f, _mm256_cvtepi32_ps(lut_idx));
+                    let y0 = _mm256_i32gather_ps(lut_ptr, lut_idx, 4);
+                    let y1 = _mm256_i32gather_ps(lut_ptr, lut_idx_next, 4);
+                    _mm256_add_ps(y0, _mm256_mul_ps(lut_frac, _mm256_sub_ps(y1, y0)))
                 } else {
-                    let all_hdr = sdr_mask_bits == 0;
-                    let rg_luma = mul_add_ps!(v_luma_g, g, _mm256_mul_ps(r, v_luma_r));
-                    let y_in = mul_add_ps!(v_luma_b, b, rg_luma);
-                    let y_in_pos = _mm256_max_ps(y_in, v_zero);
-                    let y_out = if USE_LUT {
-                        let lut_idx_f =
-                            _mm256_mul_ps(_mm256_min_ps(y_in_pos, v_lut_input_max), v_lut_inv_step);
-                        let lut_idx = _mm256_cvttps_epi32(lut_idx_f);
-                        let lut_idx_next =
-                            _mm256_min_epi32(_mm256_add_epi32(lut_idx, v_i32_one), v_lut_last_idx);
-                        let lut_frac = _mm256_sub_ps(lut_idx_f, _mm256_cvtepi32_ps(lut_idx));
-                        let y0 = _mm256_i32gather_ps(lut_ptr, lut_idx, 4);
-                        let y1 = _mm256_i32gather_ps(lut_ptr, lut_idx_next, 4);
-                        _mm256_add_ps(y0, _mm256_mul_ps(lut_frac, _mm256_sub_ps(y1, y0)))
-                    } else {
-                        let l_in_nits = _mm256_max_ps(
-                            _mm256_mul_ps(y_in_pos, v_sdr_ref_white),
-                            v_hdr_input_black,
-                        );
+                    let l_in_nits =
+                        _mm256_max_ps(_mm256_mul_ps(y_in_pos, v_sdr_ref_white), v_hdr_input_black);
 
-                        let x = nits_to_pq_ps!(l_in_nits);
-                        let mut y = _mm256_div_ps(_mm256_sub_ps(x, v_bt_ib), v_bt_denom);
+                    let x = nits_to_pq_ps!(l_in_nits);
+                    let mut y = _mm256_div_ps(_mm256_sub_ps(x, v_bt_ib), v_bt_denom);
 
-                        let tb = _mm256_div_ps(_mm256_sub_ps(y, v_bt_ks), v_bt_one_minus_ks_safe);
-                        let tb2 = _mm256_mul_ps(tb, tb);
-                        let tb3 = _mm256_mul_ps(tb2, tb);
-                        let poly = _mm256_add_ps(
-                            _mm256_add_ps(
-                                _mm256_mul_ps(
-                                    _mm256_add_ps(
-                                        _mm256_sub_ps(
-                                            _mm256_mul_ps(v_two, tb3),
-                                            _mm256_mul_ps(v_three, tb2),
-                                        ),
-                                        v_one,
-                                    ),
-                                    v_bt_ks,
-                                ),
-                                _mm256_mul_ps(
-                                    _mm256_add_ps(
-                                        _mm256_sub_ps(tb3, _mm256_mul_ps(v_two, tb2)),
-                                        tb,
-                                    ),
-                                    v_bt_one_minus_ks,
-                                ),
-                            ),
+                    let tb = _mm256_div_ps(_mm256_sub_ps(y, v_bt_ks), v_bt_one_minus_ks_safe);
+                    let tb2 = _mm256_mul_ps(tb, tb);
+                    let tb3 = _mm256_mul_ps(tb2, tb);
+                    let poly = _mm256_add_ps(
+                        _mm256_add_ps(
                             _mm256_mul_ps(
                                 _mm256_add_ps(
-                                    _mm256_mul_ps(v_neg_two, tb3),
-                                    _mm256_mul_ps(v_three, tb2),
+                                    _mm256_sub_ps(
+                                        _mm256_mul_ps(v_two, tb3),
+                                        _mm256_mul_ps(v_three, tb2),
+                                    ),
+                                    v_one,
                                 ),
-                                v_bt_max_lum,
+                                v_bt_ks,
                             ),
-                        );
-                        y = _mm256_blendv_ps(y, poly, _mm256_cmp_ps(y, v_bt_ks, _CMP_GE_OQ));
+                            _mm256_mul_ps(
+                                _mm256_add_ps(_mm256_sub_ps(tb3, _mm256_mul_ps(v_two, tb2)), tb),
+                                v_bt_one_minus_ks,
+                            ),
+                        ),
+                        _mm256_mul_ps(
+                            _mm256_add_ps(
+                                _mm256_mul_ps(v_neg_two, tb3),
+                                _mm256_mul_ps(v_three, tb2),
+                            ),
+                            v_bt_max_lum,
+                        ),
+                    );
+                    y = _mm256_blendv_ps(y, poly, _mm256_cmp_ps(y, v_bt_ks, _CMP_GE_OQ));
 
-                        let one_minus_y = _mm256_max_ps(_mm256_sub_ps(v_one, y), v_zero);
-                        let one_minus_y2 = _mm256_mul_ps(one_minus_y, one_minus_y);
-                        let one_minus_y4 = _mm256_mul_ps(one_minus_y2, one_minus_y2);
-                        let y_black = mul_add_ps!(v_bt_min_lum, one_minus_y4, y);
-                        y = _mm256_blendv_ps(y, y_black, _mm256_cmp_ps(y, v_zero, _CMP_GE_OQ));
+                    let one_minus_y = _mm256_max_ps(_mm256_sub_ps(v_one, y), v_zero);
+                    let one_minus_y2 = _mm256_mul_ps(one_minus_y, one_minus_y);
+                    let one_minus_y4 = _mm256_mul_ps(one_minus_y2, one_minus_y2);
+                    let y_black = mul_add_ps!(v_bt_min_lum, one_minus_y4, y);
+                    y = _mm256_blendv_ps(y, y_black, _mm256_cmp_ps(y, v_zero, _CMP_GE_OQ));
 
-                        let mapped_pq = _mm256_min_ps(
-                            _mm256_max_ps(mul_add_ps!(y, v_bt_denom, v_bt_ib), v_bt_ob),
-                            v_bt_ow,
-                        );
-                        _mm256_max_ps(
-                            _mm256_div_ps(pq_to_nits_ps!(mapped_pq), v_sdr_ref_white),
-                            v_zero,
-                        )
-                    };
+                    let mapped_pq = _mm256_min_ps(
+                        _mm256_max_ps(mul_add_ps!(y, v_bt_denom, v_bt_ib), v_bt_ob),
+                        v_bt_ow,
+                    );
+                    _mm256_max_ps(
+                        _mm256_div_ps(pq_to_nits_ps!(mapped_pq), v_sdr_ref_white),
+                        v_zero,
+                    )
+                };
 
-                    let safe_y_in = _mm256_max_ps(y_in_pos, v_eps);
-                    let scale = _mm256_div_ps(y_out, safe_y_in);
-                    let mut r_hdr = _mm256_mul_ps(r, scale);
-                    let mut g_hdr = _mm256_mul_ps(g, scale);
-                    let mut b_hdr = _mm256_mul_ps(b, scale);
-
-                    let low_luma_mask = _mm256_cmp_ps(y_in_pos, v_eps, _CMP_LE_OQ);
-                    let low_luma_bits = _mm256_movemask_ps(low_luma_mask);
-                    if low_luma_bits != 0 {
-                        if low_luma_bits == 0xFF {
-                            r_hdr = v_zero;
-                            g_hdr = v_zero;
-                            b_hdr = v_zero;
-                        } else {
-                            r_hdr = _mm256_blendv_ps(r_hdr, v_zero, low_luma_mask);
-                            g_hdr = _mm256_blendv_ps(g_hdr, v_zero, low_luma_mask);
-                            b_hdr = _mm256_blendv_ps(b_hdr, v_zero, low_luma_mask);
-                        }
-                    }
-
-                    let max_hdr = _mm256_max_ps(r_hdr, _mm256_max_ps(g_hdr, b_hdr));
-                    let compress_mask = _mm256_cmp_ps(max_hdr, v_one, _CMP_GT_OQ);
-                    let compress_bits = _mm256_movemask_ps(compress_mask);
-                    if compress_bits != 0 {
-                        let inv_max_hdr = _mm256_div_ps(v_one, _mm256_max_ps(max_hdr, v_one));
-                        if compress_bits == 0xFF {
-                            r_hdr = _mm256_mul_ps(r_hdr, inv_max_hdr);
-                            g_hdr = _mm256_mul_ps(g_hdr, inv_max_hdr);
-                            b_hdr = _mm256_mul_ps(b_hdr, inv_max_hdr);
-                        } else {
-                            let compress_scale =
-                                _mm256_blendv_ps(v_one, inv_max_hdr, compress_mask);
-                            r_hdr = _mm256_mul_ps(r_hdr, compress_scale);
-                            g_hdr = _mm256_mul_ps(g_hdr, compress_scale);
-                            b_hdr = _mm256_mul_ps(b_hdr, compress_scale);
-                        }
-                    }
-
-                    if all_hdr {
-                        pack_rgba_ps!(r_hdr, g_hdr, b_hdr, a)
-                    } else {
-                        let r_final = _mm256_blendv_ps(r_hdr, r, sdr_mask_ps);
-                        let g_final = _mm256_blendv_ps(g_hdr, g, sdr_mask_ps);
-                        let b_final = _mm256_blendv_ps(b_hdr, b, sdr_mask_ps);
-                        pack_rgba_ps!(r_final, g_final, b_final, a)
-                    }
-                }
+                let [r_hdr, g_hdr, b_hdr] = scale_hdr_rgb_ps([r, g, b], y_in_pos, y_out);
+                pack_rgba_ps!(r_hdr, g_hdr, b_hdr, a)
             }};
         }
 

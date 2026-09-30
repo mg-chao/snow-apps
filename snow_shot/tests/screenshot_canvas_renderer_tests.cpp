@@ -710,12 +710,22 @@ void overlayCameraPreservesDesktopPixels() {
 }
 
 QImage renderPinnedResult(const QImage& source, const QTransform& canvasToView,
-                          qreal devicePixelRatio) {
+                          qreal devicePixelRatio, bool ocrFiltered = false) {
     SnowCanvasWidget canvas;
     ScreenshotCanvasRenderer renderer(canvas);
     const QRectF canvasRect(QPointF(), QSizeF(source.size()));
     renderer.setImage(source, canvasRect);
     renderer.setPinnedResultSurface(canvasRect, canvasRect, {});
+    if (ocrFiltered) {
+        QImage background(source.size(), source.format());
+        background.fill(Qt::black);
+        renderer.setImage(background, canvasRect);
+        auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+        presentation->selection = source.rect();
+        renderer.setOcrPresentation(presentation,
+                                    ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
+        renderer.setOcrFilteredImage(source, canvasRect);
+    }
 
     const QRectF targetRect = canvasToView.mapRect(canvasRect);
     const QSize deviceSize(qCeil(targetRect.width() * devicePixelRatio),
@@ -726,6 +736,7 @@ QImage renderPinnedResult(const QImage& source, const QTransform& canvasToView,
     QPainter painter(&output);
     const QRect logicalViewport(QPoint(),
                                 QSize(qCeil(targetRect.width()), qCeil(targetRect.height())));
+    painter.setRenderHint(QPainter::Antialiasing, true);
     const SnowCanvasRenderContext context{
         logicalViewport,
         QRegion(logicalViewport),
@@ -758,16 +769,6 @@ void pinnedResultDownscaleUsesLinearFiltering() {
             const int lightness = downscaled.pixelColor(x, y).lightness();
             require(lightness >= 112 && lightness <= 143,
                     "a 2:1 shrink should average the checkerboard instead of dropping pixels");
-        }
-    }
-
-    const QImage upscaled = renderPinnedResult(checker, QTransform::fromScale(2.0, 2.0), 1.0);
-    require(upscaled.size() == QSize(32, 32),
-            "the zoomed-in pinned result should render at double size");
-    for (int y = 0; y < upscaled.height(); ++y) {
-        for (int x = 0; x < upscaled.width(); ++x) {
-            require(upscaled.pixel(x, y) == checker.pixel(x / 2, y / 2),
-                    "a 2:1 zoom should replicate source pixels instead of blurring them");
         }
     }
 
@@ -820,14 +821,25 @@ void pinnedFiltersUseTheSourceResolution() {
     require(canvas.resetEditingStatePreservingTool(), "clear pinned filter selection");
     canvas.setInteractionEnabled(false);
     const QImage baseline = renderCanvas(canvas);
-    canvas.resize(320, 240);
-    require(canvas.setViewportCamera(40, 30, 4), "double pinned window scale");
-    const QImage doubled = renderCanvas(canvas);
-    for (int y = 0; y < doubled.height(); ++y) {
-        for (int x = 0; x < doubled.width(); ++x) {
-            require(doubled.pixel(x, y) == baseline.pixel(x / 2, y / 2),
-                    "pinned mosaic must scale its source pixels instead of rerendering");
-        }
+    for (const auto [scale, dpr] :
+         {std::pair{0.5, 1.0}, {0.75, 1.25}, {1.0, 1.0}, {1.0, 2.0}, {1.5, 1.0}, {2.0, 1.0}}) {
+        canvas.resize(qRound(160 * scale), qRound(120 * scale));
+        require(canvas.setViewportCamera(40, 30, 2 * scale), "scale pinned window");
+        const QImage scaled = renderCanvas(canvas, dpr);
+        const QImage expected =
+            renderPinnedResult(baseline, QTransform::fromScale(scale, scale), dpr);
+        require(scaled.size() == expected.size(),
+                "scaled pins must keep the physical viewport size");
+        // QWidget::render clips the fractional device-pixel fringe differently from a direct
+        // renderer call. Compare every fully covered pixel on the shared physical grid.
+        const QRect completePixels(
+            QPoint(), QSize(qFloor(canvas.width() * dpr), qFloor(canvas.height() * dpr)));
+        const bool matches = scaled.copy(completePixels) == expected.copy(completePixels);
+        if (!matches)
+            std::cerr << "Pinned interior mismatch: scale=" << scale << ", dpr=" << dpr << '\n';
+        require(matches,
+                "pinned mosaic must resample its source-resolution result like an ordinary pin "
+                "without rerendering the filter at the viewport resolution");
     }
     const auto revision = renderer.contentRevision();
     ScreenshotResultStyle style;
@@ -838,6 +850,38 @@ void pinnedFiltersUseTheSourceResolution() {
     require(renderCanvas(canvas).pixelColor(0, 0).alpha() == 0,
             "reference output must refresh pinned transparency after an appearance change");
     canvas.setCustomRenderer(nullptr);
+}
+
+void pinnedResultUpscaleUsesLinearFiltering() {
+    const QImage checker = checkerboardFixture(QSize(16, 16));
+    for (const bool ocrFiltered : {false, true}) {
+        for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+            for (const qreal scale : {1.5, 2.0}) {
+                const QImage upscaled = renderPinnedResult(
+                    checker, QTransform::fromScale(scale / dpr, scale / dpr), dpr, ocrFiltered);
+                require(upscaled.size() == QSize(qRound(16 * scale), qRound(16 * scale)),
+                        "the enlarged pin should render at its physical viewport size");
+                for (int y = 1; y < upscaled.height() - 1; ++y) {
+                    for (int x = 1; x < upscaled.width() - 1; ++x) {
+                        const qreal sourceX = (x + 0.5) / scale - 0.5;
+                        const qreal sourceY = (y + 0.5) / scale - 0.5;
+                        const int left = qFloor(sourceX);
+                        const int top = qFloor(sourceY);
+                        const qreal weightX = sourceX - left;
+                        const qreal weightY = sourceY - top;
+                        const qreal oppositeWeight = weightX + weightY - 2 * weightX * weightY;
+                        const int expected = qRound(
+                            255 * ((left + top) % 2 == 0 ? 1 - oppositeWeight : oppositeWeight));
+                        const QColor pixel = upscaled.pixelColor(x, y);
+                        require(qAbs(pixel.red() - expected) <= 3 && pixel.red() == pixel.green() &&
+                                    pixel.red() == pixel.blue() && pixel.alpha() == 255,
+                                "enlarged pins and OCR backgrounds must blend neighboring pixels "
+                                "with bilinear filtering at every display DPI");
+                    }
+                }
+            }
+        }
+    }
 }
 
 void pinnedCheckerboardStaysBehindTransparentPixels() {
@@ -5384,6 +5428,11 @@ int main(int argc, char** argv) {
         physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--pinned-result-scaling"))) {
+        pinnedResultDownscaleUsesLinearFiltering();
+        pinnedResultUpscaleUsesLinearFiltering();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--text-wheel-only"))) {
         overlayPassesTextDraftWheelToCanvas();
         return 0;
@@ -5510,6 +5559,7 @@ int main(int argc, char** argv) {
     overlayCameraPreservesDesktopPixels();
     physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
     pinnedResultDownscaleUsesLinearFiltering();
+    pinnedResultUpscaleUsesLinearFiltering();
     pinnedCheckerboardStaysBehindTransparentPixels();
     largeRasterSourceExtentsRenderWithoutFixedPointWrap();
     smoothLargeImageChunkBoundariesRemainPixelEquivalent();

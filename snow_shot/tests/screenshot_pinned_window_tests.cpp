@@ -31,6 +31,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrlayout.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
@@ -5185,6 +5186,105 @@ void pinnedOffscreenDoubleClickActions() {
     require(processUntilDeleted(guarded, 2000), "offscreen Close must delete the clicked window");
 }
 
+void pinnedOcrDoubleClickCopiesLocally() {
+#ifdef Q_OS_WIN
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "load offscreen pinned double-click font");
+    QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString previousAction = settings.doubleClickAction();
+    const auto restore = qScopeGuard([&]() { settings.setDoubleClickAction(previousAction); });
+    require(settings.setDoubleClickAction(QStringLiteral("close")),
+            "configure background double-click Close");
+    auto config = cachedOcrPinConfig(nullptr);
+    auto source = config.recognitionResults.text->presentation;
+    source->lines = {
+        ScreenshotOcrLine{
+            QStringLiteral("This is the first line"),
+            0.95,
+            {QPointF(680, 405), QPointF(860, 405), QPointF(860, 425), QPointF(680, 425)}},
+        ScreenshotOcrLine{
+            QStringLiteral("continued on the next line"),
+            0.95,
+            {QPointF(680, 429), QPointF(890, 429), QPointF(890, 449), QPointF(680, 449)}},
+    };
+    source->prepareForRendering();
+    auto translation = std::make_shared<ScreenshotOcrPresentation>();
+    translation->selection = source->selection;
+    translation->lines =
+        snow_shot::presentation::mergeOcrLayout(source->lines, source->selection.topLeft());
+    require(translation->lines.size() == 1 && translation->lines[0].paragraph,
+            "pinned translation fixture merges two source boxes");
+    translation->setLineText(0, QStringLiteral("Translated, paragraph\n\U0001f642"));
+    translation->prepareForRendering();
+    config.recognitionResults.translatedText = translation;
+    ScreenshotPinnedWindow window;
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    auto* session = ScreenshotPinnedWindowTestAccess::recognitionOffscreen(window, config);
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>();
+    require(content != nullptr, "pinned double-click recognition content exists");
+    // Match ensureRecognitionContent's parent event filter while bypassing native presentation.
+    content->installEventFilter(&window);
+    require(content->present({config.screen, &window, window.rect(), config.canvasSourceRect,
+                              ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}),
+            "pinned double-click overlay presents offscreen");
+    window.show();
+    content->show();
+    window.activateWindow();
+    QApplication::processEvents();
+    const auto doubleClickText = [&]() {
+        auto* layer = content->findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+        require(layer != nullptr && !layer->scene()->items().isEmpty(),
+                "pinned text overlay has rendered blocks");
+        const QPoint point = layer->viewport()->mapTo(
+            content,
+            layer->mapFromScene(layer->scene()->items().front()->sceneBoundingRect().center()));
+        require(!content->isOcrBackgroundAt(point), "pinned double-click targets recognized text");
+        QWidget* receiver = content->childAt(point);
+        require(receiver != nullptr, "pinned double-click reaches the actual child receiver");
+        const QPoint local = receiver->mapFrom(content, point);
+        for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease,
+                                QEvent::MouseButtonDblClick, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(
+                type, QPointF(local), QPointF(receiver->mapToGlobal(local)), Qt::LeftButton,
+                type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(receiver, &event);
+        }
+    };
+    QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+    doubleClickText();
+    const auto& displayed = ScreenshotPinnedWindowTestAccess::displayedRecognition(window);
+    const QString selected = displayed.selectedText();
+    require(!selected.isEmpty() && QApplication::clipboard()->text() == selected &&
+                !selected.contains(QLatin1Char('\n')) && !displayed.textSelectionActive() &&
+                window.isVisible() && session->active(),
+            "pinned OCR double-click copies only its box and keeps recognition open");
+    require(session->activateCachedTextTranslation(), "show cached merged image translation");
+    doubleClickText();
+    require(QApplication::clipboard()->text() == translation->lines[0].text &&
+                ScreenshotPinnedWindowTestAccess::displayedRecognition(window).selectedText() ==
+                    translation->lines[0].text &&
+                window.isVisible() && session->active() &&
+                session->cachedRecognitionResults().text->presentation->lines[0].text ==
+                    source->lines[0].text,
+            "pinned merged paragraph copies translated display text without changing source OCR");
+    const QPoint background(12, content->height() - 20);
+    require(content->isOcrBackgroundAt(background), "pinned fixture retains blank background");
+    QMouseEvent backgroundDoubleClick(QEvent::MouseButtonDblClick, QPointF(background),
+                                      QPointF(content->mapToGlobal(background)), Qt::LeftButton,
+                                      Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(content, &backgroundDoubleClick);
+    require(window.isVisible(), "background Close waits for the second release");
+    releaseCloseGesture(window, Qt::LeftButton);
+    QElapsedTimer closing;
+    closing.start();
+    while (window.isVisible() && closing.elapsed() < 2000) {
+        waitForUi(1);
+    }
+    require(!window.isVisible(), "pinned background double-click retains its configured action");
+}
+
 void pinnedOcrDoubleClickUsesDragRegion(bool middleClick = false) {
     const snow_shot::storage::PinToScreenSettings settings;
     const QString previousAction = settings.doubleClickAction();
@@ -8172,6 +8272,69 @@ void pinnedClickThroughOffscreen() {
     require(guardedExit.isNull(), "closing the pin must destroy the separate exit surface");
 }
 
+void verifyPinnedWindowManagementShortcut(ScreenshotPinnedWindow& window, QAction& action,
+                                          const QString& actionId, Qt::Key key,
+                                          bool snow_shot::storage::PinnedWindowRecord::* state) {
+    const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
+    const auto original = shortcuts.shortcuts(actionId);
+    const auto checkState = [&](bool enabled) {
+        require(action.isChecked() == enabled && window.persistenceSnapshot().*state == enabled,
+                "window management shortcuts must synchronize menu and persisted state");
+    };
+    const auto checkDisplay = [&](const auto& bindings) {
+        require(
+            action.text().endsWith(QStringLiteral("\t") +
+                                   snow_shot::shortcuts::formatShortcutListDisplayText(bindings)),
+            "window management menus must display their configured shortcuts");
+    };
+    checkDisplay(original);
+    checkState(true);
+    sendShortcut(window, key);
+    checkState(false);
+    sendShortcut(window, key);
+    checkState(true);
+
+    QLineEdit textInput(&window);
+    textInput.show();
+    window.activateWindow();
+    textInput.setFocus();
+    waitForUi(20);
+    require(textInput.hasFocus(), "window management typing guard must own focus");
+    sendShortcut(textInput, key);
+    checkState(true);
+    textInput.hide();
+    window.setFocus();
+
+    const auto remapped = snow_shot::shortcuts::bindingsFromPortableText(
+        {QStringLiteral("Ctrl+Alt+") + QKeySequence(key).toString(QKeySequence::PortableText)});
+    require(shortcuts.setShortcuts(actionId, remapped),
+            "window management shortcuts must be remappable");
+    checkDisplay(remapped);
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    checkDisplay(remapped);
+    sendShortcut(window, key);
+    checkState(true);
+    sendShortcut(window, key, Qt::ControlModifier | Qt::AltModifier);
+    checkState(false);
+    sendShortcut(window, key, Qt::ControlModifier | Qt::AltModifier);
+    checkState(true);
+
+    require(shortcuts.setShortcuts(actionId, {}),
+            "window management shortcuts must support disabling");
+    require(!action.text().contains(QLatin1Char('\t')),
+            "disabling a shortcut must clear its menu hint");
+    sendShortcut(window, key, Qt::ControlModifier | Qt::AltModifier);
+    checkState(true);
+    require(shortcuts.setShortcuts(actionId, original),
+            "restore the original window management shortcut");
+    checkDisplay(original);
+    sendShortcut(window, key);
+    checkState(false);
+    sendShortcut(window, key);
+    checkState(true);
+}
+
 void pinnedAlwaysOnTopOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -8228,6 +8391,9 @@ void pinnedAlwaysOnTopOffscreen() {
             "re-checking must restore the topmost band for the pin and its click-through controls");
     static_cast<void>(Access::setClickThrough(window, false));
 
+    verifyPinnedWindowManagementShortcut(window, *alwaysOnTop, QStringLiteral("always_on_top"),
+                                         Qt::Key_T,
+                                         &snow_shot::storage::PinnedWindowRecord::alwaysOnTop);
     window.close();
 
     // A restored pin adopts its saved stacking band before the menu opens.
@@ -8821,6 +8987,9 @@ void pinnedShowBorderOffscreen() {
                      QColor(QStringLiteral("#DBDBDB")), 0,
                      "re-checking must repaint the border rim");
 
+    verifyPinnedWindowManagementShortcut(window, *showBorder, QStringLiteral("show_border"),
+                                         Qt::Key_B,
+                                         &snow_shot::storage::PinnedWindowRecord::showBorder);
     window.close();
 
     // A restored pin adopts its saved border visibility before the menu opens.
@@ -9612,6 +9781,15 @@ void pinnedDrawingShortcutsToggleActiveTool() {
                 palette->activeToolForTests() == ScreenshotToolPalette::Tool::Move &&
                 !canvas->interactionEnabled(),
             "M must reactivate Resize window and disable canvas interaction");
+    const bool alwaysOnTop = window->persistenceSnapshot().alwaysOnTop;
+    pressKey(Qt::Key_T);
+    require(canvas->canvasTool() == SnowCanvasTool::Text &&
+                window->persistenceSnapshot().alwaysOnTop == alwaysOnTop,
+            "the drawing Text shortcut must take precedence over Always on Top");
+    pressKey(Qt::Key_T);
+    require(canvas->canvasTool() == SnowCanvasTool::Select &&
+                window->persistenceSnapshot().alwaysOnTop == alwaysOnTop,
+            "toggling the Text tool off must preserve the pin's stacking state");
     for (const auto& [key, tool] : {std::pair{Qt::Key_P, SnowCanvasTool::FreeDraw},
                                     std::pair{Qt::Key_1, SnowCanvasTool::Shape}}) {
         pressKey(key);
@@ -10885,6 +11063,109 @@ void pinnedDragExportOffscreen() {
 }
 
 #ifdef Q_OS_WIN
+void pinnedCtrlHoverKeepsWindowCursorOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "Ctrl hover fixture requires a canvas");
+    canvas->setInteractionEnabled(false);
+    auto snapConfig = canvas->canvasSnapConfig();
+    snapConfig.enabled = true;
+    require(canvas->setCanvasSnapConfig(snapConfig), "enable snapping for hover regression");
+
+    // Supply a hidden HWND for the native geometry query while Qt uses offscreen.
+    // Dispatching the actual native handler preserves the hit-test/mouse-move order.
+    const QRect geometry = Access::authority(window);
+    const HWND nativeWindow =
+        CreateWindowExW(0, L"STATIC", L"", WS_POPUP, geometry.x(), geometry.y(), geometry.width(),
+                        geometry.height(), nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    require(nativeWindow != nullptr, "create hidden hit-test geometry window");
+    const auto destroyNativeWindow = qScopeGuard([&] { DestroyWindow(nativeWindow); });
+    BYTE originalKeys[256]{};
+    require(GetKeyboardState(originalKeys), "capture thread keyboard state");
+    const auto restoreKeys = qScopeGuard([&] { SetKeyboardState(originalKeys); });
+    const auto hit = [&](const QPoint& local, Qt::KeyboardModifiers modifiers) {
+        BYTE keys[256]{};
+        keys[VK_CONTROL] = modifiers.testFlag(Qt::ControlModifier) ? 0x80 : 0;
+        keys[VK_SHIFT] = modifiers.testFlag(Qt::ShiftModifier) ? 0x80 : 0;
+        require(SetKeyboardState(keys), "set thread-local hover modifiers");
+        const QPoint point =
+            geometry.topLeft() +
+            QPoint(qRound(local.x() * double(geometry.width()) / window.width()),
+                   qRound(local.y() * double(geometry.height()) / window.height()));
+        MSG message{};
+        message.hwnd = nativeWindow;
+        message.message = WM_NCHITTEST;
+        message.lParam = MAKELPARAM(static_cast<WORD>(point.x()), static_cast<WORD>(point.y()));
+        qintptr result = 0;
+        require(PinnedWindowWindowsEvents::handle(window, QByteArrayLiteral("windows_generic_MSG"),
+                                                  &message, &result),
+                "native hover hit test handled");
+        return result;
+    };
+    const auto move = [&](const QPoint& local, Qt::KeyboardModifiers modifiers) {
+        const QPoint global = window.mapToGlobal(local);
+        QMouseEvent event(QEvent::MouseMove, canvas->mapFromGlobal(global), global, Qt::NoButton,
+                          Qt::NoButton, modifiers);
+        QCoreApplication::sendEvent(canvas, &event);
+    };
+    class CursorChanges final : public QObject {
+      public:
+        int count = 0;
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::CursorChange)
+                ++count;
+            return false;
+        }
+    } changes;
+    canvas->installEventFilter(&changes);
+    int snapChanges = 0;
+    QObject::connect(canvas, &SnowCanvasWidget::snapConfigChanged, &window, [&] { ++snapChanges; });
+    const QByteArray document = Access::dragDocument(window);
+    const bool snapping = canvas->canvasSnapConfig().enabled;
+    const QPoint center = window.rect().center();
+    for (bool editing : {false, true}) {
+        if (editing) {
+            Access::editSelectionOffscreen(window, true);
+            auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+            require(controller != nullptr, "resize-window hover requires an edit controller");
+            controller->activateResizeWindowTool();
+        }
+        require(!canvas->interactionEnabled(), "viewing and resize-window tools disable drawing");
+        require(hit(center, Qt::NoModifier) == HTCAPTION, "ordinary hover uses native caption");
+        move(center, Qt::NoModifier);
+        require(canvas->cursor().shape() == Qt::OpenHandCursor, "hover starts with window cursor");
+        changes.count = 0;
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
+        QCoreApplication::sendEvent(canvas, &press);
+        for (const auto modifiers :
+             {Qt::KeyboardModifiers(Qt::ControlModifier), Qt::ControlModifier | Qt::ShiftModifier,
+              Qt::KeyboardModifiers(Qt::NoModifier)}) {
+            for (int i = 0; i < 8; ++i) {
+                const QPoint local = center + QPoint(i, i);
+                require(hit(local, modifiers) ==
+                            (modifiers.testFlag(Qt::ControlModifier) ? HTCLIENT : HTCAPTION),
+                        "Ctrl routes export input to Qt without changing ordinary hit testing");
+                require(canvas->cursor().shape() == Qt::OpenHandCursor,
+                        "native Ctrl hit testing must retain window cursor ownership");
+                move(local, modifiers);
+                require(canvas->cursor().shape() == Qt::OpenHandCursor && changes.count == 0,
+                        "repeated native hit tests and Qt moves must not toggle the cursor");
+            }
+        }
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_Control, Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &release);
+        require(changes.count == 0 && snapChanges == 0 &&
+                    canvas->canvasSnapConfig().enabled == snapping &&
+                    Access::dragDocument(window) == document,
+                "disabled drawing input must preserve cursor, snapping, and document state");
+        require(hit(QPoint(1, 1), Qt::ControlModifier) == HTTOPLEFT,
+                "Ctrl must preserve native resize borders");
+    }
+    window.close();
+}
+
 void pinnedDragExportNativeHitTest() {
     using Access = ScreenshotPinnedWindowTestAccess;
     ScreenshotPinnedWindow window;
@@ -13756,6 +14037,10 @@ int main(int argc, char* argv[]) {
                 qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(), expectedDpr),
                 "pixel fixture must run at the registered DPR, independently of monitor settings");
 #ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--ctrl-hover-only"))) {
+            pinnedCtrlHoverKeepsWindowCursorOffscreen();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--drag-export-native-only"))) {
             pinnedDragExportNativeHitTest();
             return 0;
@@ -14075,6 +14360,10 @@ int main(int argc, char* argv[]) {
                 pinnedDoubleClickActions();
                 pinnedOcrDoubleClickUsesDragRegion();
             }
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--text-double-click-only"))) {
+            pinnedOcrDoubleClickCopiesLocally();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--translation-only"))) {
