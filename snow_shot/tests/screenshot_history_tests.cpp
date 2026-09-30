@@ -2342,7 +2342,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
             "failed to restore selection shortcuts after route test");
 }
 
-void screenshotCancelShortcutWorksWhileEditingCanvasText() {
+void screenshotTextEditingTakesPriorityOverCancelShortcut() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
     ScreenshotGeometryMapper geometry;
@@ -2350,25 +2350,17 @@ void screenshotCancelShortcutWorksWhileEditingCanvasText() {
     ScreenshotIntelligentSelectionModel intelligent;
     ScreenshotInteractionState interaction;
     interaction.confirmSelection();
-    SnowCanvasWidget canvas;
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
     canvas.resize(320, 240);
     canvas.show();
     QApplication::processEvents();
-    require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate text tool for cancellation");
     const QPointF position(80, 80);
-    QMouseEvent press(QEvent::MouseButtonPress, position, position, Qt::LeftButton, Qt::LeftButton,
-                      Qt::NoModifier);
-    QMouseEvent release(QEvent::MouseButtonRelease, position, position, Qt::LeftButton,
-                        Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(&canvas, &press);
-    QApplication::sendEvent(&canvas, &release);
-    PhysicalKeyEvent insert(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
-                            QStringLiteral("Keep this draft"));
-    QApplication::sendEvent(&canvas, &insert);
-    require(canvas.hasActiveTextEditing(), "cancellation fixture must edit a text draft");
-
     snow_shot::presentation::WindowShortcutManager manager;
     manager.addScopeWindow(&canvas);
+    QWidget toolbar;
+    toolbar.show();
+    manager.addScopeWindow(&toolbar);
     int cancellations = 0;
     ScreenshotOverlayInputActions actions;
     actions.localShortcutInputAllowed = [&] { return !canvas.hasActiveTextEditing(); };
@@ -2388,13 +2380,37 @@ void screenshotCancelShortcutWorksWhileEditingCanvasText() {
             QStringLiteral("cancel_screenshot"),
             {modifiers == Qt::NoModifier ? QStringLiteral("Esc") : QStringLiteral("Alt+Esc")});
         require(settings.setAllShortcutsAtomic(configured), "configure screenshot cancellation");
+        require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate text tool for cancellation");
+        QMouseEvent press(QEvent::MouseButtonPress, position, position, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, position, position, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &press);
+        QApplication::sendEvent(&canvas, &release);
+        require(canvas.hasActiveTextEditing(), "cancellation fixture must edit text");
+        require(dispatchShortcut(canvas, Qt::Key_A, Qt::ControlModifier),
+                "select the complete draft before replacement");
+        PhysicalKeyEvent insert(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
+                                QStringLiteral("Keep this draft"));
+        QApplication::sendEvent(&canvas, &insert);
         const int before = cancellations;
         require(dispatchShortcut(canvas, Qt::Key_Escape, modifiers) && cancellations == before,
-                "cancel must reserve Escape during text editing and wait for release");
-        require(canvas.hasActiveTextEditing(), "cancel press must not delete the text draft");
-        require(dispatchShortcutRelease(canvas, Qt::Key_Escape) && cancellations == before + 1,
-                "cancel release must reach the screenshot session while editing text");
-        require(canvas.hasActiveTextEditing(), "shortcut routing must not discard text itself");
+                "Escape must finish text editing before screenshot cancellation");
+        require(!canvas.hasActiveTextEditing() &&
+                    !canvas.testAttribute(Qt::WA_InputMethodEnabled) &&
+                    canvas.canvasHistoryState().canUndo,
+                "Escape must commit text and end input mode in the screenshot window");
+        const QByteArray committed = runtime.serializeDocumentHistory();
+        require(committed.contains("Keep this draft"), "Escape must preserve the input content");
+        static_cast<void>(dispatchShortcut(canvas, Qt::Key_Escape, modifiers, true));
+        static_cast<void>(dispatchShortcutRelease(canvas, Qt::Key_Escape, modifiers, true));
+        static_cast<void>(dispatchShortcutRelease(toolbar, Qt::Key_Escape));
+        require(cancellations == before && runtime.serializeDocumentHistory() == committed,
+                "repeat and release after ending text editing must not terminate the screenshot");
+        require(dispatchShortcut(canvas, Qt::Key_Escape, modifiers) && cancellations == before,
+                "a fresh Escape press after editing must reserve screenshot cancellation");
+        require(dispatchShortcutRelease(toolbar, Qt::Key_Escape) && cancellations == before + 1,
+                "a fresh Escape release must still cancel the screenshot after editing ends");
     }
     require(settings.setAllShortcutsAtomic(original), "restore screenshot cancellation shortcuts");
 }
@@ -3021,15 +3037,11 @@ void scrollingCaptureRoutesEveryToolbarShortcut() {
                 "a declined toolbar command must not be replaced by a shortcut implementation");
         commandEnabled = true;
         inputAllowed = false;
-        if (command == QStringLiteral("cancel_screenshot")) {
-            require(dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
-                        dispatchShortcutRelease(window, Qt::Key_F12) && dispatched.size() == 2,
-                    "session cancellation must remain available while text input owns shortcuts");
-        } else {
-            require(!dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
-                        dispatched.size() == 1,
-                    "text input must retain drawing shortcuts while scrolling");
-        }
+        require(!dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
+                    dispatched.size() == 1,
+                "text input must retain shortcuts while scrolling, including cancellation");
+        static_cast<void>(dispatchShortcutRelease(window, Qt::Key_F12));
+        require(dispatched.size() == 1, "blocked shortcuts must not activate on release");
         inputAllowed = true;
     }
     require(settings.setAllShortcutsAtomic(original), "failed to restore toolbar shortcuts");
@@ -4214,7 +4226,7 @@ int main(int argc, char** argv) {
         configuredSelectionShortcutsRouteTabHistoryAndColorActions();
         intelligentSelectionSupportsCursorMovementShortcuts();
         cursorMovementEligibilityFollowsInteractionState();
-        screenshotCancelShortcutWorksWhileEditingCanvasText();
+        screenshotTextEditingTakesPriorityOverCancelShortcut();
         configuredScreenshotShortcutsControlMoveAndCursorNavigation();
         selectionStagesActivateEveryToolbarShortcut();
         toolbarSelectionPreparationRejectsIncompleteRegions();
@@ -4265,7 +4277,7 @@ int main(int argc, char** argv) {
     configuredSelectionShortcutsRouteTabHistoryAndColorActions();
     intelligentSelectionSupportsCursorMovementShortcuts();
     cursorMovementEligibilityFollowsInteractionState();
-    screenshotCancelShortcutWorksWhileEditingCanvasText();
+    screenshotTextEditingTakesPriorityOverCancelShortcut();
     configuredScreenshotShortcutsControlMoveAndCursorNavigation();
     shortcutExitConfirmationGatesCancellation();
     scrollingCaptureRoutesEveryToolbarShortcut();

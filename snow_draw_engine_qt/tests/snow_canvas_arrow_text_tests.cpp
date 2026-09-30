@@ -495,6 +495,102 @@ void taperedShaftsRenderAndRoundTrip() {
     }
 }
 
+void escapeKeyCommitsEditedText() {
+    for (const bool attached : {false, true}) {
+        for (const bool existing : {false, true}) {
+            for (const QString& content :
+                 {QString::fromUtf8("Saved\n连接 → response"), QString(), QStringLiteral(" \n ")}) {
+                SnowCanvasRuntime runtime;
+                SnowCanvasWidget canvas(runtime);
+                canvas.resize(600, 360);
+                canvas.show();
+                QApplication::processEvents();
+                if (attached) {
+                    createArrow(canvas, runtime);
+                } else {
+                    require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate text tool");
+                }
+                const auto beginEdit = [&] {
+                    if (attached) {
+                        openLabel(canvas);
+                    } else {
+                        mouse(canvas, QEvent::MouseButtonPress, {280.0, 180.0}, Qt::LeftButton,
+                              Qt::LeftButton);
+                        mouse(canvas, QEvent::MouseButtonRelease, {280.0, 180.0}, Qt::LeftButton,
+                              Qt::NoButton);
+                    }
+                    require(canvas.hasActiveTextEditing(), "begin text editing before Escape");
+                };
+                const QByteArray before = runtime.serializeDocumentHistory();
+                beginEdit();
+                if (existing) {
+                    key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("original"));
+                    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+                    beginEdit();
+                }
+                key(canvas, Qt::Key_A, Qt::ControlModifier);
+                key(canvas, Qt::Key_Backspace);
+                if (!content.isEmpty()) {
+                    QInputMethodEvent committed;
+                    committed.setCommitString(content);
+                    QApplication::sendEvent(&canvas, &committed);
+                }
+                QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+                QApplication::sendEvent(&canvas, &escape);
+                require(escape.isAccepted() && !canvas.hasActiveTextEditing(),
+                        "Escape is consumed and exits text input mode");
+                require(!canvas.testAttribute(Qt::WA_InputMethodEnabled),
+                        "Escape disables text input methods");
+                const bool hasContent = !content.trimmed().isEmpty();
+                require(records(runtime, QStringLiteral("Text")).size() == (hasContent ? 1 : 0),
+                        "Escape commits content without retaining empty text elements");
+                if (hasContent) {
+                    require(payload(runtime, QStringLiteral("Text"))
+                                    .value(QStringLiteral("text"))
+                                    .toString() == content,
+                            "Escape preserves multiline Unicode text exactly");
+                }
+                const QByteArray after = runtime.serializeDocumentHistory();
+                QKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+                QApplication::sendEvent(&canvas, &release);
+                require(runtime.serializeDocumentHistory() == after,
+                        "releasing Escape must not change the committed document or history");
+                if (attached) {
+                    require(records(runtime, QStringLiteral("Arrow")).size() == 1,
+                            "Escape preserves the label's arrow");
+                }
+                if (!existing && !hasContent) {
+                    require(after == before, "empty new drafts leave document history untouched");
+                    continue;
+                }
+                require(canvas.undo(), "Escape's text commit is undoable");
+                if (existing) {
+                    require(payload(runtime, QStringLiteral("Text"))
+                                    .value(QStringLiteral("text"))
+                                    .toString() == QStringLiteral("original"),
+                            "one undo restores the text from before editing");
+                } else {
+                    require(records(runtime, QStringLiteral("Text")).isEmpty(),
+                            "one undo removes the new text");
+                }
+                require(canvas.redo(), "Escape's text commit is redoable");
+                const auto saved = QJsonDocument::fromJson(after).object();
+                const auto redone =
+                    QJsonDocument::fromJson(runtime.serializeDocumentHistory()).object();
+                auto savedDocument = saved.value(QStringLiteral("document")).toObject();
+                auto redoneDocument = redone.value(QStringLiteral("document")).toObject();
+                // Every transaction advances the revision, including undo and redo.
+                savedDocument.remove(QStringLiteral("revision"));
+                redoneDocument.remove(QStringLiteral("revision"));
+                require(redoneDocument == savedDocument &&
+                            redone.value(QStringLiteral("history")) ==
+                                saved.value(QStringLiteral("history")),
+                        "redo restores the exact text, geometry, ownership, and history");
+            }
+        }
+    }
+}
+
 void deleteKeyRemovesEditedText() {
     for (const bool attached : {false, true}) {
         for (const bool existing : {false, true}) {
@@ -620,10 +716,6 @@ void widgetLifecycle() {
     const QByteArray before = runtime.serializeDocumentHistory();
     openLabel(canvas);
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("cancelled"));
-    const QImage draftBeforeEscape = canvas.grab().toImage();
-    key(canvas, Qt::Key_Escape);
-    require(canvas.hasActiveTextEditing(), "Escape preserves new text editing");
-    require(canvas.grab().toImage() == draftBeforeEscape, "Escape preserves the visible draft");
     require(canvas.cancelActiveTextEditing(), "explicit cancellation ends the draft");
     require(!canvas.hasActiveTextEditing(), "explicit cancellation closes the draft");
     require(runtime.serializeDocumentHistory() == before,
@@ -661,11 +753,10 @@ void widgetLifecycle() {
     key(canvas, Qt::Key_A, Qt::ControlModifier);
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("replacement"));
     key(canvas, Qt::Key_Escape);
-    require(canvas.hasActiveTextEditing(), "Escape preserves existing label editing");
-    key(canvas, Qt::Key_Return, Qt::ControlModifier);
+    require(!canvas.hasActiveTextEditing(), "Escape ends existing label editing");
     require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
                 QStringLiteral("replacement"),
-            "Escape preserves edits for commit");
+            "Escape commits existing label edits");
     require(canvas.undo(), "restore original label after checking Escape");
     require(canvas.editSelectedArrowText(), "reopen label for explicit cancellation");
     require(canvas.cancelActiveTextEditing(), "explicit cancellation ends the draft");
@@ -1048,6 +1139,7 @@ int main(int argc, char** argv) {
     if (app.arguments().contains(QStringLiteral("--shafts-only")))
         return 0;
     indentedTriangleStyleRoundTrips();
+    escapeKeyCommitsEditedText();
     deleteKeyRemovesEditedText();
     commandResolverPreservesTextAndEngineCommands();
     widgetLifecycle();

@@ -213,13 +213,14 @@ void keyCommandsInsertTextAndReportEditorCommands() {
     require(commitResult.command == snow_canvas_text_editor_input::EventCommand::Commit,
             "control-enter should request commit");
 
-    QKeyEvent cancelEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
-    const snow_canvas_text_editor_input::KeyResult cancelResult =
-        snow_canvas_text_editor_input::handleKeyPress(&cancelEvent, draft, {});
-    require(cancelResult.handled, "escape should be handled");
-    require(!cancelResult.changed, "escape should not mutate draft text");
-    require(cancelResult.command == snow_canvas_text_editor_input::EventCommand::None,
-            "escape should not request a lifecycle or deletion command");
+    QKeyEvent escapeEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    const snow_canvas_text_editor_input::KeyResult escapeResult =
+        snow_canvas_text_editor_input::handleKeyPress(&escapeEvent, draft, {});
+    require(escapeResult.handled, "escape should be handled");
+    require(!escapeResult.changed, "escape should not mutate draft text");
+    require(escapeResult.command == snow_canvas_text_editor_input::EventCommand::Commit,
+            "escape should commit the draft and end text editing");
+    require(draft.text() == QStringLiteral("axb"), "escape should preserve the complete draft");
 }
 
 void deleteRequestsElementRemovalWhileBackspaceEditsCharacters() {
@@ -1204,9 +1205,6 @@ void cancelingAnActiveTextDraftDoesNotCommitIt() {
     beginTextDraftWithContent(canvas);
     require(!canvas.canvasHistoryState().canUndo,
             "an active text draft should remain outside history before cancellation");
-    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
-    QApplication::sendEvent(&canvas, &escape);
-    require(canvas.hasActiveTextEditing(), "Escape must preserve a standalone text draft");
     require(canvas.cancelActiveTextEditing(),
             "canceling an active text draft should report a state change");
     require(canvas.setCanvasTool(SnowCanvasTool::Select),
