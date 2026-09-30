@@ -47,6 +47,7 @@ class AdForm;
 class AdFormItem;
 class AdAlert;
 class AdInputNumber;
+class AdRadio;
 class AdRadioButtonGroup;
 class AdSelect;
 class AdSlider;
@@ -631,6 +632,7 @@ class ScreenshotToolPalette final : public QWidget,
     void refreshRecordingExportSettingsText();
     void refreshRecordingEffectSettingsModalText();
     void refreshRecordingMouseOptions();
+    void refreshRecordingPostProcessingOptions();
     void refreshRecordingHighlightSwatch();
     bool activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
     void setTableQrEntryTool(Tool tool);
@@ -900,6 +902,14 @@ class ScreenshotToolPalette final : public QWidget,
     std::unique_ptr<snow_shot::presentation::ScreenshotToolPaletteColorPresets>
         m_recordMouseClickColorPresets;
     adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
+    adqt::widgets::AdButton* m_recordPostProcessingButton = nullptr;
+    adqt::widgets::AdPopover* m_recordPostProcessingPopover = nullptr;
+    QPointer<adqt::widgets::AdRadio> m_recordProgressBarRadio;
+    QPointer<adqt::widgets::AdRadio> m_recordPlaybackTimeRadio;
+    adqt::widgets::AdColorPicker* m_recordProgressBarColorPicker = nullptr;
+    // UI drafts only; these controls do not configure recording or rendering.
+    bool m_recordPlaybackTimeSelected = false;
+    QColor m_recordProgressBarColor{22, 119, 255};
     adqt::widgets::AdButton* m_recordSettingsButton = nullptr;
     adqt::widgets::AdButton* m_recordPreferencesButton = nullptr;
     IconNumericValuePreviewButton* m_recordDelayButton = nullptr;

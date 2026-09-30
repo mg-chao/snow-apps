@@ -716,6 +716,14 @@
             <translation>折线区域</translation>
         </message>
         <message>
+            <source>Post-processing effects</source>
+            <translation>后处理效果</translation>
+        </message>
+        <message>
+            <source>Progress Bar Color</source>
+            <translation>进度条颜色</translation>
+        </message>
+        <message>
             <source>Punctuation</source>
             <translation>标点符号</translation>
         </message>
@@ -862,6 +870,14 @@
         <message>
             <source>Shape</source>
             <translation>图形</translation>
+        </message>
+        <message>
+            <source>Show Playback Time</source>
+            <translation>显示播放时间</translation>
+        </message>
+        <message>
+            <source>Show Progress Bar</source>
+            <translation>显示进度条</translation>
         </message>
         <message>
             <source>Show QR Code</source>
