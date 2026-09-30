@@ -1,5 +1,6 @@
 #include "snow_shot/platform/screenshotnative.h"
 #include "platform/macos/capturewindowlayers_p.h"
+#include "platform/macos/capturewindowanimation_p.h"
 #include "presentation/pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -402,6 +403,67 @@ void screenshotPresentationFollowsOwnership() {
     }
 }
 
+void captureWindowAnimationPolicy() {
+    using namespace snow_shot::platform::detail;
+    for (auto requested :
+         {NSWindowAnimationBehaviorDefault, NSWindowAnimationBehaviorNone,
+          NSWindowAnimationBehaviorDocumentWindow, NSWindowAnimationBehaviorUtilityWindow,
+          NSWindowAnimationBehaviorAlertPanel}) {
+        for (auto fallback :
+             {NSWindowAnimationBehaviorDefault, NSWindowAnimationBehaviorDocumentWindow}) {
+            require(captureWindowAnimation({CaptureFamily::Screenshot, kOverlayLayer}, requested,
+                                           fallback) == NSWindowAnimationBehaviorNone,
+                    "screenshot overlays must suppress both default and explicit animations");
+            for (const CaptureLayer role : {CaptureLayer{},
+                                            {CaptureFamily::Screenshot, kRecognitionLayer},
+                                            {CaptureFamily::Screenshot, kToolbarLayer},
+                                            {CaptureFamily::Screenshot, kPopupLayer},
+                                            {CaptureFamily::Recording, kOverlayLayer},
+                                            {CaptureFamily::GlobalCanvas, kOverlayLayer},
+                                            {CaptureFamily::Pinned, kOverlayLayer}}) {
+                const auto expected =
+                    requested == NSWindowAnimationBehaviorDefault ? fallback : requested;
+                require(captureWindowAnimation(role, requested, fallback) == expected,
+                        "other capture surfaces must retain their presentation animation policy");
+            }
+        }
+    }
+}
+
+void screenshotOverlayDisablesNativeAnimation() {
+    OverlayFixture overlay;
+    overlay.resize(32, 32);
+    for (int surface = 0; surface != 2; ++surface) {
+        snow_shot::platform::configureScreenshotOverlayWindow(&overlay);
+        NSWindow* native = reinterpret_cast<NSView*>(overlay.winId()).window;
+        require(native.animationBehavior == NSWindowAnimationBehaviorNone,
+                "the screenshot overlay must disable native animation before its first reveal");
+        for (int reuse = 0; reuse != 2; ++reuse) {
+            for (auto requested :
+                 {NSWindowAnimationBehaviorDefault, NSWindowAnimationBehaviorDocumentWindow,
+                  NSWindowAnimationBehaviorUtilityWindow}) {
+                native.animationBehavior = requested;
+                require(native.animationBehavior == NSWindowAnimationBehaviorNone,
+                        "Qt native animation requests must not animate the screenshot overlay");
+            }
+            overlay.show();
+            QCoreApplication::processEvents();
+            require(native.animationBehavior == NSWindowAnimationBehaviorNone,
+                    "showing a reused overlay must keep native animation disabled");
+            overlay.hide();
+            QCoreApplication::processEvents();
+            require(native.animationBehavior == NSWindowAnimationBehaviorNone,
+                    "hiding the screenshot overlay must keep native animation disabled");
+            overlay.show();
+            QCoreApplication::processEvents();
+            require(overlay.close(), "the screenshot overlay must close successfully");
+            require(native.animationBehavior == NSWindowAnimationBehaviorNone,
+                    "closing the screenshot overlay must keep native animation disabled");
+        }
+        overlay.recreateSurface();
+    }
+}
+
 void screenshotWindowsKeepTheirStackingOrder(bool cocoa) {
     OverlayFixture overlay;
     overlay.resize(64, 64);
@@ -708,6 +770,15 @@ void adqtPopupPreservesScreenshotLayers(bool cocoa) {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     const bool cocoa = QGuiApplication::platformName() == QStringLiteral("cocoa");
+    if (app.arguments().contains(QStringLiteral("--overlay-animation-only"))) {
+        captureWindowAnimationPolicy();
+        if (cocoa) {
+            @autoreleasepool {
+                screenshotOverlayDisablesNativeAnimation();
+            }
+        }
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--presentation-policy-only"))) {
         if (cocoa) {
             @autoreleasepool {
@@ -777,6 +848,7 @@ int main(int argc, char** argv) {
     // the pool is essential: otherwise NSWindow/KVO teardown crashes go untested.
     @autoreleasepool {
         captureFamiliesFollowOwnership();
+        captureWindowAnimationPolicy();
         if (cocoa) {
             recordingOwnsNativeGeometry();
             captureFamiliesKeepNativeOrder();

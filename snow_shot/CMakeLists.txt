@@ -8171,6 +8171,13 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-macos-overlay-initialization-tests)
     set_tests_properties(snow-shot-macos-overlay-initialization-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-overlay-animation-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests --overlay-animation-only -platform offscreen)
+    set_tests_properties(snow-shot-macos-overlay-animation-tests PROPERTIES LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-overlay-animation-native-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests --overlay-animation-only -platform cocoa)
+    set_tests_properties(snow-shot-macos-overlay-animation-native-tests PROPERTIES
+        LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     add_test(NAME snow-shot-macos-recognition-stacking-native-tests
         COMMAND snow-shot-macos-overlay-initialization-tests --recognition-stacking-only -platform cocoa)
     set_tests_properties(snow-shot-macos-recognition-stacking-native-tests PROPERTIES

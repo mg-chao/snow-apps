@@ -1,6 +1,7 @@
 #include "snow_shot/platform/screenshotnative.h"
 #include "screenshotwindowtarget_p.h"
 #include "capturewindowlayers_p.h"
+#include "capturewindowanimation_p.h"
 #include "windowcursorcoordinator.h"
 #include <QCursor>
 #include <QTimer>
@@ -40,6 +41,7 @@ struct ScreenshotNativeSettings {
     bool applying;
     bool unconstrainedFrame;
     NSWindowAnimationBehavior defaultAnimation;
+    snow_shot::platform::detail::CaptureLayer captureRole;
 }
 @end
 @implementation SnowScreenshotWindowPolicy
@@ -57,9 +59,8 @@ SnowScreenshotWindowPolicy* nativePolicyState(NSWindow* window) {
 }
 
 NSWindowAnimationBehavior managedAnimation(SnowScreenshotWindowPolicy* state) {
-    return state->requested.animationBehavior == NSWindowAnimationBehaviorDefault
-               ? state->defaultAnimation
-               : state->requested.animationBehavior;
+    return captureWindowAnimation(state->captureRole, state->requested.animationBehavior,
+                                  state->defaultAnimation);
 }
 
 template <typename Value>
@@ -146,7 +147,8 @@ void applyNativeSettings(NSWindow* window, const ScreenshotNativeSettings& setti
 
 void applyNativeWindowPolicy(
     NSWindow* window, NSInteger level, bool enforceQtSettings = true,
-    NSWindowAnimationBehavior defaultAnimation = NSWindowAnimationBehaviorDefault) {
+    NSWindowAnimationBehavior defaultAnimation = NSWindowAnimationBehaviorDefault,
+    CaptureLayer captureRole = {}) {
     if (!window)
         return;
     auto* state = nativePolicyState(window);
@@ -161,6 +163,7 @@ void applyNativeWindowPolicy(
             attachNativeWindowPolicy(window);
     }
     state->defaultAnimation = defaultAnimation;
+    state->captureRole = captureRole;
     state->required = {level,
                        NSWindowCollectionBehaviorCanJoinAllSpaces |
                            NSWindowCollectionBehaviorFullScreenAuxiliary,
@@ -221,7 +224,7 @@ void applyScreenshotLayer(QWidget* widget, const ModalFloors& floors) {
         handle->modality() == Qt::NonModal && (window.styleMask & NSWindowStyleMaskTitled)
             ? NSWindowAnimationBehaviorDocumentWindow
             : NSWindowAnimationBehaviorDefault;
-    applyNativeWindowPolicy(window, level, true, defaultAnimation);
+    applyNativeWindowPolicy(window, level, true, defaultAnimation, role);
     // AppKit otherwise constrains a screen-sized panel to the visible/safe frame,
     // shifting its top edge below the menu bar or camera housing. Only the canvas
     // surface owns the entire display; its tools keep normal frame constraints.
