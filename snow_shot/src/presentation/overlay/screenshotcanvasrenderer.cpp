@@ -818,10 +818,8 @@ void paintImageLayer(QPainter& painter, const ScreenshotImageLayer& layer,
     }
 }
 
-// A pinned result drawn 1:1 in device pixels must stay pixel-exact. Minification resamples with
-// linear filtering because the raster engine's default nearest-neighbour sampling drops pixels and
-// aliases badly; magnification keeps nearest-neighbour sampling so zoomed-in pixels stay crisp
-// instead of blurring.
+// A pinned result drawn 1:1 in device pixels must stay pixel-exact. Both minification and
+// magnification use linear filtering to blend neighboring source pixels.
 bool pinnedResultUsesLinearFiltering(const SnowCanvasRenderContext& context,
                                      const QRectF& targetRect, const QSize& sourceSize) {
     if (context.devicePixelRatio <= 0.0) {
@@ -829,7 +827,7 @@ bool pinnedResultUsesLinearFiltering(const SnowCanvasRenderContext& context,
     }
     const QSize deviceSize(qRound(targetRect.width() * context.devicePixelRatio),
                            qRound(targetRect.height() * context.devicePixelRatio));
-    return deviceSize.width() < sourceSize.width() || deviceSize.height() < sourceSize.height();
+    return deviceSize != sourceSize;
 }
 } // namespace
 
