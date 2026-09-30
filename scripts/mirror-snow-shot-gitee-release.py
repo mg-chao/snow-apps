@@ -88,7 +88,7 @@ def sync_tag(tag: str, commit: str, token: str, username: str) -> None:
 def post_form(url: str, fields: dict[str, str], token: str, file: Path | None = None):
     if not re.fullmatch(r"[A-Za-z0-9._-]+", token):
         raise ValueError("Invalid Gitee token syntax")
-    command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "3600",
+    command = ["curl", "--fail", "--progress-bar", "--show-error", "--max-time", "3600",
                "--request", "POST", "--config", "-"]
     for key, value in fields.items():
         command.extend(["--form-string", f"{key}={value}"])
@@ -165,6 +165,7 @@ def mirror(tag: str, token: str, username: str) -> None:
         raise ValueError("Gitee release has no id")
     with tempfile.TemporaryDirectory(prefix="snow-gitee-release-") as temporary:
         directory = Path(temporary)
+        print(f"Downloading {len(source_names)} published GitHub assets", flush=True)
         run("gh", "release", "download", tag, "--repo", GITHUB_REPOSITORY,
             "--dir", str(directory))
         if {path.name for path in directory.iterdir()} != set(source_names):
@@ -174,11 +175,14 @@ def mirror(tag: str, token: str, username: str) -> None:
             if len(existing) > 1:
                 raise ValueError(f"Duplicate Gitee asset: {name}")
             if not existing:
+                print(f"Uploading {name} ({(directory / name).stat().st_size} bytes)", flush=True)
                 post_form(f"{GITEE_API}/{release_id}/attach_files", {}, token, directory / name)
                 existing = [file for file in attachments(release_id) if file.get("name") == name]
             if len(existing) != 1:
                 raise ValueError(f"Gitee upload did not produce exactly one asset: {name}")
+            print(f"Verifying {name}", flush=True)
             verify_attachment(existing[0], tag, name, directory / name, directory)
+            print(f"Verified {name}", flush=True)
     print(f"Mirrored and verified {tag} on Gitee")
 
 
