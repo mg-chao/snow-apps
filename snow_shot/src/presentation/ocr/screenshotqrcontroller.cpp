@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotqrcontroller.h"
 
@@ -393,6 +394,7 @@ void ScreenshotQrController::recognize(Snapshot snapshot) {
                 finish(generation, {}, {{}, tr("QR code recognition failed"), {}});
         }
     });
+    snow_shot::platform::configureApplicationQoSThread(worker);
     worker->start();
 }
 

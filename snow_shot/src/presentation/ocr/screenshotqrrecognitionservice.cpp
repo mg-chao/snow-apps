@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
 #include <opencv2/core.hpp>
@@ -316,6 +317,7 @@ class ScreenshotQrRecognitionService::Impl final {
                 }
             },
             Qt::QueuedConnection);
+        snow_shot::platform::configureApplicationQoSThread(thread);
         thread->start();
     }
 

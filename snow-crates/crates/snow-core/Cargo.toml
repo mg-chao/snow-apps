@@ -17,3 +17,6 @@ proptest = "1.11.0"
 windows = { workspace = true, features = [
     "Win32_System_Performance",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rayon.workspace = true

@@ -512,6 +512,7 @@ SettingsItemDefinition trayCustomIconItem() {
                 "Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)"))}};
 }
 
+#ifndef Q_OS_MACOS
 SettingsItemDefinition applicationPriorityItem() {
     SettingsSelectDefinition payload;
     payload.options = {
@@ -534,6 +535,34 @@ SettingsItemDefinition applicationPriorityItem() {
         payload,
     };
 }
+
+#else
+SettingsItemDefinition applicationQoSItem() {
+    SettingsSelectDefinition payload;
+    payload.binding = SettingsSelectBinding::ApplicationQoS;
+    payload.options = {
+        {QStringLiteral("user_interactive"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Responsive"))},
+        {QStringLiteral("user_initiated"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "User initiated"))},
+        {QStringLiteral("default"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Default"))},
+        {QStringLiteral("utility"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Utility"))},
+        {QStringLiteral("background"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Background"))},
+    };
+    return {
+        QStringLiteral("system.application-qos"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Quality of service (QoS)")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Choose the scheduling level for the interface and application "
+                               "workers. Changes take effect after restarting Snow Shot.")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Scheduling")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Responsiveness"))},
+        QStringLiteral("system/application_qos"),
+        payload,
+    };
+}
+#endif
 
 SettingsItemDefinition proxyItem() {
     SettingsSelectDefinition payload;
@@ -2820,7 +2849,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Core")),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Core application settings")),
                     SettingsSectionReset::SystemSettings,
+#ifdef Q_OS_MACOS
+                    {applicationQoSItem()},
+#else
                     {applicationPriorityItem()},
+#endif
                 },
                 {
                     QStringLiteral("mcp"),
@@ -3592,6 +3625,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::Language:
                         expectedKey = QStringLiteral("interface/language");
                         expectedSource = SettingsSelectSource::LanguageCatalog;
+                        break;
+                    case SettingsSelectBinding::ApplicationQoS:
+                        expectedKey = QStringLiteral("system/application_qos");
                         break;
                     case SettingsSelectBinding::ApplicationPriority:
                         expectedKey = QStringLiteral("system/application_priority");

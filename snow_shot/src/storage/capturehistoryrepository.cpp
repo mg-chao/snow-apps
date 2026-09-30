@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 
 #include "snow_shot/storage/persistedselectioncodec.h"
@@ -1140,7 +1141,10 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             return;
         if (!m_worker.joinable()) {
             try {
-                m_worker = std::thread([this]() { run(); });
+                m_worker = std::thread([this]() {
+                    snow_shot::platform::applyApplicationQoSToCurrentThread();
+                    run();
+                });
             } catch (...) {
                 lock.unlock();
                 reject(command, QStringLiteral("Unable to start the capture-history worker"));

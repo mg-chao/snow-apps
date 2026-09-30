@@ -112,7 +112,10 @@ impl EditingSession {
         let cancel_for_worker = Arc::clone(&cancel_flag);
         let handle = thread::Builder::new()
             .name("snow-screen-recorder-export".to_string())
-            .spawn(move || self.export_with_request(request, Some(progress_tx), cancel_for_worker))
+            .spawn(move || {
+                snow_core::qos::apply_current_thread();
+                self.export_with_request(request, Some(progress_tx), cancel_for_worker)
+            })
             .map_err(|err| ScreenRecorderError::Io(std::io::Error::other(err)))?;
 
         Ok(ExportTask::new(cancel_flag, progress_rx, handle))
@@ -1113,6 +1116,7 @@ fn build_process_pool(process_threads: u8) -> Option<rayon::ThreadPool> {
         return None;
     }
     rayon::ThreadPoolBuilder::new()
+        .start_handler(|_| snow_core::qos::apply_current_thread())
         .num_threads(count)
         .thread_name(|idx| format!("snow-export-process-{idx}"))
         .build()
@@ -1376,6 +1380,7 @@ impl StreamingVideoFrameSource {
         let worker = std::thread::Builder::new()
             .name("snow-screen-recorder-export-decode".to_string())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 decode_video_stream_worker(
                     path,
                     required_indices,
@@ -8586,6 +8591,7 @@ fn spawn_audio_packet_worker(
     let handle = thread::Builder::new()
         .name("snow-export-audio-encode".to_string())
         .spawn(move || {
+            snow_core::qos::apply_current_thread();
             let mut audio_encoder = audio_encoder;
             let encoder_time_base = audio_encoder.time_base();
             let packets =

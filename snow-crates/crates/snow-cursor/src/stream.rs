@@ -147,6 +147,7 @@ impl CursorStreamHandle {
         let join_handle = std::thread::Builder::new()
             .name("snow-cursor-stream".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 poll_loop(
                     sampler,
                     poll_interval,

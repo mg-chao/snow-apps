@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
 
@@ -118,6 +119,7 @@ class DirectCaptureController::Impl {
         worker->moveToThread(&thread);
         QObject::connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
         thread.setObjectName(QStringLiteral("direct-capture"));
+        snow_shot::platform::configureApplicationQoSThread(&thread);
         thread.start();
     }
 

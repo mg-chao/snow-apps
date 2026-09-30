@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotocrassets.h"
 #include "snow_shot/platform/minizippath.h"
 #include "screenshotocrprotocol.h"
@@ -891,6 +892,7 @@ class ScreenshotOcrAssets::Impl final {
             if (m_prepareRequested)
                 prepare();
         });
+        snow_shot::platform::configureApplicationQoSThread(m_thread);
         m_thread->start();
     }
 

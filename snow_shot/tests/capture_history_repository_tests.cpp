@@ -300,16 +300,16 @@ void desktopGeometryRoundTripsAndValidatesCoordinates() {
                         !repository->records().front().desktopGeometry,
                     "legacy records must load without inventing a desktop origin");
         }
-        for (const QJsonValue invalid :
+        for (const QJsonValue& invalid :
              {QJsonValue(QJsonValue::Null), QJsonValue(0), QJsonValue(QStringLiteral("invalid"))}) {
             record.insert(QStringLiteral("desktop_geometry"), invalid);
             writeRecord();
             auto repository = storage::makeCaptureHistoryRepository(temporary.path());
             require(repository->records().isEmpty(), "invalid desktop geometry was accepted");
         }
-        for (const QString key :
+        for (const QString& key :
              {QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("space")}) {
-            for (const QJsonValue invalid :
+            for (const QJsonValue& invalid :
                  {QJsonValue(QJsonValue::Null), QJsonValue(0.5), QJsonValue(2147483648.0),
                   QJsonValue(QStringLiteral("unknown"))}) {
                 auto geometry = validGeometry;

@@ -458,7 +458,7 @@ impl VideoStream {
         });
         let allocated = StreamOutput::alloc().set_ivars(state.clone());
         let output: Retained<StreamOutput> = unsafe { msg_send![super(allocated), init] };
-        let queue = DispatchQueue::new("app.snow.capture.frames", None);
+        let queue = crate::qos::application_queue("app.snow.capture.frames");
         let stream = unsafe {
             SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
@@ -479,6 +479,7 @@ impl VideoStream {
         let worker = std::thread::Builder::new()
             .name("snow-capture-metal".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 copy_frames(source_frames, delivery, discard, state);
                 let _ = done.try_send(());
             })

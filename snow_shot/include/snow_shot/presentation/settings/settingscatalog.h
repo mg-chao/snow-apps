@@ -74,6 +74,7 @@ enum class SettingsSelectBinding {
     Language,
     AppFont,
     ApplicationPriority,
+    ApplicationQoS,
     Proxy,
     UpdateMode,
     OcrModelType,

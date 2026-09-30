@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "../pinned/screenshotclipboardplacementgeometry.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
@@ -175,6 +176,7 @@ ScreenshotExportService::ScreenshotExportService(ScreenshotExportServiceContext 
     m_thread->setObjectName(QStringLiteral("ScreenshotExportWorker"));
     m_worker->moveToThread(m_thread.get());
     QObject::connect(m_thread.get(), &QThread::finished, m_worker, &QObject::deleteLater);
+    snow_shot::platform::configureApplicationQoSThread(m_thread.get());
     m_thread->start();
 }
 

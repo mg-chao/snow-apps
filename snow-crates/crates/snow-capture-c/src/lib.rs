@@ -661,6 +661,7 @@ impl MonitorWorker {
         let join = thread::Builder::new()
             .name("snow-capture-monitor".to_owned())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let mut session = with_capture_autoreleasepool(|| {
                     system
                         .open_session(CaptureTarget::Monitor(worker_entry.id), options)
@@ -1615,6 +1616,7 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
         match thread::Builder::new()
             .name("snow-capture-window-once".to_owned())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 if canceled.as_ref().is_some_and(|state| state.is_canceled()) {
                     return Err("screenshot capture canceled".to_owned());
                 }

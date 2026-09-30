@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "diagnosticsbridge.h"
 
@@ -867,6 +868,7 @@ struct DiagnosticsService::Impl {
                         reportedDrops = dropped;
                     }
                 }
+                platform::applyApplicationQoSToCurrentThread();
                 if (task.command)
                     task.command();
                 else
@@ -1051,7 +1053,10 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     // Publish only after all immutable session data is prepared. Calls already using
     // the stopped session keep it alive until they release their own snapshot.
     publishSession(session);
-    impl.worker = std::thread([session] { session->loop(); });
+    impl.worker = std::thread([session] {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
+        session->loop();
+    });
     if (impl.options.installMessageHandler) {
         std::lock_guard<std::mutex> lock(handlerMutex);
         installedService = this;

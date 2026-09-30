@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 
 #include "snow_shot/presentation/components/historyselectionbar.h"
@@ -164,6 +165,7 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         applicationStorage.pinnedPreviewPool().start([alive, previewEpoch, requestedEpoch, receiver,
                                                       repository, id, requestId, boundedSize,
                                                       cacheKey, cachePath]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             if (!alive->load() || previewEpoch->load() != requestedEpoch) {
                 return;
             }
@@ -215,6 +217,7 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         auto* receiver = this;
         applicationStorage.pinnedFullImagePool().start(
             [alive, receiver, repository, id, requestId]() {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
                 if (!alive->load()) {
                     return;
                 }

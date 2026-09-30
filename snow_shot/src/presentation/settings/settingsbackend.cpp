@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/fontfamilies.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
 #ifdef Q_OS_MACOS
@@ -266,6 +267,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return themeModeValue(styles::ThemeManager::instance().themeMode());
     case SettingsSelectBinding::Language:
         return LanguageManager::instance().languagePreference();
+    case SettingsSelectBinding::ApplicationQoS:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("system/application_qos"))
+            .toString();
     case SettingsSelectBinding::ApplicationPriority: {
         auto& storage = storage::ApplicationStorage::instance();
         if (!storage.isInitialized()) {
@@ -406,7 +412,20 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     }
     case SettingsSelectBinding::Language:
         return LanguageManager::instance().setLanguage(value.toString());
+    case SettingsSelectBinding::ApplicationQoS: {
+#ifdef Q_OS_MACOS
+        if (!platform::applicationQoSForValue(value.toString()).has_value())
+            return false;
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("system/application_qos"), value.toString());
+#else
+        return false;
+#endif
+    }
     case SettingsSelectBinding::ApplicationPriority: {
+#ifdef Q_OS_MACOS
+        return false;
+#else
         const auto requested = applicationPriorityForValue(value.toString());
         if (!requested.has_value()) {
             return false;
@@ -430,6 +449,7 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
             static_cast<void>(applyApplicationPriority(*previous));
         }
         return persisted;
+#endif
     }
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().setProxy(value.toString());
@@ -1527,9 +1547,11 @@ bool BuiltInSettingsBackend::importConfigurationSnapshot(
                           return applyColorValue(SettingsColorBinding::ThemePrimaryColor,
                                                  storage::colorFromRgbaString(value.toString()));
                       });
+#ifndef Q_OS_MACOS
     applyRuntimeValue(QStringLiteral("system/application_priority"), [&](const QJsonValue& value) {
         return applySelectValue(SettingsSelectBinding::ApplicationPriority, value.toVariant());
     });
+#endif
     if (previous.value(enabledKey) != requestedEnabled ||
         previous.value(elevatedKey) != requestedElevated) {
         const auto result = applyStartupSettings(requestedEnabled.toBool(),
@@ -2094,6 +2116,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             SettingsSelectBinding::Proxy,
             storage::ConfigurationSchema::defaultValue(QStringLiteral("network/proxy")));
     case SettingsSectionReset::SystemSettings: {
+#ifdef Q_OS_MACOS
+        return applySelectValue(
+            SettingsSelectBinding::ApplicationQoS,
+            storage::ConfigurationSchema::defaultValue(QStringLiteral("system/application_qos"))
+                .toVariant());
+#else
         auto& storage = storage::ApplicationStorage::instance();
         if (!storage.isInitialized()) {
             static_cast<void>(storage.initialize());
@@ -2116,6 +2144,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             static_cast<void>(applyApplicationPriority(*previous));
         }
         return accepted;
+#endif
     }
     case SettingsSectionReset::TextRecognition: {
         auto& storage = storage::ApplicationStorage::instance();

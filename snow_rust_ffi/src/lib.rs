@@ -39,3 +39,29 @@ pub mod visual_region_detector {
 pub mod recording {
     pub use snow_recording_c::*;
 }
+
+// Launch-scoped policy shared by native Qt workers and Rust workers.
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_application_qos_initialize(
+    level: u32,
+    report_error: Option<snow_core::qos::ErrorHandler>,
+) -> i32 {
+    let Some(qos) = snow_core::qos::ApplicationQos::from_code(level) else {
+        return -1;
+    };
+    if snow_core::qos::initialize_application_qos(qos, report_error) {
+        0
+    } else {
+        -2
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_application_qos_apply_current_thread() -> i32 {
+    snow_core::qos::apply_current_thread_result()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_application_qos_active() -> u32 {
+    snow_core::qos::active_application_qos().map_or(u32::MAX, |qos| qos as u32)
+}

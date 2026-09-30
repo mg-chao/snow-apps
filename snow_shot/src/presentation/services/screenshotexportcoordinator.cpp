@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 
 #include <QCoreApplication>
@@ -158,35 +159,35 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
             },
             Qt::QueuedConnection));
     };
-    auto runnable =
-        QRunnable::create([state, job, work = std::move(work)]() mutable {
-            {
-                QMutexLocker lock(&state->mutex);
-                job->queuedRunnable = nullptr;
+    auto runnable = QRunnable::create([state, job, work = std::move(work)]() mutable {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
+        {
+            QMutexLocker lock(&state->mutex);
+            job->queuedRunnable = nullptr;
+        }
+        ScreenshotExportTaskResult result;
+        const ScreenshotExportCancellation token(job->cancelled);
+        if (token.isCancellationRequested()) {
+            result = cancelledResult();
+        } else {
+            try {
+                result = work(token);
+            } catch (const std::bad_alloc&) {
+                result = ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Internal,
+                    QStringLiteral("The export ran out of memory"));
+            } catch (const std::exception& error) {
+                result = ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Internal,
+                                                             QString::fromUtf8(error.what()));
+            } catch (...) {
+                result = ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Internal,
+                    QStringLiteral("The export failed unexpectedly"));
             }
-            ScreenshotExportTaskResult result;
-            const ScreenshotExportCancellation token(job->cancelled);
-            if (token.isCancellationRequested()) {
-                result = cancelledResult();
-            } else {
-                try {
-                    result = work(token);
-                } catch (const std::bad_alloc&) {
-                    result = ScreenshotExportTaskResult::failure(
-                        ScreenshotExportFailureStage::Internal,
-                        QStringLiteral("The export ran out of memory"));
-                } catch (const std::exception& error) {
-                    result = ScreenshotExportTaskResult::failure(
-                        ScreenshotExportFailureStage::Internal, QString::fromUtf8(error.what()));
-                } catch (...) {
-                    result = ScreenshotExportTaskResult::failure(
-                        ScreenshotExportFailureStage::Internal,
-                        QStringLiteral("The export failed unexpectedly"));
-                }
-            }
+        }
 
-            job->complete(std::move(result));
-        });
+        job->complete(std::move(result));
+    });
     runnable->setAutoDelete(true);
     {
         QMutexLocker lock(&state->mutex);

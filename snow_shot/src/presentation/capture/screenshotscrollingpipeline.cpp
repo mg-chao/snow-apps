@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "screenshotscrollingpipeline.h"
 #include "screenshotscrollingdiagnostics.h"
 #include "latestbridgemailbox.h"
@@ -419,7 +420,10 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         }
         logScrollingEvent("scrolling.source_ready", generation, m_diagnostics.fields());
         m_active.store(true);
-        m_consumer = std::thread([this, generation]() { consume(generation); });
+        m_consumer = std::thread([this, generation]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
+            consume(generation);
+        });
     }
     void reset(quint64 generation) {
         m_active.store(false);
@@ -638,7 +642,9 @@ struct ScreenshotScrollingPipeline::Impl {
         QObject::connect(&stitchThread, &QThread::finished, worker, &QObject::deleteLater);
         captureThread.setObjectName(QStringLiteral("snow-shot-scrolling-capture"));
         stitchThread.setObjectName(QStringLiteral("snow-shot-scrolling-stitch"));
+        snow_shot::platform::configureApplicationQoSThread(&captureThread);
         captureThread.start();
+        snow_shot::platform::configureApplicationQoSThread(&stitchThread);
         stitchThread.start();
     }
     ~Impl() {

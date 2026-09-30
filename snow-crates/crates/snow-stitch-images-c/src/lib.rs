@@ -682,7 +682,10 @@ impl PngExportTask {
         let (progress_tx, progress) = sync_channel(16);
         let join = thread::Builder::new()
             .name("snow-stitch-png-export".to_owned())
-            .spawn(move || export_png(snapshot, request, worker_cancel, progress_tx))
+            .spawn(move || {
+                snow_core::qos::apply_current_thread();
+                export_png(snapshot, request, worker_cancel, progress_tx)
+            })
             .map_err(|error| StitchError::InvalidFrame {
                 message: format!("failed to spawn PNG export worker: {error}"),
             })?;

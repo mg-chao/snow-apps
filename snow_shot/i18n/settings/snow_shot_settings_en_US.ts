@@ -973,6 +973,10 @@
             <translation>Back up and restore application settings</translation>
         </message>
         <message>
+            <source>Background</source>
+            <translation>Background</translation>
+        </message>
+        <message>
             <source>Background Fill</source>
             <translation>Background Fill</translation>
         </message>
@@ -1155,6 +1159,10 @@
         <message>
             <source>Choose the primary color used throughout the theme</source>
             <translation>Choose the primary color used throughout the theme</translation>
+        </message>
+        <message>
+            <source>Choose the scheduling level for the interface and application workers. Changes take effect after restarting Snow Shot.</source>
+            <translation>Choose the scheduling level for the interface and application workers. Changes take effect after restarting Snow Shot.</translation>
         </message>
         <message>
             <source>Choose the server for built-in online services. Application updates are not affected.</source>
@@ -2401,6 +2409,10 @@
             <translation>Proxy</translation>
         </message>
         <message>
+            <source>Quality of service (QoS)</source>
+            <translation>Quality of service (QoS)</translation>
+        </message>
+        <message>
             <source>Quick Selection Modification</source>
             <translation>Quick Selection Modification</translation>
         </message>
@@ -2541,6 +2553,14 @@
             <translation>Resize window</translation>
         </message>
         <message>
+            <source>Responsive</source>
+            <translation>Responsive</translation>
+        </message>
+        <message>
+            <source>Responsiveness</source>
+            <translation>Responsiveness</translation>
+        </message>
+        <message>
             <source>Restart</source>
             <translation>Restart</translation>
         </message>
@@ -2627,6 +2647,10 @@
         <message>
             <source>Scale recordings that exceed the selected maximum resolution</source>
             <translation>Scale recordings that exceed the selected maximum resolution</translation>
+        </message>
+        <message>
+            <source>Scheduling</source>
+            <translation>Scheduling</translation>
         </message>
         <message>
             <source>Screen &amp; System Audio Recording</source>
@@ -3235,6 +3259,14 @@
         <message>
             <source>Use system proxy</source>
             <translation>Use system proxy</translation>
+        </message>
+        <message>
+            <source>User initiated</source>
+            <translation>User initiated</translation>
+        </message>
+        <message>
+            <source>Utility</source>
+            <translation>Utility</translation>
         </message>
         <message>
             <source>Very fast</source>

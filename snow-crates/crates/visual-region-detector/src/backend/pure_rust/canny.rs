@@ -130,6 +130,7 @@ fn sobel(gray: &[u8], width: usize, height: usize, dx: &mut [i16], dy: &mut [i16
         {
             let start = chunk_index * chunk;
             scope.spawn(move || {
+                snow_core::qos::apply_current_thread();
                 for (local, (dx_row, dy_row)) in dx_chunk
                     .chunks_exact_mut(width)
                     .zip(dy_chunk.chunks_exact_mut(width))

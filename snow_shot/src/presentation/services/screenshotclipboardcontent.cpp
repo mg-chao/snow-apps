@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "screenshotclipboardcontentsnapshot.h"
 
@@ -801,7 +802,10 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
             const int last = std::min(image.height(), first + rowsPerWorker);
             if (first >= last)
                 break;
-            workers.emplace_back([&, first, last]() { decodeRows(first, last); });
+            workers.emplace_back([&, first, last]() {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
+                decodeRows(first, last);
+            });
         }
         for (auto& worker : workers)
             worker.join();
