@@ -245,10 +245,10 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         transaction.snapshot.groupId = groupId;
         transaction.groupManager = groupManager;
         transaction.artifact = std::move(artifact);
-        m_transactions.insert(persistenceId, transaction);
+        auto pending = m_transactions.insert(persistenceId, std::move(transaction));
         if (groupManager != nullptr) {
             groupManager->registerPendingPin(persistenceId, groupId);
-            QObject::connect(
+            pending->groupDeletionConnection = QObject::connect(
                 groupManager,
                 &snow_shot::presentation::PinnedWindowGroupManager::groupDeletionRequested, this,
                 [this, persistenceId](const QString& deletedGroup) {
@@ -263,7 +263,7 @@ class ScreenshotPendingPinCoordinator final : public QObject {
                     }
                 });
         }
-        QObject::connect(
+        pending->closingConnection = QObject::connect(
             window, &ScreenshotPinnedWindow::closingForPersistence, this,
             [this, persistenceId](const snow_shot::storage::PinnedWindowRecord& snapshot,
                                   snow_shot::storage::PinnedWindowCloseIntent intent) {
@@ -279,12 +279,13 @@ class ScreenshotPendingPinCoordinator final : public QObject {
                     finish(persistenceId);
                 }
             });
-        QObject::connect(window, &QObject::destroyed, this, [this, persistenceId]() {
-            auto transaction = m_transactions.find(persistenceId);
-            if (transaction != m_transactions.end()) {
-                transaction->window = nullptr;
-            }
-        });
+        pending->destroyedConnection =
+            QObject::connect(window, &QObject::destroyed, this, [this, persistenceId]() {
+                auto transaction = m_transactions.find(persistenceId);
+                if (transaction != m_transactions.end()) {
+                    transaction->window = nullptr;
+                }
+            });
     }
 
     void updateSnapshot(const QString& persistenceId,
@@ -367,6 +368,9 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         QPointer<snow_shot::presentation::PinnedWindowGroupManager> groupManager;
         std::shared_ptr<ScreenshotExportArtifact> artifact;
         QImage image;
+        QMetaObject::Connection groupDeletionConnection;
+        QMetaObject::Connection closingConnection;
+        QMetaObject::Connection destroyedConnection;
         bool removed = false;
         snow_shot::storage::PinnedWindowCloseIntent intent =
             snow_shot::storage::PinnedWindowCloseIntent::Preserve;
@@ -449,10 +453,14 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         if (transaction == m_transactions.end()) {
             return;
         }
-        if (!transaction->groupManager.isNull()) {
-            transaction->groupManager->completePendingPin(persistenceId);
-        }
+        QObject::disconnect(transaction->groupDeletionConnection);
+        QObject::disconnect(transaction->closingConnection);
+        QObject::disconnect(transaction->destroyedConnection);
+        const auto groupManager = transaction->groupManager;
         m_transactions.erase(transaction);
+        if (!groupManager.isNull()) {
+            groupManager->completePendingPin(persistenceId);
+        }
     }
 
     QHash<QString, Transaction> m_transactions;

@@ -7,38 +7,28 @@
 
 #include <QList>
 
-#include <memory>
 #include <utility>
 
 namespace {
-SnowCanvasRuntime* workerRuntime() {
-    thread_local std::unique_ptr<SnowCanvasRuntime> runtime;
-    if (runtime == nullptr) {
-        runtime = std::make_unique<SnowCanvasRuntime>(
-            SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()});
-    }
-    return runtime->isValid() ? runtime.get() : nullptr;
-}
-
 QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source) {
-    SnowCanvasRuntime* runtime = workerRuntime();
     if (source.backgroundImage.isNull() || !source.backgroundCanvasRect.isValid() ||
         source.backgroundCanvasRect.isEmpty() || !source.contentPixelSize.isValid() ||
-        source.contentPixelSize.isEmpty() || runtime == nullptr) {
+        source.contentPixelSize.isEmpty()) {
         return {};
     }
-    if (!source.documentSession.isEmpty() &&
-        !runtime->restoreDocumentSession(source.documentSession)) {
+    // Imported document and reconstruction pixels belong to this export, not
+    // the worker thread, which can remain idle for the application's lifetime.
+    SnowCanvasRuntime runtime(
+        SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()});
+    if (!runtime.isValid() || (!source.documentSession.isEmpty() &&
+                               !runtime.restoreDocumentSession(source.documentSession))) {
         return {};
     }
-    if (source.documentSession.isEmpty() && !runtime->clearDocumentPreservingViewports()) {
-        return {};
-    }
-    runtime->restoreSmartEraseSnapshot(source.smartErase);
+    runtime.restoreSmartEraseSnapshot(source.smartErase);
     const QList<CanvasExportSource> sources{
         CanvasExportSource{source.backgroundImage, source.backgroundCanvasRect}};
     QImage content =
-        runtime->renderToImage(source.backgroundCanvasRect, source.contentPixelSize, sources);
+        runtime.renderToImage(source.backgroundCanvasRect, source.contentPixelSize, sources);
     ScreenshotResultCompositor::restoreBakedExterior(content, source.backgroundImage,
                                                      source.bakedSelectionPath);
     return content.isNull() ? QImage{}

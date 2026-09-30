@@ -3777,6 +3777,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-management-lifecycle-tests
         COMMAND snow-shot-pinned-window-tests --management-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-transaction-lifetime-tests
+        COMMAND snow-shot-pinned-window-tests --pin-lifetime-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-transaction-lifetime-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-duplicate-pin-tests
         COMMAND snow-shot-pinned-window-tests --duplicate-pin-only -platform offscreen)
     set_tests_properties(snow-shot-duplicate-pin-tests PROPERTIES LABELS "unit"
@@ -4426,6 +4431,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-export-artifact-tests PRIVATE user32)
     endif()
     add_test(NAME snow-shot-export-artifact-tests COMMAND snow-shot-export-artifact-tests)
+    add_test(NAME snow-shot-pinned-export-lifetime-tests
+        COMMAND snow-shot-export-artifact-tests --pinned-lifetime-only)
+    set_tests_properties(snow-shot-pinned-export-lifetime-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     get_target_property(_snow_mcp_test_sources snow-shot-export-artifact-tests SOURCES)
     list(REMOVE_ITEM _snow_mcp_test_sources tests/screenshot_export_artifact_tests.cpp)
     add_executable(snow-shot-mcp-tests ${_snow_mcp_test_sources}

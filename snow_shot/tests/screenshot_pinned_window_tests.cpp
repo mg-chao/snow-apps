@@ -750,6 +750,14 @@ void require(bool condition, const char* message) {
     }
 }
 
+class SignalConnectionProbe : public QObject {
+  public:
+    static int count(const QObject& object, const char* signal) {
+        const auto receivers = &SignalConnectionProbe::receivers;
+        return (object.*receivers)(signal);
+    }
+};
+
 void waitForUi(int milliseconds) {
     QElapsedTimer elapsed;
     elapsed.start();
@@ -10569,8 +10577,10 @@ void pinnedDragExportOffscreen() {
         require(settings.setImageFormat(format), "set drag file format");
         ScreenshotPinnedDragExport exporter;
         bool completed = false;
+        QString ignoredPath;
         exporter.setExecutor([&](QDrag& drag) {
-            QFile file(drag.mimeData()->urls().first().toLocalFile());
+            ignoredPath = drag.mimeData()->urls().first().toLocalFile();
+            QFile file(ignoredPath);
             require(file.open(QIODevice::ReadOnly), "configured drag file exists");
             const auto bytes = file.read(4);
             require(format == QStringLiteral("pdf") ? bytes == QByteArrayLiteral("%PDF")
@@ -10585,23 +10595,35 @@ void pinnedDragExportOffscreen() {
                 completed = true;
             });
         wait([&] { return completed; }, "format drag completes");
+        wait([&] { return !QFileInfo::exists(QFileInfo(ignoredPath).absolutePath()); },
+             "ignored drops release their files and staging directories");
     }
     // Closing/destroying a source during the nested native loop must not destroy
     // the drag object or the published file before the receiver finishes.
-    auto doomed = std::make_unique<ScreenshotPinnedDragExport>();
-    bool destroyedDuringDrag = false;
-    doomed->setExecutor([&](QDrag& drag) {
-        const auto path = drag.mimeData()->urls().first().toLocalFile();
-        doomed.reset();
-        require(QFileInfo::exists(path) && drag.mimeData()->hasImage(),
-                "payload outlives destroyed source service");
-        destroyedDuringDrag = true;
-        return Qt::IgnoreAction;
-    });
-    doomed->start(
-        std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image)),
-        [](QString) { throw std::runtime_error("destroyed source cannot receive completion"); });
-    wait([&] { return destroyedDuringDrag; }, "nested drag source destruction is safe");
+    for (const auto action : {Qt::CopyAction, Qt::IgnoreAction}) {
+        auto doomed = std::make_unique<ScreenshotPinnedDragExport>();
+        bool destroyedDuringDrag = false;
+        QString path;
+        doomed->setExecutor([&](QDrag& drag) {
+            path = drag.mimeData()->urls().first().toLocalFile();
+            doomed.reset();
+            require(QFileInfo::exists(path) && drag.mimeData()->hasImage(),
+                    "payload outlives destroyed source service");
+            destroyedDuringDrag = true;
+            return action;
+        });
+        doomed->start(
+            std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image)),
+            [](QString) {
+                throw std::runtime_error("destroyed source cannot receive completion");
+            });
+        wait([&] { return destroyedDuringDrag; }, "nested drag source destruction is safe");
+        if (action == Qt::CopyAction)
+            require(QFileInfo::exists(path), "accepted drop files outlive the source service");
+        else
+            wait([&] { return !QFileInfo::exists(QFileInfo(path).absolutePath()); },
+                 "ignored drop files are removed even when the source dies during dragging");
+    }
     const auto stagedDirectories = [] {
         return QDir(QDir::tempPath()).entryList({QStringLiteral("snow-shot-drag-*")}, QDir::Dirs);
     };
@@ -13068,6 +13090,41 @@ void duplicatePinActions() {
          "destroyed pins leave lookup");
 }
 
+void pinnedTransactionsReleaseSubscriptions() {
+    IsolatedPinnedStorage isolated;
+    using namespace snow_shot;
+    auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
+    require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
+            "disable automatic OCR for transaction lifetime fixture");
+    presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices service(nullptr, nullptr, nullptr, {}, {}, &groups);
+    auto* screen = QGuiApplication::primaryScreen();
+    QImage image(100, 60, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    const QRect geometry = physicalPinGeometry(*screen, {50, 50}, image.size());
+    const auto signal = SIGNAL(groupDeletionRequested(QString));
+    const int baseline = SignalConnectionProbe::count(groups, signal);
+    for (int cycle = 0; cycle < 12; ++cycle) {
+        require(service.presentPinnedImage(image, screen, geometry, image.size()),
+                "transaction lifetime pin is accepted");
+        QElapsedTimer timer;
+        timer.start();
+        while (repository.summaries().isEmpty() && timer.elapsed() < 5000)
+            waitForUi(5);
+        require(repository.summaries().size() == 1, "transaction lifetime pin persists");
+        auto windows = groups.liveWindows();
+        require(windows.size() == 1, "transaction lifetime fixture has one live pin");
+        require(SignalConnectionProbe::count(groups, signal) == baseline + 1,
+                "completed transaction releases its subscription while its pin stays alive");
+        QPointer<ScreenshotPinnedWindow> window(windows.front());
+        window->requestDestroy();
+        require(processUntilDeleted(window, 2000), "transaction lifetime pin is destroyed");
+        require(SignalConnectionProbe::count(groups, signal) == baseline &&
+                    repository.summaries().isEmpty(),
+                "completed pins leave no group-deletion subscriptions behind");
+    }
+}
+
 void pinnedManagementLifecycle() {
     IsolatedPinnedStorage isolated;
     using namespace snow_shot;
@@ -13465,6 +13522,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--management-only"))) {
             pinnedManagementLifecycle();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pin-lifetime-only"))) {
+            pinnedTransactionsReleaseSubscriptions();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--selection-content-alignment-only"))) {

@@ -97,8 +97,8 @@ void ScreenshotPinnedDragExport::start(std::shared_ptr<ScreenshotExportArtifact>
                         output.failureStage = ScreenshotExportFailureStage::File;
                     return output;
                 },
-                [this, request](ScreenshotExportTaskResult saved) {
-                    finish(request, std::move(saved));
+                [this, request](const ScreenshotExportTaskResult& saved) {
+                    finish(request, saved);
                 });
             if (!request->job.isValid())
                 finish(request, ScreenshotExportTaskResult::failure(
@@ -110,7 +110,7 @@ void ScreenshotPinnedDragExport::start(std::shared_ptr<ScreenshotExportArtifact>
 }
 
 void ScreenshotPinnedDragExport::finish(const std::shared_ptr<Request>& request,
-                                        ScreenshotExportTaskResult result) {
+                                        const ScreenshotExportTaskResult& result) {
     if (m_request != request)
         return;
     if (!request->canStart()) {
@@ -123,10 +123,6 @@ void ScreenshotPinnedDragExport::finish(const std::shared_ptr<Request>& request,
         request->completion(result.error);
         return;
     }
-    // Some receivers open URLs after exec() returns. Keep published files until
-    // application teardown, independently of this service and its source window.
-    QObject::connect(qApp, &QObject::destroyed,
-                     [directory = request->directory] { static_cast<void>(directory); });
     auto drag = std::make_unique<QDrag>(qApp);
     auto* mime = new QMimeData;
     mime->setImageData(request->image);
@@ -138,7 +134,13 @@ void ScreenshotPinnedDragExport::finish(const std::shared_ptr<Request>& request,
     const auto execute = m_executor;
     QPointer<ScreenshotPinnedDragExport> guard(this);
     m_dragging = true;
-    execute(*drag);
+    const Qt::DropAction action = execute(*drag);
+    if (action != Qt::IgnoreAction) {
+        // Some receivers open URLs after exec() returns. Accepted drops retain
+        // their files even if the source was destroyed inside the native loop.
+        QObject::connect(qApp, &QObject::destroyed,
+                         [directory = request->directory] { static_cast<void>(directory); });
+    }
     if (!guard)
         return;
     m_dragging = false;

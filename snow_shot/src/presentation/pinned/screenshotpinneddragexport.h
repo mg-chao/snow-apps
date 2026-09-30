@@ -25,7 +25,7 @@ class ScreenshotPinnedDragExport final : public QObject {
     std::shared_ptr<Request> m_request;
     Executor m_executor;
     bool m_dragging = false;
-    void finish(const std::shared_ptr<Request>& request, ScreenshotExportTaskResult result);
+    void finish(const std::shared_ptr<Request>& request, const ScreenshotExportTaskResult& result);
 };
 
 #endif

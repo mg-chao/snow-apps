@@ -934,6 +934,52 @@ void pinnedViewportSourceRendersExpectedPixels() {
             "pinned viewport artifact did not return the rendered pixels");
 }
 
+void pinnedViewportExportsReleaseImportedSnapshots() {
+    QTemporaryDir directory;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(directory.isValid() &&
+                storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path(), 0})
+                    .success,
+            "snapshot lifetime fixture initializes isolated storage on the main thread");
+    const auto cleanup = qScopeGuard([&] { storage.shutdown(); });
+    for (const bool serializedDocument : {false, true}) {
+        std::weak_ptr<const SnowCanvasSmartEraseSnapshot::Data> snapshot;
+        QObject receiver;
+        bool completed = false;
+        {
+            SnowCanvasRuntime runtime;
+            auto smartErase = runtime.smartEraseSnapshot();
+            require(smartErase.data != nullptr, "snapshot lifetime fixture must own data");
+            snapshot = smartErase.data;
+            QImage background(64, 48, QImage::Format_ARGB32_Premultiplied);
+            background.fill(Qt::green);
+            ScreenshotPinnedViewportExportSource source{
+                serializedDocument ? runtime.serializeDocumentSession() : QByteArray{},
+                std::move(background),
+                QRectF(0, 0, 64, 48),
+                QSize(64, 48),
+                {},
+                std::move(smartErase),
+                1.0,
+                {},
+            };
+            ScreenshotExportArtifact artifact(
+                ScreenshotExportSource::fromPinnedViewport(std::move(source)));
+            require(artifact.requestImage(&receiver,
+                                          [&](ScreenshotExportImageResult result) {
+                                              require(result.succeeded(),
+                                                      "lifetime export succeeds");
+                                              completed = true;
+                                          }),
+                    "snapshot lifetime export is scheduled");
+            processUntil([&] { return completed; });
+        }
+        processUntil([&] { return snapshot.expired(); });
+        require(ScreenshotExportCoordinator::shared().pendingJobCount() == 0,
+                "completed exports release snapshots while the shared pool remains available");
+    }
+}
+
 void quickSaveUsesOnlyConfiguredOutput() {
     QTemporaryDir directory;
     require(directory.isValid(), "quick save fixture unavailable");
@@ -1267,6 +1313,10 @@ int main(int argc, char** argv) {
             require(cancellations == 1, "a pending export must log cancellation exactly once");
         }
         diagnostics.shutdown();
+        if (application.arguments().contains(QStringLiteral("--pinned-lifetime-only"))) {
+            pinnedViewportExportsReleaseImportedSnapshots();
+            return EXIT_SUCCESS;
+        }
         if (application.arguments().contains(QStringLiteral("--quick-save-only"))) {
             quickSaveUsesOnlyConfiguredOutput();
             return EXIT_SUCCESS;
@@ -1297,6 +1347,7 @@ int main(int argc, char** argv) {
         rowRequestFailureAndCancellationFanOut();
         cancellationSuppressesPendingCallbacks();
         pinnedViewportSourceRendersExpectedPixels();
+        pinnedViewportExportsReleaseImportedSnapshots();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;
