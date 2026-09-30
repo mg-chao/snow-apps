@@ -1,23 +1,19 @@
 name: Snow Shot Scoop
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: Published Snow Shot tag (v1.1.7-beta or v1.1.7-beta_snow-shot)
+        description: Stable published Snow Shot tag (v1.1.8 or v1.1.8_snow-shot)
         required: true
         type: string
   pull_request:
     paths:
-      - bucket/**
       - scripts/*scoop*.ps1
       - .github/workflows/snow-shot-scoop.yml
   push:
     branches: [main]
     paths:
-      - bucket/**
       - scripts/*scoop*.ps1
       - .github/workflows/snow-shot-scoop.yml
 
@@ -30,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.sha }}
+          persist-credentials: false
       - name: Check out pinned Scoop schema and runtime
         uses: actions/checkout@v5
         with:
@@ -44,81 +40,21 @@ jobs:
       - name: Verify isolated Scoop lifecycle
         shell: pwsh
         run: ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime
-
-  publish:
-    needs: verify
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-    runs-on: windows-2025
-    permissions:
-      contents: write
-    concurrency:
-      group: snow-shot-scoop-bucket
-      cancel-in-progress: false
-    env:
-      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
-      EVENT_NAME: ${{ github.event_name }}
-      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-      - name: Check out pinned Scoop schema
-        uses: actions/checkout@v5
-        with:
-          repository: ScoopInstaller/Scoop
-          ref: b588a06e41d920d2123ec70aee682bae14935939
-          path: build/scoop-runtime
-          persist-credentials: false
-      - name: Test current default-branch generator
+      - name: Generate verified manifest for upstream submission
+        if: github.event_name == 'workflow_dispatch'
         shell: pwsh
-        run: ./scripts/test-snow-shot-scoop.ps1 -SchemaPath build/scoop-runtime/schema.json
-      - name: Resolve release tag
-        id: release
-        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          . ./scripts/snow-shot-scoop.ps1
-          try { $null = Get-SnowShotScoopVersion $env:RELEASE_TAG }
-          catch {
-            if ($env:EVENT_NAME -eq 'workflow_dispatch') { throw }
-            'eligible=false' >> $env:GITHUB_OUTPUT
-            Write-Output 'Ignoring an unrelated release tag.'
-            exit 0
+          ./scripts/new-snow-shot-scoop-manifest.ps1 -Tag $env:RELEASE_TAG
+          if (-not (Test-Json -Json (Get-Content build/scoop/snowshot.json -Raw) -SchemaFile build/scoop-runtime/schema.json)) {
+            throw 'Scoop schema validation failed.'
           }
-          'eligible=true' >> $env:GITHUB_OUTPUT
-      - name: Generate verified manifest
-        if: steps.release.outputs.eligible == 'true'
-        shell: pwsh
-        run: ./scripts/new-snow-shot-scoop-manifest.ps1 -Tag $env:RELEASE_TAG
-      - name: Preserve generated manifest for recovery
-        if: always() && steps.release.outputs.eligible == 'true'
+      - name: Preserve manifest for upstream submission
+        if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: snow-shot-scoop-manifest
           path: build/scoop/snowshot.json
           if-no-files-found: warn
-      - name: Validate and publish manifest
-        if: steps.release.outputs.eligible == 'true'
-        shell: pwsh
-        run: |
-          . ./scripts/snow-shot-scoop.ps1
-          $candidate = 'build/scoop/snowshot.json'
-          if (-not (Test-Json -Json (Get-Content $candidate -Raw) -SchemaFile build/scoop-runtime/schema.json)) {
-            throw 'Scoop schema validation failed.'
-          }
-          git fetch origin $env:DEFAULT_BRANCH
-          if ($LASTEXITCODE -ne 0) { throw 'Could not refresh the default branch.' }
-          git merge --ff-only "origin/$env:DEFAULT_BRANCH"
-          if ($LASTEXITCODE -ne 0) { throw 'Default branch changed incompatibly; retry this workflow.' }
-          $action = Get-SnowShotScoopUpdateAction 'bucket/snowshot.json' $candidate
-          if ($action -ne 'update') {
-            Write-Output "No bucket change: $action."
-            exit 0
-          }
-          Copy-Item -LiteralPath $candidate -Destination bucket/snowshot.json
-          git add -- bucket/snowshot.json
-          if ($LASTEXITCODE -ne 0) { throw 'Could not stage manifest.' }
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "build(scoop): update snowshot to $(Get-SnowShotScoopVersion $env:RELEASE_TAG)" --only -- bucket/snowshot.json
-          if ($LASTEXITCODE -ne 0) { throw 'Could not commit manifest.' }
-          git push origin "HEAD:$env:DEFAULT_BRANCH"
-          if ($LASTEXITCODE -ne 0) { throw 'Could not publish manifest; check branch rules or retry after concurrent changes.' }

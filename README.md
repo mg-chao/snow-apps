@@ -17,14 +17,17 @@ This package includes published beta versions and the default OCR resources. See
 [WinGet release support](docs/snow-shot-releases.md#winget) for upgrades, removal,
 and maintainer setup.
 
-Alternatively, install the portable Windows x64 package with [Scoop](https://scoop.sh):
+Once [Snow Shot's submission](https://github.com/ScoopInstaller/Extras/issues/18870)
+is accepted into Scoop's official
+[Extras bucket](https://github.com/ScoopInstaller/Extras), install the portable
+Windows x64 package with [Scoop](https://scoop.sh):
 
 ```powershell
-scoop bucket add snow-apps https://github.com/mg-chao/snow-apps
-scoop install snow-apps/snowshot
+scoop bucket add extras
+scoop install extras/snowshot
 ```
 
-The Scoop package includes published beta releases and the default OCR resources.
+The Scoop package follows stable releases and includes the default OCR resources.
 Quit Snow Shot before running `scoop update snowshot`; use Scoop rather than the
 app's built-in updater. Settings and history persist across upgrades and ordinary
 uninstall. See [Scoop release support](docs/snow-shot-releases.md#scoop) for removal,
