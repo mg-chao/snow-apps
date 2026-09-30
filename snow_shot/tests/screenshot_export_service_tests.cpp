@@ -2,6 +2,9 @@
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
+#include "snowimageqtcodec.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -12,6 +15,8 @@
 #include <QMouseEvent>
 #include <QObject>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QScopeGuard>
 
 #include <cstdlib>
 #include <iostream>
@@ -194,6 +199,54 @@ void styledClipboardResultRetainsPngTransparency() {
     require(!resultImage.isNull(), "styled clipboard export produced no image");
     require(resultImage.pixelColor(0, 0).alpha() == 0,
             "styled clipboard export did not retain rounded-corner transparency");
+}
+
+void selectionClipboardSnapshotsExportSettings() {
+    QTemporaryDir directory;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(directory.isValid() &&
+                storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path(), 0})
+                    .success,
+            "clipboard encoding settings fixture could not initialize");
+    const auto cleanup = qScopeGuard([&] { storage.shutdown(); });
+    const snow_shot::storage::ScreenshotSettings settings;
+    ExportFixture fixture;
+    require(fixture.isValid(), "clipboard encoding fixture could not initialize the canvas");
+    const QRect selection(12, 8, 37, 29);
+    for (auto compression : {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::Medium,
+                             ScreenshotCompressionLevel::High}) {
+        require(settings.setCompressionLevel(
+                    ScreenshotImageFileService::compressionLevelKey(compression)),
+                "clipboard compression setup failed");
+        require(settings.setImageQuality(35), "clipboard image quality setup failed");
+        const int level = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png,
+                                                                    {35, compression})
+                              .compression_level;
+        const QImage result = waitForResult(
+            [&](QObject* receiver, auto callback) {
+                const bool scheduled = fixture.service().requestSelectionClipboard(
+                    selection, {}, receiver, std::move(callback));
+                // The worker must use the value captured by the request, even when settings
+                // change before its callback is delivered.
+                require(
+                    settings.setCompressionLevel(ScreenshotImageFileService::compressionLevelKey(
+                        compression == ScreenshotCompressionLevel::High
+                            ? ScreenshotCompressionLevel::Low
+                            : ScreenshotCompressionLevel::High)),
+                    "clipboard settings mutation failed");
+                return scheduled;
+            },
+            [&](ScreenshotSelectionClipboardResult value) {
+                require(value.isValid() &&
+                            value.payload.pngBytes() ==
+                                snow_shot::image_codec::encodePng(
+                                    snow_shot::image_codec::srgbRowSource(value.image), level),
+                        "selection clipboard ignored its export settings snapshot");
+                return std::move(value.image);
+            });
+        require(hasSamePixels(result, fixture.displaySnapshot().copy(selection)),
+                "selection clipboard encoding changed the captured pixels");
+    }
 }
 
 void selectionClipboardPreservesEffects() {
@@ -652,6 +705,7 @@ int main(int argc, char** argv) {
         return EXIT_SUCCESS;
     }
     clipboardPlacementMatchesDirectPin();
+    selectionClipboardSnapshotsExportSettings();
     fractionalDpiExportsPreserveCapturePixels();
     exportWorkerReleasesSharedDerivedContours();
     exportWorkerReleasesDocumentSnapshotsBeforeCompletion();

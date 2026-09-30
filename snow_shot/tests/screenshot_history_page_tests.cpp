@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snowimageqtcodec.h"
 
 #include "widgets/date_picker.h"
 #include "widgets/select.h"
@@ -735,6 +737,32 @@ void waitUntil(const std::function<bool()>& complete, const char* message) {
     require(complete(), message);
 }
 
+void thumbnailsUseMediumCompression() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "thumbnail compression fixture must be available");
+    QImage image(64, 48, QImage::Format_RGB32);
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x)
+            image.setPixel(x, y, qRgb(x * 3, y * 5, (x + y) * 2));
+    }
+    const auto encoder = snow_shot::image_codec::encoderInfo(snow::image::Format::png);
+    require(encoder.has_value(), "PNG encoder must be available for thumbnail persistence");
+    const QByteArray expected =
+        snow_shot::image_codec::encodePng(image, encoder->compression_level.default_value);
+    require(!expected.isEmpty() && expected != snow_shot::image_codec::encodePng(image, 0),
+            "thumbnail fixture must distinguish medium compression from level zero");
+    const QString path = temporary.filePath(QStringLiteral("thumbnail.png"));
+    const QSize naturalSize(900, 700);
+    snow_shot::presentation::components::thumbnail_cache::persist(path, image, naturalSize);
+    QFile file(path);
+    require(file.open(QIODevice::ReadOnly) && file.readAll() == expected,
+            "persisted thumbnails must use medium PNG compression");
+    const auto cached = snow_shot::presentation::components::thumbnail_cache::load(path);
+    require(cached.image.convertToFormat(QImage::Format_RGB32) == image &&
+                cached.naturalSize == naturalSize,
+            "thumbnail compression must preserve pixels and natural-size metadata");
+}
+
 void imageFailuresRespectCacheFallbackAndCancellation() {
     QTemporaryDir temporary;
     MutableHistoryDataSource dataSource;
@@ -871,6 +899,7 @@ int main(int argc, char** argv) {
     pageTextAndEmptyStateMatchPinnedWindowManagement();
     moreMenuOffersPinAndDelete();
     entriesUseBordersAndSupportCrossPageSelection();
+    thumbnailsUseMediumCompression();
     imageFailuresRespectCacheFallbackAndCancellation();
     shutdownDrainsBacklogThenRejectsNewWork();
     storage::ApplicationStorage::instance().shutdown();

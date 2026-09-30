@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/thumbnailcache.h"
 
 #include "snowimageqtcodec.h"
+#include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include <QCryptographicHash>
@@ -105,7 +106,11 @@ CachedThumbnail load(const QString& path) {
 void persist(const QString& path, QImage image, QSize naturalSize) {
     if (path.isEmpty() || image.isNull() || !QDir().mkpath(QFileInfo(path).absolutePath()))
         return;
-    const QByteArray png = image_codec::encodePng(image);
+    const int compression =
+        ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png,
+                                                  {100, ScreenshotCompressionLevel::Medium})
+            .compression_level;
+    const QByteArray png = image_codec::encodePng(image, compression);
     image = {};
     if (png.isEmpty() || !writeBytes(path, png))
         return;

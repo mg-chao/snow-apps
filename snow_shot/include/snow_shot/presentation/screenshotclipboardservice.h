@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotimagerowsource.h"
 #include "snow_shot/presentation/screenshotclipboardplacement.h"
+#include "snow_shot/presentation/screenshotimagefileservice.h"
 
 #include <QByteArray>
 #include <QImage>
@@ -99,14 +100,18 @@ class ScreenshotClipboardService final {
 
     [[nodiscard]] static PublicationId reservePublication();
 
-    // A supplied PNG must encode the same sRGB pixels as the source. Export artifacts
-    // may pass existing bytes here; otherwise encode at level 0 for speed.
+    // Callers snapshot image export settings before scheduling asynchronous preparation.
     [[nodiscard]] static ScreenshotClipboardPayload
-    prepare(const ScreenshotImageRowSource& source, const QByteArray& canonicalPng = {},
+    prepare(const ScreenshotImageRowSource& source, ScreenshotImageEncodingOptions encoding = {},
             std::optional<ScreenshotClipboardPlacement> placement = {});
     [[nodiscard]] static ScreenshotClipboardPayload
-    prepareImage(const QImage& image, const QByteArray& canonicalPng = {},
+    prepareImage(const QImage& image, ScreenshotImageEncodingOptions encoding = {},
                  std::optional<ScreenshotClipboardPlacement> placement = {});
+    // The supplied PNG must encode the same sRGB pixels as the source, using the
+    // requested export settings. This only prepares native clipboard representations.
+    [[nodiscard]] static ScreenshotClipboardPayload
+    prepareEncoded(const ScreenshotImageRowSource& source, const QByteArray& png,
+                   std::optional<ScreenshotClipboardPlacement> placement = {});
     [[nodiscard]] static ScreenshotClipboardCommitHandle commit(QClipboard* clipboard,
                                                                 QObject* receiver,
                                                                 ScreenshotClipboardPayload payload,
@@ -121,7 +126,8 @@ class ScreenshotClipboardService final {
     commitMimeData(QClipboard* clipboard, QObject* receiver, QMimeData* mimeData,
                    PublicationId publicationId, CommitCompletion completion);
     [[nodiscard]] static bool publish(QClipboard* clipboard, ScreenshotClipboardPayload payload);
-    [[nodiscard]] static bool publishImage(QClipboard* clipboard, const QImage& image);
+    [[nodiscard]] static bool publishImage(QClipboard* clipboard, const QImage& image,
+                                           ScreenshotImageEncodingOptions encoding = {});
 };
 
 // Owns cancellation for a set of publications on the GUI thread. Terminal operations

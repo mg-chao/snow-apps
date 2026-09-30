@@ -161,8 +161,6 @@ class ScreenshotExportArtifact final : public QObject {
     void startRowSource();
     void startRowSourceFromImage(QImage image);
     void completeRowSource(ScreenshotImageRowSource source, QString error);
-    [[nodiscard]] bool requestPngCompression(QObject* receiver, int compressionLevel,
-                                             EncodingCallback callback);
     void startPng(int compressionLevel);
     void startPngFromRows(int compressionLevel, ScreenshotImageRowSource source);
     void completePng(int compressionLevel, ScreenshotExportEncodingResult result);

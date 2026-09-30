@@ -9,6 +9,7 @@
 #endif
 
 #include <QClipboard>
+#include <QBuffer>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QElapsedTimer>
@@ -510,10 +511,32 @@ bool ScreenshotClipboardPayload::isValid() const {
 
 ScreenshotClipboardPayload
 ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
-                                    const QByteArray& canonicalPng,
+                                    ScreenshotImageEncodingOptions encoding,
                                     std::optional<ScreenshotClipboardPlacement> placement) {
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.prepare_total");
-    if (!source.isValid() || (source.cancellationRequested && source.cancellationRequested())) {
+    QByteArray png;
+    {
+        SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.encode_png");
+        QBuffer buffer(&png);
+        if (!buffer.open(QIODevice::WriteOnly) ||
+            !snow_shot::image_codec::encodeToDevice(
+                source, &buffer, snow::image::Format::png,
+                ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png,
+                                                          encoding))) {
+            return {};
+        }
+    }
+    SNOW_SHOT_CLIPBOARD_PERF_COUNTER("clipboard.png_encoded", 1);
+    return prepareEncoded(source, png, std::move(placement));
+}
+
+ScreenshotClipboardPayload
+ScreenshotClipboardService::prepareEncoded(const ScreenshotImageRowSource& source,
+                                           const QByteArray& png,
+                                           std::optional<ScreenshotClipboardPlacement> placement) {
+    SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.prepare_native");
+    if (!source.isValid() || png.isEmpty() ||
+        (source.cancellationRequested && source.cancellationRequested())) {
         return {};
     }
     ScreenshotClipboardPayload payload;
@@ -521,11 +544,7 @@ ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
         placement->rasterSize = source.size;
         payload.m_placementBytes = encodeScreenshotClipboardPlacement(*placement);
     }
-    payload.m_pngBytes =
-        canonicalPng.isEmpty() ? snow_shot::image_codec::encodePng(source, 0) : canonicalPng;
-    SNOW_SHOT_CLIPBOARD_PERF_COUNTER("clipboard.png_encoded", canonicalPng.isEmpty() ? 1 : 0);
-    if (payload.m_pngBytes.isEmpty())
-        return {};
+    payload.m_pngBytes = png;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     payload.m_dibHandle = prepareDib(source);
     if (payload.m_dibHandle == nullptr)
@@ -540,10 +559,10 @@ ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
 }
 
 ScreenshotClipboardPayload
-ScreenshotClipboardService::prepareImage(const QImage& image, const QByteArray& canonicalPng,
+ScreenshotClipboardService::prepareImage(const QImage& image,
+                                         ScreenshotImageEncodingOptions encoding,
                                          std::optional<ScreenshotClipboardPlacement> placement) {
-    return prepare(snow_shot::image_codec::srgbRowSource(image), canonicalPng,
-                   std::move(placement));
+    return prepare(snow_shot::image_codec::srgbRowSource(image), encoding, std::move(placement));
 }
 
 ScreenshotClipboardCommitHandle
@@ -691,6 +710,7 @@ bool ScreenshotClipboardService::publish(QClipboard* clipboard,
 #endif
 }
 
-bool ScreenshotClipboardService::publishImage(QClipboard* clipboard, const QImage& image) {
-    return publish(clipboard, prepareImage(image));
+bool ScreenshotClipboardService::publishImage(QClipboard* clipboard, const QImage& image,
+                                              ScreenshotImageEncodingOptions encoding) {
+    return publish(clipboard, prepareImage(image, encoding));
 }

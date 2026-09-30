@@ -385,7 +385,8 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
                         png->bytes(), snow::image::Format::png, "history");
                     if (!image.isNull() && image.size() == png->pixelSize()) {
                         payload = std::make_shared<ScreenshotClipboardPayload>(
-                            ScreenshotClipboardService::prepareImage(image, png->bytes()));
+                            ScreenshotClipboardService::prepareEncoded(
+                                snow_shot::image_codec::srgbRowSource(image), png->bytes()));
                     } else {
                         applicationStorage.captureHistory().reportReadFailure(
                             record, QStringLiteral("Unable to read a capture-history payload"));

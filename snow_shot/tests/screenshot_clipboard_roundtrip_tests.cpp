@@ -157,7 +157,7 @@ void payloadsPreservePixels() {
                     auto rows = snow_shot::image_codec::srgbRowSource(source);
                     const QByteArray png = snow_shot::image_codec::encodePng(rows);
                     auto direct = ScreenshotClipboardService::prepareImage(source);
-                    auto reused = ScreenshotClipboardService::prepare(rows, png);
+                    auto reused = ScreenshotClipboardService::prepareEncoded(rows, png);
                     require(direct.isValid() && reused.isValid(), "payload preparation failed");
                     require(reused.pngBytes().constData() == png.constData(),
                             "pre-encoded PNG was copied or re-encoded");
@@ -183,7 +183,7 @@ void payloadsPreservePixels() {
     rows.cancellationRequested = {};
     rows.readRows = [](int, int, qsizetype, uchar*, qsizetype) { return false; };
     require(!ScreenshotClipboardService::prepare(rows).isValid(), "failed encoding was accepted");
-    require(!ScreenshotClipboardService::prepare(rows, payload.pngBytes()).isValid(),
+    require(!ScreenshotClipboardService::prepareEncoded(rows, payload.pngBytes()).isValid(),
             "failed fallback read was accepted");
 }
 

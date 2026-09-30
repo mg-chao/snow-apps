@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotclipboardplacement.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snowimageqtcodec.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QElapsedTimer>
@@ -170,6 +171,41 @@ QImage image() {
     image.fill(QColor(40, 90, 150, 170));
     return image;
 }
+void payloadUsesRequestedEncoding() {
+    const QImage pixels = image();
+    const auto rows = snow_shot::image_codec::srgbRowSource(pixels);
+    for (auto compression : {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::Medium,
+                             ScreenshotCompressionLevel::High}) {
+        const ScreenshotImageEncodingOptions encoding{45, compression};
+        const int level =
+            ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png, encoding)
+                .compression_level;
+        const QByteArray expected = snow_shot::image_codec::encodePng(rows, level);
+        auto fromRows = ScreenshotClipboardService::prepare(rows, encoding);
+        auto fromImage = ScreenshotClipboardService::prepareImage(pixels, encoding);
+        require(fromRows.isValid() && fromImage.isValid() && fromRows.pngBytes() == expected &&
+                    fromImage.pngBytes() == expected,
+                "clipboard payload preparation ignored the requested export compression");
+        auto reused = ScreenshotClipboardService::prepareEncoded(rows, expected);
+        require(reused.isValid() && reused.pngBytes().constData() == expected.constData(),
+                "native payload preparation re-encoded the supplied PNG");
+    }
+    require(!ScreenshotClipboardService::prepareEncoded(rows, {}).isValid(),
+            "missing encoded PNG silently fell back to a new encoding");
+    auto cancelled = rows;
+    cancelled.cancellationRequested = [] { return true; };
+    require(!ScreenshotClipboardService::prepare(cancelled).isValid(),
+            "cancelled clipboard PNG encoding produced a payload");
+    require(!ScreenshotClipboardService::prepareEncoded(cancelled,
+                                                        snow_shot::image_codec::encodePng(rows))
+                 .isValid(),
+            "cancelled native payload preparation succeeded");
+    auto unreadable = rows;
+    unreadable.readRows = [](int, int, qsizetype, uchar*, qsizetype) { return false; };
+    require(!ScreenshotClipboardService::prepare(unreadable).isValid(),
+            "failed clipboard PNG encoding produced a payload");
+}
+
 void contentAndPayload() {
     const auto pixels = image();
     auto value = fixture();
@@ -181,7 +217,8 @@ void contentAndPayload() {
     ScreenshotClipboardPayload moved = std::move(payload);
     require(moved.isValid() && moved.placementBytes() == metadata && !payload.isValid(),
             "payload move loses metadata or ownership");
-    auto reused = ScreenshotClipboardService::prepareImage(pixels, png, value);
+    auto reused = ScreenshotClipboardService::prepareEncoded(
+        snow_shot::image_codec::srgbRowSource(pixels), png, value);
     require(reused.pngBytes() == png && reused.placementBytes() == metadata,
             "placement changes canonical PNG bytes");
     QMimeData mime;
@@ -493,6 +530,7 @@ int main(int argc, char** argv) {
             require(QGuiApplication::platformName() == QStringLiteral("offscreen"),
                     "clipboard placement unit tests require the offscreen platform");
             codecAndRecovery();
+            payloadUsesRequestedEncoding();
             contentAndPayload();
 #if !defined(Q_OS_WIN)
             scopedPublicationsPreservePlacement();

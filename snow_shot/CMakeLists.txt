@@ -532,6 +532,7 @@ set_target_properties(snow_shot_image_codec_backend PROPERTIES
 set(SNOW_SHOT_IMAGE_CODEC_SOURCES
     src/image/snowimageqtcodec.h
     src/image/snowimageqtcodec.cpp
+    src/image/screenshotimageencoding.cpp
 )
 add_library(snow_shot_image_codec STATIC ${SNOW_SHOT_IMAGE_CODEC_SOURCES})
 snow_enable_unity_build(snow_shot_image_codec)
@@ -1994,6 +1995,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-screenshot-export-service-tests PRIVATE snow_shot_image_codec
+        snow_shot_storage
         snow_shot_diagnostics
         ant_design_qt
         Qt6::Widgets
@@ -6784,6 +6786,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-clipboard-performance-benchmark PRIVATE snow_shot_image_codec
+        snow_shot_storage
         snow_shot_diagnostics
         adqt::widgets
         Qt6::Widgets

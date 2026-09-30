@@ -1,5 +1,6 @@
 #include "../pinned/screenshotclipboardplacementgeometry.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
+#include "snow_shot/presentation/screenshotencodingsettings.h"
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
@@ -145,12 +146,13 @@ class ScreenshotExportWorker final : public QObject {
         const QByteArray& documentSession, const SnowCanvasSmartEraseSnapshot& smartErase,
         const QRect& selection, const ScreenshotResultStyle& style,
         const QList<CanvasExportSource>& sources, const ScreenshotSelectionRenderSpec& spec,
-        std::optional<ScreenshotClipboardPlacement> placement) {
+        std::optional<ScreenshotClipboardPlacement> placement,
+        ScreenshotImageEncodingOptions encoding) {
         ScreenshotSelectionClipboardResult result;
         result.image =
             renderSelection(documentSession, smartErase, selection, style, sources, spec);
         result.payload =
-            ScreenshotClipboardService::prepareImage(result.image, {}, std::move(placement));
+            ScreenshotClipboardService::prepareImage(result.image, encoding, std::move(placement));
         return result;
     }
 
@@ -288,6 +290,8 @@ bool ScreenshotExportService::requestSelectionClipboard(const QRect& selection,
 
     const snow_shot::presentation::clipboard_perf::Stopwatch requestTimer;
     const auto placement = prepareClipboardPlacement(selection, style);
+    const auto encoding = snow_shot::presentation::screenshotEncodingOptions(
+        snow_shot::storage::ScreenshotSettings{});
     auto smartErase = m_context.runtime.smartEraseSnapshot();
     QByteArray documentSession;
     {
@@ -316,13 +320,13 @@ bool ScreenshotExportService::requestSelectionClipboard(const QRect& selection,
     const bool scheduled = QMetaObject::invokeMethod(
         worker,
         [worker, guardedReceiver, guardedCompletionContext, documentSession, smartErase, selection,
-         style, sources, spec, placement, requestTimer, workerQueueTimer,
+         style, sources, spec, placement, encoding, requestTimer, workerQueueTimer,
          callback = std::move(callback)]() mutable {
             snow_shot::presentation::clipboard_perf::duration(
                 "export.worker_queue_delay", workerQueueTimer.elapsedNanoseconds());
             auto result = std::make_shared<ScreenshotSelectionClipboardResult>(
                 worker->prepareSelectionClipboard(documentSession, smartErase, selection, style,
-                                                  sources, spec, placement));
+                                                  sources, spec, placement, encoding));
             smartErase = {};
             documentSession.clear();
             sources.clear();
