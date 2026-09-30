@@ -1,5 +1,7 @@
 mod color_effect;
 mod f16;
+#[cfg(test)]
+pub(crate) mod hdr_tests;
 mod parallel;
 mod scalar;
 #[cfg(target_arch = "x86_64")]
@@ -100,6 +102,8 @@ pub enum HdrInputModel {
 /// This context is auto-derived by the Windows backend from display metadata.
 /// It intentionally excludes user-tunable curve parameters so the HDR->SDR
 /// pipeline follows one consistent standard flow.
+/// Every pixel on a surface with this context follows the same tone curve;
+/// SDR content and sub-white HDR content cannot be distinguished by pixel intensity.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HdrFrameContext {
     /// SDR white level in nits reported by the platform. On Windows this

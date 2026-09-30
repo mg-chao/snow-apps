@@ -1,7 +1,7 @@
 cbuffer Params : register(b0) {
     float sdr_white_nits;
     float hdr_peak_nits;
-    float sdr_identity_eps;
+    float _pad0;
     uint flags;
     uint tex_width;
     uint tex_height;
@@ -119,11 +119,6 @@ float3 inverse_windows_sdr_boost(float3 rgb) {
     return rgb / boost;
 }
 
-bool is_sdr_identity_pixel(float3 rgb) {
-    float eps = max(sdr_identity_eps, 0.0);
-    return max(rgb.r, max(rgb.g, rgb.b)) <= (1.0 + eps);
-}
-
 float3 tone_map_hdr_pixel_bt2390(float3 rgb) {
     float y_in = max(dot(rgb, float3(0.2126, 0.7152, 0.0722)), 0.0);
     if (y_in <= EPSILON) {
@@ -154,10 +149,8 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 
     float4 src = src_tex[hdr_source_coord(coord)];
     float3 rgb = inverse_windows_sdr_boost(max(restore_screen_colors(src.rgb), 0.0));
-    bool is_sdr = is_sdr_identity_pixel(rgb);
-    if (!is_sdr) {
-        rgb = tone_map_hdr_pixel_bt2390(rgb);
-    }
+    // Use one continuous curve for the entire HDR surface, including values below SDR white.
+    rgb = tone_map_hdr_pixel_bt2390(rgb);
     float3 srgb = float3(linear_to_srgb(rgb.r), linear_to_srgb(rgb.g), linear_to_srgb(rgb.b));
     dst_tex[coord] = float4(srgb, saturate(src.a));
 }
@@ -172,10 +165,7 @@ void main_1d(uint3 dtid : SV_DispatchThreadID) {
 
     float4 src = src_tex[hdr_source_coord(coord)];
     float3 rgb = inverse_windows_sdr_boost(max(restore_screen_colors(src.rgb), 0.0));
-    bool is_sdr = is_sdr_identity_pixel(rgb);
-    if (!is_sdr) {
-        rgb = tone_map_hdr_pixel_bt2390(rgb);
-    }
+    rgb = tone_map_hdr_pixel_bt2390(rgb);
     float3 srgb = float3(linear_to_srgb(rgb.r), linear_to_srgb(rgb.g), linear_to_srgb(rgb.b));
     dst_tex[coord] = float4(srgb, saturate(src.a));
 }
