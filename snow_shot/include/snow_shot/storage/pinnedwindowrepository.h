@@ -10,6 +10,7 @@
 #include <QDateTime>
 
 #include <memory>
+#include <mutex>
 #include <functional>
 #include <optional>
 
@@ -101,6 +102,9 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult enforcePolicy(QDateTime now = QDateTime::currentDateTimeUtc());
     [[nodiscard]] StorageResult clearClosed();
     [[nodiscard]] StorageResult flush();
+    void suspendWrites(bool suspended);
+    // Called with writers suspended, after flush, and with a prepared destination.
+    void exchangeStorage(PinnedWindowRepository& prepared);
     [[nodiscard]] QString lastError() const;
 
   private:
@@ -110,6 +114,8 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult upsertImpl(PinnedWindowRecord record, bool requireExisting);
     [[nodiscard]] StorageResult markClosedImpl(const QString& id, QDateTime when,
                                                bool enforceImmediately);
+    mutable std::recursive_mutex m_accessMutex;
+    bool m_suspended = false;
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

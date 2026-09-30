@@ -56,6 +56,8 @@ class ConfigurationStore final : public QObject {
     // read-only or `schemaVersion` is from a newer application.
     bool applySnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion = 0);
     [[nodiscard]] StorageResult flushNow();
+    void suspendWrites(bool suspended);
+    void relocate(const QString& configurationDirectory);
 
   signals:
     void valueChanged(const QString& key, const QJsonValue& value);
@@ -71,6 +73,7 @@ class ConfigurationStore final : public QObject {
 
     QString m_configurationFile;
     bool m_readAvailable = false;
+    bool m_suspended = false;
     bool m_writeAvailable = false;
     mutable QMutex m_mutex;
     QRecursiveMutex m_mutationMutex;

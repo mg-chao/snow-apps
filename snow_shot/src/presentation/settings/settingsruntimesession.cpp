@@ -54,7 +54,8 @@ QVariant globalMouseCombinationVariant(const SettingsGlobalMouseCombination& com
 }
 
 bool sameStorageStatus(const storage::StorageStatus& first, const storage::StorageStatus& second) {
-    return first.requestedDirectory == second.requestedDirectory &&
+    return first.directoryChanging == second.directoryChanging &&
+           first.requestedDirectory == second.requestedDirectory &&
            first.effectiveDirectory == second.effectiveDirectory &&
            first.fallbackReason == second.fallbackReason &&
            first.effectiveMode == second.effectiveMode &&
@@ -87,6 +88,10 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
     qRegisterMetaType<SettingsGlobalMouseCombination>();
     qRegisterMetaType<shortcuts::ShortcutBinding>();
     qRegisterMetaType<shortcuts::ShortcutBindingList>();
+    connect(&m_backend, &SettingsBackend::directoryChangeProgress, this,
+            &SettingsRuntimeSession::directoryChangeProgress);
+    connect(&m_backend, &SettingsBackend::directoryChangeFinished, this,
+            &SettingsRuntimeSession::directoryChangeFinished);
     connect(&m_backend, &SettingsBackend::operationMessage, this,
             &SettingsRuntimeSession::operationMessage);
     connect(&m_backend, &SettingsBackend::actionFinished, this,

@@ -1437,6 +1437,10 @@
             <translation>Dark</translation>
         </message>
         <message>
+            <source>Data storage</source>
+            <translation>Data storage</translation>
+        </message>
+        <message>
             <source>Decrease opacity by 10%</source>
             <translation>Decrease opacity by 10%</translation>
         </message>
@@ -3440,6 +3444,73 @@ Unavailable: %2</translation>
         </message>
     </context>
     <context>
+        <name>StorageDirectoryChange</name>
+        <message>
+            <source>An interrupted storage migration was detected. The last committed directory is in use; remaining copies have been preserved.</source>
+            <translation>An interrupted storage migration was detected. The last committed directory is in use; remaining copies have been preserved.</translation>
+        </message>
+        <message>
+            <source>Another storage migration is in progress.</source>
+            <translation>Another storage migration is in progress.</translation>
+        </message>
+        <message>
+            <source>Choose a new or empty directory.</source>
+            <translation>Choose a new or empty directory.</translation>
+        </message>
+        <message>
+            <source>Choose an absolute storage directory path.</source>
+            <translation>Choose an absolute storage directory path.</translation>
+        </message>
+        <message>
+            <source>Could not copy %1.</source>
+            <translation>Could not copy %1.</translation>
+        </message>
+        <message>
+            <source>Could not create the storage directory.</source>
+            <translation>Could not create the storage directory.</translation>
+        </message>
+        <message>
+            <source>Could not save the storage directory selection.</source>
+            <translation>Could not save the storage directory selection.</translation>
+        </message>
+        <message>
+            <source>Storage contains a link or unsupported file: %1</source>
+            <translation>Storage contains a link or unsupported file: %1</translation>
+        </message>
+        <message>
+            <source>Storage directory paths must not contain symbolic links or junctions.</source>
+            <translation>Storage directory paths must not contain symbolic links or junctions.</translation>
+        </message>
+        <message>
+            <source>Storage migration is in progress</source>
+            <translation>Storage migration is in progress</translation>
+        </message>
+        <message>
+            <source>The destination does not have enough writable disk space.</source>
+            <translation>The destination does not have enough writable disk space.</translation>
+        </message>
+        <message>
+            <source>The new directory must be separate from the current storage directory.</source>
+            <translation>The new directory must be separate from the current storage directory.</translation>
+        </message>
+        <message>
+            <source>The new storage directory is active, but some old files could not be removed: %1</source>
+            <translation>The new storage directory is active, but some old files could not be removed: %1</translation>
+        </message>
+        <message>
+            <source>The saved storage directory selection could not be read.</source>
+            <translation>The saved storage directory selection could not be read.</translation>
+        </message>
+        <message>
+            <source>The storage directory is not writable.</source>
+            <translation>The storage directory is not writable.</translation>
+        </message>
+        <message>
+            <source>Verification failed for %1.</source>
+            <translation>Verification failed for %1.</translation>
+        </message>
+    </context>
+    <context>
         <name>StorageStatusSettingsWidget</name>
         <message>
             <source>App storage usage</source>
@@ -3450,12 +3521,36 @@ Unavailable: %2</translation>
             <translation>Application data</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Change storage directory?</source>
+            <translation>Change storage directory?</translation>
+        </message>
+        <message>
+            <source>Choose directory</source>
+            <translation>Choose directory</translation>
+        </message>
+        <message>
+            <source>Choose storage directory</source>
+            <translation>Choose storage directory</translation>
+        </message>
+        <message>
             <source>Copy today's log file</source>
             <translation>Copy today's log file</translation>
         </message>
         <message>
             <source>Could not copy the log file: %1</source>
             <translation>Could not copy the log file: %1</translation>
+        </message>
+        <message>
+            <source>Current storage location: %1</source>
+            <translation>Current storage location: %1</translation>
+        </message>
+        <message>
+            <source>Custom directory</source>
+            <translation>Custom directory</translation>
         </message>
         <message>
             <source>Diagnostics status</source>
@@ -3472,6 +3567,10 @@ Unavailable: %2</translation>
         <message>
             <source>Effective storage mode</source>
             <translation>Effective storage mode</translation>
+        </message>
+        <message>
+            <source>Existing data will be migrated to %1. Verified files will be removed from the old directory after the switch. Continue?</source>
+            <translation>Existing data will be migrated to %1. Verified files will be removed from the old directory after the switch. Continue?</translation>
         </message>
         <message>
             <source>File logging active; crash capture unavailable</source>
@@ -3518,6 +3617,30 @@ Unavailable: %2</translation>
             <translation>Logs and crash reports disk usage</translation>
         </message>
         <message>
+            <source>Migrate existing data</source>
+            <translation>Migrate existing data</translation>
+        </message>
+        <message>
+            <source>Migrating OCR assets — %1/%2</source>
+            <translation>Migrating OCR assets — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating logs — %1/%2</source>
+            <translation>Migrating logs — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating other data — %1/%2</source>
+            <translation>Migrating other data — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating pinned windows — %1/%2</source>
+            <translation>Migrating pinned windows — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating screenshot history — %1/%2</source>
+            <translation>Migrating screenshot history — %1/%2</translation>
+        </message>
+        <message>
             <source>None</source>
             <translation>None</translation>
         </message>
@@ -3528,6 +3651,10 @@ Unavailable: %2</translation>
         <message>
             <source>OCR assets</source>
             <translation>OCR assets</translation>
+        </message>
+        <message>
+            <source>OK</source>
+            <translation>OK</translation>
         </message>
         <message>
             <source>Other app data disk usage</source>
@@ -3550,6 +3677,14 @@ Unavailable: %2</translation>
             <translation>Portable</translation>
         </message>
         <message>
+            <source>Preparing migration…</source>
+            <translation>Preparing migration…</translation>
+        </message>
+        <message>
+            <source>Proceed</source>
+            <translation>Proceed</translation>
+        </message>
+        <message>
             <source>Read-only (newer configuration)</source>
             <translation>Read-only (newer configuration)</translation>
         </message>
@@ -3570,6 +3705,10 @@ Unavailable: %2</translation>
             <translation>Refresh storage usage</translation>
         </message>
         <message>
+            <source>Removing old files — %1/%2</source>
+            <translation>Removing old files — %1/%2</translation>
+        </message>
+        <message>
             <source>Scanning…</source>
             <translation>Scanning…</translation>
         </message>
@@ -3582,12 +3721,28 @@ Unavailable: %2</translation>
             <translation>Screenshot history disk usage</translation>
         </message>
         <message>
+            <source>Settings and open pinned windows will be copied to %1. Screenshot and closed pinned history will stay in the old directory. Continue?</source>
+            <translation>Settings and open pinned windows will be copied to %1. Screenshot and closed pinned history will stay in the old directory. Continue?</translation>
+        </message>
+        <message>
+            <source>Storage directory</source>
+            <translation>Storage directory</translation>
+        </message>
+        <message>
             <source>Storage location</source>
             <translation>Storage location</translation>
         </message>
         <message>
+            <source>Storage migration complete.</source>
+            <translation>Storage migration complete.</translation>
+        </message>
+        <message>
             <source>Storage mode</source>
             <translation>Storage mode</translation>
+        </message>
+        <message>
+            <source>Switching storage directory…</source>
+            <translation>Switching storage directory…</translation>
         </message>
         <message>
             <source>Thumbnail cache</source>
@@ -3608,6 +3763,10 @@ Unavailable: %2</translation>
         <message>
             <source>Unavailable</source>
             <translation>Unavailable</translation>
+        </message>
+        <message>
+            <source>Verifying data — %1/%2</source>
+            <translation>Verifying data — %1/%2</translation>
         </message>
     </context>
     <context>
@@ -3770,6 +3929,25 @@ Unavailable: %2</translation>
         <message>
             <source>Global mouse input is unavailable. Check permissions and retry.</source>
             <translation>Global mouse input is unavailable. Check permissions and retry.</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::storage::ApplicationStorage</name>
+        <message>
+            <source>Custom storage directories are only supported on Windows.</source>
+            <translation>Custom storage directories are only supported on Windows.</translation>
+        </message>
+        <message>
+            <source>File logging could not be restarted.</source>
+            <translation>File logging could not be restarted.</translation>
+        </message>
+        <message>
+            <source>Some pinned windows could not be prepared in the new directory.</source>
+            <translation>Some pinned windows could not be prepared in the new directory.</translation>
+        </message>
+        <message>
+            <source>Storage is busy or unavailable. Try again when current operations finish.</source>
+            <translation>Storage is busy or unavailable. Try again when current operations finish.</translation>
         </message>
     </context>
     <context>

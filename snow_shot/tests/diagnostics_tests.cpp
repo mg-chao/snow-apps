@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -150,6 +151,89 @@ void concurrentRecordsAndSnapshots() {
     service.record(QtCriticalMsg, QStringLiteral("test"), QStringLiteral("later"));
     require(service.flush(), "later flush");
     require(read(result.path) == snapshot, "published snapshots must be immutable");
+}
+void restartPublishesPreparedSession() {
+    QTemporaryDir directory;
+    DiagnosticsService service;
+    const auto source = QDir(directory.path()).filePath(QStringLiteral("source"));
+    const auto destination = QDir(directory.path()).filePath(QStringLiteral("destination"));
+    require(service.initialize(optionsFor(source)), "source logger initializes");
+    const auto before = service.status();
+    std::promise<void> preparing;
+    auto prepared = preparing.get_future();
+    std::promise<void> resume;
+    auto resumed = resume.get_future().share();
+    std::once_flag pause;
+    auto options = optionsFor(destination);
+    options.clock = [&] {
+        std::call_once(pause, [&] {
+            preparing.set_value();
+            resumed.wait();
+        });
+        return QDateTime::currentDateTime();
+    };
+    auto restart = std::async(std::launch::async, [&] { return service.initialize(options); });
+    const bool reached = prepared.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    const auto during = service.status();
+    const auto directories = service.directories();
+    const auto visibleOptions = service.options();
+    service.record(QtWarningMsg, QStringLiteral("test"), QStringLiteral("during.restart"));
+    service.requestMaintenance();
+    resume.set_value();
+    const bool initialized = restart.get();
+    service.shutdown();
+    require(reached && initialized, "paused logger restart completes");
+    require(during.sessionId == before.sessionId && during.directory == before.directory &&
+                during.currentFile == before.currentFile && directories == QStringList{source} &&
+                visibleOptions.directories == QStringList{source},
+            "partially initialized diagnostics session must not replace the published session");
+    require(service.status().directory == destination, "prepared destination session published");
+}
+struct ClockCopyGate {
+    std::atomic_bool armed{false};
+    std::promise<void> entered;
+    std::shared_future<void> resume;
+};
+struct PausingClock {
+    explicit PausingClock(std::shared_ptr<ClockCopyGate> value) : gate(std::move(value)) {}
+    PausingClock(const PausingClock& other) : gate(other.gate) {
+        if (gate->armed.exchange(false)) {
+            gate->entered.set_value();
+            gate->resume.wait();
+        }
+    }
+    QDateTime operator()() const {
+        return QDateTime::currentDateTime();
+    }
+    std::shared_ptr<ClockCopyGate> gate;
+};
+void restartRetainsInFlightReader() {
+    QTemporaryDir directory;
+    DiagnosticsService service;
+    const auto gate = std::make_shared<ClockCopyGate>();
+    std::promise<void> resume;
+    gate->resume = resume.get_future().share();
+    auto entered = gate->entered.get_future();
+    auto lifetime = std::make_shared<int>(0);
+    const std::weak_ptr<int> retiredSession = lifetime;
+    auto options = optionsFor(QDir(directory.path()).filePath(QStringLiteral("source")));
+    options.clock = PausingClock(gate);
+    options.removeFile = [lifetime](const QString& path) { return QFile::remove(path); };
+    lifetime.reset();
+    require(service.initialize(std::move(options)), "retained-reader source initializes");
+    gate->armed.store(true);
+    auto reader = std::async(std::launch::async, [&] { return service.options(); });
+    const bool paused = entered.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    const auto destination = QDir(directory.path()).filePath(QStringLiteral("destination"));
+    const bool initialized = service.initialize(optionsFor(destination));
+    const bool retained = !retiredSession.expired();
+    resume.set_value();
+    const auto snapshot = reader.get();
+    service.shutdown();
+    require(paused && initialized, "logger restarts while an options reader is in flight");
+    require(retained && snapshot.directories ==
+                            QStringList{QDir(directory.path()).filePath(QStringLiteral("source"))},
+            "retired session stays alive until an in-flight reader finishes its snapshot");
 }
 void retentionAndRollover() {
     QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
@@ -448,6 +532,8 @@ int main(int argc, char** argv) {
         scrollingMetadataAndReportCadence();
         displayMetadata();
         concurrentRecordsAndSnapshots();
+        restartPublishesPreparedSession();
+        restartRetainsInFlightReader();
         retentionAndRollover();
         fallbackPrivacyAndFailures();
         boundedQueueAndRecord();

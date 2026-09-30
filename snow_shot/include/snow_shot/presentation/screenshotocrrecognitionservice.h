@@ -161,6 +161,10 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void setDetectorResizePolicy(ScreenshotOcrDetectorResizePolicy policy);
     void setRuntimeConfiguration(const ScreenshotOcrRuntimeConfiguration& configuration);
     [[nodiscard]] int liveWorkerCount() const;
+    [[nodiscard]] bool storageBusy() const;
+    void suspendStorage();
+    void drainStorage();
+    void resumeStorage(const QString& cacheRoot);
     // Application-thread snapshots; the QProcess itself belongs to the transport thread.
     [[nodiscard]] qint64 processId() const;
     [[nodiscard]] QString processPath() const;
@@ -168,7 +172,10 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
   private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
+    std::unique_ptr<Impl> m_suspendedImpl;
     RequestToken m_nextToken = 0;
+    Options m_storageOptions;
+    ScreenshotOcrRuntimeConfiguration m_storageConfiguration;
 
   signals:
 };

@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <utility>
@@ -1092,8 +1093,31 @@ void actualOcrCrashAfterInference() {
 int runOcrLifecycleChild();
 void ocrProcessLifecycleTests();
 
+void storageRelocationPreservesServiceIdentity() {
+    QTemporaryDir root;
+    ScreenshotOcrRecognitionService::Options options;
+    options.offlineRoot = root.filePath(QStringLiteral("offline"));
+    options.cacheRoot = root.filePath(QStringLiteral("old"));
+    ScreenshotOcrRecognitionService service(options);
+    require(!service.storageBusy(), "idle OCR can suspend");
+    service.setBackendPreference(ScreenshotOcrBackendPreference::DirectMl);
+    service.suspendStorage();
+    auto drain = std::async(std::launch::async, [&] { service.drainStorage(); });
+    drain.get();
+    QCoreApplication::processEvents();
+    require(service.liveWorkerCount() == 0 && service.processId() == 0,
+            "old process fully drained without replacing service");
+    service.resumeStorage(root.filePath(QStringLiteral("new")));
+    QCoreApplication::processEvents();
+    require(!service.storageBusy(), "new OCR service is ready for requests");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--storage-relocation-only"))) {
+        storageRelocationPreservesServiceIdentity();
+        return 0;
+    }
     if (qEnvironmentVariableIsSet("SNOW_TEST_OCR_LIFECYCLE_CHILD"))
         return runOcrLifecycleChild();
     if (application.arguments().contains(QStringLiteral("--process-lifecycle"))) {

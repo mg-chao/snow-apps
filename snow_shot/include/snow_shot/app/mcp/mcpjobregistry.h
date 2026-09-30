@@ -30,6 +30,7 @@ class McpJobRegistry final : public QObject {
     bool discard(quint64 owner, const QString& id);
     void disconnected(quint64 owner);
     void shutdown();
+    [[nodiscard]] bool hasRunningJobs() const;
   signals:
     void changed(quint64 owner, const QString& id);
 

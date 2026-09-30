@@ -319,7 +319,8 @@ bool ConfigurationStore::setValues(const QMap<QString, QJsonValue>& values) {
     QVector<QPair<QString, QJsonValue>> changed;
     {
         QMutexLocker locker(&m_mutex);
-        if (!m_writeAvailable || m_compatibility == ConfigurationCompatibility::FutureVersion) {
+        if (m_suspended || !m_writeAvailable ||
+            m_compatibility == ConfigurationCompatibility::FutureVersion) {
             locker.unlock();
             rejectMutation(values.isEmpty() ? QString() : values.cbegin().key(),
                            QStringLiteral("Configuration storage is read-only"));
@@ -379,7 +380,8 @@ bool ConfigurationStore::applySnapshot(const QMap<QString, QJsonValue>& values, 
     QVector<QPair<QString, QJsonValue>> changed;
     {
         QMutexLocker locker(&m_mutex);
-        if (!m_writeAvailable || m_compatibility == ConfigurationCompatibility::FutureVersion) {
+        if (m_suspended || !m_writeAvailable ||
+            m_compatibility == ConfigurationCompatibility::FutureVersion) {
             locker.unlock();
             rejectMutation({}, QStringLiteral("Configuration storage is read-only"));
             return false;
@@ -459,6 +461,20 @@ StorageResult ConfigurationStore::flushNow() {
             }
         }
     }
+}
+
+void ConfigurationStore::suspendWrites(bool suspended) {
+    QMutexLocker mutationLock(&m_mutationMutex);
+    QMutexLocker lock(&m_mutex);
+    m_suspended = suspended;
+    if (suspended)
+        m_flushTimer.stop();
+}
+
+void ConfigurationStore::relocate(const QString& directory) {
+    QMutexLocker ioLock(&m_ioMutex);
+    QMutexLocker lock(&m_mutex);
+    m_configurationFile = QDir(directory).filePath(QStringLiteral("config.json"));
 }
 
 void ConfigurationStore::load() {

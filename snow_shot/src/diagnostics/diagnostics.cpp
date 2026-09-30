@@ -158,6 +158,8 @@ struct DiagnosticsService::Impl {
     mutable std::mutex stateMutex;
     DiagnosticsStatus state;
     QStringList roots;
+    QStringList crashDatabases;
+    QString captureDatabase;
     QString pipe;
     QString collectorError;
     QString emergencyPath;
@@ -548,9 +550,10 @@ struct DiagnosticsService::Impl {
                     }
                 }
             }
+        }
+        for (const QString& database : crashDatabases) {
             auto reportCollector = collector;
-            if (root != state.directory) {
-                const QString database = QDir(root).filePath(QStringLiteral("crashes"));
+            if (!reportCollector || database != captureDatabase) {
                 if (!safePath(database) || !QFileInfo(database).isDir()) {
                     continue;
                 }
@@ -625,8 +628,7 @@ struct DiagnosticsService::Impl {
             if (!file.collector)
                 total += file.bytes;
         }
-        for (const QString& root : roots) {
-            const QString database = QDir(root).filePath(QStringLiteral("crashes"));
+        for (const QString& database : crashDatabases) {
             if (safePath(database)) {
                 total += treeBytes(database);
             }
@@ -689,8 +691,7 @@ struct DiagnosticsService::Impl {
             if (!file.collector && safePath(file.path))
                 total += QFileInfo(file.path).size();
         }
-        for (const QString& root : roots) {
-            const QString database = QDir(root).filePath(QStringLiteral("crashes"));
+        for (const QString& database : crashDatabases) {
             if (safePath(database))
                 total += treeBytes(database);
         }
@@ -922,7 +923,7 @@ struct DiagnosticsService::Impl {
 };
 
 DiagnosticsService::DiagnosticsService(QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this)) {}
+    : QObject(parent), m_impl(std::make_shared<Impl>(*this)) {}
 DiagnosticsService::~DiagnosticsService() {
     shutdown();
 }
@@ -933,8 +934,8 @@ DiagnosticsService& DiagnosticsService::instance() {
 
 bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     shutdown();
-    m_impl = std::make_unique<Impl>(*this);
-    auto& impl = *m_impl;
+    const auto session = std::make_shared<Impl>(*this);
+    auto& impl = *session;
     impl.options = std::move(options);
     impl.options.segmentBytes = std::max<qint64>(kRecordLimit, impl.options.segmentBytes);
     impl.options.dailyBytes = std::max(impl.options.segmentBytes, impl.options.dailyBytes);
@@ -949,6 +950,9 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
         }
     }
     for (const QString& root : impl.roots) {
+        impl.crashDatabases.append(QDir(root).filePath(QStringLiteral("crashes")));
+    }
+    for (const QString& root : impl.roots) {
         if (!prepareDirectory(root))
             continue;
         QFile probe(QDir(root).filePath(QStringLiteral("probe-%1").arg(impl.state.sessionId)));
@@ -960,8 +964,10 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
         break;
     }
     if (impl.state.directory.isEmpty()) {
-        impl.fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
-            "DiagnosticsService", "No writable diagnostics directory is available.")));
+        impl.state.lastError = QString::fromUtf8(QT_TRANSLATE_NOOP(
+            "DiagnosticsService", "No writable diagnostics directory is available."));
+        m_impl.store(session);
+        impl.notify();
         return false;
     }
     if (impl.state.directory != impl.roots.value(0)) {
@@ -973,26 +979,56 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
         QDir(impl.state.directory)
             .filePath(QStringLiteral("session-%1.lock").arg(impl.state.sessionId)));
     impl.sessionLock->setStaleLockTime(0);
-    if (!impl.sessionLock->tryLock(0))
+    if (!impl.sessionLock->tryLock(0)) {
+        m_impl.store(session);
         return false;
+    }
     if (impl.options.installMessageHandler)
         snow_diag_prepare(impl.state.sessionId.toUtf8().constData(),
                           impl.options.version.toUtf8().constData(),
                           impl.options.revision.toUtf8().constData());
     impl.rotateEmergency(impl.options.clock().date());
+    const QString registered =
+        impl.options.crashCollector ? QString() : QString::fromUtf8(snow_diag_database());
+    if (!registered.isEmpty()) {
+        impl.captureDatabase = registered;
+        impl.options.crashCaptureDirectory = registered;
+    }
     if (impl.options.enableCrashCapture) {
         impl.collector =
             impl.options.crashCollector ? impl.options.crashCollector : makeCrashCollector();
         QString error;
-        const QString database = QDir(impl.state.directory).filePath(QStringLiteral("crashes"));
+        const QString database =
+            !registered.isEmpty() ? registered
+            : impl.options.crashCaptureDirectory.isEmpty()
+                ? QDir(impl.state.directory).filePath(QStringLiteral("crashes"))
+                : QDir::cleanPath(impl.options.crashCaptureDirectory);
         if (prepareDirectory(database)) {
             impl.state.crashCaptureAvailable = impl.collector->initialize(
                 database, impl.options.handlerPath, impl.state.sessionId, &error);
+            if (impl.state.crashCaptureAvailable) {
+                impl.captureDatabase = impl.collector->databaseDirectory();
+                if (impl.captureDatabase.isEmpty())
+                    impl.captureDatabase = database;
+                impl.options.crashCaptureDirectory = impl.captureDatabase;
+            }
+        } else {
+            error = QCoreApplication::translate(
+                "DiagnosticsService", "The local crash database could not be initialized.");
         }
         if (!impl.state.crashCaptureAvailable)
             impl.state.lastError = error;
         impl.collectorError = error;
         impl.pipe = impl.collector->pipeName();
+    }
+    // Completed reports remain readable even when a recovery/export session does
+    // not install native crash capture. Legacy databases under log roots stay readable too.
+    if (!impl.options.crashCaptureDirectory.isEmpty()) {
+        const QString database = QDir::cleanPath(impl.options.crashCaptureDirectory);
+        if (!impl.crashDatabases.contains(database, Qt::CaseInsensitive))
+            impl.crashDatabases.append(database);
+        if (!impl.roots.contains(database, Qt::CaseInsensitive))
+            impl.roots.append(database);
     }
     impl.running = true;
     impl.markerPath = QDir(impl.state.directory)
@@ -1002,7 +1038,10 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
         marker.write(impl.options.clock().toString(Qt::ISODateWithMs).toUtf8());
         marker.close();
     }
-    impl.worker = std::thread([&impl] { impl.loop(); });
+    // Publish only after all immutable session data is prepared. Calls already using
+    // the stopped session keep it alive until they release their own snapshot.
+    m_impl.store(session);
+    impl.worker = std::thread([session] { session->loop(); });
     if (impl.options.installMessageHandler) {
         std::lock_guard<std::mutex> lock(handlerMutex);
         installedService = this;
@@ -1027,8 +1066,13 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     return impl.running && !impl.stopping;
 }
 
+DiagnosticsOptions DiagnosticsService::options() const {
+    return m_impl.load()->options;
+}
+
 void DiagnosticsService::shutdown() {
-    auto& impl = *m_impl;
+    const auto session = m_impl.load();
+    auto& impl = *session;
     if (!impl.running)
         return;
     record(QtInfoMsg, QStringLiteral("snow_shot.app"), QStringLiteral("session.clean_shutdown"));
@@ -1057,17 +1101,22 @@ void DiagnosticsService::shutdown() {
     if (impl.ownsHandler)
         snow_diag_shutdown();
     impl.emergencyLock.reset();
+    impl.collector.reset();
 }
 
 DiagnosticsStatus DiagnosticsService::status() const {
-    std::lock_guard<std::mutex> lock(m_impl->stateMutex);
-    return m_impl->state;
+    const auto session = m_impl.load();
+    std::lock_guard<std::mutex> lock(session->stateMutex);
+    return session->state;
 }
 QStringList DiagnosticsService::directories() const {
-    return m_impl->roots;
+    return m_impl.load()->roots;
 }
 QString DiagnosticsService::crashPipeName() const {
-    return m_impl->pipe;
+    return m_impl.load()->pipe;
+}
+QString DiagnosticsService::crashCaptureDirectory() const {
+    return m_impl.load()->captureDatabase;
 }
 
 void DiagnosticsService::record(QtMsgType level, const QString& category, const QString& event,
@@ -1087,7 +1136,8 @@ void DiagnosticsService::record(QtMsgType level, const QString& category, const 
                 insideRecord = false;
             }
         } reset;
-        auto& impl = *m_impl;
+        const auto session = m_impl.load();
+        auto& impl = *session;
         std::lock_guard<std::mutex> lock(impl.mutex);
         if (!impl.running || impl.stopping || level == QtDebugMsg)
             return;
@@ -1130,19 +1180,22 @@ void DiagnosticsService::record(QtMsgType level, const QString& category, const 
 }
 
 bool DiagnosticsService::flush(std::chrono::milliseconds timeout) {
+    const auto session = m_impl.load();
     auto promise = std::make_shared<std::promise<bool>>();
     auto future = promise->get_future();
     {
-        std::lock_guard<std::mutex> lock(m_impl->mutex);
-        if (!m_impl->running || m_impl->stopping || m_impl->tasks.size() >= 4160)
+        std::lock_guard<std::mutex> lock(session->mutex);
+        if (!session->running || session->stopping || session->tasks.size() >= 4160)
             return false;
-        m_impl->tasks.push_back(
-            {{}, {}, QtInfoMsg, [this, promise] {
-                 const bool flushed = m_impl->output.isOpen() && m_impl->output.flush();
-                 promise->set_value(flushed && !m_impl->writeFailed && status().loggingAvailable);
-             }});
+        session->tasks.push_back({{}, {}, QtInfoMsg, [session, promise] {
+                                      const bool flushed =
+                                          session->output.isOpen() && session->output.flush();
+                                      std::lock_guard<std::mutex> stateLock(session->stateMutex);
+                                      promise->set_value(flushed && !session->writeFailed &&
+                                                         session->state.loggingAvailable);
+                                  }});
     }
-    m_impl->wake.notify_one();
+    session->wake.notify_one();
     if (future.wait_for(timeout) != std::future_status::ready)
         return false;
     try {
@@ -1153,28 +1206,30 @@ bool DiagnosticsService::flush(std::chrono::milliseconds timeout) {
 }
 
 void DiagnosticsService::requestMaintenance() {
-    std::lock_guard<std::mutex> lock(m_impl->mutex);
-    if (!m_impl->running || m_impl->stopping || m_impl->maintenancePending)
+    const auto session = m_impl.load();
+    std::lock_guard<std::mutex> lock(session->mutex);
+    if (!session->running || session->stopping || session->maintenancePending)
         return;
-    m_impl->maintenancePending = true;
-    m_impl->tasks.push_back({{}, {}, QtInfoMsg, [this] {
-                                 {
-                                     std::lock_guard<std::mutex> lock(m_impl->mutex);
-                                     m_impl->maintenancePending = false;
-                                 }
-                                 m_impl->maintenance();
-                             }});
-    m_impl->wake.notify_one();
+    session->maintenancePending = true;
+    session->tasks.push_back({{}, {}, QtInfoMsg, [session] {
+                                  {
+                                      std::lock_guard<std::mutex> lock(session->mutex);
+                                      session->maintenancePending = false;
+                                  }
+                                  session->maintenance();
+                              }});
+    session->wake.notify_one();
 }
 
 std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& date) {
+    const auto session = m_impl.load();
     auto promise = std::make_shared<std::promise<LogExportResult>>();
     auto future = promise->get_future().share();
     record(QtInfoMsg, QStringLiteral("snow_shot.diagnostics"), QStringLiteral("export.snapshot"));
-    std::lock_guard<std::mutex> lock(m_impl->mutex);
+    std::lock_guard<std::mutex> lock(session->mutex);
     {
-        std::lock_guard<std::mutex> stateLock(m_impl->stateMutex);
-        if (!m_impl->running || m_impl->stopping || m_impl->state.exporting || !date.isValid()) {
+        std::lock_guard<std::mutex> stateLock(session->stateMutex);
+        if (!session->running || session->stopping || session->state.exporting || !date.isValid()) {
             promise->set_value(
                 {false,
                  {},
@@ -1182,52 +1237,53 @@ std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& d
                      "DiagnosticsService", "Log export is unavailable or already running."))});
             return future;
         }
-        m_impl->state.exporting = true;
+        session->state.exporting = true;
     }
-    m_impl->tasks.push_back({{}, {}, QtInfoMsg, [this, date, promise] {
-                                 LogExportResult result;
-                                 try {
-                                     result = m_impl->exportNow(date);
-                                 } catch (...) {
-                                     result.error = QString::fromUtf8(
-                                         QT_TRANSLATE_NOOP("DiagnosticsService",
-                                                           "The log snapshot could not be saved."));
-                                 }
-                                 {
-                                     std::lock_guard<std::mutex> stateLock(m_impl->stateMutex);
-                                     m_impl->state.exporting = false;
-                                 }
-                                 promise->set_value(std::move(result));
-                                 m_impl->notify();
-                             }});
-    m_impl->wake.notify_one();
-    m_impl->notify();
+    session->tasks.push_back(
+        {{}, {}, QtInfoMsg, [session, date, promise] {
+             LogExportResult result;
+             try {
+                 result = session->exportNow(date);
+             } catch (...) {
+                 result.error = QString::fromUtf8(QT_TRANSLATE_NOOP(
+                     "DiagnosticsService", "The log snapshot could not be saved."));
+             }
+             {
+                 std::lock_guard<std::mutex> stateLock(session->stateMutex);
+                 session->state.exporting = false;
+             }
+             promise->set_value(std::move(result));
+             session->notify();
+         }});
+    session->wake.notify_one();
+    session->notify();
     return future;
 }
 
 void DiagnosticsService::protectSnapshot(const QString& path) {
-    std::lock_guard<std::mutex> lock(m_impl->mutex);
-    if (!m_impl->running || m_impl->stopping)
+    const auto session = m_impl.load();
+    std::lock_guard<std::mutex> lock(session->mutex);
+    if (!session->running || session->stopping)
         return;
-    m_impl->tasks.push_back(
-        {{}, {}, QtInfoMsg, [this, path] {
-             m_impl->protectedSnapshot = path;
-             m_impl->pendingSnapshot.clear();
-             QSaveFile publication(
-                 QDir(m_impl->state.directory).filePath(QStringLiteral("clipboard-snapshot.json")));
+    session->tasks.push_back(
+        {{}, {}, QtInfoMsg, [session, path] {
+             session->protectedSnapshot = path;
+             session->pendingSnapshot.clear();
+             QSaveFile publication(QDir(session->state.directory)
+                                       .filePath(QStringLiteral("clipboard-snapshot.json")));
              const QByteArray data =
                  QJsonDocument(QJsonObject{{QStringLiteral("path"),
-                                            QDir(m_impl->state.directory).relativeFilePath(path)}})
+                                            QDir(session->state.directory).relativeFilePath(path)}})
                      .toJson(QJsonDocument::Compact);
              if (!publication.open(QIODevice::WriteOnly) ||
                  publication.write(data) != data.size() || !publication.commit()) {
-                 m_impl->fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
+                 session->fail(QString::fromUtf8(QT_TRANSLATE_NOOP(
                      "DiagnosticsService", "The log snapshot could not be saved.")));
              }
-             m_impl->snapshotLock.reset();
-             m_impl->maintenance();
+             session->snapshotLock.reset();
+             session->maintenance();
          }});
-    m_impl->wake.notify_one();
+    session->wake.notify_one();
 }
 
 QString DiagnosticsService::sanitize(QString text) {

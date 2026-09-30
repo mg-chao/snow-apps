@@ -242,6 +242,10 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
     if (!applicationStorage.isInitialized()) {
         static_cast<void>(applicationStorage.initialize());
     }
+    connect(&applicationStorage, &storage::ApplicationStorage::directoryChangeProgress, this,
+            &SettingsBackend::directoryChangeProgress);
+    connect(&applicationStorage, &storage::ApplicationStorage::directoryChangeFinished, this,
+            &SettingsBackend::directoryChangeFinished);
     connect(&applicationStorage, &storage::ApplicationStorage::storageStatusChanged, this,
             [this](const storage::StorageStatus&) { emit synchronized(); });
     connect(&applicationStorage, &storage::ApplicationStorage::captureHistoryClearFinished, this,
@@ -1555,6 +1559,11 @@ storage::StorageStatus BuiltInSettingsBackend::storageStatus() const {
     auto status = storage::ApplicationStorage::instance().status();
     status.diagnostics.exporting = status.diagnostics.exporting || m_copyLogBusy;
     return status;
+}
+
+storage::StorageResult BuiltInSettingsBackend::changeStorageDirectory(const QString& directory,
+                                                                      bool migrate) {
+    return storage::ApplicationStorage::instance().requestDirectoryChange(directory, migrate);
 }
 
 void BuiltInSettingsBackend::refreshStorageStatus() {

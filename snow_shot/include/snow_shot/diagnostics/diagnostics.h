@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include <chrono>
+#include <atomic>
 #include <functional>
 #include <future>
 #include <memory>
@@ -29,6 +30,9 @@ class CrashCollector {
     virtual QVector<CrashReport> reports() = 0;
     virtual bool removeReport(const QString& id) = 0;
     virtual QString pipeName() const = 0;
+    virtual QString databaseDirectory() const {
+        return {};
+    }
     virtual bool healthy() const {
         return true;
     }
@@ -37,6 +41,9 @@ class CrashCollector {
 struct DiagnosticsOptions {
     QStringList directories;
     QString handlerPath;
+    // Stable Crashpad database, independent of the relocatable log directories.
+    // The first successful process registration owns this path until process exit.
+    QString crashCaptureDirectory;
     QString version;
     QString revision;
     QString buildConfiguration;
@@ -89,9 +96,11 @@ class DiagnosticsService final : public QObject {
     static DiagnosticsService& instance();
     bool initialize(DiagnosticsOptions options);
     void shutdown();
+    DiagnosticsOptions options() const;
     DiagnosticsStatus status() const;
     QStringList directories() const;
     QString crashPipeName() const;
+    QString crashCaptureDirectory() const;
     void record(QtMsgType level, const QString& category, const QString& event,
                 const QString& message = {}, const QJsonObject& fields = {},
                 const QMessageLogContext& context = {}) noexcept;
@@ -106,7 +115,8 @@ class DiagnosticsService final : public QObject {
 
   private:
     struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    // Readers retain their session while a storage migration publishes its replacement.
+    std::atomic<std::shared_ptr<Impl>> m_impl;
 };
 
 void logEvent(const QString& category, const QString& event, const QJsonObject& fields = {},

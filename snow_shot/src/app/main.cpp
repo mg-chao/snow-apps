@@ -421,6 +421,11 @@ int main(int argc, char* argv[]) {
     diagnosticsOptions.directories.append(
         QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
             .filePath(QStringLiteral("logs")));
+    // Crashpad registers process-wide exception resources once. Its live database must
+    // stay at a stable path while the user-selected data/log directory is migrated.
+    diagnosticsOptions.crashCaptureDirectory =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+            .filePath(QStringLiteral("logs/crashes"));
     diagnosticsOptions.directories.append(
         QDir(QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).canonicalPath())
             .filePath(QStringLiteral("SnowShot/%1/logs").arg(applicationName)));

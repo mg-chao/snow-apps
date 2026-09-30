@@ -1425,6 +1425,8 @@ void ScreenshotPinnedWindow::cancelDeferredInactiveGroupClose() {
 }
 
 void ScreenshotPinnedWindow::schedulePersistence() {
+    if (m_storageWritesSuspended)
+        return;
     m_automationRevision = snow_shot::presentation::nextAutomationRevision();
     if (!m_persistenceEnabled || m_persistenceWriter == nullptr || m_persistenceId.isEmpty() ||
         !m_presented || m_closing || m_persistenceTimer == nullptr) {
@@ -1434,6 +1436,8 @@ void ScreenshotPinnedWindow::schedulePersistence() {
 }
 
 void ScreenshotPinnedWindow::persistNow() {
+    if (m_storageWritesSuspended)
+        return;
     if (!m_persistenceEnabled || m_persistenceWriter == nullptr || m_persistenceId.isEmpty() ||
         !m_presented || m_closing ||
         (m_originalImage.isNull() && m_originalClipboardContent.isEmpty())) {
@@ -1533,6 +1537,22 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
 
 snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceSnapshot() const {
     return persistenceRecord();
+}
+
+void ScreenshotPinnedWindow::suspendStorageWrites() {
+    if (m_persistenceTimer)
+        m_persistenceTimer->stop();
+    persistNow();
+    m_storageWritesSuspended = true;
+}
+
+void ScreenshotPinnedWindow::resumeStorageWrites(const QString& oldRoot, const QString& newRoot) {
+    const auto path = QDir::cleanPath(m_originalClipboardContent.localFilePath);
+    if (path.startsWith(QDir::cleanPath(oldRoot) + u'/', Qt::CaseInsensitive))
+        m_originalClipboardContent.localFilePath =
+            QDir(newRoot).filePath(QDir(oldRoot).relativeFilePath(path));
+    m_storageWritesSuspended = false;
+    schedulePersistence();
 }
 
 void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {

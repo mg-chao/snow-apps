@@ -689,6 +689,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Feature unavailable</translation>
         </message>
         <message>
+            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</source>
+            <translation>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</translation>
+        </message>
+        <message>
             <source>Finish capturing, recording, or exporting before updating.</source>
             <translation>Finish capturing, recording, or exporting before updating.</translation>
         </message>
