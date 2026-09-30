@@ -324,6 +324,10 @@
             <translation>编辑选区</translation>
         </message>
         <message>
+            <source>Effect Settings</source>
+            <translation>效果设置</translation>
+        </message>
+        <message>
             <source>Elbow arrow</source>
             <translation>折线箭头</translation>
         </message>
@@ -746,6 +750,10 @@
         <message>
             <source>Recording format</source>
             <translation>录制格式</translation>
+        </message>
+        <message>
+            <source>Recording settings</source>
+            <translation>录屏设置</translation>
         </message>
         <message>
             <source>Rectangle</source>

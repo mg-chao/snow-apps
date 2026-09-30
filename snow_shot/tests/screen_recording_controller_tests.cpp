@@ -45,6 +45,12 @@
 #include <QJsonArray>
 #include <QMessageBox>
 #include "widgets/color_picker.h"
+#include "widgets/form.h"
+#include "widgets/modal.h"
+#include "widgets/select.h"
+#include "widgets/slider.h"
+#include "widgets/switch.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include <future>
 #ifdef Q_OS_MACOS
 #include "macos_capture_exclusion_probe.h"
@@ -1668,6 +1674,170 @@ const char* snow_recording_last_error_message() {
 }
 }
 
+void recordingSettingsDialog() {
+    using namespace adqt::widgets;
+    namespace settings = snow_shot::presentation::settings;
+    ScreenRecordingController controller(testEffectsSource);
+    controller.open(QRect(80, 80, 320, 240));
+    auto* toolbarPalette = palette();
+    auto* button = toolbarPalette->findChild<AdButton*>(QStringLiteral("screenRecordingSettings"));
+    require(button != nullptr, "recording settings button must exist");
+    require(toolbarPalette->findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal")) ==
+                nullptr,
+            "recording preferences must stay lazy when opening the toolbar");
+    button->click();
+    QCoreApplication::processEvents();
+    auto* modal = controller.findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal"));
+    require(modal != nullptr && modal->isOpen(), "settings button must open a popup window");
+    require(modal->mode() == AdModal::Mode::Window && modal->ownerWindow() != nullptr,
+            "recording settings must be a standalone owned popup");
+    auto* form =
+        modal->contentWidget()->findChild<AdForm*>(QStringLiteral("screenRecordingSettingsForm"));
+    require(form != nullptr, "recording preferences must use Ant Design Qt Form");
+    require(form->formLayout() == AdForm::FormLayout::Vertical,
+            "recording preferences must place ordinary form labels above their controls");
+    const auto& registry = settings::builtInSettingsRegistry();
+    int expectedCount = 0;
+    for (const auto& descriptor : registry.fields()) {
+        if (descriptor.reset != settings::SettingsSectionReset::ScreenRecording &&
+            descriptor.reset != settings::SettingsSectionReset::ScreenRecordingCapture)
+            continue;
+        ++expectedCount;
+        require(form->field(descriptor.id) != nullptr,
+                "every feature and system recording preference must appear in the form");
+        require(form->field(descriptor.id)->label() == descriptor.definition->title.translated(),
+                "recording preferences must share their labels with the main settings page");
+        require(form->field(descriptor.id)->extraText().isEmpty(),
+                "recording preferences must keep descriptions out of the compact form rows");
+    }
+    require(form->items().size() == expectedCount && expectedCount == 10,
+            "recording popup must contain exactly the requested settings categories");
+    class SettingsTranslator final : public QTranslator {
+      public:
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ScreenRecordingSettingsDialog" ||
+                QByteArray(context) == "SettingsCatalog")
+                return QStringLiteral("Translated: ") + QString::fromUtf8(source);
+            return {};
+        }
+    } translator;
+    require(QCoreApplication::installTranslator(&translator),
+            "install recording settings translations");
+    QCoreApplication::processEvents();
+    require(modal->windowTitle() == QStringLiteral("Translated: Recording settings") &&
+                form->field(QStringLiteral("screen-recording.frame-rate"))->label() ==
+                    QStringLiteral("Translated: Frame rate") &&
+                form->findChild<AdSelect*>(QStringLiteral("screen-recording.encoder"))
+                        ->options()
+                        .first()
+                        .label == QStringLiteral("Translated: H.264 (Hardware)"),
+            "open recording preferences must retranslate their title, labels and options");
+    QCoreApplication::removeTranslator(&translator);
+    QCoreApplication::processEvents();
+    if (const QString preview = qEnvironmentVariable("SNOW_TEST_RECORDING_SETTINGS_PREVIEW");
+        !preview.isEmpty()) {
+        require(modal->contentWidget()->window()->grab().save(preview),
+                "save recording settings popup preview");
+    }
+    const auto items = form->items();
+    for (int index = 0; index < items.size(); index += 2) {
+        const auto left = items[index]->geometry();
+        const auto right = items[index + 1]->geometry();
+        require(left.top() == right.top() && left.right() < right.left() &&
+                    qAbs(left.width() - right.width()) <= 1,
+                "recording preferences must use two equally sized columns in each row");
+        require(form->rect().contains(left) && form->rect().contains(right) &&
+                    (index == 0 || items[index - 2]->geometry().bottom() < left.top()),
+                "all recording preferences must fit in five rows without scrolling");
+    }
+    auto* captureToolbar =
+        form->findChild<AdSwitch*>(QStringLiteral("screen-recording.capture-toolbar"));
+    require(captureToolbar != nullptr &&
+                modal->contentWidget()->rect().contains(captureToolbar->mapTo(
+                    modal->contentWidget(), captureToolbar->rect().center())) &&
+                captureToolbar->toolTip() ==
+                    registry.field(QStringLiteral("screen-recording.capture-toolbar"))
+                        ->definition->description.translated(),
+            "the system recording preference and its description must remain reachable");
+    const auto select = [form](const char* id, const QVariant& value) {
+        auto* control = form->findChild<AdSelect*>(QString::fromLatin1(id));
+        require(control != nullptr, "recording select must exist");
+        control->setCurrentValue(value);
+    };
+    select("screen-recording.clarity", QStringLiteral("4k"));
+    select("screen-recording.frame-rate", 60);
+    select("screen-recording.animated-image-clarity", QStringLiteral("1080p"));
+    select("screen-recording.animated-image-frame-rate", 15);
+    select("screen-recording.encoder", QStringLiteral("h265"));
+    select("screen-recording.encoding-preset", QStringLiteral("medium"));
+    auto* quality = form->findChild<AdSlider*>(QStringLiteral("screen-recording.video-quality"));
+    require(quality != nullptr && quality->minimum() == 0 && quality->maximum() == 100,
+            "recording quality must use the shared schema range");
+    quality->setValue(65);
+    const auto toggle = [form](const char* id, bool value) {
+        auto* control = form->findChild<AdSwitch*>(QString::fromLatin1(id));
+        require(control != nullptr, "recording toggle must exist");
+        control->setChecked(value);
+    };
+    toggle("screen-recording.loop-animated-images", false);
+    toggle("screen-recording.separate-audio-tracks", true);
+    toggle("screen-recording.capture-toolbar", false);
+    const snow_shot::storage::RecordingSettings saved;
+    require(saved.screenRecordingClarity() == QStringLiteral("4k") && saved.frameRate() == 60 &&
+                saved.animatedImageClarity() == QStringLiteral("1080p") &&
+                saved.animatedImageFrameRate() == 15 && saved.encoder() == QStringLiteral("h265") &&
+                saved.encodingPreset() == QStringLiteral("medium") && saved.videoQuality() == 65 &&
+                !saved.loopAnimatedImages() && saved.separateAudioTracks() &&
+                !saved.captureToolbarInRecording(),
+            "every recording popup editor must persist through the shared settings backend");
+    require(saved.setFrameRate(30), "external settings write must succeed");
+    QCoreApplication::processEvents();
+    require(form->findChild<AdSelect*>(QStringLiteral("screen-recording.frame-rate"))
+                    ->currentValue()
+                    .toInt() == 30,
+            "an open recording form must follow settings changed elsewhere");
+    QPointer<AdModal> retired(modal);
+    modal->accept();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(retired.isNull(), "closing recording settings must release its form and popup windows");
+    button->click();
+    modal = controller.findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal"));
+    require(modal != nullptr && modal->isOpen(), "recording settings must reopen after dismissal");
+    require(modal->contentWidget()
+                    ->findChild<AdSelect*>(QStringLiteral("screen-recording.frame-rate"))
+                    ->currentValue()
+                    .toInt() == 30,
+            "reopening recording settings must restore current saved preferences");
+    toolbarPalette->setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    require(!modal->isOpen(), "switching to drawing must dismiss recording preferences");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    toolbarPalette->findChild<AdButton*>(QStringLiteral("screenRecordingExportSettings"))->click();
+    button->click();
+    modal = controller.findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal"));
+    retired = modal;
+    const auto toolbarId = snow_shot::platform::captureWindowId(toolbarPalette->window());
+    const std::vector<uint32_t> expectedExclusions =
+        toolbarId ? std::vector<uint32_t>{*toolbarId} : std::vector<uint32_t>{};
+    controller.startRecording();
+    waitForRecording(controller);
+    require(!button->isEnabled() && (retired.isNull() || !retired->isOpen()),
+            "recording must disable and dismiss the preferences window");
+    require(lastDirectConfig.capture_fps == 30 && lastDirectConfig.maximum_width == 3840 &&
+                lastDirectConfig.maximum_height == 2160 &&
+                lastDirectConfig.codec == SNOW_CAPTURE_VIDEO_CODEC_H265 &&
+                lastDirectConfig.preset == SNOW_CAPTURE_VIDEO_ENCODING_PRESET_MEDIUM &&
+                lastDirectConfig.quality == 65 && lastDirectConfig.loop_animated_images == 0 &&
+                lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE &&
+                lastExcludedWindows == expectedExclusions,
+            "the next recording must use preferences saved in the popup");
+    toolbarPalette->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 int main(int argc, char** argv) {
 #ifdef SNOW_RECORDING_EFFECTS_BENCHMARK
     RecordingEffectsBenchmarkApplication app(argc, argv);
@@ -1737,6 +1907,18 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (app.arguments().contains(QStringLiteral("--settings-dialog-only"))) {
+        if (const QString previewFont =
+                qEnvironmentVariable("SNOW_TEST_RECORDING_SETTINGS_PREVIEW_FONT");
+            !previewFont.isEmpty()) {
+            const int fontId = QFontDatabase::addApplicationFont(previewFont);
+            require(fontId >= 0, "load recording settings preview font");
+            QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(fontId).first()));
+        }
+        recordingSettingsDialog();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--style-wheel-only"))) {
         ScreenRecordingController controller(testEffectsSource);
         controller.open(QRect(10, 10, 640, 480));

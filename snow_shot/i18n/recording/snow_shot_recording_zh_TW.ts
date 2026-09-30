@@ -68,4 +68,15 @@ Keep this folder to recover the recording.</source>
             <translation>未知錄製錯誤</translation>
         </message>
     </context>
+    <context>
+        <name>ScreenRecordingSettingsDialog</name>
+        <message>
+            <source>Done</source>
+            <translation>完成</translation>
+        </message>
+        <message>
+            <source>Recording settings</source>
+            <translation>錄影設定</translation>
+        </message>
+    </context>
 </TS>

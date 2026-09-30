@@ -3263,6 +3263,10 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                                                   "Show keystrokes in recording",
                                                   styleButtonMetrics(m_physicalScale));
     }
+    if (m_recordPreferencesButton != nullptr) {
+        configureScreenshotToolPaletteStyleButton(m_recordPreferencesButton, "Recording settings",
+                                                  styleButtonMetrics(m_physicalScale));
+    }
     if (m_scrollingAutoScrollIntervalEditor != nullptr) {
         configureScreenshotToolPaletteScrollingIntervalEditor(m_scrollingAutoScrollIntervalEditor,
                                                               actionButtonMetrics(m_physicalScale));
@@ -6126,7 +6130,7 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         emit recordingStartDelaySecondsChanged(m_recordingStartDelaySeconds);
     });
     m_recordSettingsButton = createScreenshotToolPaletteStyleActionButton(
-        m_recordExportSettingsPanel, "Settings", outlined_icons::Setting(),
+        m_recordExportSettingsPanel, "Settings", custom_outlined_icons::RecordingRenderSettings(),
         styleButtonMetrics(m_physicalScale));
     m_recordSettingsButton->setObjectName(QStringLiteral("screenRecordingEffectSettings"));
     m_recordSettingsButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
@@ -6144,6 +6148,13 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
             m_recordSettingsOwnerWindow ? m_recordSettingsOwnerWindow.data() : window());
         m_recordSettingsModal->open();
     });
+    m_recordPreferencesButton = createScreenshotToolPaletteStyleActionButton(
+        m_recordExportSettingsPanel, "Recording settings", outlined_icons::Setting(),
+        styleButtonMetrics(m_physicalScale));
+    m_recordPreferencesButton->setObjectName(QStringLiteral("screenRecordingSettings"));
+    layout->addWidget(m_recordPreferencesButton);
+    connect(m_recordPreferencesButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::recordingSettingsRequested);
     connect(m_recordKeyboardButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         setRecordingKeyboardVisible(!m_recordingKeyboardVisible);
         emit recordingKeyboardVisibleChanged(m_recordingKeyboardVisible);
@@ -6413,7 +6424,7 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
         ->setLabel(tr("Mouse highlight color"));
     m_recordSettingsForm->field(QStringLiteral("highlightPreview"))
         ->setLabel(tr("Mouse highlight preview"));
-    m_recordSettingsModal->setWindowTitle(tr("Settings"));
+    m_recordSettingsModal->setWindowTitle(tr("Effect Settings"));
     m_recordKeyboardSizeInput->setAccessibleName(tr("Keyboard Size"));
     m_recordKeyboardSizeInput->setSuffixText(tr("px"));
     m_recordTrailDurationInput->setSuffixText(tr("ms"));
@@ -6429,6 +6440,10 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
 }
 
 void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
+    if (m_recordPreferencesButton != nullptr) {
+        configureScreenshotToolPaletteTooltip(m_recordPreferencesButton, "Recording settings");
+        m_recordPreferencesButton->setAccessibleName(tr("Recording settings"));
+    }
     refreshRecordingMouseOptions();
     if (m_recordSettingsButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordSettingsButton, "Settings");

@@ -623,7 +623,7 @@ void recordingEffectSettingsModal() {
                 modal->windowModality() == Qt::ApplicationModal && modal->centered() &&
                 !modal->maskVisible() && !modal->closeOnMaskClick() &&
                 modal->ownerWindow() == &recordingOwner &&
-                modal->windowTitle() == QStringLiteral("Settings") &&
+                modal->windowTitle() == QStringLiteral("Effect Settings") &&
                 modal->standardButtons() == adqt::widgets::AdModal::StandardButton::Ok,
             "settings must use the selection editor's Windows-style modal conventions");
     require((modal->contentWidget()->window()->frameGeometry().center() -
@@ -759,7 +759,7 @@ void recordingEffectSettingsModal() {
                 foregroundChanges == foregroundChangesBeforeRebuild,
             "rebuilding settings must not emit effect change signals");
     require(!reopened.form->disabled() &&
-                reopened.modal->windowTitle() == QStringLiteral("Settings") &&
+                reopened.modal->windowTitle() == QStringLiteral("Effect Settings") &&
                 !reopened.duration->suffixText().isEmpty() &&
                 reopened.keyboardSize->suffixText() == QStringLiteral("px"),
             "a rebuilt form must be enabled and retranslated before it is shown");
@@ -821,6 +821,18 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         QStringLiteral("screenRecordingExportSettings"));
     auto* exportPanel =
         palette.findChild<QWidget*>(QStringLiteral("screenRecordingExportSettingsPanel"));
+    auto* preferences =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingSettings"));
+    require(preferences != nullptr &&
+                exportPanel->layout()->indexOf(preferences) == exportPanel->layout()->count() - 1,
+            "recording settings must be the far-right export toolbar button");
+    int settingsRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingSettingsRequested, &palette,
+                     [&settingsRequests] { ++settingsRequests; });
+    preferences->click();
+    require(settingsRequests == 1 &&
+                preferences->accessibleName() == QStringLiteral("Recording settings"),
+            "recording settings must request its window with an accessible label");
     auto* format =
         palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenRecordingOutputFormat"));
     auto* trail = palette.findChild<adqt::widgets::AdColorPicker*>(
@@ -1031,6 +1043,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         QCoreApplication::processEvents();
         const int controlSize = qRound(28 * scale);
         const int iconSize = qRound(18 * scale);
+        require(preferences->size() == QSize(controlSize, controlSize),
+                "recording settings must retain the shared toolbar button size at every scale");
         for (QLabel* icon : {trailIcon, clickIcon}) {
             require(icon->size() == QSize(controlSize, controlSize) &&
                         icon->pixmap().deviceIndependentSize() == QSizeF(iconSize, iconSize),
@@ -1270,7 +1284,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
                 "recording state changes should preserve the active Export Settings tool");
         require(exportPanel->isEnabled() == editable && format->disabled() == !editable &&
                     trail->disabled() == !editable && click->disabled() == !editable &&
-                    cursor->isEnabled() == editable && keyboard->isEnabled() == editable,
+                    cursor->isEnabled() == editable && keyboard->isEnabled() == editable &&
+                    preferences->isEnabled() == editable,
                 "only the export child toolbar should lock while recording or busy");
         if (!editable) {
             keyboard->click();

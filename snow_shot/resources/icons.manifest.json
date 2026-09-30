@@ -743,9 +743,25 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecordingPostProcessing",
+      "name": "recording-post-processing",
+      "source": "../src/presentation/components/icons/resources/recording-post-processing.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingRender",
       "name": "recording-render",
       "source": "../src/presentation/components/icons/resources/recording-render.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingRenderSettings",
+      "name": "recording-render-settings",
+      "source": "../src/presentation/components/icons/resources/recording-render-settings.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

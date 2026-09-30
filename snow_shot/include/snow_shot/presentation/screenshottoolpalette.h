@@ -529,6 +529,7 @@ class ScreenshotToolPalette final : public QWidget,
     void resetCanvasRequested();
     void visibleContentChanged();
     void recordingStartRequested();
+    void recordingSettingsRequested();
     void recordingStopRequested();
     void recordingPauseRequested();
     void recordingResumeRequested();
@@ -900,6 +901,7 @@ class ScreenshotToolPalette final : public QWidget,
         m_recordMouseClickColorPresets;
     adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
     adqt::widgets::AdButton* m_recordSettingsButton = nullptr;
+    adqt::widgets::AdButton* m_recordPreferencesButton = nullptr;
     IconNumericValuePreviewButton* m_recordDelayButton = nullptr;
     adqt::widgets::AdModal* m_recordSettingsModal = nullptr;
     adqt::widgets::AdForm* m_recordSettingsForm = nullptr;

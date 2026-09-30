@@ -891,6 +891,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/customaimodelssettingswidget.cpp
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
+    include/snow_shot/presentation/components/screenrecordingsettingsdialog.h
+    src/presentation/components/screenrecordingsettingsdialog.cpp
     src/presentation/components/actionrow.cpp
     src/presentation/components/shortcutkeyrow.cpp
     src/presentation/components/shortcutconfigurationbutton.cpp
@@ -5632,6 +5634,11 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     get_target_property(_recording_test_sources snow-shot-screenshot-tool-palette-tests SOURCES)
     list(FILTER _recording_test_sources EXCLUDE REGEX "tests/screenshot_tool_palette_tests.cpp$")
+    # The shared settings library supplies theme objects and their Qt metaobjects.
+    list(REMOVE_ITEM _recording_test_sources
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp)
     add_executable(snow-shot-screen-recording-controller-tests
         ${_recording_test_sources}
         tests/screen_recording_controller_tests.cpp
@@ -5642,6 +5649,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
         src/presentation/recording/screenrecordingcontroller.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/recording/screenrecordingfolder.cpp
         src/presentation/recording/recordingeffectpreview.cpp
         src/presentation/recording/recordingeffectpreview.h
@@ -5669,7 +5677,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-recording-c/include")
     target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE
         adqt_icon_core ant_design_icons_qt ant_design_qt snow_draw_engine_qt_canvas
-        snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts Qt6::Widgets snow_recording_effects_c snow_capture_c)
+        snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts snow_shot_settings Qt6::Widgets snow_recording_effects_c snow_capture_c)
     if(APPLE)
         target_sources(snow-shot-screen-recording-controller-tests PRIVATE
             src/platform/macos/windowcaptureexclusion.mm
@@ -5707,6 +5715,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-style-wheel-tests
         COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-settings-dialog-tests
+        COMMAND snow-shot-screen-recording-controller-tests --settings-dialog-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-settings-dialog-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
     if(WIN32)

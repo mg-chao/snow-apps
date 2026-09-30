@@ -8,6 +8,8 @@
 #include <QElapsedTimer>
 
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/components/screenrecordingsettingsdialog.h"
+#include "widgets/modal.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
@@ -219,6 +221,11 @@ namespace {
 // finalization belongs to the controller and can finish after this object is retired.
 struct RecordingUiSession final : QObject {
     explicit RecordingUiSession(QObject* parent) : QObject(parent) {}
+    ~RecordingUiSession() override {
+        if (settingsModal)
+            settingsModal->close();
+    }
+    QPointer<adqt::widgets::AdModal> settingsModal;
     std::unique_ptr<ScreenRecordingAreaWindow> area = std::make_unique<ScreenRecordingAreaWindow>();
     std::unique_ptr<ScreenRecordingToolbarWindow> toolbar =
         std::make_unique<ScreenRecordingToolbarWindow>();
@@ -446,6 +453,29 @@ struct ScreenRecordingController::Impl {
             return;
         }
         palette->setRecordingSettingsOwnerWindow(areaWindow);
+        QObject::connect(
+            palette, &ScreenshotToolPalette::recordingSettingsRequested,
+            uiSession->connections.get(), [this] {
+                if (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
+                    sessionStatus.busy())
+                    return;
+                if (!uiSession->settingsModal) {
+                    auto* modal = snow_shot::presentation::createScreenRecordingSettingsDialog(
+                        areaWindow, uiSession);
+                    uiSession->settingsModal = modal;
+                    QObject::connect(modal, &adqt::widgets::AdModal::finished,
+                                     uiSession->connections.get(), [this] {
+                                         uiSession->settingsModal = nullptr;
+                                         syncPreview();
+                                     });
+                }
+                uiSession->settingsModal->open();
+            });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingExportSettingsVisibleChanged,
+                         uiSession->connections.get(), [this](bool visible) {
+                             if (!visible && uiSession->settingsModal)
+                                 uiSession->settingsModal->close();
+                         });
         connectDrawingToolbar(*palette);
         QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardSizeChanged,
                          uiSession->connections.get(), [this](int value) {
@@ -1115,6 +1145,8 @@ struct ScreenRecordingController::Impl {
         }
         automationRevision = snow_shot::presentation::nextAutomationRevision();
         auto* retiring = uiSession;
+        if (retiring->settingsModal)
+            retiring->settingsModal->close();
         uiSession = nullptr;
         areaWindow = nullptr;
         toolbarWindow = nullptr;
@@ -1242,6 +1274,10 @@ struct ScreenRecordingController::Impl {
     }
 
     void syncUi() {
+        if (uiSession != nullptr && uiSession->settingsModal &&
+            (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
+             sessionStatus.busy()))
+            uiSession->settingsModal->close();
         syncPreview();
         if (areaWindow != nullptr) {
             areaWindow->setRecordingState(sessionStatus.state());

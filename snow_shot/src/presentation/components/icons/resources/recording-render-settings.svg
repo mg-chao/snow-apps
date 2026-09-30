@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
+  <path fill-rule="evenodd" d="M168 168h688a72 72 0 0 1 72 72v544a72 72 0 0 1-72 72H168a72 72 0 0 1-72-72V240a72 72 0 0 1 72-72Zm0 72v544h688V240H168Z"/>
+  <path d="M272 360q-8-6-8 4v296q0 10 8 4l192-148q8-6 0-12L272 360Z"/>
+  <path d="M512 364h288v72H512v-72ZM512 588h288v72H512v-72Z"/>
+  <path d="M600 328h56a8 8 0 0 1 8 8v128a8 8 0 0 1-8 8h-56a8 8 0 0 1-8-8V336a8 8 0 0 1 8-8ZM712 552h56a8 8 0 0 1 8 8v128a8 8 0 0 1-8 8h-56a8 8 0 0 1-8-8V560a8 8 0 0 1 8-8Z"/>
+</svg>

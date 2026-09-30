@@ -324,6 +324,10 @@
             <translation>Edit selection</translation>
         </message>
         <message>
+            <source>Effect Settings</source>
+            <translation>Effect Settings</translation>
+        </message>
+        <message>
             <source>Elbow arrow</source>
             <translation>Elbow arrow</translation>
         </message>
@@ -746,6 +750,10 @@
         <message>
             <source>Recording format</source>
             <translation>Recording format</translation>
+        </message>
+        <message>
+            <source>Recording settings</source>
+            <translation>Recording settings</translation>
         </message>
         <message>
             <source>Rectangle</source>

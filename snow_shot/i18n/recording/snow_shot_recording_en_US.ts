@@ -68,4 +68,15 @@ Keep this folder to recover the recording.</translation>
             <translation>Unknown recording error</translation>
         </message>
     </context>
+    <context>
+        <name>ScreenRecordingSettingsDialog</name>
+        <message>
+            <source>Done</source>
+            <translation>Done</translation>
+        </message>
+        <message>
+            <source>Recording settings</source>
+            <translation>Recording settings</translation>
+        </message>
+    </context>
 </TS>
