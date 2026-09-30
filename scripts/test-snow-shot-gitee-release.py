@@ -4,9 +4,11 @@
 import base64
 import importlib.util
 import io
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -212,6 +214,35 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(api.call_args.args[1], "secret-token")
             publisher.existing_release(TAG, "secret-token")
             self.assertEqual(api.call_args.args[1], "secret-token")
+
+    def test_utf8_release_response_through_real_curl_transport(self):
+        notes = "Snow Shot release notes: 中文，繁體。"
+        body = json.dumps({"body": notes}, ensure_ascii=False).encode("utf-8")
+        received = []
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.append(self.rfile.read(int(self.headers["Content-Length"])))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            response = publisher.post_form(f"http://127.0.0.1:{server.server_port}/releases",
+                                           {"body": notes}, "fixture-token")
+            self.assertEqual(response["body"], notes)
+            self.assertIn(notes.encode("utf-8"), received[0])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
 
 if __name__ == "__main__":

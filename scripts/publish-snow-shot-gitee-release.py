@@ -108,7 +108,7 @@ def post_form(url: str, fields: dict[str, str], token: str, file: Path | None = 
         command.extend(["--form", f"file=@{file}"])
     command.append(url)
     config = f'form-string = "access_token={token}"\n'
-    return json.loads(subprocess.check_output(command, input=config, text=True))
+    return json.loads(subprocess.check_output(command, input=config, text=True, encoding="utf-8"))
 
 
 def attachments(release_id: int, token: str = "") -> list[dict]:
