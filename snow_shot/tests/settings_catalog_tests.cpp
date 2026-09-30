@@ -284,7 +284,10 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 201, "catalog must contain 201 shared settings on every platform");
+    require(itemIds.size() == 202,
+            qPrintable(QStringLiteral(
+                           "catalog must contain 202 shared settings on every platform; found %1")
+                           .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -2542,6 +2545,22 @@ void emptyRegistryBuilderIsExplicitlyInvalid() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--storage-directory-only"))) {
+        const auto& catalog = settings::builtInSettingsRegistry().catalog();
+        const auto* section = catalog.section(QStringLiteral("storage-and-privacy"),
+                                              QStringLiteral("storage-status"));
+        require(section && !section->items.isEmpty() &&
+                    section->items.front().id == u"storage.status",
+                "storage section identifiers and first status widget remain stable");
+#ifdef Q_OS_WIN
+        require(section->title.translated() == u"Data storage" &&
+                    section->items.front().title.translated() == u"Data storage",
+                "Windows storage section is renamed to Data storage");
+#else
+        require(section->title.translated() == u"Storage status", "non-Windows label preserved");
+#endif
+        return 0;
+    }
     const auto adminCatalog = settings::buildBuiltInSettingsCatalog();
 #ifdef Q_OS_MACOS
     const auto* login =

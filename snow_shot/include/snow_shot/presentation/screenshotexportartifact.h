@@ -66,14 +66,16 @@ class ScreenshotExportSource final {
 
     ScreenshotExportSource() = default;
 
-    [[nodiscard]] static ScreenshotExportSource fromImage(QImage image);
+    [[nodiscard]] static ScreenshotExportSource
+    fromImage(QImage image, std::optional<ScreenshotClipboardPlacement> placement = {});
     [[nodiscard]] static ScreenshotExportSource
     fromRecognitionImage(ScreenshotRecognitionImageSnapshot snapshot);
     [[nodiscard]] static ScreenshotExportSource
     fromScrollingSnapshot(ScreenshotScrollingSnapshot snapshot);
     [[nodiscard]] static ScreenshotExportSource
     fromPinnedViewport(ScreenshotPinnedViewportExportSource source);
-    [[nodiscard]] static ScreenshotExportSource fromImageLoader(ImageLoader loader);
+    [[nodiscard]] static ScreenshotExportSource
+    fromImageLoader(ImageLoader loader, std::optional<ScreenshotClipboardPlacement> placement = {});
     [[nodiscard]] static ScreenshotExportSource
     fromProducer(ImageProducer producer, RowSourceFactory rowSourceFactory = {});
 
@@ -83,6 +85,7 @@ class ScreenshotExportSource final {
     ImageLoader m_imageLoader;
     ImageProducer m_imageProducer;
     RowSourceFactory m_rowSourceFactory;
+    std::optional<ScreenshotClipboardPlacement> m_clipboardPlacement;
 
     friend class ScreenshotExportArtifact;
 };
@@ -123,6 +126,7 @@ class ScreenshotExportArtifact final : public QObject {
     [[nodiscard]] bool requestPng(QObject* receiver, ScreenshotCompressionLevel compression,
                                   EncodingCallback callback);
     [[nodiscard]] bool requestClipboard(QObject* receiver, ClipboardCallback callback);
+    [[nodiscard]] std::optional<ScreenshotClipboardPlacement> clipboardPlacement() const;
     [[nodiscard]] bool requestSaveToPath(QObject* receiver, QString path,
                                          ScreenshotImageFileFormat format,
                                          ScreenshotImageEncodingOptions encoding,

@@ -2034,7 +2034,11 @@ SettingsItemDefinition clearPinnedHistoryItem() {
 SettingsItemDefinition storageStatusItem() {
     return {
         QStringLiteral("storage.status"),
+#ifdef Q_OS_WIN
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Data storage")),
+#else
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Storage status")),
+#endif
         settingsText(QT_TRANSLATE_NOOP(
             "SettingsCatalog",
             "App-wide storage usage breakdown, location, mode, and latest errors")),
@@ -2649,7 +2653,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                 },
                 {
                     QStringLiteral("storage-status"),
+#ifdef Q_OS_WIN
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Data storage")),
+#else
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Storage status")),
+#endif
                     settingsText(QT_TRANSLATE_NOOP(
                         "SettingsCatalog",
                         "App-wide storage usage, location, mode, errors, and cleanup")),

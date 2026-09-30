@@ -6,6 +6,7 @@
 
 #include <QBuffer>
 #include <QCache>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -1333,6 +1334,7 @@ PinnedWindowRepository::~PinnedWindowRepository() {
 std::optional<PinnedWindowRecord>
 PinnedWindowRepository::loadRecord(const QString& id,
                                    std::function<bool(qint64)> allocationCheck) const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr || !safeId(id)) {
         return std::nullopt;
     }
@@ -1380,6 +1382,7 @@ PinnedWindowRepository::loadRecord(const QString& id,
 
 std::optional<PinnedWindowPreviewSource>
 PinnedWindowRepository::loadPreviewSource(const QString& id) const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr || !safeId(id)) {
         return std::nullopt;
     }
@@ -1403,6 +1406,7 @@ PinnedWindowRepository::loadPreviewSource(const QString& id) const {
 }
 
 std::optional<quint64> PinnedWindowRepository::previewSourceRevision(const QString& id) const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr || !safeId(id)) {
         return std::nullopt;
     }
@@ -1413,6 +1417,7 @@ std::optional<quint64> PinnedWindowRepository::previewSourceRevision(const QStri
 }
 
 PinnedSourceIdentity PinnedWindowRepository::sourceIdentity(const QString& id) const {
+    std::lock_guard access(m_accessMutex);
     if (!m_impl)
         return {};
     std::lock_guard locker(m_impl->mutex);
@@ -1421,6 +1426,7 @@ PinnedSourceIdentity PinnedWindowRepository::sourceIdentity(const QString& id) c
 }
 
 QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {
+    std::lock_guard access(m_accessMutex);
     QVector<PinnedWindowSummary> result;
     if (m_impl == nullptr) {
         return result;
@@ -1442,6 +1448,9 @@ QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {
 }
 
 int PinnedWindowRepository::allocateHideToTopAccent() {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return 0;
     std::lock_guard locker(m_impl->mutex);
     const int index = m_impl->nextHideToTopAccent;
     m_impl->nextHideToTopAccent = (index + 1) % 13;
@@ -1452,6 +1461,7 @@ int PinnedWindowRepository::allocateHideToTopAccent() {
 }
 
 quint64 PinnedWindowRepository::revision() const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr) {
         return 0;
     }
@@ -1460,6 +1470,7 @@ quint64 PinnedWindowRepository::revision() const {
 }
 
 quint64 PinnedWindowRepository::membershipRevision() const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr)
         return 0;
     std::lock_guard locker(m_impl->mutex);
@@ -1467,6 +1478,7 @@ quint64 PinnedWindowRepository::membershipRevision() const {
 }
 
 QVector<PinnedWindowGroup> PinnedWindowRepository::groups() const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr) {
         return {};
     }
@@ -1475,6 +1487,7 @@ QVector<PinnedWindowGroup> PinnedWindowRepository::groups() const {
 }
 
 QString PinnedWindowRepository::activeGroupId() const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr) {
         return QString::fromLatin1(kDefaultGroupId);
     }
@@ -1483,6 +1496,10 @@ QString PinnedWindowRepository::activeGroupId() const {
 }
 
 StorageResult PinnedWindowRepository::setActiveGroup(const QString& groupId) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1500,6 +1517,10 @@ StorageResult PinnedWindowRepository::setActiveGroup(const QString& groupId) {
 
 StorageResult PinnedWindowRepository::setGroups(QVector<PinnedWindowGroup> groups,
                                                 const QString& activeGroupId) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1542,6 +1563,10 @@ StorageResult PinnedWindowRepository::setGroups(QVector<PinnedWindowGroup> group
 
 StorageResult PinnedWindowRepository::setRecordGroup(const QString& recordId,
                                                      const QString& groupId) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1560,6 +1585,10 @@ StorageResult PinnedWindowRepository::setRecordGroup(const QString& recordId,
 }
 
 StorageResult PinnedWindowRepository::removeEmptyGroup(const QString& groupId) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (m_impl == nullptr || !m_impl->writeAvailable)
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     if (!safeGroupId(groupId) || groupId == QString::fromLatin1(kDefaultGroupId))
@@ -1582,6 +1611,10 @@ StorageResult PinnedWindowRepository::removeEmptyGroup(const QString& groupId) {
 }
 
 StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& groupId) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1621,17 +1654,29 @@ StorageResult PinnedWindowRepository::removeGroupAndRecords(const QString& group
 
 StorageResult PinnedWindowRepository::create(PinnedWindowRecord record,
                                              PreparedPngImage sourceImage) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return createImpl(std::move(record), std::move(sourceImage), false);
 }
 
 StorageResult PinnedWindowRepository::createReserved(PinnedWindowRecord record,
                                                      PreparedPngImage sourceImage) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return createImpl(std::move(record), std::move(sourceImage), true);
 }
 
 StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
                                                  PreparedPngImage sourceImage,
                                                  bool requireReservation) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1683,15 +1728,27 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
 }
 
 StorageResult PinnedWindowRepository::create(PinnedWindowRecord record) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return createImpl(std::move(record), false);
 }
 
 StorageResult PinnedWindowRepository::createReserved(PinnedWindowRecord record) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return createImpl(std::move(record), true);
 }
 
 StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
                                                  bool requireReservation) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1748,6 +1805,10 @@ StorageResult PinnedWindowRepository::createImpl(PinnedWindowRecord record,
 }
 
 StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1850,14 +1911,26 @@ StorageResult PinnedWindowRepository::updateState(PinnedWindowRecord record) {
 }
 
 StorageResult PinnedWindowRepository::upsert(PinnedWindowRecord record) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return upsertImpl(std::move(record), false);
 }
 
 StorageResult PinnedWindowRepository::upsertExisting(PinnedWindowRecord record) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return upsertImpl(std::move(record), true);
 }
 
 StorageResult PinnedWindowRepository::upsertImpl(PinnedWindowRecord record, bool requireExisting) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     normalizePlacement(record);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
@@ -1939,10 +2012,18 @@ StorageResult PinnedWindowRepository::upsertImpl(PinnedWindowRecord record, bool
 }
 
 StorageResult PinnedWindowRepository::remove(const QString& id) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return removeMany({id});
 }
 
 StorageResult PinnedWindowRepository::removeMany(const QVector<QString>& ids) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -1968,11 +2049,15 @@ StorageResult PinnedWindowRepository::removeMany(const QVector<QString>& ids) {
 }
 
 void PinnedWindowRepository::setChangedCallback(std::function<void()> callback) {
+    std::lock_guard access(m_accessMutex);
     std::lock_guard lock(m_impl->mutex);
     m_impl->changed = std::move(callback);
 }
 
 void PinnedWindowRepository::reserveCreation(const QString& id, QDateTime when) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return;
     std::lock_guard lock(m_impl->mutex);
     if (m_impl->writeAvailable && safeId(id) && when.isValid() && !m_impl->records.contains(id) &&
         !m_impl->pendingCreations.contains(id))
@@ -1980,21 +2065,36 @@ void PinnedWindowRepository::reserveCreation(const QString& id, QDateTime when) 
 }
 
 void PinnedWindowRepository::cancelCreation(const QString& id) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return;
     std::lock_guard lock(m_impl->mutex);
     m_impl->pendingCreations.remove(id);
     m_impl->pendingCloses.remove(id);
 }
 
 StorageResult PinnedWindowRepository::markClosed(const QString& id, QDateTime when) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return markClosedImpl(id, when, true);
 }
 
 StorageResult PinnedWindowRepository::markClosedDeferred(const QString& id, QDateTime when) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     return markClosedImpl(id, when, false);
 }
 
 StorageResult PinnedWindowRepository::markClosedImpl(const QString& id, QDateTime when,
                                                      bool enforceImmediately) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (!m_impl->writeAvailable || !safeId(id) || !when.isValid())
         return StorageResult::failure(QStringLiteral("Pinned-window close could not be saved"));
     {
@@ -2025,6 +2125,10 @@ StorageResult PinnedWindowRepository::markClosedImpl(const QString& id, QDateTim
 }
 
 StorageResult PinnedWindowRepository::beginRestore(const QString& id) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     std::lock_guard lock(m_impl->mutex);
     if (!m_impl->writeAvailable || !m_impl->records.contains(id) ||
         m_impl->restoringIds.contains(id))
@@ -2033,11 +2137,18 @@ StorageResult PinnedWindowRepository::beginRestore(const QString& id) {
     return StorageResult::ok();
 }
 void PinnedWindowRepository::cancelRestore(const QString& id) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return;
     std::lock_guard lock(m_impl->mutex);
     m_impl->restoringIds.remove(id);
 }
 
 StorageResult PinnedWindowRepository::markRestored(const QString& id) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     std::lock_guard lock(m_impl->mutex);
     m_impl->restoringIds.remove(id);
     auto it = m_impl->records.find(id);
@@ -2050,17 +2161,25 @@ StorageResult PinnedWindowRepository::markRestored(const QString& id) {
 }
 
 PinnedWindowPolicy PinnedWindowRepository::policy() const {
+    std::lock_guard access(m_accessMutex);
     std::lock_guard lock(m_impl->mutex);
     return m_impl->policy;
 }
 
 void PinnedWindowRepository::setCompressionLevel(const QString& level) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return;
     std::lock_guard lock(m_impl->mutex);
     m_impl->compressionLevel = level;
 }
 
 StorageResult PinnedWindowRepository::setPolicy(PinnedWindowPolicy policy,
                                                 bool enforceImmediately) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (!m_impl->writeAvailable || !policy.isValid())
         return StorageResult::failure(
             QStringLiteral("Pinned-window retention policy is invalid or storage is read-only"));
@@ -2072,6 +2191,10 @@ StorageResult PinnedWindowRepository::setPolicy(PinnedWindowPolicy policy,
 }
 
 StorageResult PinnedWindowRepository::enforcePolicy(QDateTime now) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     struct Candidate {
         QString id;
         QDateTime closed;
@@ -2189,6 +2312,10 @@ StorageResult PinnedWindowRepository::enforcePolicy(QDateTime now) {
 }
 
 StorageResult PinnedWindowRepository::clearClosed() {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
     if (!m_impl->writeAvailable)
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     std::lock_guard lock(m_impl->mutex);
@@ -2206,6 +2333,7 @@ StorageResult PinnedWindowRepository::clearClosed() {
 }
 
 StorageResult PinnedWindowRepository::flush() {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr || !m_impl->writeAvailable) {
         return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
     }
@@ -2224,11 +2352,28 @@ StorageResult PinnedWindowRepository::flush() {
 }
 
 QString PinnedWindowRepository::lastError() const {
+    std::lock_guard access(m_accessMutex);
     if (m_impl == nullptr) {
         return QStringLiteral("Pinned-window storage unavailable");
     }
     std::lock_guard locker(m_impl->mutex);
     return m_impl->error;
+}
+
+void PinnedWindowRepository::suspendWrites(bool suspended) {
+    std::lock_guard access(m_accessMutex);
+    m_suspended = suspended;
+}
+
+void PinnedWindowRepository::exchangeStorage(PinnedWindowRepository& prepared) {
+    std::scoped_lock access(m_accessMutex, prepared.m_accessMutex);
+    std::scoped_lock state(m_impl->mutex, prepared.m_impl->mutex);
+    std::swap(m_impl->changed, prepared.m_impl->changed);
+    prepared.m_impl->policy = m_impl->policy;
+    prepared.m_impl->compressionLevel = m_impl->compressionLevel;
+    prepared.m_impl->revision = m_impl->revision + 1;
+    prepared.m_impl->membershipRevision = m_impl->membershipRevision + 1;
+    std::swap(m_impl, prepared.m_impl);
 }
 
 } // namespace snow_shot::storage

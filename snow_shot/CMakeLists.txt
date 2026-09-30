@@ -714,6 +714,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     include/snow_shot/storage/storageresult.h
     include/snow_shot/storage/storageusagetracker.h
     src/storage/applicationstorage.cpp
+    src/storage/storagedirectorychange.cpp
     src/storage/capturehistorypolicy_p.h
     src/storage/capturehistoryrepository.cpp
     src/storage/configurationarchive.cpp
@@ -1691,6 +1692,24 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-image-codec-backend-smoke-tests
              COMMAND snow-shot-image-codec-backend-smoke-tests)
 
+    if(WIN32)
+        add_executable(snow-shot-storage-directory-change-tests tests/storage_directory_change_tests.cpp)
+        target_link_libraries(snow-shot-storage-directory-change-tests PRIVATE snow_shot_storage Qt6::Core)
+        add_test(NAME snow-shot-storage-directory-change-tests COMMAND snow-shot-storage-directory-change-tests)
+        set_tests_properties(snow-shot-storage-directory-change-tests PROPERTIES LABELS "unit;windows" TIMEOUT 90
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+        add_executable(snow-shot-storage-directory-crash-capture-tests
+            tests/storage_directory_crash_capture_tests.cpp)
+        target_link_libraries(snow-shot-storage-directory-crash-capture-tests PRIVATE
+            snow_shot_storage Qt6::Core)
+        target_compile_definitions(snow-shot-storage-directory-crash-capture-tests PRIVATE
+            SNOW_TEST_CRASHPAD_HANDLER="${SNOW_CRASHPAD_HANDLER}")
+        add_test(NAME snow-shot-storage-directory-crash-capture-tests
+            COMMAND snow-shot-storage-directory-crash-capture-tests)
+        set_tests_properties(snow-shot-storage-directory-crash-capture-tests PROPERTIES
+            LABELS "unit;windows;crash" TIMEOUT 120)
+    endif()
     add_executable(snow-shot-application-storage-tests
         tests/application_storage_tests.cpp
     )
@@ -1833,6 +1852,15 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
     endif()
+
+    snow_shot_import_offscreen_platform(snow-shot-storage-status-widget-tests)
+    add_test(NAME snow-shot-storage-directory-widget-tests
+        COMMAND snow-shot-storage-status-widget-tests --storage-directory-only -platform offscreen)
+    set_tests_properties(snow-shot-storage-directory-widget-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
 
     add_executable(snow-shot-configuration-transfer-widget-tests
         tests/configuration_transfer_widget_tests.cpp
@@ -2190,6 +2218,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_settings_search
         Qt6::Core
     )
+    add_test(NAME snow-shot-storage-directory-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --storage-directory-only)
+    set_tests_properties(snow-shot-storage-directory-catalog-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-settings-catalog-tests
              COMMAND snow-shot-settings-catalog-tests)
     set_tests_properties(snow-shot-settings-catalog-tests PROPERTIES
@@ -5938,6 +5970,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(NAME snow-shot-ocr-storage-relocation-tests
+        COMMAND snow-shot-ocr-recognition-service-tests --storage-relocation-only)
+    set_tests_properties(snow-shot-ocr-storage-relocation-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-ocr-process-lifecycle-tests
         COMMAND snow-shot-ocr-recognition-service-tests --process-lifecycle)
     add_executable(snow-shot-ocr-assets-tests
@@ -6128,6 +6164,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-mcp-document-tests PRIVATE user32 advapi32)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-mcp-document-tests)
+    add_test(NAME snow-shot-mcp-storage-guard-tests COMMAND snow-shot-mcp-document-tests --jobs-only -platform offscreen)
+    set_tests_properties(snow-shot-mcp-storage-guard-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-mcp-document-tests COMMAND snow-shot-mcp-document-tests -platform offscreen)
     add_test(NAME snow-shot-mcp-application-tests
         COMMAND snow-shot-mcp-document-tests --application-only -platform offscreen)
@@ -8289,12 +8328,72 @@ if(SNOW_SHOT_BUILD_TESTS)
     unset(_snow_clipboard_qpa_environment)
 endif()
 
+# Shared clipboard metadata must have one native MIME converter per process.
+add_library(snow_shot_clipboard_placement STATIC
+    src/presentation/services/screenshotclipboardplacement.cpp)
+target_include_directories(snow_shot_clipboard_placement PUBLIC include)
+target_link_libraries(snow_shot_clipboard_placement PUBLIC Qt6::Gui)
 if(APPLE)
-    get_property(_clipboard_host_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-    foreach(_clipboard_host IN LISTS _clipboard_host_targets)
-        get_target_property(_clipboard_host_sources ${_clipboard_host} SOURCES)
-        if(_clipboard_host_sources MATCHES "screenshotclipboardservice\\.cpp")
-            target_link_libraries(${_clipboard_host} PRIVATE snow_shot_macos_clipboard)
-        endif()
-    endforeach()
+    target_sources(snow_shot_clipboard_placement PRIVATE src/platform/macos/clipboardrevision.mm)
+    target_link_libraries(snow_shot_clipboard_placement PRIVATE "-framework AppKit")
+elseif(WIN32)
+    target_link_libraries(snow_shot_clipboard_placement PRIVATE user32)
 endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-clipboard-placement-tests
+        tests/screenshot_clipboard_placement_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp)
+    target_include_directories(snow-shot-clipboard-placement-tests PRIVATE include src/image)
+    target_link_libraries(snow-shot-clipboard-placement-tests PRIVATE
+        snow_shot_clipboard_placement snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-clipboard-placement-tests)
+    add_test(NAME snow-shot-clipboard-placement-tests COMMAND snow-shot-clipboard-placement-tests)
+    snow_shot_offscreen_qpa_environment(_snow_clipboard_placement_qpa_environment)
+    set_tests_properties(snow-shot-clipboard-placement-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_snow_clipboard_placement_qpa_environment}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    unset(_snow_clipboard_placement_qpa_environment)
+    if(APPLE OR WIN32)
+        add_test(NAME snow-shot-clipboard-placement-native-tests
+            COMMAND snow-shot-clipboard-placement-tests --native-roundtrip)
+        set_tests_properties(snow-shot-clipboard-placement-native-tests PROPERTIES
+            LABELS "interactive" RUN_SERIAL TRUE TIMEOUT 60)
+        if(APPLE)
+            set_tests_properties(snow-shot-clipboard-placement-native-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
+        else()
+            target_link_libraries(snow-shot-clipboard-placement-tests PRIVATE user32)
+            set_tests_properties(snow-shot-clipboard-placement-native-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows")
+        endif()
+    endif()
+endif()
+
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-clipboard-placement-benchmark
+        tests/screenshot_clipboard_placement_benchmark.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp)
+    target_include_directories(snow-shot-clipboard-placement-benchmark PRIVATE include src/image)
+    target_link_libraries(snow-shot-clipboard-placement-benchmark PRIVATE
+        snow_shot_clipboard_placement snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-clipboard-placement-benchmark)
+    if(WIN32)
+        target_link_libraries(snow-shot-clipboard-placement-benchmark PRIVATE user32)
+    endif()
+endif()
+
+# Link after all clipboard test and benchmark targets have been declared so
+# metadata and native image converters are available to every consumer.
+get_property(_snow_clipboard_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_target IN LISTS _snow_clipboard_consumers)
+    get_target_property(_snow_sources ${_snow_target} SOURCES)
+    if("${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_clipboard_placement)
+    endif()
+    if(APPLE AND "${_snow_sources}" MATCHES "screenshotclipboardservice\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
+    endif()
+endforeach()

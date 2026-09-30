@@ -73,6 +73,10 @@ class CaptureHistoryRepository {
     updatePolicy(CaptureHistoryPolicy policy) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult> requestClear() = 0;
     virtual void drain() = 0;
+    virtual void suspendWrites(bool) {}
+    virtual StorageResult relocate(const QString&) {
+        return StorageResult::failure(QStringLiteral("unsupported"));
+    }
     [[nodiscard]] virtual QString lastError() const = 0;
 };
 

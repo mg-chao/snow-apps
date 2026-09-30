@@ -31,9 +31,11 @@
     "SettingsCatalog",
     "SettingsPageWidget",
     "ShortcutKeyRow",
+    "StorageDirectoryChange",
     "StorageStatusSettingsWidget",
     "TextTranslationSettingsWidget",
     "snow_shot::presentation::GlobalMouseManager",
+    "snow_shot::storage::ApplicationStorage",
     "snow_shot::storage::ConfigurationArchive",
     "snow_shot::storage::ConfigurationStore"
   ],

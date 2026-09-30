@@ -82,16 +82,21 @@ class LocalCrashCollector final : public CrashCollector {
     bool initialize(const QString& directory, const QString& handler, const QString& session,
                     QString* error) override {
 #if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
-        m_database = crashpad::CrashReportDatabase::Initialize(nativePath(directory));
+        // Archive readers open the requested database. Capture sessions share the
+        // database registered by the process's one Crashpad client.
+        const bool capture = !handler.isEmpty() || !session.isEmpty();
+        const QString registered = capture ? QString::fromUtf8(snow_diag_database()) : QString();
+        m_directory = registered.isEmpty() ? directory : registered;
+        m_database = crashpad::CrashReportDatabase::Initialize(nativePath(m_directory));
         if (!m_database || !m_database->GetSettings()->SetUploadsEnabled(false)) {
             *error = QString::fromUtf8(QT_TRANSLATE_NOOP(
                 "DiagnosticsService", "The local crash database could not be initialized."));
             return false;
         }
-        if (handler.isEmpty() && session.isEmpty())
+        if (!capture)
             return true;
-        if (!QFileInfo(handler).isFile() ||
-            !snow_diag_start(handler.toUtf8().constData(), directory.toUtf8().constData(),
+        if ((registered.isEmpty() && !QFileInfo(handler).isFile()) ||
+            !snow_diag_start(handler.toUtf8().constData(), m_directory.toUtf8().constData(),
                              session.toUtf8().constData(), SNOW_DIAGNOSTICS_VERSION,
                              SNOW_DIAGNOSTICS_REVISION)) {
             *error = QString::fromUtf8(QT_TRANSLATE_NOOP(
@@ -143,6 +148,9 @@ class LocalCrashCollector final : public CrashCollector {
     QString pipeName() const override {
         return m_pipe;
     }
+    QString databaseDirectory() const override {
+        return m_directory;
+    }
     bool healthy() const override {
 #ifdef Q_OS_WIN
         if (m_pipe.isEmpty())
@@ -160,6 +168,7 @@ class LocalCrashCollector final : public CrashCollector {
 
   private:
     QString m_pipe;
+    QString m_directory;
 #if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     std::unique_ptr<crashpad::CrashReportDatabase> m_database;
 #endif

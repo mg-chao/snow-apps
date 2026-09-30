@@ -39,6 +39,8 @@ class ScreenshotExportService final : public ScreenshotSelectionImageComposerPor
     [[nodiscard]] std::optional<ScreenshotPinnedSelectionRequest>
     preparePinnedSelection(const QRect& selection,
                            const ScreenshotResultStyle& style) const override;
+    [[nodiscard]] std::optional<ScreenshotClipboardPlacement>
+    prepareClipboardPlacement(const QRect& selection, const ScreenshotResultStyle& style) const;
     [[nodiscard]] bool schedulePinnedSelection(ScreenshotPinnedSelectionRequest request,
                                                QObject* receiver,
                                                PinRequestCallback callback) override;

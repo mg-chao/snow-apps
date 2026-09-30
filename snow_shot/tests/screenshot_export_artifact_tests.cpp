@@ -720,9 +720,10 @@ void pngCacheBudgetEvictsLeastRecentlyUsedResults() {
                   ScreenshotImageEncodingOptions{100, ScreenshotCompressionLevel::Medium})
                   .compression_level);
     const auto high = snow_shot::image_codec::encodePng(rows, 9);
-    ScreenshotExportArtifact artifact(
-        ScreenshotExportSource::fromImage(image), ScreenshotCompressionLevel::Low,
-        ScreenshotExportArtifact::PngCachePolicy{low.size() + qMax(medium.size(), high.size())});
+    ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image),
+                                      ScreenshotCompressionLevel::Low,
+                                      ScreenshotExportArtifact::PngCachePolicy{
+                                          low.size() + qMax(medium.size(), high.size()), {}});
     QObject receiver;
     auto request = [&](ScreenshotCompressionLevel level) {
         QByteArray result;
@@ -760,7 +761,7 @@ void fileOutputsStreamBeyondCacheBudget() {
     for (auto compression : {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::Medium,
                              ScreenshotCompressionLevel::High}) {
         ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image), compression,
-                                          ScreenshotExportArtifact::PngCachePolicy{1});
+                                          ScreenshotExportArtifact::PngCachePolicy{1, {}});
         int callbacks = 0;
         QString automaticPath;
         const QString manualPath = directory.filePath(QStringLiteral("manual.png"));
@@ -800,7 +801,7 @@ void fileOutputsStreamBeyondCacheBudget() {
 void oversizedPngStillFansOutWithoutRetention() {
     ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(testImage()),
                                       ScreenshotCompressionLevel::Low,
-                                      ScreenshotExportArtifact::PngCachePolicy{1});
+                                      ScreenshotExportArtifact::PngCachePolicy{1, {}});
     QObject receiver;
     int callbacks = 0;
     QByteArray first;
@@ -910,15 +911,13 @@ void pinnedViewportSourceRendersExpectedPixels() {
     QImage background(QSize(64, 48), QImage::Format_ARGB32_Premultiplied);
     background.fill(QColor(12, 24, 36, 255));
     ScreenshotPinnedViewportExportSource source{
-        session,
-        std::move(background),
-        QRectF(0.0, 0.0, 64.0, 48.0),
-        QSize(64, 48),
-        {},
+        session, std::move(background), QRectF(0.0, 0.0, 64.0, 48.0), QSize(64, 48), {}, {}, 1.0,
         {},
     };
     ScreenshotExportArtifact artifact(
         ScreenshotExportSource::fromPinnedViewport(std::move(source)));
+    require(!artifact.clipboardPlacement(),
+            "pinned-window copies must not acquire screenshot placement");
     QObject receiver;
     QImage rendered;
     require(artifact.requestImage(&receiver,
@@ -1140,16 +1139,79 @@ void quickSaveUsesOnlyConfiguredOutput() {
 }
 } // namespace
 
+void clipboardPlacementIsAnImmutableArtifactProperty() {
+    ScreenshotClipboardPlacement placement;
+    placement.placement = {QStringLiteral("display"), {}, QPointF(50, 60), QSize(20, 10)};
+    placement.windowRect = QRect(50, 60, 20, 10);
+    placement.rasterSize = QSize(40, 20);
+    placement.displays = {{QStringLiteral("display"),
+                           {},
+                           QRect(0, 0, 200, 200),
+                           QRect(0, 0, 200, 200),
+                           QRect(0, 0, 200, 200),
+                           1}};
+    QImage pixels(40, 20, QImage::Format_ARGB32);
+    pixels.fill(Qt::red);
+    ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(pixels, placement),
+                                      ScreenshotCompressionLevel::Low);
+    placement.windowRect.moveTopLeft(QPoint(100, 110));
+    QObject receiver;
+    bool completed = false;
+    require(artifact.requestClipboard(
+                &receiver,
+                [&](ScreenshotExportClipboardResult result) {
+                    require(result.succeeded(), "artifact clipboard preparation must succeed");
+                    const auto metadata =
+                        decodeScreenshotClipboardPlacement(result.payload.placementBytes());
+                    require(metadata && metadata->windowRect == QRect(50, 60, 20, 10) &&
+                                metadata->rasterSize == pixels.size(),
+                            "artifact observes later caller placement");
+                    completed = true;
+                }),
+            "artifact clipboard request must schedule");
+    processUntil([&] { return completed; });
+    QTemporaryDir directory;
+    bool saved = false;
+    require(artifact.requestSaveToPath(
+                &receiver, directory.filePath(QStringLiteral("saved.png")),
+                ScreenshotImageFileFormat::Png,
+                ScreenshotImageEncodingOptions{100, ScreenshotCompressionLevel::Low},
+                [&](ScreenshotExportTaskResult result) {
+                    require(result.succeeded(), "metadata artifact file save must succeed");
+                    auto filePlacement = artifact.clipboardPlacement();
+                    const QFileInfo info(result.savedPath);
+                    filePlacement->filePath = screenshotClipboardFilePath(result.savedPath);
+                    filePlacement->fileSize = info.size();
+                    filePlacement->fileModifiedMs = info.lastModified().toUTC().toMSecsSinceEpoch();
+                    const auto metadata = decodeScreenshotClipboardPlacement(
+                        encodeScreenshotClipboardPlacement(*filePlacement));
+                    require(
+                        metadata && metadata->windowRect == QRect(50, 60, 20, 10) &&
+                            metadata->matchesFile(result.savedPath, info.size(),
+                                                  info.lastModified().toUTC().toMSecsSinceEpoch()),
+                        "file-copy save loses the original artifact placement");
+                    saved = true;
+                }),
+            "metadata artifact file save must schedule");
+    processUntil([&] { return saved; });
+    require(artifact.clipboardPlacement()->windowRect == QRect(50, 60, 20, 10),
+            "file-save subscriber must share the same immutable placement");
+    ScreenshotExportArtifact imported(ScreenshotExportSource::fromImage(pixels),
+                                      ScreenshotCompressionLevel::Low);
+    require(!imported.clipboardPlacement(), "ordinary image artifacts invent placement");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
         QTemporaryDir logs;
         snow_shot::diagnostics::DiagnosticsOptions logging;
-        logging.directories = {logs.path()};
+        logging.directories = {QFileInfo(logs.path()).canonicalFilePath()};
         logging.enableCrashCapture = false;
         logging.mirrorToConsole = false;
         auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
         require(diagnostics.initialize(logging), "export diagnostics must initialize");
+        clipboardPlacementIsAnImmutableArtifactProperty();
         {
             QObject receiver;
             ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImageLoader(

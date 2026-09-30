@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cstdio>
 #include <exception>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -23,6 +24,9 @@ namespace {
 crashpad::CrashpadClient client;
 crashpad::SimpleStringDictionary annotations;
 std::string pipeName;
+std::string databaseDirectory;
+std::mutex captureMutex;
+bool captureAttempted = false;
 std::atomic<HANDLE> emergencyHandle{INVALID_HANDLE_VALUE};
 std::atomic<unsigned> emergencyUsers{0};
 std::atomic<size_t> emergencyBytes{0};
@@ -105,6 +109,7 @@ void configure(const char* role, const char* session) {
 void snow_diag_prepare(const char* session, const char* version, const char* revision) {
 #ifdef _WIN32
     try {
+        std::lock_guard lock(captureMutex);
         configure("application", session);
         annotations.SetKeyValue("version", version);
         annotations.SetKeyValue("revision", revision);
@@ -121,9 +126,17 @@ int snow_diag_start(const char* handler, const char* database, const char* sessi
                     const char* version, const char* revision) {
 #ifdef _WIN32
     try {
+        std::lock_guard lock(captureMutex);
+        if (captureAttempted && (!collectorReady.load() || databaseDirectory != database))
+            return 0;
         configure("application", session);
         annotations.SetKeyValue("version", version);
         annotations.SetKeyValue("revision", revision);
+        if (captureAttempted)
+            return 1;
+        // StartHandler mutates process-wide exception state even if handler startup fails.
+        // It must never be called again, including after an unsuccessful first attempt.
+        captureAttempted = true;
         if (!client.StartHandler(base::FilePath(wide(handler)), base::FilePath(wide(database)),
                                  base::FilePath(), "", {}, {"--no-periodic-tasks"}, true, false)) {
             return 0;
@@ -134,6 +147,7 @@ int snow_diag_start(const char* handler, const char* database, const char* sessi
         pipeName.resize(static_cast<size_t>(count));
         WideCharToMultiByte(CP_UTF8, 0, pipe.c_str(), static_cast<int>(pipe.size()),
                             pipeName.data(), count, nullptr, nullptr);
+        databaseDirectory = database;
         collectorReady.store(true);
         return 1;
     } catch (...) {
@@ -152,9 +166,18 @@ int snow_diag_start(const char* handler, const char* database, const char* sessi
 int snow_diag_attach(const char* pipe, const char* session, const char* version) {
 #ifdef _WIN32
     try {
+        std::lock_guard lock(captureMutex);
+        if (captureAttempted &&
+            (!collectorReady.load() || !databaseDirectory.empty() || pipeName != pipe))
+            return 0;
         configure("ocr", session);
         annotations.SetKeyValue("version", version);
+        if (captureAttempted)
+            return 1;
+        captureAttempted = true;
         const bool attached = client.SetHandlerIPCPipe(wide(pipe));
+        if (attached)
+            pipeName = pipe;
         collectorReady.store(attached);
         return attached ? 1 : 0;
     } catch (...) {
@@ -170,7 +193,15 @@ int snow_diag_attach(const char* pipe, const char* session, const char* version)
 
 const char* snow_diag_pipe(void) {
 #ifdef _WIN32
-    return pipeName.c_str();
+    return collectorReady.load() ? pipeName.c_str() : "";
+#else
+    return "";
+#endif
+}
+
+const char* snow_diag_database(void) {
+#ifdef _WIN32
+    return collectorReady.load() ? databaseDirectory.c_str() : "";
 #else
     return "";
 #endif
@@ -276,11 +307,6 @@ void snow_diag_panic(const unsigned char* location, size_t length) {
 
 void snow_diag_shutdown(void) {
 #ifdef _WIN32
-    collectorReady.store(false);
-    if (previousTerminate != nullptr) {
-        std::set_terminate(previousTerminate);
-        previousTerminate = nullptr;
-    }
     const HANDLE handle = emergencyHandle.exchange(INVALID_HANDLE_VALUE);
     closeEmergency(handle);
 #endif

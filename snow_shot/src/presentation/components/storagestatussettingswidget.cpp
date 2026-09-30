@@ -1,16 +1,31 @@
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
 
+#include "snow_shot/presentation/components/pathinput.h"
+#include "snow_shot/presentation/components/settingspageutils.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 
 #include "antd_icons.h"
+#include "widgets/alert.h"
 #include "widgets/button.h"
 #include "widgets/descriptions.h"
+#include "widgets/form.h"
+#include "widgets/modal.h"
+#include "widgets/input.h"
+#include "widgets/switch.h"
+#include "widgets/spin.h"
+#include "widgets/message.h"
+#include <QFileDialog>
+#include <QDir>
+#include <QPushButton>
+#include <QToolButton>
+#include <QTimer>
 
 #include <QEvent>
 #include <QFont>
 #include <QLabel>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QPalette>
 #include <QShowEvent>
 #include <QSizePolicy>
@@ -38,6 +53,8 @@ QString modeText(snow_shot::storage::StorageMode mode) {
     switch (mode) {
     case StorageMode::ApplicationData:
         return StorageStatusSettingsWidget::tr("Application data");
+    case StorageMode::Custom:
+        return StorageStatusSettingsWidget::tr("Custom directory");
     case StorageMode::Portable:
         return StorageStatusSettingsWidget::tr("Portable");
     case StorageMode::FutureVersionReadOnly:
@@ -75,6 +92,32 @@ StorageStatusSettingsWidget::StorageStatusSettingsWidget(
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+#ifdef Q_OS_WIN
+    m_directoryButton = new adqt::widgets::AdButton(this);
+    m_directoryButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
+    m_directoryButton->setSizeClass(adqt::widgets::AdButton::SizeClass::Medium);
+    m_directoryButton->setObjectName(QStringLiteral("settings-storage-directory-choose"));
+    auto* directoryRow = snow_shot::presentation::components::createSettingItemRow(
+        this, m_colorScheme.metricAlias, &m_directoryTitle, &m_directoryDescription,
+        m_directoryButton, QStringLiteral("settings-storage-directory-row"));
+    m_directoryTitle->setObjectName(QStringLiteral("settings-storage-directory-title"));
+    m_directoryDescription->setObjectName(QStringLiteral("settings-storage-directory-location"));
+    m_directoryDescription->setWordWrap(true);
+    m_directoryDescription->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    layout->addWidget(directoryRow);
+    layout->addSpacing(m_colorScheme.metricAlias.marginLG);
+    connect(m_directoryButton, &QAbstractButton::clicked, this,
+            &StorageStatusSettingsWidget::openDirectoryDialog);
+    connect(&m_runtimeSession,
+            &snow_shot::presentation::settings::SettingsRuntimeSession::directoryChangeProgress,
+            this, [this](const snow_shot::storage::StorageDirectoryProgress& progress) {
+                m_directoryProgress = progress;
+                updateDirectoryProgress();
+            });
+    connect(&m_runtimeSession,
+            &snow_shot::presentation::settings::SettingsRuntimeSession::directoryChangeFinished,
+            this, &StorageStatusSettingsWidget::finishDirectoryChange);
+#endif
     m_descriptions = new adqt::widgets::AdDescriptions(this);
     m_descriptions->setObjectName(QStringLiteral("settings-storage-status-descriptions"));
     m_descriptions->setBordered(false);
@@ -166,7 +209,10 @@ void StorageStatusSettingsWidget::applyTheme(
                                        m_recordingTempValue, m_otherValue,     m_locationValue,
                                        m_modeValue,          m_errorValue,     m_diagnosticsValue,
                                        m_logLocationValue,   m_logStatusValue, m_copyLogFeedback};
-    for (QLabel* label : valueLabels) {
+    QVector<QLabel*> labels = valueLabels;
+    if (m_directoryModal)
+        labels << m_directoryProgressLabel;
+    for (QLabel* label : labels) {
         QFont font = label->font();
         font.setPixelSize(scheme.metricAlias.fontSize);
         font.setWeight(QFont::Normal);
@@ -174,6 +220,10 @@ void StorageStatusSettingsWidget::applyTheme(
         QPalette palette = label->palette();
         palette.setColor(QPalette::WindowText, scheme.map.colorText);
         label->setPalette(palette);
+    }
+    if (m_directoryTitle) {
+        snow_shot::presentation::components::applySettingItemTheme(m_directoryTitle,
+                                                                   m_directoryDescription, scheme);
     }
     QPalette errorPalette = m_errorValue->palette();
     errorPalette.setColor(QPalette::WindowText, m_errorValue->property("hasError").toBool()
@@ -184,6 +234,42 @@ void StorageStatusSettingsWidget::applyTheme(
 }
 
 void StorageStatusSettingsWidget::retranslateUi() {
+    if (m_directoryButton) {
+        m_directoryTitle->setText(tr("Storage directory"));
+        m_directoryButton->setText(tr("Choose directory"));
+        m_directoryButton->setAccessibleName(tr("Choose storage directory"));
+        m_directoryDescription->setText(
+            tr("Current storage location: %1")
+                .arg(
+                    QDir::toNativeSeparators(m_runtimeSession.storageStatus().effectiveDirectory)));
+    }
+    if (m_directoryModal) {
+        m_directoryModal->setWindowTitle(tr("Storage directory"));
+        m_directoryModal->setAcceptText(tr("OK"));
+        m_directoryModal->setRejectText(tr("Cancel"));
+        m_directoryField->setLabel(tr("Storage directory"));
+        m_directoryInput->setAccessibleName(tr("Storage directory"));
+        m_directoryInput->lineEdit()->setAccessibleName(tr("Storage directory"));
+        m_directoryInput->setBrowseButtonText(tr("Choose storage directory"));
+        m_migrateField->setLabel(tr("Migrate existing data"));
+        m_migrateSwitch->setAccessibleName(tr("Migrate existing data"));
+        if (!m_directoryField->errorMessages().isEmpty())
+            static_cast<void>(m_directoryField->validate());
+        updateDirectoryProgress();
+    }
+    if (m_directoryConfirmation) {
+        m_directoryConfirmation->setWindowTitle(tr("Change storage directory?"));
+        m_directoryConfirmation->setText(
+            m_migrateSwitch->isChecked()
+                ? tr("Existing data will be migrated to %1. Verified files will be removed from "
+                     "the old directory after the switch. Continue?")
+                      .arg(m_directoryInput->text())
+                : tr("Settings and open pinned windows will be copied to %1. Screenshot and closed "
+                     "pinned history will stay in the old directory. Continue?")
+                      .arg(m_directoryInput->text()));
+        m_directoryConfirmation->setAcceptText(tr("Proceed"));
+        m_directoryConfirmation->setRejectText(tr("Cancel"));
+    }
     m_copyLogButton->setText(tr("Copy today's log file"));
     m_copyLogButton->setAccessibleName(tr("Copy today's log file"));
     m_copyLogFeedback->setText(
@@ -254,6 +340,12 @@ void StorageStatusSettingsWidget::showEvent(QShowEvent* event) {
 }
 
 void StorageStatusSettingsWidget::syncStatus(const snow_shot::storage::StorageStatus& status) {
+    if (m_directoryButton) {
+        m_directoryButton->setEnabled(status.writeAvailable && !status.directoryChanging);
+        m_directoryDescription->setText(
+            tr("Current storage location: %1")
+                .arg(QDir::toNativeSeparators(status.effectiveDirectory)));
+    }
     const snow_shot::storage::AppStorageUsage& usage = status.appUsage;
     m_totalValue->setText(usage.scanning ? tr("Scanning…") : formattedBytes(usage.totalBytes()));
     m_historyValue->setText(formattedBytes(usage.historyBytes));
@@ -295,4 +387,237 @@ void StorageStatusSettingsWidget::syncStatus(const snow_shot::storage::StorageSt
     m_errorValue->setText(hasError ? latestError : tr("None"));
     m_refreshButton->setEnabled(!usage.scanning && !status.cacheClearing);
     applyTheme(m_colorScheme);
+}
+
+void StorageStatusSettingsWidget::openDirectoryDialog() {
+#ifdef Q_OS_WIN
+    using namespace adqt::widgets;
+    if (m_directoryModal)
+        return;
+    auto* modal = new AdModal(this);
+    m_directoryModal = modal;
+    modal->setObjectName(QStringLiteral("settings-storage-directory-modal"));
+    modal->setMode(AdModal::Mode::Overlay);
+    modal->setOwnerWindow(window());
+    modal->setCentered(true);
+    modal->setPreferredWidth(580);
+    modal->setCloseOnMaskClick(false);
+    modal->setClosePolicy(AdModal::ClosePolicy::Manual);
+    modal->setStandardButtons(AdModal::StandardButton::Ok | AdModal::StandardButton::Cancel);
+    auto* body = new QWidget;
+    auto* layout = new QVBoxLayout(body);
+    layout->setContentsMargins(0, 0, 0, 0);
+    m_directoryForm = new QWidget(body);
+    m_directoryForm->setObjectName(QStringLiteral("storage-directory-form"));
+    auto* grid = new QGridLayout(m_directoryForm);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(m_colorScheme.metricAlias.marginLG);
+    grid->setVerticalSpacing(0);
+    grid->setColumnStretch(0, 1);
+    m_directoryInput = new DirectoryPathInput(m_directoryForm);
+    m_directoryInput->setObjectName(QStringLiteral("storage-directory-path-input"));
+    m_directoryInput->lineEdit()->setObjectName(QStringLiteral("storage-directory-input"));
+    m_directoryInput->browseButton()->setObjectName(QStringLiteral("storage-directory-browse"));
+    m_directoryInput->setText(
+        QDir::toNativeSeparators(m_runtimeSession.storageStatus().effectiveDirectory));
+    m_directoryField =
+        new AdFormItem(QString(), m_directoryInput, QStringLiteral("directory"), m_directoryForm);
+    m_directoryField->setObjectName(QStringLiteral("storage-directory-field"));
+    m_directoryField->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    m_directoryField->setControlValueProperty(QStringLiteral("text"));
+    m_directoryField->setValidateOnChange(false);
+    m_directoryField->setFormValidator([this](const QVariant& value, AdFormItem*) {
+        AdFormItem::ValidationResult result;
+        const auto validation = snow_shot::storage::validateStorageDirectory(
+            m_runtimeSession.storageStatus().effectiveDirectory,
+            QDir::fromNativeSeparators(value.toString().trimmed()));
+        if (!validation.success) {
+            result.status = AdFormItem::ValidateStatus::Error;
+            result.errors.push_back(validation.error);
+        }
+        return result;
+    });
+    grid->addWidget(m_directoryField, 0, 0, Qt::AlignTop);
+    m_migrateSwitch = new AdSwitch(m_directoryForm);
+    m_migrateSwitch->setObjectName(QStringLiteral("storage-directory-migrate"));
+    m_migrateSwitch->setChecked(true);
+    m_migrateField =
+        new AdFormItem(QString(), m_migrateSwitch, QStringLiteral("migrate"), m_directoryForm);
+    m_migrateField->setObjectName(QStringLiteral("storage-directory-migrate-field"));
+    m_migrateField->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    m_migrateField->setControlValueProperty(QStringLiteral("checked"));
+    grid->addWidget(m_migrateField, 1, 0, Qt::AlignTop);
+    layout->addWidget(m_directoryForm);
+    m_directoryError = new AdAlert(body);
+    m_directoryError->setObjectName(QStringLiteral("storage-directory-error"));
+    m_directoryError->setSeverity(AdAlert::Severity::Error);
+    m_directoryError->hide();
+    layout->addWidget(m_directoryError);
+    m_directoryProgressBody = new QWidget(body);
+    auto* progressLayout = new QVBoxLayout(m_directoryProgressBody);
+    auto* spin = new AdSpin(m_directoryProgressBody);
+    spin->setObjectName(QStringLiteral("storage-directory-spinner"));
+    spin->setSpinning(true);
+    progressLayout->addWidget(spin, 0, Qt::AlignHCenter);
+    m_directoryProgressLabel = new QLabel(m_directoryProgressBody);
+    m_directoryProgressLabel->setObjectName(QStringLiteral("storage-directory-progress"));
+    m_directoryProgressLabel->setWordWrap(true);
+    m_directoryProgressLabel->setAlignment(Qt::AlignCenter);
+    progressLayout->addWidget(m_directoryProgressLabel);
+    layout->addWidget(m_directoryProgressBody);
+    m_directoryProgressBody->hide();
+    modal->setContentWidget(body);
+    modal->setInitialFocusWidget(m_directoryInput->lineEdit());
+    connect(m_directoryInput, &DirectoryPathInput::browseRequested, this, [this] {
+        const QString directory = QFileDialog::getExistingDirectory(
+            m_directoryModal->contentWidget()->window(), tr("Choose storage directory"),
+            m_directoryInput->text());
+        if (!directory.isEmpty())
+            m_directoryInput->setText(QDir::toNativeSeparators(directory));
+    });
+    connect(modal, &AdModal::closeRequested, this, [this, modal](AdModal::CloseReason reason) {
+        if (m_directoryBusy || m_directoryConfirmation)
+            return;
+        if (reason != AdModal::CloseReason::OkAction) {
+            modal->reject();
+            return;
+        }
+        if (!m_directoryField->validate()) {
+            m_directoryInput->lineEdit()->setFocus();
+            return;
+        }
+        m_directoryError->setText(QString());
+        m_directoryError->hide();
+        auto* confirmation = new AdModal(modal->contentWidget());
+        m_directoryConfirmation = confirmation;
+        confirmation->setObjectName(QStringLiteral("storage-directory-confirmation"));
+        confirmation->setMode(AdModal::Mode::Window);
+        confirmation->setOwnerWindow(modal->contentWidget()->window());
+        confirmation->setCentered(true);
+        confirmation->setCloseOnMaskClick(false);
+        confirmation->setPreset(AdModal::Preset::Confirm);
+        confirmation->setAcceptAccentRole(AdButton::AccentRole::Danger);
+        confirmation->setStandardButtons(AdModal::StandardButton::Ok |
+                                         AdModal::StandardButton::Cancel);
+        retranslateUi();
+        connect(confirmation, &AdModal::accepted, this, [this] {
+            const QString directory = m_directoryInput->text();
+            const bool migrate = m_migrateSwitch->isChecked();
+            setDirectoryBusy(true);
+            m_directoryProgress = {};
+            updateDirectoryProgress();
+            QTimer::singleShot(0, this, [this, directory, migrate] {
+                const auto result = m_runtimeSession.changeStorageDirectory(directory, migrate);
+                if (!result.success)
+                    finishDirectoryChange({false, result.error, {}});
+            });
+        });
+        connect(confirmation, &AdModal::finished, this, [this, confirmation](AdModal::DialogCode) {
+            m_directoryConfirmation = nullptr;
+            confirmation->deleteLater();
+        });
+        confirmation->setOpen(true);
+    });
+    connect(modal, &AdModal::finished, this, [this, modal](AdModal::DialogCode) {
+        if (m_directoryConfirmation)
+            m_directoryConfirmation->reject();
+        m_directoryModal = nullptr;
+        m_directoryForm = nullptr;
+        m_directoryField = nullptr;
+        m_migrateField = nullptr;
+        m_directoryInput = nullptr;
+        m_migrateSwitch = nullptr;
+        m_directoryError = nullptr;
+        m_directoryProgressBody = nullptr;
+        m_directoryProgressLabel = nullptr;
+        m_directoryBusy = false;
+        modal->deleteLater();
+    });
+    retranslateUi();
+    applyTheme(m_colorScheme);
+    body->ensurePolished();
+    const auto children = body->findChildren<QWidget*>();
+    for (auto it = children.crbegin(); it != children.crend(); ++it) {
+        (*it)->ensurePolished();
+        if ((*it)->layout())
+            (*it)->layout()->activate();
+    }
+    body->layout()->activate();
+    modal->setOpen(true);
+#endif
+}
+
+void StorageStatusSettingsWidget::setDirectoryBusy(bool busy) {
+    m_directoryBusy = busy;
+    if (!m_directoryModal)
+        return;
+    m_directoryModal->acceptButton()->setEnabled(!busy);
+    m_directoryModal->rejectButton()->setEnabled(!busy);
+    m_directoryModal->setCloseButtonVisible(!busy);
+    m_directoryModal->setCloseOnEscape(!busy);
+    m_directoryModal->setCloseOnMaskClick(false);
+    m_directoryForm->setVisible(!busy);
+    m_directoryError->setVisible(!busy && !m_directoryError->text().isEmpty());
+    m_directoryProgressBody->setVisible(busy);
+}
+
+void StorageStatusSettingsWidget::updateDirectoryProgress() {
+    if (!m_directoryProgressLabel)
+        return;
+    using Stage = snow_shot::storage::StorageDirectoryProgress::Stage;
+    QString text;
+    switch (m_directoryProgress.stage) {
+    case Stage::Preparing:
+        text = tr("Preparing migration…");
+        break;
+    case Stage::Switching:
+        text = tr("Switching storage directory…");
+        break;
+    case Stage::Cleaning:
+        text = tr("Removing old files — %1/%2")
+                   .arg(m_directoryProgress.completed)
+                   .arg(m_directoryProgress.total);
+        break;
+    case Stage::Verifying:
+        text = tr("Verifying data — %1/%2")
+                   .arg(m_directoryProgress.completed)
+                   .arg(m_directoryProgress.total);
+        break;
+    case Stage::Copying:
+        text = m_directoryProgress.category == u"history"
+                   ? tr("Migrating screenshot history — %1/%2")
+               : m_directoryProgress.category == u"pinned" ? tr("Migrating pinned windows — %1/%2")
+               : m_directoryProgress.category == u"ocr"    ? tr("Migrating OCR assets — %1/%2")
+               : m_directoryProgress.category == u"logs"   ? tr("Migrating logs — %1/%2")
+                                                           : tr("Migrating other data — %1/%2");
+        text = text.arg(m_directoryProgress.completed).arg(m_directoryProgress.total);
+        break;
+    }
+    m_directoryProgressLabel->setText(text);
+}
+
+void StorageStatusSettingsWidget::finishDirectoryChange(
+    const snow_shot::storage::StorageDirectoryChangeResult& result) {
+    if (!m_directoryModal || !m_directoryBusy)
+        return;
+    using namespace adqt::widgets;
+    AdMessage::Request message;
+    if (result.success) {
+        message.content =
+            result.warning.isEmpty() ? tr("Storage migration complete.") : result.warning;
+        m_directoryBusy = false;
+        m_directoryModal->accept();
+        if (result.warning.isEmpty())
+            AdMessageService::success(std::move(message), window());
+        else
+            AdMessageService::warning(std::move(message), window());
+        syncStatus(m_runtimeSession.storageStatus());
+    } else {
+        setDirectoryBusy(false);
+        message.content =
+            result.error + (result.warning.isEmpty() ? QString() : u'\n' + result.warning);
+        m_directoryError->setText(message.content);
+        m_directoryError->show();
+        AdMessageService::error(std::move(message), window());
+    }
 }

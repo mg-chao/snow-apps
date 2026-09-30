@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_APPLICATIONSTORAGE_H
 
 #include "snow_shot/storage/appstorageusage.h"
+#include "snow_shot/storage/storagedirectorychange.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/configurationstore.h"
@@ -33,6 +34,7 @@ struct StorageInitializationOptions {
 enum class StorageMode {
     ApplicationData,
     Portable,
+    Custom,
     FutureVersionReadOnly,
     Degraded,
 };
@@ -51,6 +53,7 @@ struct StorageStatus {
     QString fallbackReason;
     StorageMode effectiveMode = StorageMode::Degraded;
     ConfigurationCompatibility configurationCompatibility = ConfigurationCompatibility::Unavailable;
+    bool directoryChanging = false;
     bool readAvailable = false;
     bool writeAvailable = false;
     CaptureHistoryUsage historyUsage;
@@ -78,6 +81,13 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] StorageResult initialize(const StorageInitializationOptions& options = {});
     [[nodiscard]] bool isInitialized() const;
     [[nodiscard]] StorageResult flushNow();
+    void setDirectoryChangeHooks(std::function<StorageResult()> suspend,
+                                 std::function<void(const QString&)> resume,
+                                 std::function<void()> drain = {});
+    [[nodiscard]] StorageResult requestDirectoryChange(const QString& directory, bool migrate);
+    [[nodiscard]] bool directoryChanging() const {
+        return m_status.directoryChanging;
+    }
     void shutdown();
 
     [[nodiscard]] ConfigurationStore& configuration();
@@ -123,6 +133,8 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] std::shared_future<StorageResult> requestRecordingTempClearAsync();
 
   signals:
+    void directoryChangeProgress(const snow_shot::storage::StorageDirectoryProgress& progress);
+    void directoryChangeFinished(const snow_shot::storage::StorageDirectoryChangeResult& result);
     void captureHistoryChanged();
     void pinnedWindowsChanged();
     void pinnedWindowShowRequested(const QString& id);
@@ -142,6 +154,14 @@ class ApplicationStorage final : public QObject {
     void finishHistoryPolicy(bool success, const QString& error);
     void finishCacheClear(StorageCacheKind kind, const StorageResult& result);
     void emitStatusChanged();
+    void createUsageTracker();
+    quint64 m_usageGeneration = 0;
+    QString m_bootstrapDirectory;
+    QString m_executableDirectory;
+    std::function<StorageResult()> m_suspendForDirectoryChange;
+    std::function<void()> m_drainForDirectoryChange;
+    std::function<void(const QString&)> m_resumeAfterDirectoryChange;
+    std::future<StorageDirectoryChangeResult> m_directoryWorker;
 
     StorageStatus m_status;
     std::unique_ptr<ConfigurationStore> m_configuration;

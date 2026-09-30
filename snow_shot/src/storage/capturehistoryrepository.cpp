@@ -4,6 +4,8 @@
 #include "snow_shot/storage/storagelogging.h"
 #include "snowimageqtcodec.h"
 
+#include <shared_mutex>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -597,6 +599,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
 
     std::optional<CaptureHistoryAssetSet>
     displayAssets(const CaptureHistoryRecord& record) const override {
+        std::shared_lock access(m_relocationMutex);
         const auto stored = find(record);
         if (!stored)
             return std::nullopt;
@@ -618,6 +621,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::optional<CaptureHistoryPayload> load(const CaptureHistoryRecord& record) const override {
+        std::shared_lock access(m_relocationMutex);
         const auto stored = find(record);
         if (!stored)
             return std::nullopt;
@@ -649,6 +653,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::optional<QImage> loadResultImage(const CaptureHistoryRecord& record) const override {
+        std::shared_lock access(m_relocationMutex);
         const auto stored = find(record);
         if (!stored || !record.result)
             return std::nullopt;
@@ -658,6 +663,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
 
     std::optional<PreparedPngImage>
     loadResultPng(const CaptureHistoryRecord& record) const override {
+        std::shared_lock access(m_relocationMutex);
         const auto stored = find(record);
         if (!stored || !record.result)
             return std::nullopt;
@@ -715,6 +721,30 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         Command command;
         command.kind = Kind::Clear;
         return submit(std::move(command));
+    }
+
+    void suspendWrites(bool suspended) override {
+        std::lock_guard lock(m_queueMutex);
+        m_suspended = suspended;
+    }
+
+    StorageResult relocate(const QString& directory) override {
+        drain();
+        std::unique_lock access(m_relocationMutex);
+        m_configurationDirectory = QDir::cleanPath(directory);
+        m_root = QDir(directory).filePath(QStringLiteral("capture_history"));
+        m_recordsRoot = QDir(m_root).filePath(QStringLiteral("records"));
+        m_indexPath = QDir(m_root).filePath(QStringLiteral("index.json"));
+        {
+            std::lock_guard stateLock(m_stateMutex);
+            m_indexHealthy = true;
+            m_error.clear();
+        }
+        m_failedReads.clear();
+        install({}, 0, true);
+        loadIndex();
+        changed();
+        return m_indexHealthy ? StorageResult::ok() : StorageResult::failure(lastError());
     }
 
     void drain() override {
@@ -1092,6 +1122,9 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                 rejection = QStringLiteral("Capture-history storage is not writable");
             }
         }
+        if (m_suspended)
+            rejection = QCoreApplication::translate("StorageDirectoryChange",
+                                                    "Storage migration is in progress");
         if (m_stopping)
             rejection = QStringLiteral("Capture-history storage is shutting down");
         if (command.kind == Kind::Publish &&
@@ -1210,6 +1243,8 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         }
     }
 
+    mutable std::shared_mutex m_relocationMutex;
+    bool m_suspended = false;
     QString m_configurationDirectory;
     QString m_root;
     QString m_recordsRoot;

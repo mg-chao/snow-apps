@@ -52,6 +52,7 @@
 #include "widgets/message.h"
 
 #include <QApplication>
+#include <QEvent>
 #include <QClipboard>
 #include <QFutureWatcher>
 #include "mcp/mcpasyncwork_p.h"
@@ -74,6 +75,36 @@
 
 namespace snow_shot::app {
 namespace {
+// A migration keeps the event loop painting while preventing user-driven mutations
+// and all ordinary close/quit paths, including other top-level pinned windows.
+class StorageMigrationInputGuard final : public QObject {
+  public:
+    explicit StorageMigrationInputGuard(QObject* parent) : QObject(parent) {}
+    bool active = false;
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (!active)
+            return false;
+        switch (event->type()) {
+        case QEvent::Close:
+        case QEvent::Quit:
+            event->ignore();
+            return true;
+        case QEvent::KeyPress:
+        case QEvent::KeyRelease:
+        case QEvent::Shortcut:
+        case QEvent::ShortcutOverride:
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+        case QEvent::MouseButtonDblClick:
+        case QEvent::Wheel:
+        case QEvent::Drop:
+        case QEvent::TouchBegin:
+            return true;
+        default:
+            return false;
+        }
+    }
+};
 const QString kPinBorderColorKey = QStringLiteral("pin_to_screen/border_color");
 const QString kPinBorderActiveColorKey = QStringLiteral("pin_to_screen/border_active_color");
 const QString kTrayEnabledKey = QStringLiteral("tray/enabled");
@@ -117,6 +148,8 @@ class ApplicationController::Impl {
           featureRouter([this](FeatureFamily feature) { showUnavailableFeature(feature); }) {
         QObject::connect(
             &systemTray, &presentation::SystemTrayController::screenshotRequested, &q, [this]() {
+                if (storage::ApplicationStorage::instance().directoryChanging())
+                    return;
                 if (!allowPermissions(presentation::requiredPermissions(
                         presentation::GlobalShortcutAction::Screenshot,
                         permissions.microphoneEnabled())))
@@ -146,6 +179,8 @@ class ApplicationController::Impl {
                          [this]() { ensureMainWindow().showAbout(); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::exitRequested, &q,
                          [this]() {
+                             if (storage::ApplicationStorage::instance().directoryChanging())
+                                 return;
                              systemTray.hide();
                              QApplication::quit();
                          });
@@ -308,6 +343,56 @@ class ApplicationController::Impl {
         });
 #endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
+#ifdef Q_OS_WIN
+        migrationInput = new StorageMigrationInputGuard(&q);
+        app.installEventFilter(migrationInput);
+        applicationStorage.setDirectoryChangeHooks(
+            [this] {
+                if (!restartAllowed() || (ocrRecognition && ocrRecognition->storageBusy()) ||
+                    ScreenshotExportCoordinator::shared().pendingJobCount() != 0 ||
+                    mcpSourceWork != 0 || (mcpJobs && mcpJobs->hasRunningJobs()) ||
+                    diagnostics::DiagnosticsService::instance().status().exporting)
+                    return storage::StorageResult::failure(ApplicationController::tr(
+                        "Finish capturing, recording, exporting, recognizing text, or updating "
+                        "before changing storage."));
+                migrationSource = storage::ApplicationStorage::instance().configurationDirectory();
+                migrationInput->active = true;
+                systemTray.setEnabled(false);
+                for (auto* window : QApplication::topLevelWidgets()) {
+                    if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(window))
+                        pin->suspendStorageWrites();
+                }
+                migrationShortcuts = globalShortcutManager.suspendRegistrations();
+                globalMouseManager.setCaptureAvailable(false);
+                migrationMcp = mcpServer && mcpServer->isRunning();
+                stopMcp();
+                if (ocrRecognition)
+                    ocrRecognition->suspendStorage();
+                return storage::StorageResult::ok();
+            },
+            [this](const QString& root) {
+                if (ocrRecognition)
+                    ocrRecognition->resumeStorage(
+                        QDir(root).filePath(QStringLiteral("assets/ocr")));
+                for (auto* window : QApplication::topLevelWidgets()) {
+                    if (auto* pin = qobject_cast<ScreenshotPinnedWindow*>(window))
+                        pin->resumeStorageWrites(migrationSource, root);
+                }
+                migrationInput->active = false;
+                systemTray.setEnabled(storage::ApplicationStorage::instance()
+                                          .configuration()
+                                          .value(kTrayEnabledKey)
+                                          .toBool());
+                globalShortcutManager.resumeRegistrations(migrationShortcuts);
+                globalMouseManager.setCaptureAvailable(true);
+                if (migrationMcp)
+                    startMcp();
+            },
+            [this] {
+                if (ocrRecognition)
+                    ocrRecognition->drainStorage();
+            });
+#endif
         QObject::connect(updates, &update::UpdateService::restartRequested, &q, [this] {
             if (platform::windows::administratorOperationPending())
                 return;
@@ -390,6 +475,7 @@ class ApplicationController::Impl {
     ~Impl() {
         stopMcp();
         platform::windows::setAdministratorRestartGuard({});
+        storage::ApplicationStorage::instance().setDirectoryChangeHooks({}, {});
         if (mainWindow != nullptr) {
             mainWindow->setAttribute(Qt::WA_DeleteOnClose, false);
             delete mainWindow;
@@ -397,7 +483,8 @@ class ApplicationController::Impl {
     }
 
     [[nodiscard]] bool restartAllowed() const {
-        return updates != nullptr && updates->status().state != update::UpdateState::Applying &&
+        return !storage::ApplicationStorage::instance().directoryChanging() && updates != nullptr &&
+               updates->status().state != update::UpdateState::Applying &&
                !(screenshotController && screenshotController->blocksApplicationUpdate()) &&
                !(directCaptureController && directCaptureController->blocksApplicationUpdate());
     }
@@ -1377,6 +1464,8 @@ class ApplicationController::Impl {
     }
 
     void dispatchQuickAction(presentation::GlobalShortcutAction action) {
+        if (storage::ApplicationStorage::instance().directoryChanging())
+            return;
         if (!allowPermissions(
                 presentation::requiredPermissions(action, permissions.microphoneEnabled())))
             return;
@@ -1538,6 +1627,8 @@ class ApplicationController::Impl {
     }
 
     void showMainWindow() {
+        if (storage::ApplicationStorage::instance().directoryChanging())
+            return;
         ensureMainWindow().showAndActivate();
     }
 
@@ -1610,6 +1701,10 @@ class ApplicationController::Impl {
     ApplicationController& q;
     QApplication& app;
     ApplicationRestartCoordinator restartCoordinator;
+    StorageMigrationInputGuard* migrationInput = nullptr;
+    quint64 migrationShortcuts = 0;
+    bool migrationMcp = false;
+    QString migrationSource;
     // These services outlive the disposable configuration window.
     presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;
@@ -1668,6 +1763,8 @@ void ApplicationController::showMainWindow() {
 }
 
 void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
+    if (storage::ApplicationStorage::instance().directoryChanging())
+        return;
     if (arguments.contains(QStringLiteral("--autostart"))) {
         return;
     }

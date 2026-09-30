@@ -1,4 +1,6 @@
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "../src/presentation/services/screenshotclipboardcontentsnapshot.h"
+#include "snowimageqtcodec.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
@@ -13,6 +15,7 @@
 #include <QTextFrame>
 #include <QThread>
 #include <QUrl>
+#include <QtEndian>
 
 #include <cstdlib>
 #include <algorithm>
@@ -213,6 +216,77 @@ void encodedImagesPrecedeDetachedImagesAndCorruptionFallsBack() {
     require(fallback.has_value() && fallback->image.size() == detached.size() &&
                 fallback->image.pixelColor(0, 0) == QColor(Qt::red),
             "corrupt encoded image data should fall back to the detached image snapshot");
+}
+
+class CountingEncodedMimeData final : public QMimeData {
+  public:
+    mutable int pngRequests = 0;
+
+  protected:
+    QVariant retrieveData(const QString& mimeType, QMetaType type) const override {
+        if (mimeType == QStringLiteral("image/png"))
+            ++pngRequests;
+        return QMimeData::retrieveData(mimeType, type);
+    }
+};
+
+ScreenshotClipboardContentSnapshot nativeBitmapFallback() {
+    const QSize size(2, 1);
+    QByteArray bytes(40 + size.width() * size.height() * 4, '\0');
+    qToLittleEndian(quint32(40), bytes.data());
+    qToLittleEndian(qint32(size.width()), bytes.data() + 4);
+    qToLittleEndian(qint32(-size.height()), bytes.data() + 8);
+    qToLittleEndian(quint16(1), bytes.data() + 12);
+    qToLittleEndian(quint16(32), bytes.data() + 14);
+    for (int x = 0; x < size.width(); ++x)
+        qToLittleEndian(quint32(0x00ff0000), bytes.data() + 40 + x * 4);
+    ScreenshotClipboardContentSnapshot snapshot;
+    snapshot.nativeDib = ScreenshotClipboardNativeDib{std::move(bytes), size,
+                                                      ScreenshotClipboardNativeDibFormat::Dib};
+    return snapshot;
+}
+
+void nativeSnapshotRetainsPreferredEncodedImages() {
+    QImage original(QSize(4, 3), QImage::Format_RGBA8888);
+    original.fill(QColor(30, 90, 160, 127));
+    const auto png = pngBytes(original);
+    CountingEncodedMimeData mime;
+    mime.setData(QStringLiteral("image/png"), png);
+    auto snapshot = snow_shot::presentation::detail::snapshotClipboardMimeData(
+        &mime, 1.0, Qt::white, false, {}, nativeBitmapFallback());
+    require(snapshot && snapshot->encodedImages.size() == 1 &&
+                snapshot->encodedImages.first().bytes == png && snapshot->nativeDib &&
+                snapshot->nativeDib->size == QSize(2, 1) && mime.pngRequests == 1,
+            "a native bitmap must not discard the original encoded image");
+    const auto content = ScreenshotClipboardContentReader::decode(std::move(*snapshot));
+    require(content && content->image.size() == original.size() &&
+                content->image.pixelColor(0, 0).alpha() == 127,
+            "encoded pixels must retain their resolution and transparency ahead of native bitmaps");
+
+    QImage secondary(QSize(5, 4), QImage::Format_RGB32);
+    secondary.fill(Qt::green);
+    QByteArray jpeg;
+    QBuffer buffer(&jpeg);
+    require(buffer.open(QIODevice::WriteOnly) &&
+                snow_shot::image_codec::encodeToDevice(secondary, &buffer,
+                                                       snow::image::Format::jpeg, {}),
+            "secondary encoded image should encode");
+    mime.setData(QStringLiteral("image/jpeg"), jpeg);
+    for (const bool corrupt : {false, true}) {
+        auto native = nativeBitmapFallback();
+        const auto capturedPng = corrupt ? QByteArrayLiteral("corrupt") : png;
+        native.encodedImages.append({capturedPng, QStringLiteral("image/png")});
+        mime.pngRequests = 0;
+        snapshot = snow_shot::presentation::detail::snapshotClipboardMimeData(
+            &mime, 1.0, Qt::white, false, {}, std::move(native));
+        require(snapshot && snapshot->encodedImages.size() == 2 &&
+                    snapshot->encodedImages[0].bytes == capturedPng &&
+                    snapshot->encodedImages[1].bytes == jpeg && mime.pngRequests == 0,
+                "native PNG bytes must be reused while retaining other encoded formats");
+        const auto decoded = ScreenshotClipboardContentReader::decode(std::move(*snapshot));
+        require(decoded && decoded->image.size() == (corrupt ? secondary.size() : original.size()),
+                "encoded format priority and corruption fallback must precede native bitmaps");
+    }
 }
 
 class ImageDataOnlyMimeData final : public QMimeData {
@@ -647,6 +721,7 @@ int main(int argc, char** argv) {
     encodedImageAndTextAreSupported();
     formattedTextRetainsOriginalClipboardInput();
     encodedImagesPrecedeDetachedImagesAndCorruptionFallsBack();
+    nativeSnapshotRetainsPreferredEncodedImages();
     localImageFilesAndPlainTextFallbackAreSupported();
     changedLocalFilesAreRejectedAndTextFallbackRemainsAvailable();
     decodeIsCancellableAndReturnsGuiAffineDocuments();

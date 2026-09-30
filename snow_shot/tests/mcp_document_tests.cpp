@@ -1124,6 +1124,7 @@ void documentClipboardTeardown() {
 
 void jobs() {
     McpJobRegistry registry;
+    require(!registry.hasRunningJobs(), "empty registry permits storage migration");
     QString id;
     int canceled = 0;
     id = registry.start(1, QStringLiteral("test"), [&] {
@@ -1131,11 +1132,13 @@ void jobs() {
         require(!registry.complete(id, {{QStringLiteral("late"), true}}),
                 "late synchronous completion cannot resurrect canceled job");
     });
+    require(registry.hasRunningJobs(), "running jobs block storage migration");
     require(!id.isEmpty() && registry.list(1).size() == 1 && registry.list(2).isEmpty(),
             "jobs are independently owned");
     require(!registry.get(2, id) && !registry.cancel(2, id), "job lookup enforces owner");
     require(registry.cancel(1, id) && canceled == 1 && registry.cancel(1, id) && canceled == 1,
             "job cancellation is idempotent and retires callback first");
+    require(!registry.hasRunningJobs(), "canceled jobs no longer block migration");
     const auto committed = registry.start(1, QStringLiteral("committed"));
     require(registry.retainInput(committed,
                                  {{QStringLiteral("secret_input"), QStringLiteral("private")}}) &&
@@ -1583,6 +1586,10 @@ int main(int argc, char** argv) {
         return 0;
     }
     jobs();
+    if (application.arguments().contains(QStringLiteral("--jobs-only"))) {
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     documentReservations(temporary.path());
     documentCacheWork(temporary.path());
     documentConcurrency();

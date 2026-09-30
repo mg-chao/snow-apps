@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "screenshotclipboardcontentsnapshot.h"
 
 #include "../../image/snowimageqtcodec.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
@@ -25,6 +26,7 @@
 #include <QThread>
 #include <QUrl>
 #include <QVariant>
+#include <QScopeGuard>
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +65,8 @@ qint64 snapshotBytes(const ScreenshotClipboardContentSnapshot& snapshot) {
         bytes += encoded.bytes.size();
     if (snapshot.nativeDib)
         bytes += snapshot.nativeDib->bytes.size();
+    if (snapshot.placement)
+        bytes += kScreenshotClipboardPlacementMaximumBytes;
     return bytes;
 }
 
@@ -429,19 +433,39 @@ readFileImage(const ScreenshotClipboardLocalImage& localImage,
                                                        QByteArray("image/") + format->suffix));
 }
 
+} // namespace
+
 std::optional<ScreenshotClipboardContentSnapshot>
-snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, const QColor& baseColor,
-                         bool includeDetachedImage, const AllocationCheck& allocate = {}) {
-    if (mimeData == nullptr || !std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
+snow_shot::presentation::detail::snapshotClipboardMimeData(
+    const QMimeData* mimeData, qreal devicePixelRatio, const QColor& baseColor,
+    bool includeDetachedImage, const AllocationCheck& allocate,
+    std::optional<ScreenshotClipboardContentSnapshot> nativeSnapshot) {
+    if (!std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
         return std::nullopt;
     }
 
-    ScreenshotClipboardContentSnapshot snapshot;
+    const bool nativeCaptured = nativeSnapshot.has_value();
+    ScreenshotClipboardContentSnapshot snapshot =
+        nativeCaptured ? std::move(*nativeSnapshot) : ScreenshotClipboardContentSnapshot{};
     snapshot.devicePixelRatio = devicePixelRatio;
     snapshot.baseColor = baseColor;
+    if (!mimeData)
+        return snapshot.isValid() ? std::optional(std::move(snapshot)) : std::nullopt;
+    if (!nativeCaptured && mimeData->hasFormat(screenshotClipboardPlacementNativeMimeType())) {
+        if (allocate && !allocate(kScreenshotClipboardPlacementMaximumBytes))
+            return std::nullopt;
+        snapshot.placement = readScreenshotClipboardPlacement(mimeData);
+    }
 
     for (const EncodedImageFormat& candidate : kEncodedImageFormats) {
         const QLatin1String mimeType(candidate.mimeType);
+        // Reuse the exact encoded formats copied under the native clipboard lock.
+        // A DIB is only a fallback and must not suppress other encoded images.
+        if (std::any_of(snapshot.encodedImages.cbegin(), snapshot.encodedImages.cend(),
+                        [&mimeType](const ScreenshotClipboardEncodedImage& encoded) {
+                            return encoded.mimeType == mimeType;
+                        }))
+            continue;
         if (!mimeData->hasFormat(mimeType)) {
             continue;
         }
@@ -496,10 +520,11 @@ snapshotMimeDataInternal(const QMimeData* mimeData, qreal devicePixelRatio, cons
                : std::nullopt;
 }
 
+namespace {
 #if defined(Q_OS_WIN) || defined(_WIN32)
 QByteArray captureNativePng(const AllocationCheck& allocate, qint64 retained) {
     const UINT format = RegisterClipboardFormatW(L"PNG");
-    if (format == 0 || !IsClipboardFormatAvailable(format) || !OpenClipboard(nullptr))
+    if (format == 0 || !IsClipboardFormatAvailable(format))
         return {};
     const auto handle = static_cast<HGLOBAL>(GetClipboardData(format));
     const SIZE_T size = handle == nullptr ? 0 : GlobalSize(handle);
@@ -511,7 +536,6 @@ QByteArray captureNativePng(const AllocationCheck& allocate, qint64 retained) {
     }
     if (memory != nullptr)
         GlobalUnlock(handle);
-    CloseClipboard();
     return bytes;
 }
 
@@ -562,15 +586,10 @@ qint64 nativeDibPixelOffset(const QByteArray& bytes, const BITMAPINFOHEADER& hea
 
 std::optional<ScreenshotClipboardNativeDib> captureNativeDib(const AllocationCheck& allocate,
                                                              qint64 retained) {
-    if (!OpenClipboard(nullptr)) {
-        return std::nullopt;
-    }
-    const auto closeClipboard = []() { static_cast<void>(CloseClipboard()); };
     const UINT format = IsClipboardFormatAvailable(CF_DIBV5)
                             ? CF_DIBV5
                             : (IsClipboardFormatAvailable(CF_DIB) ? CF_DIB : 0);
     if (format == 0) {
-        closeClipboard();
         return std::nullopt;
     }
     HGLOBAL handle = static_cast<HGLOBAL>(GetClipboardData(format));
@@ -580,7 +599,6 @@ std::optional<ScreenshotClipboardNativeDib> captureNativeDib(const AllocationChe
         size > static_cast<SIZE_T>(std::numeric_limits<int>::max())) {
         if (locked != nullptr)
             GlobalUnlock(handle);
-        closeClipboard();
         return std::nullopt;
     }
     const auto* rawHeader = static_cast<const BITMAPINFOHEADER*>(locked);
@@ -591,12 +609,10 @@ std::optional<ScreenshotClipboardNativeDib> captureNativeDib(const AllocationChe
         (allocate && !allocate(retained + static_cast<qint64>(size) +
                                static_cast<qint64>(rawHeader->biWidth) * rawHeight * 4))) {
         GlobalUnlock(handle);
-        closeClipboard();
         return std::nullopt;
     }
     QByteArray bytes(static_cast<const char*>(locked), static_cast<int>(size));
     GlobalUnlock(handle);
-    closeClipboard();
 
     const auto* header = reinterpret_cast<const BITMAPINFOHEADER*>(bytes.constData());
     if (header->biSize < sizeof(BITMAPINFOHEADER) ||
@@ -863,9 +879,8 @@ ScreenshotClipboardContentReader::snapshotLocalFiles(const QStringList& paths,
     return files;
 }
 
-std::optional<ScreenshotClipboardContentSnapshot>
-ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePixelRatio,
-                                           AllocationCheck allocate) {
+static std::optional<ScreenshotClipboardContentSnapshot>
+snapshotClipboardOnce(QClipboard* clipboard, qreal devicePixelRatio, AllocationCheck allocate) {
     if (clipboard == nullptr) {
         return std::nullopt;
     }
@@ -876,8 +891,41 @@ ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePi
         return !rejected;
     })
                                              : AllocationCheck{};
-    auto snapshot = snapshotMimeDataInternal(clipboard->mimeData(), devicePixelRatio, baseColor,
-                                             false, checked);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    std::optional<ScreenshotClipboardContentSnapshot> nativeSnapshot;
+    if (QGuiApplication::platformName() == QStringLiteral("windows"))
+        nativeSnapshot.emplace();
+    if (nativeSnapshot && OpenClipboard(nullptr)) {
+        const auto close = qScopeGuard([] { CloseClipboard(); });
+        QByteArray png = captureNativePng(checked, 0);
+        if (!png.isEmpty())
+            nativeSnapshot->encodedImages.push_back({std::move(png), QStringLiteral("image/png")});
+        if (auto native = captureNativeDib(checked, snapshotBytes(*nativeSnapshot)); native) {
+            SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.native_dib_copied");
+            nativeSnapshot->nativeDib = std::move(*native);
+        }
+        const UINT format = RegisterClipboardFormatW(L"SnowShotScreenshotPlacement");
+        const auto handle = static_cast<HGLOBAL>(GetClipboardData(format));
+        const auto size = handle ? GlobalSize(handle) : 0;
+        if (size && size <= static_cast<SIZE_T>(kScreenshotClipboardPlacementMaximumBytes) &&
+            (!checked ||
+             checked(snapshotBytes(*nativeSnapshot) + kScreenshotClipboardPlacementMaximumBytes))) {
+            if (const void* bytes = GlobalLock(handle)) {
+                nativeSnapshot->placement = decodeScreenshotClipboardPlacement(
+                    QByteArray(static_cast<const char*>(bytes), static_cast<qsizetype>(size)));
+                GlobalUnlock(handle);
+            }
+        }
+    }
+    if (rejected)
+        return std::nullopt;
+    auto snapshot = snow_shot::presentation::detail::snapshotClipboardMimeData(
+        clipboard->mimeData(), devicePixelRatio, baseColor, false, checked,
+        std::move(nativeSnapshot));
+#else
+    auto snapshot = snow_shot::presentation::detail::snapshotClipboardMimeData(
+        clipboard->mimeData(), devicePixelRatio, baseColor, false, checked);
+#endif
     if (rejected)
         return std::nullopt;
     if (!snapshot.has_value() && std::isfinite(devicePixelRatio) && devicePixelRatio > 0.0) {
@@ -885,22 +933,6 @@ ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePi
         snapshot->devicePixelRatio = devicePixelRatio;
         snapshot->baseColor = baseColor;
     }
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    if (snapshot.has_value() && snapshot->encodedImages.isEmpty()) {
-        QByteArray png = captureNativePng(checked, snapshotBytes(*snapshot));
-        if (!png.isEmpty()) {
-            snapshot->encodedImages.push_back({std::move(png), QStringLiteral("image/png")});
-        }
-    }
-    if (snapshot.has_value()) {
-        if (auto native = captureNativeDib(checked, snapshotBytes(*snapshot)); native.has_value()) {
-            SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.native_dib_copied");
-            snapshot->nativeDib = std::move(*native);
-        }
-    }
-#endif
-    if (rejected)
-        return std::nullopt;
     if (snapshot.has_value() && !snapshot->nativeDib.has_value()) {
         // Providers that expose only QMimeData::imageData() remain supported.
         SNOW_SHOT_PIN_PERF_COUNTER("clipboard.native_dib_fallback", 1);
@@ -919,10 +951,24 @@ ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePi
 }
 
 std::optional<ScreenshotClipboardContentSnapshot>
+ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePixelRatio,
+                                           AllocationCheck allocate) {
+    ensureScreenshotClipboardPlacementMimeSupport();
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto revision = screenshotClipboardRevision();
+        auto result = snapshotClipboardOnce(clipboard, devicePixelRatio, allocate);
+        if (revision == screenshotClipboardRevision())
+            return result;
+    }
+    return std::nullopt;
+}
+
+std::optional<ScreenshotClipboardContentSnapshot>
 ScreenshotClipboardContentReader::snapshotMimeData(const QMimeData* mimeData,
                                                    qreal devicePixelRatio, const QColor& baseColor,
                                                    AllocationCheck allocate) {
-    return snapshotMimeDataInternal(mimeData, devicePixelRatio, baseColor, true, allocate);
+    return snow_shot::presentation::detail::snapshotClipboardMimeData(mimeData, devicePixelRatio,
+                                                                      baseColor, true, allocate);
 }
 
 std::optional<ScreenshotClipboardContent>
@@ -942,11 +988,22 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
     if (checked && !checked(retained))
         return std::nullopt;
 
+    const auto attachPlacement = [&snapshot](std::optional<ScreenshotClipboardContent> result,
+                                             const ScreenshotClipboardLocalImage* file = nullptr) {
+        if (result && snapshot.placement &&
+            result->image.size() == snapshot.placement->rasterSize &&
+            ((!file && snapshot.placement->filePath.isEmpty()) ||
+             (file && snapshot.placement->matchesFile(file->absolutePath, file->size,
+                                                      file->lastModifiedUtc.toMSecsSinceEpoch()))))
+            result->placement = snapshot.placement;
+        return result;
+    };
+
     {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_encoded_image");
         if (auto result = readEncodedImage(snapshot.encodedImages, cancelled, checked, retained);
             result.has_value()) {
-            return result;
+            return attachPlacement(std::move(result));
         }
     }
     if (*rejected || cancellationRequested(cancelled)) {
@@ -962,7 +1019,7 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
             if (QImage image = decodeNativeDib(*snapshot.nativeDib); !image.isNull()) {
                 SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.native_dib_decoded");
                 if (auto result = imageContent(std::move(image)); result.has_value()) {
-                    return result;
+                    return attachPlacement(std::move(result));
                 }
             }
         }
@@ -971,7 +1028,7 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
             !admitImage(snapshot.detachedImage.size(), retained, checked))
             return std::nullopt;
         if (auto result = imageContent(std::move(snapshot.detachedImage)); result.has_value()) {
-            return result;
+            return attachPlacement(std::move(result));
         }
     }
     if (snapshot.localImage.has_value()) {
@@ -980,7 +1037,7 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
             result.has_value()) {
             result->originalContent.localFilePath = snapshot.localImage->absolutePath;
             result->sourceIdentity = snapshot.localImage->sourceIdentity;
-            return result;
+            return attachPlacement(std::move(result), &*snapshot.localImage);
         }
     }
     if (!snapshot.html.isEmpty()) {

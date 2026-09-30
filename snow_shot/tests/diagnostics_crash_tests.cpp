@@ -62,6 +62,13 @@ int fixture(const QStringList& arguments) {
     DiagnosticsService service;
     require(service.initialize(options), "fixture logger starts");
     require(service.status().crashCaptureAvailable, "fixture collector starts");
+    const QByteArray database = service.crashCaptureDirectory().toUtf8();
+    const QByteArray otherDatabase =
+        QDir(arguments.at(2)).filePath(QStringLiteral("other")).toUtf8();
+    require(snow_diag_start(SNOW_TEST_CRASHPAD_HANDLER, otherDatabase.constData(), "rejected",
+                            "test", "test") == 0 &&
+                QByteArray(snow_diag_database()) == database,
+            "native registration refuses to rebind an active crash database");
     service.record(QtWarningMsg, QStringLiteral("test"), QStringLiteral("crash.breadcrumb"));
     require(service.flush(), "pre-crash flush");
     const QString kind = arguments.at(3);
@@ -144,6 +151,31 @@ void verifyEmergencyLogging() {
     require(!service.status().crashCaptureAvailable, "missing collector is reported accurately");
     service.record(QtWarningMsg, QStringLiteral("test"), QStringLiteral("collector.unavailable"));
     require(service.flush(), "logging remains usable without collector");
+}
+
+int failedStartupFixture(const QString& directory) {
+    const QByteArray missing = QDir(directory).filePath(QStringLiteral("missing-handler")).toUtf8();
+    const QByteArray database = QDir(directory).filePath(QStringLiteral("crashes")).toUtf8();
+    require(snow_diag_start(missing.constData(), database.constData(), "first", "test", "test") ==
+                0,
+            "missing native handler fails startup");
+    require(snow_diag_start(SNOW_TEST_CRASHPAD_HANDLER, database.constData(), "second", "test",
+                            "test") == 0,
+            "failed native registration cannot initialize process resources again");
+    require(QByteArray(snow_diag_database()).isEmpty() && QByteArray(snow_diag_pipe()).isEmpty(),
+            "failed native registration never publishes a database or endpoint");
+    return 0;
+}
+
+void verifyFailedStartup() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "failed-start fixture directory");
+    QProcess process;
+    process.start(QCoreApplication::applicationFilePath(),
+                  {QStringLiteral("--failed-start-fixture"), directory.path()});
+    require(process.waitForStarted(5000) && process.waitForFinished(15000) &&
+                process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0,
+            "failed native startup remains safe on subsequent initialization");
 }
 
 void verifyCrash(const QString& kind) {
@@ -234,6 +266,10 @@ int main(int argc, char** argv) {
             SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 #endif
             snow_test_ocr_initialize();
+            const QByteArray endpoint = qgetenv("SNOW_SHOT_CRASHPAD_PIPE");
+            const QByteArray session = qgetenv("SNOW_SHOT_DIAGNOSTICS_SESSION");
+            require(snow_diag_attach(endpoint.constData(), session.constData(), "test") == 1,
+                    "repeated OCR attachment preserves the registered client");
             constexpr char breadcrumb[] = "crash.breadcrumb OCR";
             snow_diag_breadcrumb(breadcrumb, sizeof(breadcrumb) - 1);
             std::fwrite("IPC", 1, 3, stdout);
@@ -246,7 +282,10 @@ int main(int argc, char** argv) {
         }
         if (app.arguments().value(1) == QStringLiteral("--fixture"))
             return fixture(app.arguments());
+        if (app.arguments().value(1) == QStringLiteral("--failed-start-fixture"))
+            return failedStartupFixture(app.arguments().at(2));
         verifyEmergencyLogging();
+        verifyFailedStartup();
         for (const QString& kind :
              {QStringLiteral("access"), QStringLiteral("stack"), QStringLiteral("fatal"),
               QStringLiteral("abort"), QStringLiteral("terminate"), QStringLiteral("panic"),

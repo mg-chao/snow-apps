@@ -194,6 +194,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceSnapshot() const;
+    void suspendStorageWrites();
+    void resumeStorageWrites(const QString& oldRoot, const QString& newRoot);
     [[nodiscard]] QString persistenceId() const {
         return m_persistenceId;
     }
@@ -615,6 +617,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QString m_persistenceId;
     QString m_groupId = QStringLiteral("default");
     bool m_persistenceEnabled = true;
+    bool m_storageWritesSuspended = false;
     bool m_persistenceRemovalRequested = false;
     qreal m_firstCreationTextDpi = 1.0;
     QTimer* m_persistenceTimer = nullptr;

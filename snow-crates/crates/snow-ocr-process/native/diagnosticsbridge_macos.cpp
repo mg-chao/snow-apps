@@ -15,6 +15,8 @@
 #include <cstring>
 #include <ctime>
 #include <exception>
+#include <mutex>
+#include <string>
 #include <fcntl.h>
 #include <mach/mach.h>
 #include <pthread.h>
@@ -25,6 +27,9 @@
 namespace {
 crashpad::CrashpadClient client;
 crashpad::SimpleStringDictionary annotations;
+std::string databaseDirectory;
+std::mutex captureMutex;
+bool captureAttempted = false;
 std::atomic<int> emergencyHandle{-1};
 std::atomic<unsigned> emergencyUsers{0};
 std::atomic<size_t> emergencyBytes{0};
@@ -119,6 +124,7 @@ bool hasCrashPort() {
 
 void snow_diag_prepare(const char* session, const char* version, const char* revision) {
     try {
+        std::lock_guard lock(captureMutex);
         configure("application", session, version);
         annotations.SetKeyValue("revision", revision);
     } catch (...) {
@@ -128,10 +134,19 @@ void snow_diag_prepare(const char* session, const char* version, const char* rev
 int snow_diag_start(const char* handler, const char* database, const char* session,
                     const char* version, const char* revision) {
     try {
-        snow_diag_prepare(session, version, revision);
+        std::lock_guard lock(captureMutex);
+        if (captureAttempted && (!collectorReady.load() || databaseDirectory != database))
+            return 0;
+        configure("application", session, version);
+        annotations.SetKeyValue("revision", revision);
+        if (captureAttempted)
+            return 1;
+        captureAttempted = true;
         const bool started =
             client.StartHandler(base::FilePath(handler), base::FilePath(database), base::FilePath(),
                                 "", {}, {"--no-periodic-tasks"}, true, false);
+        if (started)
+            databaseDirectory = database;
         collectorReady.store(started);
         return started ? 1 : 0;
     } catch (...) {
@@ -141,9 +156,13 @@ int snow_diag_start(const char* handler, const char* database, const char* sessi
 
 int snow_diag_attach(const char* endpoint, const char* session, const char* version) {
     try {
+        std::lock_guard lock(captureMutex);
         if (std::strcmp(endpoint, "mach-inherited") != 0 || !hasCrashPort())
             return 0;
+        if (captureAttempted && (!collectorReady.load() || !databaseDirectory.empty()))
+            return 0;
         configure("ocr", session, version);
+        captureAttempted = true;
         collectorReady.store(true);
         return 1;
     } catch (...) {
@@ -153,6 +172,10 @@ int snow_diag_attach(const char* endpoint, const char* session, const char* vers
 
 const char* snow_diag_pipe(void) {
     return snow_diag_healthy() ? "mach-inherited" : "";
+}
+
+const char* snow_diag_database(void) {
+    return collectorReady.load() ? databaseDirectory.c_str() : "";
 }
 
 int snow_diag_healthy(void) {
@@ -224,10 +247,5 @@ void snow_diag_panic(const unsigned char* location, size_t length) {
 }
 
 void snow_diag_shutdown(void) {
-    collectorReady.store(false);
-    if (previousTerminate != nullptr) {
-        std::set_terminate(previousTerminate);
-        previousTerminate = nullptr;
-    }
     closeEmergency(emergencyHandle.exchange(-1));
 }

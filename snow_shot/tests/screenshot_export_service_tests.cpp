@@ -212,6 +212,13 @@ void selectionClipboardPreservesEffects() {
                     require(result.isValid(), "selection clipboard export has no payload");
                     require(result.payload.isValid() && !result.payload.pngBytes().isEmpty(),
                             "clipboard export must prepare PNG and its bitmap fallback");
+                    const auto direct = fixture.service().preparePinnedSelection(selection, style);
+                    const auto placement =
+                        decodeScreenshotClipboardPlacement(result.payload.placementBytes());
+                    require(direct && placement &&
+                                placement->windowRect == direct->geometry.nativeGeometry &&
+                                placement->rasterSize == result.image.size(),
+                            "plain or styled clipboard geometry differs from direct pinning");
                     return std::move(result.image);
                 });
             require(image.size() == selection.size() + QSize(shadow * 2, shadow * 2),
@@ -345,10 +352,15 @@ void pinnedSelectionMaterializesCompositedImage() {
             return fixture.service().requestSelectionClipboard(selection, {}, receiver,
                                                                std::move(callback));
         },
-        [](ScreenshotSelectionClipboardResult result) {
+        [&](ScreenshotSelectionClipboardResult result) {
             require(result.isValid(), "annotated selection did not prepare a clipboard payload");
             require(result.payload.isValid() && !result.payload.pngBytes().isEmpty(),
                     "clipboard export must prepare PNG and its bitmap fallback");
+            const auto direct = fixture.service().preparePinnedSelection(selection, {});
+            const auto placement =
+                decodeScreenshotClipboardPlacement(result.payload.placementBytes());
+            require(direct && placement && placement->windowRect == direct->geometry.nativeGeometry,
+                    "annotation must not alter clipboard placement");
             return std::move(result.image);
         });
     require(annotatedCopy.size() == selection.size() &&
@@ -475,13 +487,27 @@ void compoundExportsSnapshotTheirGeometry() {
                     result.pixelColor(5 * scale, 5 * scale).alpha() == 255,
                 "asynchronous export must retain its shape snapshot at backing scale");
         style.region = shape;
+        const auto clipboardPlacement =
+            fixture.service().prepareClipboardPlacement(selection, style);
         const auto clipboard = waitForResult(
             [&](QObject* receiver, auto callback) {
-                return fixture.service().requestSelectionClipboard(selection, style, receiver,
-                                                                   std::move(callback));
+                const bool scheduled = fixture.service().requestSelectionClipboard(
+                    selection, style, receiver, std::move(callback));
+                style.shadowWidth = 8;
+                style.region = QRegion(selection);
+                return scheduled;
             },
-            [](ScreenshotSelectionClipboardResult value) { return value.image; });
+            [&](ScreenshotSelectionClipboardResult value) {
+                const auto metadata =
+                    decodeScreenshotClipboardPlacement(value.payload.placementBytes());
+                require(metadata && clipboardPlacement &&
+                            metadata->windowRect == clipboardPlacement->windowRect,
+                        "asynchronous clipboard export observes later geometry edits");
+                return value.image;
+            });
         require(hasSamePixels(clipboard, result), "clipboard must use the same compound mask");
+        style.shadowWidth = 0;
+        style.region = shape;
         const auto request = fixture.service().preparePinnedSelection(selection, style);
         require(request && request->resultStyle.region == style.region,
                 "pin request carries region snapshot");
@@ -526,6 +552,8 @@ void exportWorkerReleasesDocumentSnapshotsBeforeCompletion() {
     ExportFixture fixture;
     const QRect selection(0, 0, 40, 30);
     const auto expected = fixture.displaySnapshot().copy(selection);
+    const auto placement = fixture.service().prepareClipboardPlacement(selection, {});
+    require(placement.has_value(), "prepare snapshot lifetime clipboard placement");
     for (int mode = 0; mode < 3; ++mode) {
         auto snapshot = fixture.runtime().smartEraseSnapshot();
         const std::weak_ptr<const SnowCanvasSmartEraseSnapshot::Data> lifetime = snapshot.data;
@@ -540,7 +568,13 @@ void exportWorkerReleasesDocumentSnapshotsBeforeCompletion() {
                 } else if (mode == 1) {
                     scheduled = fixture.service().requestSelectionClipboard(
                         selection, {}, receiver,
-                        [callback = std::move(callback)](ScreenshotSelectionClipboardResult value) {
+                        [placement,
+                         callback = std::move(callback)](ScreenshotSelectionClipboardResult value) {
+                            const auto metadata =
+                                decodeScreenshotClipboardPlacement(value.payload.placementBytes());
+                            require(metadata && metadata->windowRect == placement->windowRect &&
+                                        metadata->rasterSize == value.image.size(),
+                                    "releasing export snapshots must preserve clipboard placement");
                             callback(std::move(value.image));
                         });
                 } else {
@@ -574,12 +608,50 @@ void exportWorkerReleasesDocumentSnapshotsBeforeCompletion() {
     }
 }
 
+void clipboardPlacementMatchesDirectPin() {
+    for (const bool points : {false, true}) {
+        ExportFixture fixture(points);
+        for (const int shadow : {0, 4}) {
+            ScreenshotResultStyle style;
+            style.shadowWidth = shadow;
+            style.cornerRadius = 6;
+            QPainterPath ellipse;
+            ellipse.addEllipse(QRectF(0, 0, 20, 15));
+            style.region = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve);
+            const QRect selection(10, 10, 20, 15);
+            const auto direct = fixture.service().preparePinnedSelection(selection, style);
+            require(direct.has_value(), "direct placement must be prepared");
+            const auto snapshot = fixture.service().prepareClipboardPlacement(selection, style);
+            require(snapshot && snapshot->windowRect == direct->geometry.nativeGeometry &&
+                        snapshot->placement.windowSize == direct->initialWindowSize,
+                    "clipboard snapshot differs from direct pin geometry");
+            bool received = false;
+            const auto result = waitForResult(
+                [&](QObject* receiver, auto callback) {
+                    return fixture.service().requestSelectionClipboard(selection, style, receiver,
+                                                                       std::move(callback));
+                },
+                [&](ScreenshotSelectionClipboardResult value) {
+                    const auto metadata =
+                        decodeScreenshotClipboardPlacement(value.payload.placementBytes());
+                    require(metadata && metadata->windowRect == direct->geometry.nativeGeometry &&
+                                metadata->rasterSize == value.image.size(),
+                            "composited clipboard raster loses the direct pin's platform geometry");
+                    received = true;
+                    return value.image;
+                });
+            require(received && !result.isNull(), "clipboard placement export must complete");
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     if (app.arguments().contains(QStringLiteral("--fractional-dpi"))) {
         fractionalDpiExportsPreserveCapturePixels();
         return EXIT_SUCCESS;
     }
+    clipboardPlacementMatchesDirectPin();
     fractionalDpiExportsPreserveCapturePixels();
     exportWorkerReleasesSharedDerivedContours();
     exportWorkerReleasesDocumentSnapshotsBeforeCompletion();

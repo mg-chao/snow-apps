@@ -14,6 +14,15 @@ McpJobRegistry::McpJobRegistry(QObject* parent, std::function<qint64()> clock)
     connect(timer, &QTimer::timeout, this, &McpJobRegistry::trim);
     timer->start(1000);
 }
+bool McpJobRegistry::hasRunningJobs() const {
+    Q_ASSERT(QThread::currentThread() == thread());
+    for (const auto& job : m_jobs) {
+        if (job.value.value(QStringLiteral("status")) == QStringLiteral("running"))
+            return true;
+    }
+    return false;
+}
+
 QString McpJobRegistry::start(quint64 owner, const QString& kind, std::function<void()> cancel,
                               QJsonObject metadata) {
     Q_ASSERT(QThread::currentThread() == thread());

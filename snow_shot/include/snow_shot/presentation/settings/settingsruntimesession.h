@@ -154,6 +154,9 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] storage::StorageStatus storageStatus() const;
     void refreshPlatformSettings();
     void refreshStorageStatus();
+    storage::StorageResult changeStorageDirectory(const QString& directory, bool migrate) {
+        return m_backend.changeStorageDirectory(directory, migrate);
+    }
     void refreshStorageStatusIfStale();
 
     AppPermissionService* appPermissions() const {
@@ -174,6 +177,8 @@ class SettingsRuntimeSession final : public QObject {
     }
 
   signals:
+    void directoryChangeProgress(const snow_shot::storage::StorageDirectoryProgress& progress);
+    void directoryChangeFinished(const snow_shot::storage::StorageDirectoryChangeResult& result);
     void globalMousePermissionChanged();
     void operationMessage(const QString& message, bool warning);
     void fieldChanged(const QString& fieldId,

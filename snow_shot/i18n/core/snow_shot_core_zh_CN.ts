@@ -689,6 +689,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>功能暂不可用</translation>
         </message>
         <message>
+            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</source>
+            <translation>请先完成截图、录制、导出、文字识别或更新，再更改存储目录。</translation>
+        </message>
+        <message>
             <source>Finish capturing, recording, or exporting before updating.</source>
             <translation>请先完成截图、录屏或导出，再进行更新。</translation>
         </message>

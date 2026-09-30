@@ -4,11 +4,18 @@
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/storage/applicationstorage.h"
 
+#include <QPointer>
+
 class QEvent;
 class QLabel;
-class QVBoxLayout;
+class DirectoryPathInput;
 
 namespace adqt::widgets {
+class AdModal;
+class AdAlert;
+class AdFormItem;
+class AdSwitch;
+class AdSpin;
 class AdButton;
 class AdDescriptions;
 } // namespace adqt::widgets
@@ -32,6 +39,25 @@ class StorageStatusSettingsWidget final : public SettingsCustomWidget {
     void showEvent(QShowEvent* event) override;
 
   private:
+    void openDirectoryDialog();
+    void setDirectoryBusy(bool busy);
+    void updateDirectoryProgress();
+    void finishDirectoryChange(const snow_shot::storage::StorageDirectoryChangeResult& result);
+    adqt::widgets::AdButton* m_directoryButton = nullptr;
+    QLabel* m_directoryTitle = nullptr;
+    QLabel* m_directoryDescription = nullptr;
+    QPointer<adqt::widgets::AdModal> m_directoryModal;
+    QPointer<adqt::widgets::AdModal> m_directoryConfirmation;
+    DirectoryPathInput* m_directoryInput = nullptr;
+    adqt::widgets::AdSwitch* m_migrateSwitch = nullptr;
+    adqt::widgets::AdFormItem* m_directoryField = nullptr;
+    adqt::widgets::AdFormItem* m_migrateField = nullptr;
+    adqt::widgets::AdAlert* m_directoryError = nullptr;
+    QLabel* m_directoryProgressLabel = nullptr;
+    QWidget* m_directoryForm = nullptr;
+    QWidget* m_directoryProgressBody = nullptr;
+    bool m_directoryBusy = false;
+    snow_shot::storage::StorageDirectoryProgress m_directoryProgress;
     void syncStatus(const snow_shot::storage::StorageStatus& status);
 
     adqt::widgets::AdDescriptions* m_descriptions = nullptr;

@@ -1437,6 +1437,10 @@
             <translation>深色</translation>
         </message>
         <message>
+            <source>Data storage</source>
+            <translation>資料儲存</translation>
+        </message>
+        <message>
             <source>Decrease opacity by 10%</source>
             <translation>不透明度減少 10%</translation>
         </message>
@@ -3440,6 +3444,73 @@ Unavailable: %2</source>
         </message>
     </context>
     <context>
+        <name>StorageDirectoryChange</name>
+        <message>
+            <source>An interrupted storage migration was detected. The last committed directory is in use; remaining copies have been preserved.</source>
+            <translation>偵測到中斷的儲存移轉。目前使用上次確認的目錄，剩餘副本已保留。</translation>
+        </message>
+        <message>
+            <source>Another storage migration is in progress.</source>
+            <translation>另一項儲存移轉正在進行。</translation>
+        </message>
+        <message>
+            <source>Choose a new or empty directory.</source>
+            <translation>請選擇新目錄或空目錄。</translation>
+        </message>
+        <message>
+            <source>Choose an absolute storage directory path.</source>
+            <translation>請輸入儲存目錄的絕對路徑。</translation>
+        </message>
+        <message>
+            <source>Could not copy %1.</source>
+            <translation>無法複製 %1。</translation>
+        </message>
+        <message>
+            <source>Could not create the storage directory.</source>
+            <translation>無法建立儲存目錄。</translation>
+        </message>
+        <message>
+            <source>Could not save the storage directory selection.</source>
+            <translation>無法儲存所選的儲存目錄。</translation>
+        </message>
+        <message>
+            <source>Storage contains a link or unsupported file: %1</source>
+            <translation>儲存目錄包含連結或不支援的檔案：%1</translation>
+        </message>
+        <message>
+            <source>Storage directory paths must not contain symbolic links or junctions.</source>
+            <translation>儲存目錄路徑不能包含符號連結或目錄接合點。</translation>
+        </message>
+        <message>
+            <source>Storage migration is in progress</source>
+            <translation>正在遷移儲存資料</translation>
+        </message>
+        <message>
+            <source>The destination does not have enough writable disk space.</source>
+            <translation>目標目錄沒有足夠的可寫入磁碟空間。</translation>
+        </message>
+        <message>
+            <source>The new directory must be separate from the current storage directory.</source>
+            <translation>新目錄不能與目前儲存目錄相同，也不能互相包含。</translation>
+        </message>
+        <message>
+            <source>The new storage directory is active, but some old files could not be removed: %1</source>
+            <translation>新儲存目錄已啟用，但部分舊檔案無法刪除：%1</translation>
+        </message>
+        <message>
+            <source>The saved storage directory selection could not be read.</source>
+            <translation>無法讀取已儲存的儲存目錄選擇。</translation>
+        </message>
+        <message>
+            <source>The storage directory is not writable.</source>
+            <translation>儲存目錄無法寫入。</translation>
+        </message>
+        <message>
+            <source>Verification failed for %1.</source>
+            <translation>%1 驗證失敗。</translation>
+        </message>
+    </context>
+    <context>
         <name>StorageStatusSettingsWidget</name>
         <message>
             <source>App storage usage</source>
@@ -3450,12 +3521,36 @@ Unavailable: %2</source>
             <translation>應用程式資料</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Change storage directory?</source>
+            <translation>變更儲存目錄？</translation>
+        </message>
+        <message>
+            <source>Choose directory</source>
+            <translation>選擇目錄</translation>
+        </message>
+        <message>
+            <source>Choose storage directory</source>
+            <translation>選擇儲存目錄</translation>
+        </message>
+        <message>
             <source>Copy today's log file</source>
             <translation>複製今日記錄檔</translation>
         </message>
         <message>
             <source>Could not copy the log file: %1</source>
             <translation>無法複製記錄檔：%1</translation>
+        </message>
+        <message>
+            <source>Current storage location: %1</source>
+            <translation>目前儲存位置：%1</translation>
+        </message>
+        <message>
+            <source>Custom directory</source>
+            <translation>自訂目錄</translation>
         </message>
         <message>
             <source>Diagnostics status</source>
@@ -3472,6 +3567,10 @@ Unavailable: %2</source>
         <message>
             <source>Effective storage mode</source>
             <translation>目前儲存模式</translation>
+        </message>
+        <message>
+            <source>Existing data will be migrated to %1. Verified files will be removed from the old directory after the switch. Continue?</source>
+            <translation>現有資料將移轉至 %1。切換後將從舊目錄刪除已驗證的檔案。是否繼續？</translation>
         </message>
         <message>
             <source>File logging active; crash capture unavailable</source>
@@ -3518,6 +3617,30 @@ Unavailable: %2</source>
             <translation>記錄與當機報告磁碟用量</translation>
         </message>
         <message>
+            <source>Migrate existing data</source>
+            <translation>移轉現有資料</translation>
+        </message>
+        <message>
+            <source>Migrating OCR assets — %1/%2</source>
+            <translation>正在移轉 OCR 資源 — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating logs — %1/%2</source>
+            <translation>正在移轉記錄 — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating other data — %1/%2</source>
+            <translation>正在移轉其他資料 — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating pinned windows — %1/%2</source>
+            <translation>正在移轉貼圖 — %1/%2</translation>
+        </message>
+        <message>
+            <source>Migrating screenshot history — %1/%2</source>
+            <translation>正在移轉擷取歷史 — %1/%2</translation>
+        </message>
+        <message>
             <source>None</source>
             <translation>無</translation>
         </message>
@@ -3528,6 +3651,10 @@ Unavailable: %2</source>
         <message>
             <source>OCR assets</source>
             <translation>OCR 資源</translation>
+        </message>
+        <message>
+            <source>OK</source>
+            <translation>確定</translation>
         </message>
         <message>
             <source>Other app data disk usage</source>
@@ -3550,6 +3677,14 @@ Unavailable: %2</source>
             <translation>可攜模式</translation>
         </message>
         <message>
+            <source>Preparing migration…</source>
+            <translation>正在準備移轉…</translation>
+        </message>
+        <message>
+            <source>Proceed</source>
+            <translation>繼續</translation>
+        </message>
+        <message>
             <source>Read-only (newer configuration)</source>
             <translation>唯讀（設定版本較新）</translation>
         </message>
@@ -3570,6 +3705,10 @@ Unavailable: %2</source>
             <translation>重新整理儲存用量</translation>
         </message>
         <message>
+            <source>Removing old files — %1/%2</source>
+            <translation>正在刪除舊檔案 — %1/%2</translation>
+        </message>
+        <message>
             <source>Scanning…</source>
             <translation>正在掃描…</translation>
         </message>
@@ -3582,12 +3721,28 @@ Unavailable: %2</source>
             <translation>截圖歷史磁碟用量</translation>
         </message>
         <message>
+            <source>Settings and open pinned windows will be copied to %1. Screenshot and closed pinned history will stay in the old directory. Continue?</source>
+            <translation>設定與已開啟的貼圖將複製至 %1。擷取歷史與已關閉的貼圖歷史將保留在舊目錄中。是否繼續？</translation>
+        </message>
+        <message>
+            <source>Storage directory</source>
+            <translation>儲存目錄</translation>
+        </message>
+        <message>
             <source>Storage location</source>
             <translation>儲存位置</translation>
         </message>
         <message>
+            <source>Storage migration complete.</source>
+            <translation>儲存移轉完成。</translation>
+        </message>
+        <message>
             <source>Storage mode</source>
             <translation>儲存模式</translation>
+        </message>
+        <message>
+            <source>Switching storage directory…</source>
+            <translation>正在切換儲存目錄…</translation>
         </message>
         <message>
             <source>Thumbnail cache</source>
@@ -3608,6 +3763,10 @@ Unavailable: %2</source>
         <message>
             <source>Unavailable</source>
             <translation>無法使用</translation>
+        </message>
+        <message>
+            <source>Verifying data — %1/%2</source>
+            <translation>正在驗證資料 — %1/%2</translation>
         </message>
     </context>
     <context>
@@ -3770,6 +3929,25 @@ Unavailable: %2</source>
         <message>
             <source>Global mouse input is unavailable. Check permissions and retry.</source>
             <translation>全域滑鼠輸入無法使用。請檢查權限後重試。</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::storage::ApplicationStorage</name>
+        <message>
+            <source>Custom storage directories are only supported on Windows.</source>
+            <translation>僅 Windows 支援自訂儲存目錄。</translation>
+        </message>
+        <message>
+            <source>File logging could not be restarted.</source>
+            <translation>無法重新啟動檔案記錄。</translation>
+        </message>
+        <message>
+            <source>Some pinned windows could not be prepared in the new directory.</source>
+            <translation>無法在新目錄中準備部分貼圖。</translation>
+        </message>
+        <message>
+            <source>Storage is busy or unavailable. Try again when current operations finish.</source>
+            <translation>儲存空間忙碌或無法使用。請在目前操作完成後重試。</translation>
         </message>
     </context>
     <context>

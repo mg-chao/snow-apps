@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDSERVICE_H
 
 #include "snow_shot/presentation/screenshotimagerowsource.h"
+#include "snow_shot/presentation/screenshotclipboardplacement.h"
 
 #include <QByteArray>
 #include <QImage>
@@ -35,6 +36,9 @@ class ScreenshotClipboardPayload final {
     [[nodiscard]] const QByteArray& pngBytes() const {
         return m_pngBytes;
     }
+    [[nodiscard]] const QByteArray& placementBytes() const {
+        return m_placementBytes;
+    }
 
   private:
     friend class ScreenshotClipboardService;
@@ -45,8 +49,10 @@ class ScreenshotClipboardPayload final {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     void* m_dibHandle = nullptr;
     void* m_pngHandle = nullptr;
+    void* m_placementHandle = nullptr;
 #endif
     QByteArray m_pngBytes;
+    QByteArray m_placementBytes;
 };
 
 enum class ScreenshotClipboardCommitFailure {
@@ -95,10 +101,12 @@ class ScreenshotClipboardService final {
 
     // A supplied PNG must encode the same sRGB pixels as the source. Export artifacts
     // may pass existing bytes here; otherwise encode at level 0 for speed.
-    [[nodiscard]] static ScreenshotClipboardPayload prepare(const ScreenshotImageRowSource& source,
-                                                            const QByteArray& canonicalPng = {});
     [[nodiscard]] static ScreenshotClipboardPayload
-    prepareImage(const QImage& image, const QByteArray& canonicalPng = {});
+    prepare(const ScreenshotImageRowSource& source, const QByteArray& canonicalPng = {},
+            std::optional<ScreenshotClipboardPlacement> placement = {});
+    [[nodiscard]] static ScreenshotClipboardPayload
+    prepareImage(const QImage& image, const QByteArray& canonicalPng = {},
+                 std::optional<ScreenshotClipboardPlacement> placement = {});
     [[nodiscard]] static ScreenshotClipboardCommitHandle commit(QClipboard* clipboard,
                                                                 QObject* receiver,
                                                                 ScreenshotClipboardPayload payload,

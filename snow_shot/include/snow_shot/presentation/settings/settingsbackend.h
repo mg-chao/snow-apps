@@ -172,6 +172,9 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
     virtual void refreshPlatformSettings() {}
     virtual void refreshStorageStatus() {}
+    virtual storage::StorageResult changeStorageDirectory(const QString&, bool) {
+        return storage::StorageResult::failure(QStringLiteral("unsupported"));
+    }
     // Show-event path; backends may throttle repeated refreshes.  Defaults to
     // the unthrottled refresh so simple backends only need that override.
     virtual void refreshStorageStatusIfStale() {
@@ -188,6 +191,8 @@ class SettingsBackend : public QObject {
     }
 
   signals:
+    void directoryChangeProgress(const snow_shot::storage::StorageDirectoryProgress& progress);
+    void directoryChangeFinished(const snow_shot::storage::StorageDirectoryChangeResult& result);
     void operationMessage(const QString& message, bool warning);
     void synchronized();
     void globalMousePermissionChanged();
@@ -283,6 +288,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
     void refreshPlatformSettings() override;
     void refreshStorageStatus() override;
+    storage::StorageResult changeStorageDirectory(const QString& directory, bool migrate) override;
     void refreshStorageStatusIfStale() override;
     [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
 
