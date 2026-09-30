@@ -10645,6 +10645,109 @@ void pinnedDragExportOffscreen() {
 }
 
 #ifdef Q_OS_WIN
+void pinnedCtrlHoverKeepsWindowCursorOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "Ctrl hover fixture requires a canvas");
+    canvas->setInteractionEnabled(false);
+    auto snapConfig = canvas->canvasSnapConfig();
+    snapConfig.enabled = true;
+    require(canvas->setCanvasSnapConfig(snapConfig), "enable snapping for hover regression");
+
+    // Supply a hidden HWND for the native geometry query while Qt uses offscreen.
+    // Dispatching the actual native handler preserves the hit-test/mouse-move order.
+    const QRect geometry = Access::authority(window);
+    const HWND nativeWindow =
+        CreateWindowExW(0, L"STATIC", L"", WS_POPUP, geometry.x(), geometry.y(), geometry.width(),
+                        geometry.height(), nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    require(nativeWindow != nullptr, "create hidden hit-test geometry window");
+    const auto destroyNativeWindow = qScopeGuard([&] { DestroyWindow(nativeWindow); });
+    BYTE originalKeys[256]{};
+    require(GetKeyboardState(originalKeys), "capture thread keyboard state");
+    const auto restoreKeys = qScopeGuard([&] { SetKeyboardState(originalKeys); });
+    const auto hit = [&](const QPoint& local, Qt::KeyboardModifiers modifiers) {
+        BYTE keys[256]{};
+        keys[VK_CONTROL] = modifiers.testFlag(Qt::ControlModifier) ? 0x80 : 0;
+        keys[VK_SHIFT] = modifiers.testFlag(Qt::ShiftModifier) ? 0x80 : 0;
+        require(SetKeyboardState(keys), "set thread-local hover modifiers");
+        const QPoint point =
+            geometry.topLeft() +
+            QPoint(qRound(local.x() * double(geometry.width()) / window.width()),
+                   qRound(local.y() * double(geometry.height()) / window.height()));
+        MSG message{};
+        message.hwnd = nativeWindow;
+        message.message = WM_NCHITTEST;
+        message.lParam = MAKELPARAM(static_cast<WORD>(point.x()), static_cast<WORD>(point.y()));
+        qintptr result = 0;
+        require(PinnedWindowWindowsEvents::handle(window, QByteArrayLiteral("windows_generic_MSG"),
+                                                  &message, &result),
+                "native hover hit test handled");
+        return result;
+    };
+    const auto move = [&](const QPoint& local, Qt::KeyboardModifiers modifiers) {
+        const QPoint global = window.mapToGlobal(local);
+        QMouseEvent event(QEvent::MouseMove, canvas->mapFromGlobal(global), global, Qt::NoButton,
+                          Qt::NoButton, modifiers);
+        QCoreApplication::sendEvent(canvas, &event);
+    };
+    class CursorChanges final : public QObject {
+      public:
+        int count = 0;
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::CursorChange)
+                ++count;
+            return false;
+        }
+    } changes;
+    canvas->installEventFilter(&changes);
+    int snapChanges = 0;
+    QObject::connect(canvas, &SnowCanvasWidget::snapConfigChanged, &window, [&] { ++snapChanges; });
+    const QByteArray document = Access::dragDocument(window);
+    const bool snapping = canvas->canvasSnapConfig().enabled;
+    const QPoint center = window.rect().center();
+    for (bool editing : {false, true}) {
+        if (editing) {
+            Access::editSelectionOffscreen(window, true);
+            auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+            require(controller != nullptr, "resize-window hover requires an edit controller");
+            controller->activateResizeWindowTool();
+        }
+        require(!canvas->interactionEnabled(), "viewing and resize-window tools disable drawing");
+        require(hit(center, Qt::NoModifier) == HTCAPTION, "ordinary hover uses native caption");
+        move(center, Qt::NoModifier);
+        require(canvas->cursor().shape() == Qt::OpenHandCursor, "hover starts with window cursor");
+        changes.count = 0;
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
+        QCoreApplication::sendEvent(canvas, &press);
+        for (const auto modifiers :
+             {Qt::KeyboardModifiers(Qt::ControlModifier), Qt::ControlModifier | Qt::ShiftModifier,
+              Qt::KeyboardModifiers(Qt::NoModifier)}) {
+            for (int i = 0; i < 8; ++i) {
+                const QPoint local = center + QPoint(i, i);
+                require(hit(local, modifiers) ==
+                            (modifiers.testFlag(Qt::ControlModifier) ? HTCLIENT : HTCAPTION),
+                        "Ctrl routes export input to Qt without changing ordinary hit testing");
+                require(canvas->cursor().shape() == Qt::OpenHandCursor,
+                        "native Ctrl hit testing must retain window cursor ownership");
+                move(local, modifiers);
+                require(canvas->cursor().shape() == Qt::OpenHandCursor && changes.count == 0,
+                        "repeated native hit tests and Qt moves must not toggle the cursor");
+            }
+        }
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_Control, Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &release);
+        require(changes.count == 0 && snapChanges == 0 &&
+                    canvas->canvasSnapConfig().enabled == snapping &&
+                    Access::dragDocument(window) == document,
+                "disabled drawing input must preserve cursor, snapping, and document state");
+        require(hit(QPoint(1, 1), Qt::ControlModifier) == HTTOPLEFT,
+                "Ctrl must preserve native resize borders");
+    }
+    window.close();
+}
+
 void pinnedDragExportNativeHitTest() {
     using Access = ScreenshotPinnedWindowTestAccess;
     ScreenshotPinnedWindow window;
@@ -13437,6 +13540,10 @@ int main(int argc, char* argv[]) {
                 qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(), expectedDpr),
                 "pixel fixture must run at the registered DPR, independently of monitor settings");
 #ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--ctrl-hover-only"))) {
+            pinnedCtrlHoverKeepsWindowCursorOffscreen();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--drag-export-native-only"))) {
             pinnedDragExportNativeHitTest();
             return 0;

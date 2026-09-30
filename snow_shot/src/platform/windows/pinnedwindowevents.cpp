@@ -415,15 +415,19 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                     }
                 }
             }
-            if (hitTest == HTCAPTION && (GetKeyState(VK_CONTROL) & 0x8000) &&
-                window.exportDragEnabledAt(mapping.localPosition(screenPosition).toPoint())) {
-                hitTest = HTCLIENT;
-            }
+            // Cursor ownership follows the interaction area. Ctrl only changes
+            // native input routing so Qt can start an export drag; clearing the
+            // host cursor for that client route would make every following Qt
+            // mouse move restore it, alternating the cursor on each movement.
             if (hitTest == HTCAPTION) {
                 window.setWindowDragCursor(window.m_windowDragActive ? Qt::ClosedHandCursor
                                                                      : Qt::OpenHandCursor);
             } else if (!window.m_windowDragActive) {
                 window.clearWindowDragCursor();
+            }
+            if (hitTest == HTCAPTION && (GetKeyState(VK_CONTROL) & 0x8000) &&
+                window.exportDragEnabledAt(mapping.localPosition(screenPosition).toPoint())) {
+                hitTest = HTCLIENT;
             }
             if (result != nullptr) {
                 *result = hitTest;

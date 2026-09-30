@@ -8292,6 +8292,9 @@ if(TARGET snow-shot-pinned-window-tests)
         COMMAND snow-shot-pinned-window-tests --drag-export-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-drag-export-tests PROPERTIES LABELS "unit")
     if(WIN32)
+        add_test(NAME snow-shot-pinned-ctrl-hover-tests
+            COMMAND snow-shot-pinned-window-tests --ctrl-hover-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-ctrl-hover-tests PROPERTIES LABELS "unit;windows")
         add_test(NAME snow-shot-pinned-drag-export-native-tests
             COMMAND snow-shot-pinned-window-tests --drag-export-native-only -platform windows)
         set_tests_properties(snow-shot-pinned-drag-export-native-tests PROPERTIES LABELS "unit;windows")
