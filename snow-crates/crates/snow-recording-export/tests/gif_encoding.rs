@@ -227,6 +227,43 @@ fn gif_adaptive_palette_improves_screen_colors_and_compression() {
 }
 
 #[test]
+fn gif_preserves_screen_contrast_with_colorful_content() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("screen-contrast.gif");
+    let (width, height) = (960usize, 540usize);
+    let mut rgba = vec![255; width * height * 4];
+    // A white desktop, a thin black text stroke, and an image with many colors.
+    // A population-weighted palette used to average the stroke into image
+    // colors, decoding pure black as a brighter, tinted color.
+    for x in 100..200 {
+        rgba[(100 * width + x) * 4..][..3].fill(0);
+    }
+    for y in 0..180 {
+        for x in 0..width {
+            let pixel = &mut rgba[((y + 360) * width + x) * 4..][..3];
+            pixel.copy_from_slice(&[
+                ((x * 73 + y * 19) % 256) as u8,
+                ((x * 13 + y * 107) % 256) as u8,
+                ((x * 37 + y * 43) % 256) as u8,
+            ]);
+        }
+    }
+    let mut encoder = StreamingEncoder::create(config(&path, width as u32, height as u32)).unwrap();
+    for pts in 0..2 {
+        encoder.push_rgba_frame_at_pts(pts, &rgba).unwrap();
+    }
+    encoder.finish_at_pts(2).unwrap();
+    let frames = decode(&path);
+    assert_eq!(frames.len(), 2);
+    for (_, pixels) in frames {
+        assert!(pixels[..width * 4].chunks_exact(4).all(|p| p == [255; 4]));
+        for x in 100..200 {
+            assert_eq!(&pixels[(100 * width + x) * 4..][..4], &[0, 0, 0, 255]);
+        }
+    }
+}
+
+#[test]
 fn gif_preserves_variable_delays_last_hold_and_single_frame() {
     ffmpeg::init().unwrap();
     let directory = tempfile::tempdir().unwrap();
