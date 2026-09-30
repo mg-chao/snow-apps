@@ -11,8 +11,10 @@
 
 #include <QVector>
 
+#include <array>
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -531,6 +533,67 @@ void exportCancellationDefersExpensiveCleanup() {
             "deferred export cleanup must be idempotent");
     require(runtime.releaseSelectionPreviewCacheCalls == 1,
             "deferred export cleanup must release preview assets only once");
+}
+
+void captureCompletionReleasesHistoryBeforeExportsFinish() {
+    const auto trackedImage = [](int& releases) {
+        struct Pixels {
+            std::array<uchar, 8 * 8 * 4> data{};
+            int* releases;
+        };
+        auto* pixels = new Pixels{{}, &releases};
+        return QImage(
+            pixels->data.data(), 8, 8, QImage::Format_RGBA8888,
+            [](void* info) {
+                auto* released = static_cast<Pixels*>(info);
+                ++*released->releases;
+                delete released;
+            },
+            pixels);
+    };
+    for (const bool deferred : {false, true}) {
+        ScreenshotCaptureState state;
+        state.sessionState = ScreenshotSessionState::Editing;
+        state.captureInProgress = true;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        interaction.beginCapture();
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligentSelection;
+        CaptureRuntime runtime;
+        int liveHistoryReleases = 0;
+        int exportReleases = 0;
+        int nextHistoryReleases = 0;
+        QImage liveHistory = trackedImage(liveHistoryReleases);
+        QImage pendingExport = trackedImage(exportReleases);
+        int historyCleanupCalls = 0;
+        ScreenshotCaptureWorkflowContext context{
+            state, runtime, geometry, displays, interaction, selection, intelligentSelection, {}};
+        context.releaseCaptureHistory = [&]() {
+            ++historyCleanupCalls;
+            liveHistory = {};
+        };
+        ScreenshotCaptureWorkflow workflow(std::move(context));
+        if (deferred) {
+            workflow.cancelCaptureForExport();
+        } else {
+            workflow.cancelCapture();
+        }
+        require(state.sessionState == ScreenshotSessionState::IdlePrepared,
+                "capture must become idle without waiting for a save or pin result");
+        require(liveHistoryReleases == 1 && historyCleanupCalls == 1,
+                "the live history backup must be released before export success or failure");
+        require(exportReleases == 0 && !pendingExport.isNull(),
+                "capture history cleanup must preserve independently owned export pixels");
+
+        // A delayed export/maintenance pass must not clear a later capture's navigation.
+        liveHistory = trackedImage(nextHistoryReleases);
+        workflow.completeDeferredExportCleanup();
+        workflow.completeDeferredExportCleanup();
+        require(historyCleanupCalls == 1 && nextHistoryReleases == 0,
+                "deferred export cleanup must not reset a newer live history endpoint");
+    }
 }
 
 void captureOverlapsSelectorInitialization() {
@@ -1910,6 +1973,7 @@ void silentCaptureSuppressesAllPresentationAndRestoresVisibleMode() {
 }
 
 int main() {
+    captureCompletionReleasesHistoryBeforeExportsFinish();
     silentCaptureSuppressesAllPresentationAndRestoresVisibleMode();
     toolbarPresentationTracksSelectionDragLifetime();
     confirmedSelectionPreservesRegionTypeInToolbarPresentation();

@@ -170,7 +170,21 @@ if(ADQT_BUILD_TESTS)
         LABELS "unit"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
+    add_executable(adqt-context-menu-lifecycle-tests
+        packages/ant_design_qt/tests/context_menu_lifecycle_tests.cpp)
+    target_link_libraries(adqt-context-menu-lifecycle-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-context-menu-lifecycle-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-context-menu-lifecycle-tests COMMAND adqt-context-menu-lifecycle-tests)
+    set_tests_properties(adqt-context-menu-lifecycle-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
     if(APPLE)
+        # This lifecycle check creates native menu items without displaying a popup.
+        add_test(NAME adqt-context-menu-lifecycle-native-tests
+            COMMAND adqt-context-menu-lifecycle-tests)
+        set_tests_properties(adqt-context-menu-lifecycle-native-tests PROPERTIES
+            LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=cocoa" TIMEOUT 30)
         add_executable(adqt-popup-stacking-native-tests tests/popup_stacking_native_tests.mm)
         target_link_libraries(adqt-popup-stacking-native-tests PRIVATE
             adqt::widgets Qt6::Widgets "-framework AppKit")

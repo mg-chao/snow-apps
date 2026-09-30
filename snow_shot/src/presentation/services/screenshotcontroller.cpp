@@ -1518,6 +1518,12 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             [this](bool succeeded, const QString& errorMessage) {
                 finishRecapture(succeeded, !succeeded && !errorMessage.isEmpty());
             },
+            []() { return QCursor::pos(); },
+            [this]() {
+                if (m_historyService != nullptr) {
+                    m_historyService->resetCaptureNavigation();
+                }
+            },
         });
 }
 
@@ -3008,9 +3014,6 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
             } else if (!success) {
                 qWarning("Screenshot pin export failed");
             }
-            if (receiver->m_impl->m_historyService != nullptr) {
-                receiver->m_impl->m_historyService->resetCaptureNavigation();
-            }
             receiver->m_impl->scheduleDeferredExportCleanup();
         });
     if (!presented) {
@@ -4189,9 +4192,6 @@ void ScreenshotController::Impl::completeFileSave(
             static_cast<void>(settings.setLastManualSaveDirectory(directory));
         publishHistoryResult(std::move(historyCandidate), historySource, std::move(artifact));
     }
-    if (m_historyService != nullptr) {
-        m_historyService->resetCaptureNavigation();
-    }
 }
 
 void ScreenshotController::Impl::publishHistoryResult(
@@ -4592,9 +4592,6 @@ void ScreenshotController::Impl::completeCopyExport(
         publishHistoryResult(std::move(historyCandidate), historySource, std::move(artifact));
     } else if (notify) {
         qWarning("Screenshot clipboard export failed");
-    }
-    if (m_historyService != nullptr) {
-        m_historyService->resetCaptureNavigation();
     }
 }
 

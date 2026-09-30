@@ -221,6 +221,7 @@ void ScreenshotCaptureWorkflow::clearDisplays() {
 void ScreenshotCaptureWorkflow::finishCaptureSession(bool deferExportCleanup) {
     SNOW_SHOT_PIN_PERF_SCOPE("cleanup.finish_capture_session");
     m_context.runtime.releaseColorPicker();
+    m_context.releaseCaptureHistory();
     if (deferExportCleanup) {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_overlays_immediately");
         m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);

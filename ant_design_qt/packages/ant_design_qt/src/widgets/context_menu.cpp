@@ -653,6 +653,9 @@ AdContextMenu::~AdContextMenu() {
   if (d_->triggerWidget) {
     d_->triggerWidget->removeEventFilter(this);
   }
+  // Retire platform items while QMenu::actionEvent still handles action removal.
+  // QWidget's destructor no longer dispatches that override.
+  clear();
 }
 
 bool AdContextMenu::nativeMenuEnabled() const { return d_->useNativeMenu; }

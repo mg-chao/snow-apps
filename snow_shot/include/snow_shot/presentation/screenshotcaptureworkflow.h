@@ -46,6 +46,8 @@ struct ScreenshotCaptureWorkflowContext {
     };
     std::function<void(bool, const QString&)> recaptureCompleted = [](bool, const QString&) {};
     std::function<QPoint()> cursorPosition = [] { return QCursor::pos(); };
+    // Navigation's live desktop backup belongs to the ending capture, not its exports.
+    std::function<void()> releaseCaptureHistory = []() {};
 };
 
 class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink {

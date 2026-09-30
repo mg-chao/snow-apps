@@ -190,7 +190,7 @@ class ScreenshotQrPopover final : public QWidget {
     }
     void clearDetection() {
         text->clear();
-        url = {};
+        url = QUrl();
         status->clear();
         status->hide();
         open->hide();
