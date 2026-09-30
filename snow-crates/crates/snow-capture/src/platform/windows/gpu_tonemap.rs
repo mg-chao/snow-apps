@@ -14,7 +14,10 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::core::Interface;
 
 use crate::color_effect::ScreenColorTransform;
-use crate::convert::{HDR_LUMA_LUT_SIZE, HdrFrameContext, build_bt2390_luma_lut};
+use crate::convert::{
+    HDR_LUMA_LUT_SIZE, HDR_SDR_TRANSITION_INV_WIDTH, HDR_SDR_TRANSITION_START, HdrFrameContext,
+    build_bt2390_luma_lut,
+};
 use crate::error::{CaptureError, CaptureResult};
 
 /// Pre-compiled shader bytecode, embedded at build time when fxc.exe is available.
@@ -154,7 +157,7 @@ fn compile_shader_runtime_with_entry(entry: &[u8]) -> CaptureResult<Vec<u8>> {
 struct GpuParams {
     sdr_white_nits: f32,
     hdr_peak_nits: f32,
-    _pad0: f32,
+    sdr_transition_start: f32,
     flags: u32,
     tex_width: u32,
     tex_height: u32,
@@ -162,7 +165,7 @@ struct GpuParams {
     rotation: u32,
     lut_input_max: f32,
     lut_inv_step: f32,
-    _pad1: f32,
+    sdr_transition_inv_width: f32,
     _pad2: f32,
     color_rows: [[f32; 4]; 3],
 }
@@ -540,7 +543,7 @@ impl GpuTonemapper {
         let gpu_params = GpuParams {
             sdr_white_nits: params.sdr_white_nits,
             hdr_peak_nits: params.hdr_peak_nits,
-            _pad0: 0.0,
+            sdr_transition_start: HDR_SDR_TRANSITION_START,
             flags,
             tex_width: width,
             tex_height: height,
@@ -552,7 +555,7 @@ impl GpuTonemapper {
             },
             lut_input_max,
             lut_inv_step,
-            _pad1: 0.0,
+            sdr_transition_inv_width: HDR_SDR_TRANSITION_INV_WIDTH,
             _pad2: 0.0,
             color_rows: [[0.; 4]; 3],
         }
@@ -616,7 +619,7 @@ impl GpuF16Converter {
         let gpu_params = GpuParams {
             sdr_white_nits: 0.0,
             hdr_peak_nits: 0.0,
-            _pad0: 0.0,
+            sdr_transition_start: 0.0,
             flags: 0,
             tex_width: width,
             tex_height: height,
@@ -624,7 +627,7 @@ impl GpuF16Converter {
             rotation: 0,
             lut_input_max: 0.0,
             lut_inv_step: 0.0,
-            _pad1: 0.0,
+            sdr_transition_inv_width: 0.0,
             _pad2: 0.0,
             color_rows: [[0.; 4]; 3],
         }
@@ -781,6 +784,72 @@ mod tests {
     }
 
     #[test]
+    fn hdr_surface_preserves_sdr_and_legacy_highlights_in_both_shader_dispatches()
+    -> anyhow::Result<()> {
+        use crate::convert::hdr_tests::{
+            assert_color_bytes, boosted_sdr_palette, legacy_highlight_fixture,
+        };
+        let mut device = None;
+        let mut context = None;
+        unsafe {
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_WARP,
+                windows::Win32::Foundation::HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                Some(&[D3D_FEATURE_LEVEL_11_0]),
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                None,
+                Some(&mut context),
+            )?;
+        }
+        let device = device.unwrap();
+        let context = context.unwrap();
+        for use_1d in [true, false] {
+            let mut mapper = GpuTonemapper::new(&device)?;
+            if use_1d {
+                assert!(mapper.pass.cs_1d.is_some());
+            } else {
+                mapper.pass.cs_1d = None;
+            }
+            // Reuse the mapper across white-level changes to exercise its caches.
+            for sdr_white_nits in [80.0, 160.0, 203.0, 280.0, 480.0] {
+                let (mut pixels, sdr_expected) = boosted_sdr_palette(sdr_white_nits);
+                pixels.extend(legacy_highlight_fixture(sdr_white_nits, 400.0).0);
+                let (source, desc) =
+                    hdr_source_from_pixels(&device, pixels.len() as u32, 1, &pixels)?;
+                let mut readback =
+                    Readback::new(&device, desc.Width, desc.Height, CapturePixelFormat::Rgba8)?;
+                for hdr_peak_nits in [400.0, 1000.0, 4000.0] {
+                    let mut expected = sdr_expected.clone();
+                    expected.extend(legacy_highlight_fixture(sdr_white_nits, hdr_peak_nits).1);
+                    for tonemap_use_lut in [false, true] {
+                        let params = HdrFrameContext {
+                            sdr_white_nits,
+                            hdr_peak_nits,
+                            tonemap_use_lut,
+                            ..Default::default()
+                        };
+                        let output =
+                            mapper.tonemap(&device, &context, &source, &desc, params, None)?;
+                        readback.copy(&context, output, 0, 0)?;
+                        assert_color_bytes(
+                            readback.frame.as_bytes(),
+                            &expected,
+                            false,
+                            &format!(
+                                "GPU 1D={use_1d}, white={sdr_white_nits}, peak={hdr_peak_nits}, LUT={tonemap_use_lut}"
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn hdr_highlight_gradients_are_continuous_in_both_shader_dispatches() -> anyhow::Result<()> {
         use crate::convert::hdr_tests::{
             HIGHLIGHT_RAMP_HEIGHT, HIGHLIGHT_RAMP_WIDTH, assert_smooth_highlight_rows,
@@ -803,7 +872,7 @@ mod tests {
         }
         let device = device.unwrap();
         let context = context.unwrap();
-        for sdr_white_nits in [80.0, 160.0, 280.0] {
+        for sdr_white_nits in [80.0, 160.0, 280.0, 480.0] {
             let pixels = highlight_ramp(sdr_white_nits);
             let (source, desc) = hdr_source_from_pixels(
                 &device,

@@ -38,6 +38,12 @@ const SDR_OUTPUT_WHITE_NITS: f32 = 100.0;
 const SDR_OUTPUT_BLACK_NITS: f32 = 0.1;
 const HDR_INPUT_BLACK_NITS: f32 = 0.001;
 const EPSILON: f32 = 1e-6;
+// Retain the original SDR identity tolerance. Finish the smooth handoff within
+// the existing output-white headroom (100/80); the HDR curve stays unchanged.
+pub(crate) const HDR_SDR_TRANSITION_START: f32 = 1.0 + 1e-3;
+const HDR_SDR_TRANSITION_END: f32 = SDR_OUTPUT_WHITE_NITS / SDR_REFERENCE_WHITE_NITS;
+pub(crate) const HDR_SDR_TRANSITION_INV_WIDTH: f32 =
+    1.0 / (HDR_SDR_TRANSITION_END - HDR_SDR_TRANSITION_START);
 pub(crate) const HDR_LUMA_LUT_SIZE: usize = 2048;
 const HDR_LUMA_LUT_CACHE_SIZE: usize = 4;
 
@@ -306,6 +312,9 @@ fn inverse_windows_sdr_boost(rgb: &mut [f32; 3], inv_boost: f32) {
 
 #[inline(always)]
 fn tone_map_hdr_pixel_bt2390(rgb: &mut [f32; 3], curve: HdrBt2390Curve) {
+    if rgb[0].max(rgb[1]).max(rgb[2]) <= HDR_SDR_TRANSITION_START {
+        return;
+    }
     let y_in = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]).max(0.0);
     if y_in <= EPSILON {
         rgb[0] = 0.0;
@@ -320,6 +329,9 @@ fn tone_map_hdr_pixel_bt2390(rgb: &mut [f32; 3], curve: HdrBt2390Curve) {
 
 #[inline(always)]
 fn tone_map_hdr_pixel_bt2390_lut(rgb: &mut [f32; 3], lut: &HdrLumaLut) {
+    if rgb[0].max(rgb[1]).max(rgb[2]) <= HDR_SDR_TRANSITION_START {
+        return;
+    }
     let y_in = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]).max(0.0);
     if y_in <= EPSILON {
         rgb[0] = 0.0;
@@ -333,6 +345,8 @@ fn tone_map_hdr_pixel_bt2390_lut(rgb: &mut [f32; 3], lut: &HdrLumaLut) {
 
 #[inline(always)]
 fn tone_map_hdr_pixel_with_luma(rgb: &mut [f32; 3], y_in: f32, y_out: f32) {
+    let original = *rgb;
+    let input_max = original[0].max(original[1]).max(original[2]);
     let scale = y_out / y_in.max(EPSILON);
     rgb[0] *= scale;
     rgb[1] *= scale;
@@ -345,6 +359,17 @@ fn tone_map_hdr_pixel_with_luma(rgb: &mut [f32; 3], y_in: f32, y_out: f32) {
         rgb[0] *= inv;
         rgb[1] *= inv;
         rgb[2] *= inv;
+    }
+
+    if input_max < HDR_SDR_TRANSITION_END {
+        let t =
+            ((input_max - HDR_SDR_TRANSITION_START) * HDR_SDR_TRANSITION_INV_WIDTH).clamp(0.0, 1.0);
+        let weight = t * t * (3.0 - 2.0 * t);
+        // Blend after the original gamut compression, retaining its chromaticity
+        // and meeting both the SDR identity and legacy HDR output smoothly.
+        for (channel, input) in rgb.iter_mut().zip(original) {
+            *channel = input + (*channel - input) * weight;
+        }
     }
 }
 
@@ -619,8 +644,8 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_scalar_prepared_impl<const FORCE_OPAQUE_A
         }
         rgb = rgb.map(|v| v.max(0.0));
         inverse_windows_sdr_boost(&mut rgb, inv_boost);
-        // An HDR surface has no per-pixel SDR/HDR provenance. Switching to identity
-        // below SDR white introduces a discontinuity in otherwise smooth highlights.
+        // Preserve the SDR range and blend into the unchanged BT.2390 mapping
+        // only around its former hard switch at SDR white.
         if let Some(lut) = hdr_lut {
             tone_map_hdr_pixel_bt2390_lut(&mut rgb, lut);
         } else {
@@ -720,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn inverse_boost_precedes_tone_mapping_for_all_hdr_surface_pixels() {
+    fn sdr_pixels_are_restored_after_inverse_boost() {
         let k = 2.0f32; // Equivalent to SDR white level = 160 nits
         let context = HdrFrameContext {
             sdr_white_nits: SDR_REFERENCE_WHITE_NITS * k,
@@ -768,7 +793,17 @@ mod tests {
         }
 
         assert_eq!(dst, unboosted_dst);
-        assert_eq!(&dst[..4], &[0, 0, 0, 255]);
+        for (pixel, original) in dst.chunks_exact(4).zip(src_pixels) {
+            assert_eq!(
+                pixel,
+                &[
+                    linear_to_srgb_u8(original[0]),
+                    linear_to_srgb_u8(original[1]),
+                    linear_to_srgb_u8(original[2]),
+                    255,
+                ]
+            );
+        }
     }
 
     #[test]
