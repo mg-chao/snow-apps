@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/applicationrestart.h"
 #include <QTemporaryDir>
@@ -188,6 +189,7 @@ int main(int argc, char* argv[]) {
         const QRect screen = probe.primaryScreen()->geometry();
         const QPoint origin = screen.topLeft() + QPoint(40, 40);
         auto result = std::async(std::launch::async, [path, arguments, origin] {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             SnowCaptureDirectRecordingConfig config{};
             config.version = SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION;
             config.struct_size = sizeof(config);
@@ -535,7 +537,9 @@ int main(int argc, char* argv[]) {
             shutdownScreenshotHistoryTasks();
         }
     } historyTaskDrain;
+#ifndef Q_OS_MACOS
     static_cast<void>(snow_shot::presentation::settings::applyConfiguredApplicationPriority());
+#endif
     QApplication::setQuitOnLastWindowClosed(false);
 #ifndef Q_OS_MACOS
     QApplication::setWindowIcon(

@@ -282,6 +282,7 @@ impl CaptureStream {
         let join_handle = std::thread::Builder::new()
             .name("snow-capture-stream".to_string())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 stream_loop(
                     &mut capture,
                     &config,

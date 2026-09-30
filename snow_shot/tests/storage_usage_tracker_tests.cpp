@@ -38,8 +38,14 @@ void writeBytes(const QString& path, qint64 size) {
 
 void setLastModified(const QString& path, const QDateTime& when) {
     namespace fs = std::filesystem;
-    const auto moment = std::chrono::clock_cast<fs::file_time_type::clock>(
-        std::chrono::system_clock::time_point{std::chrono::milliseconds(when.toMSecsSinceEpoch())});
+    const auto systemMoment =
+        std::chrono::system_clock::time_point{std::chrono::milliseconds(when.toMSecsSinceEpoch())};
+#if __cpp_lib_chrono >= 201907L
+    const auto moment = std::chrono::clock_cast<fs::file_time_type::clock>(systemMoment);
+#else
+    // libc++ provides the file-clock conversion but not C++20 clock_cast yet.
+    const auto moment = fs::file_time_type::clock::from_sys(systemMoment);
+#endif
     std::error_code error;
     fs::last_write_time(fs::path(path.toStdWString()), moment, error);
     require(!error, "failed to set test file timestamp");

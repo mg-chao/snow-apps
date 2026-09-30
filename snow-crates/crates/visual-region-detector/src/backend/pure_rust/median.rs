@@ -61,6 +61,7 @@ fn median_blur_8u_o1(padded: &Image, output: &mut Image, radius: usize) {
     std::thread::scope(|scope| {
         for (x0, stripe_w, band) in &mut bands {
             scope.spawn(move || {
+                snow_core::qos::apply_current_thread();
                 fill_stripe(padded, band, *x0, *stripe_w, radius, height, *stripe_w, 0);
             });
         }

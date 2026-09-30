@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "globalmousebackend_p.h"
 
 #import <AppKit/AppKit.h>
@@ -168,6 +169,7 @@ class MacOSGlobalMouseBackend final : public QObject, public GlobalMouseBackend 
         }
         stopping = false;
         thread.reset(QThread::create([this] { run(); }));
+        snow_shot::platform::configureApplicationQoSThread(thread.get());
         thread->start();
     }
     void stop() override {

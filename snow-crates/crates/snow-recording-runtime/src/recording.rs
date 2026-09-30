@@ -250,6 +250,7 @@ impl RecordingSession {
         let worker_handle = std::thread::Builder::new()
             .name("snow-screen-recorder-worker".to_string())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 new_recording_worker(
                     config,
                     layout,
@@ -959,6 +960,7 @@ fn new_recording_worker(
             let intermediate_profile = config.intermediate_profile;
             let video_config = config.video;
             move || {
+                snow_core::qos::apply_current_thread();
                 run_video_worker(
                     target_fps,
                     intermediate_profile,

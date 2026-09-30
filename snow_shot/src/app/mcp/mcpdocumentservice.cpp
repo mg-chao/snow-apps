@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/app/mcp/mcpdocumentservice.h"
 #include "snow_shot/app/mcp/mcpjobregistry.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
@@ -1127,6 +1128,7 @@ struct McpDocumentService::Impl {
             worker->moveToThread(&thread);
             QObject::connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
             thread.setObjectName(QStringLiteral("McpDocumentWorker%1").arg(index));
+            snow_shot::platform::configureApplicationQoSThread(&thread);
             thread.start();
         }
         auto* expiration = new QTimer(&q);

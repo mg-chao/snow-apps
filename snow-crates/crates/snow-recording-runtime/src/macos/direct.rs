@@ -183,6 +183,7 @@ impl DirectSession {
             std::thread::Builder::new()
                 .name("snow-macos-recording".into())
                 .spawn(move || {
+                    snow_core::qos::apply_current_thread();
                     let result = (|| {
                         let mut recording =
                             NativeRecordingSession::start(native_config(config, cancellation)?)?;

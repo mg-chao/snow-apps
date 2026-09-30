@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/serverconfiguration.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -393,6 +394,7 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
     const QElapsedTimer accepted = state->elapsed;
     const auto prepare = m_tableImagePreparation;
     QThreadPool::globalInstance()->start([guard, token, source, accepted, prepare]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
         const qint64 queueMs = accepted.elapsed();
         QElapsedTimer encoding;
         encoding.start();
@@ -537,6 +539,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::extractLatex(const QImage& so
     const QElapsedTimer accepted = state->elapsed;
     const auto prepare = m_tableImagePreparation;
     QThreadPool::globalInstance()->start([guard, token, source, accepted, prepare]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
         const qint64 queueMs = accepted.elapsed();
         QElapsedTimer encoding;
         encoding.start();
@@ -971,6 +974,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
     QThreadPool::globalInstance()->start(
         [guard, token, effectiveInput, isCustom = custom != nullptr,
          supportsReasoning = custom != nullptr && custom->supportsReasoning]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             QByteArray body = imageConversionBody(effectiveInput);
             if (isCustom && !body.isEmpty()) {
                 auto object = QJsonDocument::fromJson(body).object();

@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 
 #include <QCoreApplication>
@@ -162,6 +163,7 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
             Qt::QueuedConnection));
     };
     auto runnable = QRunnable::create([state, job, work = std::move(work)]() mutable {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
         {
             QMutexLocker lock(&state->mutex);
             job->queuedRunnable = nullptr;

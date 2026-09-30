@@ -68,6 +68,11 @@ Accessibility and pasteboard interoperability. Their resolved notices are
 included in the generated Rust dependency bundle. Apple system frameworks are
 provided by macOS and are not redistributed.
 
+macOS application QoS uses the repository's Apache-2.0 `snow-core` scheduling
+policy and the existing Rayon worker pools (MIT OR Apache-2.0). Native pthread
+and dispatch APIs are provided by macOS and are not redistributed. The resolved
+Rayon notices remain included in the generated Rust dependency bundle.
+
 Smart selection (`snow-ui-selector` and `snow-ui-selector-c`) uses the same
 accessibility-sys, core-foundation, and core-foundation-sys dependencies
 (MIT OR Apache-2.0) for macOS Accessibility and Quartz window snapshots.

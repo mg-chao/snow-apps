@@ -973,6 +973,10 @@
             <translation>備份和還原應用程式設定</translation>
         </message>
         <message>
+            <source>Background</source>
+            <translation>背景</translation>
+        </message>
+        <message>
             <source>Background Fill</source>
             <translation>背景填充</translation>
         </message>
@@ -1155,6 +1159,10 @@
         <message>
             <source>Choose the primary color used throughout the theme</source>
             <translation>選擇整個主題使用的主色</translation>
+        </message>
+        <message>
+            <source>Choose the scheduling level for the interface and application workers. Changes take effect after restarting Snow Shot.</source>
+            <translation>選擇介面及應用程式工作執行緒的排程等級。變更將於重新啟動 Snow Shot 後生效。</translation>
         </message>
         <message>
             <source>Choose the server for built-in online services. Application updates are not affected.</source>
@@ -2401,6 +2409,10 @@
             <translation>代理</translation>
         </message>
         <message>
+            <source>Quality of service (QoS)</source>
+            <translation>服務品質（QoS）</translation>
+        </message>
+        <message>
             <source>Quick Selection Modification</source>
             <translation>快速修改選取區域</translation>
         </message>
@@ -2541,6 +2553,14 @@
             <translation>調整視窗大小</translation>
         </message>
         <message>
+            <source>Responsive</source>
+            <translation>回應優先</translation>
+        </message>
+        <message>
+            <source>Responsiveness</source>
+            <translation>回應速度</translation>
+        </message>
+        <message>
             <source>Restart</source>
             <translation>重新啟動</translation>
         </message>
@@ -2627,6 +2647,10 @@
         <message>
             <source>Scale recordings that exceed the selected maximum resolution</source>
             <translation>縮放超過所選最大解析度的錄製螢幕</translation>
+        </message>
+        <message>
+            <source>Scheduling</source>
+            <translation>排程</translation>
         </message>
         <message>
             <source>Screen &amp; System Audio Recording</source>
@@ -3235,6 +3259,14 @@
         <message>
             <source>Use system proxy</source>
             <translation>使用系統代理</translation>
+        </message>
+        <message>
+            <source>User initiated</source>
+            <translation>使用者啟動</translation>
+        </message>
+        <message>
+            <source>Utility</source>
+            <translation>實用作業</translation>
         </message>
         <message>
             <source>Very fast</source>

@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
@@ -252,7 +253,10 @@ class ScreenshotHistoryValidationQueue final {
                 }
                 try {
                     m_running = true;
-                    m_thread = std::thread([this]() { run(); });
+                    m_thread = std::thread([this]() {
+                        snow_shot::platform::applyApplicationQoSToCurrentThread();
+                        run();
+                    });
                 } catch (...) {
                     m_running = false;
                     promise->set_value({snow_shot::storage::StorageResult::failure(
@@ -529,6 +533,7 @@ bool ScreenshotHistoryService::navigateTo(int index) {
         m_pendingLoads.push_back(std::async(std::launch::async, [this, generation, index, entryId,
                                                                  metadata = std::move(metadata),
                                                                  pendingWrite]() mutable {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             std::optional<ScreenshotHistoryEntry> loadedEntry;
             try {
                 if (pendingWrite.valid()) {

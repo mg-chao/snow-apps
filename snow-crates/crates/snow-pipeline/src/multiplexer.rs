@@ -162,6 +162,7 @@ impl<O: StreamEvent> StreamMultiplexerBuilder<O> {
             let join = thread::Builder::new()
                 .name(format!("mux-fwd-{}", sid.0))
                 .spawn(move || {
+                    snow_core::qos::apply_current_thread();
                     forwarding_thread(sid, handle, mapper, tx, send_timeout, cmd_rx);
                 })
                 .expect("failed to spawn multiplexer forwarding thread");
@@ -205,6 +206,7 @@ impl<O: StreamEvent> StreamMultiplexerBuilder<O> {
         let main_handle = thread::Builder::new()
             .name("mux-main".to_string())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 main_loop(
                     config,
                     source_entries,

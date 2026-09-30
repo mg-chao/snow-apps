@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "recordingeffectpreview.h"
 #include "widgets/message.h"
 #include "recordingeffectstyle.h"
@@ -309,6 +310,7 @@ struct ScreenRecordingController::Impl {
             std::thread([start = std::move(startFuture), finish = std::move(finalizationFuture),
                          dimensions = std::move(dimensionsFuture),
                          session = std::move(recordingSession)]() mutable {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
                 if (start.valid()) {
                     StartAttemptResult result = start.get();
                     if (result.session != nullptr && session == nullptr)
@@ -922,6 +924,7 @@ struct ScreenRecordingController::Impl {
                 std::launch::async,
                 [config, excludedWindowIds, directories, baseName, extension, keyboard,
                  keyboardFont, requestedPath]() mutable -> StartAttemptResult {
+                    snow_shot::platform::applyApplicationQoSToCurrentThread();
                     StartAttemptResult result;
                     result.outputPath =
                         requestedPath.isEmpty()
@@ -1075,6 +1078,7 @@ struct ScreenRecordingController::Impl {
         // only after the asynchronous stop has joined the worker.
         SnowRecordingSession* session = recordingSession.get();
         finalizationFuture = std::async(std::launch::async, [session]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             const bool ok = snow_recording_session_stop(session) == SNOW_RECORDING_RESULT_OK;
             return std::make_pair(ok, ok ? QString() : captureError());
         });
@@ -1229,6 +1233,7 @@ struct ScreenRecordingController::Impl {
                 const auto generation = dimensionsGeneration;
                 dimensionsFuture =
                     std::async(std::launch::async, [region, maximum, format, generation] {
+                        snow_shot::platform::applyApplicationQoSToCurrentThread();
                         uint32_t width = 0, height = 0;
                         const bool ok =
                             snow_recording_region_output_dimensions(

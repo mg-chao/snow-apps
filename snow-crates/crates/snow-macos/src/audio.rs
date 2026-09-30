@@ -246,7 +246,7 @@ impl SystemAudioStream {
         });
         let allocated = Output::alloc().set_ivars(state);
         let output: Retained<Output> = unsafe { msg_send![super(allocated), init] };
-        let queue = DispatchQueue::new("app.snow.capture.audio", None);
+        let queue = crate::qos::application_queue("app.snow.capture.audio");
         let stream = unsafe {
             SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),

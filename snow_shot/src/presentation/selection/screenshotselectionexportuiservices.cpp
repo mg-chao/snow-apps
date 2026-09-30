@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "../pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -1011,6 +1012,7 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     auto* repository = &storage.pinnedWindows();
     const auto alive = m_restoreAlive;
     storage.pinnedFullImagePool().start([this, alive, repository, id]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
         auto loaded = repository->loadRecord(id);
         QMetaObject::invokeMethod(
             &snow_shot::storage::ApplicationStorage::instance(),

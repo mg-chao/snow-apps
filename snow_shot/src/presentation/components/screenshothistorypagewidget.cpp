@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 
 #include "snowimageqtcodec.h"
@@ -112,6 +113,7 @@ class ScreenshotHistoryTaskExecutor final {
         try {
             m_pool.start(
                 [this, function = std::forward<Function>(function), persistence]() mutable {
+                    snow_shot::platform::applyApplicationQoSToCurrentThread();
                     struct Completion final {
                         ScreenshotHistoryTaskExecutor* executor;
                         bool persistence;

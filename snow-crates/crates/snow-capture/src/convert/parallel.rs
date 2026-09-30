@@ -103,6 +103,7 @@ where
                 return None;
             }
             rayon::ThreadPoolBuilder::new()
+                .start_handler(|_| snow_core::qos::apply_current_thread())
                 .num_threads(workers)
                 .build()
                 .ok()

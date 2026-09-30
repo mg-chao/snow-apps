@@ -159,6 +159,7 @@ impl Runtime {
         std::thread::Builder::new()
             .name("snow-selected-text".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let mut backend = factory();
                 while let Ok(job) = receiver.recv() {
                     let result = match &mut backend {

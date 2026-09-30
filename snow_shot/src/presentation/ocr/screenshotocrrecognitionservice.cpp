@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "screenshotocrtransport.h"
 
@@ -233,6 +234,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         const auto alive = m_alive;
         m_localPool->start(
             QRunnable::create([service, job, alive, beforeRender = m_beforeLocalRender]() {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
                 if (alive->load(std::memory_order_acquire) && beforeRender)
                     beforeRender();
                 SnowCanvasRegionFilterScratch scratch;
@@ -529,6 +531,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         QObject::connect(m_transportThread, &QThread::finished, m_transport, &QObject::deleteLater);
         QObject::connect(m_transportThread, &QThread::finished, m_transportThread,
                          &QObject::deleteLater);
+        snow_shot::platform::configureApplicationQoSThread(m_transportThread);
         m_transportThread->start();
         const auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
         auto environment = QProcessEnvironment::systemEnvironment();
@@ -1063,6 +1066,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_localPool->start(QRunnable::create(
                 [service, job, alive, beforeRender = m_beforeLocalRender,
                  result = std::move(result), source, canvasRect, background]() mutable {
+                    snow_shot::platform::applyApplicationQoSToCurrentThread();
                     if (alive->load(std::memory_order_acquire) && beforeRender)
                         beforeRender();
                     SnowCanvasRegionFilterScratch scratch;

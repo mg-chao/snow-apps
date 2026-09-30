@@ -343,6 +343,7 @@ impl RecordingEncoder {
         let worker = std::thread::Builder::new()
             .name("snow-direct-encoder".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 // Drop on success, failure or unwind to wake every control waiter.
                 let _lifetime = lifetime;
                 let result = (|| {

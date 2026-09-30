@@ -6282,6 +6282,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Core
         Qt6::Gui
     )
+    if(APPLE)
+        target_link_libraries(snow-shot-qr-recognition-service-tests PRIVATE snow_shot_rust_ffi_bundle)
+    endif()
     add_test(
         NAME snow-shot-qr-recognition-service-tests
         COMMAND snow-shot-qr-recognition-service-tests
@@ -8269,6 +8272,18 @@ foreach(_cursor_host IN ITEMS snow_shot snow-shot-physical-cursor-tests snow-sho
         target_link_libraries(${_cursor_host} PRIVATE Qt6::GuiPrivate)
     endif()
 endforeach()
+
+if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-application-qos-tests tests/application_qos_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-application-qos-tests PRIVATE snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-application-qos-tests)
+    foreach(_snow_qos IN ITEMS user_interactive user_initiated default utility background invalid missing)
+        add_test(NAME snow-shot-application-qos-${_snow_qos}-tests COMMAND snow-shot-application-qos-tests ${_snow_qos})
+        set_tests_properties(snow-shot-application-qos-${_snow_qos}-tests PROPERTIES LABELS "unit;macos" TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+    unset(_snow_qos)
+endif()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-login-item-settings-tests tests/login_item_settings_tests.cpp

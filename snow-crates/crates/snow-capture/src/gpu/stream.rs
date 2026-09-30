@@ -91,6 +91,7 @@ impl GpuCaptureStream {
         let worker = std::thread::Builder::new()
             .name("snow-gpu-capture".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let mut session = match GpuCaptureSession::open(region, backend) {
                     Ok(session) => session,
                     Err(error) => {
