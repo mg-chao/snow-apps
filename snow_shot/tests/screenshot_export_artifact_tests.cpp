@@ -8,6 +8,7 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QMimeData>
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
@@ -1263,8 +1264,15 @@ void clipboardPlacementIsAnImmutableArtifactProperty() {
                            1}};
     QImage pixels(40, 20, QImage::Format_ARGB32);
     pixels.fill(Qt::red);
-    ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(pixels, placement),
-                                      ScreenshotCompressionLevel::Low);
+    ScreenshotClipboardAppearance appearance;
+    appearance.rasterSize = pixels.size();
+    appearance.borderAppearance =
+        snow_shot::storage::PinnedBorderAppearance{QSize(20, 10), QRectF(2, 2, 16, 6), 2, true, {}};
+    appearance.showBorder = false;
+    ScreenshotExportArtifact artifact(
+        ScreenshotExportSource::fromImage(pixels, placement, appearance),
+        ScreenshotCompressionLevel::Low);
+    appearance.checkerboardEnabled = true;
     placement.windowRect.moveTopLeft(QPoint(100, 110));
     QObject receiver;
     bool completed = false;
@@ -1277,6 +1285,13 @@ void clipboardPlacementIsAnImmutableArtifactProperty() {
                     require(metadata && metadata->windowRect == QRect(50, 60, 20, 10) &&
                                 metadata->rasterSize == pixels.size(),
                             "artifact observes later caller placement");
+                    const auto copiedAppearance =
+                        decodeScreenshotClipboardAppearance(result.payload.appearanceBytes());
+                    require(copiedAppearance && !copiedAppearance->checkerboardEnabled &&
+                                copiedAppearance->rasterSize == pixels.size() &&
+                                copiedAppearance->showBorder == false &&
+                                copiedAppearance->borderAppearance == appearance.borderAppearance,
+                            "artifact observes later caller appearance");
                     completed = true;
                 }),
             "artifact clipboard request must schedule");
@@ -1289,18 +1304,23 @@ void clipboardPlacementIsAnImmutableArtifactProperty() {
                 ScreenshotImageEncodingOptions{100, ScreenshotCompressionLevel::Low},
                 [&](ScreenshotExportTaskResult result) {
                     require(result.succeeded(), "metadata artifact file save must succeed");
-                    auto filePlacement = artifact.clipboardPlacement();
                     const QFileInfo info(result.savedPath);
-                    filePlacement->filePath = screenshotClipboardFilePath(result.savedPath);
-                    filePlacement->fileSize = info.size();
-                    filePlacement->fileModifiedMs = info.lastModified().toUTC().toMSecsSinceEpoch();
-                    const auto metadata = decodeScreenshotClipboardPlacement(
-                        encodeScreenshotClipboardPlacement(*filePlacement));
+                    QMimeData mime;
+                    artifact.setClipboardFileMetadata(mime, result.savedPath);
+                    const auto metadata = readScreenshotClipboardPlacement(&mime);
+                    const auto fileAppearance = readScreenshotClipboardAppearance(&mime);
                     require(
                         metadata && metadata->windowRect == QRect(50, 60, 20, 10) &&
                             metadata->matchesFile(result.savedPath, info.size(),
                                                   info.lastModified().toUTC().toMSecsSinceEpoch()),
                         "file-copy save loses the original artifact placement");
+                    require(fileAppearance &&
+                                fileAppearance->borderAppearance == appearance.borderAppearance &&
+                                fileAppearance->rasterSize == pixels.size() &&
+                                fileAppearance->matchesFile(
+                                    result.savedPath, info.size(),
+                                    info.lastModified().toUTC().toMSecsSinceEpoch()),
+                            "file-copy save loses the original artifact appearance");
                     saved = true;
                 }),
             "metadata artifact file save must schedule");
@@ -1309,7 +1329,8 @@ void clipboardPlacementIsAnImmutableArtifactProperty() {
             "file-save subscriber must share the same immutable placement");
     ScreenshotExportArtifact imported(ScreenshotExportSource::fromImage(pixels),
                                       ScreenshotCompressionLevel::Low);
-    require(!imported.clipboardPlacement(), "ordinary image artifacts invent placement");
+    require(!imported.clipboardPlacement() && !imported.clipboardAppearance(),
+            "ordinary image artifacts invent clipboard metadata");
 }
 
 int main(int argc, char** argv) {

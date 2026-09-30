@@ -472,7 +472,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
                           snow_shot::storage::CaptureHistorySource historySource,
                           std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
                           bool scrolling,
-                          std::optional<ScreenshotClipboardPlacement> placement = {});
+                          std::optional<ScreenshotClipboardPlacement> placement = {},
+                          std::optional<ScreenshotClipboardAppearance> appearance = {});
     void saveScrollingSnapshotForCopy(
         ScreenshotScrollingSnapshot snapshot, quint64 generation, bool copyFileToClipboard,
         snow_shot::storage::CaptureHistorySource historySource,
@@ -3417,15 +3418,18 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     cancelContentPin();
     QStringList paths;
     std::optional<ScreenshotClipboardPlacement> filePlacement;
+    std::optional<ScreenshotClipboardAppearance> fileAppearance;
     for (int attempt = 0; attempt < 2; ++attempt) {
         const auto revision = screenshotClipboardRevision();
         const auto* mime = QApplication::clipboard()->mimeData();
         paths = ScreenshotClipboardContentReader::localFilePaths(mime);
         filePlacement = snapshotScreenshotClipboardPlacement(QApplication::clipboard());
+        fileAppearance = snapshotScreenshotClipboardAppearance(QApplication::clipboard());
         if (revision == screenshotClipboardRevision())
             break;
         paths.clear();
         filePlacement.reset();
+        fileAppearance.reset();
     }
     if (!ensureExportFeature()) {
         return;
@@ -3456,26 +3460,36 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
         const bool autoResize = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
         m_filePinBatch.start(
             paths,
-            [presenter, receiver, fallback, autoResize, filePlacement,
+            [presenter, receiver, fallback, autoResize, filePlacement, fileAppearance,
              filter](ScreenshotClipboardContent decoded) {
                 const QFileInfo info(decoded.originalContent.localFilePath);
-                if (!filePlacement || !receiver ||
-                    decoded.image.size() != filePlacement->rasterSize ||
-                    !filePlacement->matchesFile(info.absoluteFilePath(), info.size(),
-                                                info.lastModified().toUTC().toMSecsSinceEpoch()))
+                const auto matches = [&decoded, &info](const auto& metadata) {
+                    return metadata && decoded.image.size() == metadata->rasterSize &&
+                           metadata->matchesFile(info.absoluteFilePath(), info.size(),
+                                                 info.lastModified().toUTC().toMSecsSinceEpoch());
+                };
+                const auto placement = matches(filePlacement) ? filePlacement : std::nullopt;
+                const auto appearance = matches(fileAppearance) ? fileAppearance : std::nullopt;
+                if ((!placement && !appearance) || !receiver)
                     return presenter(std::move(decoded));
                 if (filter.consume && filter.consume(decoded.sourceIdentity))
                     return true;
-                const auto geometry =
-                    screenshotClipboardPinGeometry(filePlacement, decoded.image.size(),
-                                                   decoded.image.size(), fallback, autoResize);
+                const auto geometry = screenshotClipboardPinGeometry(
+                    placement, decoded.image.size(),
+                    snow_shot::presentation::pinnedImageWindowSize(
+                        decoded.image, fallback ? fallback->devicePixelRatio() : 1.0),
+                    fallback, autoResize);
                 return geometry.fit.valid && receiver->m_impl->m_selectionExportUiServices &&
                        receiver->m_impl->m_selectionExportUiServices->presentPinnedImage(
                            decoded.image, geometry.screen, geometry.fit.nativeGeometry,
                            geometry.fit.initialWindowSize, {}, {}, 1.0,
-                           std::move(decoded.originalContent), {}, {}, {}, {},
+                           std::move(decoded.originalContent), {}, {},
+                           appearance ? appearance->borderAppearance : std::nullopt,
+                           appearance ? std::optional(appearance->checkerboardEnabled)
+                                      : std::nullopt,
                            snow_shot::storage::PinnedWindowCreationSource::Clipboard,
-                           std::move(decoded.sourceIdentity));
+                           std::move(decoded.sourceIdentity),
+                           appearance ? appearance->showBorder : std::nullopt);
             },
             filter);
         if (m_selectionExportUiServices != nullptr) {
@@ -3557,6 +3571,10 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
         const QPointer<ScreenshotController> receiver(&owner);
         const QPointer<QScreen> guardedScreen(screen);
         const bool nativeSnapshot = snapshot->nativeDib.has_value();
+        const auto appearance = snapshot->appearance && snapshot->appearance->filePath.isEmpty() &&
+                                        snapshot->appearance->rasterSize == nativeSize
+                                    ? snapshot->appearance
+                                    : std::nullopt;
         const ScreenshotImageLoader imageLoader =
             [receiver, guardedScreen, generation, snapshot = std::move(*snapshot)](
                 QObject* windowReceiver, ScreenshotImageLoadCallback callback) mutable {
@@ -3629,7 +3647,10 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                         QCoreApplication::translate("ScreenshotController",
                                                     "The clipboard content could not be pinned"));
                 },
-                {}, {}, snow_shot::storage::PinnedWindowCreationSource::Clipboard, sourceIdentity);
+                appearance ? appearance->borderAppearance : std::nullopt,
+                appearance ? std::optional(appearance->checkerboardEnabled) : std::nullopt,
+                snow_shot::storage::PinnedWindowCreationSource::Clipboard, sourceIdentity,
+                appearance ? appearance->showBorder : std::nullopt);
         SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.presented");
         if (!presented) {
             SNOW_SHOT_PIN_PERF_FINISH(false);
@@ -3712,8 +3733,11 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_complete");
                         SNOW_SHOT_PIN_PERF_FINISH(success);
                     },
-                    {}, {}, snow_shot::storage::PinnedWindowCreationSource::Clipboard,
-                    sourceIdentity)) {
+                    decoded.appearance ? decoded.appearance->borderAppearance : std::nullopt,
+                    decoded.appearance ? std::optional(decoded.appearance->checkerboardEnabled)
+                                       : std::nullopt,
+                    snow_shot::storage::PinnedWindowCreationSource::Clipboard, sourceIdentity,
+                    decoded.appearance ? decoded.appearance->showBorder : std::nullopt)) {
                 SNOW_SHOT_PIN_PERF_FINISH(false);
                 receiver->m_impl->m_messages->error(
                     QString::fromLatin1(kPinClipboardMessageKey),
@@ -4333,6 +4357,8 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
     auto historyCandidate = std::make_shared<std::optional<ScreenshotHistoryEntry>>();
     const auto placement = m_exportService->prepareClipboardPlacement(m_selection.pixelSelection(),
                                                                       m_selection.resultStyle());
+    const auto appearance = screenshotSelectionClipboardAppearance(
+        m_selection.pixelSelection().size(), m_selection.resultStyle());
     const bool materializeImage = autoSave || copyFileToClipboard;
     const QPointer<ScreenshotController> receiver(&owner);
     if (materializeImage) {
@@ -4340,14 +4366,14 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
         const bool scheduled = m_exportService->requestSelectionResult(
             m_selection.pixelSelection(), style, &owner,
             [receiver, generation = *exportGeneration, copyFileToClipboard, historyCandidate,
-             historySource, placement](QImage image) mutable {
+             historySource, placement, appearance](QImage image) mutable {
                 if (receiver.isNull() || receiver->m_impl == nullptr ||
                     !receiver->m_impl->imageExportCurrent(generation)) {
                     return;
                 }
                 receiver->m_impl->saveImageForCopy(std::move(image), generation,
                                                    copyFileToClipboard, historySource,
-                                                   historyCandidate, false, placement);
+                                                   historyCandidate, false, placement, appearance);
             });
         if (!scheduled) {
             static_cast<void>(finishImageExport(*exportGeneration));
@@ -4366,14 +4392,14 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
     const ScreenshotResultStyle style = m_selection.resultStyle();
     const bool scheduled = m_exportService->requestSelectionResult(
         m_selection.pixelSelection(), style, &owner,
-        [receiver, generation = *exportGeneration, historyCandidate, historySource,
-         placement](QImage image) mutable {
+        [receiver, generation = *exportGeneration, historyCandidate, historySource, placement,
+         appearance](QImage image) mutable {
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 !receiver->m_impl->imageExportCurrent(generation)) {
                 return;
             }
             auto artifact = std::make_shared<ScreenshotExportArtifact>(
-                ScreenshotExportSource::fromImage(std::move(image), placement));
+                ScreenshotExportSource::fromImage(std::move(image), placement, appearance));
             receiver->m_impl->copyArtifactToClipboard(
                 std::move(artifact), generation, historySource, std::move(historyCandidate), false);
         });
@@ -4395,10 +4421,11 @@ void ScreenshotController::Impl::saveImageForCopy(
     QImage image, quint64 generation, bool copyFileToClipboard,
     snow_shot::storage::CaptureHistorySource historySource,
     std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate, bool scrolling,
-    std::optional<ScreenshotClipboardPlacement> placement) {
+    std::optional<ScreenshotClipboardPlacement> placement,
+    std::optional<ScreenshotClipboardAppearance> appearance) {
     saveArtifactForCopy(
-        std::make_shared<ScreenshotExportArtifact>(
-            ScreenshotExportSource::fromImage(std::move(image), std::move(placement))),
+        std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(
+            std::move(image), std::move(placement), std::move(appearance))),
         generation, copyFileToClipboard, historySource, std::move(historyCandidate), scrolling);
 }
 
@@ -4456,13 +4483,7 @@ void ScreenshotController::Impl::saveArtifactForCopy(
             }
             auto* mime = new QMimeData();
             mime->setUrls({QUrl::fromLocalFile(QFileInfo(result.savedPath).absoluteFilePath())});
-            if (auto placement = artifact->clipboardPlacement()) {
-                const QFileInfo info(result.savedPath);
-                placement->filePath = screenshotClipboardFilePath(result.savedPath);
-                placement->fileSize = info.size();
-                placement->fileModifiedMs = info.lastModified().toUTC().toMSecsSinceEpoch();
-                setScreenshotClipboardPlacement(*mime, *placement);
-            }
+            artifact->setClipboardFileMetadata(*mime, result.savedPath);
             const auto handle = impl.m_clipboardScope.commitMimeData(
                 QApplication::clipboard(), receiver, mime,
                 [receiver, artifact, generation, historySource, historyCandidate,
@@ -6017,7 +6038,7 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotController::mcpExportArtifac
                    guard->m_impl->m_exportService->requestSelectionResultAtScale(
                        selection, style, scale, receiver, std::move(done));
         },
-        placement));
+        placement, screenshotSelectionClipboardAppearance(selection.size(), style)));
 }
 bool ScreenshotController::mcpPinArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact,
                                           std::function<void(bool)> completion) {
@@ -6082,18 +6103,26 @@ bool ScreenshotController::mcpPinContent(ScreenshotClipboardContent content,
         return false;
     const qreal scale = content.isFormattedText() ? content.formattedTextDevicePixelRatio
                                                   : screen->devicePixelRatio();
-    const auto fit = snow_shot::presentation::fitPinnedImageOnScreen(
-        *screen, snow_shot::presentation::pinnedImageWindowSize(content.image, scale),
+    const auto geometry = screenshotClipboardPinGeometry(
+        content.placement, content.image.size(),
+        snow_shot::presentation::pinnedImageWindowSize(content.image, scale), screen,
         snow_shot::storage::PinToScreenSettings().autoResizeWindow());
+    const auto& fit = geometry.fit;
     return fit.valid &&
            m_impl->m_selectionExportUiServices->presentPinnedImage(
-               content.image, screen, fit.nativeGeometry, fit.initialWindowSize,
+               content.image, geometry.screen, fit.nativeGeometry, fit.initialWindowSize,
                std::move(content.formattedDocument), content.plainText,
                content.formattedTextDevicePixelRatio, std::move(content.originalContent), {},
                [completion = std::move(completion)](bool ok, QImage) {
                    if (completion)
                        completion(ok);
-               });
+               },
+               content.appearance ? content.appearance->borderAppearance : std::nullopt,
+               content.appearance ? std::optional(content.appearance->checkerboardEnabled)
+                                  : std::nullopt,
+               snow_shot::storage::PinnedWindowCreationSource::Other,
+               std::move(content.sourceIdentity),
+               content.appearance ? content.appearance->showBorder : std::nullopt);
 }
 
 bool ScreenshotController::mcpPinDocument(ScreenshotHistoryEntry entry, QImage background,

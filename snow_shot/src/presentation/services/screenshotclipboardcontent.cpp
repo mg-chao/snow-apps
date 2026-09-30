@@ -68,6 +68,12 @@ qint64 snapshotBytes(const ScreenshotClipboardContentSnapshot& snapshot) {
         bytes += snapshot.nativeDib->bytes.size();
     if (snapshot.placement)
         bytes += kScreenshotClipboardPlacementMaximumBytes;
+    if (snapshot.appearance) {
+        bytes += static_cast<qint64>(sizeof(ScreenshotClipboardAppearance)) +
+                 snapshot.appearance->filePath.size() * 2;
+        if (snapshot.appearance->borderAppearance && snapshot.appearance->borderAppearance->region)
+            bytes += snapshot.appearance->borderAppearance->region->retainedBytesEstimate();
+    }
     return bytes;
 }
 
@@ -441,6 +447,7 @@ snow_shot::presentation::detail::snapshotClipboardMimeData(
     const QMimeData* mimeData, qreal devicePixelRatio, const QColor& baseColor,
     bool includeDetachedImage, const AllocationCheck& allocate,
     std::optional<ScreenshotClipboardContentSnapshot> nativeSnapshot) {
+    ensureScreenshotClipboardAppearanceMimeSupport();
     if (!std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
         return std::nullopt;
     }
@@ -456,6 +463,12 @@ snow_shot::presentation::detail::snapshotClipboardMimeData(
         if (allocate && !allocate(kScreenshotClipboardPlacementMaximumBytes))
             return std::nullopt;
         snapshot.placement = readScreenshotClipboardPlacement(mimeData);
+    }
+
+    if (!nativeCaptured && mimeData->hasFormat(screenshotClipboardAppearanceNativeMimeType())) {
+        snapshot.appearance = readScreenshotClipboardAppearance(mimeData);
+        if (allocate && !allocate(snapshotBytes(snapshot)))
+            return std::nullopt;
     }
 
     for (const EncodedImageFormat& candidate : kEncodedImageFormats) {
@@ -920,6 +933,19 @@ snapshotClipboardOnce(QClipboard* clipboard, qreal devicePixelRatio, AllocationC
                 GlobalUnlock(handle);
             }
         }
+        const UINT appearanceFormat = RegisterClipboardFormatW(L"SnowShotScreenshotAppearance");
+        const auto appearanceHandle = static_cast<HGLOBAL>(GetClipboardData(appearanceFormat));
+        const auto appearanceSize = appearanceHandle ? GlobalSize(appearanceHandle) : 0;
+        if (appearanceSize &&
+            appearanceSize <= static_cast<SIZE_T>(kScreenshotClipboardAppearanceMaximumBytes) &&
+            (!checked ||
+             checked(snapshotBytes(*nativeSnapshot) + static_cast<qint64>(appearanceSize) * 4))) {
+            if (const void* bytes = GlobalLock(appearanceHandle)) {
+                nativeSnapshot->appearance = decodeScreenshotClipboardAppearance(QByteArray(
+                    static_cast<const char*>(bytes), static_cast<qsizetype>(appearanceSize)));
+                GlobalUnlock(appearanceHandle);
+            }
+        }
     }
     if (rejected)
         return std::nullopt;
@@ -958,6 +984,7 @@ std::optional<ScreenshotClipboardContentSnapshot>
 ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePixelRatio,
                                            AllocationCheck allocate) {
     ensureScreenshotClipboardPlacementMimeSupport();
+    ensureScreenshotClipboardAppearanceMimeSupport();
     for (int attempt = 0; attempt < 2; ++attempt) {
         const auto revision = screenshotClipboardRevision();
         auto result = snapshotClipboardOnce(clipboard, devicePixelRatio, allocate);
@@ -1000,6 +1027,12 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
              (file && snapshot.placement->matchesFile(file->absolutePath, file->size,
                                                       file->lastModifiedUtc.toMSecsSinceEpoch()))))
             result->placement = snapshot.placement;
+        if (result && !result->isFormattedText() && snapshot.appearance &&
+            result->image.size() == snapshot.appearance->rasterSize &&
+            ((!file && snapshot.appearance->filePath.isEmpty()) ||
+             (file && snapshot.appearance->matchesFile(file->absolutePath, file->size,
+                                                       file->lastModifiedUtc.toMSecsSinceEpoch()))))
+            result->appearance = snapshot.appearance;
         return result;
     };
 

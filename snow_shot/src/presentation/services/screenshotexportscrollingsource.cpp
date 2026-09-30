@@ -7,6 +7,12 @@
 ScreenshotExportSource
 ScreenshotExportSource::fromScrollingSnapshot(ScreenshotScrollingSnapshot snapshot) {
     ScreenshotExportSource source;
+    if (snapshot.isValid()) {
+        ScreenshotClipboardAppearance appearance;
+        appearance.rasterSize = snapshot.rowSource().size;
+        // A scrolling result is an opaque, unstyled raster, just like its direct pin.
+        source.m_clipboardAppearance = std::move(appearance);
+    }
     source.m_imageProducer = [snapshot](const ScreenshotExportCancellation& cancellation) mutable {
         return cancellation.isCancellationRequested() ? QImage{} : snapshot.materialize();
     };

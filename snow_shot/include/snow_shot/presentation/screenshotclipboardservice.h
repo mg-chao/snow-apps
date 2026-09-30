@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotimagerowsource.h"
 #include "snow_shot/presentation/screenshotclipboardplacement.h"
+#include "snow_shot/presentation/screenshotclipboardappearance.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 
 #include <QByteArray>
@@ -37,6 +38,9 @@ class ScreenshotClipboardPayload final {
     [[nodiscard]] const QByteArray& pngBytes() const {
         return m_pngBytes;
     }
+    [[nodiscard]] const QByteArray& appearanceBytes() const {
+        return m_appearanceBytes;
+    }
     [[nodiscard]] const QByteArray& placementBytes() const {
         return m_placementBytes;
     }
@@ -51,9 +55,11 @@ class ScreenshotClipboardPayload final {
     void* m_dibHandle = nullptr;
     void* m_pngHandle = nullptr;
     void* m_placementHandle = nullptr;
+    void* m_appearanceHandle = nullptr;
 #endif
     QByteArray m_pngBytes;
     QByteArray m_placementBytes;
+    QByteArray m_appearanceBytes;
 };
 
 enum class ScreenshotClipboardCommitFailure {
@@ -103,15 +109,18 @@ class ScreenshotClipboardService final {
     // Callers snapshot image export settings before scheduling asynchronous preparation.
     [[nodiscard]] static ScreenshotClipboardPayload
     prepare(const ScreenshotImageRowSource& source, ScreenshotImageEncodingOptions encoding = {},
-            std::optional<ScreenshotClipboardPlacement> placement = {});
+            std::optional<ScreenshotClipboardPlacement> placement = {},
+            std::optional<ScreenshotClipboardAppearance> appearance = {});
     [[nodiscard]] static ScreenshotClipboardPayload
     prepareImage(const QImage& image, ScreenshotImageEncodingOptions encoding = {},
-                 std::optional<ScreenshotClipboardPlacement> placement = {});
+                 std::optional<ScreenshotClipboardPlacement> placement = {},
+                 std::optional<ScreenshotClipboardAppearance> appearance = {});
     // The supplied PNG must encode the same sRGB pixels as the source, using the
     // requested export settings. This only prepares native clipboard representations.
     [[nodiscard]] static ScreenshotClipboardPayload
     prepareEncoded(const ScreenshotImageRowSource& source, const QByteArray& png,
-                   std::optional<ScreenshotClipboardPlacement> placement = {});
+                   std::optional<ScreenshotClipboardPlacement> placement = {},
+                   std::optional<ScreenshotClipboardAppearance> appearance = {});
     [[nodiscard]] static ScreenshotClipboardCommitHandle commit(QClipboard* clipboard,
                                                                 QObject* receiver,
                                                                 ScreenshotClipboardPayload payload,

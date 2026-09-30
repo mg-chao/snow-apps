@@ -28,6 +28,8 @@ struct ScreenshotPinnedViewportExportSource final {
     SnowCanvasSmartEraseSnapshot smartErase;
     qreal outputOpacity = 1.0;
     QPainterPath bakedSelectionPath;
+    std::optional<ScreenshotClipboardPlacement> clipboardPlacement = std::nullopt;
+    std::optional<ScreenshotClipboardAppearance> clipboardAppearance = std::nullopt;
 };
 
 struct ScreenshotExportImageResult final {
@@ -67,7 +69,8 @@ class ScreenshotExportSource final {
     ScreenshotExportSource() = default;
 
     [[nodiscard]] static ScreenshotExportSource
-    fromImage(QImage image, std::optional<ScreenshotClipboardPlacement> placement = {});
+    fromImage(QImage image, std::optional<ScreenshotClipboardPlacement> placement = {},
+              std::optional<ScreenshotClipboardAppearance> appearance = {});
     [[nodiscard]] static ScreenshotExportSource
     fromRecognitionImage(ScreenshotRecognitionImageSnapshot snapshot);
     [[nodiscard]] static ScreenshotExportSource
@@ -75,7 +78,8 @@ class ScreenshotExportSource final {
     [[nodiscard]] static ScreenshotExportSource
     fromPinnedViewport(ScreenshotPinnedViewportExportSource source);
     [[nodiscard]] static ScreenshotExportSource
-    fromImageLoader(ImageLoader loader, std::optional<ScreenshotClipboardPlacement> placement = {});
+    fromImageLoader(ImageLoader loader, std::optional<ScreenshotClipboardPlacement> placement = {},
+                    std::optional<ScreenshotClipboardAppearance> appearance = {});
     [[nodiscard]] static ScreenshotExportSource
     fromProducer(ImageProducer producer, RowSourceFactory rowSourceFactory = {});
 
@@ -86,6 +90,7 @@ class ScreenshotExportSource final {
     ImageProducer m_imageProducer;
     RowSourceFactory m_rowSourceFactory;
     std::optional<ScreenshotClipboardPlacement> m_clipboardPlacement;
+    std::optional<ScreenshotClipboardAppearance> m_clipboardAppearance;
 
     friend class ScreenshotExportArtifact;
 };
@@ -127,6 +132,9 @@ class ScreenshotExportArtifact final : public QObject {
                                   EncodingCallback callback);
     [[nodiscard]] bool requestClipboard(QObject* receiver, ClipboardCallback callback);
     [[nodiscard]] std::optional<ScreenshotClipboardPlacement> clipboardPlacement() const;
+    [[nodiscard]] std::optional<ScreenshotClipboardAppearance> clipboardAppearance() const;
+    // Used by file-URL clipboard publications after the export has completed.
+    void setClipboardFileMetadata(QMimeData& mime, const QString& path) const;
     [[nodiscard]] bool requestSaveToPath(QObject* receiver, QString path,
                                          ScreenshotImageFileFormat format,
                                          ScreenshotImageEncodingOptions encoding,

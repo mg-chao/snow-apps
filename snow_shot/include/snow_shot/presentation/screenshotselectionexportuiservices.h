@@ -63,7 +63,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::optional<bool> checkerboardEnabled = {},
         snow_shot::storage::PinnedWindowCreationSource source =
             snow_shot::storage::PinnedWindowCreationSource::Other,
-        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {});
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {},
+        std::optional<bool> initialBorderVisible = {});
     // An already composited selection bitmap placed by screenshotSelectionPinRequest.
     [[nodiscard]] bool
     presentCompositedSelectionImage(const QImage& image,
@@ -114,7 +115,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         snow_shot::storage::PinnedWindowCreationSource source =
             snow_shot::storage::PinnedWindowCreationSource::Other,
         const ScreenshotHistoryEntry* document = nullptr,
-        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {});
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {},
+        std::optional<bool> initialBorderVisible = {});
 
     QHash<QString, QList<QPointer<ScreenshotPinnedWindow>>> m_sourceWindows;
     std::function<void()> m_restoreFailure;

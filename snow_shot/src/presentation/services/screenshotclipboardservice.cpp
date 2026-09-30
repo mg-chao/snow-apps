@@ -44,11 +44,15 @@ namespace {
 // representation when a local reader requests it. Publishing never decodes.
 class PngClipboardMimeData final : public QMimeData {
   public:
-    explicit PngClipboardMimeData(QByteArray png, QByteArray placement = {}) {
+    explicit PngClipboardMimeData(QByteArray png, QByteArray placement = {},
+                                  QByteArray appearance = {}) {
 #ifdef Q_OS_MACOS
         snow_shot::platform::macos::initializeImageClipboardConverter();
 #endif
         ensureScreenshotClipboardPlacementMimeSupport();
+        ensureScreenshotClipboardAppearanceMimeSupport();
+        if (!appearance.isEmpty())
+            setData(screenshotClipboardAppearanceNativeMimeType(), std::move(appearance));
         if (!placement.isEmpty())
             setData(screenshotClipboardPlacementNativeMimeType(), std::move(placement));
         setData(QStringLiteral("image/png"), std::move(png));
@@ -302,7 +306,7 @@ HGLOBAL prepareDib(const ScreenshotImageRowSource& source) {
 }
 
 ClipboardPublishAttempt publishClipboardPayload(void** pngHandle, void** dibHandle,
-                                                void** placementHandle) {
+                                                void** placementHandle, void** appearanceHandle) {
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.publish_total");
     if (*pngHandle == nullptr || *dibHandle == nullptr) {
         return {ScreenshotClipboardCommitFailure::InvalidPayload, ERROR_INVALID_DATA};
@@ -310,8 +314,11 @@ ClipboardPublishAttempt publishClipboardPayload(void** pngHandle, void** dibHand
     const UINT pngFormat = RegisterClipboardFormatW(L"PNG");
     const UINT placementFormat =
         *placementHandle ? RegisterClipboardFormatW(L"SnowShotScreenshotPlacement") : 0;
+    const UINT appearanceFormat =
+        *appearanceHandle ? RegisterClipboardFormatW(L"SnowShotScreenshotAppearance") : 0;
     const HWND owner = clipboardOwnerWindow();
-    if (pngFormat == 0 || (*placementHandle && placementFormat == 0) || owner == nullptr) {
+    if (pngFormat == 0 || (*placementHandle && placementFormat == 0) ||
+        (*appearanceHandle && appearanceFormat == 0) || owner == nullptr) {
         return {ScreenshotClipboardCommitFailure::ClipboardUnavailable, GetLastError()};
     }
     if (!OpenClipboard(owner)) {
@@ -335,6 +342,12 @@ ClipboardPublishAttempt publishClipboardPayload(void** pngHandle, void** dibHand
             SetClipboardData(placementFormat, static_cast<HGLOBAL>(*placementHandle)) != nullptr;
         if (published)
             *placementHandle = nullptr;
+    }
+    if (published && *appearanceHandle) {
+        published =
+            SetClipboardData(appearanceFormat, static_cast<HGLOBAL>(*appearanceHandle)) != nullptr;
+        if (published)
+            *appearanceHandle = nullptr;
     }
     const DWORD error = published ? ERROR_SUCCESS : GetLastError();
     if (!published) {
@@ -474,10 +487,14 @@ void ScreenshotClipboardPayload::reset() noexcept {
         GlobalFree(static_cast<HGLOBAL>(m_placementHandle));
     m_dibHandle = nullptr;
     m_pngHandle = nullptr;
+    if (m_appearanceHandle != nullptr)
+        GlobalFree(static_cast<HGLOBAL>(m_appearanceHandle));
     m_placementHandle = nullptr;
+    m_appearanceHandle = nullptr;
 #endif
     m_pngBytes.clear();
     m_placementBytes.clear();
+    m_appearanceBytes.clear();
 }
 
 ScreenshotClipboardPayload::ScreenshotClipboardPayload(
@@ -494,16 +511,19 @@ ScreenshotClipboardPayload::operator=(ScreenshotClipboardPayload&& other) noexce
     m_dibHandle = std::exchange(other.m_dibHandle, nullptr);
     m_pngHandle = std::exchange(other.m_pngHandle, nullptr);
     m_placementHandle = std::exchange(other.m_placementHandle, nullptr);
+    m_appearanceHandle = std::exchange(other.m_appearanceHandle, nullptr);
 #endif
     m_pngBytes = std::move(other.m_pngBytes);
     m_placementBytes = std::move(other.m_placementBytes);
+    m_appearanceBytes = std::move(other.m_appearanceBytes);
     return *this;
 }
 
 bool ScreenshotClipboardPayload::isValid() const {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     return m_dibHandle != nullptr && m_pngHandle != nullptr && !m_pngBytes.isEmpty() &&
-           (m_placementBytes.isEmpty() || m_placementHandle != nullptr);
+           (m_placementBytes.isEmpty() || m_placementHandle != nullptr) &&
+           (m_appearanceBytes.isEmpty() || m_appearanceHandle != nullptr);
 #else
     return !m_pngBytes.isEmpty();
 #endif
@@ -512,7 +532,8 @@ bool ScreenshotClipboardPayload::isValid() const {
 ScreenshotClipboardPayload
 ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
                                     ScreenshotImageEncodingOptions encoding,
-                                    std::optional<ScreenshotClipboardPlacement> placement) {
+                                    std::optional<ScreenshotClipboardPlacement> placement,
+                                    std::optional<ScreenshotClipboardAppearance> appearance) {
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.prepare_total");
     QByteArray png;
     {
@@ -527,13 +548,13 @@ ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
         }
     }
     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("clipboard.png_encoded", 1);
-    return prepareEncoded(source, png, std::move(placement));
+    return prepareEncoded(source, png, std::move(placement), std::move(appearance));
 }
 
-ScreenshotClipboardPayload
-ScreenshotClipboardService::prepareEncoded(const ScreenshotImageRowSource& source,
-                                           const QByteArray& png,
-                                           std::optional<ScreenshotClipboardPlacement> placement) {
+ScreenshotClipboardPayload ScreenshotClipboardService::prepareEncoded(
+    const ScreenshotImageRowSource& source, const QByteArray& png,
+    std::optional<ScreenshotClipboardPlacement> placement,
+    std::optional<ScreenshotClipboardAppearance> appearance) {
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.prepare_native");
     if (!source.isValid() || png.isEmpty() ||
         (source.cancellationRequested && source.cancellationRequested())) {
@@ -544,6 +565,10 @@ ScreenshotClipboardService::prepareEncoded(const ScreenshotImageRowSource& sourc
         placement->rasterSize = source.size;
         payload.m_placementBytes = encodeScreenshotClipboardPlacement(*placement);
     }
+    if (appearance) {
+        appearance->rasterSize = source.size;
+        payload.m_appearanceBytes = encodeScreenshotClipboardAppearance(*appearance);
+    }
     payload.m_pngBytes = png;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     payload.m_dibHandle = prepareDib(source);
@@ -552,6 +577,8 @@ ScreenshotClipboardService::prepareEncoded(const ScreenshotImageRowSource& sourc
     payload.m_pngHandle = copyToGlobal(payload.m_pngBytes);
     if (!payload.m_placementBytes.isEmpty())
         payload.m_placementHandle = copyToGlobal(payload.m_placementBytes);
+    if (!payload.m_appearanceBytes.isEmpty())
+        payload.m_appearanceHandle = copyToGlobal(payload.m_appearanceBytes);
 #endif
     if (source.cancellationRequested && source.cancellationRequested())
         return {};
@@ -561,8 +588,10 @@ ScreenshotClipboardService::prepareEncoded(const ScreenshotImageRowSource& sourc
 ScreenshotClipboardPayload
 ScreenshotClipboardService::prepareImage(const QImage& image,
                                          ScreenshotImageEncodingOptions encoding,
-                                         std::optional<ScreenshotClipboardPlacement> placement) {
-    return prepare(snow_shot::image_codec::srgbRowSource(image), encoding, std::move(placement));
+                                         std::optional<ScreenshotClipboardPlacement> placement,
+                                         std::optional<ScreenshotClipboardAppearance> appearance) {
+    return prepare(snow_shot::image_codec::srgbRowSource(image), encoding, std::move(placement),
+                   std::move(appearance));
 }
 
 ScreenshotClipboardCommitHandle
@@ -598,7 +627,8 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         if (!sharedPayload->isValid())
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
         return publishClipboardPayload(&sharedPayload->m_pngHandle, &sharedPayload->m_dibHandle,
-                                       &sharedPayload->m_placementHandle);
+                                       &sharedPayload->m_placementHandle,
+                                       &sharedPayload->m_appearanceHandle);
     };
 #else
     const QPointer<QClipboard> guardedClipboard(clipboard);
@@ -614,7 +644,8 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
         }
         auto* mime =
-            new PngClipboardMimeData(sharedPayload->m_pngBytes, sharedPayload->m_placementBytes);
+            new PngClipboardMimeData(sharedPayload->m_pngBytes, sharedPayload->m_placementBytes,
+                                     sharedPayload->m_appearanceBytes);
         guardedClipboard->setMimeData(mime, QClipboard::Clipboard);
         sharedPayload->reset();
         return ClipboardPublishAttempt{};
@@ -647,17 +678,21 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
     auto state = std::make_shared<ScreenshotClipboardCommitState>();
     auto holder = std::make_shared<std::unique_ptr<QMimeData>>(mimeData);
     const auto placementFormat = screenshotClipboardPlacementNativeMimeType();
+    const auto appearanceFormat = screenshotClipboardAppearanceNativeMimeType();
     const auto formats = mimeData->formats();
-    const bool fileOnly =
-        mimeData->hasUrls() &&
-        std::all_of(formats.begin(), formats.end(), [&placementFormat](const QString& format) {
-            return format == QStringLiteral("text/uri-list") || format == placementFormat;
-        });
+    const bool fileOnly = mimeData->hasUrls() &&
+                          std::all_of(formats.begin(), formats.end(),
+                                      [&placementFormat, &appearanceFormat](const QString& format) {
+                                          return format == QStringLiteral("text/uri-list") ||
+                                                 format == placementFormat ||
+                                                 format == appearanceFormat;
+                                      });
     const QList<QUrl> fileUrls = fileOnly ? mimeData->urls() : QList<QUrl>{};
     const QByteArray placementBytes = fileOnly ? mimeData->data(placementFormat) : QByteArray{};
+    const QByteArray appearanceBytes = fileOnly ? mimeData->data(appearanceFormat) : QByteArray{};
     const QPointer<QClipboard> guardedClipboard(clipboard);
     auto attempt = [guardedClipboard, holder, publicationId, fileUrls, placementFormat,
-                    placementBytes]() {
+                    placementBytes, appearanceFormat, appearanceBytes]() {
         if (publicationId != g_latestPublicationId.load(std::memory_order_acquire)) {
             return ClipboardPublishAttempt{};
         }
@@ -674,6 +709,8 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
             attemptMime->setUrls(fileUrls);
             if (!placementBytes.isEmpty())
                 attemptMime->setData(placementFormat, placementBytes);
+            if (!appearanceBytes.isEmpty())
+                attemptMime->setData(appearanceFormat, appearanceBytes);
             guardedClipboard->setMimeData(attemptMime, QClipboard::Clipboard);
             if (!guardedClipboard->ownsClipboard() && guardedClipboard->mimeData() != attemptMime) {
                 return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::Busy, 0};
@@ -697,14 +734,15 @@ bool ScreenshotClipboardService::publish(QClipboard* clipboard,
 #if defined(Q_OS_WIN) || defined(_WIN32)
     Q_UNUSED(clipboard);
     return publishClipboardPayload(&payload.m_pngHandle, &payload.m_dibHandle,
-                                   &payload.m_placementHandle)
+                                   &payload.m_placementHandle, &payload.m_appearanceHandle)
         .succeeded();
 #else
     if (clipboard == nullptr || !payload.isValid()) {
         qWarning("Screenshot clipboard is unavailable");
         return false;
     }
-    auto* mime = new PngClipboardMimeData(payload.m_pngBytes, payload.m_placementBytes);
+    auto* mime = new PngClipboardMimeData(payload.m_pngBytes, payload.m_placementBytes,
+                                          payload.m_appearanceBytes);
     clipboard->setMimeData(mime, QClipboard::Clipboard);
     return true;
 #endif

@@ -206,6 +206,122 @@ void payloadUsesRequestedEncoding() {
             "failed clipboard PNG encoding produced a payload");
 }
 
+ScreenshotClipboardAppearance appearanceFixture() {
+    ScreenshotClipboardAppearance value;
+    value.rasterSize = QSize(640, 400);
+    value.borderAppearance = snow_shot::storage::PinnedBorderAppearance{
+        QSize(320, 200), QRectF(8, 8, 304, 184), 12, true, {}};
+    value.showBorder = false;
+    return value;
+}
+void appearanceCodecAndContent() {
+    auto value = appearanceFixture();
+    const auto bytes = encodeScreenshotClipboardAppearance(value);
+    auto decoded = decodeScreenshotClipboardAppearance(bytes);
+    require(decoded && decoded->borderAppearance == value.borderAppearance &&
+                decoded->showBorder == false && !decoded->checkerboardEnabled,
+            "appearance codec changes the baked outline");
+    require(decodeScreenshotClipboardAppearance(bytes + QByteArray(7, 'x')).has_value(),
+            "native allocation padding invalidates appearance");
+    require(!decodeScreenshotClipboardAppearance(bytes.left(10)), "truncated appearance accepted");
+    auto unknown = bytes;
+    qToLittleEndian(quint32(2), unknown.data() + 4);
+    require(!decodeScreenshotClipboardAppearance(unknown), "unknown appearance version accepted");
+    require(!decodeScreenshotClipboardAppearance(
+                QByteArray(kScreenshotClipboardAppearanceMaximumBytes + 1, 'x')),
+            "oversized appearance accepted");
+    auto truncatedBody = bytes;
+    qToLittleEndian(quint32(kScreenshotClipboardAppearanceMaximumBytes), truncatedBody.data() + 8);
+    require(!decodeScreenshotClipboardAppearance(truncatedBody),
+            "truncated appearance body accepted");
+    auto json = QJsonDocument::fromJson(bytes.mid(12)).object();
+    auto border = json[QStringLiteral("border")].toObject();
+    border.insert(QStringLiteral("corner_radius"), -1);
+    json.insert(QStringLiteral("border"), border);
+    require(!decodeScreenshotClipboardAppearance(replaceJson(bytes, json)),
+            "negative corner radius accepted");
+    json = QJsonDocument::fromJson(bytes.mid(12)).object();
+    json.insert(QStringLiteral("checkerboard"), 1);
+    require(!decodeScreenshotClipboardAppearance(replaceJson(bytes, json)),
+            "non-boolean transparency policy accepted");
+    value.borderAppearance->contentRect = QRectF(-1, 0, 320, 200);
+    require(encodeScreenshotClipboardAppearance(value).isEmpty(),
+            "outline outside its reference raster accepted");
+    value = appearanceFixture();
+    QPainterPath path;
+    path.addEllipse(QRectF(0, 0, 304, 184));
+    value.borderAppearance->region =
+        ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+    value.checkerboardEnabled = true;
+    decoded = decodeScreenshotClipboardAppearance(encodeScreenshotClipboardAppearance(value));
+    require(decoded && decoded->borderAppearance == value.borderAppearance &&
+                decoded->checkerboardEnabled,
+            "custom selection geometry lost during appearance roundtrip");
+
+    const auto pixels = image();
+    auto payload = ScreenshotClipboardService::prepareImage(pixels, {}, fixture(), value);
+    const auto png = payload.pngBytes();
+    const auto metadata = payload.appearanceBytes();
+    auto moved = std::move(payload);
+    require(moved.isValid() && !payload.isValid() && moved.appearanceBytes() == metadata,
+            "appearance payload move loses bytes or ownership");
+    auto reused = ScreenshotClipboardService::prepareEncoded(
+        snow_shot::image_codec::srgbRowSource(pixels), png, fixture(), value);
+    require(reused.pngBytes().constData() == png.constData() &&
+                reused.appearanceBytes() == metadata,
+            "appearance publication re-encodes the canonical PNG");
+    QMimeData mime;
+    mime.setData(QStringLiteral("image/png"), png);
+    setScreenshotClipboardAppearance(mime, value);
+    auto snapshot = ScreenshotClipboardContentReader::snapshotMimeData(&mime, 2, Qt::white);
+    value.checkerboardEnabled = false;
+    setScreenshotClipboardAppearance(mime, value);
+    auto content = ScreenshotClipboardContentReader::decode(*snapshot);
+    require(content && !content->placement && content->appearance &&
+                content->appearance->checkerboardEnabled,
+            "appearance-only snapshot observes later changes or requires a position");
+    value.rasterSize = QSize(1, 1);
+    setScreenshotClipboardAppearance(mime, value);
+    content = ScreenshotClipboardContentReader::readMimeData(&mime, 1);
+    require(content && !content->appearance, "appearance with another raster size attached");
+    mime.setData(screenshotClipboardAppearanceNativeMimeType(), QByteArray("invalid"));
+    content = ScreenshotClipboardContentReader::readMimeData(&mime, 1);
+    require(content && !content->appearance, "invalid appearance rejected usable pixels");
+    QMimeData detached;
+    detached.setImageData(pixels);
+    setScreenshotClipboardAppearance(detached, appearanceFixture());
+    content = ScreenshotClipboardContentReader::readMimeData(&detached, 1);
+    require(content && content->appearance, "detached image loses appearance");
+    QMimeData text;
+    text.setText(QStringLiteral("clipboard text"));
+    setScreenshotClipboardAppearance(text, appearanceFixture());
+    require(!ScreenshotClipboardContentReader::readMimeData(&text, 1)->appearance,
+            "appearance leaked to formatted text");
+
+    QTemporaryDir directory;
+    const auto file = directory.filePath(QStringLiteral("appearance.png"));
+    require(pixels.save(file, "PNG"), "save appearance file fixture");
+    const QFileInfo info(file);
+    value = appearanceFixture();
+    value.filePath = screenshotClipboardFilePath(file);
+    value.fileSize = info.size();
+    value.fileModifiedMs = info.lastModified().toUTC().toMSecsSinceEpoch();
+    QMimeData fileMime;
+    fileMime.setUrls({QUrl::fromLocalFile(file)});
+    setScreenshotClipboardAppearance(fileMime, value);
+    content = ScreenshotClipboardContentReader::readMimeData(&fileMime, 1);
+    require(content && content->appearance && !content->placement,
+            "file appearance requires independent placement");
+    value.fileModifiedMs += 1;
+    setScreenshotClipboardAppearance(fileMime, value);
+    require(!ScreenshotClipboardContentReader::readMimeData(&fileMime, 1)->appearance,
+            "appearance ignores changed file identity");
+    fileMime.setData(QStringLiteral("image/png"), png);
+    value.fileModifiedMs -= 1;
+    setScreenshotClipboardAppearance(fileMime, value);
+    require(!ScreenshotClipboardContentReader::readMimeData(&fileMime, 1)->appearance,
+            "file appearance leaked to an encoded image");
+}
 void contentAndPayload() {
     const auto pixels = image();
     auto value = fixture();
@@ -315,6 +431,11 @@ void publishFile(const QString& path, bool expectRetry = false) {
     auto* mime = new QMimeData;
     mime->setUrls({QUrl::fromLocalFile(path)});
     setScreenshotClipboardPlacement(*mime, value);
+    auto appearance = appearanceFixture();
+    appearance.filePath = value.filePath;
+    appearance.fileSize = value.fileSize;
+    appearance.fileModifiedMs = value.fileModifiedMs;
+    setScreenshotClipboardAppearance(*mime, appearance);
     bool done = false, success = false;
     int attempts = 0;
     QObject receiver;
@@ -337,6 +458,7 @@ void scopedPublicationsPreservePlacement() {
     require(image().save(path, "PNG"), "save scoped publication fixture");
     for (const bool file : {false, true}) {
         auto placement = fixture();
+        auto appearance = appearanceFixture();
         bool completed = false;
         ScreenshotClipboardCommitHandle handle;
         auto completion = [&](ScreenshotClipboardCommitResult result) {
@@ -352,11 +474,16 @@ void scopedPublicationsPreservePlacement() {
             auto* mime = new QMimeData;
             mime->setUrls({QUrl::fromLocalFile(path)});
             setScreenshotClipboardPlacement(*mime, placement);
+            appearance.filePath = placement.filePath;
+            appearance.fileSize = placement.fileSize;
+            appearance.fileModifiedMs = placement.fileModifiedMs;
+            setScreenshotClipboardAppearance(*mime, appearance);
             handle = scope.commitMimeData(QApplication::clipboard(), &receiver, mime, completion);
         } else {
-            handle = scope.commit(QApplication::clipboard(), &receiver,
-                                  ScreenshotClipboardService::prepareImage(image(), {}, placement),
-                                  completion);
+            handle = scope.commit(
+                QApplication::clipboard(), &receiver,
+                ScreenshotClipboardService::prepareImage(image(), {}, placement, appearance),
+                completion);
         }
         require(handle.isValid() && scope.pendingCount() == 1,
                 "scoped metadata publication must be tracked");
@@ -364,8 +491,9 @@ void scopedPublicationsPreservePlacement() {
         auto snapshot = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
         require(snapshot.has_value(), "snapshot scoped clipboard publication");
         const auto content = ScreenshotClipboardContentReader::decode(std::move(*snapshot));
-        require(content && content->placement &&
-                    content->placement->windowRect == placement.windowRect &&
+        require(content && content->appearance &&
+                    content->appearance->borderAppearance == appearance.borderAppearance &&
+                    content->placement && content->placement->windowRect == placement.windowRect &&
                     content->placement->filePath == placement.filePath &&
                     content->image.size() == placement.rasterSize,
                 "retiring scoped image and file publications must preserve placement and pixels");
@@ -381,7 +509,7 @@ void publicationOrderAndCancellation() {
     int callbacks = 0;
     auto newHandle = ScreenshotClipboardService::commit(
         QApplication::clipboard(), &receiver,
-        ScreenshotClipboardService::prepareImage(image(), {}, newer), newId,
+        ScreenshotClipboardService::prepareImage(image(), {}, newer, appearanceFixture()), newId,
         [&](ScreenshotClipboardCommitResult result) {
             require(result.succeeded(), "new publication failed");
             ++callbacks;
@@ -396,7 +524,8 @@ void publicationOrderAndCancellation() {
     require(newHandle.isValid() && oldHandle.isValid(), "ordered publication not queued");
     processUntil([&] { return callbacks == 2; });
     auto captured = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
-    require(captured && captured->placement && captured->placement->windowRect == newer.windowRect,
+    require(captured && captured->appearance && captured->placement &&
+                captured->placement->windowRect == newer.windowRect,
             "older export overwrote the latest image placement");
 
     ScreenshotClipboardCommitResult cancelled;
@@ -414,11 +543,13 @@ void publicationOrderAndCancellation() {
                 cancelled.attempts == 0,
             "cancelled publication must not touch image or metadata");
     captured = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
-    require(captured && captured->placement && captured->placement->windowRect == newer.windowRect,
+    require(captured && captured->appearance && captured->placement &&
+                captured->placement->windowRect == newer.windowRect,
             "cancelled publication replaced metadata");
     QApplication::clipboard()->setText(QStringLiteral("external replacement"));
     auto replacement = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
-    require(replacement && !replacement->placement, "external content retained old placement");
+    require(replacement && !replacement->placement && !replacement->appearance,
+            "external content retained old placement");
 }
 void nativeRead() {
     const auto snapshot = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
@@ -429,7 +560,8 @@ void nativeRead() {
     const auto content = ScreenshotClipboardContentReader::decode(*snapshot);
     require(content && content->placement &&
                 content->placement->windowRect == fixture().windowRect &&
-                content->image.size() == image().size(),
+                content->image.size() == image().size() && content->appearance &&
+                content->appearance->borderAppearance == appearanceFixture().borderAppearance,
             "native cross-process metadata roundtrip failed");
 }
 void runChild(const QStringList& args) {
@@ -446,6 +578,7 @@ void runChild(const QStringList& args) {
 void nativeRoundtrip() {
     auto* clipboard = QApplication::clipboard();
     ensureScreenshotClipboardPlacementMimeSupport();
+    ensureScreenshotClipboardAppearanceMimeSupport();
     auto saved = std::make_unique<QMimeData>();
     if (const auto* mime = clipboard->mimeData()) {
         for (const auto& format : mime->formats())
@@ -473,7 +606,8 @@ void nativeRoundtrip() {
     scopedPublicationsPreservePlacement();
     publicationOrderAndCancellation();
     require(ScreenshotClipboardService::publish(
-                clipboard, ScreenshotClipboardService::prepareImage(image(), {}, fixture())),
+                clipboard, ScreenshotClipboardService::prepareImage(image(), {}, fixture(),
+                                                                    appearanceFixture())),
             "native image copy failed");
     runChild({QStringLiteral("--native-read")});
     runChild({QStringLiteral("--native-image-producer")});
@@ -522,7 +656,8 @@ int main(int argc, char** argv) {
         else if (args.contains(QStringLiteral("--native-image-producer")))
             require(ScreenshotClipboardService::publish(
                         QApplication::clipboard(),
-                        ScreenshotClipboardService::prepareImage(image(), {}, fixture())),
+                        ScreenshotClipboardService::prepareImage(image(), {}, fixture(),
+                                                                 appearanceFixture())),
                     "native child image copy failed");
         else if (args.contains(QStringLiteral("--native-roundtrip")))
             nativeRoundtrip();
@@ -532,6 +667,7 @@ int main(int argc, char** argv) {
             codecAndRecovery();
             payloadUsesRequestedEncoding();
             contentAndPayload();
+            appearanceCodecAndContent();
 #if !defined(Q_OS_WIN)
             scopedPublicationsPreservePlacement();
             publicationOrderAndCancellation();

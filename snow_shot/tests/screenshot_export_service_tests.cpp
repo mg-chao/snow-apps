@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snowimageqtcodec.h"
@@ -265,6 +266,15 @@ void selectionClipboardPreservesEffects() {
                     require(result.isValid(), "selection clipboard export has no payload");
                     require(result.payload.isValid() && !result.payload.pngBytes().isEmpty(),
                             "clipboard export must prepare PNG and its bitmap fallback");
+                    const auto appearance =
+                        decodeScreenshotClipboardAppearance(result.payload.appearanceBytes());
+                    require(
+                        appearance && appearance->rasterSize == result.image.size() &&
+                            appearance->borderAppearance ==
+                                screenshotSelectionBorderAppearance(selection.size(), style) &&
+                            appearance->checkerboardEnabled ==
+                                screenshotSelectionNeedsCheckerboard(appearance->borderAppearance),
+                        "clipboard appearance differs from a direct selection pin");
                     const auto direct = fixture.service().preparePinnedSelection(selection, style);
                     const auto placement =
                         decodeScreenshotClipboardPlacement(result.payload.placementBytes());
@@ -690,6 +700,12 @@ void clipboardPlacementMatchesDirectPin() {
                     require(metadata && metadata->windowRect == direct->geometry.nativeGeometry &&
                                 metadata->rasterSize == value.image.size(),
                             "composited clipboard raster loses the direct pin's platform geometry");
+                    const auto appearance =
+                        decodeScreenshotClipboardAppearance(value.payload.appearanceBytes());
+                    require(appearance && appearance->rasterSize == value.image.size() &&
+                                appearance->borderAppearance ==
+                                    screenshotSelectionBorderAppearance(selection.size(), style),
+                            "scaled clipboard raster loses its reference outline");
                     received = true;
                     return value.image;
                 });

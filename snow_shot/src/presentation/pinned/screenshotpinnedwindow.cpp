@@ -21,6 +21,8 @@
 #include "screenshotpinnedgeometrymapping.h"
 #include <QScopedValueRollback>
 #include "screenshotpinnedresizegeometry.h"
+#include "screenshotclipboardplacementgeometry.h"
+#include "snow_shot/presentation/screenshotselectionpin.h"
 #include "pinnedwindowplatform.h"
 #include "screenshotpintoperfinstrumentation.h"
 #include "snow_shot/platform/physicalcursor.h"
@@ -1596,7 +1598,8 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
     const bool compoundSelection =
         m_borderAppearance && m_borderAppearance->region &&
         (m_borderAppearance->region->custom() || m_borderAppearance->region->rectCount() != 1);
-    m_showBorder = compoundSelection || !m_borderAppearance || !m_borderAppearance->hasShadow;
+    m_showBorder = config.initialBorderVisible.value_or(compoundSelection || !m_borderAppearance ||
+                                                        !m_borderAppearance->hasShadow);
     if (m_borderFrame != nullptr)
         m_borderFrame->setVisible(m_showBorder);
     updateBorderOutline();
@@ -4679,6 +4682,55 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::viewportArtifa
         appearance.outputOpacity,   {},
     };
     request.bakedSelectionPath = bakedSelectionPath(contentPixelSize);
+    const QRect geometry =
+        hideToTopActive() ? m_hideToTop->shownGeometry() : authoritativeNativeGeometry();
+    request.clipboardPlacement =
+        screenshotClipboardSelectionPlacement(geometry, geometry.size(), screen());
+    ScreenshotClipboardAppearance clipboardAppearance;
+    clipboardAppearance.rasterSize =
+        ScreenshotResultCompositor::layoutForContent(contentPixelSize, appearance.resultStyle)
+            .outputRect.size();
+    clipboardAppearance.checkerboardEnabled = m_checkerboardEnabled.value_or(false);
+    clipboardAppearance.showBorder = m_showBorder;
+    if (appearance.resultStyle.cornerRadius > 0 || appearance.resultStyle.shadowWidth > 0 ||
+        appearance.resultStyle.region) {
+        clipboardAppearance.borderAppearance =
+            screenshotSelectionBorderAppearance(contentPixelSize, appearance.resultStyle);
+    } else if (m_borderAppearance && !m_originalPixelSize.isEmpty()) {
+        auto border = *m_borderAppearance;
+        QTransform sourceScale;
+        sourceScale.scale(qreal(m_originalPixelSize.width()) / border.sourceSize.width(),
+                          qreal(m_originalPixelSize.height()) / border.sourceSize.height());
+        const auto rotation = QImage::trueMatrix(m_imageTransform, m_originalPixelSize.width(),
+                                                 m_originalPixelSize.height());
+        const auto transformed = rotation.mapRect(QRectF(QPointF(), QSizeF(m_originalPixelSize)));
+        QTransform outputScale;
+        outputScale.scale(contentPixelSize.width() / transformed.width(),
+                          contentPixelSize.height() / transformed.height());
+        const auto mapping = sourceScale * rotation * outputScale;
+        const auto contentRect = mapping.mapRect(border.contentRect);
+        const qreal scale = std::max(std::hypot(mapping.m11(), mapping.m12()),
+                                     std::hypot(mapping.m21(), mapping.m22()));
+        if (border.region && (border.region->custom() || border.region->rectCount() != 1)) {
+            auto outline = border.region->custom()
+                               ? border.region->path(scale)
+                               : screenshotRegionPath(*border.region, border.cornerRadius);
+            outline.translate(border.contentRect.topLeft());
+            outline = mapping.map(outline);
+            outline.translate(-contentRect.topLeft());
+            border.region =
+                ScreenshotRegionGeometry::fromPath(outline, ScreenshotRegionType::Curve);
+            border.cornerRadius = 0;
+        } else {
+            // A rectangular outline remains rectangular after the pin's quarter-turn rotation.
+            border.region.reset();
+            border.cornerRadius *= scale;
+        }
+        border.sourceSize = contentPixelSize;
+        border.contentRect = contentRect;
+        clipboardAppearance.borderAppearance = std::move(border);
+    }
+    request.clipboardAppearance = std::move(clipboardAppearance);
 
     return std::make_shared<ScreenshotExportArtifact>(
         ScreenshotExportSource::fromPinnedViewport(std::move(request)));
@@ -4816,6 +4868,7 @@ void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportA
             }
             auto* mime = new QMimeData();
             mime->setUrls({QUrl::fromLocalFile(QFileInfo(result.savedPath).absoluteFilePath())});
+            m_exportArtifact->setClipboardFileMetadata(*mime, result.savedPath);
             m_clipboardCommit = ScreenshotClipboardService::commitMimeData(
                 QApplication::clipboard(), this, mime, committed);
             if (!m_clipboardCommit.isValid()) {

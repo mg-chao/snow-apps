@@ -11,6 +11,7 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPointer>
+#include <QFileInfo>
 #include <QThread>
 #include <QUuid>
 
@@ -116,7 +117,8 @@ ScreenshotImageRowSource withCancellation(const ScreenshotImageRowSource& source
 
 ScreenshotExportSource
 ScreenshotExportSource::fromImage(QImage image,
-                                  std::optional<ScreenshotClipboardPlacement> placement) {
+                                  std::optional<ScreenshotClipboardPlacement> placement,
+                                  std::optional<ScreenshotClipboardAppearance> appearance) {
     if (placement)
         placement->rasterSize = image.size();
     auto source =
@@ -124,15 +126,18 @@ ScreenshotExportSource::fromImage(QImage image,
             return cancellation.isCancellationRequested() ? QImage{} : image;
         });
     source.m_clipboardPlacement = std::move(placement);
+    source.m_clipboardAppearance = std::move(appearance);
     return source;
 }
 
 ScreenshotExportSource
 ScreenshotExportSource::fromImageLoader(ImageLoader loader,
-                                        std::optional<ScreenshotClipboardPlacement> placement) {
+                                        std::optional<ScreenshotClipboardPlacement> placement,
+                                        std::optional<ScreenshotClipboardAppearance> appearance) {
     ScreenshotExportSource source;
     source.m_imageLoader = std::move(loader);
     source.m_clipboardPlacement = std::move(placement);
+    source.m_clipboardAppearance = std::move(appearance);
     return source;
 }
 
@@ -712,6 +717,36 @@ std::optional<ScreenshotClipboardPlacement> ScreenshotExportArtifact::clipboardP
     return placement;
 }
 
+std::optional<ScreenshotClipboardAppearance> ScreenshotExportArtifact::clipboardAppearance() const {
+    if (!m_impl)
+        return {};
+    QMutexLocker lock(&m_impl->mutex);
+    auto appearance = m_impl->source.m_clipboardAppearance;
+    if (appearance && m_impl->rowSource.isValid())
+        appearance->rasterSize = m_impl->rowSource.size;
+    else if (appearance && !m_impl->image.isNull())
+        appearance->rasterSize = m_impl->image.size();
+    return appearance;
+}
+
+void ScreenshotExportArtifact::setClipboardFileMetadata(QMimeData& mime,
+                                                        const QString& path) const {
+    const QFileInfo info(path);
+    const auto bindFile = [&info](auto& metadata) {
+        metadata.filePath = screenshotClipboardFilePath(info.absoluteFilePath());
+        metadata.fileSize = info.size();
+        metadata.fileModifiedMs = info.lastModified().toUTC().toMSecsSinceEpoch();
+    };
+    if (auto placement = clipboardPlacement()) {
+        bindFile(*placement);
+        setScreenshotClipboardPlacement(mime, *placement);
+    }
+    if (auto appearance = clipboardAppearance()) {
+        bindFile(*appearance);
+        setScreenshotClipboardAppearance(mime, *appearance);
+    }
+}
+
 bool ScreenshotExportArtifact::requestClipboard(QObject* receiver, ClipboardCallback callback) {
     if (receiver == nullptr || !callback || isCancelled())
         return false;
@@ -768,12 +803,13 @@ bool ScreenshotExportArtifact::prepareClipboard(QObject* receiver, QByteArray ca
             ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
                 receiver, ScreenshotExportCoordinator::Priority::Foreground,
                 [source = std::move(source), canonicalPng, payload,
-                 placement = guardedArtifact->m_impl->source.m_clipboardPlacement](
+                 placement = guardedArtifact->m_impl->source.m_clipboardPlacement,
+                 appearance = guardedArtifact->m_impl->source.m_clipboardAppearance](
                     const ScreenshotExportCancellation& cancellation) mutable {
                     ScreenshotImageRowSource rows = withCancellation(
                         source, [&cancellation] { return cancellation.isCancellationRequested(); });
-                    *payload =
-                        ScreenshotClipboardService::prepareEncoded(rows, canonicalPng, placement);
+                    *payload = ScreenshotClipboardService::prepareEncoded(rows, canonicalPng,
+                                                                          placement, appearance);
                     return payload->isValid()
                                ? ScreenshotExportTaskResult{}
                                : ScreenshotExportTaskResult::failure(

@@ -1243,7 +1243,6 @@ set(PROJECT_CXX_SOURCES
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
-    src/platform/windows/monitorgeometry.cpp
     src/platform/windows/windowchrome.cpp
     src/platform/windows/windowcursorrefresh.h
     src/platform/windows/scrollinput.cpp
@@ -1289,9 +1288,6 @@ set(PROJECT_CXX_SOURCES
         src/presentation/services/screenshotpdfexport.cpp
     src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
     src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
-    src/presentation/services/historypinplacement.cpp
-    src/presentation/services/screenshotselectionpin.cpp
-    src/presentation/core/screenshotgeometry.cpp
     src/presentation/core/screenshotcanvastoolstyles.cpp
     src/presentation/core/screenshotstylebinding.cpp
     src/presentation/core/screenshotintelligentselectionmodel.cpp
@@ -1353,7 +1349,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/overlay/screenshotoverlaycanvaswidget.h
     src/presentation/ocr/screenshotocrtextlayout.cpp
     src/presentation/overlay/screenshotcanvasrenderer.cpp
-    src/presentation/overlay/screenshotselectionshadowrenderer.cpp
     src/presentation/overlay/screenshotoverlaycoordinator.cpp
     src/presentation/overlay/screenshotoverlayinteractionadapter.cpp
     src/presentation/overlay/screenshotoverlayinputhandler.cpp
@@ -8037,6 +8032,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-physical-authority-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-clipboard-appearance-presentation-tests
+        COMMAND snow-shot-pinned-window-tests --clipboard-appearance-only -platform offscreen)
+    set_tests_properties(snow-shot-clipboard-appearance-presentation-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-history-selection-presentation-tests
         COMMAND snow-shot-pinned-window-tests --history-selection-only -platform offscreen)
     set_tests_properties(snow-shot-history-selection-presentation-tests PROPERTIES
@@ -8417,9 +8417,26 @@ if(SNOW_SHOT_BUILD_TESTS)
     unset(_snow_clipboard_qpa_environment)
 endif()
 
+# History copying shares the same placement and outline calculations as direct pinning.
+add_library(snow_shot_history_pin STATIC
+    src/platform/windows/monitorgeometry.cpp
+    src/presentation/services/historypinplacement.cpp
+    src/presentation/services/screenshotselectionpin.cpp
+    src/presentation/core/screenshotgeometry.cpp
+    src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
+target_include_directories(snow_shot_history_pin PUBLIC include)
+target_link_libraries(snow_shot_history_pin PUBLIC Qt6::Widgets PRIVATE ant_design_qt)
+if(APPLE)
+    target_link_libraries(snow_shot_history_pin PRIVATE "-framework AppKit")
+elseif(WIN32)
+    target_link_libraries(snow_shot_history_pin PRIVATE user32)
+endif()
+target_link_libraries(snow_shot_settings PRIVATE snow_shot_history_pin snow_shot_clipboard_placement)
+
 # Shared clipboard metadata must have one native MIME converter per process.
 add_library(snow_shot_clipboard_placement STATIC
-    src/presentation/services/screenshotclipboardplacement.cpp)
+    src/presentation/services/screenshotclipboardplacement.cpp
+    src/presentation/services/screenshotclipboardappearance.cpp)
 target_include_directories(snow_shot_clipboard_placement PUBLIC include)
 target_link_libraries(snow_shot_clipboard_placement PUBLIC Qt6::Gui)
 if(APPLE)
