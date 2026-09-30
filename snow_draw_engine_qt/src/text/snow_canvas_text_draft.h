@@ -9,6 +9,8 @@ class QInputMethodEvent;
 class SnowCanvasTextDraft final {
   public:
     void reset();
+    void releaseRetainedState();
+    std::size_t retainedHistoryStorageBytes() const;
     void begin(const QString& text);
 
     const QString& text() const;

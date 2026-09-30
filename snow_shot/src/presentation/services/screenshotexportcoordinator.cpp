@@ -18,6 +18,9 @@
 namespace {
 constexpr int kMaximumPendingJobs = 16;
 constexpr int kDefaultShutdownTimeoutMilliseconds = 5000;
+// Reuse workers for a burst of screenshots, then release their stacks and
+// thread-local native resources while the application is idle.
+constexpr int kWorkerIdleTimeoutMilliseconds = 5000;
 
 ScreenshotExportTaskResult cancelledResult() {
     return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
@@ -71,7 +74,7 @@ struct ScreenshotExportCoordinator::Impl final {
     explicit Impl(int shutdownTimeoutMsValue) : shutdownTimeoutMs(shutdownTimeoutMsValue) {
         const int ideal = QThread::idealThreadCount();
         pool->setMaxThreadCount(std::clamp(ideal, 1, 2));
-        pool->setExpiryTimeout(-1);
+        pool->setExpiryTimeout(kWorkerIdleTimeoutMilliseconds);
         pool->setObjectName(QStringLiteral("snow-shot-export"));
     }
 
@@ -158,35 +161,34 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
             },
             Qt::QueuedConnection));
     };
-    auto runnable =
-        QRunnable::create([state, job, work = std::move(work)]() mutable {
-            {
-                QMutexLocker lock(&state->mutex);
-                job->queuedRunnable = nullptr;
+    auto runnable = QRunnable::create([state, job, work = std::move(work)]() mutable {
+        {
+            QMutexLocker lock(&state->mutex);
+            job->queuedRunnable = nullptr;
+        }
+        ScreenshotExportTaskResult result;
+        const ScreenshotExportCancellation token(job->cancelled);
+        if (token.isCancellationRequested()) {
+            result = cancelledResult();
+        } else {
+            try {
+                result = work(token);
+            } catch (const std::bad_alloc&) {
+                result = ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Internal,
+                    QStringLiteral("The export ran out of memory"));
+            } catch (const std::exception& error) {
+                result = ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Internal,
+                                                             QString::fromUtf8(error.what()));
+            } catch (...) {
+                result = ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Internal,
+                    QStringLiteral("The export failed unexpectedly"));
             }
-            ScreenshotExportTaskResult result;
-            const ScreenshotExportCancellation token(job->cancelled);
-            if (token.isCancellationRequested()) {
-                result = cancelledResult();
-            } else {
-                try {
-                    result = work(token);
-                } catch (const std::bad_alloc&) {
-                    result = ScreenshotExportTaskResult::failure(
-                        ScreenshotExportFailureStage::Internal,
-                        QStringLiteral("The export ran out of memory"));
-                } catch (const std::exception& error) {
-                    result = ScreenshotExportTaskResult::failure(
-                        ScreenshotExportFailureStage::Internal, QString::fromUtf8(error.what()));
-                } catch (...) {
-                    result = ScreenshotExportTaskResult::failure(
-                        ScreenshotExportFailureStage::Internal,
-                        QStringLiteral("The export failed unexpectedly"));
-                }
-            }
+        }
 
-            job->complete(std::move(result));
-        });
+        job->complete(std::move(result));
+    });
     runnable->setAutoDelete(true);
     {
         QMutexLocker lock(&state->mutex);
@@ -236,10 +238,8 @@ void ScreenshotExportCoordinator::shutdown() {
             m_impl->cancelQueued(job, false);
         QMutexLocker lock(&m_impl->mutex);
         // An expiry timeout of 0 makes a worker exit the next time it parks (QThreadPool
-        // re-reads the timeout on every park, despite its docs claiming only
-        // newly created threads honor it). Workers already parked under the
-        // previous disabled timeout cannot be woken without starting throwaway
-        // jobs and stay parked for the remaining process lifetime.
+        // re-reads the timeout on every park). Workers already parked under the
+        // ordinary finite timeout also retire without needing throwaway jobs.
         m_impl->pool->setExpiryTimeout(0);
         static_cast<void>(m_impl->pool.release());
     }

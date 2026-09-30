@@ -21,6 +21,8 @@ class Client {
     virtual void attachRuntime(SnowRuntime runtime) = 0;
     virtual void detachRuntimeOwner(SnowCanvasRuntime* runtimeOwner) = 0;
     virtual void clearRenderState() = 0;
+    // Called after the old document is discarded, before syncing the empty viewports.
+    virtual void resetDocumentRetainedState() = 0;
     virtual void smartEraseChanged() {
         clearRenderState();
     }

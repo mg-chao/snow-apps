@@ -75,6 +75,7 @@ class SnowCanvasWidgetTextInteraction final {
 
     SnowCanvasWidgetTextInteraction(QWidget& widget, SnowCanvasCursorController& cursorController);
     void invalidateArrowTextMetrics();
+    void resetDocumentRetainedState();
 
     SnowCanvasTextEditorSession& session();
     const SnowCanvasTextEditorSession& session() const;

@@ -835,12 +835,17 @@ impl CaptureSession {
         &self.target
     }
 
-    /// Warm the shared conversion runtime only for sessions that use it.
+    /// Warm conversion dispatch without allocating workers for one-shot captures.
     pub fn warmup_runtime(&mut self) {
-        // Native target capturers own their pixel processing. Only the legacy
-        // pipeline needs the shared conversion tables and persistent workers.
+        // Native target capturers own their pixel processing. Snapshot backends
+        // may copy pixels or convert serially, so their parallel conversion paths
+        // initialize the shared pool only when they actually need it. Continuous
+        // capture still warms the pool ahead of the first frame.
         if self.native.is_none() {
-            crate::convert::warmup();
+            match self.config.mode {
+                CaptureMode::Snapshot => crate::convert::warmup_dispatch(),
+                CaptureMode::Continuous => crate::convert::warmup(),
+            }
         }
     }
 
@@ -2531,18 +2536,50 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_conversion_pool_is_warmed_only_for_capture() {
+    fn serial_snapshot_does_not_initialize_conversion_pool() {
         in_fresh_test_process(
-            "snapshot_conversion_pool_is_warmed_only_for_capture",
+            "serial_snapshot_does_not_initialize_conversion_pool",
             || {
                 let state = Arc::new(Mutex::new(LifecycleState::default()));
                 let mut session = lifecycle_session(state).unwrap();
                 session.prewarm_environment().unwrap();
                 assert!(!crate::convert::pool_initialized());
+                session.warmup_runtime();
+                session.prepare_target().unwrap();
+                assert!(!crate::convert::pool_initialized());
                 let frame = session.capture_snapshot(false, Default::default()).unwrap();
                 assert_eq!(frame.dimensions(), (4, 4));
                 assert_eq!(session.active_capture_access_count(), 0);
-                assert!(crate::convert::pool_initialized());
+                session.reset_to_prepared().unwrap();
+                assert!(!crate::convert::pool_initialized());
+            },
+        );
+    }
+
+    #[test]
+    fn snapshot_parallel_conversion_initializes_shared_pool_when_needed() {
+        in_fresh_test_process(
+            "snapshot_parallel_conversion_initializes_shared_pool_when_needed",
+            || {
+                let mut session =
+                    lifecycle_session(Arc::new(Mutex::new(LifecycleState::default()))).unwrap();
+                session.prewarm_environment().unwrap();
+                session.capture_snapshot(false, Default::default()).unwrap();
+                assert!(!crate::convert::pool_initialized());
+                let workers = crate::convert::conversion_workers(usize::MAX);
+                let pixel_count = workers * 524_288;
+                let source = [17, 29, 41, 53].repeat(pixel_count);
+                let mut destination = vec![0; source.len()];
+                crate::convert::convert_bgra_to_rgba(&source, &mut destination, pixel_count);
+                assert!(
+                    destination
+                        .chunks_exact(4)
+                        .all(|pixel| pixel == [41, 29, 17, 53])
+                );
+                // A single-core process correctly keeps this conversion serial.
+                assert_eq!(crate::convert::pool_initialized(), workers > 1);
+                session.reset_to_prepared().unwrap();
+                assert_eq!(crate::convert::pool_initialized(), workers > 1);
             },
         );
     }

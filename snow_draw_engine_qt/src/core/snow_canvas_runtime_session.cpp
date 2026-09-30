@@ -270,7 +270,7 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
     }
 
     m_smartErase.reset();
-    m_clients.clearRenderState();
+    m_clients.resetDocumentRetainedState();
     syncChangedViewports(changedViewports.get());
     clearDrawingCachesForCurrentThread();
     return true;

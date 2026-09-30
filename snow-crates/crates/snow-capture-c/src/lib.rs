@@ -145,6 +145,10 @@ pub struct SnowCaptureDesktopSessionState {
     backend_kind: *const c_char,
 }
 
+/// Native and shared-runtime allocation sizes are not fully observable.
+/// A session state must report unknown instead of implying no resources remain.
+pub const SNOW_CAPTURE_RESOURCE_BYTES_UNKNOWN: u64 = u64::MAX;
+
 #[repr(C)]
 pub struct SnowCaptureFrameInfo {
     pub stable_id: *const c_char,
@@ -1472,7 +1476,7 @@ pub unsafe extern "C" fn snow_capture_desktop_session_state(
             prepared: u8::from(session.prepared),
             reserved0: [0; 3],
             active_capture_access_count: active_count,
-            retained_resource_bytes: 0,
+            retained_resource_bytes: SNOW_CAPTURE_RESOURCE_BYTES_UNKNOWN,
             backend_kind: backend_kind_ptr(session),
         };
     }
@@ -2898,7 +2902,10 @@ mod tests {
         assert_eq!(state.worker_count, 0);
         assert_eq!(state.prepared, 1);
         assert_eq!(state.active_capture_access_count, 0);
-        assert_eq!(state.retained_resource_bytes, 0);
+        assert_eq!(
+            state.retained_resource_bytes,
+            SNOW_CAPTURE_RESOURCE_BYTES_UNKNOWN
+        );
         assert!(!state.backend_kind.is_null());
     }
 

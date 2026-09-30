@@ -103,6 +103,27 @@ impl ScreenColorTransform {
     }
 }
 
+#[cfg(any(windows, test))]
+fn with_magnifier<T>(
+    initialize: impl FnOnce() -> bool,
+    query: impl FnOnce() -> T,
+    uninitialize: impl FnOnce(),
+) -> Option<T> {
+    if !initialize() {
+        return None;
+    }
+    struct Guard<F: FnOnce()>(Option<F>);
+    impl<F: FnOnce()> Drop for Guard<F> {
+        fn drop(&mut self) {
+            if let Some(uninitialize) = self.0.take() {
+                uninitialize();
+            }
+        }
+    }
+    let _guard = Guard(Some(uninitialize));
+    Some(query())
+}
+
 #[cfg(windows)]
 fn current_transform() -> Option<ScreenColorTransform> {
     use std::cell::RefCell;
@@ -111,52 +132,47 @@ fn current_transform() -> Option<ScreenColorTransform> {
         MAGCOLOREFFECT, MagGetFullscreenColorEffect, MagInitialize, MagUninitialize,
     };
 
-    static USERS: Mutex<usize> = Mutex::new(0);
+    // MagInitialize/MagUninitialize affect process-wide state. Serialize the
+    // entire query so another capture cannot uninitialize a concurrent reader.
+    // Only the sampled matrix cache survives the query, never native resources.
+    static QUERY: Mutex<()> = Mutex::new(());
     struct Reader {
-        initialized: bool,
         matrix: Option<[f32; 25]>,
         transform: Option<ScreenColorTransform>,
     }
     impl Reader {
         fn read(&mut self) -> Option<ScreenColorTransform> {
-            if !self.initialized {
-                let mut users = USERS.lock().ok()?;
-                if *users == 0 && !unsafe { MagInitialize() }.as_bool() {
-                    return None;
-                }
-                *users += 1;
-                self.initialized = true;
-            }
-            let mut effect = MAGCOLOREFFECT::default();
-            if !unsafe { MagGetFullscreenColorEffect(&mut effect) }.as_bool() {
+            let matrix = {
+                let _query = QUERY.lock().ok()?;
+                with_magnifier(
+                    || unsafe { MagInitialize() }.as_bool(),
+                    || {
+                        let mut effect = MAGCOLOREFFECT::default();
+                        unsafe { MagGetFullscreenColorEffect(&mut effect) }
+                            .as_bool()
+                            .then_some(effect.transform)
+                    },
+                    || unsafe {
+                        let _ = MagUninitialize();
+                    },
+                )
+                .flatten()
+            };
+            let Some(matrix) = matrix else {
                 self.matrix = None;
                 self.transform = None;
                 return None;
-            }
-            if self.matrix != Some(effect.transform) {
-                self.transform = ScreenColorTransform::from_magnifier_matrix(&effect.transform);
-                self.matrix = Some(effect.transform);
+            };
+            if self.matrix != Some(matrix) {
+                self.transform = ScreenColorTransform::from_magnifier_matrix(&matrix);
+                self.matrix = Some(matrix);
             }
             self.transform
         }
     }
-    impl Drop for Reader {
-        fn drop(&mut self) {
-            if self.initialized
-                && let Ok(mut users) = USERS.lock()
-            {
-                *users -= 1;
-                if *users == 0 {
-                    unsafe {
-                        let _ = MagUninitialize();
-                    }
-                }
-            }
-        }
-    }
     thread_local! {
         static READER: RefCell<Reader> = const { RefCell::new(Reader {
-            initialized: false, matrix: None, transform: None,
+            matrix: None, transform: None,
         }) };
     }
     READER.with(|reader| reader.borrow_mut().read())
@@ -170,6 +186,52 @@ fn current_transform() -> Option<ScreenColorTransform> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn magnifier_query_releases_initialization_on_success_and_failure() {
+        use std::cell::Cell;
+
+        for query_succeeds in [true, false] {
+            let initialized = Cell::new(false);
+            let result = with_magnifier(
+                || {
+                    initialized.set(true);
+                    true
+                },
+                || {
+                    assert!(initialized.get());
+                    query_succeeds.then_some(42)
+                },
+                || initialized.set(false),
+            );
+            assert_eq!(result, Some(query_succeeds.then_some(42)));
+            assert!(!initialized.get());
+        }
+    }
+
+    #[test]
+    fn magnifier_initialization_failure_skips_query_and_cleanup() {
+        assert_eq!(
+            with_magnifier(
+                || false,
+                || panic!("query requires successful initialization"),
+                || panic!("failed initialization must not be uninitialized"),
+            ),
+            None::<()>,
+        );
+    }
+
+    #[test]
+    fn magnifier_query_releases_initialization_during_unwind() {
+        use std::cell::Cell;
+
+        let released = Cell::new(false);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_magnifier(|| true, || panic!("query failed"), || released.set(true));
+        }));
+        assert!(result.is_err());
+        assert!(released.get());
+    }
     fn identity() -> [f32; 25] {
         std::array::from_fn(|i| if i / 5 == i % 5 { 1.0 } else { 0.0 })
     }

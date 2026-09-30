@@ -7,6 +7,8 @@
 #include "snow_canvas_renderer.h"
 #include "snow_canvas_fill_render.h"
 #include "snow_canvas_watermark_renderer.h"
+#include "snow_canvas_runtime_access.h"
+#include "snow_canvas_viewport.h"
 #include "icons/draw_engine_icons.h"
 #include "icon_renderer.h"
 
@@ -519,6 +521,74 @@ void documentResetReleasesDrawingCaches() {
     exportWorker.join();
 }
 
+void documentResetReleasesRetainedDisplayStorage() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(320, 180);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(160, 90, 1), "set the document-storage fixture camera");
+    SnowCanvasViewport viewport;
+    const SnowRuntime handle = snow_canvas_runtime::Access::handle(runtime);
+    require(viewport.create(handle, snow_canvas_viewport::defaultEngineConfig()) &&
+                snow_viewport_set_surface_size(handle, viewport.get(), 320, 180) == SNOW_OK &&
+                snow_viewport_set_camera(handle, viewport.get(), 160, 90, 1) == SNOW_OK,
+            "create an independently synchronized viewport for retained-storage checks");
+    SnowCanvasDisplayCache cache;
+    require(cache.sync(handle, viewport.get()), "synchronize the empty display cache");
+    const auto emptyStorageBytes = cache.retainedStorageBytes();
+    const QImage empty = renderCanvas(canvas);
+    for (const int count : {64, 1}) {
+        require(canvas.setCanvasTool(SnowCanvasTool::Shape), "activate the storage fixture tool");
+        for (int index = 0; index < count; ++index) {
+            const QPointF start(10 + (index % 8) * 36, 10 + (index / 8) * 18);
+            const QPointF end = start + QPointF(12, 10);
+            sendMouseEvent(canvas, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+            sendMouseEvent(canvas, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
+            sendMouseEvent(canvas, QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
+            require(cache.sync(handle, viewport.get()), "synchronize each committed shape");
+        }
+        require(cache.sceneItemCount() == static_cast<std::uint32_t>(count) &&
+                    cache.retainedStorageBytes() > emptyStorageBytes,
+                "annotation must populate retained scene, render-plan and spatial storage");
+        const QImage annotated = renderCanvas(canvas);
+        const auto annotatedBytes = cache.retainedStorageBytes();
+        runtime.clearRenderState();
+        cache.clearRenderState();
+        require(
+            cache.retainedStorageBytes() == annotatedBytes && renderCanvas(canvas) == annotated &&
+                annotated != empty,
+            "ordinary render cleanup must retain the document and its reusable display storage");
+        const auto cursor = cache.patchCursor();
+        require(runtime.clearDocumentPreservingViewports() && cache.sync(handle, viewport.get()),
+                "document cleanup must synchronize an independent display-cache client");
+        require(cache.sceneItemCount() == 0 && cache.overlayItemCount() == 0 &&
+                    cache.retainedStorageBytes() == emptyStorageBytes &&
+                    cache.patchCursor().scene_revision > cursor.scene_revision,
+                "document cleanup must reclaim high-water storage and advance the patch sequence");
+        require(renderCanvas(canvas) == empty && !runtime.canUndo(),
+                "a reused canvas must render the empty document without old history");
+    }
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleFilter),
+            "activate the render-plan fixture");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, QPointF(20, 20), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseMove, QPointF(60, 60), Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, QPointF(60, 60), Qt::LeftButton,
+                   Qt::NoButton);
+    require(cache.sync(handle, viewport.get()) && !cache.renderPlan().empty(),
+            "filter annotations must populate retained render-plan storage");
+    cache.reset(SnowColorRgba8{255, 255, 255, 255});
+    require(cache.renderPlan().capacity() == 0,
+            "explicit retained-state reset must release a populated render-plan allocation");
+    require(cache.sync(handle, viewport.get()) && !cache.renderPlan().empty(),
+            "a reset display cache must rebuild the current document when needed");
+    require(runtime.clearDocumentPreservingViewports() && cache.sync(handle, viewport.get()) &&
+                cache.renderPlan().capacity() == 0 &&
+                cache.retainedStorageBytes() == emptyStorageBytes,
+            "the document reset patch must release render-plan high-water storage too");
+}
+
 void renderStateCleanupPreservesDocument() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -974,6 +1044,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--document-reset-only"))) {
         documentResetClearsElementsAndPreservesViews();
         documentResetReleasesDrawingCaches();
+        documentResetReleasesRetainedDisplayStorage();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--render-state-only"))) {
@@ -988,6 +1059,7 @@ int main(int argc, char** argv) {
     canvasContentVisibilityPreservesCustomRenderingAndState();
     documentResetClearsElementsAndPreservesViews();
     documentResetReleasesDrawingCaches();
+    documentResetReleasesRetainedDisplayStorage();
     renderStateCleanupPreservesDocument();
     coalescedSceneRevisionsInvalidateEveryDirtyRegion();
     rectangleStrokeStylesRenderDistinctPatterns();

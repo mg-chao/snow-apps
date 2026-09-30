@@ -14,10 +14,13 @@
 
 #include <chrono>
 #include <atomic>
+#include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <mutex>
+#include <thread>
 
 namespace storage = snow_shot::storage;
 
@@ -583,10 +586,13 @@ void publicationQueueCapacity() {
     std::promise<void> started;
     std::promise<void> release;
     auto released = release.get_future().share();
+    std::once_flag firstWorker;
     options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
         if (operation == storage::CaptureHistoryOperation::WorkerStarted) {
-            started.set_value();
-            released.wait();
+            std::call_once(firstWorker, [&]() {
+                started.set_value();
+                released.wait();
+            });
         }
     };
     auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
@@ -989,10 +995,13 @@ void clearCancelsQueuedPublicationsAndShutdownDrains() {
     std::promise<void> started, release;
     auto released = release.get_future().share();
     storage::CaptureHistoryRepositoryOptions options;
+    std::once_flag firstWorker;
     options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
         if (operation == storage::CaptureHistoryOperation::WorkerStarted) {
-            started.set_value();
-            released.wait();
+            std::call_once(firstWorker, [&]() {
+                started.set_value();
+                released.wait();
+            });
         }
     };
     auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
@@ -1005,6 +1014,60 @@ void clearCancelsQueuedPublicationsAndShutdownDrains() {
     auto accepted = repository->publish(draftAt(QDateTime::currentDateTimeUtc()));
     repository.reset();
     require(accepted.get().storage.success, "shutdown abandoned an accepted publication");
+}
+
+void idleWorkersRetireAndRestartWithoutLosingHistory() {
+    struct Lifecycle {
+        std::mutex mutex;
+        std::condition_variable changed;
+        int starts = 0;
+        int exits = 0;
+        int maximumLive = 0;
+    };
+    struct ExitNotice {
+        std::shared_ptr<Lifecycle> lifecycle;
+        ~ExitNotice() {
+            {
+                const std::lock_guard lock(lifecycle->mutex);
+                ++lifecycle->exits;
+            }
+            lifecycle->changed.notify_all();
+        }
+    };
+    const auto lifecycle = std::make_shared<Lifecycle>();
+    storage::CaptureHistoryRepositoryOptions options;
+    options.operationObserved = [lifecycle](storage::CaptureHistoryOperation operation) {
+        if (operation != storage::CaptureHistoryOperation::WorkerStarted)
+            return;
+        thread_local std::unique_ptr<ExitNotice> exitNotice;
+        exitNotice = std::make_unique<ExitNotice>(lifecycle);
+        const std::lock_guard lock(lifecycle->mutex);
+        ++lifecycle->starts;
+        lifecycle->maximumLive =
+            std::max(lifecycle->maximumLive, lifecycle->starts - lifecycle->exits);
+    };
+    QTemporaryDir temporary;
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (int cycle = 1; cycle <= 2; ++cycle) {
+        require(repository->publish(draftAt(now.addMSecs(cycle))).get().storage.success,
+                "publication failed after history worker restart");
+        repository->drain();
+        std::unique_lock lock(lifecycle->mutex);
+        require(lifecycle->changed.wait_for(lock, std::chrono::seconds(7),
+                                            [&]() { return lifecycle->exits == cycle; }),
+                "idle history storage worker did not actually terminate");
+        require(lifecycle->starts == cycle && lifecycle->maximumLive == 1,
+                "history storage worker restart overlapped or duplicated workers");
+    }
+    require(repository->records().size() == 2 && repository->recordsSnapshot().revision == 2,
+            "history worker restart lost records or changed revisions");
+    auto clear = repository->requestClear();
+    repository.reset();
+    require(clear.get().success, "shutdown abandoned clear after history worker restart");
+    const std::lock_guard lock(lifecycle->mutex);
+    require(lifecycle->starts == 3 && lifecycle->exits == 3 && lifecycle->maximumLive == 1,
+            "shutdown did not finish the restarted history storage worker");
 }
 } // namespace
 
@@ -1078,6 +1141,10 @@ void revisionCheckedMutations() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--worker-lifecycle-only"))) {
+        idleWorkersRetireAndRestartWithoutLosingHistory();
+        return 0;
+    }
     revisionCheckedMutations();
     if (application.arguments().contains(QStringLiteral("--revision-only"))) {
         failedCommitPreservesPublishedHistory();
@@ -1108,5 +1175,6 @@ int main(int argc, char** argv) {
     batchRemovalCommitsAndNotifiesOnce();
     permanentHistoryBypassesLimitsAndAllowsManualDeletion();
     clearCancelsQueuedPublicationsAndShutdownDrains();
+    idleWorkersRetireAndRestartWithoutLosingHistory();
     return 0;
 }

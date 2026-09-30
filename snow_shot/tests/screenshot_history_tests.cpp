@@ -47,7 +47,10 @@
 #include <QWindow>
 
 #include <cstdlib>
+#include <chrono>
+#include <condition_variable>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <utility>
 
@@ -103,6 +106,151 @@ void waitForNavigation(ScreenshotHistoryService& history, const char* timeoutMes
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(!history.navigationInProgress(), timeoutMessage);
+}
+
+void validationWorkersRetireAndRestart() {
+    struct Lifecycle {
+        std::mutex mutex;
+        std::condition_variable changed;
+        int starts = 0;
+        int exits = 0;
+        int maximumLive = 0;
+    };
+    struct ExitNotice {
+        std::shared_ptr<Lifecycle> lifecycle;
+        ~ExitNotice() {
+            {
+                const std::lock_guard lock(lifecycle->mutex);
+                ++lifecycle->exits;
+            }
+            lifecycle->changed.notify_all();
+        }
+    };
+    class ObservedRepository final : public storage::CaptureHistoryRepository {
+      public:
+        explicit ObservedRepository(std::shared_ptr<Lifecycle> lifecycle)
+            : m_lifecycle(std::move(lifecycle)) {}
+        QVector<storage::CaptureHistoryRecord> records() const override {
+            const std::lock_guard lock(m_mutex);
+            return m_records;
+        }
+        storage::CaptureHistoryUsage usage() const override {
+            return {};
+        }
+        storage::CaptureHistoryPolicy policy() const override {
+            return {};
+        }
+        std::shared_future<storage::CaptureHistoryPublishResult>
+        publish(storage::CaptureHistoryDraft draft) override {
+            thread_local std::unique_ptr<ExitNotice> exitNotice;
+            if (!exitNotice) {
+                exitNotice = std::make_unique<ExitNotice>(m_lifecycle);
+                const std::lock_guard lock(m_lifecycle->mutex);
+                ++m_lifecycle->starts;
+                m_lifecycle->maximumLive =
+                    std::max(m_lifecycle->maximumLive, m_lifecycle->starts - m_lifecycle->exits);
+            }
+            storage::CaptureHistoryRecord record;
+            record.id = draft.id;
+            record.createdUtc = draft.createdUtc;
+            record.canvasBounds = draft.canvasBounds;
+            record.selection = draft.selection;
+            {
+                const std::lock_guard lock(m_mutex);
+                m_records.push_back(record);
+            }
+            std::promise<storage::CaptureHistoryPublishResult> promise;
+            promise.set_value({storage::StorageResult::ok(), record});
+            return promise.get_future().share();
+        }
+        std::optional<storage::CaptureHistoryPayload>
+        load(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        std::optional<storage::CaptureHistoryAssetSet>
+        displayAssets(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        std::optional<QImage> loadResultImage(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        std::optional<storage::PreparedPngImage>
+        loadResultPng(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        void reportReadFailure(const storage::CaptureHistoryRecord&, const QString&) override {}
+        std::shared_future<storage::StorageResult> remove(const QString&) override {
+            return ready();
+        }
+        std::shared_future<storage::StorageResult> removeMany(QVector<QString>) override {
+            return ready();
+        }
+        std::shared_future<storage::StorageResult>
+        updatePolicy(storage::CaptureHistoryPolicy) override {
+            return ready();
+        }
+        std::shared_future<storage::StorageResult> requestClear() override {
+            return ready();
+        }
+        void drain() override {}
+        QString lastError() const override {
+            return {};
+        }
+
+      private:
+        static std::shared_future<storage::StorageResult> ready() {
+            std::promise<storage::StorageResult> promise;
+            promise.set_value(storage::StorageResult::ok());
+            return promise.get_future().share();
+        }
+        std::shared_ptr<Lifecycle> m_lifecycle;
+        mutable std::mutex m_mutex;
+        QVector<storage::CaptureHistoryRecord> m_records;
+    };
+
+    const auto lifecycle = std::make_shared<Lifecycle>();
+    ObservedRepository repository(lifecycle);
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel source;
+    source.stableId = QStringLiteral("validation-worker");
+    source.canvasRect = QRect(0, 0, 16, 16);
+    source.imageSourceCanvasRect = source.canvasRect;
+    source.logicalRect = QRect(0, 0, 16, 16);
+    source.physicalRect = QRect(0, 0, 16, 16);
+    source.image = QImage(16, 16, QImage::Format_RGBA8888);
+    source.image.fill(Qt::blue);
+    source.active = true;
+    displays.appendDisplay(std::move(source));
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(0, 0, 16, 16));
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    ScreenshotIntelligentSelectionModel intelligent;
+    {
+        ScreenshotHistoryService history({displays, runtime, selection, interaction, intelligent},
+                                         repository);
+        for (int cycle = 1; cycle <= 2; ++cycle) {
+            history.commit(
+                takeSnapshot(history.snapshotCurrent(true), "validation worker snapshot failed"));
+            history.drainPendingWrites();
+            require(repository.records().size() == cycle,
+                    "validation worker restart lost an accepted publication");
+            std::unique_lock lock(lifecycle->mutex);
+            require(lifecycle->changed.wait_for(lock, std::chrono::seconds(7),
+                                                [&]() { return lifecycle->exits == cycle; }),
+                    "idle history validation worker did not actually terminate");
+            require(lifecycle->starts == cycle && lifecycle->maximumLive == 1,
+                    "history validation worker restart overlapped or duplicated workers");
+        }
+        history.commit(takeSnapshot(history.snapshotCurrent(true),
+                                    "shutdown validation worker snapshot failed"));
+    }
+    require(repository.records().size() == 3,
+            "shutdown abandoned an accepted validation job after idle restart");
+    const std::lock_guard lock(lifecycle->mutex);
+    require(lifecycle->starts == 3 && lifecycle->exits == 3 && lifecycle->maximumLive == 1,
+            "shutdown did not finish the restarted validation worker");
 }
 
 QImage solidImage(const QSize& size, QRgb color) {
@@ -4169,6 +4317,11 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--history-worker-lifecycle-only"))) {
+        validationWorkersRetireAndRestart();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--mcp-transient-only"))) {
         transientMcpDocumentPreservesUndoAndSources(temporary.path());
         storage::ApplicationStorage::instance().shutdown();
@@ -4236,6 +4389,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     snapshotsRetainTheLiveDesktopGeometry();
+    validationWorkersRetireAndRestart();
     editorHistoryUsesConfiguredDisplayCompression(
         QDir(temporary.path()).filePath(QStringLiteral("compression")));
     pointHistorySurvivesDisplayRemoval();

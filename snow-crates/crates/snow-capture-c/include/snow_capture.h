@@ -76,11 +76,19 @@ typedef struct SnowCaptureDesktopSessionConfig {
     SnowCaptureExclusions exclusions;
 } SnowCaptureDesktopSessionConfig;
 
+/* No complete byte accounting exists for native resources and shared runtimes.
+   Check this
+ * sentinel before displaying, adding, or comparing resource bytes. */
+#define SNOW_CAPTURE_RESOURCE_BYTES_UNKNOWN UINT64_MAX
+
 typedef struct SnowCaptureDesktopSessionState {
     size_t worker_count;
     uint8_t prepared;
     uint8_t reserved0[3];
     uint32_t active_capture_access_count;
+    /* SNOW_CAPTURE_RESOURCE_BYTES_UNKNOWN when no complete measurement exists.
+       Zero must not
+     * be inferred from active_capture_access_count == 0. */
     uint64_t retained_resource_bytes;
     const char* backend_kind;
 } SnowCaptureDesktopSessionState;

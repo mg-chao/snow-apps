@@ -21,6 +21,7 @@ class NaturalTextLayoutCache {
     snow_canvas_text_layout::TextMeasuredLayout measure(const QString& text, const QFont& baseFont,
                                                         const SnowSceneDisplayItem& item);
     void clear();
+    qsizetype retainedBytes() const;
     std::uint64_t measurementCount() const;
 
   private:

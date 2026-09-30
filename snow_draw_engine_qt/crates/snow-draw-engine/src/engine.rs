@@ -131,25 +131,25 @@ impl Engine {
         // the editor session; watermark appearance and spotlight style are
         // document-wide configuration, so carry those fields explicitly while
         // dropping the watermark content that belongs to the old document.
-        let mut editor = self.editor.clone();
-        editor.reset_editing_state();
         let mut watermark = self.model.watermark_config().clone();
-        watermark.text.clear();
-        watermark.template_value.clear();
+        watermark.text = String::new();
+        watermark.template_value = String::new();
         watermark.template_application_time = None;
         let spotlight = self.model.spotlight_config();
         let mut replacement = Self::try_new(self.config.clone())?;
-        replacement.editor = editor;
         let mut retained_styles = snow_draw_engine_document::Transaction::new("retained styles");
         retained_styles.update_watermark(watermark);
         retained_styles.update_spotlight(spotlight);
         replacement.model.apply_transaction(retained_styles)?;
         self.model = replacement.model;
         self.history = HistoryStore::default();
-        self.editor = replacement.editor;
+        self.editor.reset_document_retained_state();
         self.session_config_seeded = false;
         self.scene_cache = DocumentSceneCache::default();
         self.scene_cache.sync(&self.model, None);
+        for slot in self.viewports.values_mut() {
+            slot.composer.reset_document_retained_state();
+        }
         self.refresh_all_viewports()
     }
 
@@ -607,6 +607,9 @@ mod tests {
         );
         assert_eq!(engine.spotlight_config(), changed_spotlight);
         assert_eq!(engine.history_state(), HistoryState::default());
+        assert_eq!(engine.style_defaults(), &config.style_defaults);
+        assert_eq!(engine.watermark_config().text.capacity(), 0);
+        assert_eq!(engine.watermark_config().template_value.capacity(), 0);
     }
 
     #[test]

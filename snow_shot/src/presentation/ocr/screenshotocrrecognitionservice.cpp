@@ -100,7 +100,6 @@ class ScreenshotOcrRecognitionService::Impl final {
         m_configuration.backend = preference;
         m_configuration.detectorResizePolicy = options.detectorResizePolicy;
         m_queueClock.start();
-        m_transportThread.setObjectName(QStringLiteral("snow-ocr-transport"));
         m_localPool->setMaxThreadCount(1);
         if (!options.processPath.trimmed().isEmpty() &&
             !options.detectorModelPath.trimmed().isEmpty() &&
@@ -517,9 +516,20 @@ class ScreenshotOcrRecognitionService::Impl final {
                  if (valid())
                      processFailed(stage.toLatin1().constData());
              }});
-        m_transport->moveToThread(&m_transportThread);
-        if (!m_transportThread.isRunning())
-            m_transportThread.start();
+        // Each transport owns one child-process lifetime. Retiring its thread
+        // also releases the I/O stack when nonresident OCR returns to idle.
+        m_transportThreads.erase(std::remove_if(m_transportThreads.begin(),
+                                                m_transportThreads.end(),
+                                                [](const auto& thread) { return thread.isNull(); }),
+                                 m_transportThreads.end());
+        m_transportThread = new QThread(m_owner);
+        m_transportThread->setObjectName(QStringLiteral("snow-ocr-transport"));
+        m_transportThreads.emplace_back(m_transportThread);
+        m_transport->moveToThread(m_transportThread);
+        QObject::connect(m_transportThread, &QThread::finished, m_transport, &QObject::deleteLater);
+        QObject::connect(m_transportThread, &QThread::finished, m_transportThread,
+                         &QObject::deleteLater);
+        m_transportThread->start();
         const auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
         auto environment = QProcessEnvironment::systemEnvironment();
         environment.insert(QStringLiteral("SNOW_SHOT_CRASHPAD_PIPE"), diagnostics.crashPipeName());
@@ -556,6 +566,10 @@ class ScreenshotOcrRecognitionService::Impl final {
         if (m_transport != nullptr) {
             m_transport->deleteLater();
             m_transport = nullptr;
+        }
+        if (m_transportThread != nullptr) {
+            m_transportThread->quit();
+            m_transportThread = nullptr;
         }
         ++m_processGeneration;
     }
@@ -1259,13 +1273,17 @@ class ScreenshotOcrRecognitionService::Impl final {
                      m_shutdownTimeoutMilliseconds);
             m_localPool.release();
         }
-        m_transportThread.quit();
-        if (!m_transportThread.wait(kTransportStopTimeoutMilliseconds)) {
-            qWarning("OCR transport thread did not stop within %lu milliseconds; still waiting",
-                     kTransportStopTimeoutMilliseconds);
-            // A running QThread must never be destroyed, so keep waiting past
-            // the deadline once the stall is visible in diagnostics.
-            m_transportThread.wait();
+        for (const auto& thread : m_transportThreads) {
+            if (thread.isNull())
+                continue;
+            thread->quit();
+            if (!thread->wait(kTransportStopTimeoutMilliseconds)) {
+                qWarning("OCR transport thread did not stop within %lu milliseconds; still waiting",
+                         kTransportStopTimeoutMilliseconds);
+                // A running QThread must never be destroyed. Retiring threads
+                // are included so an earlier child cannot outlive the service.
+                thread->wait();
+            }
         }
     }
 
@@ -1289,7 +1307,8 @@ class ScreenshotOcrRecognitionService::Impl final {
     std::unique_ptr<QThreadPool> m_localPool = std::make_unique<QThreadPool>();
     QElapsedTimer m_queueClock;
     std::shared_ptr<std::atomic_bool> m_alive = std::make_shared<std::atomic_bool>(true);
-    QThread m_transportThread;
+    QThread* m_transportThread = nullptr;
+    std::vector<QPointer<QThread>> m_transportThreads;
     ScreenshotOcrTransport* m_transport = nullptr;
     ProcessStopReason m_processStopReason = ProcessStopReason::None;
     qsizetype m_slotBytes = 0;

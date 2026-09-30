@@ -19,6 +19,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <deque>
@@ -37,6 +38,7 @@ constexpr int kMaximumDisplays = 32;
 constexpr int kIndexVersion = 2;
 // Bounds arithmetic on persisted sizes without consulting payload files.
 constexpr qint64 kMaximumStoredBytes = 1LL << 40;
+constexpr auto kWorkerIdleTimeout = std::chrono::seconds(5);
 
 struct StoredRecord {
     CaptureHistoryRecord record;
@@ -1138,10 +1140,14 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         }
         if (command.kind == Kind::ReadFailure && m_failedReads.contains(command.record.id))
             return;
-        if (!m_worker.joinable()) {
+        if (!m_workerRunning) {
+            if (m_worker.joinable())
+                m_worker.join();
             try {
+                m_workerRunning = true;
                 m_worker = std::thread([this]() { run(); });
             } catch (...) {
+                m_workerRunning = false;
                 lock.unlock();
                 reject(command, QStringLiteral("Unable to start the capture-history worker"));
                 return;
@@ -1178,9 +1184,12 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             Command command;
             {
                 std::unique_lock lock(m_queueMutex);
-                m_condition.wait(lock, [&]() { return m_stopping || !m_queue.empty(); });
-                if (m_queue.empty())
+                const bool ready = m_condition.wait_for(
+                    lock, kWorkerIdleTimeout, [&]() { return m_stopping || !m_queue.empty(); });
+                if (!ready || m_queue.empty()) {
+                    m_workerRunning = false;
                     return;
+                }
                 command = std::move(m_queue.front());
                 m_queue.pop_front();
                 m_active = true;
@@ -1267,6 +1276,8 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     int m_publications = 0;
     bool m_stopping = false;
     bool m_active = false;
+    // joinable() also includes workers that have already retired after idle expiry.
+    bool m_workerRunning = false;
 };
 
 std::unique_ptr<CaptureHistoryRepository>

@@ -246,10 +246,15 @@ class ScreenshotHistoryValidationQueue final {
                                     {}});
                 return result;
             }
-            if (!m_thread.joinable()) {
+            if (!m_running) {
+                if (m_thread.joinable()) {
+                    m_thread.join();
+                }
                 try {
+                    m_running = true;
                     m_thread = std::thread([this]() { run(); });
                 } catch (...) {
+                    m_running = false;
                     promise->set_value({snow_shot::storage::StorageResult::failure(
                                             QStringLiteral("Unable to start history validation")),
                                         {}});
@@ -264,6 +269,7 @@ class ScreenshotHistoryValidationQueue final {
 
   private:
     static constexpr std::size_t kMaximumPendingJobs = 2;
+    static constexpr auto kIdleTimeout = std::chrono::seconds(5);
 
     struct Job {
         snow_shot::storage::CaptureHistoryDraft draft;
@@ -275,9 +281,15 @@ class ScreenshotHistoryValidationQueue final {
             Job job;
             {
                 std::unique_lock lock(m_mutex);
-                m_condition.wait(lock, [this]() { return m_stopping || !m_jobs.empty(); });
+                const bool ready = m_condition.wait_for(
+                    lock, kIdleTimeout, [this]() { return m_stopping || !m_jobs.empty(); });
+                if (!ready) {
+                    m_running = false;
+                    return;
+                }
                 if (m_jobs.empty()) {
                     if (m_stopping) {
+                        m_running = false;
                         return;
                     }
                     continue;
@@ -319,6 +331,8 @@ class ScreenshotHistoryValidationQueue final {
     std::condition_variable m_condition;
     std::deque<Job> m_jobs;
     bool m_stopping = false;
+    // A retired thread remains joinable until the next submission reaps it.
+    bool m_running = false;
     std::thread m_thread;
 };
 

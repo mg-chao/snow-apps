@@ -19,6 +19,7 @@ class SnowCanvasWidgetDisplayState final {
     const snow_canvas_state::Snapshot& snapshot() const;
 
     void resetRetainedState();
+    void resetDocumentRetainedState();
     std::uint64_t initializeEngine(SnowRuntime runtime, SnowCanvasViewport& viewport);
     bool refreshState(SnowRuntime runtime, SnowViewport viewport,
                       snow_canvas_state::Changes* outChanges = nullptr);

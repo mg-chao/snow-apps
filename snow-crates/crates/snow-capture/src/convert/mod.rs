@@ -4,7 +4,7 @@ mod f16;
 pub(crate) mod hdr_tests;
 mod parallel;
 #[cfg(test)]
-pub(crate) use parallel::pool_initialized;
+pub(crate) use parallel::{conversion_workers, pool_initialized};
 mod scalar;
 #[cfg(target_arch = "x86_64")]
 mod simd_x86;
