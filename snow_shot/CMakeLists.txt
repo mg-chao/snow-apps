@@ -3879,6 +3879,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --double-click-only)
     set_tests_properties(snow-shot-pinned-double-click-offscreen-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-text-double-click-tests
+        COMMAND snow-shot-pinned-window-tests --text-double-click-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-text-double-click-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-save-dialog-tests
         COMMAND snow-shot-pinned-window-tests --save-dialog-only)
     set_tests_properties(snow-shot-pinned-save-dialog-tests PROPERTIES TIMEOUT 90)
@@ -5900,6 +5905,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-recognition-window-tests --context-menu-only -platform offscreen)
     set_tests_properties(snow-shot-recognition-context-menu-tests PROPERTIES
         LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recognition-double-click-tests
+        COMMAND snow-shot-recognition-window-tests --ocr-double-click-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-double-click-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-recognition-selection-only-rendering-tests
         COMMAND snow-shot-recognition-window-tests --selection-only-rendering -platform offscreen)
     add_test(NAME snow-shot-recognition-ocr-hover-tests

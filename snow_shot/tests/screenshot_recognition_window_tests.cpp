@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "theme/theme_manager.h"
@@ -36,6 +37,7 @@
 #include <QPainter>
 #include <QScrollBar>
 #include <QScreen>
+#include <QScopeGuard>
 #include <QStyleOptionGraphicsItem>
 #include <QTextBlock>
 #include <QTextBrowser>
@@ -82,6 +84,26 @@ void clickCell(ScreenshotTableEditor& editor, int row, int column) {
                         Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(editor.viewport(), &release);
     QApplication::processEvents();
+}
+
+QPolygonF ocrQuad(const QRectF& rect) {
+    return {rect.topLeft(), rect.topRight(), rect.bottomRight(), rect.bottomLeft()};
+}
+
+bool doubleClickWidget(QWidget& receiver, const QPoint& point,
+                       Qt::MouseButton button = Qt::LeftButton) {
+    bool accepted = false;
+    for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease,
+                            QEvent::MouseButtonDblClick, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, QPointF(point), QPointF(receiver.mapToGlobal(point)), button,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : button,
+                          Qt::NoModifier);
+        QApplication::sendEvent(&receiver, &event);
+        if (type == QEvent::MouseButtonDblClick) {
+            accepted = event.isAccepted();
+        }
+    }
+    return accepted;
 }
 
 void processEditorClose() {
@@ -392,6 +414,208 @@ void ocrHoverUpdatesCursorWithoutClicking() {
         hover(QPoint(10, 100), Qt::ArrowCursor);
         hover(QPoint(100, 45), Qt::IBeamCursor);
     }
+}
+
+void ocrDoubleClickCopiesOnlyTheClickedBlock() {
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
+        require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >=
+                    0,
+                "load offscreen double-click font");
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+    }
+#endif
+    const snow_shot::storage::TextRecognitionSettings settings;
+    const QString priorFormatting = settings.defaultFormatting();
+    const QString priorPunctuation = settings.defaultPunctuation();
+    const auto restore = qScopeGuard([&]() {
+        settings.setDefaultFormatting(priorFormatting);
+        settings.setDefaultPunctuation(priorPunctuation);
+    });
+    using Mode = ScreenshotRecognitionWindow::PresentationMode;
+    using Rendering = ScreenshotOcrTextLayer::RenderingMode;
+    for (const auto mode : {Mode::TopLevelWindow, Mode::EmbeddedChild}) {
+        for (const auto rendering : {Rendering::Normal, Rendering::SelectionOnly}) {
+            require(settings.setDefaultFormatting(QStringLiteral("keep")) &&
+                        settings.setDefaultPunctuation(QStringLiteral("half")),
+                    "configure unchanged OCR block copy");
+            QWidget host;
+            host.resize(320, 200);
+            host.show();
+            int copyCommands = 0;
+            ScreenshotRecognitionWindowActions actions;
+            actions.handleCopy = [&]() { ++copyCommands; };
+            ScreenshotRecognitionWindow window(std::move(actions), &host, mode);
+            const QRect canvasSelection(120, 80, 640, 400);
+            require(window.present({QGuiApplication::primaryScreen(), &host, host.rect(),
+                                    canvasSelection, mode}),
+                    "scaled OCR double-click window presents");
+            auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+            presentation->selection = canvasSelection;
+            presentation->lines = {
+                ScreenshotOcrLine{QStringLiteral("Neighbor"), 1.0,
+                                  ocrQuad(QRectF(160, 100, 500, 40))},
+                ScreenshotOcrLine{QStringLiteral("First, \u4e2d\u6587 e\u0301\nSecond! \U0001f642"),
+                                  1.0, ocrQuad(QRectF(160, 180, 500, 120))},
+                ScreenshotOcrLine{QString{}, 1.0, ocrQuad(QRectF(160, 340, 500, 40))},
+            };
+            presentation->lines[1].paragraph = true;
+            presentation->lines[1].sourceLineQuads = {ocrQuad(QRectF(160, 180, 500, 40)),
+                                                      ocrQuad(QRectF(160, 260, 500, 40))};
+            presentation->prepareForRendering();
+            window.setOcrPresentation(presentation, rendering);
+            QApplication::processEvents();
+            auto* layer = window.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+            require(layer != nullptr, "double-click fixture has a text layer");
+            const auto items = layer->scene()->items();
+            require(std::count_if(items.cbegin(), items.cend(),
+                                  [](const auto* item) { return item->isVisible(); }) == 2,
+                    "double-click fixtures render both nonempty text blocks");
+            const auto doubleClickAt = [&](const QPoint& point,
+                                           Qt::MouseButton button = Qt::LeftButton) {
+                QWidget* receiver = window.childAt(point);
+                require(receiver != nullptr, "double-click uses the actual overlay receiver");
+                return doubleClickWidget(*receiver, receiver->mapFrom(&window, point), button);
+            };
+            const QPoint paragraphPoint(100, 65);
+            const QString paragraph = presentation->lines[1].text;
+            presentation->selectAll();
+            window.updateOcrSelection();
+            const QImage allSelected = layer->grab().toImage();
+            QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+            require(doubleClickAt(paragraphPoint), "OCR double-click should consume the event");
+            require(presentation->selectedText() == paragraph &&
+                        !presentation->textSelectionActive() &&
+                        QApplication::clipboard()->text() == paragraph && copyCommands == 0 &&
+                        window.isVisible(),
+                    "double-click replaces selection with the complete block and copies locally");
+            require(layer->grab().toImage() != allSelected,
+                    "double-click refreshes the rendered highlight to just the clicked block");
+            QMouseEvent move(QEvent::MouseMove, QPointF(30, 20),
+                             QPointF(window.mapToGlobal(QPoint(30, 20))), Qt::NoButton,
+                             Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(&window, &move);
+            require(presentation->selectedText() == paragraph,
+                    "double-click finishes selection before subsequent pointer movement");
+            require(doubleClickAt(QPoint(100, 20)) &&
+                        presentation->selectedText() == QStringLiteral("Neighbor") &&
+                        QApplication::clipboard()->text() == QStringLiteral("Neighbor"),
+                    "unmerged OCR double-click copies just the clicked box");
+
+            require(settings.setDefaultFormatting(QStringLiteral("remove")) &&
+                        settings.setDefaultPunctuation(QStringLiteral("full")),
+                    "configure OCR block formatting and punctuation defaults");
+            doubleClickAt(paragraphPoint);
+            require(
+                QApplication::clipboard()->text() ==
+                        QStringLiteral("First\uff0c \u4e2d\u6587 e\u0301Second\uff01 \U0001f642") &&
+                    presentation->selectedText() == paragraph,
+                "automatic copy applies OCR defaults without changing displayed text");
+
+            window.setOcrCopyDefaultsEnabled(false);
+            const QString partial = QStringLiteral("Translated, paragraph\n\U0001f642");
+            window.updateOcrText(1, partial);
+            doubleClickAt(paragraphPoint);
+            require(QApplication::clipboard()->text() == partial &&
+                        presentation->selectedText() == partial,
+                    "translation double-click copies the displayed partial paragraph unchanged");
+            const QString completed = partial + QStringLiteral(" complete!");
+            window.updateOcrText(1, completed);
+            require(QApplication::clipboard()->text() == partial,
+                    "streaming updates do not replace already copied text");
+            doubleClickAt(paragraphPoint);
+            require(QApplication::clipboard()->text() == completed &&
+                        presentation->selectedText() == completed && copyCommands == 0,
+                    "a later double-click copies the current complete translation");
+
+            for (const auto button : {Qt::RightButton, Qt::MiddleButton}) {
+                QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+                doubleClickAt(paragraphPoint, button);
+                require(QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+                        "non-left double-click never copies text");
+            }
+            for (const QPoint point : {QPoint(100, 140), QPoint(305, 175)}) {
+                QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+                doubleClickAt(point);
+                require(QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+                        "empty blocks and blank areas never fall back to copying all text");
+            }
+            window.setShowOriginalImage(true);
+            doubleClickWidget(window, paragraphPoint);
+            require(QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+                    "temporarily hidden recognition does not copy text");
+        }
+    }
+}
+
+void ocrDoubleClickPreservesEditorsAndResizeHandles() {
+    QTextDocument document(QStringLiteral("First second paragraph"));
+    bool resizeEnabled = true;
+    bool resizing = false;
+    int completedResizes = 0;
+    ScreenshotRecognitionWindowActions actions;
+    actions.selectionResizeDragMode = [&](const QPointF& point) {
+        return resizeEnabled && point.y() < 40 ? ScreenshotSelectionDragMode::Top
+                                               : ScreenshotSelectionDragMode::None;
+    };
+    actions.beginSelectionResize = [&](const QPointF&) {
+        resizing = true;
+        return true;
+    };
+    actions.finishSelectionResize = [&](const QPointF&) {
+        resizing = false;
+        ++completedResizes;
+    };
+    ScreenshotRecognitionWindow window(std::move(actions));
+    require(window.present({QGuiApplication::primaryScreen(), nullptr, QRect(0, 0, 320, 200),
+                            QRect(0, 0, 320, 200)}),
+            "double-click exclusions fixture presents");
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = window.rect();
+    presentation->lines = {
+        ScreenshotOcrLine{QStringLiteral("Resize edge text"), 1.0,
+                          ocrQuad(QRectF(20, 10, 200, 25))},
+        ScreenshotOcrLine{QStringLiteral("Text below the resize handle"), 1.0,
+                          ocrQuad(QRectF(20, 70, 200, 25))},
+    };
+    presentation->prepareForRendering();
+    window.setOcrPresentation(presentation);
+    QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+    doubleClickWidget(window, QPoint(100, 20));
+    require(QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+            "resize handle double-click must not copy OCR text");
+    require(!resizing && !presentation->hasTextSelection(),
+            "resize handle double-click finishes resizing without selecting text");
+    require(completedResizes == 1, "double-click preserves the first press's completed resize");
+    QMouseEvent resizePress(QEvent::MouseButtonPress, QPointF(100, 20),
+                            QPointF(window.mapToGlobal(QPoint(100, 20))), Qt::LeftButton,
+                            Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&window, &resizePress);
+    QMouseEvent activeDoubleClick(QEvent::MouseButtonDblClick, QPointF(100, 80),
+                                  QPointF(window.mapToGlobal(QPoint(100, 80))), Qt::LeftButton,
+                                  Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&window, &activeDoubleClick);
+    require(resizing && !presentation->textSelectionActive() &&
+                QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+            "an active resize retains input even when double-clicked over OCR text");
+    QMouseEvent resizeRelease(QEvent::MouseButtonRelease, QPointF(100, 80),
+                              QPointF(window.mapToGlobal(QPoint(100, 80))), Qt::LeftButton,
+                              Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&window, &resizeRelease);
+    require(!resizing && completedResizes == 2, "active resize finishes on release");
+
+    resizeEnabled = false;
+    window.showTextEditor(&document);
+    QApplication::processEvents();
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor != nullptr, "double-click editor fixture exists");
+    QTextCursor cursor(&document);
+    cursor.setPosition(9);
+    editor->setTextCursor(cursor);
+    doubleClickWidget(*editor->viewport(), editor->cursorRect().center());
+    require(editor->textCursor().selectedText() == QStringLiteral("second") &&
+                QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+            "editor double-click retains word selection without automatically copying");
 }
 
 void recognitionWindowCanExtendBeyondItsDpiScreen() {
@@ -2132,6 +2356,11 @@ void tableCommandsUsePhysicalKeys() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--ocr-double-click-only"))) {
+        ocrDoubleClickCopiesOnlyTheClickedBlock();
+        ocrDoubleClickPreservesEditorsAndResizeHandles();
+        return 0;
+    }
     tableTabNavigationPreservesDirectionAndFocus();
     tableCommandsUsePhysicalKeys();
     if (application.arguments().contains(QStringLiteral("--physical-commands-only"))) {
@@ -2177,6 +2406,8 @@ int main(int argc, char** argv) {
     }
     selectionOnlyTextLayerPaintsOnlyHighlights();
     embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer();
+    ocrDoubleClickCopiesOnlyTheClickedBlock();
+    ocrDoubleClickPreservesEditorsAndResizeHandles();
     recognitionWindowCanExtendBeyondItsDpiScreen();
     recognitionMessageUsesOnlyItsPaintedShadow();
     recognitionWindowUsesOrdinaryQtWindowBehavior();

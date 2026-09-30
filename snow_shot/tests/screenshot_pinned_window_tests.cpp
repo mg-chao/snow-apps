@@ -31,6 +31,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrlayout.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
@@ -5179,6 +5180,105 @@ void pinnedOffscreenDoubleClickActions() {
     require(guarded && guarded->isVisible(), "double-click must wait for its second release");
     releaseCloseGesture(*window, Qt::LeftButton);
     require(processUntilDeleted(guarded, 2000), "offscreen Close must delete the clicked window");
+}
+
+void pinnedOcrDoubleClickCopiesLocally() {
+#ifdef Q_OS_WIN
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "load offscreen pinned double-click font");
+    QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString previousAction = settings.doubleClickAction();
+    const auto restore = qScopeGuard([&]() { settings.setDoubleClickAction(previousAction); });
+    require(settings.setDoubleClickAction(QStringLiteral("close")),
+            "configure background double-click Close");
+    auto config = cachedOcrPinConfig(nullptr);
+    auto source = config.recognitionResults.text->presentation;
+    source->lines = {
+        ScreenshotOcrLine{
+            QStringLiteral("This is the first line"),
+            0.95,
+            {QPointF(680, 405), QPointF(860, 405), QPointF(860, 425), QPointF(680, 425)}},
+        ScreenshotOcrLine{
+            QStringLiteral("continued on the next line"),
+            0.95,
+            {QPointF(680, 429), QPointF(890, 429), QPointF(890, 449), QPointF(680, 449)}},
+    };
+    source->prepareForRendering();
+    auto translation = std::make_shared<ScreenshotOcrPresentation>();
+    translation->selection = source->selection;
+    translation->lines =
+        snow_shot::presentation::mergeOcrLayout(source->lines, source->selection.topLeft());
+    require(translation->lines.size() == 1 && translation->lines[0].paragraph,
+            "pinned translation fixture merges two source boxes");
+    translation->setLineText(0, QStringLiteral("Translated, paragraph\n\U0001f642"));
+    translation->prepareForRendering();
+    config.recognitionResults.translatedText = translation;
+    ScreenshotPinnedWindow window;
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+    auto* session = ScreenshotPinnedWindowTestAccess::recognitionOffscreen(window, config);
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>();
+    require(content != nullptr, "pinned double-click recognition content exists");
+    // Match ensureRecognitionContent's parent event filter while bypassing native presentation.
+    content->installEventFilter(&window);
+    require(content->present({config.screen, &window, window.rect(), config.canvasSourceRect,
+                              ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}),
+            "pinned double-click overlay presents offscreen");
+    window.show();
+    content->show();
+    window.activateWindow();
+    QApplication::processEvents();
+    const auto doubleClickText = [&]() {
+        auto* layer = content->findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+        require(layer != nullptr && !layer->scene()->items().isEmpty(),
+                "pinned text overlay has rendered blocks");
+        const QPoint point = layer->viewport()->mapTo(
+            content,
+            layer->mapFromScene(layer->scene()->items().front()->sceneBoundingRect().center()));
+        require(!content->isOcrBackgroundAt(point), "pinned double-click targets recognized text");
+        QWidget* receiver = content->childAt(point);
+        require(receiver != nullptr, "pinned double-click reaches the actual child receiver");
+        const QPoint local = receiver->mapFrom(content, point);
+        for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease,
+                                QEvent::MouseButtonDblClick, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(
+                type, QPointF(local), QPointF(receiver->mapToGlobal(local)), Qt::LeftButton,
+                type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(receiver, &event);
+        }
+    };
+    QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+    doubleClickText();
+    const auto& displayed = ScreenshotPinnedWindowTestAccess::displayedRecognition(window);
+    const QString selected = displayed.selectedText();
+    require(!selected.isEmpty() && QApplication::clipboard()->text() == selected &&
+                !selected.contains(QLatin1Char('\n')) && !displayed.textSelectionActive() &&
+                window.isVisible() && session->active(),
+            "pinned OCR double-click copies only its box and keeps recognition open");
+    require(session->activateCachedTextTranslation(), "show cached merged image translation");
+    doubleClickText();
+    require(QApplication::clipboard()->text() == translation->lines[0].text &&
+                ScreenshotPinnedWindowTestAccess::displayedRecognition(window).selectedText() ==
+                    translation->lines[0].text &&
+                window.isVisible() && session->active() &&
+                session->cachedRecognitionResults().text->presentation->lines[0].text ==
+                    source->lines[0].text,
+            "pinned merged paragraph copies translated display text without changing source OCR");
+    const QPoint background(12, content->height() - 20);
+    require(content->isOcrBackgroundAt(background), "pinned fixture retains blank background");
+    QMouseEvent backgroundDoubleClick(QEvent::MouseButtonDblClick, QPointF(background),
+                                      QPointF(content->mapToGlobal(background)), Qt::LeftButton,
+                                      Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(content, &backgroundDoubleClick);
+    require(window.isVisible(), "background Close waits for the second release");
+    releaseCloseGesture(window, Qt::LeftButton);
+    QElapsedTimer closing;
+    closing.start();
+    while (window.isVisible() && closing.elapsed() < 2000) {
+        waitForUi(1);
+    }
+    require(!window.isVisible(), "pinned background double-click retains its configured action");
 }
 
 void pinnedOcrDoubleClickUsesDragRegion(bool middleClick = false) {
@@ -13861,6 +13961,10 @@ int main(int argc, char* argv[]) {
                 pinnedDoubleClickActions();
                 pinnedOcrDoubleClickUsesDragRegion();
             }
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--text-double-click-only"))) {
+            pinnedOcrDoubleClickCopiesLocally();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--translation-only"))) {
