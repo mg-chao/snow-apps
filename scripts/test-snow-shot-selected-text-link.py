@@ -17,6 +17,7 @@ class SelectedTextLinkContract(unittest.TestCase):
                 'bundle.cpp': 'int runtime_value() { return 7; }\nint shared_entry() { return 11; }\n',
                 'selected.cpp': 'int runtime_value();\nint selected_entry() { return runtime_value(); }\n',
                 'runtime.cpp': 'int runtime_value() { return 7; }\n',
+                'wrapper.cpp': 'int wrapper_entry() { return 0; }\n',
                 'main.cpp': 'int shared_entry();\nint selected_entry();\n'
                             'int main() { return shared_entry() + selected_entry() == 18 ? 0 : 1; }\n',
             }
@@ -34,8 +35,12 @@ function(snow_add_rust_static_library target)
 endfunction()
 set(SNOW_SHOT_CAPTURE_CRATES_DIR "{ROOT.as_posix()}/snow-crates")
 include("{ROOT.as_posix()}/cmake/SnowSelectedText.cmake")
+add_library(translation STATIC wrapper.cpp)
+target_link_libraries(translation PRIVATE snow_selected_text_c)
+add_library(shared_consumer STATIC wrapper.cpp)
+target_link_libraries(shared_consumer PRIVATE snow_shot_rust_ffi_bundle)
 add_executable(link_contract main.cpp)
-target_link_libraries(link_contract PRIVATE snow_selected_text_c)
+target_link_libraries(link_contract PRIVATE translation shared_consumer)
 ''', encoding='utf-8')
             build = fixture / 'build'
             for command in (['cmake', '-S', str(fixture), '-B', str(build)],

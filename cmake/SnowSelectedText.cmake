@@ -20,6 +20,11 @@ if(NOT TARGET snow_selected_text_c)
         add_library(snow_selected_text_c INTERFACE)
         target_link_libraries(snow_selected_text_c INTERFACE
             snow_shot_rust_ffi_bundle ${_snow_selected_text_archive})
+        # Other capture/recording consumers also depend on the bundle. Promote
+        # it to a direct dependency of the final consumer so CMake's transitive
+        # ordering cannot move it behind the selected-text archive.
+        set_property(TARGET snow_selected_text_c PROPERTY
+            INTERFACE_LINK_LIBRARIES_DIRECT snow_shot_rust_ffi_bundle)
     endif()
     unset(_snow_selected_text_features)
     unset(_snow_selected_text_archive)
