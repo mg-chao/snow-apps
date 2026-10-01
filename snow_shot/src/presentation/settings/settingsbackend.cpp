@@ -610,6 +610,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().copyImageFileToClipboard();
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
         return storage::TextRecognitionSettings().saveRecognitionResultAsImage();
+    case SettingsSwitchBinding::ShowOriginalImagePreview:
+        return storage::TextRecognitionSettings().showOriginalImagePreview();
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
         return storage::PinToScreenSettings().automaticTextRecognition();
     case SettingsSwitchBinding::PinAutoResizeWindow:
@@ -812,6 +814,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::SaveRecognitionResultAsImage) {
         return storage::TextRecognitionSettings().setSaveRecognitionResultAsImage(value);
     }
+    if (binding == SettingsSwitchBinding::ShowOriginalImagePreview) {
+        return storage::TextRecognitionSettings().setShowOriginalImagePreview(value);
+    }
     if (binding == SettingsSwitchBinding::PinAutomaticTextRecognition) {
         return storage::PinToScreenSettings().setAutomaticTextRecognition(value);
     }
@@ -924,6 +929,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
+    case SettingsSwitchBinding::ShowOriginalImagePreview:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::TranslationPageEnabled:
@@ -1934,6 +1940,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::TextRecognitionBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("text_recognition/show_original_image_preview"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/show_original_image_preview"))},
             {QStringLiteral("text_recognition/save_recognition_result_as_image"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/save_recognition_result_as_image"))},

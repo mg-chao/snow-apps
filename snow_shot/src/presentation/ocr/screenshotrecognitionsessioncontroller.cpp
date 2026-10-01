@@ -129,6 +129,10 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
     connect(&snow_shot::storage::ApplicationStorage::instance().configuration(),
             &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
+                if (key == QStringLiteral("text_recognition/show_original_image_preview")) {
+                    updateOriginalImagePreview();
+                    return;
+                }
                 if (key == QStringLiteral("text_recognition/fill_style")) {
                     if (m_active && m_mode == Mode::Text) {
                         setPendingTextRecognitionRendering(true);
@@ -1978,6 +1982,7 @@ void ScreenshotRecognitionSessionController::ensureContent() {
 #endif
         }
     }
+    updateOriginalImagePreview();
 }
 
 void ScreenshotRecognitionSessionController::clearContent() {
@@ -2157,6 +2162,7 @@ void ScreenshotRecognitionSessionController::updateBusyState() const {
 }
 
 void ScreenshotRecognitionSessionController::updateTextState() const {
+    updateOriginalImagePreview();
     emit workflowStateChanged();
     const bool available = hasTextResult() && m_active && m_mode == Mode::Text;
     const auto entry = m_textCache.value(m_editingKey);
@@ -2191,6 +2197,23 @@ void ScreenshotRecognitionSessionController::updateTextState() const {
             editing() && session != nullptr ? session->formatting() : QString{},
             editing() && session != nullptr ? session->punctuation() : QString{});
     }
+}
+
+void ScreenshotRecognitionSessionController::updateOriginalImagePreview() const {
+    if (m_content == nullptr) {
+        return;
+    }
+    const bool textActive = m_active && m_mode == Mode::Text;
+    if (!textActive) {
+        m_content->setOriginalImagePreviewEnabled(false);
+        m_content->setOriginalImagePreviewSource({}, {});
+        return;
+    }
+    // The default image describes the screenshot selection. Embedded hosts can
+    // provide their displayed image and viewport mapping without replacing it.
+    m_content->setOriginalImagePreviewSource(m_target.image, m_target.canvasRect);
+    m_content->setOriginalImagePreviewEnabled(
+        snow_shot::storage::TextRecognitionSettings().showOriginalImagePreview());
 }
 
 void ScreenshotRecognitionSessionController::updateTableState(

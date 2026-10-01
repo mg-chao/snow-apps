@@ -107,6 +107,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setRenderMode(RenderMode mode);
     void setImage(QImage image, const QRectF& canvasRect);
     void setImageSource(ScreenshotImageSource source, const QRectF& damage = {});
+    [[nodiscard]] ScreenshotImageSource imageSourceSnapshot() const {
+        return m_imageSource;
+    }
     void setScrollingResultPreview(QImage image, const QRectF& canvasRect,
                                    std::optional<Qt::Orientation> cropGuide = std::nullopt);
     void clearScrollingResultPreview();

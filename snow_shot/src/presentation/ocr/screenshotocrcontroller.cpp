@@ -837,6 +837,8 @@ bool ScreenshotOcrController::ensureRecognitionWindow() {
         },
         nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
         m_context.shortcutManager);
+    window->setOriginalImagePreviewAboveSiblingProvider(
+        [this]() -> QWidget* { return m_context.overlayCoordinator.toolbar(); });
     if (!window->present(config)) {
         delete window;
         showStatus(tr("Unable to read the selected screenshot"), true);

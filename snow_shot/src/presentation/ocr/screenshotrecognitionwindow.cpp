@@ -271,9 +271,20 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     m_textLayer->viewport()->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
     registerWindowShortcuts();
+    m_originalImagePreviewHost = this;
+    installEventFilter(this);
+    connect(qApp, &QGuiApplication::screenAdded, this, [this] {
+        m_originalImagePreviewHostHandle = nullptr;
+        refreshOriginalImagePreview();
+    });
+    connect(qApp, &QGuiApplication::screenRemoved, this, [this] {
+        m_originalImagePreviewHostHandle = nullptr;
+        refreshOriginalImagePreview();
+    });
 }
 
 ScreenshotRecognitionWindow::~ScreenshotRecognitionWindow() {
+    delete m_originalImagePreview.data();
     clearFormattedText();
     if (m_textEditor != nullptr) {
         const QSignalBlocker blocker(m_textEditor);
@@ -310,6 +321,7 @@ bool ScreenshotRecognitionWindow::present(const Config& config) {
     }
 
     m_canvasSelection = config.canvasSelection.normalized();
+    m_originalImagePreviewTransientOwner = config.transientOwner;
     m_formattedTextDevicePixelRatio = config.formattedTextDevicePixelRatio;
     m_presentationMode = config.presentationMode;
     if (m_presentationMode == PresentationMode::TopLevelWindow) {
@@ -343,6 +355,7 @@ bool ScreenshotRecognitionWindow::present(const Config& config) {
     }
     synchronizeTextLayer();
     installSelectionResizeEventFilters(this);
+    refreshOriginalImagePreview();
     return true;
 }
 
@@ -359,7 +372,169 @@ bool ScreenshotRecognitionWindow::updateSelectionGeometry(const QRect& geometry,
     setGeometry(geometry);
     synchronizeTextLayer();
     update();
+    refreshOriginalImagePreview();
     return true;
+}
+
+void ScreenshotRecognitionWindow::setOriginalImagePreviewEnabled(bool enabled) {
+    if (m_originalImagePreviewEnabled == enabled) {
+        return;
+    }
+    m_originalImagePreviewEnabled = enabled;
+    if (!enabled && m_originalImagePreview) {
+        m_originalImagePreview->clear();
+    }
+    refreshOriginalImagePreview();
+}
+
+bool ScreenshotRecognitionWindow::originalImagePreviewEnabled() const {
+    return m_originalImagePreviewEnabled;
+}
+
+void ScreenshotRecognitionWindow::setOriginalImagePreviewSource(QImage image,
+                                                                const QRectF& canvasRect) {
+    if (m_originalImagePreviewSource.cacheKey() == image.cacheKey() &&
+        m_originalImagePreviewCanvasRect == canvasRect) {
+        return;
+    }
+    m_originalImagePreviewSource = std::move(image);
+    m_originalImagePreviewCanvasRect = canvasRect;
+    refreshOriginalImagePreview();
+}
+
+void ScreenshotRecognitionWindow::setOriginalImagePreviewProvider(
+    std::function<std::optional<ScreenshotOriginalImagePreviewState>()> provider, QWidget* host) {
+    if (m_originalImagePreviewHost && m_originalImagePreviewHost != this) {
+        m_originalImagePreviewHost->removeEventFilter(this);
+    }
+    m_originalImagePreviewProvider = std::move(provider);
+    m_originalImagePreviewHost = host != nullptr ? host : this;
+    m_originalImagePreviewHost->installEventFilter(this);
+    if (m_originalImagePreviewHostHandle) {
+        m_originalImagePreviewHostHandle->removeEventFilter(this);
+    }
+    m_originalImagePreviewHostHandle = nullptr;
+    refreshOriginalImagePreview();
+}
+
+void ScreenshotRecognitionWindow::setOriginalImagePreviewSuppressed(bool suppressed) {
+    if (m_originalImagePreviewSuppressed == suppressed) {
+        return;
+    }
+    m_originalImagePreviewSuppressed = suppressed;
+    refreshOriginalImagePreview();
+}
+
+void ScreenshotRecognitionWindow::setOriginalImagePreviewAboveSiblingProvider(
+    std::function<QWidget*()> provider) {
+    m_originalImagePreviewAboveSiblingProvider = std::move(provider);
+    refreshOriginalImagePreview();
+}
+
+void ScreenshotRecognitionWindow::syncOriginalImagePreviewStacking(bool staysOnTop) {
+    if (m_originalImagePreviewStaysOnTop == staysOnTop) {
+        return;
+    }
+    m_originalImagePreviewStaysOnTop = staysOnTop;
+    refreshOriginalImagePreview();
+}
+
+void ScreenshotRecognitionWindow::refreshOriginalImagePreview() {
+    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || !isVisible() ||
+        !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
+        m_originalImagePreviewHost->isMinimized()) {
+        if (m_originalImagePreview) {
+            m_originalImagePreview->hide();
+        }
+        return;
+    }
+    if (m_originalImagePreviewRefreshPending) {
+        return;
+    }
+    m_originalImagePreviewRefreshPending = true;
+    QTimer::singleShot(0, this, [this] {
+        m_originalImagePreviewRefreshPending = false;
+        updateOriginalImagePreview();
+    });
+}
+
+void ScreenshotRecognitionWindow::observeOriginalImagePreviewHost() {
+    QWindow* handle = m_originalImagePreviewHost->window()->windowHandle();
+    if (m_originalImagePreviewHostHandle == handle &&
+        !m_originalImagePreviewConnections.isEmpty()) {
+        return;
+    }
+    for (const auto& connection : std::as_const(m_originalImagePreviewConnections)) {
+        disconnect(connection);
+    }
+    m_originalImagePreviewConnections.clear();
+    if (m_originalImagePreviewHostHandle) {
+        m_originalImagePreviewHostHandle->removeEventFilter(this);
+    }
+    m_originalImagePreviewHostHandle = handle;
+    if (handle != nullptr) {
+        handle->installEventFilter(this);
+        m_originalImagePreviewConnections.append(connect(
+            handle, &QWindow::screenChanged, this, [this] { refreshOriginalImagePreview(); }));
+    }
+    for (QScreen* screen : QGuiApplication::screens()) {
+        m_originalImagePreviewConnections.append(
+            connect(screen, &QScreen::availableGeometryChanged, this,
+                    [this] { refreshOriginalImagePreview(); }));
+        m_originalImagePreviewConnections.append(connect(
+            screen, &QScreen::geometryChanged, this, [this] { refreshOriginalImagePreview(); }));
+        m_originalImagePreviewConnections.append(
+            connect(screen, &QScreen::logicalDotsPerInchChanged, this,
+                    [this] { refreshOriginalImagePreview(); }));
+    }
+}
+
+void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
+    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || !isVisible() ||
+        !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
+        m_originalImagePreviewHost->isMinimized()) {
+        if (m_originalImagePreview) {
+            m_originalImagePreview->hide();
+        }
+        return;
+    }
+    observeOriginalImagePreviewHost();
+    std::optional<ScreenshotOriginalImagePreviewState> state;
+    if (m_originalImagePreviewProvider) {
+        state = m_originalImagePreviewProvider();
+    } else if (!m_originalImagePreviewSource.isNull() &&
+               m_originalImagePreviewCanvasRect.isValid()) {
+        state.emplace();
+        state->image = m_originalImagePreviewSource;
+        state->imageRectInViewport =
+            canvasToLocalTransform().mapRect(m_originalImagePreviewCanvasRect);
+        if (ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry()) {
+            const qreal dpr = devicePixelRatioF();
+            state->imageRectInViewport = QRectF(state->imageRectInViewport.topLeft() * dpr,
+                                                state->imageRectInViewport.size() * dpr);
+        }
+        state->resultRect = ScreenshotOriginalImagePreviewWindow::nativeClientRect(this);
+        state->transientOwner = m_originalImagePreviewTransientOwner
+                                    ? m_originalImagePreviewTransientOwner.data()
+                                    : this;
+    }
+    if (!state || state->image.isNull() || state->resultRect.isEmpty() ||
+        !state->imageRectInViewport.isValid()) {
+        if (m_originalImagePreview) {
+            m_originalImagePreview->clear();
+        }
+        return;
+    }
+    state->staysOnTop = m_originalImagePreviewStaysOnTop;
+    if (m_originalImagePreviewAboveSiblingProvider) {
+        state->aboveSibling = m_originalImagePreviewAboveSiblingProvider();
+    }
+    if (!m_originalImagePreview) {
+        m_originalImagePreview = new ScreenshotOriginalImagePreviewWindow(this);
+    }
+    if (!m_originalImagePreview->present(*state)) {
+        m_originalImagePreview->hide();
+    }
 }
 
 std::optional<ScreenshotRecognitionImageSnapshot>
@@ -1244,6 +1419,33 @@ bool ScreenshotRecognitionWindow::handleSelectionResizeEvent(QObject* watched, Q
 }
 
 bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_originalImagePreview) {
+        return QWidget::eventFilter(watched, event);
+    }
+    if (event != nullptr && (watched == this || watched == m_originalImagePreviewHost ||
+                             watched == m_originalImagePreviewHostHandle)) {
+        switch (event->type()) {
+        case QEvent::Hide:
+        case QEvent::Close:
+            if (m_originalImagePreview) {
+                m_originalImagePreview->hide();
+            }
+            refreshOriginalImagePreview();
+            break;
+        case QEvent::Show:
+        case QEvent::Move:
+        case QEvent::Resize:
+        case QEvent::WindowStateChange:
+        case QEvent::ScreenChangeInternal:
+        case QEvent::DevicePixelRatioChange:
+        case QEvent::WinIdChange:
+        case QEvent::PlatformSurface:
+            refreshOriginalImagePreview();
+            break;
+        default:
+            break;
+        }
+    }
     if (event != nullptr && event->type() == QEvent::ChildAdded) {
         const auto* childEvent = static_cast<const QChildEvent*>(event);
         if (auto* childWidget = qobject_cast<QWidget*>(childEvent->child());

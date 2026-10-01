@@ -2353,9 +2353,76 @@ void tableCommandsUsePhysicalKeys() {
 #endif
 }
 
+void originalImagePreviewPreservesSelectionAndOwnerLifecycle() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "preview fixture requires a screen");
+    auto* window = new ScreenshotRecognitionWindow(ScreenshotRecognitionWindowActions{});
+    const QRect geometry(screen->geometry().topLeft() + QPoint(110, 120), QSize(83, 24));
+    const QRectF selection(100, 50, 166, 48);
+    QImage input(166, 48, QImage::Format_ARGB32_Premultiplied);
+    input.fill(QColor(18, 72, 156));
+    input.setDevicePixelRatio(2.0);
+    window->setOriginalImagePreviewSource(input, selection);
+    window->setOriginalImagePreviewEnabled(true);
+    require(window->present({screen, nullptr, geometry, selection}),
+            "small selection preview result presents");
+    const auto flush = [] {
+        for (int i = 0; i < 4; ++i) {
+            QApplication::sendPostedEvents();
+            QApplication::processEvents();
+        }
+    };
+    flush();
+    QPointer<ScreenshotOriginalImagePreviewWindow> preview =
+        window->findChild<ScreenshotOriginalImagePreviewWindow*>();
+    require(preview && preview->isWindow() && preview->isVisible() &&
+                preview->size() == geometry.size() && !preview->hasFocus(),
+            "preview is a separate passive selection-sized window");
+    require(preview->grab().toImage().pixelColor(40, 12) == QColor(18, 72, 156),
+            "preview displays the input pixels independently of source DPR metadata");
+    QTextDocument document;
+    document.setPlainText(QStringLiteral("A long draft that must not expand the selection"));
+    window->showTextEditor(&document);
+    window->setShowOriginalImage(true);
+    flush();
+    require(window->geometry() == geometry && preview->isVisible() &&
+                preview->size() == geometry.size(),
+            "editing and the existing original-image peek preserve the separate preview");
+    window->setShowOriginalImage(false);
+    window->hideTextEditor();
+    window->setOriginalImagePreviewSuppressed(true);
+    require(preview->isHidden(), "interaction suppression hides the preview immediately");
+    window->setOriginalImagePreviewEnabled(false);
+    window->setOriginalImagePreviewSuppressed(false);
+    flush();
+    require(preview->isHidden(), "suppression end cannot restore a disabled preview");
+    window->setOriginalImagePreviewEnabled(true);
+    flush();
+    require(preview->isVisible(), "reenabling a preview restores its retained input source");
+    window->hide();
+    require(preview->isHidden(), "hiding results hides the companion synchronously");
+    window->show();
+    flush();
+    require(preview->isVisible(), "showing results restores the companion");
+    window->showMinimized();
+    flush();
+    require(preview->isHidden(), "minimizing results hides the companion");
+    window->showNormal();
+    flush();
+    require(preview->isVisible(), "restoring results restores the companion");
+    window->refreshOriginalImagePreview();
+    delete window;
+    require(preview.isNull(), "destroying results destroys the separate preview");
+    flush();
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--preview-window-only"))) {
+        originalImagePreviewPreservesSelectionAndOwnerLifecycle();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--ocr-double-click-only"))) {
         ocrDoubleClickCopiesOnlyTheClickedBlock();
         ocrDoubleClickPreservesEditorsAndResizeHandles();

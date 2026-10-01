@@ -134,6 +134,7 @@ enum class SettingsSwitchBinding {
     ScreenshotRestoreOriginalScreenColors,
     ScreenshotCopyImageFileToClipboard,
     SaveRecognitionResultAsImage,
+    ShowOriginalImagePreview,
     PinAutomaticTextRecognition,
     PinAutoResizeWindow,
     OriginalImageTranslation,

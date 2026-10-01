@@ -325,6 +325,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] bool copyHiddenTextSelection();
     void updateOcrPresentation();
     void updateRecognitionContentGeometry();
+    void beginAuxiliaryWindowInteraction();
+    void endAuxiliaryWindowInteraction();
     void activateRecognitionMode(int mode, bool showToolbar = true);
     void ensureRecognitionProviders();
     void deactivateRecognition();
@@ -631,6 +633,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QTimer* m_persistenceTimer = nullptr;
     bool m_systemSizingActive = false;
     bool m_windowDragActive = false;
+    bool m_auxiliaryWindowInteractionActive = false;
     bool m_windowDragCursorSet = false;
     QPointer<QScreen> m_clickThroughScreen;
     QMetaObject::Connection m_clickThroughScreenGeometryConnection;
@@ -641,6 +644,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_windowActive = false;
     bool m_fileDragActive = false;
     bool m_passiveGeometryReconciliationActive = false;
+    bool m_forwardingNativeExposeEvent = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOW_H

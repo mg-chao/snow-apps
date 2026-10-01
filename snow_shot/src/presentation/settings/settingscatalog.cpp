@@ -1294,6 +1294,16 @@ SettingsItemDefinition saveRecognitionResultAsImageItem() {
                       SettingsSwitchBinding::SaveRecognitionResultAsImage);
 }
 
+SettingsItemDefinition showOriginalImagePreviewItem() {
+    return switchItem(
+        QStringLiteral("text-recognition.show-original-image-preview"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Show original image preview"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Display the original image beside recognition and translation results."),
+        QStringLiteral("text_recognition/show_original_image_preview"),
+        SettingsSwitchBinding::ShowOriginalImagePreview);
+}
+
 SettingsItemDefinition defaultOcrFormattingItem() {
     return fixedSelectItem(
         QStringLiteral("text-recognition.default-formatting"),
@@ -2419,7 +2429,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition output settings")),
                     SettingsSectionReset::TextRecognitionBehavior,
                     {saveRecognitionResultAsImageItem(), defaultOcrFormattingItem(),
-                     defaultOcrPunctuationItem()},
+                     defaultOcrPunctuationItem(), showOriginalImagePreviewItem()},
                 },
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                 {
@@ -3975,6 +3985,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::SaveRecognitionResultAsImage:
                         expectedKey =
                             QStringLiteral("text_recognition/save_recognition_result_as_image");
+                        break;
+                    case SettingsSwitchBinding::ShowOriginalImagePreview:
+                        expectedKey =
+                            QStringLiteral("text_recognition/show_original_image_preview");
                         break;
                     case SettingsSwitchBinding::PinAutomaticTextRecognition:
                         expectedKey = QStringLiteral("pin_to_screen/automatic_text_recognition");
