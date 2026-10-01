@@ -70,6 +70,16 @@ void SnowCanvasTextDraft::reset() {
     clearPreedit();
 }
 
+void SnowCanvasTextDraft::releaseRetainedState() {
+    reset();
+    std::vector<Snapshot>().swap(m_undoStack);
+    std::vector<Snapshot>().swap(m_redoStack);
+}
+
+std::size_t SnowCanvasTextDraft::retainedHistoryStorageBytes() const {
+    return (m_undoStack.capacity() + m_redoStack.capacity()) * sizeof(Snapshot);
+}
+
 void SnowCanvasTextDraft::begin(const QString& text) {
     reset();
     m_text = text;

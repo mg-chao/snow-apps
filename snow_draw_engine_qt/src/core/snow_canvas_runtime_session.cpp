@@ -270,10 +270,16 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
     }
 
     m_smartErase.reset();
-    m_clients.clearRenderState();
+    m_clients.resetDocumentRetainedState();
     syncChangedViewports(changedViewports.get());
     clearDrawingCachesForCurrentThread();
     return true;
+}
+
+void RuntimeSession::clearRenderState() {
+    m_smartErase.clearCache();
+    m_clients.clearRenderState();
+    clearDrawingCachesForCurrentThread();
 }
 
 bool RuntimeSession::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {

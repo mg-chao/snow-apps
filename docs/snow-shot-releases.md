@@ -167,11 +167,14 @@ service reports updates unavailable and does not expose a self-update channel th
 
 ### Scoop
 
-The repository is also a Scoop bucket. On Windows x64, with Scoop installed:
+Snow Shot targets Scoop's official [Extras bucket](https://github.com/ScoopInstaller/Extras).
+The initial [package request](https://github.com/ScoopInstaller/Extras/issues/18870)
+includes the verified 1.1.8 manifest and is awaiting maintainer acceptance.
+After upstream accepts the package, on Windows x64 with Scoop installed:
 
 ```powershell
-scoop bucket add snow-apps https://github.com/mg-chao/snow-apps
-scoop install snow-apps/snowshot
+scoop bucket add extras
+scoop install extras/snowshot
 scoop update
 scoop update snowshot
 scoop uninstall snowshot
@@ -179,8 +182,9 @@ scoop uninstall snowshot
 
 The package installs the portable ZIP, including default OCR resources, without an
 administrator installer. Launch **Snow Shot** from the Start Menu or run `snowshot`.
-The single `snowshot` channel includes published beta releases, whether or not
-GitHub marks them as prereleases. Draft releases are excluded.
+The `snowshot` package follows stable releases. Drafts, GitHub prereleases, beta
+tags, other Snow Apps releases, and releases without a Windows x64 portable ZIP
+are excluded.
 
 Quit Snow Shot and finish recordings before upgrading or uninstalling. Use Scoop
 for updates instead of Snow Shot's built-in updater: the app's updater remains
@@ -195,53 +199,73 @@ and ordinary uninstall. To deliberately delete this persisted data, use
 if it was already uninstalled. Back up any wanted data before purging. Custom
 data directories selected by the user are outside Scoop's persistence management.
 
-#### Maintaining the bucket
+#### Migrating from the retired bucket
 
-`bucket/snowshot.json` is generated from a published, versioned GitHub portable
-ZIP. The **Snow Shot Scoop** workflow runs after release publication and supports
-manual dispatch with `v<version>` or `v<version>_snow-shot`. It reads the publisher
-from the default branch so existing releases can be backfilled. It downloads the
-ZIP, checks its size, computes SHA-256, validates its executable layout and portable
-marker, and validates the generated manifest against Scoop's schema.
+The self-maintained `snow-apps` bucket has been removed. Once `extras/snowshot`
+is available, quit Snow Shot and switch an existing Scoop installation with:
+
+```powershell
+scoop bucket add extras
+scoop update
+scoop info extras/snowshot
+scoop uninstall snowshot
+scoop install extras/snowshot
+scoop bucket rm snow-apps
+```
+
+Confirm the official package is available before uninstalling. Ordinary uninstall
+retains the existing `persist\snowshot\bin\portable` data, and reinstalling the
+same package name reconnects it. Do not use `--purge` when migrating. Removing a
+bucket alone does not change the source recorded for an installed package.
+
+#### Official bucket submission and updates
+
+The manifest belongs in `ScoopInstaller/Extras/bucket/snowshot.json`; this
+repository no longer publishes a Scoop bucket. Generate a manifest from a stable,
+published GitHub portable ZIP using `v<version>` or `v<version>_snow-shot`. The
+generator downloads the ZIP, checks its size, computes SHA-256, and validates its
+executable layout and portable marker.
 
 At least one published checksum is required: GitHub's SHA-256 asset digest or the
 `<portable.zip>.sha256` sidecar. Every available source must match. The sidecar
-must name the exact archive. The initial `v1.1.7-beta` manifest uses GitHub's asset
-digest; that release has no checksum sidecar. No mutable download URLs or
-placeholder hashes are used.
+must name the exact archive. Stable releases also publish the checksum sidecar
+used by Scoop's upstream updater. No mutable download URLs or placeholder hashes
+are used.
 
-Publishing uses the repository's `GITHUB_TOKEN`, with Contents write permission
-only on the publication job; no additional secret is needed. Repository and
-organization Actions policies must permit this permission, and default-branch
-rules must allow the bot's manifest commit. The workflow commits only the manifest,
-never force-pushes, and fails visibly when branch protection or a concurrent push
-prevents publication. It does not publish application releases.
+For the initial submission, follow Scoop's
+[contribution process](https://github.com/ScoopInstaller/.github/blob/main/.github/CONTRIBUTING.md):
+open a package request in Extras, obtain maintainer acceptance, then add the
+verified manifest in a pull request from an Extras fork. Use the title
+`snowshot: Add version <version>`, reference the request, and ask Scoop's verifier
+to check the PR with `/verify`. Package availability depends on upstream review
+and merge.
 
-Updates are serialized and compared using semantic versions, including prerelease
-ordering. Older versions and identical manifests (ignoring checkout line endings)
-are successful no-ops.
-Different content for an existing version is rejected; investigate the release
-instead of overwriting an immutable asset. Publish a higher version for corrections.
-Updates are driven by this workflow, so the manifest needs no separate Scoop
-`checkver` or `autoupdate` configuration.
+The generated manifest includes `checkver` and `autoupdate` for Scoop's official
+update automation. Version discovery reads the latest 100 GitHub releases,
+filters eligible stable Snow Shot portable assets, and sorts numeric versions.
+The captured tag preserves the optional `_snow-shot` suffix in the download URL.
+Autoupdate reads the corresponding `<portable.zip>.sha256` sidecar. Publish a
+higher version for corrections to immutable release assets. Once merged, the
+official bucket maintains updates; no local manifest commits, publishing token,
+or release-triggered bucket workflow is required.
 
-To recover, run **Snow Shot Scoop** manually with the intended release tag after
-fixing the reported problem. The generated manifest is retained as the
+The **Snow Shot Scoop** workflow verifies Scoop-related changes and supports
+manual dispatch to produce a verified submission artifact for a stable release.
+It uses only Contents read permission. The generated manifest is retained as the
 `snow-shot-scoop-manifest` workflow artifact when generation succeeds, including
-when later validation or publication fails. Releases published by another workflow
-using `GITHUB_TOKEN` may not trigger a new workflow; dispatch this workflow manually
-in that case. If several releases arrive together, dispatch the newest tag to
-recover any run replaced in GitHub's concurrency queue.
+when later schema validation fails. It does not publish releases or write to a
+bucket. Update the upstream manifest through a reviewed Extras PR when its install
+contract or version-discovery rules change.
 
 Local generation and focused checks require PowerShell 7:
 
 ```powershell
-./scripts/new-snow-shot-scoop-manifest.ps1 -Tag v1.1.7-beta
+./scripts/new-snow-shot-scoop-manifest.ps1 -Tag v1.1.8_snow-shot
 ./scripts/test-snow-shot-scoop.ps1
 ```
 
 The generator defaults to `build/scoop/snowshot.json`; use `-OutputPath` to choose
-another file. Review generated changes before copying them into the bucket.
+another file. Review generated changes before submitting them to Extras.
 For schema validation and the Windows lifecycle smoke test, check out
 `ScoopInstaller/Scoop` at `b588a06e41d920d2123ec70aee682bae14935939` under
 `build/scoop-runtime`, then run:
@@ -251,11 +275,14 @@ For schema validation and the Windows lifecycle smoke test, check out
 ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime
 ```
 
-CI runs these checks for Scoop-related changes and before publication. Fixtures
-cover release validation, checksums, archive layout, version ordering, and repeat
-runs. The smoke test exercises Scoop's real install and removal functions with
+CI runs these checks for Scoop-related changes and manual manifest generation.
+Fixtures cover release validation, checksums, archive layout, upstream version
+discovery, download URL substitution, and repeat runs. The smoke test exercises
+Scoop's real install and removal functions with
 two locally cached fixture packages, checks shortcut/shim targets, and verifies
-settings/history persistence through upgrade and ordinary uninstall. It redirects
+settings/history persistence through upgrade and ordinary uninstall. It also
+reinstalls the package after uninstall to verify retained data reconnects
+when migrating buckets. It redirects
 Start Menu and PATH integration into an isolated process/directory, never launches
 Snow Shot, and does not modify an existing Scoop installation. It tests lifecycle
 functions rather than the complete interactive Scoop CLI.

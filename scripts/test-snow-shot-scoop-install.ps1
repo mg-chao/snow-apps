@@ -43,8 +43,11 @@ try {
         if ($Global) { throw 'Global PATH requested by per-user fixture.' }
         $env:PATH = "$Path;$env:PATH"
     }
+    . (Join-Path $PSScriptRoot 'snow-shot-scoop.ps1')
+    Set-StrictMode -Off
     $fixtureManifest = Join-Path $root 'snowshot.json'
-    $manifest = Get-Content "$PSScriptRoot/../bucket/snowshot.json" -Raw | ConvertFrom-Json
+    $manifest = New-SnowShotScoopManifestObject '0.0.1' 'https://fixture.invalid/portable.zip' ('0' * 64) |
+        ConvertTo-Json -Depth 8 | ConvertFrom-Json
     # The executable is inert: use the OS's existing executable as a valid PE fixture,
     # but never launch it. The real release ZIP is independently verified by the generator.
     foreach ($version in @('0.0.1-beta', '0.0.2-beta')) {
@@ -98,7 +101,22 @@ try {
     $persisted = Join-Path $env:SCOOP 'persist/snowshot/bin/portable'
     Require ((Get-Content "$persisted/settings.json" -Raw) -ceq '{"fixture":"retained"}') 'Uninstall removed settings'
     Require ((Get-Content "$persisted/history.fixture" -Raw) -ceq 'history') 'Uninstall removed history'
-    Write-Output 'Isolated Scoop install, upgrade, and uninstall smoke test passed.'
+    # Changing buckets requires uninstall/reinstall of the same app name.
+    # Reinstall must reconnect the data left by ordinary uninstall.
+    install_app $fixtureManifest '64bit' $false @{}
+    $current = Join-Path $env:SCOOP 'apps/snowshot/current'
+    $data = Join-Path $current 'bin/portable'
+    Require ((Get-Item $data).LinkType -eq 'Junction') 'Reinstall did not reconnect portable data'
+    Require ((Get-Content "$data/settings.json" -Raw) -ceq '{"fixture":"retained"}') 'Reinstall lost settings'
+    Require ((Get-Content "$data/history.fixture" -Raw) -ceq 'history') 'Reinstall lost history'
+    rm_shims 'snowshot' $manifest $false '64bit'
+    rm_startmenu_shortcuts $manifest $false '64bit'
+    $directory = Join-Path $env:SCOOP 'apps/snowshot/0.0.2-beta'
+    Assert-FixturePath $directory
+    $null = unlink_current $directory
+    unlink_persist_data $manifest $directory
+    Remove-Item -LiteralPath $directory -Recurse -Force
+    Write-Output 'Isolated Scoop install, upgrade, uninstall, and migration reinstall smoke test passed.'
 } finally {
     foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
     # The root is created by this test. Remove junctions first, including on failure.

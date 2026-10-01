@@ -39,10 +39,15 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source) 
 
 ScreenshotExportSource
 ScreenshotExportSource::fromPinnedViewport(ScreenshotPinnedViewportExportSource source) {
-    return fromProducer(
+    auto placement = source.clipboardPlacement;
+    auto appearance = source.clipboardAppearance;
+    auto result = fromProducer(
         [source = std::move(source)](const ScreenshotExportCancellation& cancellation) {
             return cancellation.isCancellationRequested() ? QImage{} : renderPinnedViewport(source);
         });
+    result.m_clipboardPlacement = std::move(placement);
+    result.m_clipboardAppearance = std::move(appearance);
+    return result;
 }
 
 ScreenshotExportSource

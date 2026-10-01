@@ -11,6 +11,7 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPointer>
+#include <QFileInfo>
 #include <QThread>
 #include <QUuid>
 
@@ -116,7 +117,8 @@ ScreenshotImageRowSource withCancellation(const ScreenshotImageRowSource& source
 
 ScreenshotExportSource
 ScreenshotExportSource::fromImage(QImage image,
-                                  std::optional<ScreenshotClipboardPlacement> placement) {
+                                  std::optional<ScreenshotClipboardPlacement> placement,
+                                  std::optional<ScreenshotClipboardAppearance> appearance) {
     if (placement)
         placement->rasterSize = image.size();
     auto source =
@@ -124,15 +126,18 @@ ScreenshotExportSource::fromImage(QImage image,
             return cancellation.isCancellationRequested() ? QImage{} : image;
         });
     source.m_clipboardPlacement = std::move(placement);
+    source.m_clipboardAppearance = std::move(appearance);
     return source;
 }
 
 ScreenshotExportSource
 ScreenshotExportSource::fromImageLoader(ImageLoader loader,
-                                        std::optional<ScreenshotClipboardPlacement> placement) {
+                                        std::optional<ScreenshotClipboardPlacement> placement,
+                                        std::optional<ScreenshotClipboardAppearance> appearance) {
     ScreenshotExportSource source;
     source.m_imageLoader = std::move(loader);
     source.m_clipboardPlacement = std::move(placement);
+    source.m_clipboardAppearance = std::move(appearance);
     return source;
 }
 
@@ -569,14 +574,10 @@ bool ScreenshotExportArtifact::requestCanonicalPng(QObject* receiver, EncodingCa
 
 bool ScreenshotExportArtifact::requestPng(QObject* receiver, ScreenshotCompressionLevel compression,
                                           EncodingCallback callback) {
-    return requestPngCompression(receiver, pngCompression(compression), std::move(callback));
-}
-
-bool ScreenshotExportArtifact::requestPngCompression(QObject* receiver, int compressionLevel,
-                                                     EncodingCallback callback) {
     if (receiver == nullptr || !callback || m_impl == nullptr) {
         return false;
     }
+    const int compressionLevel = pngCompression(compression);
     ScreenshotExportEncodingResult ready;
     bool dispatchReady = false;
     bool start = false;
@@ -633,9 +634,7 @@ void ScreenshotExportArtifact::startPngFromRows(int compressionLevel,
     const QPointer<ScreenshotExportArtifact> guarded(this);
     auto encoded = std::make_shared<ScreenshotExportEncodingResult>();
     const ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
-        this,
-        compressionLevel == 0 ? ScreenshotExportCoordinator::Priority::Foreground
-                              : ScreenshotExportCoordinator::Priority::Background,
+        this, ScreenshotExportCoordinator::Priority::Background,
         [source = std::move(source), encoded, observed = m_impl->encodingStarted,
          compressionLevel](const ScreenshotExportCancellation& cancellation) {
             if (cancellation.isCancellationRequested()) {
@@ -718,52 +717,65 @@ std::optional<ScreenshotClipboardPlacement> ScreenshotExportArtifact::clipboardP
     return placement;
 }
 
+std::optional<ScreenshotClipboardAppearance> ScreenshotExportArtifact::clipboardAppearance() const {
+    if (!m_impl)
+        return {};
+    QMutexLocker lock(&m_impl->mutex);
+    auto appearance = m_impl->source.m_clipboardAppearance;
+    if (appearance && m_impl->rowSource.isValid())
+        appearance->rasterSize = m_impl->rowSource.size;
+    else if (appearance && !m_impl->image.isNull())
+        appearance->rasterSize = m_impl->image.size();
+    return appearance;
+}
+
+void ScreenshotExportArtifact::setClipboardFileMetadata(QMimeData& mime,
+                                                        const QString& path) const {
+    const QFileInfo info(path);
+    const auto bindFile = [&info](auto& metadata) {
+        metadata.filePath = screenshotClipboardFilePath(info.absoluteFilePath());
+        metadata.fileSize = info.size();
+        metadata.fileModifiedMs = info.lastModified().toUTC().toMSecsSinceEpoch();
+    };
+    if (auto placement = clipboardPlacement()) {
+        bindFile(*placement);
+        setScreenshotClipboardPlacement(mime, *placement);
+    }
+    if (auto appearance = clipboardAppearance()) {
+        bindFile(*appearance);
+        setScreenshotClipboardAppearance(mime, *appearance);
+    }
+}
+
 bool ScreenshotExportArtifact::requestClipboard(QObject* receiver, ClipboardCallback callback) {
     if (receiver == nullptr || !callback || isCancelled())
         return false;
-    QByteArray readyPng;
-    {
-        QMutexLocker lock(&m_impl->mutex);
-        for (auto& encoding : m_impl->pngEncodings) {
-            if (encoding.phase == RequestPhase::Ready) {
-                readyPng = encoding.image.bytes();
-                encoding.lastUsed = ++m_impl->pngUseSerial;
-                break;
-            }
-        }
-    }
-    // Existing bytes are cheapest regardless of compression. Otherwise share level 0;
-    // never subscribe the clipboard to a pending higher-compression encoding.
-    if (!readyPng.isEmpty())
-        return prepareClipboard(receiver, std::move(readyPng), std::move(callback));
     const QPointer<ScreenshotExportArtifact> guarded(this);
     const QPointer<QObject> target(receiver);
-    return requestPngCompression(
-        this, 0,
-        [guarded, target,
-         callback = std::move(callback)](ScreenshotExportEncodingResult result) mutable {
-            if (guarded.isNull() || guarded->isCancelled() || target.isNull())
-                return;
-            if (!result.succeeded()) {
-                dispatchResult(target, std::move(callback),
-                               ScreenshotExportClipboardResult{{}, result.error});
-                return;
-            }
-            auto completion = std::make_shared<ClipboardCallback>(std::move(callback));
-            const bool scheduled = guarded->prepareClipboard(
-                target, result.image.bytes(),
-                [completion](ScreenshotExportClipboardResult prepared) mutable {
-                    if (*completion) {
-                        auto deliver = std::move(*completion);
-                        deliver(std::move(prepared));
-                    }
-                });
-            if (!scheduled && *completion) {
-                dispatchResult(target, std::move(*completion),
-                               ScreenshotExportClipboardResult{
-                                   {}, QStringLiteral("The screenshot export queue is full")});
-            }
-        });
+    return requestCanonicalPng(this, [guarded, target, callback = std::move(callback)](
+                                         ScreenshotExportEncodingResult result) mutable {
+        if (guarded.isNull() || guarded->isCancelled() || target.isNull())
+            return;
+        if (!result.succeeded()) {
+            dispatchResult(target, std::move(callback),
+                           ScreenshotExportClipboardResult{{}, result.error});
+            return;
+        }
+        auto completion = std::make_shared<ClipboardCallback>(std::move(callback));
+        const bool scheduled = guarded->prepareClipboard(
+            target, result.image.bytes(),
+            [completion](ScreenshotExportClipboardResult prepared) mutable {
+                if (*completion) {
+                    auto deliver = std::move(*completion);
+                    deliver(std::move(prepared));
+                }
+            });
+        if (!scheduled && *completion) {
+            dispatchResult(target, std::move(*completion),
+                           ScreenshotExportClipboardResult{
+                               {}, QStringLiteral("The screenshot export queue is full")});
+        }
+    });
 }
 
 bool ScreenshotExportArtifact::prepareClipboard(QObject* receiver, QByteArray canonicalPng,
@@ -791,11 +803,13 @@ bool ScreenshotExportArtifact::prepareClipboard(QObject* receiver, QByteArray ca
             ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
                 receiver, ScreenshotExportCoordinator::Priority::Foreground,
                 [source = std::move(source), canonicalPng, payload,
-                 placement = guardedArtifact->m_impl->source.m_clipboardPlacement](
+                 placement = guardedArtifact->m_impl->source.m_clipboardPlacement,
+                 appearance = guardedArtifact->m_impl->source.m_clipboardAppearance](
                     const ScreenshotExportCancellation& cancellation) mutable {
                     ScreenshotImageRowSource rows = withCancellation(
                         source, [&cancellation] { return cancellation.isCancellationRequested(); });
-                    *payload = ScreenshotClipboardService::prepare(rows, canonicalPng, placement);
+                    *payload = ScreenshotClipboardService::prepareEncoded(rows, canonicalPng,
+                                                                          placement, appearance);
                     return payload->isValid()
                                ? ScreenshotExportTaskResult{}
                                : ScreenshotExportTaskResult::failure(

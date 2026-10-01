@@ -30,3 +30,6 @@ windows = { workspace = true, features = [
   "Win32_Graphics_Gdi",
   "Win32_UI_Controls",
 ] }
+
+[dependencies]
+snow-core = { path = "../snow-core" }

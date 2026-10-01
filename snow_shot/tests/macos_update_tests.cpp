@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QEventLoop>
 #include <QHash>
 #include <QJsonArray>
@@ -9,13 +10,20 @@
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
+#include <QNetworkReply>
+#include <QPointer>
+#include <QSet>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
 #include <QTimer>
+#include <QUrlQuery>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#if defined(Q_OS_MACOS)
+#include <malloc/malloc.h>
+#endif
 
 using namespace snow_shot::update;
 using namespace std::chrono_literals;
@@ -45,6 +53,11 @@ struct Server {
     QTcpServer server;
     QHash<QByteArray, QByteArray> bodies;
     QList<QByteArray> requests;
+    QList<QByteArray> targets;
+    QHash<QByteArray, int> statuses;
+    QSet<QByteArray> heldTargets;
+    bool contentLength = true;
+    bool closeResponse = true;
     int delay = 0;
     int status = 200;
     Server() {
@@ -59,17 +72,29 @@ struct Server {
                         if (!buffer.contains("\r\n\r\n") || socket->property("responded").toBool())
                             return;
                         socket->setProperty("responded", true);
-                        const QByteArray path =
-                            buffer.split('\n').first().split(' ').at(1).split('?').first();
+                        const QByteArray rawTarget = buffer.split('\n').first().split(' ').at(1);
+                        const QUrl url = QUrl::fromEncoded(rawTarget);
+                        const QByteArray path = url.path().toUtf8();
+                        QByteArray target = path;
+                        const QString page = QUrlQuery(url).queryItemValue(QStringLiteral("page"));
+                        if (!page.isEmpty())
+                            target += "?page=" + page.toUtf8();
                         requests.append(path);
-                        const QByteArray body = bodies.value(path, "[]");
+                        targets.append(target);
+                        if (heldTargets.contains(target) || heldTargets.contains(path))
+                            return;
+                        const QByteArray body = bodies.value(target, bodies.value(path, "[]"));
+                        const int responseStatus = statuses.value(target, status);
                         const QByteArray response =
-                            "HTTP/1.1 " + QByteArray::number(status) +
-                            " Test\r\nContent-Length: " + QByteArray::number(body.size()) +
-                            "\r\nConnection: close\r\n\r\n" + body;
-                        QTimer::singleShot(delay, socket, [socket, response] {
+                            "HTTP/1.1 " + QByteArray::number(responseStatus) + " Test\r\n" +
+                            (contentLength
+                                 ? "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+                                 : QByteArray()) +
+                            "Connection: close\r\n\r\n" + body;
+                        QTimer::singleShot(delay, socket, [this, socket, response] {
                             socket->write(response);
-                            socket->disconnectFromHost();
+                            if (closeResponse)
+                                socket->disconnectFromHost();
                         });
                     });
             }
@@ -134,6 +159,351 @@ void setGithub(Server& server, const QJsonArray& releases) {
 void setGitee(Server& server, const QJsonArray& releases, const QJsonArray& assets) {
     server.bodies.insert("/releases", QJsonDocument(releases).toJson());
     server.bodies.insert("/releases/123/attach_files", QJsonDocument(assets).toJson());
+}
+QJsonArray githubPage(int bodyBytes = 0) {
+    QJsonArray releases;
+    for (int i = 0; i < 100; ++i) {
+        auto release = githubRelease(QStringLiteral("2.0.%1").arg(i));
+        if (bodyBytes > 0)
+            release.insert(QStringLiteral("body"), QString(bodyBytes, u'x'));
+        releases.append(release);
+    }
+    return releases;
+}
+bool hasReplyFor(const UpdateService& service, const Server& server) {
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    for (const auto* reply : service.findChildren<QNetworkReply*>()) {
+        if (reply->url().port() == server.server.serverPort())
+            return true;
+    }
+    return false;
+}
+void requireStopped(UpdateService& service) {
+    require(!service.busy(), "terminal checks are no longer busy");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(service.findChildren<QNetworkReply*>().isEmpty(),
+            "terminal checks release their network replies");
+    for (const auto* timer : service.findChildren<QTimer*>())
+        require(!timer->isActive(), "manual terminal checks stop their transport timers");
+}
+#if defined(Q_OS_MACOS)
+size_t liveHeapBytes() {
+    malloc_statistics_t statistics{};
+    malloc_zone_statistics(nullptr, &statistics);
+    return statistics.size_in_use;
+}
+void responseMemoryIsReleased() {
+    // Warm Qt's process-wide network machinery before measuring a fresh, application-owned
+    // service. Live allocated bytes are independent of the allocator's resident-page caches.
+    {
+        Server github;
+        Server gitee;
+        setGithub(github, {githubRelease(QStringLiteral("2.0.0"))});
+        UpdateService warmup(options(github, gitee));
+        warmup.setMode(QStringLiteral("manual"));
+        warmup.check();
+        waitFor([&] { return !warmup.busy(); });
+        requireStopped(warmup);
+    }
+    pump(20);
+    Server github;
+    Server gitee;
+    UpdateService service(options(github, gitee));
+    service.setMode(QStringLiteral("manual"));
+    const size_t baseline = liveHeapBytes();
+    // The margin tolerates small Qt connection/cache allocations. It remains far below the
+    // old tiny-response allocation (32 MiB) and the unnecessary large response/JSON retention.
+    constexpr size_t budget = 2 * 1024 * 1024;
+    setGithub(github, {githubRelease(QStringLiteral("2.0.0"))});
+    service.check();
+    waitFor([&] { return !service.busy(); });
+    requireStopped(service);
+    github.bodies.clear();
+    gitee.bodies.clear();
+    pump(20);
+    require(liveHeapBytes() <= baseline + budget,
+            "tiny completed responses do not retain allocations based on the response limit");
+
+    // Keep an unknown-length response open to observe its allocation before terminal cleanup.
+    github.contentLength = false;
+    github.closeResponse = false;
+    github.bodies.insert("/releases", QByteArray(31, ' '));
+    gitee.heldTargets.insert("/releases");
+    bool readPartialResponse = false;
+    service.check();
+    for (auto* reply : service.findChildren<QNetworkReply*>()) {
+        if (reply->url().port() == github.server.serverPort()) {
+            QObject::connect(reply, &QNetworkReply::readyRead, &service,
+                             [&] { readPartialResponse = true; });
+        }
+    }
+    waitFor([&] { return readPartialResponse; });
+    require(service.busy(), "partial unknown-length responses keep the check active");
+    require(liveHeapBytes() <= baseline + budget,
+            "small active responses allocate for available bytes rather than the response limit");
+    service.cancel();
+    requireStopped(service);
+    github.contentLength = true;
+    github.closeResponse = true;
+    gitee.heldTargets.clear();
+    github.bodies.clear();
+    pump(20);
+    require(liveHeapBytes() <= baseline + budget, "cancellation releases partial response buffers");
+
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        QJsonArray releases;
+        for (int i = 0; i < 40; ++i) {
+            auto release = githubRelease(QStringLiteral("3.0.%1").arg(i));
+            release.insert(QStringLiteral("body"), QString(96 * 1024, u'x'));
+            releases.append(release);
+        }
+        setGithub(github, releases);
+        releases = {};
+        service.check();
+        waitFor([&] { return !service.busy(); });
+        require(service.status().version == u"3.0.39",
+                "large responses still select the newest release");
+        requireStopped(service);
+        github.bodies.clear();
+        gitee.bodies.clear();
+        pump(20);
+        require(liveHeapBytes() <= baseline + budget,
+                "completed checks release large response bodies and parsed release metadata");
+    }
+
+    github.heldTargets.insert("/releases");
+    QJsonArray giteeReleases;
+    for (int i = 0; i < 40; ++i) {
+        auto release = giteeRelease(QStringLiteral("4.0.%1").arg(i));
+        if (i < 39)
+            release.insert(QStringLiteral("id"), 200 + i);
+        release.insert(QStringLiteral("body"), QString(96 * 1024, u'x'));
+        giteeReleases.append(release);
+    }
+    setGitee(gitee, giteeReleases, giteeAssets(QStringLiteral("4.0.39")));
+    giteeReleases = {};
+    service.check();
+    waitFor([&] { return !service.busy(); });
+    require(service.status().version == u"4.0.39" &&
+                service.status().downloadUrl.host() == u"gitee.com",
+            "large Gitee responses still select a validated release");
+    requireStopped(service);
+    github.bodies.clear();
+    gitee.bodies.clear();
+    pump(20);
+    require(liveHeapBytes() <= baseline + budget,
+            "Gitee completion releases release and attachment working data");
+
+    github.heldTargets.clear();
+    github.heldTargets.insert("/releases?page=2");
+    gitee.heldTargets.insert("/releases");
+    setGithub(github, githubPage(32 * 1024));
+    service.check();
+    waitFor([&] { return github.targets.contains("/releases?page=2"); });
+    github.bodies.clear();
+    gitee.bodies.clear();
+    pump(20);
+    require(liveHeapBytes() <= baseline + budget,
+            "pagination keeps only required candidate data after parsing a large page");
+    service.cancel();
+    requireStopped(service);
+    pump(20);
+    require(liveHeapBytes() <= baseline + budget,
+            "cancellation releases candidates accumulated during pagination");
+
+    // A failed channel must discard its data immediately while its peer is still checking.
+    github.heldTargets.clear();
+    github.targets.clear();
+    setGithub(github, githubPage(32 * 1024));
+    github.bodies.insert("/releases?page=2", "invalid JSON");
+    service.check();
+    waitFor([&] {
+        return github.targets.contains("/releases?page=2") && !hasReplyFor(service, github);
+    });
+    require(service.busy(), "one failed source leaves its peer running");
+    github.bodies.clear();
+    gitee.bodies.clear();
+    pump(20);
+    require(liveHeapBytes() <= baseline + budget,
+            "source failure releases accumulated data before the peer completes");
+    service.cancel();
+    requireStopped(service);
+
+    {
+        Server timeoutGithub;
+        Server timeoutGitee;
+        timeoutGithub.heldTargets.insert("/releases");
+        timeoutGitee.heldTargets.insert("/releases/123/attach_files");
+        auto value = options(timeoutGithub, timeoutGitee);
+        value.requestTimeout = 1s;
+        UpdateService timeoutService(value);
+        timeoutService.setMode(QStringLiteral("manual"));
+        const size_t timeoutBaseline = liveHeapBytes();
+        auto release = giteeRelease(QStringLiteral("5.0.0"));
+        release.insert(QStringLiteral("body"), QString(4 * 1024 * 1024, u'x'));
+        setGitee(timeoutGitee, {release}, {});
+        release = {};
+        timeoutService.check();
+        waitFor([&] { return timeoutGitee.requests.contains("/releases/123/attach_files"); });
+        timeoutGitee.bodies.clear();
+        waitFor([&] { return !timeoutService.busy(); });
+        require(timeoutService.status().state == UpdateState::Failed,
+                "transport deadlines terminate checks with pending attachments");
+        requireStopped(timeoutService);
+        pump(20);
+        require(liveHeapBytes() <= timeoutBaseline + budget,
+                "timeout releases pending attachment candidates and response data");
+    }
+}
+#endif
+void paginationAndAttachmentFallback() {
+    {
+        Server github;
+        Server gitee;
+        auto page = githubPage();
+        page.replace(0, githubRelease(QStringLiteral("8.0.0")));
+        setGithub(github, page);
+        github.bodies.insert(
+            "/releases?page=2",
+            QJsonDocument(QJsonArray{githubRelease(QStringLiteral("7.0.0"))}).toJson());
+        gitee.heldTargets.insert("/releases");
+        UpdateService service(options(github, gitee));
+        service.setMode(QStringLiteral("manual"));
+        service.check();
+        waitFor([&] { return !service.busy(); });
+        require(github.targets.contains("/releases?page=2"), "GitHub follows full release pages");
+        require(service.status().version == u"8.0.0",
+                "transport replacement preserves the best candidate from previous pages");
+        requireStopped(service);
+    }
+    {
+        Server github;
+        Server gitee;
+        github.heldTargets.insert("/releases");
+        QJsonArray page;
+        for (int i = 0; i < 99; ++i) {
+            auto release = giteeRelease(QStringLiteral("2.0.%1").arg(i));
+            release.insert(QStringLiteral("id"), 200 + i);
+            page.append(release);
+        }
+        page.append(giteeRelease(QStringLiteral("8.0.0")));
+        setGitee(gitee, page, giteeAssets(QStringLiteral("8.0.0")));
+        auto newer = giteeRelease(QStringLiteral("9.0.0"));
+        newer.insert(QStringLiteral("id"), 124);
+        gitee.bodies.insert("/releases?page=2", QJsonDocument(QJsonArray{newer}).toJson());
+        gitee.bodies.insert("/releases/124/attach_files", "[]");
+        UpdateService service(options(github, gitee));
+        service.setMode(QStringLiteral("manual"));
+        service.check();
+        waitFor([&] { return !service.busy(); });
+        require(gitee.targets.contains("/releases?page=2"), "Gitee follows full release pages");
+        require(gitee.requests.contains("/releases/124/attach_files") &&
+                    gitee.requests.contains("/releases/123/attach_files"),
+                "Gitee requests attachments for successive release candidates");
+        require(service.status().version == u"8.0.0" &&
+                    service.status().downloadUrl.host() == u"gitee.com",
+                "attachment fallback preserves candidate versions and release IDs across pages");
+        requireStopped(service);
+    }
+}
+void cancellationAndDestructionAfterPagination() {
+    Server github;
+    Server gitee;
+    setGithub(github, githubPage());
+    github.heldTargets.insert("/releases?page=2");
+    gitee.heldTargets.insert("/releases");
+    UpdateService service(options(github, gitee));
+    service.setMode(QStringLiteral("manual"));
+    service.check();
+    waitFor([&] { return github.targets.contains("/releases?page=2"); });
+    service.cancel();
+    require(service.status().state == UpdateState::Idle,
+            "cancellation after pagination restores the previous result");
+    requireStopped(service);
+
+    // Automatic cancellation uses the same cleanup when the user switches to manual mode.
+    github.targets.clear();
+    service.setMode(QStringLiteral("check"));
+    service.check(false);
+    waitFor([&] { return github.targets.contains("/releases?page=2"); });
+    service.setMode(QStringLiteral("manual"));
+    requireStopped(service);
+
+    github.targets.clear();
+    auto* pending = new UpdateService(options(github, gitee));
+    pending->setMode(QStringLiteral("manual"));
+    pending->check();
+    waitFor([&] { return github.targets.contains("/releases?page=2"); });
+    QList<QPointer<QNetworkReply>> replies;
+    for (auto* reply : pending->findChildren<QNetworkReply*>())
+        replies.append(reply);
+    require(!replies.isEmpty(), "pending pagination has live network replies");
+    delete pending;
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    for (const auto& reply : replies)
+        require(!reply, "service destruction releases pending replies");
+}
+void sourceFailureAndTimeout() {
+    Server github;
+    Server gitee;
+    setGithub(github, githubPage());
+    github.bodies.insert("/releases?page=2", "invalid JSON");
+    gitee.heldTargets.insert("/releases");
+    auto value = options(github, gitee);
+    value.requestTimeout = 250ms;
+    UpdateService service(value);
+    service.setMode(QStringLiteral("manual"));
+    service.check();
+    waitFor([&] {
+        return github.targets.contains("/releases?page=2") && !hasReplyFor(service, github);
+    });
+    require(service.busy() && service.status().state == UpdateState::Checking,
+            "a malformed later page retires only the failed source");
+    waitFor([&] { return !service.busy(); });
+    require(service.status().state == UpdateState::Failed,
+            "the remaining source deadline completes a failed check");
+    requireStopped(service);
+
+    github.bodies.remove("/releases?page=2");
+    github.statuses.insert("/releases?page=2", 503);
+    github.targets.clear();
+    service.check();
+    waitFor([&] {
+        return github.targets.contains("/releases?page=2") && !hasReplyFor(service, github);
+    });
+    require(service.busy(), "a failed later HTTP response does not terminate its peer");
+    service.cancel();
+    requireStopped(service);
+}
+void responseLimit() {
+    constexpr qsizetype limit = 8 * 1024 * 1024;
+    for (const bool contentLength : {true, false}) {
+        Server github;
+        Server gitee;
+        github.contentLength = contentLength;
+        setGithub(github, {githubRelease(QStringLiteral("2.0.0"))});
+        auto body = github.bodies.value("/releases");
+        body.append(limit - body.size(), ' ');
+        github.bodies.insert("/releases", body);
+        body = {};
+        gitee.heldTargets.insert("/releases");
+        UpdateService service(options(github, gitee));
+        service.setMode(QStringLiteral("manual"));
+        service.check();
+        waitFor([&] { return !service.busy(); });
+        require(service.status().version == u"2.0.0",
+                "responses at the inclusive byte limit remain valid with or without a length");
+        requireStopped(service);
+
+        github.bodies["/releases"].append(' ');
+        gitee.heldTargets.clear();
+        gitee.status = 503;
+        service.check();
+        waitFor([&] { return !service.busy(); });
+        require(service.status().state == UpdateState::Failed,
+                "declared and streamed responses exceeding the byte limit are rejected");
+        requireStopped(service);
+    }
 }
 void releaseRaceAndValidation() {
     Server github;
@@ -224,7 +594,7 @@ void schedulingAndFailures() {
     waitFor([&] { return notices == 1; });
     require(service.status().state == UpdateState::Available, "automatic check finds release");
     service.setMode(QStringLiteral("manual"));
-    const int count = github.requests.size() + gitee.requests.size();
+    const qsizetype count = github.requests.size() + gitee.requests.size();
     pump(120);
     require(github.requests.size() + gitee.requests.size() == count,
             "manual mode stops scheduled checks");
@@ -258,7 +628,14 @@ void schedulingAndFailures() {
 } // namespace
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
+#if defined(Q_OS_MACOS)
+    responseMemoryIsReleased();
+#endif
     releaseRaceAndValidation();
     schedulingAndFailures();
+    paginationAndAttachmentFallback();
+    cancellationAndDestructionAfterPagination();
+    sourceFailureAndTimeout();
+    responseLimit();
     return 0;
 }

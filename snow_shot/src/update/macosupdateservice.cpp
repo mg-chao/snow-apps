@@ -19,6 +19,8 @@
 
 namespace snow_shot::update {
 namespace {
+constexpr qint64 MAXIMUM_RESPONSE_BYTES = 8 * 1024 * 1024;
+
 struct Version {
     QStringList core;
     QStringList prerelease;
@@ -88,6 +90,11 @@ struct UpdateService::Impl {
     enum class Source { GitHub, Gitee };
     enum class Stage { Releases, Attachments };
 
+    struct Candidate {
+        QString version;
+        qint64 releaseId = 0;
+    };
+
     struct Channel {
         explicit Channel(QObject* parent) : deadline(parent) {
             deadline.setSingleShot(true);
@@ -95,9 +102,7 @@ struct UpdateService::Impl {
         QTimer deadline;
         QPointer<QNetworkReply> reply;
         QByteArray bytes;
-        QJsonObject bestRelease;
-        QString bestVersion;
-        QVector<QPair<QString, QJsonObject>> candidates;
+        QVector<Candidate> candidates;
         qsizetype candidateIndex = 0;
         int page = 1;
         Stage stage = Stage::Releases;
@@ -129,7 +134,7 @@ struct UpdateService::Impl {
         if (started && mode == u"check")
             schedule.start(delay);
     }
-    void stop(Channel& source) {
+    void stopRequest(Channel& source) {
         source.deadline.stop();
         source.active = false;
         if (source.reply) {
@@ -140,12 +145,20 @@ struct UpdateService::Impl {
             reply->deleteLater();
         }
     }
-    void stopAll() {
-        stop(github);
-        stop(gitee);
+    void reset(Channel& source) {
+        stopRequest(source);
+        source.bytes = {};
+        source.candidates = QVector<Candidate>();
+        source.candidateIndex = 0;
+        source.page = 1;
+        source.stage = Stage::Releases;
+    }
+    void resetAll() {
+        reset(github);
+        reset(gitee);
     }
     void finishFailure(const char* error) {
-        stopAll();
+        resetAll();
         status = previous;
         errorSource = previousErrorSource;
         if (manual) {
@@ -158,7 +171,7 @@ struct UpdateService::Impl {
         emit q.operationFinished(QStringLiteral("check"), QStringLiteral("failed"));
     }
     void sourceFailure(Source source) {
-        stop(channel(source));
+        reset(channel(source));
         if (!busy())
             finishFailure(QT_TRANSLATE_NOOP("UpdateService",
                                             "Could not check for updates. Please try again."));
@@ -170,7 +183,7 @@ struct UpdateService::Impl {
         return url.isValid() && !url.host().isEmpty() && (url.scheme() == u"https" || local) &&
                url.userInfo().isEmpty();
     }
-    void complete(Source source, const QString& text) {
+    void complete(Source source, QString text) {
         const auto version = parseVersion(text);
         if (!version) {
             sourceFailure(source);
@@ -183,7 +196,7 @@ struct UpdateService::Impl {
             source == Source::GitHub
                 ? QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/")
                 : QStringLiteral("https://gitee.com/mg-chao/snow-apps/releases/tag/");
-        stopAll();
+        resetAll();
         status = {available ? UpdateState::Available : UpdateState::Idle,
                   text,
                   {},
@@ -240,6 +253,7 @@ struct UpdateService::Impl {
         auto& state = channel(source);
         QJsonParseError error;
         const auto document = QJsonDocument::fromJson(state.bytes, &error);
+        state.bytes = {};
         if (error.error != QJsonParseError::NoError || !document.isArray() ||
             document.array().size() > 100) {
             sourceFailure(source);
@@ -260,10 +274,10 @@ struct UpdateService::Impl {
             if (source == Source::GitHub &&
                 !validAssets(source, release.value(QStringLiteral("assets")).toArray(), text))
                 continue;
-            if (source == Source::Gitee &&
-                release.value(QStringLiteral("id")).toVariant().toLongLong() <= 0)
+            const qint64 releaseId = release.value(QStringLiteral("id")).toVariant().toLongLong();
+            if (source == Source::Gitee && releaseId <= 0)
                 continue;
-            state.candidates.append({text, release});
+            state.candidates.append({text, releaseId});
         }
         if (document.array().size() == 100) {
             if (state.page == 10) {
@@ -280,14 +294,12 @@ struct UpdateService::Impl {
         }
         std::sort(state.candidates.begin(), state.candidates.end(),
                   [](const auto& left, const auto& right) {
-                      return compareVersions(*parseVersion(left.first),
-                                             *parseVersion(right.first)) > 0;
+                      return compareVersions(*parseVersion(left.version),
+                                             *parseVersion(right.version)) > 0;
                   });
         state.candidateIndex = 0;
-        state.bestVersion = state.candidates.front().first;
-        state.bestRelease = state.candidates.front().second;
         if (source == Source::GitHub) {
-            complete(source, state.bestVersion);
+            complete(source, state.candidates.front().version);
         } else {
             state.stage = Stage::Attachments;
             request(source);
@@ -296,46 +308,48 @@ struct UpdateService::Impl {
     void attachmentsResponse() {
         QJsonParseError error;
         const auto document = QJsonDocument::fromJson(gitee.bytes, &error);
+        gitee.bytes = {};
         if (error.error != QJsonParseError::NoError || !document.isArray() ||
             document.array().size() >= 100) {
             sourceFailure(Source::Gitee);
             return;
         }
-        if (!validAssets(Source::Gitee, document.array(), gitee.bestVersion)) {
+        if (!validAssets(Source::Gitee, document.array(),
+                         gitee.candidates[gitee.candidateIndex].version)) {
             ++gitee.candidateIndex;
             if (gitee.candidateIndex >= gitee.candidates.size()) {
                 sourceFailure(Source::Gitee);
                 return;
             }
-            gitee.bestVersion = gitee.candidates[gitee.candidateIndex].first;
-            gitee.bestRelease = gitee.candidates[gitee.candidateIndex].second;
             request(Source::Gitee);
             return;
         }
-        complete(Source::Gitee, gitee.bestVersion);
+        complete(Source::Gitee, gitee.candidates[gitee.candidateIndex].version);
     }
     void read(Source source) {
         auto& state = channel(source);
         if (!state.reply)
             return;
-        constexpr qint64 limit = 8 * 1024 * 1024;
-        state.bytes += state.reply->read(limit + 1 - state.bytes.size());
-        if (state.bytes.size() > limit)
+        const qint64 available = state.reply->bytesAvailable();
+        if (available <= 0)
+            return;
+        state.bytes +=
+            state.reply->read(std::min(available, MAXIMUM_RESPONSE_BYTES + 1 - state.bytes.size()));
+        if (state.bytes.size() > MAXIMUM_RESPONSE_BYTES)
             sourceFailure(source);
     }
     void request(Source source) {
         auto& state = channel(source);
-        stop(state);
+        // Pagination and attachment fallback still need the compact candidates.
+        stopRequest(state);
         QUrl url = source == Source::GitHub ? options.githubApiUrl : options.giteeApiUrl;
         if (state.stage == Stage::Attachments) {
             QString path = url.path();
             if (path.endsWith(u'/'))
                 path.chop(1);
-            url.setPath(
-                path + u'/' +
-                QString::number(
-                    state.bestRelease.value(QStringLiteral("id")).toVariant().toLongLong()) +
-                QStringLiteral("/attach_files"));
+            url.setPath(path + u'/' +
+                        QString::number(state.candidates[state.candidateIndex].releaseId) +
+                        QStringLiteral("/attach_files"));
         }
         QUrlQuery query;
         query.addQueryItem(QStringLiteral("per_page"), QStringLiteral("100"));
@@ -358,13 +372,13 @@ struct UpdateService::Impl {
         request.setRawHeader("Cache-Control", "no-cache");
         state.active = true;
         state.reply = network.get(request);
-        state.reply->setReadBufferSize(8 * 1024 * 1024 + 1);
+        state.reply->setReadBufferSize(MAXIMUM_RESPONSE_BYTES + 1);
         const QPointer<QNetworkReply> current = state.reply;
         QObject::connect(state.reply, &QNetworkReply::metaDataChanged, &q, [this, source, current] {
             auto& state = channel(source);
             if (state.reply == current && state.reply &&
                 state.reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() >
-                    8 * 1024 * 1024)
+                    MAXIMUM_RESPONSE_BYTES)
                 sourceFailure(source);
         });
         QObject::connect(state.reply, &QNetworkReply::readyRead, &q, [this, source, current] {
@@ -408,14 +422,7 @@ struct UpdateService::Impl {
                                             "Could not check for updates. Please try again."));
             return;
         }
-        for (Channel* state : {&github, &gitee}) {
-            state->page = 1;
-            state->stage = Stage::Releases;
-            state->bestVersion.clear();
-            state->bestRelease = {};
-            state->candidates.clear();
-            state->candidateIndex = 0;
-        }
+        resetAll();
         status = {UpdateState::Checking, {}, {}, 0, 0};
         emit q.statusChanged();
         request(Source::GitHub);
@@ -443,7 +450,7 @@ UpdateService::UpdateService(Options options, QObject* parent)
     setObjectName(QStringLiteral("snowShotUpdateService"));
 }
 UpdateService::~UpdateService() {
-    m_impl->stopAll();
+    m_impl->resetAll();
 }
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
@@ -482,7 +489,7 @@ void UpdateService::check(bool manual) {
 void UpdateService::cancel() {
     if (!m_impl->busy())
         return;
-    m_impl->stopAll();
+    m_impl->resetAll();
     m_impl->status = m_impl->previous;
     m_impl->errorSource = m_impl->previousErrorSource;
     m_impl->arm(m_impl->options.automaticCheckInterval);

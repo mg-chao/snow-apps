@@ -72,6 +72,8 @@ class SnowCanvasDisplayCache {
     SnowCanvasDisplayCache();
 
     void reset(const SnowColorRgba8& clearColor);
+    // Releases the derived execution plan while preserving the current scene snapshot.
+    void clearRenderState();
     void setClearColor(const SnowColorRgba8& clearColor);
     bool sync(SnowRuntime runtime, SnowViewport viewport);
 
@@ -83,6 +85,8 @@ class SnowCanvasDisplayCache {
     std::size_t executionPlanBuildCount() const {
         return m_executionPlan.buildCount;
     }
+    // Owned container capacity, excluding payloads inside display items and the execution plan.
+    std::size_t retainedStorageBytes() const;
     const WatermarkDisplayInfo& watermarkInfo() const;
     const SpotlightDisplayInfo& spotlightInfo() const;
     const OverlayDisplayInfo& overlayInfo() const;

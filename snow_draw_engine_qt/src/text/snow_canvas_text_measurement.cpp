@@ -51,6 +51,10 @@ void NaturalTextLayoutCache::clear() {
     m_layouts.clear();
 }
 
+qsizetype NaturalTextLayoutCache::retainedBytes() const {
+    return m_layouts.totalCost();
+}
+
 std::uint64_t NaturalTextLayoutCache::measurementCount() const {
     return m_measurementCount;
 }

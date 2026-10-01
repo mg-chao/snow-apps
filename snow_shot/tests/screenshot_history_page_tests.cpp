@@ -1,6 +1,14 @@
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/presentation/historypinplacement.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "../src/presentation/pinned/screenshotclipboardplacementgeometry.h"
+#include <QClipboard>
+#include <QMimeData>
+#include "snowimageqtcodec.h"
 
 #include "widgets/date_picker.h"
 #include "widgets/select.h"
@@ -735,6 +743,113 @@ void waitUntil(const std::function<bool()>& complete, const char* message) {
     require(complete(), message);
 }
 
+void historyCopiesPreservePositionAndAppearance() {
+    auto& repository = storage::ApplicationStorage::instance().captureHistory();
+    for (int mode : {0, 1, 2}) {
+        storage::CaptureHistoryDraft draft;
+        draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        draft.createdUtc = QDateTime::currentDateTimeUtc();
+        draft.canvasBounds = QRect(0, 0, 400, 300);
+        draft.selection.rectangle = QRect(100, 80, 100, 50);
+        draft.selection.cornerRadius = 12;
+        draft.selection.shadowWidth = 8;
+        draft.selection.shadowColor = Qt::black;
+        draft.canvasHistory =
+            QByteArrayLiteral("{\"schemaVersion\":1,\"document\":{},\"history\":{}}");
+        draft.scrolling = mode == 2;
+        if (mode != 1) {
+#ifdef Q_OS_MACOS
+            draft.desktopGeometry = storage::CaptureHistoryDesktopGeometry{QPoint(), true};
+#else
+            draft.desktopGeometry = storage::CaptureHistoryDesktopGeometry{QPoint(), false};
+#endif
+        }
+        QImage display(draft.canvasBounds.size(), QImage::Format_RGB32);
+        display.fill(Qt::blue);
+        draft.displays.push_back(
+            {QStringLiteral("display-id"), QStringLiteral("Display"), display});
+        const ScreenshotResultStyle style{12, 8, Qt::black};
+        draft.resultImage =
+            ScreenshotResultCompositor::compose(display.copy(draft.selection.rectangle), style);
+        const auto published = repository.publish(draft).get();
+        require(published.storage.success, "publish clipboard history fixture");
+        const auto stored = repository.loadResultPng(published.record);
+        require(stored.has_value(), "history PNG fixture is unavailable");
+        // Deliver the repository's publication notification before opening the page.
+        // A refresh queued by that notification intentionally cancels pending copies.
+        flushEvents();
+        {
+            ScreenshotHistoryPageWidget page;
+            page.resize(900, 700);
+            page.show();
+            page.setActive(true);
+            flushEvents();
+            auto* entry = page.findChild<QWidget*>(
+                QStringLiteral("screenshotHistoryEntry-%1").arg(published.record.id));
+            require(entry != nullptr, "published history entry is unavailable");
+            auto* copy = entry->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotHistoryEntryCopy"));
+            require(copy != nullptr && copy->isVisible(), "history copy action is unavailable");
+            QApplication::clipboard()->setText(QStringLiteral("before history copy"));
+            copy->click();
+            waitUntil(
+                [&] {
+                    return copy->isEnabled() && QApplication::clipboard()->mimeData()->hasFormat(
+                                                    QStringLiteral("image/png"));
+                },
+                "history image copy did not finish");
+            auto snapshot =
+                ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
+            require(snapshot.has_value(), "history clipboard snapshot is unavailable");
+            auto content = ScreenshotClipboardContentReader::decode(std::move(*snapshot));
+            require(content && content->appearance &&
+                        content->appearance->borderAppearance ==
+                            snow_shot::presentation::historySelectionBorderAppearance(
+                                published.record) &&
+                        !content->appearance->checkerboardEnabled,
+                    "history copy loses its baked selection appearance");
+            require(QApplication::clipboard()->mimeData()->data(QStringLiteral("image/png")) ==
+                        stored->bytes(),
+                    "history copy changes the stored PNG");
+            const auto direct =
+                snow_shot::presentation::historySelectionPinPlacement(published.record);
+            require(content->placement.has_value() == direct.isPrepared(),
+                    "history copy loses recoverable position or invents missing position");
+            if (direct.isPrepared())
+                require(content->placement->windowRect == direct.geometry.nativeGeometry,
+                        "history clipboard position differs from direct history pinning");
+        }
+        require(repository.remove(published.record.id).get().success,
+                "remove clipboard history fixture");
+    }
+}
+
+void thumbnailsUseMediumCompression() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "thumbnail compression fixture must be available");
+    QImage image(64, 48, QImage::Format_RGB32);
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x)
+            image.setPixel(x, y, qRgb(x * 3, y * 5, (x + y) * 2));
+    }
+    const auto encoder = snow_shot::image_codec::encoderInfo(snow::image::Format::png);
+    require(encoder.has_value(), "PNG encoder must be available for thumbnail persistence");
+    const QByteArray expected =
+        snow_shot::image_codec::encodePng(image, encoder->compression_level.default_value);
+    require(!expected.isEmpty() && expected != snow_shot::image_codec::encodePng(image, 0),
+            "thumbnail fixture must distinguish medium compression from level zero");
+    const QString path = temporary.filePath(QStringLiteral("thumbnail.png"));
+    const QSize naturalSize(900, 700);
+    snow_shot::presentation::components::thumbnail_cache::persist(path, image, naturalSize);
+    QFile file(path);
+    require(file.open(QIODevice::ReadOnly) && file.readAll() == expected,
+            "persisted thumbnails must use medium PNG compression");
+    const auto cached = snow_shot::presentation::components::thumbnail_cache::load(path);
+    require(cached.image.convertToFormat(QImage::Format_RGB32) == image &&
+                cached.naturalSize == naturalSize,
+            "thumbnail compression must preserve pixels and natural-size metadata");
+}
+
 void imageFailuresRespectCacheFallbackAndCancellation() {
     QTemporaryDir temporary;
     MutableHistoryDataSource dataSource;
@@ -871,6 +986,8 @@ int main(int argc, char** argv) {
     pageTextAndEmptyStateMatchPinnedWindowManagement();
     moreMenuOffersPinAndDelete();
     entriesUseBordersAndSupportCrossPageSelection();
+    historyCopiesPreservePositionAndAppearance();
+    thumbnailsUseMediumCompression();
     imageFailuresRespectCacheFallbackAndCancellation();
     shutdownDrainsBacklogThenRejectsNewWork();
     storage::ApplicationStorage::instance().shutdown();

@@ -232,6 +232,15 @@ impl EditorSession {
         self.editor.reset_editing_state();
     }
 
+    /// Discards measurements and transient storage belonging to the old document.
+    pub fn reset_document_retained_state(&mut self) {
+        self.editor.reset_editing_state();
+        self.editor.invalidate_arrow_text_measurements();
+        self.editor.state.arrow_text_measurements = Vec::new();
+        self.editor.state.selection = Default::default();
+        self.editor.state.ui = Default::default();
+    }
+
     pub fn style_toolbar_source(&self, document: &DocumentModel) -> StyleToolbarSource {
         self.editor.style_toolbar_source(document)
     }
@@ -684,4 +693,53 @@ fn validate_persisted_editor_styles(persisted: &PersistedEditorSession) -> Resul
         return Err(ErrorCode::InvalidArgument);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod document_reset_tests {
+    use super::*;
+
+    #[test]
+    fn document_reset_releases_layouts_and_preserves_creation_styles() {
+        let mut session = EditorSession::new(EngineConfig::default()).unwrap();
+        session
+            .editor
+            .state
+            .default_rectangle_shape_style
+            .stroke_width = 17.0;
+        session.editor.state.arrow_text_measurements.reserve(64);
+        session.editor.state.arrow_text_measurements.push(
+            crate::arrow_text::ArrowTextMeasurement {
+                text_id: ElementId {
+                    index: 5,
+                    generation: 3,
+                },
+                key: 7,
+                size: TextLayoutSize::new(20.0, 10.0),
+                text_key: 11,
+                natural_width: 20.0,
+            },
+        );
+        session.editor.state.ui.snap_guides.reserve(64);
+        session.editor.state.selection.ids.reserve(64);
+        session.set_quick_selection_disabled_tools(3);
+        let config = session.config();
+        let generation = session.editor.state.arrow_text_measurement_generation;
+
+        session.reset_document_retained_state();
+        assert_eq!(session.editor.state.arrow_text_measurements.capacity(), 0);
+        assert_eq!(session.editor.state.ui.snap_guides.capacity(), 0);
+        assert_eq!(session.editor.state.selection.ids.capacity(), 0);
+        assert!(session.editor.state.arrow_text_measurement_generation > generation);
+        assert_eq!(
+            session
+                .editor
+                .state
+                .default_rectangle_shape_style
+                .stroke_width,
+            17.0
+        );
+        assert_eq!(session.config(), config);
+        assert_eq!(session.quick_selection_disabled_tools(), 3);
+    }
 }

@@ -1,14 +1,12 @@
-use std::collections::HashSet;
-
 use crate::model::{
     AttachedCursorSample, CursorShapeCapture, CursorShapeState, CursorSnapshot, CursorTargetInfo,
 };
 
-/// Converts absolute cursor snapshots into target-relative samples and
-/// deduplicates repeated cursor shapes into cached references.
+/// Converts absolute cursor snapshots into target-relative samples. Each shape
+/// transition includes its pixels; repeated observations reference the current
+/// shape so consumers only need to retain one bitmap.
 #[derive(Default)]
 pub struct CursorProjector {
-    emitted_shape_ids: HashSet<crate::CursorShapeId>,
     last_shape_id: Option<crate::CursorShapeId>,
 }
 
@@ -27,8 +25,9 @@ impl CursorProjector {
         let visible = snapshot.visible && target.contains_relative(x, y);
         let shape = match snapshot.shape {
             CursorShapeCapture::Captured(shape) => {
+                let changed = self.last_shape_id != Some(shape.shape_id);
                 self.last_shape_id = Some(shape.shape_id);
-                if self.emitted_shape_ids.insert(shape.shape_id) {
+                if changed {
                     CursorShapeState::Embedded(shape)
                 } else {
                     CursorShapeState::Cached(shape.shape_id)
@@ -104,6 +103,49 @@ mod tests {
             second.shape,
             CursorShapeState::Cached(id) if id == shape.shape_id
         ));
+    }
+
+    #[test]
+    fn every_shape_transition_reembeds_pixels_including_revisited_shapes() {
+        let mut projector = CursorProjector::new();
+        let target = CursorTargetInfo {
+            origin_x: 0,
+            origin_y: 0,
+            width: 100,
+            height: 100,
+        };
+        let a = sample_shape(1);
+        let b = sample_shape(2);
+        for (shape, embedded) in [
+            (&a, true),
+            (&a, false),
+            (&b, true),
+            (&b, false),
+            (&a, true),
+            (&a, false),
+        ] {
+            let sample = projector.project(
+                &target,
+                CursorSnapshot {
+                    absolute_x: 10,
+                    absolute_y: 20,
+                    visible: true,
+                    shape: CursorShapeCapture::Captured(shape.clone()),
+                },
+            );
+            assert_eq!(sample.shape_id(), Some(shape.shape_id));
+            assert_eq!(sample.shape.embedded_shape().is_some(), embedded);
+        }
+        let sample = projector.project(
+            &target,
+            CursorSnapshot {
+                absolute_x: 11,
+                absolute_y: 21,
+                visible: true,
+                shape: CursorShapeCapture::Unavailable,
+            },
+        );
+        assert!(matches!(sample.shape, CursorShapeState::Cached(id) if id == a.shape_id));
     }
 
     #[test]

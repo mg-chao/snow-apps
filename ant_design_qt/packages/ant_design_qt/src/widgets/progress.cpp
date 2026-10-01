@@ -736,7 +736,7 @@ void AdProgress::paintProgress(QPainter& painter) {
         const qreal eased = 1 - std::pow(1 - phase, 5);
         const qreal shineWidth = fill.width() * eased;
         QColor shineColor(style.shimmer);
-        shineColor.setAlphaF(0.5 * (1 - eased));
+        shineColor.setAlphaF(static_cast<float>(0.5 * (1 - eased)));
         painter.fillRect(
             QRectF(rtl ? fill.right() - shineWidth : fill.left(), fill.top(), shineWidth, h),
             shineColor);
@@ -834,14 +834,14 @@ void AdProgress::paintProgress(QPainter& painter) {
     } else {
       painter.setFont(d_->infoFont);
       painter.setPen(textColor);
-      int alignment = Qt::AlignCenter;
+      Qt::Alignment alignment = Qt::AlignCenter;
       if (d_->type == Type::Line && inner && d_->alignment != PercentAlignment::Center)
         alignment =
             Qt::AlignVCenter |
             ((d_->alignment == PercentAlignment::Start) != rtl ? Qt::AlignLeft : Qt::AlignRight);
       const QString text =
           QFontMetricsF(d_->infoFont).elidedText(d_->text, Qt::ElideRight, indicator.width());
-      painter.drawText(indicator, alignment, text);
+      painter.drawText(indicator, static_cast<int>(alignment.toInt()), text);
     }
   }
 }

@@ -88,6 +88,7 @@ impl AudioStreamHandle {
         let join_handle = std::thread::Builder::new()
             .name("snow-audio-stream".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 stream_loop(
                     &mut engine,
                     &worker_config,

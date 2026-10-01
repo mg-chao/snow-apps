@@ -51,6 +51,19 @@ impl std::fmt::Debug for SharedDevice {
 
 impl SharedDevice {
     pub fn create(adapter: &IDXGIAdapter) -> Result<Self> {
+        Self::create_with_flags(
+            adapter,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+        )
+    }
+
+    /// Create a shared device for compute operations without requiring video
+    /// processor support. This also supports WARP for offscreen conversion tests.
+    pub fn create_compute(adapter: &IDXGIAdapter) -> Result<Self> {
+        Self::create_with_flags(adapter, D3D11_CREATE_DEVICE_BGRA_SUPPORT)
+    }
+
+    fn create_with_flags(adapter: &IDXGIAdapter, flags: D3D11_CREATE_DEVICE_FLAG) -> Result<Self> {
         let mut device = None;
         let mut context = None;
         unsafe {
@@ -58,7 +71,7 @@ impl SharedDevice {
                 adapter,
                 D3D_DRIVER_TYPE_UNKNOWN,
                 HMODULE::default(),
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+                flags,
                 Some(&[D3D_FEATURE_LEVEL_11_0]),
                 D3D11_SDK_VERSION,
                 Some(&mut device),

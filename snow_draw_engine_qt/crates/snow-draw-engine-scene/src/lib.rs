@@ -101,6 +101,18 @@ impl ViewportComposer {
         }
     }
 
+    /// Releases document storage while retaining the viewport's patch sequence.
+    /// The next refresh publishes a full reset, including for an empty document.
+    pub fn reset_document_retained_state(&mut self) {
+        *self = Self {
+            scene_revision: self.scene_revision,
+            decoration_revision: self.decoration_revision,
+            overlay_revision: self.overlay_revision,
+            next_pen_geometry_revision: self.next_pen_geometry_revision,
+            ..Self::default()
+        };
+    }
+
     pub fn refresh(
         &mut self,
         cache: &DocumentSceneCache,
@@ -1667,6 +1679,78 @@ mod tests {
             is_free_draw: true,
             blend_mode: snow_draw_engine_display::DisplayBlendMode::Normal,
         })
+    }
+
+    #[test]
+    fn document_reset_releases_storage_and_preserves_patch_sequence() {
+        let mut composer = ViewportComposer::new();
+        composer.scene_items = vec![long_path_display(1, 10.0); 64];
+        composer.scene_render_plan.reserve(64);
+        composer.overlay_items.reserve(64);
+        composer.spotlight_cutouts.reserve(64);
+        composer.pen_geometry_revisions.insert(
+            DisplayItemId {
+                index: 91,
+                generation: 3,
+            },
+            7,
+        );
+        composer.scene_revision = SceneRevision(41);
+        composer.decoration_revision = DecorationRevision(12);
+        composer.overlay_revision = OverlayRevision(29);
+        composer.next_pen_geometry_revision = 7;
+        composer.initialized = true;
+        let cursor = composer.current_cursor();
+
+        composer.reset_document_retained_state();
+        assert_eq!(composer.current_cursor(), cursor);
+        assert_eq!(composer.next_pen_geometry_revision, 7);
+        assert_eq!(composer.scene_items.capacity(), 0);
+        assert_eq!(composer.scene_render_plan.capacity(), 0);
+        assert_eq!(composer.overlay_items.capacity(), 0);
+        assert_eq!(composer.spotlight_cutouts.capacity(), 0);
+        assert_eq!(composer.pen_geometry_revisions.capacity(), 0);
+
+        let mut model = DocumentModel::default();
+        let mut cache = DocumentSceneCache::default();
+        cache.sync(&model, None);
+        let presentation = EditorPresentationState::default();
+        composer.refresh_with_presentation(
+            &cache,
+            &model,
+            frame_view(),
+            &presentation,
+            SnapConfig::default(),
+        );
+        let patch = composer.acquire_patch(Some(cursor));
+        assert!(patch.scene.reset && patch.decoration.reset && patch.overlay.reset);
+        assert!(patch.scene.revision > cursor.scene_revision.0);
+        assert!(patch.decoration.revision > cursor.decoration_revision.0);
+        assert!(patch.overlay.revision > cursor.overlay_revision.0);
+        assert!(composer.scene_items.is_empty());
+
+        let mut rectangle = spotlight_rect(Point::new(0.0, 0.0), 40.0, 30.0);
+        rectangle.rectangle_kind = snow_draw_engine_document::RectangleElementKind::Rectangle;
+        let mut transaction = Transaction::new("next document");
+        transaction.insert_rectangle(
+            model.peek_next_element_id(),
+            ElementMeta::default(),
+            rectangle,
+        );
+        model.apply_transaction(transaction).unwrap();
+        cache.sync(&model, None);
+        let empty_cursor = composer.current_cursor();
+        composer.refresh_with_presentation(
+            &cache,
+            &model,
+            frame_view(),
+            &presentation,
+            SnapConfig::default(),
+        );
+        assert_eq!(composer.scene_items.len(), 1);
+        let next_patch = composer.acquire_patch(Some(empty_cursor));
+        assert!(!next_patch.scene.reset);
+        assert!(!next_patch.scene.ops.is_empty());
     }
 
     #[test]

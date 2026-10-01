@@ -9,6 +9,74 @@
 //! original pixels and does not opt into either transform.
 
 use nalgebra::{Matrix3, Vector3};
+use std::sync::{Arc, OnceLock};
+use std::thread::JoinHandle;
+
+/// One request's color matrix, shared by all of its capture workers.
+/// Backends wait for it only after acquiring pixels, before color conversion.
+#[derive(Clone, Debug)]
+pub struct PendingScreenColorTransform {
+    result: Arc<OnceLock<Option<ScreenColorTransform>>>,
+}
+
+impl PendingScreenColorTransform {
+    #[cfg(any(windows, test))]
+    pub(crate) fn resolve(&self) -> Option<ScreenColorTransform> {
+        *self.result.wait()
+    }
+}
+
+/// Owns the query worker so cancellation and failed captures cannot leave it running.
+pub struct ScreenColorQuery {
+    snapshot: PendingScreenColorTransform,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl ScreenColorQuery {
+    pub fn start_current() -> std::io::Result<Self> {
+        Self::start_with(current_transform)
+    }
+
+    pub fn snapshot(&self) -> PendingScreenColorTransform {
+        self.snapshot.clone()
+    }
+
+    pub(crate) fn start_with(
+        query: impl FnOnce() -> Option<ScreenColorTransform> + Send + 'static,
+    ) -> std::io::Result<Self> {
+        let snapshot = PendingScreenColorTransform {
+            result: Arc::new(OnceLock::new()),
+        };
+        let result = snapshot.clone();
+        let worker = std::thread::Builder::new()
+            .name("snow-capture-color-query".to_owned())
+            .spawn(move || {
+                // Publish a best-effort absence even if the native query unwinds,
+                // so capture workers never wait for an abandoned result.
+                struct PublishOnDrop(PendingScreenColorTransform);
+                impl Drop for PublishOnDrop {
+                    fn drop(&mut self) {
+                        let _ = self.0.result.set(None);
+                    }
+                }
+                let publish = PublishOnDrop(result);
+                snow_core::qos::apply_current_thread();
+                let _ = publish.0.result.set(query());
+            })?;
+        Ok(Self {
+            snapshot,
+            worker: Some(worker),
+        })
+    }
+}
+
+impl Drop for ScreenColorQuery {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
 
 /// Policy for capture paths that contain a full-screen Magnifier effect.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -103,6 +171,27 @@ impl ScreenColorTransform {
     }
 }
 
+#[cfg(any(windows, test))]
+fn with_magnifier<T>(
+    initialize: impl FnOnce() -> bool,
+    query: impl FnOnce() -> T,
+    uninitialize: impl FnOnce(),
+) -> Option<T> {
+    if !initialize() {
+        return None;
+    }
+    struct Guard<F: FnOnce()>(Option<F>);
+    impl<F: FnOnce()> Drop for Guard<F> {
+        fn drop(&mut self) {
+            if let Some(uninitialize) = self.0.take() {
+                uninitialize();
+            }
+        }
+    }
+    let _guard = Guard(Some(uninitialize));
+    Some(query())
+}
+
 #[cfg(windows)]
 fn current_transform() -> Option<ScreenColorTransform> {
     use std::cell::RefCell;
@@ -111,52 +200,47 @@ fn current_transform() -> Option<ScreenColorTransform> {
         MAGCOLOREFFECT, MagGetFullscreenColorEffect, MagInitialize, MagUninitialize,
     };
 
-    static USERS: Mutex<usize> = Mutex::new(0);
+    // MagInitialize/MagUninitialize affect process-wide state. Serialize the
+    // entire query so another capture cannot uninitialize a concurrent reader.
+    // Only the sampled matrix cache survives the query, never native resources.
+    static QUERY: Mutex<()> = Mutex::new(());
     struct Reader {
-        initialized: bool,
         matrix: Option<[f32; 25]>,
         transform: Option<ScreenColorTransform>,
     }
     impl Reader {
         fn read(&mut self) -> Option<ScreenColorTransform> {
-            if !self.initialized {
-                let mut users = USERS.lock().ok()?;
-                if *users == 0 && !unsafe { MagInitialize() }.as_bool() {
-                    return None;
-                }
-                *users += 1;
-                self.initialized = true;
-            }
-            let mut effect = MAGCOLOREFFECT::default();
-            if !unsafe { MagGetFullscreenColorEffect(&mut effect) }.as_bool() {
+            let matrix = {
+                let _query = QUERY.lock().ok()?;
+                with_magnifier(
+                    || unsafe { MagInitialize() }.as_bool(),
+                    || {
+                        let mut effect = MAGCOLOREFFECT::default();
+                        unsafe { MagGetFullscreenColorEffect(&mut effect) }
+                            .as_bool()
+                            .then_some(effect.transform)
+                    },
+                    || unsafe {
+                        let _ = MagUninitialize();
+                    },
+                )
+                .flatten()
+            };
+            let Some(matrix) = matrix else {
                 self.matrix = None;
                 self.transform = None;
                 return None;
-            }
-            if self.matrix != Some(effect.transform) {
-                self.transform = ScreenColorTransform::from_magnifier_matrix(&effect.transform);
-                self.matrix = Some(effect.transform);
+            };
+            if self.matrix != Some(matrix) {
+                self.transform = ScreenColorTransform::from_magnifier_matrix(&matrix);
+                self.matrix = Some(matrix);
             }
             self.transform
         }
     }
-    impl Drop for Reader {
-        fn drop(&mut self) {
-            if self.initialized
-                && let Ok(mut users) = USERS.lock()
-            {
-                *users -= 1;
-                if *users == 0 {
-                    unsafe {
-                        let _ = MagUninitialize();
-                    }
-                }
-            }
-        }
-    }
     thread_local! {
         static READER: RefCell<Reader> = const { RefCell::new(Reader {
-            initialized: false, matrix: None, transform: None,
+            matrix: None, transform: None,
         }) };
     }
     READER.with(|reader| reader.borrow_mut().read())
@@ -170,6 +254,111 @@ fn current_transform() -> Option<ScreenColorTransform> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parallel_query_shares_one_sample_and_joins_on_drop() {
+        use std::cell::RefCell;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        struct ExitNotice(mpsc::Sender<()>);
+        impl Drop for ExitNotice {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        thread_local! {
+            static EXIT: RefCell<Option<ExitNotice>> = const { RefCell::new(None) };
+        }
+        let (release, wait) = mpsc::channel();
+        let (exited, exit) = mpsc::channel();
+        let query = ScreenColorQuery::start_with(move || {
+            EXIT.with(|notice| *notice.borrow_mut() = Some(ExitNotice(exited)));
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            ScreenColorTransform::from_magnifier_matrix(&{
+                let mut matrix = identity();
+                matrix[0] = 0.5;
+                matrix
+            })
+        })
+        .unwrap();
+        let snapshot = query.snapshot();
+        let consumers = (0..3)
+            .map(|_| {
+                let snapshot = snapshot.clone();
+                std::thread::spawn(move || snapshot.resolve())
+            })
+            .collect::<Vec<_>>();
+        release.send(()).unwrap();
+        let expected = snapshot.resolve();
+        assert!(expected.is_some());
+        for consumer in consumers {
+            assert_eq!(consumer.join().unwrap(), expected);
+        }
+        drop(query);
+        // A thread-local destructor runs at actual worker exit, not when its
+        // result is published. The request owner must finish that exit too.
+        exit.try_recv().unwrap();
+    }
+
+    #[test]
+    fn parallel_query_failure_and_unwind_release_waiting_consumers() {
+        for panics in [false, true] {
+            let query = ScreenColorQuery::start_with(move || {
+                assert!(!panics, "controlled query failure");
+                None
+            })
+            .unwrap();
+            assert_eq!(query.snapshot().resolve(), None);
+            drop(query);
+        }
+    }
+
+    #[test]
+    fn magnifier_query_releases_initialization_on_success_and_failure() {
+        use std::cell::Cell;
+
+        for query_succeeds in [true, false] {
+            let initialized = Cell::new(false);
+            let result = with_magnifier(
+                || {
+                    initialized.set(true);
+                    true
+                },
+                || {
+                    assert!(initialized.get());
+                    query_succeeds.then_some(42)
+                },
+                || initialized.set(false),
+            );
+            assert_eq!(result, Some(query_succeeds.then_some(42)));
+            assert!(!initialized.get());
+        }
+    }
+
+    #[test]
+    fn magnifier_initialization_failure_skips_query_and_cleanup() {
+        assert_eq!(
+            with_magnifier(
+                || false,
+                || panic!("query requires successful initialization"),
+                || panic!("failed initialization must not be uninitialized"),
+            ),
+            None::<()>,
+        );
+    }
+
+    #[test]
+    fn magnifier_query_releases_initialization_during_unwind() {
+        use std::cell::Cell;
+
+        let released = Cell::new(false);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_magnifier(|| true, || panic!("query failed"), || released.set(true));
+        }));
+        assert!(result.is_err());
+        assert!(released.get());
+    }
     fn identity() -> [f32; 25] {
         std::array::from_fn(|i| if i / 5 == i % 5 { 1.0 } else { 0.0 })
     }

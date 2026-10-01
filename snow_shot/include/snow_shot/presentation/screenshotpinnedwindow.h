@@ -134,6 +134,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         // Known from a selection's shape or rendered text. Imported images
         // with unknown opacity use their alpha capability conservatively.
         std::optional<bool> checkerboardEnabled;
+        std::optional<bool> initialBorderVisible;
         QSize initialWindowSize;
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;

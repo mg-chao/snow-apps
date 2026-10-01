@@ -1114,6 +1114,17 @@ impl WgcWorker {
         D3D11_TEXTURE2D_DESC,
         Option<HdrFrameContext>,
     )> {
+        self.effective_canonical_source_into(None)
+    }
+
+    fn effective_canonical_source_into(
+        &mut self,
+        output: Option<&snow_d3d11::Texture>,
+    ) -> CaptureResult<(
+        ID3D11Texture2D,
+        D3D11_TEXTURE2D_DESC,
+        Option<HdrFrameContext>,
+    )> {
         let source = self
             .canonical
             .texture()
@@ -1132,6 +1143,18 @@ impl WgcWorker {
                 let tonemapper = self.gpu_tonemapper.as_mut().ok_or_else(|| {
                     CaptureError::platform(anyhow::anyhow!("failed to initialize WGC tonemapper"))
                 })?;
+                if let Some(output) = output {
+                    tonemapper.tonemap_into(
+                        &self.device,
+                        &self.context,
+                        &source,
+                        &source_desc,
+                        params,
+                        None,
+                        output,
+                    )?;
+                    return Ok((output.raw().clone(), output.desc(), None));
+                }
                 let output = tonemapper
                     .tonemap(
                         &self.device,
@@ -1151,6 +1174,17 @@ impl WgcWorker {
             let converter = self.gpu_f16_converter.as_mut().ok_or_else(|| {
                 CaptureError::platform(anyhow::anyhow!("failed to initialize WGC F16 converter"))
             })?;
+            if let Some(output) = output {
+                converter.convert_into(
+                    &self.device,
+                    &self.context,
+                    &source,
+                    &source_desc,
+                    None,
+                    output,
+                )?;
+                return Ok((output.raw().clone(), output.desc(), None));
+            }
             let output = converter
                 .convert(&self.device, &self.context, &source, &source_desc, None)?
                 .clone();

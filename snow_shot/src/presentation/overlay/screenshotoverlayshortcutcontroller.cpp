@@ -250,8 +250,7 @@ struct ScreenshotOverlayShortcutController::Impl {
                     !actionId.startsWith(QStringLiteral("move_cursor_")))
                     return false;
                 if (actionId == QStringLiteral("cancel_screenshot")) {
-                    // Session cancellation remains available while a text editor owns input.
-                    return true;
+                    return actions.localShortcutInputAllowed();
                 }
                 if (actionId == QStringLiteral("previous_screenshot_history") ||
                     actionId == QStringLiteral("next_screenshot_history")) {

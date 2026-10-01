@@ -1,4 +1,5 @@
 #include "recordingrenderjob.h"
+#include "snow_shot/platform/applicationqos.h"
 #include "widgets/button.h"
 #include "widgets/modal.h"
 #include "widgets/progress.h"
@@ -68,6 +69,7 @@ struct RecordingRenderJob::Impl {
         std::thread([start = std::move(startFuture), cleanup = std::move(cleanupFuture),
                      cancellation = std::move(cancelFuture), task = task,
                      source = source]() mutable {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             if (start.valid()) {
                 const auto result = start.get();
                 if (result.task)
@@ -217,6 +219,7 @@ struct RecordingRenderJob::Impl {
         lastError.clear();
         errorTranslation = nullptr;
         startFuture = std::async(std::launch::async, [source = source] {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             StartResult result;
             if (snow_recording_source_render_start(source, &result.task) !=
                 SNOW_RECORDING_RESULT_OK)
@@ -247,6 +250,7 @@ struct RecordingRenderJob::Impl {
         task = nullptr;
         cleanupFuture = std::async(std::launch::async,
                                    [retiring, cancellation = std::move(cancelFuture)]() mutable {
+                                       snow_shot::platform::applyApplicationQoSToCurrentThread();
                                        if (cancellation.valid())
                                            cancellation.get();
                                        snow_recording_render_task_destroy(retiring);
@@ -260,6 +264,7 @@ struct RecordingRenderJob::Impl {
         // waiting on filesystem work, so keep that wait away from the GUI and
         // preserve the borrowed task until this operation completes.
         cancelFuture = std::async(std::launch::async, [canceling = task] {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             static_cast<void>(snow_recording_render_task_cancel(canceling));
         });
     }
@@ -268,6 +273,7 @@ struct RecordingRenderJob::Impl {
         auto* retiring = source;
         source = nullptr;
         cleanupFuture = std::async(std::launch::async, [retiring, discard, outcome] {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             CleanupResult result;
             if (discard && snow_recording_source_discard(retiring) != SNOW_RECORDING_RESULT_OK) {
                 result.error = nativeError();

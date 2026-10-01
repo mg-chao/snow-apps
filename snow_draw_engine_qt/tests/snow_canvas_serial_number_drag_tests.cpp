@@ -99,8 +99,9 @@ void clickAndDragLifecycle() {
     require(text.value(QStringLiteral("width")).toDouble() > 1.0,
             "release persists the host-measured label layout, not the placeholder width");
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("Drag label"));
-    key(canvas, Qt::Key_Return, Qt::ControlModifier);
-    require(!canvas.hasActiveTextEditing(), "commit closes editor");
+    key(canvas, Qt::Key_Escape);
+    require(!canvas.hasActiveTextEditing() && !canvas.testAttribute(Qt::WA_InputMethodEnabled),
+            "Escape commits the serial number label and closes its editor");
     require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
                 QStringLiteral("Drag label"),
             "typing after release updates the attached text");

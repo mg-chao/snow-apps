@@ -267,8 +267,8 @@ fn project_cursor(
     target: &CursorTargetInfo,
     snapshot: snow_cursor::CursorSnapshot,
 ) -> snow_cursor::AttachedCursorSample {
-    // Retain before deduplication: A -> B -> A returns Cached(A), even if the
-    // bounded queue dropped A. Embedded shapes share their immutable Arc bytes.
+    // Repeated observations may reference the current shape even if the bounded
+    // queue dropped its transition. Share the pixels with every delivered frame.
     if let Some(shape) = snapshot.shape.shape() {
         *retained = Some(shape.clone());
     }
@@ -355,6 +355,27 @@ pub(crate) fn copy_texture(
     let dst: ID3D11Resource = texture.raw().cast().map_err(CaptureError::platform)?;
     unsafe { device.context().CopyResource(&dst, &src) };
     Ok(texture)
+}
+
+/// Acquire the final shader destination rather than copying a temporary output.
+pub(crate) fn acquire_conversion_output(
+    pool: &mut snow_d3d11::TexturePool,
+    width: u32,
+    height: u32,
+) -> CaptureResult<Texture> {
+    use windows::Win32::Graphics::Direct3D11::{
+        D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_UNORDERED_ACCESS,
+    };
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM;
+    pool.acquire(
+        width,
+        height,
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        (D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS).0
+            as u32,
+    )
+    .map_err(CaptureError::platform)?
+    .ok_or(CaptureError::Timeout)
 }
 
 #[cfg(test)]

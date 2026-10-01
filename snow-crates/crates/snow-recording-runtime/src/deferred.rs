@@ -181,6 +181,7 @@ impl DeferredRecordingSession {
         let worker = std::thread::Builder::new()
             .name("snow-deferred-recording".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let result = run_recording(
                     config,
                     options,

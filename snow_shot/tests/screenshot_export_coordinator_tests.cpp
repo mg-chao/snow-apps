@@ -276,6 +276,34 @@ void shutdownCancelsAndDrains() {
             "coordinator admitted work after shutdown");
 }
 
+void idleWorkersRetireAndLaterWorkRestarts() {
+    ScreenshotExportCoordinator coordinator;
+    QObject receiver;
+    QThread* workerThread = nullptr;
+    int completionCount = 0;
+    const auto submit = [&]() {
+        return coordinator.submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+            [&workerThread](const ScreenshotExportCancellation&) {
+                workerThread = QThread::currentThread();
+                return ScreenshotExportTaskResult{};
+            },
+            [&completionCount](ScreenshotExportTaskResult result) {
+                require(result.succeeded(), "restarted export work must succeed");
+                ++completionCount;
+            });
+    };
+    require(submit().isValid() && processUntil([&]() { return completionCount == 1; }),
+            "initial export work must complete");
+    require(workerThread != nullptr &&
+                processUntil([&]() { return workerThread->isFinished(); }, 10000),
+            "idle export workers must retire without shutting down the coordinator");
+    require(coordinator.pendingJobCount() == 0,
+            "retiring idle workers must leave no pending exports");
+    require(submit().isValid() && processUntil([&]() { return completionCount == 2; }),
+            "export work must restart after idle worker retirement");
+}
+
 void shutdownAbandonsAWorkerThatIgnoresCancellation() {
     ScreenshotExportCoordinator coordinator(150);
     QObject receiver;
@@ -447,12 +475,17 @@ void clipboardCommitRetriesTransientContention() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--idle-workers-only"))) {
+            idleWorkersRetireAndLaterWorkRestarts();
+            return EXIT_SUCCESS;
+        }
         completionRunsOnceOnGuiThread();
         cancellationPropagates();
         destroyedReceiverSuppressesCompletion();
         queueAndWorkerBoundsAreEnforced();
         queuedCancellationImmediatelyReleasesCapacity();
         shutdownCancelsAndDrains();
+        idleWorkersRetireAndLaterWorkRestarts();
         shutdownAbandonsAWorkerThatIgnoresCancellation();
         shutdownDropsQueuedWorkWhenAbandoned();
         clipboardCommitCancellationIsAsynchronous();

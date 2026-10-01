@@ -1,5 +1,5 @@
 use super::*;
-use crate::gpu::{GpuMonitorFrame, copy_texture};
+use crate::gpu::{GpuMonitorFrame, acquire_conversion_output, copy_texture};
 use snow_d3d11::{SharedDevice, TexturePool};
 
 pub(crate) struct GpuDxgiCapturer {
@@ -57,33 +57,34 @@ impl GpuDxgiCapturer {
         drop(guard);
         let desc = native.desc();
         let texture = if desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT {
-            let converted = if let Some(params) = self.hdr {
+            let output = acquire_conversion_output(&mut self.converted, desc.Width, desc.Height)?;
+            if let Some(params) = self.hdr {
                 if self.tonemapper.is_none() {
                     self.tonemapper = Some(GpuTonemapper::new(device.device())?);
                 }
-                self.tonemapper
-                    .as_mut()
-                    .unwrap()
-                    .tonemap(
-                        device.device(),
-                        device.context(),
-                        native.raw(),
-                        &desc,
-                        params.sanitized(),
-                        None,
-                    )?
-                    .clone()
+                self.tonemapper.as_mut().unwrap().tonemap_into(
+                    device.device(),
+                    device.context(),
+                    native.raw(),
+                    &desc,
+                    params.sanitized(),
+                    None,
+                    &output,
+                )?;
             } else {
                 if self.f16.is_none() {
                     self.f16 = Some(GpuF16Converter::new(device.device())?);
                 }
-                self.f16
-                    .as_mut()
-                    .unwrap()
-                    .convert(device.device(), device.context(), native.raw(), &desc, None)?
-                    .clone()
-            };
-            copy_texture(&device, &mut self.converted, &converted)?
+                self.f16.as_mut().unwrap().convert_into(
+                    device.device(),
+                    device.context(),
+                    native.raw(),
+                    &desc,
+                    None,
+                    &output,
+                )?;
+            }
+            output
         } else {
             native
         };

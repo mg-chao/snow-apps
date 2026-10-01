@@ -462,12 +462,17 @@ void wheelAndEscapeRespectDrawingOwnership() {
     require(canvas->hasActiveTextEditing(), "recording text draft should be active");
     PhysicalKeyEvent preserveText(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QCoreApplication::sendEvent(canvas, &preserveText);
-    require(canvas->hasActiveTextEditing() && deactivationRequests == 1,
-            "Escape must preserve the recording text draft and drawing mode");
-    PhysicalKeyEvent commitText(QEvent::KeyPress, Qt::Key_Return, Qt::ControlModifier);
-    QCoreApplication::sendEvent(canvas, &commitText);
-    require(!canvas->hasActiveTextEditing() && canvas->canvasHistoryState().canUndo,
-            "the preserved recording text draft should still commit");
+    require(preserveText.isAccepted() && !canvas->hasActiveTextEditing() &&
+                !canvas->testAttribute(Qt::WA_InputMethodEnabled) && deactivationRequests == 1 &&
+                canvas->canvasHistoryState().canUndo,
+            "Escape must commit recording text and end editing while preserving drawing mode");
+    const QByteArray committedHistory = ScreenRecordingAreaWindowTestAccess::history(area);
+    require(committedHistory.contains("Preserved text"), "Escape must retain recording text");
+    PhysicalKeyEvent releaseText(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QCoreApplication::sendEvent(canvas, &releaseText);
+    require(ScreenRecordingAreaWindowTestAccess::history(area) == committedHistory &&
+                deactivationRequests == 1,
+            "releasing Escape must preserve committed text and drawing mode");
 
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
     QWheelEvent passThroughWheel(QPointF(20, 20), QPointF(20, 20), QPoint(), QPoint(0, -120),

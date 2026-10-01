@@ -1,7 +1,7 @@
 cbuffer Params : register(b0) {
     float sdr_white_nits;
     float hdr_peak_nits;
-    float _pad0;
+    float sdr_transition_start;
     uint flags;
     uint tex_width;
     uint tex_height;
@@ -9,7 +9,7 @@ cbuffer Params : register(b0) {
     uint rotation;
     float lut_input_max;
     float lut_inv_step;
-    float _pad1;
+    float sdr_transition_inv_width;
     float _pad2;
     float4 color_row_r;
     float4 color_row_g;
@@ -120,6 +120,11 @@ float3 inverse_windows_sdr_boost(float3 rgb) {
 }
 
 float3 tone_map_hdr_pixel_bt2390(float3 rgb) {
+    float3 original = rgb;
+    float input_max = max(rgb.r, max(rgb.g, rgb.b));
+    if (input_max <= sdr_transition_start) {
+        return rgb;
+    }
     float y_in = max(dot(rgb, float3(0.2126, 0.7152, 0.0722)), 0.0);
     if (y_in <= EPSILON) {
         return float3(0.0, 0.0, 0.0);
@@ -136,7 +141,13 @@ float3 tone_map_hdr_pixel_bt2390(float3 rgb) {
         rgb /= max_channel;
     }
 
-    return rgb;
+    float t = saturate((input_max - sdr_transition_start) * sdr_transition_inv_width);
+    if (t >= 1.0) {
+        return rgb;
+    }
+    // Match the CPU's bounded handoff after the unchanged gamut compression.
+    float weight = t * t * (3.0 - 2.0 * t);
+    return original + (rgb - original) * weight;
 }
 
 [numthreads(16, 16, 1)]
@@ -149,7 +160,6 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 
     float4 src = src_tex[hdr_source_coord(coord)];
     float3 rgb = inverse_windows_sdr_boost(max(restore_screen_colors(src.rgb), 0.0));
-    // Use one continuous curve for the entire HDR surface, including values below SDR white.
     rgb = tone_map_hdr_pixel_bt2390(rgb);
     float3 srgb = float3(linear_to_srgb(rgb.r), linear_to_srgb(rgb.g), linear_to_srgb(rgb.b));
     dst_tex[coord] = float4(srgb, saturate(src.a));

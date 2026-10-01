@@ -175,6 +175,7 @@ fn filter_rows(mask: &mut Mask, kernel: i32, anchor: i32, pad: u8, dilating: boo
     std::thread::scope(|scope| {
         for chunk in mask.data.chunks_mut(width * chunk_rows.max(1)) {
             scope.spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let mut row_out = vec![0u8; width];
                 let mut deque = VecDeque::with_capacity(kernel.max(1) as usize);
                 for row in chunk.chunks_exact_mut(width) {

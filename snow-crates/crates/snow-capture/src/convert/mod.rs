@@ -3,13 +3,18 @@ mod f16;
 #[cfg(test)]
 pub(crate) mod hdr_tests;
 mod parallel;
+#[cfg(test)]
+pub(crate) use parallel::{conversion_workers, pool_initialized};
 mod scalar;
 #[cfg(target_arch = "x86_64")]
 mod simd_x86;
 
 use crate::frame::CapturePixelFormat;
 #[cfg(windows)]
-pub(crate) use f16::{HDR_LUMA_LUT_SIZE, build_bt2390_luma_lut};
+pub(crate) use f16::{
+    HDR_LUMA_LUT_SIZE, HDR_SDR_TRANSITION_INV_WIDTH, HDR_SDR_TRANSITION_START,
+    build_bt2390_luma_lut,
+};
 pub(crate) use f16::{HdrPreparedContext, prepare_hdr_context_cached};
 use parallel::{install_conversion_pool, parallel_chunk_pixels, should_parallelize};
 use std::sync::OnceLock;
@@ -102,8 +107,9 @@ pub enum HdrInputModel {
 /// This context is auto-derived by the Windows backend from display metadata.
 /// It intentionally excludes user-tunable curve parameters so the HDR->SDR
 /// pipeline follows one consistent standard flow.
-/// Every pixel on a surface with this context follows the same tone curve;
-/// SDR content and sub-white HDR content cannot be distinguished by pixel intensity.
+/// After undoing Windows' SDR white-level scale, SDR-range colors are preserved.
+/// A smooth handoff at SDR white leads into the existing BT.2390 luminance mapping
+/// and hue-preserving gamut compression.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HdrFrameContext {
     /// SDR white level in nits reported by the platform. On Windows this
@@ -400,7 +406,8 @@ impl SurfaceRowConverter {
             let _ = layout.assert_pitches(self.plan.src_bytes_per_pixel);
             let total_pixels = layout.total_pixels();
 
-            let prepared = prepare_hdr_context_cached(params);
+            let prepared =
+                prepare_hdr_context_cached(params).with_output_format(self.output_pixel_format);
             let kernel = if self.force_opaque_alpha {
                 f16_hdr_prepared_opaque_kernel()
             } else {
@@ -418,12 +425,6 @@ impl SurfaceRowConverter {
                         self.plan.parallel.max_workers,
                         move |row_src, row_dst, row_width| {
                             kernel(row_src, row_dst, row_width, &prepared_for_parallel);
-                            if self.output_pixel_format == CapturePixelFormat::Bgra8 {
-                                swap_rgba_to_bgra_in_place(
-                                    std::slice::from_raw_parts_mut(row_dst, row_width * 4),
-                                    row_width,
-                                );
-                            }
                         },
                     );
                 }
@@ -432,12 +433,6 @@ impl SurfaceRowConverter {
             unsafe {
                 run_rows_serial_with(layout, move |row_src, row_dst, row_width| {
                     kernel(row_src, row_dst, row_width, &prepared);
-                    if self.output_pixel_format == CapturePixelFormat::Bgra8 {
-                        swap_rgba_to_bgra_in_place(
-                            std::slice::from_raw_parts_mut(row_dst, row_width * 4),
-                            row_width,
-                        );
-                    }
                 });
             }
             return;
@@ -629,7 +624,8 @@ pub fn convert_row_to_rgba_with_options(
                     dst_row.len(),
                     required_dst
                 );
-                let prepared = prepare_hdr_context_cached(params.sanitized());
+                let prepared = prepare_hdr_context_cached(params.sanitized())
+                    .with_output_format(options.output_pixel_format);
                 let kernel = if options.force_opaque_alpha {
                     f16_hdr_prepared_opaque_kernel()
                 } else {
@@ -642,9 +638,6 @@ pub fn convert_row_to_rgba_with_options(
                         pixel_count,
                         &prepared,
                     );
-                }
-                if options.output_pixel_format == CapturePixelFormat::Bgra8 {
-                    swap_rgba_to_bgra_in_place(dst_row, pixel_count);
                 }
             } else if options.force_opaque_alpha {
                 convert_f16_rgba_to_srgb_opaque(src_row, dst_row, pixel_count);
@@ -1563,7 +1556,7 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
     let params = params.sanitized();
     let (src_row_bytes, dst_row_bytes) = layout.assert_pitches(8);
     let total_pixels = layout.total_pixels();
-    let prepared = prepare_hdr_context_cached(params);
+    let prepared = prepare_hdr_context_cached(params).with_output_format(output_pixel_format);
     let kernel = if force_opaque_alpha {
         f16_hdr_prepared_opaque_kernel()
     } else {
@@ -1597,24 +1590,12 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
                     parallel.max_workers,
                     move |src, dst, pixels| {
                         kernel(src, dst, pixels, &prepared_for_parallel);
-                        if output_pixel_format == CapturePixelFormat::Bgra8 {
-                            swap_rgba_to_bgra_in_place(
-                                std::slice::from_raw_parts_mut(dst, pixels * 4),
-                                pixels,
-                            );
-                        }
                     },
                 );
             }
         } else {
             unsafe {
                 kernel(layout.src, layout.dst, total_pixels, &prepared);
-                if output_pixel_format == CapturePixelFormat::Bgra8 {
-                    swap_rgba_to_bgra_in_place(
-                        std::slice::from_raw_parts_mut(layout.dst, total_pixels * 4),
-                        total_pixels,
-                    );
-                }
             }
         }
         return;
@@ -1634,12 +1615,6 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
                 parallel.max_workers,
                 move |src, dst, width| {
                     kernel(src, dst, width, &prepared_for_parallel);
-                    if output_pixel_format == CapturePixelFormat::Bgra8 {
-                        swap_rgba_to_bgra_in_place(
-                            std::slice::from_raw_parts_mut(dst, width * 4),
-                            width,
-                        );
-                    }
                 },
             );
         }
@@ -1649,9 +1624,6 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
     unsafe {
         run_rows_serial_with(layout, move |src, dst, width| {
             kernel(src, dst, width, &prepared);
-            if output_pixel_format == CapturePixelFormat::Bgra8 {
-                swap_rgba_to_bgra_in_place(std::slice::from_raw_parts_mut(dst, width * 4), width);
-            }
         });
     }
 }

@@ -28,6 +28,7 @@ struct SnowCanvasRuntime::Impl {
     bool restoreDocumentHistory(const QByteArray& payload);
     bool restoreDocumentHistoryPreservingEditorStyles(const QByteArray& payload);
     bool clearDocumentPreservingViewports();
+    void clearRenderState();
     bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void destroyAsync();
     QImage renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
@@ -339,6 +340,16 @@ void SnowCanvasRuntime::setDocumentChangedHandler(std::function<void()> handler)
 
 void SnowCanvasRuntime::destroyAsync() {
     m_impl->destroyAsync();
+}
+
+void SnowCanvasRuntime::Impl::clearRenderState() {
+    if (hasThreadAccess("clearRenderState")) {
+        session.clearRenderState();
+    }
+}
+
+void SnowCanvasRuntime::clearRenderState() {
+    m_impl->clearRenderState();
 }
 
 QImage SnowCanvasRuntime::renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,

@@ -50,28 +50,50 @@ function Assert-SnowShotScoopArchive([string]$Path) {
     } finally { $zip.Dispose() }
 }
 
-function Get-SnowShotScoopUpdateAction([string]$ExistingPath, [string]$CandidatePath) {
-    $candidateText = [IO.File]::ReadAllText($CandidatePath).Replace("`r`n", "`n")
-    $candidate = $candidateText | ConvertFrom-Json
-    $next = [System.Management.Automation.SemanticVersion]::Parse($candidate.version)
-    if (-not (Test-Path -LiteralPath $ExistingPath)) { return 'update' }
-    # Windows Git checkouts may convert committed LF files to CRLF. Compare
-    # repository content, not the checkout's platform-specific line endings.
-    $existingText = [IO.File]::ReadAllText($ExistingPath).Replace("`r`n", "`n")
-    $existing = $existingText | ConvertFrom-Json
-    $current = [System.Management.Automation.SemanticVersion]::Parse($existing.version)
-    if ($next -lt $current) { return 'older' }
-    if ($next -eq $current) {
-        if ($candidateText -ceq $existingText) { return 'unchanged' }
-        throw 'A manifest already exists for this version with different content; investigate the immutable release.'
+function New-SnowShotScoopManifestObject([string]$Version, [string]$Url, [string]$Hash) {
+    # Keep the install contract and upstream maintenance metadata in one place.
+    # checkver scripts also run under Windows PowerShell 5.1 in Scoop's tooling.
+    return [ordered]@{
+        version = $Version
+        description = 'A screenshot utility for capturing, annotating, pinning, and recognizing screen content.'
+        homepage = 'https://snowshot.top'
+        license = 'GPL-3.0-or-later'
+        notes = 'Quit Snow Shot before upgrading. Use scoop update snowshot instead of the built-in updater.'
+        architecture = [ordered]@{ '64bit' = [ordered]@{ url = $Url; hash = $Hash } }
+        bin = ,@('bin\snow_shot.exe', 'snowshot')
+        shortcuts = ,@('bin\snow_shot.exe', 'Snow Shot')
+        persist = 'bin\portable'
+        checkver = [ordered]@{
+            url = 'https://api.github.com/repos/mg-chao/snow-apps/releases?per_page=100'
+            script = @(
+                '$releases = ($page | ConvertFrom-Json) | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -cmatch ''^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:_snow-shot)?$'' }'
+                '$releases = $releases | Sort-Object { [version] ($_.tag_name -replace ''^v|_snow-shot$'', '''') } -Descending'
+                'foreach ($release in $releases) {'
+                '    $version = $release.tag_name -replace ''^v|_snow-shot$'', '''''
+                '    $name = "snow-shot-$version-windows-x64-portable.zip"'
+                '    $asset = $release.assets | Where-Object { $_.name -ceq $name -and $_.browser_download_url -ceq "https://github.com/mg-chao/snow-apps/releases/download/$($release.tag_name)/$name" } | Select-Object -First 1'
+                '    if ($asset) { $asset.browser_download_url; break }'
+                '}'
+            )
+            regex = '/download/(?<tag>v(?<version>\d+\.\d+\.\d+)(?:_snow-shot)?)/snow-shot-\k<version>-windows-x64-portable\.zip$'
+        }
+        autoupdate = [ordered]@{
+            architecture = [ordered]@{
+                '64bit' = [ordered]@{
+                    url = 'https://github.com/mg-chao/snow-apps/releases/download/$matchTag/snow-shot-$version-windows-x64-portable.zip'
+                    hash = [ordered]@{ url = '$url.sha256' }
+                }
+            }
+        }
     }
-    return 'update'
 }
 
 function New-SnowShotScoopManifest([string]$Tag, [string]$OutputPath) {
     $version = Get-SnowShotScoopVersion $Tag
+    if ($version.Contains('-')) { throw 'Scoop Extras requires a stable release version.' }
     $release = Invoke-SnowShotScoopRelease $Tag
     if ($release.draft -or $release.tag_name -cne $Tag) { throw 'Expected the requested published release.' }
+    if ($release.prerelease) { throw 'Scoop Extras requires a stable published release.' }
     $name = "snow-shot-$version-windows-x64-portable.zip"
     $asset = Get-SnowShotScoopAsset $release $name $Tag
     $sidecar = Get-SnowShotScoopAsset $release "$name.sha256" $Tag -Optional
@@ -101,17 +123,7 @@ function New-SnowShotScoopManifest([string]$Tag, [string]$OutputPath) {
             if ($hash -cne $expected) { throw 'Portable ZIP SHA-256 mismatch.' }
         }
         Assert-SnowShotScoopArchive $temp
-        $manifest = [ordered]@{
-            version = $version
-            description = 'A screenshot utility for capturing, annotating, pinning, and recognizing screen content.'
-            homepage = 'https://snowshot.top'
-            license = 'GPL-3.0-or-later'
-            architecture = [ordered]@{ '64bit' = [ordered]@{ url = $asset.browser_download_url; hash = $hash } }
-            bin = ,@('bin\snow_shot.exe', 'snowshot')
-            shortcuts = ,@('bin\snow_shot.exe', 'Snow Shot')
-            persist = 'bin\portable'
-            notes = 'Quit Snow Shot before upgrading. Use scoop update snowshot instead of the built-in updater. Published beta releases are included.'
-        }
+        $manifest = New-SnowShotScoopManifestObject $version $asset.browser_download_url $hash
         $output = [IO.Path]::GetFullPath($OutputPath)
         $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
         [IO.File]::WriteAllText($output, (($manifest | ConvertTo-Json -Depth 8).Replace("`r`n", "`n") + "`n"),

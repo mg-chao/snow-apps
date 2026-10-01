@@ -13,6 +13,7 @@ pure-rust = []
 opencv = ["dep:opencv"]
 
 [dependencies]
+snow-core = { path = "../snow-core" }
 image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png"] }
 opencv = { version = "0.100.1", optional = true, default-features = false, features = ["clang-runtime", "imgproc", "imgcodecs"] }
 serde = { version = "1", features = ["derive"] }

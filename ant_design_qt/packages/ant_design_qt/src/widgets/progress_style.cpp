@@ -68,8 +68,9 @@ ProgressVisualStyle resolveProgressVisualStyle(const AdProgress* widget,
   }
   const QColor firstColor =
       widget->strokeGradient().isEmpty() ? style.fill : widget->strokeGradient().first().second;
-  if (!semantic.indicator.textColor && (firstColor.redF() * 0.299 + firstColor.greenF() * 0.587 +
-                                        firstColor.blueF() * 0.114) > 0.6) {
+  if (!semantic.indicator.textColor && (static_cast<qreal>(firstColor.redF()) * 0.299 +
+                                        static_cast<qreal>(firstColor.greenF()) * 0.587 +
+                                        static_cast<qreal>(firstColor.blueF()) * 0.114) > 0.6) {
     style.innerText = QColor(0, 0, 0, 115);
   }
   return style;

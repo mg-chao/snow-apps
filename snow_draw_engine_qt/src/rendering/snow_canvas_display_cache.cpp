@@ -189,7 +189,7 @@ SnowCanvasDisplayCache::SnowCanvasDisplayCache() {
 
 void SnowCanvasDisplayCache::reset(const SnowColorRgba8& clearColor) {
     m_patchCursor = SnowPatchCursor{};
-    m_renderPlan.clear();
+    std::vector<SnowSceneRenderRun>().swap(m_renderPlan);
     m_executionPlan = {};
     std::vector<SnowCanvasSceneItem>().swap(m_sceneStorage);
     std::vector<SnowCanvasOverlayItem>().swap(m_overlayStorage);
@@ -211,6 +211,38 @@ void SnowCanvasDisplayCache::reset(const SnowColorRgba8& clearColor) {
     m_watermarkDisplayInfo = WatermarkDisplayInfo{};
     m_spotlightDisplayInfo = SpotlightDisplayInfo{};
     m_overlayDisplayInfo = OverlayDisplayInfo{};
+}
+
+void SnowCanvasDisplayCache::clearRenderState() {
+    m_executionPlan = {};
+}
+
+std::size_t SnowCanvasDisplayCache::retainedStorageBytes() const {
+    std::size_t bytes =
+        m_renderPlan.capacity() * sizeof(SnowSceneRenderRun) +
+        m_sceneStorage.capacity() * sizeof(SnowCanvasSceneItem) +
+        m_overlayStorage.capacity() * sizeof(SnowCanvasOverlayItem) +
+        m_spotlightStorage.capacity() * sizeof(SnowSpotlightCutout) +
+        (m_sceneDirtyStorage.capacity() + m_overlayDirtyStorage.capacity() +
+         m_decorationDirtyStorage.capacity()) *
+            sizeof(SnowDirtyRect) +
+        m_appliedPenFilterGeometryDeltas.capacity() * sizeof(AppliedPenFilterGeometryDelta) +
+        m_sceneItemSpatialCells.capacity() * sizeof(std::vector<std::int64_t>) +
+        (m_sceneGlobalItems.capacity() + m_filterIndices.capacity() +
+         m_sceneQueryMarks.capacity()) *
+            sizeof(std::uint32_t);
+    for (const auto& cells : m_sceneItemSpatialCells) {
+        bytes += cells.capacity() * sizeof(std::int64_t);
+    }
+    if (m_sceneSpatialCells.bucket_count() > 1) {
+        bytes += m_sceneSpatialCells.bucket_count() * sizeof(void*);
+    }
+    for (const auto& [key, indices] : m_sceneSpatialCells) {
+        Q_UNUSED(key);
+        bytes += sizeof(decltype(m_sceneSpatialCells)::value_type) +
+                 indices.capacity() * sizeof(std::uint32_t);
+    }
+    return bytes;
 }
 
 void SnowCanvasDisplayCache::setClearColor(const SnowColorRgba8& clearColor) {
@@ -256,6 +288,9 @@ bool SnowCanvasDisplayCache::sync(SnowRuntime runtime, SnowViewport viewport) {
         return false;
     }
     if (payload.renderPlanReplace != 0) {
+        if (patchInfo.scene_reset != 0) {
+            std::vector<SnowSceneRenderRun>().swap(m_renderPlan);
+        }
         assignStorage(m_renderPlan, payload.renderPlan, payload.renderPlanCount);
     }
     if ((payload.renderPlanReplace != 0 ||

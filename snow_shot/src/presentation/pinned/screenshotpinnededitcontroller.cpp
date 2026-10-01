@@ -532,6 +532,8 @@ void ScreenshotPinnedEditController::setEditMode(bool enabled) {
         }
     }
     destroyToolbar();
+    resetAutoFilterSession();
+    m_pinnedWindow.m_runtime.clearRenderState();
     emit editModeChanged(false);
 }
 
@@ -1015,6 +1017,10 @@ QJsonObject ScreenshotPinnedEditController::automationAutoFilterState() const {
 void ScreenshotPinnedEditController::cancelAutomationAutoFilter() {
     if (m_automationFilterCategories.isEmpty())
         return;
+    resetAutoFilterSession();
+}
+
+void ScreenshotPinnedEditController::resetAutoFilterSession() {
     m_automationFilterCategories.clear();
     m_autoFilterController->resetSession();
 }

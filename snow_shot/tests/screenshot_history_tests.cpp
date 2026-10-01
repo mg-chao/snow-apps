@@ -47,7 +47,10 @@
 #include <QWindow>
 
 #include <cstdlib>
+#include <chrono>
+#include <condition_variable>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <utility>
 
@@ -103,6 +106,151 @@ void waitForNavigation(ScreenshotHistoryService& history, const char* timeoutMes
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(!history.navigationInProgress(), timeoutMessage);
+}
+
+void validationWorkersRetireAndRestart() {
+    struct Lifecycle {
+        std::mutex mutex;
+        std::condition_variable changed;
+        int starts = 0;
+        int exits = 0;
+        int maximumLive = 0;
+    };
+    struct ExitNotice {
+        std::shared_ptr<Lifecycle> lifecycle;
+        ~ExitNotice() {
+            {
+                const std::lock_guard lock(lifecycle->mutex);
+                ++lifecycle->exits;
+            }
+            lifecycle->changed.notify_all();
+        }
+    };
+    class ObservedRepository final : public storage::CaptureHistoryRepository {
+      public:
+        explicit ObservedRepository(std::shared_ptr<Lifecycle> lifecycle)
+            : m_lifecycle(std::move(lifecycle)) {}
+        QVector<storage::CaptureHistoryRecord> records() const override {
+            const std::lock_guard lock(m_mutex);
+            return m_records;
+        }
+        storage::CaptureHistoryUsage usage() const override {
+            return {};
+        }
+        storage::CaptureHistoryPolicy policy() const override {
+            return {};
+        }
+        std::shared_future<storage::CaptureHistoryPublishResult>
+        publish(storage::CaptureHistoryDraft draft) override {
+            thread_local std::unique_ptr<ExitNotice> exitNotice;
+            if (!exitNotice) {
+                exitNotice = std::make_unique<ExitNotice>(m_lifecycle);
+                const std::lock_guard lock(m_lifecycle->mutex);
+                ++m_lifecycle->starts;
+                m_lifecycle->maximumLive =
+                    std::max(m_lifecycle->maximumLive, m_lifecycle->starts - m_lifecycle->exits);
+            }
+            storage::CaptureHistoryRecord record;
+            record.id = draft.id;
+            record.createdUtc = draft.createdUtc;
+            record.canvasBounds = draft.canvasBounds;
+            record.selection = draft.selection;
+            {
+                const std::lock_guard lock(m_mutex);
+                m_records.push_back(record);
+            }
+            std::promise<storage::CaptureHistoryPublishResult> promise;
+            promise.set_value({storage::StorageResult::ok(), record});
+            return promise.get_future().share();
+        }
+        std::optional<storage::CaptureHistoryPayload>
+        load(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        std::optional<storage::CaptureHistoryAssetSet>
+        displayAssets(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        std::optional<QImage> loadResultImage(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        std::optional<storage::PreparedPngImage>
+        loadResultPng(const storage::CaptureHistoryRecord&) const override {
+            return {};
+        }
+        void reportReadFailure(const storage::CaptureHistoryRecord&, const QString&) override {}
+        std::shared_future<storage::StorageResult> remove(const QString&) override {
+            return ready();
+        }
+        std::shared_future<storage::StorageResult> removeMany(QVector<QString>) override {
+            return ready();
+        }
+        std::shared_future<storage::StorageResult>
+        updatePolicy(storage::CaptureHistoryPolicy) override {
+            return ready();
+        }
+        std::shared_future<storage::StorageResult> requestClear() override {
+            return ready();
+        }
+        void drain() override {}
+        QString lastError() const override {
+            return {};
+        }
+
+      private:
+        static std::shared_future<storage::StorageResult> ready() {
+            std::promise<storage::StorageResult> promise;
+            promise.set_value(storage::StorageResult::ok());
+            return promise.get_future().share();
+        }
+        std::shared_ptr<Lifecycle> m_lifecycle;
+        mutable std::mutex m_mutex;
+        QVector<storage::CaptureHistoryRecord> m_records;
+    };
+
+    const auto lifecycle = std::make_shared<Lifecycle>();
+    ObservedRepository repository(lifecycle);
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel source;
+    source.stableId = QStringLiteral("validation-worker");
+    source.canvasRect = QRect(0, 0, 16, 16);
+    source.imageSourceCanvasRect = source.canvasRect;
+    source.logicalRect = QRect(0, 0, 16, 16);
+    source.physicalRect = QRect(0, 0, 16, 16);
+    source.image = QImage(16, 16, QImage::Format_RGBA8888);
+    source.image.fill(Qt::blue);
+    source.active = true;
+    displays.appendDisplay(std::move(source));
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(0, 0, 16, 16));
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    ScreenshotIntelligentSelectionModel intelligent;
+    {
+        ScreenshotHistoryService history({displays, runtime, selection, interaction, intelligent},
+                                         repository);
+        for (int cycle = 1; cycle <= 2; ++cycle) {
+            history.commit(
+                takeSnapshot(history.snapshotCurrent(true), "validation worker snapshot failed"));
+            history.drainPendingWrites();
+            require(repository.records().size() == cycle,
+                    "validation worker restart lost an accepted publication");
+            std::unique_lock lock(lifecycle->mutex);
+            require(lifecycle->changed.wait_for(lock, std::chrono::seconds(7),
+                                                [&]() { return lifecycle->exits == cycle; }),
+                    "idle history validation worker did not actually terminate");
+            require(lifecycle->starts == cycle && lifecycle->maximumLive == 1,
+                    "history validation worker restart overlapped or duplicated workers");
+        }
+        history.commit(takeSnapshot(history.snapshotCurrent(true),
+                                    "shutdown validation worker snapshot failed"));
+    }
+    require(repository.records().size() == 3,
+            "shutdown abandoned an accepted validation job after idle restart");
+    const std::lock_guard lock(lifecycle->mutex);
+    require(lifecycle->starts == 3 && lifecycle->exits == 3 && lifecycle->maximumLive == 1,
+            "shutdown did not finish the restarted validation worker");
 }
 
 QImage solidImage(const QSize& size, QRgb color) {
@@ -2342,7 +2490,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
             "failed to restore selection shortcuts after route test");
 }
 
-void screenshotCancelShortcutWorksWhileEditingCanvasText() {
+void screenshotTextEditingTakesPriorityOverCancelShortcut() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
     ScreenshotGeometryMapper geometry;
@@ -2350,25 +2498,17 @@ void screenshotCancelShortcutWorksWhileEditingCanvasText() {
     ScreenshotIntelligentSelectionModel intelligent;
     ScreenshotInteractionState interaction;
     interaction.confirmSelection();
-    SnowCanvasWidget canvas;
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
     canvas.resize(320, 240);
     canvas.show();
     QApplication::processEvents();
-    require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate text tool for cancellation");
     const QPointF position(80, 80);
-    QMouseEvent press(QEvent::MouseButtonPress, position, position, Qt::LeftButton, Qt::LeftButton,
-                      Qt::NoModifier);
-    QMouseEvent release(QEvent::MouseButtonRelease, position, position, Qt::LeftButton,
-                        Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(&canvas, &press);
-    QApplication::sendEvent(&canvas, &release);
-    PhysicalKeyEvent insert(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
-                            QStringLiteral("Keep this draft"));
-    QApplication::sendEvent(&canvas, &insert);
-    require(canvas.hasActiveTextEditing(), "cancellation fixture must edit a text draft");
-
     snow_shot::presentation::WindowShortcutManager manager;
     manager.addScopeWindow(&canvas);
+    QWidget toolbar;
+    toolbar.show();
+    manager.addScopeWindow(&toolbar);
     int cancellations = 0;
     ScreenshotOverlayInputActions actions;
     actions.localShortcutInputAllowed = [&] { return !canvas.hasActiveTextEditing(); };
@@ -2388,13 +2528,37 @@ void screenshotCancelShortcutWorksWhileEditingCanvasText() {
             QStringLiteral("cancel_screenshot"),
             {modifiers == Qt::NoModifier ? QStringLiteral("Esc") : QStringLiteral("Alt+Esc")});
         require(settings.setAllShortcutsAtomic(configured), "configure screenshot cancellation");
+        require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate text tool for cancellation");
+        QMouseEvent press(QEvent::MouseButtonPress, position, position, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, position, position, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &press);
+        QApplication::sendEvent(&canvas, &release);
+        require(canvas.hasActiveTextEditing(), "cancellation fixture must edit text");
+        require(dispatchShortcut(canvas, Qt::Key_A, Qt::ControlModifier),
+                "select the complete draft before replacement");
+        PhysicalKeyEvent insert(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier,
+                                QStringLiteral("Keep this draft"));
+        QApplication::sendEvent(&canvas, &insert);
         const int before = cancellations;
         require(dispatchShortcut(canvas, Qt::Key_Escape, modifiers) && cancellations == before,
-                "cancel must reserve Escape during text editing and wait for release");
-        require(canvas.hasActiveTextEditing(), "cancel press must not delete the text draft");
-        require(dispatchShortcutRelease(canvas, Qt::Key_Escape) && cancellations == before + 1,
-                "cancel release must reach the screenshot session while editing text");
-        require(canvas.hasActiveTextEditing(), "shortcut routing must not discard text itself");
+                "Escape must finish text editing before screenshot cancellation");
+        require(!canvas.hasActiveTextEditing() &&
+                    !canvas.testAttribute(Qt::WA_InputMethodEnabled) &&
+                    canvas.canvasHistoryState().canUndo,
+                "Escape must commit text and end input mode in the screenshot window");
+        const QByteArray committed = runtime.serializeDocumentHistory();
+        require(committed.contains("Keep this draft"), "Escape must preserve the input content");
+        static_cast<void>(dispatchShortcut(canvas, Qt::Key_Escape, modifiers, true));
+        static_cast<void>(dispatchShortcutRelease(canvas, Qt::Key_Escape, modifiers, true));
+        static_cast<void>(dispatchShortcutRelease(toolbar, Qt::Key_Escape));
+        require(cancellations == before && runtime.serializeDocumentHistory() == committed,
+                "repeat and release after ending text editing must not terminate the screenshot");
+        require(dispatchShortcut(canvas, Qt::Key_Escape, modifiers) && cancellations == before,
+                "a fresh Escape press after editing must reserve screenshot cancellation");
+        require(dispatchShortcutRelease(toolbar, Qt::Key_Escape) && cancellations == before + 1,
+                "a fresh Escape release must still cancel the screenshot after editing ends");
     }
     require(settings.setAllShortcutsAtomic(original), "restore screenshot cancellation shortcuts");
 }
@@ -3021,15 +3185,11 @@ void scrollingCaptureRoutesEveryToolbarShortcut() {
                 "a declined toolbar command must not be replaced by a shortcut implementation");
         commandEnabled = true;
         inputAllowed = false;
-        if (command == QStringLiteral("cancel_screenshot")) {
-            require(dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
-                        dispatchShortcutRelease(window, Qt::Key_F12) && dispatched.size() == 2,
-                    "session cancellation must remain available while text input owns shortcuts");
-        } else {
-            require(!dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
-                        dispatched.size() == 1,
-                    "text input must retain drawing shortcuts while scrolling");
-        }
+        require(!dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
+                    dispatched.size() == 1,
+                "text input must retain shortcuts while scrolling, including cancellation");
+        static_cast<void>(dispatchShortcutRelease(window, Qt::Key_F12));
+        require(dispatched.size() == 1, "blocked shortcuts must not activate on release");
         inputAllowed = true;
     }
     require(settings.setAllShortcutsAtomic(original), "failed to restore toolbar shortcuts");
@@ -4157,6 +4317,11 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--history-worker-lifecycle-only"))) {
+        validationWorkersRetireAndRestart();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--mcp-transient-only"))) {
         transientMcpDocumentPreservesUndoAndSources(temporary.path());
         storage::ApplicationStorage::instance().shutdown();
@@ -4214,7 +4379,7 @@ int main(int argc, char** argv) {
         configuredSelectionShortcutsRouteTabHistoryAndColorActions();
         intelligentSelectionSupportsCursorMovementShortcuts();
         cursorMovementEligibilityFollowsInteractionState();
-        screenshotCancelShortcutWorksWhileEditingCanvasText();
+        screenshotTextEditingTakesPriorityOverCancelShortcut();
         configuredScreenshotShortcutsControlMoveAndCursorNavigation();
         selectionStagesActivateEveryToolbarShortcut();
         toolbarSelectionPreparationRejectsIncompleteRegions();
@@ -4224,6 +4389,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     snapshotsRetainTheLiveDesktopGeometry();
+    validationWorkersRetireAndRestart();
     editorHistoryUsesConfiguredDisplayCompression(
         QDir(temporary.path()).filePath(QStringLiteral("compression")));
     pointHistorySurvivesDisplayRemoval();
@@ -4265,7 +4431,7 @@ int main(int argc, char** argv) {
     configuredSelectionShortcutsRouteTabHistoryAndColorActions();
     intelligentSelectionSupportsCursorMovementShortcuts();
     cursorMovementEligibilityFollowsInteractionState();
-    screenshotCancelShortcutWorksWhileEditingCanvasText();
+    screenshotTextEditingTakesPriorityOverCancelShortcut();
     configuredScreenshotShortcutsControlMoveAndCursorNavigation();
     shortcutExitConfirmationGatesCancellation();
     scrollingCaptureRoutesEveryToolbarShortcut();

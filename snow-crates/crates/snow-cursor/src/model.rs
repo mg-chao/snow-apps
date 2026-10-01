@@ -108,7 +108,11 @@ pub struct CursorSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CursorShapeState {
+    /// Authentic pixels for the current shape. A stream may embed the same ID
+    /// again after another shape, or on every frame to tolerate dropped packets.
     Embedded(CursorShape),
+    /// Reuses the most recent embedded shape. Projected streams embed each
+    /// transition, so consumers can release the previous shape's pixels.
     Cached(CursorShapeId),
     Unavailable,
 }

@@ -5,7 +5,7 @@
 
 #if defined(Q_OS_WIN)
 #include <windows.h>
-#else
+#elif !defined(Q_OS_MACOS)
 #include <cerrno>
 #include <sys/resource.h>
 #endif
@@ -44,7 +44,10 @@ std::optional<ApplicationPriority> applicationPriorityForValue(const QString& va
 }
 
 bool applyApplicationPriority(ApplicationPriority priority) {
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_MACOS)
+    Q_UNUSED(priority);
+    return false;
+#elif defined(Q_OS_WIN)
     DWORD priorityClass = NORMAL_PRIORITY_CLASS;
     switch (priority) {
     case ApplicationPriority::Normal:

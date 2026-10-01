@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "../pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -794,7 +795,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     PinnedCompletion completion,
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
     std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
-    snow_shot::storage::PinnedSourceIdentity sourceIdentity) {
+    snow_shot::storage::PinnedSourceIdentity sourceIdentity,
+    std::optional<bool> initialBorderVisible) {
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
@@ -806,7 +808,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
         QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)), std::move(formattedTextDocument),
         formattedPlainText, formattedTextDevicePixelRatio, std::move(originalContent),
         std::move(imageLoader), std::move(completion), std::move(borderAppearance),
-        checkerboardEnabled, source, nullptr, std::move(sourceIdentity));
+        checkerboardEnabled, source, nullptr, std::move(sourceIdentity), initialBorderVisible);
 }
 
 bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
@@ -834,8 +836,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     ScreenshotImageLoader imageLoader, PinnedCompletion completion,
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
     std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
-    const ScreenshotHistoryEntry* document,
-    snow_shot::storage::PinnedSourceIdentity sourceIdentity) {
+    const ScreenshotHistoryEntry* document, snow_shot::storage::PinnedSourceIdentity sourceIdentity,
+    std::optional<bool> initialBorderVisible) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
@@ -871,6 +873,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     config.nativeGeometry = nativeGeometry;
     config.canvasSourceRect = canvasRect;
     config.borderAppearance = std::move(borderAppearance);
+    config.initialBorderVisible = initialBorderVisible;
     config.checkerboardEnabled =
         formattedTextDocument != nullptr ? std::optional<bool>(false) : checkerboardEnabled;
     if (!image.isNull()) {
@@ -1011,6 +1014,7 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     auto* repository = &storage.pinnedWindows();
     const auto alive = m_restoreAlive;
     storage.pinnedFullImagePool().start([this, alive, repository, id]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
         auto loaded = repository->loadRecord(id);
         QMetaObject::invokeMethod(
             &snow_shot::storage::ApplicationStorage::instance(),

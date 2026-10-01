@@ -137,11 +137,12 @@ fn copy_region_rgba(src: &Frame, blit: CaptureBlitRegion, dst: &mut Frame) -> Ca
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct CaptureSessionConfig {
     backend_tuning: crate::tuning::BackendTuning,
     windows: crate::tuning::windows::WindowsCaptureOptions,
     screen_color_transform: Option<crate::color_effect::ScreenColorTransform>,
+    pending_screen_color_transform: Option<crate::color_effect::PendingScreenColorTransform>,
     pub(crate) capture_retry_count: usize,
     /// Capture intent used to tune backend behavior for screenshot
     /// vs. continuous recording workloads.
@@ -159,6 +160,7 @@ impl Default for CaptureSessionConfig {
             backend_tuning: Default::default(),
             windows: Default::default(),
             screen_color_transform: None,
+            pending_screen_color_transform: None,
             capture_retry_count: 1,
             mode: CaptureMode::Snapshot,
             output_pixel_format: CapturePixelFormat::Rgba8,
@@ -174,6 +176,7 @@ impl From<CaptureOptions> for CaptureSessionConfig {
             backend_tuning: value.backend_tuning,
             windows: value.backend_tuning.windows_or_default(),
             screen_color_transform: None,
+            pending_screen_color_transform: None,
             capture_retry_count: value.capture_retry_count,
             mode: value.workload,
             output_pixel_format: value.output_pixel_format,
@@ -270,9 +273,6 @@ impl CaptureSessionBuilder {
         let excluded_windows = self.excluded_windows.clone();
         let excluded_processes = self.excluded_processes.clone();
         let (target, backend, config) = self.resolve_backend_and_config()?;
-        if config.mode == CaptureMode::Continuous {
-            crate::convert::warmup();
-        }
         let native = backend.create_target_capturer(
             &target,
             CaptureOptions {
@@ -287,7 +287,7 @@ impl CaptureSessionBuilder {
             },
         )?;
         let runtime = CaptureSessionRuntime::for_target(&target);
-        Ok(CaptureSession {
+        let mut session = CaptureSession {
             target,
             backend,
             config,
@@ -297,7 +297,11 @@ impl CaptureSessionBuilder {
             cursor_projector: CursorProjector::new(),
             latest_cursor_shape: None,
             native,
-        })
+        };
+        if session.config.mode == CaptureMode::Continuous {
+            session.warmup_runtime();
+        }
+        Ok(session)
     }
 
     pub(crate) fn build(self) -> CaptureResult<CaptureSession> {
@@ -523,6 +527,8 @@ where
             std::collections::hash_map::Entry::Occupied(entry) => {
                 let capturer = entry.into_mut();
                 capturer.set_screen_color_transform(config.screen_color_transform)?;
+                capturer
+                    .set_pending_screen_color_transform(config.pending_screen_color_transform)?;
                 Ok(capturer)
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -533,6 +539,8 @@ where
                 capturer.set_output_pixel_format(config.output_pixel_format)?;
                 capturer.set_capture_mode(config.mode)?;
                 capturer.set_screen_color_transform(config.screen_color_transform)?;
+                capturer
+                    .set_pending_screen_color_transform(config.pending_screen_color_transform)?;
                 #[cfg(feature = "stage-timing")]
                 capturer.set_record_stage_timings(config.record_stage_timings)?;
                 Ok(entry.insert(capturer))
@@ -834,8 +842,18 @@ impl CaptureSession {
         &self.target
     }
 
+    /// Warm conversion dispatch without allocating workers for one-shot captures.
     pub fn warmup_runtime(&mut self) {
-        crate::convert::warmup();
+        // Native target capturers own their pixel processing. Snapshot backends
+        // may copy pixels or convert serially, so their parallel conversion paths
+        // initialize the shared pool only when they actually need it. Continuous
+        // capture still warms the pool ahead of the first frame.
+        if self.native.is_none() {
+            match self.config.mode {
+                CaptureMode::Snapshot => crate::convert::warmup_dispatch(),
+                CaptureMode::Continuous => crate::convert::warmup(),
+            }
+        }
     }
 
     /// Prepare resources that are safe to retain between one-shot captures.
@@ -845,7 +863,9 @@ impl CaptureSession {
             // Snapshot warm-up must stay allocation-light. SIMD dispatch and
             // lookup tables are cheap to retain; the conversion worker pool
             // is created only when a real capture needs it.
-            crate::convert::warmup_dispatch();
+            if self.native.is_none() {
+                crate::convert::warmup_dispatch();
+            }
         } else {
             self.warmup_runtime();
         }
@@ -908,14 +928,14 @@ impl CaptureSession {
             CaptureTarget::PrimaryMonitor | CaptureTarget::Monitor(_) => {
                 let monitor = self.resolve_monitor_target()?;
                 let backend = Arc::clone(&self.backend);
-                let config = self.config;
+                let config = self.config.clone();
                 self.monitor_runtime_mut()
                     .get_or_create_capturer(backend, config, &monitor)?
                     .prewarm_environment()?;
             }
             CaptureTarget::Window(window) => {
                 let backend = Arc::clone(&self.backend);
-                let config = self.config;
+                let config = self.config.clone();
                 self.window_runtime_mut()
                     .get_or_create_capturer(backend, config, &window)?
                     .prewarm_environment()?;
@@ -928,7 +948,7 @@ impl CaptureSession {
                 };
                 for entry in entries.iter() {
                     let backend = Arc::clone(&self.backend);
-                    let config = self.config;
+                    let config = self.config.clone();
                     self.region_runtime_mut()
                         .get_or_create_capturer(backend, config, &entry.monitor)?
                         .prewarm_environment()?;
@@ -995,10 +1015,31 @@ impl CaptureSession {
         include_cursor: bool,
         cancellation: snow_core::cancellation::CancellationToken,
     ) -> CaptureResult<Frame> {
+        self.capture_snapshot_impl(include_cursor, cancellation, None)
+    }
+
+    /// Acquire pixels while a shared Magnifier query runs, waiting only before
+    /// conversion. The pending result is discarded before snapshot idle cleanup.
+    pub fn capture_snapshot_with_color_query(
+        &mut self,
+        include_cursor: bool,
+        cancellation: snow_core::cancellation::CancellationToken,
+        snapshot: crate::color_effect::PendingScreenColorTransform,
+    ) -> CaptureResult<Frame> {
+        self.capture_snapshot_impl(include_cursor, cancellation, Some(snapshot))
+    }
+
+    fn capture_snapshot_impl(
+        &mut self,
+        include_cursor: bool,
+        cancellation: snow_core::cancellation::CancellationToken,
+        snapshot: Option<crate::color_effect::PendingScreenColorTransform>,
+    ) -> CaptureResult<Frame> {
         if cancellation.is_canceled() {
             self.release_idle_resources();
             return Err(CaptureError::Canceled);
         }
+        self.config.pending_screen_color_transform = snapshot;
         if let Some(native) = &mut self.native {
             native.set_cancellation(cancellation.clone());
         }
@@ -1007,6 +1048,7 @@ impl CaptureSession {
         } else {
             self.capture_frame(None)
         };
+        self.config.pending_screen_color_transform = None;
         // Native snapshots are already prepared. Re-enumerating after releasing
         // them would delay cancellation and could reject a valid captured frame
         // after its target moves or disappears.
@@ -1196,7 +1238,7 @@ impl CaptureSession {
             }
             CaptureTarget::Window(window) => {
                 let backend = Arc::clone(&self.backend);
-                let config = self.config;
+                let config = self.config.clone();
                 let capturer = self
                     .window_runtime_mut()
                     .get_or_create_capturer(backend, config, &window)?;
@@ -1209,7 +1251,7 @@ impl CaptureSession {
     fn sample_native_cursor_for_monitor_target(&mut self) -> CaptureResult<Option<CursorSnapshot>> {
         let monitor = self.resolve_monitor_target()?;
         let backend = Arc::clone(&self.backend);
-        let config = self.config;
+        let config = self.config.clone();
         let capturer = self
             .monitor_runtime_mut()
             .get_or_create_capturer(backend, config, &monitor)?;
@@ -1233,7 +1275,7 @@ impl CaptureSession {
             return Ok(None);
         };
         let backend = Arc::clone(&self.backend);
-        let config = self.config;
+        let config = self.config.clone();
         let capturer =
             self.region_runtime_mut()
                 .get_or_create_capturer(backend, config, &entry.monitor)?;
@@ -1409,11 +1451,13 @@ impl CaptureSession {
 
     fn do_capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
         if let Some(native) = &mut self.native {
-            if !matches!(
-                self.config.windows.color_correction,
-                crate::color_effect::ColorCorrection::Disabled
-                    | crate::color_effect::ColorCorrection::Snapshot(None)
-            ) {
+            if self.config.pending_screen_color_transform.is_some()
+                || !matches!(
+                    self.config.windows.color_correction,
+                    crate::color_effect::ColorCorrection::Disabled
+                        | crate::color_effect::ColorCorrection::Snapshot(None)
+                )
+            {
                 return Err(CaptureError::BackendUnavailable(
                     "Windows Magnifier correction is unsupported by this native backend".into(),
                 ));
@@ -1424,8 +1468,13 @@ impl CaptureSession {
             frame.metadata.backend_kind = native.backend_kind();
             return Ok(frame);
         }
-        let transform = self.config.windows.color_correction.resolve();
-        if transform != self.config.screen_color_transform {
+        let pending = self.config.pending_screen_color_transform.is_some();
+        let transform = if pending {
+            None
+        } else {
+            self.config.windows.color_correction.resolve()
+        };
+        if pending || transform != self.config.screen_color_transform {
             self.config.screen_color_transform = transform;
             // A new transform invalidates converted history, not the raw capture surfaces.
             match &mut self.runtime {
@@ -1466,7 +1515,7 @@ impl CaptureSession {
             last_history_seq,
             move |s| {
                 let backend = Arc::clone(&s.backend);
-                let config = s.config;
+                let config = s.config.clone();
                 s.monitor_runtime_mut().get_or_create_capturer(
                     backend,
                     config,
@@ -1498,7 +1547,7 @@ impl CaptureSession {
             last_history_seq,
             move |s| {
                 let backend = Arc::clone(&s.backend);
-                let config = s.config;
+                let config = s.config.clone();
                 s.window_runtime_mut()
                     .get_or_create_capturer(backend, config, &window)
             },
@@ -1573,7 +1622,7 @@ impl CaptureSession {
             if should_try_desktop_direct {
                 let direct_sample = {
                     let backend = Arc::clone(&self.backend);
-                    let config = self.config;
+                    let config = self.config.clone();
                     let capturer = self.region_runtime_mut().get_or_create_capturer(
                         backend,
                         config,
@@ -1635,7 +1684,7 @@ impl CaptureSession {
         for entry in entries.iter() {
             let sample = {
                 let backend = Arc::clone(&self.backend);
-                let config = self.config;
+                let config = self.config.clone();
                 let capturer = self.region_runtime_mut().get_or_create_capturer(
                     backend,
                     config,
@@ -1660,7 +1709,7 @@ impl CaptureSession {
                 let reuse_has_history = reuse_frame.is_some();
                 let monitor_frame = {
                     let backend = Arc::clone(&self.backend);
-                    let config = self.config;
+                    let config = self.config.clone();
                     let capturer = self.region_runtime_mut().get_or_create_capturer(
                         backend,
                         config,
@@ -1854,6 +1903,7 @@ mod tests {
     struct MockBackend {
         monitor: MonitorId,
         history_hints: Arc<Mutex<Vec<bool>>>,
+        raw_acquired: Option<std::sync::mpsc::Sender<()>>,
     }
 
     impl MockBackend {
@@ -1861,12 +1911,15 @@ mod tests {
             Self {
                 monitor: MonitorId::from_parts(1, 2, 0, "mock-monitor", true),
                 history_hints,
+                raw_acquired: None,
             }
         }
     }
 
     struct MockMonitorCapturer {
         history_hints: Arc<Mutex<Vec<bool>>>,
+        raw_acquired: Option<std::sync::mpsc::Sender<()>>,
+        pending: Option<crate::color_effect::PendingScreenColorTransform>,
     }
 
     #[derive(Default)]
@@ -1876,11 +1929,13 @@ mod tests {
         capture_calls: usize,
         release_calls: usize,
         fail_capture: bool,
+        cursor_visibility: Vec<bool>,
     }
 
     struct LifecycleBackend {
         monitor: MonitorId,
         state: Arc<Mutex<LifecycleState>>,
+        native: bool,
     }
 
     struct LifecycleCapturer {
@@ -1908,6 +1963,11 @@ mod tests {
     }
 
     impl MonitorCapturer for LifecycleCapturer {
+        fn set_cursor_visible(&mut self, visible: bool) -> CaptureResult<()> {
+            self.state.lock().unwrap().cursor_visibility.push(visible);
+            Ok(())
+        }
+
         fn backend_kind(&self) -> crate::backend::CaptureBackendKind {
             crate::backend::CaptureBackendKind::Gdi
         }
@@ -1947,6 +2007,18 @@ mod tests {
     }
 
     impl CaptureBackend for LifecycleBackend {
+        fn create_target_capturer(
+            &self,
+            _target: &CaptureTarget,
+            _options: CaptureOptions,
+        ) -> CaptureResult<Option<Box<dyn MonitorCapturer>>> {
+            Ok(self.native.then(|| {
+                Box::new(LifecycleCapturer {
+                    state: Arc::clone(&self.state),
+                }) as Box<dyn MonitorCapturer>
+            }))
+        }
+
         fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
             Ok(vec![self.monitor.clone()])
         }
@@ -2063,6 +2135,7 @@ mod tests {
         let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
             monitor: MonitorId::from_parts(41, 43, 0, "lifecycle-monitor", true),
             state,
+            native: false,
         });
         CaptureSession::builder()
             .target(CaptureTarget::PrimaryMonitor)
@@ -2071,6 +2144,13 @@ mod tests {
     }
 
     impl MonitorCapturer for MockMonitorCapturer {
+        fn set_pending_screen_color_transform(
+            &mut self,
+            snapshot: Option<crate::color_effect::PendingScreenColorTransform>,
+        ) -> CaptureResult<()> {
+            self.pending = snapshot;
+            Ok(())
+        }
         fn capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
             self.capture_with_history_hint(reuse, false)
         }
@@ -2087,6 +2167,30 @@ mod tests {
             let mut frame = reuse.unwrap_or_else(Frame::empty);
             frame.ensure_rgba_capacity(4, 4)?;
             frame.reset_metadata();
+            if let Some(snapshot) = self.pending.take() {
+                // Model independent raw acquisition, followed by the same CPU
+                // conversion boundary used by the Windows capture backends.
+                let raw = [25u8, 50, 75, 255].repeat(4 * 4);
+                self.raw_acquired.as_ref().unwrap().send(()).unwrap();
+                let transform = snapshot.resolve();
+                unsafe {
+                    crate::convert::convert_surface_to_rgba_unchecked(
+                        crate::convert::SurfacePixelFormat::Bgra8,
+                        crate::convert::SurfaceLayout::new(
+                            raw.as_ptr(),
+                            16,
+                            frame.as_mut_rgba_ptr(),
+                            16,
+                            4,
+                            4,
+                        ),
+                        crate::convert::SurfaceConversionOptions {
+                            screen_color_transform: transform,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
             Ok(frame)
         }
     }
@@ -2110,8 +2214,125 @@ mod tests {
         ) -> CaptureResult<Box<dyn MonitorCapturer>> {
             Ok(Box::new(MockMonitorCapturer {
                 history_hints: Arc::clone(&self.history_hints),
+                raw_acquired: self.raw_acquired.clone(),
+                pending: None,
             }))
         }
+
+        fn create_window_capturer(
+            &self,
+            _window: &WindowId,
+        ) -> CaptureResult<Box<dyn MonitorCapturer>> {
+            self.create_monitor_capturer(&self.monitor)
+        }
+
+        fn inspect_window(&self, _window: &WindowId) -> CaptureResult<CaptureTargetInfo> {
+            Ok(CaptureTargetInfo {
+                origin_x: 0,
+                origin_y: 0,
+                width: 4,
+                height: 4,
+            })
+        }
+    }
+
+    #[test]
+    fn snapshot_acquisition_overlaps_one_query_for_monitor_and_window() {
+        use crate::color_effect::{ScreenColorQuery, ScreenColorTransform};
+        use snow_core::cancellation::CancellationToken;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        for correct_colors in [true, false] {
+            let (acquired, acquisition) = mpsc::channel();
+            let query = ScreenColorQuery::start_with(move || {
+                // Sampling cannot complete until both raw captures have run.
+                // Resolving at capture dispatch would fail this handshake.
+                for _ in 0..2 {
+                    acquisition.recv_timeout(Duration::from_secs(5)).unwrap();
+                }
+                let mut matrix = [0.; 25];
+                for i in 0..5 {
+                    matrix[i * 6] = if i < 3 { -1. } else { 1. };
+                }
+                matrix[20..23].fill(1.);
+                correct_colors
+                    .then(|| ScreenColorTransform::from_magnifier_matrix(&matrix).unwrap())
+            })
+            .unwrap();
+            let captures = [
+                CaptureTarget::PrimaryMonitor,
+                CaptureTarget::Window(WindowId::from_windows_handle(1)),
+            ]
+            .into_iter()
+            .map(|target| {
+                let acquired = acquired.clone();
+                let snapshot = query.snapshot();
+                std::thread::spawn(move || {
+                    let mut backend = MockBackend::new(Arc::new(Mutex::new(Vec::new())));
+                    backend.raw_acquired = Some(acquired);
+                    let mut session = CaptureSession::builder()
+                        .target(target)
+                        .with_backend(Arc::new(backend))
+                        .build()
+                        .unwrap();
+                    let frame = session
+                        .capture_snapshot_with_color_query(
+                            false,
+                            CancellationToken::default(),
+                            snapshot,
+                        )
+                        .unwrap();
+                    assert_eq!(session.active_capture_access_count(), 0);
+                    let next = session
+                        .capture_snapshot(false, CancellationToken::default())
+                        .unwrap();
+                    assert!(next.as_rgba_bytes().iter().all(|&byte| byte == 0));
+                    frame
+                })
+            })
+            .collect::<Vec<_>>();
+            for capture in captures {
+                let frame = capture.join().unwrap();
+                let expected = if correct_colors {
+                    [180, 205, 230, 255]
+                } else {
+                    [75, 50, 25, 255]
+                };
+                assert!(
+                    frame
+                        .as_rgba_bytes()
+                        .chunks_exact(4)
+                        .all(|pixel| pixel == expected)
+                );
+            }
+            drop(query);
+        }
+    }
+
+    #[test]
+    fn canceled_snapshot_does_not_wait_for_pending_color_query() {
+        use crate::color_effect::ScreenColorQuery;
+        use snow_core::cancellation::CancellationToken;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (release, wait) = mpsc::channel();
+        let query = ScreenColorQuery::start_with(move || {
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            None
+        })
+        .unwrap();
+        let cancel = CancellationToken::default();
+        cancel.cancel();
+        let mut session =
+            lifecycle_session(Arc::new(Mutex::new(LifecycleState::default()))).unwrap();
+        assert!(matches!(
+            session.capture_snapshot_with_color_query(false, cancel, query.snapshot()),
+            Err(CaptureError::Canceled)
+        ));
+        release.send(()).unwrap();
+        drop(query);
     }
 
     struct MetadataDrivenBackend {
@@ -2412,6 +2633,161 @@ mod tests {
             virtual_width: width,
             virtual_height: height,
         }
+    }
+
+    // The pool is process-global. Isolate these lifecycle checks from conversion
+    // tests that legitimately initialize it on other test-runner threads.
+    fn in_fresh_test_process(name: &str, check: impl FnOnce()) {
+        const CHILD_TEST: &str = "SNOW_CAPTURE_POOL_LIFECYCLE_TEST";
+        let test = format!("capture_session::tests::{name}");
+        if std::env::var_os(CHILD_TEST).as_deref() == Some(std::ffi::OsStr::new(&test)) {
+            check();
+            return;
+        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &test, "--nocapture"])
+            .env(CHILD_TEST, &test)
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "isolated pool lifecycle check failed: {test}"
+        );
+    }
+
+    #[test]
+    fn native_capture_does_not_initialize_conversion_pool() {
+        in_fresh_test_process("native_capture_does_not_initialize_conversion_pool", || {
+            assert!(!crate::convert::pool_initialized());
+            for mode in [CaptureMode::Snapshot, CaptureMode::Continuous] {
+                let state = Arc::new(Mutex::new(LifecycleState::default()));
+                let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
+                    monitor: MonitorId::from_parts(41, 43, 0, "native-monitor", true),
+                    state: Arc::clone(&state),
+                    native: true,
+                });
+                let mut session = CaptureSession::builder()
+                    .target(CaptureTarget::PrimaryMonitor)
+                    .with_backend(backend)
+                    .capture_mode(mode)
+                    .build()
+                    .unwrap();
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native session creation"
+                );
+                session.warmup_runtime();
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "explicit native warmup"
+                );
+                assert_eq!(session.prepare_target().unwrap().width, 4);
+                session.prewarm_environment().unwrap();
+                assert!(!crate::convert::pool_initialized(), "native preparation");
+
+                let frame = session.capture_frame(None).unwrap();
+                assert_eq!(frame.dimensions(), (4, 4));
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native cursor-hidden capture"
+                );
+                let frame = session.capture_reuse(frame).unwrap();
+                assert_eq!(frame.dimensions(), (4, 4));
+                assert_eq!(state.lock().unwrap().cursor_visibility, [false, true]);
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native cursor-visible capture"
+                );
+                session.release_capture_access();
+
+                if mode == CaptureMode::Snapshot {
+                    for include_cursor in [false, true] {
+                        let frame = session
+                            .capture_snapshot(include_cursor, Default::default())
+                            .unwrap();
+                        assert_eq!(frame.dimensions(), (4, 4));
+                        assert_eq!(session.active_capture_access_count(), 0);
+                    }
+                    assert_eq!(session.capture_once().unwrap().dimensions(), (4, 4));
+                    assert_eq!(session.active_capture_access_count(), 0);
+                    state.lock().unwrap().fail_capture = true;
+                    assert!(session.capture_snapshot(false, Default::default()).is_err());
+                    assert_eq!(session.active_capture_access_count(), 0);
+                    session.reset_to_prepared().unwrap();
+                }
+                assert!(
+                    !crate::convert::pool_initialized(),
+                    "native completion/reset"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn serial_snapshot_does_not_initialize_conversion_pool() {
+        in_fresh_test_process(
+            "serial_snapshot_does_not_initialize_conversion_pool",
+            || {
+                let state = Arc::new(Mutex::new(LifecycleState::default()));
+                let mut session = lifecycle_session(state).unwrap();
+                session.prewarm_environment().unwrap();
+                assert!(!crate::convert::pool_initialized());
+                session.warmup_runtime();
+                session.prepare_target().unwrap();
+                assert!(!crate::convert::pool_initialized());
+                let frame = session.capture_snapshot(false, Default::default()).unwrap();
+                assert_eq!(frame.dimensions(), (4, 4));
+                assert_eq!(session.active_capture_access_count(), 0);
+                session.reset_to_prepared().unwrap();
+                assert!(!crate::convert::pool_initialized());
+            },
+        );
+    }
+
+    #[test]
+    fn snapshot_parallel_conversion_initializes_shared_pool_when_needed() {
+        in_fresh_test_process(
+            "snapshot_parallel_conversion_initializes_shared_pool_when_needed",
+            || {
+                let mut session =
+                    lifecycle_session(Arc::new(Mutex::new(LifecycleState::default()))).unwrap();
+                session.prewarm_environment().unwrap();
+                session.capture_snapshot(false, Default::default()).unwrap();
+                assert!(!crate::convert::pool_initialized());
+                let workers = crate::convert::conversion_workers(usize::MAX);
+                let pixel_count = workers * 524_288;
+                let source = [17, 29, 41, 53].repeat(pixel_count);
+                let mut destination = vec![0; source.len()];
+                crate::convert::convert_bgra_to_rgba(&source, &mut destination, pixel_count);
+                assert!(
+                    destination
+                        .chunks_exact(4)
+                        .all(|pixel| pixel == [41, 29, 17, 53])
+                );
+                // A single-core process correctly keeps this conversion serial.
+                assert_eq!(crate::convert::pool_initialized(), workers > 1);
+                session.reset_to_prepared().unwrap();
+                assert_eq!(crate::convert::pool_initialized(), workers > 1);
+            },
+        );
+    }
+
+    #[test]
+    fn continuous_conversion_pool_is_warmed_on_build() {
+        in_fresh_test_process("continuous_conversion_pool_is_warmed_on_build", || {
+            let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
+                monitor: MonitorId::from_parts(41, 43, 0, "lifecycle-monitor", true),
+                state: Arc::new(Mutex::new(LifecycleState::default())),
+                native: false,
+            });
+            let _session = CaptureSession::builder()
+                .target(CaptureTarget::PrimaryMonitor)
+                .with_backend(backend)
+                .capture_mode(CaptureMode::Continuous)
+                .build()
+                .unwrap();
+            assert!(crate::convert::pool_initialized());
+        });
     }
 
     #[test]

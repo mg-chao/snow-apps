@@ -1127,6 +1127,11 @@ void ScreenshotCanvasRenderer::setRenderMode(RenderMode mode) {
         return;
     }
     m_renderMode = mode;
+    if (mode != RenderMode::ScrollingCapture) {
+        m_scrollingResultPreviewImage = {};
+        m_scrollingResultPreviewCanvasRect = {};
+        m_scrollingCropGuide.reset();
+    }
     invalidateCachedContent();
     if (m_renderMode == RenderMode::ScrollingCapture && m_ocrTextLayer != nullptr) {
         m_ocrTextLayer->hide();
@@ -1136,6 +1141,50 @@ void ScreenshotCanvasRenderer::setRenderMode(RenderMode mode) {
 
 void ScreenshotCanvasRenderer::setImage(QImage image, const QRectF& canvasRect) {
     setImageSource(ScreenshotImageSource::fromImage(std::move(image), canvasRect));
+}
+
+void ScreenshotCanvasRenderer::setScrollingResultPreview(QImage image, const QRectF& canvasRect,
+                                                         std::optional<Qt::Orientation> cropGuide) {
+    const QRectF target = canvasRect.normalized();
+    if (m_renderMode != RenderMode::ScrollingCapture || image.isNull() || !finiteRect(target) ||
+        !target.isValid() || target.isEmpty()) {
+        clearScrollingResultPreview();
+        return;
+    }
+    if (m_scrollingResultPreviewImage.cacheKey() == image.cacheKey() &&
+        m_scrollingResultPreviewCanvasRect == target && m_scrollingCropGuide == cropGuide) {
+        return;
+    }
+    const QRegion damage = canvasImageDamageRegion(m_scrollingResultPreviewCanvasRect) +
+                           canvasImageDamageRegion(target);
+    if (image.devicePixelRatio() != 1.0) {
+        image.setDevicePixelRatio(1.0);
+    }
+    m_scrollingResultPreviewImage = std::move(image);
+    m_scrollingResultPreviewCanvasRect = target;
+    m_scrollingCropGuide = cropGuide;
+    invalidateCachedContent();
+    if (!damage.isEmpty()) {
+        m_canvas.update(damage);
+    }
+}
+
+void ScreenshotCanvasRenderer::clearScrollingResultPreview() {
+    if (m_scrollingResultPreviewImage.isNull()) {
+        return;
+    }
+    const QRegion damage = canvasImageDamageRegion(m_scrollingResultPreviewCanvasRect);
+    m_scrollingResultPreviewImage = {};
+    m_scrollingResultPreviewCanvasRect = {};
+    m_scrollingCropGuide.reset();
+    invalidateCachedContent();
+    if (!damage.isEmpty()) {
+        m_canvas.update(damage);
+    }
+}
+
+bool ScreenshotCanvasRenderer::hasScrollingResultPreview() const {
+    return !m_scrollingResultPreviewImage.isNull();
 }
 
 void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source) {
@@ -1171,10 +1220,22 @@ void ScreenshotCanvasRenderer::setImageViewportPhysicalSize(const QSize& size) {
 void ScreenshotCanvasRenderer::setPinnedResultSurface(const QRectF& contentCanvasRect,
                                                       const QRectF& surfaceCanvasRect,
                                                       const ScreenshotResultStyle& style) {
+    const auto normalizedStyle = ScreenshotResultCompositor::normalizedStyle(style);
+    const bool changed = m_pinnedContentCanvasRect != contentCanvasRect.normalized() ||
+                         m_pinnedSurfaceCanvasRect != surfaceCanvasRect.normalized() ||
+                         m_pinnedResultStyle.cornerRadius != normalizedStyle.cornerRadius ||
+                         m_pinnedResultStyle.shadowWidth != normalizedStyle.shadowWidth ||
+                         m_pinnedResultStyle.shadowColor != normalizedStyle.shadowColor ||
+                         m_pinnedResultStyle.region != normalizedStyle.region ||
+                         m_pinnedResultStyle.regionScale != normalizedStyle.regionScale;
     m_pinnedContentCanvasRect = contentCanvasRect.normalized();
     m_pinnedSurfaceCanvasRect = surfaceCanvasRect.normalized();
-    m_pinnedResultStyle = ScreenshotResultCompositor::normalizedStyle(style);
+    m_pinnedResultStyle = normalizedStyle;
     setRenderMode(RenderMode::PinnedResult);
+    if (changed) {
+        invalidateCachedContent();
+        m_canvas.update();
+    }
 }
 
 void ScreenshotCanvasRenderer::setBakedSelectionPath(const QPainterPath& path) {
@@ -1431,14 +1492,14 @@ void ScreenshotCanvasRenderer::setOcrPresentation(
         hadPresentation != (m_ocrPresentation != nullptr)) {
         m_canvas.update();
     } else if (hadFilteredImage) {
-        const QRegion dirtyRegion = ocrFilterImageDamageRegion(clearedFilteredCanvasRect);
+        const QRegion dirtyRegion = canvasImageDamageRegion(clearedFilteredCanvasRect);
         if (!dirtyRegion.isEmpty()) {
             m_canvas.update(dirtyRegion);
         }
     }
 }
 
-QRegion ScreenshotCanvasRenderer::ocrFilterImageDamageRegion(const QRectF& canvasRect) const {
+QRegion ScreenshotCanvasRenderer::canvasImageDamageRegion(const QRectF& canvasRect) const {
     if (!canvasRect.isValid() || canvasRect.isEmpty()) {
         return {};
     }
@@ -1462,10 +1523,10 @@ void ScreenshotCanvasRenderer::setOcrFilteredImage(QImage image, const QRectF& c
         image.setDevicePixelRatio(1.0);
         m_ocrFilteredImage = std::move(image);
         m_ocrFilteredCanvasRect = canvasRect.normalized();
-        dirtyRegion = ocrFilterImageDamageRegion(previousCanvasRect) +
-                      ocrFilterImageDamageRegion(m_ocrFilteredCanvasRect);
+        dirtyRegion = canvasImageDamageRegion(previousCanvasRect) +
+                      canvasImageDamageRegion(m_ocrFilteredCanvasRect);
     } else {
-        dirtyRegion = ocrFilterImageDamageRegion(previousCanvasRect);
+        dirtyRegion = canvasImageDamageRegion(previousCanvasRect);
         m_ocrFilteredImage = {};
         m_ocrFilteredCanvasRect = {};
     }
@@ -1520,23 +1581,21 @@ void ScreenshotCanvasRenderer::clearOcrPresentation() {
 void ScreenshotCanvasRenderer::reset() {
     // Pinned/export snapshots can share geometry with the ending capture.
     // Release only derived data, leaving those snapshots fully usable.
-    if (m_selectionState.region)
-        m_selectionState.region->clearDerivedCache();
-    m_selectionState.confirmedRegion.clearDerivedCache();
-    if (m_regionHoverCacheRegion)
-        m_regionHoverCacheRegion->clearDerivedCache();
-    if (m_pinnedResultStyle.region)
-        m_pinnedResultStyle.region->clearDerivedCache();
+    clearRenderState();
     setOcrVisible(true);
-    const bool hadCachedContent =
-        m_imageSource.isValid() || !m_imageViewportPhysicalSize.isEmpty() ||
-        m_renderMode != RenderMode::Standard || m_ocrPresentation != nullptr;
+    const bool hadCachedContent = m_imageSource.isValid() ||
+                                  !m_imageViewportPhysicalSize.isEmpty() ||
+                                  m_renderMode != RenderMode::Standard ||
+                                  m_ocrPresentation != nullptr || hasScrollingResultPreview();
     const bool hadState = m_imageSource.isValid() || !m_imageViewportPhysicalSize.isEmpty() ||
                           m_renderMode != RenderMode::Standard || m_maskVisible ||
                           m_selectionState.present || m_selectionState.shadowWidth > 0 ||
                           m_selectionState.toolbarHovered || !m_selectionState.borderVisible ||
                           m_ocrPresentation != nullptr || m_guideLinesVisible;
     m_imageSource = {};
+    m_scrollingResultPreviewImage = {};
+    m_scrollingResultPreviewCanvasRect = {};
+    m_scrollingCropGuide.reset();
     m_canvas.setBaseImageSources({});
     m_imageViewportPhysicalSize = QSize();
     m_pinnedContentCanvasRect = {};
@@ -1544,10 +1603,6 @@ void ScreenshotCanvasRenderer::reset() {
     m_pinnedResultStyle = {};
     m_pinnedBackgroundColor = {};
     m_bakedSelectionPath = {};
-    m_regionHoverCacheRegion.reset();
-    m_regionHoverCache = {};
-    m_outlineCache = {};
-    m_maskCache = {};
     m_pinnedCheckerboardEnabled = false;
     m_selectionState = ScreenshotSelectionVisualState{};
     m_renderMode = RenderMode::Standard;
@@ -1570,8 +1625,34 @@ void ScreenshotCanvasRenderer::reset() {
     }
 }
 
+void ScreenshotCanvasRenderer::clearRenderState() {
+    if (m_selectionState.region)
+        m_selectionState.region->clearDerivedCache();
+    m_selectionState.confirmedRegion.clearDerivedCache();
+    if (m_regionHoverCacheRegion)
+        m_regionHoverCacheRegion->clearDerivedCache();
+    if (m_pinnedResultStyle.region)
+        m_pinnedResultStyle.region->clearDerivedCache();
+    m_regionHoverCacheRegion.reset();
+    m_regionHoverCache = {};
+    m_outlineCache = {};
+    m_maskCache = {};
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+}
+
 std::uint64_t ScreenshotCanvasRenderer::contentRevision() const {
     return m_contentRevision;
+}
+
+std::optional<SnowCanvasFilterRenderReference>
+ScreenshotCanvasRenderer::filterRenderReference() const {
+    if (m_renderMode != RenderMode::PinnedResult || !m_imageSource.isMaterialized() ||
+        !m_pinnedSurfaceCanvasRect.isValid()) {
+        return std::nullopt;
+    }
+    return SnowCanvasFilterRenderReference{m_pinnedSurfaceCanvasRect,
+                                           m_imageSource.materializedImage.width() /
+                                               m_imageSource.materializedCanvasRect.width()};
 }
 
 ScreenshotCanvasRenderer::RenderMode ScreenshotCanvasRenderer::renderMode() const {
@@ -1683,6 +1764,37 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
         painter.restore();
         painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         if (m_renderMode == RenderMode::ScrollingCapture) {
+            if (hasScrollingResultPreview()) {
+                const QRectF targetRect =
+                    context.canvasToViewTransform.mapRect(m_scrollingResultPreviewCanvasRect);
+                if (context.exposedRegion.intersects(targetRect.toAlignedRect())) {
+                    painter.save();
+                    painter.setRenderHint(
+                        QPainter::SmoothPixmapTransform,
+                        m_scrollingResultPreviewImage.size() !=
+                            QSize(qRound(targetRect.width() * context.devicePixelRatio),
+                                  qRound(targetRect.height() * context.devicePixelRatio)));
+                    paintExposedImageSlice(painter, targetRect, m_scrollingResultPreviewImage,
+                                           QRectF(m_scrollingResultPreviewImage.rect()),
+                                           context.exposedRegion);
+                    if (m_scrollingCropGuide) {
+                        painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
+                        painter.setClipRect(targetRect, Qt::IntersectClip);
+                        painter.setRenderHint(QPainter::Antialiasing, false);
+                        QPen pen(Qt::red, 1.0);
+                        pen.setCosmetic(true);
+                        painter.setPen(pen);
+                        if (*m_scrollingCropGuide == Qt::Horizontal) {
+                            painter.drawLine(QPointF(targetRect.left(), targetRect.center().y()),
+                                             QPointF(targetRect.right(), targetRect.center().y()));
+                        } else {
+                            painter.drawLine(QPointF(targetRect.center().x(), targetRect.top()),
+                                             QPointF(targetRect.center().x(), targetRect.bottom()));
+                        }
+                    }
+                    painter.restore();
+                }
+            }
             return;
         }
     }

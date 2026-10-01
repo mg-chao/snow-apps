@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include "snow_shot/storage/storagelogging.h"
@@ -117,7 +118,10 @@ void StorageUsageTracker::ensureWorkerLocked() {
     if (m_worker.joinable()) {
         m_worker.join();
     }
-    m_worker = std::thread([this]() { workerLoop(); });
+    m_worker = std::thread([this]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
+        workerLoop();
+    });
     m_workerLive = true;
 }
 

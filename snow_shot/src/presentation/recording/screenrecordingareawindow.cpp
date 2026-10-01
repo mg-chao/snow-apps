@@ -394,8 +394,7 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
             break;
         }
         if (m_canvas->hasActiveTextEditing()) {
-            key->accept();
-            return true;
+            return false;
         }
         if (m_gestureInProgress) {
             m_gestureInProgress = false;

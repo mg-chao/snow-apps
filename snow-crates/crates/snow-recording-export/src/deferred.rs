@@ -147,6 +147,7 @@ impl DeferredRenderTask {
         let join = std::thread::Builder::new()
             .name("snow-recording-render".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let _lease = RenderLease(worker_active);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     #[cfg(test)]

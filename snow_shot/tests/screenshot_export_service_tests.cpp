@@ -2,6 +2,10 @@
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectionpin.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
+#include "snowimageqtcodec.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -12,6 +16,8 @@
 #include <QMouseEvent>
 #include <QObject>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QScopeGuard>
 
 #include <cstdlib>
 #include <iostream>
@@ -196,6 +202,54 @@ void styledClipboardResultRetainsPngTransparency() {
             "styled clipboard export did not retain rounded-corner transparency");
 }
 
+void selectionClipboardSnapshotsExportSettings() {
+    QTemporaryDir directory;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(directory.isValid() &&
+                storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path(), 0})
+                    .success,
+            "clipboard encoding settings fixture could not initialize");
+    const auto cleanup = qScopeGuard([&] { storage.shutdown(); });
+    const snow_shot::storage::ScreenshotSettings settings;
+    ExportFixture fixture;
+    require(fixture.isValid(), "clipboard encoding fixture could not initialize the canvas");
+    const QRect selection(12, 8, 37, 29);
+    for (auto compression : {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::Medium,
+                             ScreenshotCompressionLevel::High}) {
+        require(settings.setCompressionLevel(
+                    ScreenshotImageFileService::compressionLevelKey(compression)),
+                "clipboard compression setup failed");
+        require(settings.setImageQuality(35), "clipboard image quality setup failed");
+        const int level = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png,
+                                                                    {35, compression})
+                              .compression_level;
+        const QImage result = waitForResult(
+            [&](QObject* receiver, auto callback) {
+                const bool scheduled = fixture.service().requestSelectionClipboard(
+                    selection, {}, receiver, std::move(callback));
+                // The worker must use the value captured by the request, even when settings
+                // change before its callback is delivered.
+                require(
+                    settings.setCompressionLevel(ScreenshotImageFileService::compressionLevelKey(
+                        compression == ScreenshotCompressionLevel::High
+                            ? ScreenshotCompressionLevel::Low
+                            : ScreenshotCompressionLevel::High)),
+                    "clipboard settings mutation failed");
+                return scheduled;
+            },
+            [&](ScreenshotSelectionClipboardResult value) {
+                require(value.isValid() &&
+                            value.payload.pngBytes() ==
+                                snow_shot::image_codec::encodePng(
+                                    snow_shot::image_codec::srgbRowSource(value.image), level),
+                        "selection clipboard ignored its export settings snapshot");
+                return std::move(value.image);
+            });
+        require(hasSamePixels(result, fixture.displaySnapshot().copy(selection)),
+                "selection clipboard encoding changed the captured pixels");
+    }
+}
+
 void selectionClipboardPreservesEffects() {
     ExportFixture fixture;
     require(fixture.isValid(), "clipboard export fixture could not initialize the canvas runtime");
@@ -212,6 +266,15 @@ void selectionClipboardPreservesEffects() {
                     require(result.isValid(), "selection clipboard export has no payload");
                     require(result.payload.isValid() && !result.payload.pngBytes().isEmpty(),
                             "clipboard export must prepare PNG and its bitmap fallback");
+                    const auto appearance =
+                        decodeScreenshotClipboardAppearance(result.payload.appearanceBytes());
+                    require(
+                        appearance && appearance->rasterSize == result.image.size() &&
+                            appearance->borderAppearance ==
+                                screenshotSelectionBorderAppearance(selection.size(), style) &&
+                            appearance->checkerboardEnabled ==
+                                screenshotSelectionNeedsCheckerboard(appearance->borderAppearance),
+                        "clipboard appearance differs from a direct selection pin");
                     const auto direct = fixture.service().preparePinnedSelection(selection, style);
                     const auto placement =
                         decodeScreenshotClipboardPlacement(result.payload.placementBytes());
@@ -637,6 +700,12 @@ void clipboardPlacementMatchesDirectPin() {
                     require(metadata && metadata->windowRect == direct->geometry.nativeGeometry &&
                                 metadata->rasterSize == value.image.size(),
                             "composited clipboard raster loses the direct pin's platform geometry");
+                    const auto appearance =
+                        decodeScreenshotClipboardAppearance(value.payload.appearanceBytes());
+                    require(appearance && appearance->rasterSize == value.image.size() &&
+                                appearance->borderAppearance ==
+                                    screenshotSelectionBorderAppearance(selection.size(), style),
+                            "scaled clipboard raster loses its reference outline");
                     received = true;
                     return value.image;
                 });
@@ -652,6 +721,7 @@ int main(int argc, char** argv) {
         return EXIT_SUCCESS;
     }
     clipboardPlacementMatchesDirectPin();
+    selectionClipboardSnapshotsExportSettings();
     fractionalDpiExportsPreserveCapturePixels();
     exportWorkerReleasesSharedDerivedContours();
     exportWorkerReleasesDocumentSnapshotsBeforeCompletion();

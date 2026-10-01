@@ -178,7 +178,61 @@ void auxiliaryOwnershipRequiresARealOwner() {
     }
 }
 
+void wakeNotificationsFollowAttachedPlatforms() {
+    QWidget firstWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+    QWidget secondWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+    firstWidget.winId();
+    secondWidget.winId();
+    auto first = createPinnedWindowPlatform(&firstWidget);
+    auto second = createPinnedWindowPlatform(&secondWidget);
+    require(first->attach() && second->attach(), "wake fixture platforms must attach");
+    int firstChanges = 0;
+    int secondChanges = 0;
+    first->environmentChanged = [&](bool) { ++firstChanges; };
+    second->environmentChanged = [&](bool) { ++secondChanges; };
+    const auto wake = [] {
+        [NSWorkspace.sharedWorkspace.notificationCenter
+            postNotificationName:NSWorkspaceDidWakeNotification
+                          object:nil];
+    };
+    require(first->attach() && second->attach(), "repeated attachment must succeed");
+    wake();
+    require(firstChanges == 1 && secondChanges == 1,
+            "a shared wake subscription must notify each attached platform exactly once");
+    first->detach();
+    firstChanges = 0;
+    secondChanges = 0;
+    wake();
+    require(firstChanges == 0 && secondChanges == 1,
+            "a detached native surface must leave the shared wake fanout");
+    for (int cycle = 0; cycle < 50; ++cycle) {
+        require(first->attach(), "recycled native surface must rejoin wake notifications");
+        first->detach();
+    }
+    require(first->attach(), "final wake reattachment must succeed");
+    firstChanges = 0;
+    secondChanges = 0;
+    first->environmentChanged = [&](bool) {
+        ++firstChanges;
+        second.reset();
+    };
+    // Reinsert the second platform after the first so a callback can destroy another subscriber
+    // before the fanout reaches it.
+    second->detach();
+    require(second->attach(), "wake callback destruction fixture must reattach");
+    firstChanges = 0;
+    secondChanges = 0;
+    wake();
+    require(firstChanges == 1 && secondChanges == 0 && !second,
+            "wake fanout must tolerate destruction of another subscriber during delivery");
+    first.reset();
+    firstChanges = 0;
+    wake();
+    require(firstChanges == 0, "destroyed native platforms must leave the shared wake fanout");
+}
+
 void nativePolicies(bool focus) {
+    wakeNotificationsFollowAttachedPlatforms();
     auxiliaryOwnershipRequiresARealOwner();
     hiddenPlacementCommitsBeforeShow();
     QWidget widget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);

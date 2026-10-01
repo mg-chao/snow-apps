@@ -86,6 +86,8 @@ class Coordinator {
     void sync(SnowRuntime runtime);
     void syncItems(std::vector<SnowCanvasSceneItem> items);
     void reset();
+    // Current reconstruction results remain available for rendering and export.
+    void clearCache();
     SnowCanvasSmartEraseSnapshot snapshot() const;
     void restoreSnapshot(const SnowCanvasSmartEraseSnapshot& snapshot);
 

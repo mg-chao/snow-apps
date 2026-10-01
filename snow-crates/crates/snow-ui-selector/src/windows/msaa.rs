@@ -1,11 +1,15 @@
 use std::collections::HashMap;
+use std::os::windows::io::AsRawHandle;
 use std::ptr;
-use std::thread;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use crossbeam_channel::{Receiver, Sender, bounded};
+use windows::Win32::Foundation::{HANDLE, HWND, POINT, RECT, WAIT_OBJECT_0};
 use windows::Win32::System::Com::IDispatch;
+use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::System::Variant::{VARIANT, VT_DISPATCH, VT_EMPTY, VT_I4, VT_UNKNOWN};
 use windows::Win32::UI::Accessibility::{AccessibleObjectFromWindow, IAccessible};
 use windows::Win32::UI::WindowsAndMessaging::{CHILDID_SELF, IsHungAppWindow, OBJID_WINDOW};
@@ -23,6 +27,75 @@ const MSAA_MAX_HIT_PATH_RECTS: usize = 100;
 const STATE_SYSTEM_INVISIBLE: i32 = 0x0000_8000;
 const STATE_SYSTEM_OFFSCREEN: i32 = 0x0001_0000;
 const MSAA_REQUEST_TIMEOUT: Duration = Duration::from_millis(168);
+const MSAA_MAX_OUTSTANDING_WORKERS: usize = 2;
+
+// A provider can block indefinitely inside COM, even after its request sender is dropped.
+// Account for the actual thread lifetime across every backend and screenshot session.
+static MSAA_WORKER_ADMISSION: OnceLock<Arc<MsaaWorkerAdmission>> = OnceLock::new();
+
+#[derive(Default)]
+struct MsaaWorkerAdmission {
+    live_workers: Arc<AtomicUsize>,
+    workers: Mutex<Vec<MsaaTrackedWorker>>,
+}
+
+struct MsaaTrackedWorker {
+    thread: JoinHandle<()>,
+    permit: MsaaWorkerPermit,
+}
+
+struct MsaaWorkerPermit {
+    live_workers: Arc<AtomicUsize>,
+}
+
+impl MsaaWorkerAdmission {
+    fn reap_finished(&self) {
+        let finished = {
+            let mut workers = self
+                .workers
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let mut finished = Vec::new();
+            let mut index = 0;
+            while index < workers.len() {
+                // Rust's completion flag may precede native TLS destructors. Require the
+                // Windows thread handle to be signaled before joining or releasing capacity.
+                let thread = &workers[index].thread;
+                if thread.is_finished()
+                    && unsafe { WaitForSingleObject(HANDLE(thread.as_raw_handle()), 0) }
+                        == WAIT_OBJECT_0
+                {
+                    finished.push(workers.swap_remove(index));
+                } else {
+                    index += 1;
+                }
+            }
+            finished
+        };
+        // Never join a running provider or hold the registry lock during thread cleanup.
+        for MsaaTrackedWorker { thread, permit } in finished {
+            let _ = thread.join();
+            drop(permit);
+        }
+    }
+
+    fn try_acquire(self: &Arc<Self>) -> Option<MsaaWorkerPermit> {
+        self.live_workers
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |live| {
+                (live < MSAA_MAX_OUTSTANDING_WORKERS).then_some(live + 1)
+            })
+            .ok()?;
+        Some(MsaaWorkerPermit {
+            live_workers: Arc::clone(&self.live_workers),
+        })
+    }
+}
+
+impl Drop for MsaaWorkerPermit {
+    fn drop(&mut self) {
+        self.live_workers.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 struct MsaaWindow {
     hwnd: HWND,
@@ -34,7 +107,63 @@ struct MsaaWindow {
 pub(crate) struct MsaaBackend {
     windows: Vec<MsaaWindow>,
     window_index: WindowSpatialIndex,
+    worker: MsaaWorkerSession,
+}
+
+type MsaaWorkerRunner = fn(Receiver<MsaaRequest>);
+type MsaaHitTestResult =
+    std::result::Result<Result<Vec<RECT>>, crossbeam_channel::RecvTimeoutError>;
+
+struct MsaaWorkerSession<Run = MsaaWorkerRunner> {
     worker: Option<MsaaWorker>,
+    admission: Arc<MsaaWorkerAdmission>,
+    run_worker: Run,
+}
+
+impl Default for MsaaWorkerSession {
+    fn default() -> Self {
+        Self {
+            worker: None,
+            admission: Arc::clone(MSAA_WORKER_ADMISSION.get_or_init(Arc::default)),
+            run_worker: run_msaa_worker,
+        }
+    }
+}
+
+impl<Run> Drop for MsaaWorkerSession<Run> {
+    fn drop(&mut self) {
+        self.worker = None;
+        self.admission.reap_finished();
+    }
+}
+
+impl<Run: Fn(Receiver<MsaaRequest>) + Clone + Send + 'static> MsaaWorkerSession<Run> {
+    fn reset(&mut self) {
+        // Disconnect first; an idle worker exits and drops its roots on its own COM thread.
+        // A blocked worker retains its permit until that same cleanup completes.
+        self.worker = None;
+        self.admission.reap_finished();
+    }
+
+    fn hit_test(
+        &mut self,
+        hwnd: HWND,
+        point: POINT,
+        window_bounds: RECT,
+        timeout: Duration,
+    ) -> Option<MsaaHitTestResult> {
+        if self.worker.is_none() {
+            self.worker = MsaaWorker::spawn(Arc::clone(&self.admission), self.run_worker.clone());
+        }
+        let result = self
+            .worker
+            .as_ref()?
+            .hit_test(hwnd, point, window_bounds, timeout);
+        if result.is_err() {
+            self.reset();
+        }
+        Some(result)
+    }
 }
 
 struct MsaaWorker {
@@ -56,12 +185,22 @@ struct MsaaWorkerState {
 }
 
 impl MsaaWorker {
-    fn spawn() -> Option<Self> {
-        let (requests, receiver) = unbounded();
-        thread::Builder::new()
+    fn spawn(
+        admission: Arc<MsaaWorkerAdmission>,
+        run_worker: impl FnOnce(Receiver<MsaaRequest>) + Send + 'static,
+    ) -> Option<Self> {
+        admission.reap_finished();
+        let permit = admission.try_acquire()?;
+        let (requests, receiver) = bounded(1);
+        let thread = thread::Builder::new()
             .name("snow-msaa-hit-test".into())
-            .spawn(move || run_msaa_worker(receiver))
+            .spawn(move || run_worker(receiver))
             .ok()?;
+        admission
+            .workers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push(MsaaTrackedWorker { thread, permit });
         Some(Self { requests })
     }
 
@@ -70,7 +209,8 @@ impl MsaaWorker {
         hwnd: HWND,
         point: POINT,
         window_bounds: RECT,
-    ) -> std::result::Result<Result<Vec<RECT>>, crossbeam_channel::RecvTimeoutError> {
+        timeout: Duration,
+    ) -> MsaaHitTestResult {
         let (response, receiver) = bounded(1);
         if self
             .requests
@@ -84,7 +224,7 @@ impl MsaaWorker {
         {
             return Err(crossbeam_channel::RecvTimeoutError::Disconnected);
         }
-        receiver.recv_timeout(MSAA_REQUEST_TIMEOUT)
+        receiver.recv_timeout(timeout)
     }
 }
 
@@ -139,7 +279,7 @@ impl MsaaBackend {
         Ok(Self {
             windows,
             window_index,
-            worker: MsaaWorker::spawn(),
+            worker: MsaaWorkerSession::default(),
         })
     }
 
@@ -151,14 +291,14 @@ impl MsaaBackend {
         let (windows, window_index) = build_msaa_window_cache(excluded_hwnds, displays)?;
         self.windows = windows;
         self.window_index = window_index;
-        self.worker = MsaaWorker::spawn();
+        self.worker.reset();
         Ok(())
     }
 
     pub(crate) fn release_cache(&mut self) {
         self.windows = Vec::new();
         self.window_index.release_cache();
-        self.worker = None;
+        self.worker.reset();
     }
 
     pub(crate) fn hit_test_point(
@@ -179,18 +319,23 @@ impl MsaaBackend {
                 } else if unsafe { IsHungAppWindow(self.windows[window_idx].hwnd).as_bool() } {
                     self.mark_unresponsive(window_idx);
                     Vec::new()
-                } else if let Some(worker) = &self.worker {
-                    match worker.hit_test(self.windows[window_idx].hwnd, point, window_bounds) {
-                        Ok(Ok(rects)) => rects,
-                        Ok(Err(_)) => Vec::new(),
-                        Err(_) => {
+                } else {
+                    match self.worker.hit_test(
+                        self.windows[window_idx].hwnd,
+                        point,
+                        window_bounds,
+                        MSAA_REQUEST_TIMEOUT,
+                    ) {
+                        Some(Ok(Ok(rects))) => rects,
+                        Some(Ok(Err(_))) => Vec::new(),
+                        Some(Err(_)) => {
                             self.mark_unresponsive(window_idx);
-                            self.worker = MsaaWorker::spawn();
                             Vec::new()
                         }
+                        // Retry on later queries when a detached worker has finished. Admission
+                        // failure says nothing about this HWND or its current provider.
+                        None => Vec::new(),
                     }
-                } else {
-                    Vec::new()
                 };
 
                 let fallback_rects = self.fallback_hit_path(window_idx, point);
@@ -208,7 +353,8 @@ impl MsaaBackend {
 
     fn mark_unresponsive(&mut self, window_idx: usize) {
         // A blocked COM call cannot be forcibly terminated. Quarantine its
-        // HWND until refresh so repeated pointer samples cannot leak workers.
+        // HWND until refresh so repeated pointer samples do not repeat the timeout.
+        // The process-wide permit separately bounds workers across those refreshes.
         self.windows[window_idx].msaa_quarantined = true;
     }
 
@@ -514,6 +660,286 @@ fn variant_to_accessible(value: &VARIANT) -> Option<IAccessible> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+
+    fn wait_for_no_workers(admission: &MsaaWorkerAdmission) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while admission.live_workers.load(Ordering::Acquire) != 0 {
+            admission.reap_finished();
+            assert!(
+                Instant::now() < deadline,
+                "MSAA worker did not finish cleanup"
+            );
+            thread::yield_now();
+        }
+    }
+
+    struct ReleasedRoots(Arc<AtomicUsize>);
+
+    impl Drop for ReleasedRoots {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    #[test]
+    fn backend_sessions_share_admission_without_creating_idle_workers() {
+        let first = MsaaWorkerSession::default();
+        let mut second = MsaaWorkerSession::default();
+        assert!(Arc::ptr_eq(&first.admission, &second.admission));
+        assert!(first.worker.is_none());
+        assert!(second.worker.is_none());
+        second.reset();
+        assert!(second.worker.is_none());
+    }
+
+    #[test]
+    fn concurrent_sessions_cannot_overbook_workers_during_spawn_or_reset() {
+        let admission = Arc::new(MsaaWorkerAdmission::default());
+        let barrier = Arc::new(std::sync::Barrier::new(17));
+        let (release, blocked) = bounded::<()>(0);
+        let queries = (0..16)
+            .map(|_| {
+                let admission = Arc::clone(&admission);
+                let barrier = Arc::clone(&barrier);
+                let blocked = blocked.clone();
+                thread::spawn(move || {
+                    let mut session = MsaaWorkerSession {
+                        worker: None,
+                        admission,
+                        run_worker: move |requests: Receiver<MsaaRequest>| {
+                            let request = requests.recv();
+                            let _ = blocked.recv();
+                            drop(request);
+                        },
+                    };
+                    barrier.wait();
+                    let admitted = session
+                        .hit_test(
+                            HWND::default(),
+                            POINT::default(),
+                            RECT::default(),
+                            Duration::ZERO,
+                        )
+                        .is_some();
+                    session.reset();
+                    admitted
+                })
+            })
+            .collect::<Vec<_>>();
+        barrier.wait();
+        let admitted = queries
+            .into_iter()
+            .map(|query| usize::from(query.join().unwrap()))
+            .sum::<usize>();
+        assert_eq!(admitted, MSAA_MAX_OUTSTANDING_WORKERS);
+        assert_eq!(
+            admission.live_workers.load(Ordering::Acquire),
+            MSAA_MAX_OUTSTANDING_WORKERS
+        );
+        drop(release);
+        wait_for_no_workers(&admission);
+    }
+
+    #[test]
+    fn blocked_workers_remain_bounded_across_cache_resets_and_backend_recreation() {
+        let admission = Arc::new(MsaaWorkerAdmission::default());
+        let released_roots = Arc::new(AtomicUsize::new(0));
+        let (started, entered) = bounded(MSAA_MAX_OUTSTANDING_WORKERS);
+        let (release, blocked) = bounded::<()>(0);
+        let run_worker = {
+            let released_roots = Arc::clone(&released_roots);
+            move |requests: Receiver<MsaaRequest>| {
+                let _roots = ReleasedRoots(Arc::clone(&released_roots));
+                let request = requests
+                    .recv()
+                    .expect("worker must receive its first query");
+                started.send(()).unwrap();
+                // Inject a provider call that ignores request-sender destruction.
+                let _ = blocked.recv();
+                drop(request);
+            }
+        };
+        let make_session = || MsaaWorkerSession {
+            worker: None,
+            admission: Arc::clone(&admission),
+            run_worker: run_worker.clone(),
+        };
+        let mut session = make_session();
+        for attempt in 0..32 {
+            if attempt % 2 == 0 {
+                // Both backend refresh and release_cache use this same reset operation.
+                session.reset();
+            } else {
+                session = make_session();
+            }
+            let result = session.hit_test(
+                HWND::default(),
+                POINT::default(),
+                RECT::default(),
+                Duration::ZERO,
+            );
+            if attempt < MSAA_MAX_OUTSTANDING_WORKERS {
+                assert!(matches!(
+                    result,
+                    Some(Err(crossbeam_channel::RecvTimeoutError::Timeout))
+                ));
+                entered.recv_timeout(Duration::from_secs(2)).unwrap();
+            } else {
+                assert!(
+                    result.is_none(),
+                    "replacement escaped the process-wide worker limit"
+                );
+                assert!(session.worker.is_none());
+                assert!(entered.try_recv().is_err());
+            }
+            assert_eq!(
+                admission.live_workers.load(Ordering::Acquire),
+                (attempt + 1).min(MSAA_MAX_OUTSTANDING_WORKERS)
+            );
+        }
+        drop(session);
+        assert_eq!(released_roots.load(Ordering::Acquire), 0);
+        drop(release);
+        wait_for_no_workers(&admission);
+        assert_eq!(
+            released_roots.load(Ordering::Acquire),
+            MSAA_MAX_OUTSTANDING_WORKERS
+        );
+
+        let mut recovered = MsaaWorkerSession {
+            worker: None,
+            admission: Arc::clone(&admission),
+            run_worker: |requests: Receiver<MsaaRequest>| {
+                while let Ok(MsaaRequest::HitTest {
+                    response,
+                    window_bounds,
+                    ..
+                }) = requests.recv()
+                {
+                    let _ = response.send(Ok(vec![window_bounds]));
+                }
+            },
+        };
+        let bounds = rect(0, 0, 100, 100);
+        let result = recovered.hit_test(
+            HWND::default(),
+            POINT::default(),
+            bounds,
+            Duration::from_secs(2),
+        );
+        let path = result
+            .expect("admission must recover after blocked calls finish")
+            .unwrap()
+            .unwrap();
+        assert_eq!(path.len(), 1);
+        assert!(same_rect(path[0], bounds));
+        recovered.reset();
+        wait_for_no_workers(&admission);
+    }
+
+    #[test]
+    fn worker_permits_are_held_until_thread_local_teardown_finishes() {
+        struct BlockedTeardown {
+            started: Sender<()>,
+            release: Receiver<()>,
+            released_roots: Arc<AtomicUsize>,
+        }
+        impl Drop for BlockedTeardown {
+            fn drop(&mut self) {
+                let _ = self.started.send(());
+                let _ = self.release.recv();
+                self.released_roots.fetch_add(1, Ordering::Release);
+            }
+        }
+        thread_local! {
+            static TEARDOWN: std::cell::RefCell<Option<BlockedTeardown>> = const {
+                std::cell::RefCell::new(None)
+            };
+        }
+
+        let admission = Arc::new(MsaaWorkerAdmission::default());
+        let released_roots = Arc::new(AtomicUsize::new(0));
+        let (started, entered) = bounded(MSAA_MAX_OUTSTANDING_WORKERS);
+        let (release, blocked) = bounded::<()>(0);
+        let (completed, result) = bounded(1);
+        let (ready, retry_ready) = bounded(1);
+        let (retry_now, begin_retry) = bounded(1);
+        let next_admission = Arc::clone(&admission);
+        // Windows may serialize new-thread startup behind an exiting thread's TLS cleanup.
+        // Create this query thread before blocking TLS so the regression can observe progress.
+        let retry = thread::spawn(move || {
+            ready.send(()).unwrap();
+            begin_retry.recv().unwrap();
+            let mut session = MsaaWorkerSession {
+                worker: None,
+                admission: next_admission,
+                run_worker: |_: Receiver<MsaaRequest>| {},
+            };
+            completed
+                .send(
+                    session
+                        .hit_test(
+                            HWND::default(),
+                            POINT::default(),
+                            RECT::default(),
+                            Duration::ZERO,
+                        )
+                        .is_none(),
+                )
+                .unwrap();
+        });
+        retry_ready.recv_timeout(Duration::from_secs(2)).unwrap();
+        let run_worker = {
+            let released_roots = Arc::clone(&released_roots);
+            move |requests: Receiver<MsaaRequest>| {
+                let state = BlockedTeardown {
+                    started: started.clone(),
+                    release: blocked.clone(),
+                    released_roots: Arc::clone(&released_roots),
+                };
+                TEARDOWN.with(|slot| *slot.borrow_mut() = Some(state));
+                let _ = requests.recv();
+            }
+        };
+        // A session that has not queried MSAA must not allocate a worker.
+        let mut session = MsaaWorkerSession {
+            worker: None,
+            admission: Arc::clone(&admission),
+            run_worker,
+        };
+        session.reset();
+        assert_eq!(admission.live_workers.load(Ordering::Acquire), 0);
+        for attempt in 0..MSAA_MAX_OUTSTANDING_WORKERS {
+            let _ = session.hit_test(
+                HWND::default(),
+                POINT::default(),
+                RECT::default(),
+                Duration::ZERO,
+            );
+            if attempt == 0 {
+                entered.recv_timeout(Duration::from_secs(2)).unwrap();
+            }
+        }
+        retry_now.send(()).unwrap();
+        let denied = result.recv_timeout(Duration::from_secs(2));
+        assert_eq!(released_roots.load(Ordering::Acquire), 0);
+        assert_eq!(
+            admission.live_workers.load(Ordering::Acquire),
+            MSAA_MAX_OUTSTANDING_WORKERS
+        );
+        drop(release);
+        retry.join().unwrap();
+        wait_for_no_workers(&admission);
+        assert!(
+            matches!(denied, Ok(true)),
+            "admission waited for or bypassed blocked TLS cleanup"
+        );
+        assert_eq!(
+            released_roots.load(Ordering::Acquire),
+            MSAA_MAX_OUTSTANDING_WORKERS
+        );
+    }
 
     fn rect(left: i32, top: i32, right: i32, bottom: i32) -> RECT {
         RECT {

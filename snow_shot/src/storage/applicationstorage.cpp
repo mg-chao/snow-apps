@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include <QTimer>
 
@@ -236,6 +237,12 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_configuration = std::make_unique<ConfigurationStore>(
         configurationFile, m_status.readAvailable, m_status.writeAvailable,
         options.debounceMilliseconds, this);
+#ifdef Q_OS_MACOS
+    platform::initializeApplicationQoS(
+        platform::applicationQoSForValue(
+            m_configuration->value(QStringLiteral("system/application_qos")).toString())
+            .value_or(platform::ApplicationQoS::Responsive));
+#endif
     m_status.configurationCompatibility = m_configuration->compatibility();
     m_status.lastConfigurationError = m_configuration->lastError();
     if (m_configuration->compatibility() == ConfigurationCompatibility::FutureVersion) {
@@ -601,6 +608,7 @@ void ApplicationStorage::requestPinnedWindowRetentionCleanup() {
     }
     auto* repository = m_pinnedWindows.get();
     m_pinnedMaintenancePool.start([this, repository]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
         for (;;) {
             {
                 std::lock_guard lock(m_pinnedMaintenanceMutex);
@@ -806,6 +814,7 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
     const auto diagnosticOptions = diagnostics::DiagnosticsService::instance().options();
     m_directoryWorker =
         std::async(std::launch::async, [this, before, destination, migrate, diagnosticOptions] {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             StorageDirectoryChangeResult outcome;
             if (m_drainForDirectoryChange)
                 m_drainForDirectoryChange();

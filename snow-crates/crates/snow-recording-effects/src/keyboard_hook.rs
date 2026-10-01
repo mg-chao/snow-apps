@@ -224,6 +224,7 @@ mod platform {
             let join = std::thread::Builder::new()
                 .name("snow-recording-keyboard-hook".into())
                 .spawn(move || {
+                    snow_core::qos::apply_current_thread();
                     let thread_id = unsafe { GetCurrentThreadId() };
                     let mut message = MSG::default();
                     unsafe {
@@ -577,6 +578,7 @@ mod platform {
             let input = InputObserver::start(true, false).map_err(|e| e.to_string())?;
             let (stop, stopped) = crossbeam_channel::bounded(1);
             let worker = std::thread::Builder::new().name("snow-keyboard-adapter".into()).spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let mut input_generation = input.generation();
                 loop {
                     // Poll status as well as events, so secure input clears held keys immediately.

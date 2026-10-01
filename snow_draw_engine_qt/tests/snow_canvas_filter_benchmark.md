@@ -77,3 +77,43 @@ Emboss scenarios cover 256x256, 1080p, and 4K kernels, single-threaded execution
 opaque and partial-alpha masks, full-frame rendering, local rendering on a 4K surface,
 and a pen append at DPR 2. See [the emboss performance report](snow_canvas_emboss_benchmark.md)
 for Release preset commands, before/after results, and exact-output validation.
+
+## Pinned filter rendering
+
+A host can override `SnowCanvasCustomRenderer::filterRenderReference()` with its full
+canvas rectangle and original pixel density. Snow Shot enables this for materialized
+pinned results, including Retina sources. The engine renders the background and ordered
+scene once on that fixed grid, then presents the resulting image at every zoom and DPR.
+Editor overlays, spotlight, and watermark remain in the live viewport path.
+
+The widget owns one reference image, approximately `width * height * 4` bytes at the
+reference resolution. Filter workspaces and pen-mask data are temporary; the path does
+not retain filter-source tiles or zoom variants. A fixed engine viewport preserves
+source-pass boundaries and content that the live viewport culls. Document edits,
+background `contentRevision()` changes, reference-grid changes, and explicit render-state
+clearing replace the image. Hosts must increment their content revision for every
+background appearance change.
+
+Presentation matches ordinary pinned images: source pixels stay exact at 1:1 in device
+pixels, and both reduction and enlargement use linear sampling without rerunning filters.
+
+`snow-canvas-reference-scene-tests` checks rectangle and pen effects against the 100%
+render, mixed source passes, transparent partial paints, DPR changes, panning, background
+replacement, undo/redo, and runtime replacement. Warm presentation diagnostics require
+zero filter dispatches, mask rasterization, execution-plan builds, and source-tile work.
+`snow-shot-pinned-filter-reference-tests` checks the application integration and appearance
+invalidation.
+
+`snow-canvas-reference-scene-benchmark` compares the existing viewport path and reference
+path while alternating a 1024x640 Gaussian/pen-mosaic scene between 70% and 130%. It reports
+median and p95 for resizing, camera synchronization, and painting after four warmups and
+40 measured frames. The reference path must dispatch zero filter effects during scaling.
+Run only this benchmark from a performance preset:
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-performance --target snow-canvas-reference-scene-benchmark
+QT_QPA_PLATFORM=offscreen build/snow-shot-macos-arm64-performance/snow_draw_engine_qt/snow-canvas-reference-scene-benchmark
+```
+
+On Windows, build the same target with `build-windows-msvc-performance` and run its
+Release executable with `QT_QPA_PLATFORM=offscreen`.
