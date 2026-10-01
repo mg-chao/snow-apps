@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import platform
 import plistlib
 from pathlib import Path
 import signal
@@ -265,13 +266,17 @@ if name == 'cmake' and '--preset' in sys.argv and '--build' not in sys.argv:
     (build / 'CMakeCache.txt').write_text('\\n'.join(entries) + '\\n')
 if name == 'cmake' and '--build' in sys.argv:
     preset = sys.argv[sys.argv.index('--preset') + 1].removeprefix('build-')
-    binary = pathlib.Path(os.environ['SNOW_TEST_ROOT']) / 'build' / preset / 'snow_shot/snow_shot.app/Contents/MacOS/snow_shot'
-    binary.parent.mkdir(parents=True, exist_ok=True)
-    binary.touch()
-    binary.chmod(0o755)
+    for target in ('snow_shot', 'snow_shot_mini'):
+        if target in sys.argv:
+            binary = pathlib.Path(os.environ['SNOW_TEST_ROOT']) / 'build' / preset / target / f'{target}.app/Contents/MacOS/{target}'
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            binary.touch()
+            binary.chmod(0o755)
 if name == 'cmake' and '--install' in sys.argv and '--prefix' in sys.argv:
     prefix = pathlib.Path(sys.argv[sys.argv.index('--prefix') + 1])
-    binary = prefix / 'snow_shot.app/Contents/MacOS/snow_shot'
+    component = sys.argv[sys.argv.index('--component') + 1]
+    target = 'snow_shot_mini' if component == 'SnowShotMini' else 'snow_shot'
+    binary = prefix / f'{target}.app/Contents/MacOS/{target}'
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.touch()
     binary.chmod(0o755)
@@ -526,6 +531,20 @@ if name == 'openssl':
         self.assertIn('--install', calls[-3])
         self.assertEqual(calls[-2], ['lsregister', '-f', str(deployed)])
 
+    def test_launch_mini_builds_and_deploys_the_selected_edition(self):
+        deployed = self.root / 'build/snow-shot-macos-arm64-debug/run/snow_shot_mini.app'
+        calls = self.run_script('run-snow-shot.sh', '--edition', 'mini', '--', '--example', 'a path')
+        self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
+                       '--target', 'snow_shot_mini', '--parallel'], calls)
+        self.assertIn(['cmake', '--install', str(deployed.parent.parent), '--component',
+                       'SnowShotMini', '--prefix', str(deployed.parent)], calls)
+        self.assertEqual(calls[-2], ['lsregister', '-f', str(deployed)])
+        self.assertEqual(calls[-1], ['open', '-n', str(deployed), '--args', '--example', 'a path'])
+        self.log.unlink()
+        calls = self.run_script('run-snow-shot.sh', '--edition', 'mini', '--no-build')
+        self.assertFalse(any(call[0] == 'cmake' for call in calls))
+        self.assertEqual(calls[-1], ['open', '-n', str(deployed), '--args'])
+
     def test_launch_stops_selected_build_instances_before_rebuilding(self):
         app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
         binary = app / 'Contents/MacOS/snow_shot'
@@ -748,6 +767,35 @@ if name == 'macdeployqt' and os.environ.get('SNOW_TEST_FAIL_SIGN'): sys.exit(1)
 @unittest.skipUnless(os.environ.get("SNOW_TEST_MACOS_BUNDLE") == "1",
                      "Set SNOW_TEST_MACOS_BUNDLE=1 for the native deployment fixture")
 class MacOSBundle(unittest.TestCase):
+    @unittest.skipUnless(platform.system() == 'Darwin' and platform.machine() == 'arm64',
+                         'Mini requires Apple Silicon macOS')
+    def test_mini_deploys_its_codec_backend_and_starts_offscreen(self):
+        def run(*args, **kwargs):
+            result = subprocess.run(args, text=True, capture_output=True, **kwargs)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return result.stdout
+
+        preset = 'snow-shot-macos-arm64-debug'
+        run(str(ROOT / 'scripts/build.sh'), preset, '--target', 'snow_shot_mini')
+        with tempfile.TemporaryDirectory(prefix='snow mini deployment ') as temp:
+            stage = Path(temp)
+            app = stage / 'snow_shot_mini.app'
+            backend = 'libsnow_shot_image_codec_backend.dylib'
+            stale_backend = app / 'Contents/MacOS' / backend
+            stale_backend.parent.mkdir(parents=True)
+            shutil.copy2(ROOT / 'build' / preset / 'snow_shot' / backend, stale_backend)
+            run('cmake', '--install', str(ROOT / 'build' / preset), '--component',
+                'SnowShotMini', '--prefix', str(stage))
+            self.assertTrue((app / 'Contents/Frameworks' / backend).is_file())
+            self.assertFalse(stale_backend.exists())
+            run('codesign', '--verify', '--deep', '--strict', str(app))
+            env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+            for name in ('QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'DYLD_LIBRARY_PATH',
+                         'DYLD_FRAMEWORK_PATH'):
+                env.pop(name, None)
+            run(str(app / 'Contents/MacOS/snow_shot_mini'), '--startup-probe',
+                env=env, cwd=temp, timeout=30)
+
     def test_deploy_helpers_and_package(self):
         arch = "arm64" if os.uname().machine == "arm64" else "x64"
         prefix = ROOT / f".tools/macos/installed/dynamic/{arch}-osx-snow-shot"
