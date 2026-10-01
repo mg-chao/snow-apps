@@ -5,6 +5,16 @@ endif()
 # Use CPack's normal encoder to create a second configuration. The standard
 # CPackConfig.cmake remains the historical full product configuration.
 function(snow_shot_configure_mini_package)
+    # include(CPack) leaves source-package variables in the caller's scope.
+    # Start from the saved binary configuration, including its generator and
+    # install inputs, so Mini cannot accidentally package the source tree.
+    get_cmake_property(_snow_cpack_variables VARIABLES)
+    foreach(_variable IN LISTS _snow_cpack_variables)
+        if(_variable MATCHES "^CPACK_")
+            unset(${_variable})
+        endif()
+    endforeach()
+    include("${CMAKE_BINARY_DIR}/CPackConfig.cmake")
     set(CPACK_PACKAGE_NAME snow-shot-mini)
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Snow Shot Mini screenshot utility")
     set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/snow_shot/packaging/README-mini.txt")
