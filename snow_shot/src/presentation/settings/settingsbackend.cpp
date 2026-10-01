@@ -14,6 +14,7 @@
 #include "snow_shot/platform/windows/administratorlaunch.h"
 
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/presentation/mainwindowskincontroller.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -266,7 +267,24 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
     connect(&applicationStorage, &storage::ApplicationStorage::smartSelectionChanged, this,
             [this](bool) { emit synchronized(); });
     connect(&applicationStorage.configuration(), &storage::ConfigurationStore::valueChanged, this,
-            [this](const QString&, const QJsonValue&) { emit synchronized(); });
+            [this](const QString& key, const QJsonValue& value) {
+                if (key == QStringLiteral("interface/skin_path") && !value.toString().isEmpty())
+                    connectSkinControllerIfNeeded();
+                emit synchronized();
+            });
+    connectSkinControllerIfNeeded();
+}
+
+void BuiltInSettingsBackend::connectSkinControllerIfNeeded() {
+    auto* controller = MainWindowSkinController::existingInstance();
+    if (controller == nullptr && !storage::InterfaceSettings().skinPath().isEmpty())
+        controller = &MainWindowSkinController::instance();
+    if (controller == nullptr || m_skinController == controller)
+        return;
+    disconnect(m_skinStatusConnection);
+    m_skinController = controller;
+    m_skinStatusConnection = connect(controller, &MainWindowSkinController::statusChanged, this,
+                                     &SettingsBackend::synchronized);
 }
 
 QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) const {
@@ -281,6 +299,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return styles::ThemeManager::instance().appFontFamily();
     case SettingsSelectBinding::Theme:
         return themeModeValue(styles::ThemeManager::instance().themeMode());
+    case SettingsSelectBinding::SkinDisplayMode:
+        return storage::InterfaceSettings().skinDisplayMode();
     case SettingsSelectBinding::Language:
         return LanguageManager::instance().languagePreference();
     case SettingsSelectBinding::ApplicationQoS:
@@ -417,6 +437,8 @@ BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) cons
 bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                               const QVariant& value) {
     switch (binding) {
+    case SettingsSelectBinding::SkinDisplayMode:
+        return storage::InterfaceSettings().setSkinDisplayMode(value.toString());
     case SettingsSelectBinding::TranslationLayoutProcessing:
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return storage::ScreenshotTranslationSettings().setLayoutProcessing(value.toString());
@@ -1041,6 +1063,12 @@ bool BuiltInSettingsBackend::applyMultiSelectValue(SettingsMultiSelectBinding bi
 
 int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
     switch (binding) {
+    case SettingsSliderBinding::SkinOpacity:
+        return storage::InterfaceSettings().skinOpacity();
+    case SettingsSliderBinding::SkinBlurLevel:
+        return storage::InterfaceSettings().skinBlurLevel();
+    case SettingsSliderBinding::SkinMaskOpacity:
+        return storage::InterfaceSettings().skinMaskOpacity();
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().shortcutHintOpacity();
     case SettingsSliderBinding::ScreenshotImageQuality:
@@ -1053,6 +1081,12 @@ int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
 
 bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int value) {
     switch (binding) {
+    case SettingsSliderBinding::SkinOpacity:
+        return storage::InterfaceSettings().setSkinOpacity(value);
+    case SettingsSliderBinding::SkinBlurLevel:
+        return storage::InterfaceSettings().setSkinBlurLevel(value);
+    case SettingsSliderBinding::SkinMaskOpacity:
+        return storage::InterfaceSettings().setSkinMaskOpacity(value);
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().setShortcutHintOpacity(value);
     case SettingsSliderBinding::ScreenshotImageQuality:
@@ -1131,6 +1165,8 @@ bool BuiltInSettingsBackend::applyRadioValue(SettingsRadioBinding binding, const
 
 QString BuiltInSettingsBackend::filePathValue(SettingsFilePathBinding binding) const {
     switch (binding) {
+    case SettingsFilePathBinding::SkinPath:
+        return storage::InterfaceSettings().skinPath();
     case SettingsFilePathBinding::TrayCustomIcon:
         return storage::TraySettings().customIcon();
     }
@@ -1140,10 +1176,34 @@ QString BuiltInSettingsBackend::filePathValue(SettingsFilePathBinding binding) c
 bool BuiltInSettingsBackend::applyFilePathValue(SettingsFilePathBinding binding,
                                                 const QString& value) {
     switch (binding) {
+    case SettingsFilePathBinding::SkinPath:
+        return storage::InterfaceSettings().setSkinPath(value);
     case SettingsFilePathBinding::TrayCustomIcon:
         return storage::TraySettings().setCustomIcon(value);
     }
     return false;
+}
+
+QString BuiltInSettingsBackend::filePathStatus(SettingsFilePathBinding binding) const {
+    const auto* controller = MainWindowSkinController::existingInstance();
+    return binding == SettingsFilePathBinding::SkinPath && controller != nullptr
+               ? controller->statusText()
+               : QString();
+}
+
+bool BuiltInSettingsBackend::filePathStatusError(SettingsFilePathBinding binding) const {
+    const auto* controller = MainWindowSkinController::existingInstance();
+    return binding == SettingsFilePathBinding::SkinPath && controller != nullptr &&
+           controller->hasError();
+}
+
+void BuiltInSettingsBackend::reloadFilePathValue(SettingsFilePathBinding binding) {
+    if (binding != SettingsFilePathBinding::SkinPath ||
+        storage::InterfaceSettings().skinPath().isEmpty())
+        return;
+    connectSkinControllerIfNeeded();
+    if (auto* controller = MainWindowSkinController::existingInstance())
+        controller->reload();
 }
 
 QString BuiltInSettingsBackend::directoryPathValue(SettingsDirectoryPathBinding binding) const {
@@ -1713,6 +1773,17 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         return false;
 #endif
     switch (reset) {
+    case SettingsSectionReset::Skin: {
+        QMap<QString, QJsonValue> defaults;
+        for (const auto* key :
+             {"interface/skin_path", "interface/skin_display_mode", "interface/skin_opacity",
+              "interface/skin_blur_level", "interface/skin_mask_opacity"}) {
+            const QString configurationKey = QString::fromLatin1(key);
+            defaults.insert(configurationKey,
+                            storage::ConfigurationSchema::defaultValue(configurationKey));
+        }
+        return storage::ApplicationStorage::instance().configuration().setValues(defaults);
+    }
     case SettingsSectionReset::ScreenshotShortcuts: {
         bool accepted = true;
         const auto resetShortcut = [this, &accepted](GlobalShortcutAction action,

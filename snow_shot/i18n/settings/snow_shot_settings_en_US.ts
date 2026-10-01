@@ -520,6 +520,33 @@
         </message>
     </context>
     <context>
+        <name>MainWindowSkin</name>
+        <message>
+            <source>Choose a PNG, JPG, or WebP image.</source>
+            <translation>Choose a PNG, JPG, or WebP image.</translation>
+        </message>
+        <message>
+            <source>Loading skin...</source>
+            <translation>Loading skin...</translation>
+        </message>
+        <message>
+            <source>The skin image could not be decoded.</source>
+            <translation>The skin image could not be decoded.</translation>
+        </message>
+        <message>
+            <source>The skin image could not be opened.</source>
+            <translation>The skin image could not be opened.</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds 64 MiB.</source>
+            <translation>The skin image exceeds 64 MiB.</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds processing limits.</source>
+            <translation>The skin image exceeds processing limits.</translation>
+        </message>
+    </context>
+    <context>
         <name>PermissionGuide</name>
         <message>
             <source>Close guidance</source>
@@ -849,6 +876,14 @@
             <translation>Adjust MP4 quality and file size</translation>
         </message>
         <message>
+            <source>Adjust the opacity of the skin image</source>
+            <translation>Adjust the opacity of the skin image</translation>
+        </message>
+        <message>
+            <source>Adjust the theme background opacity of the title bar, side navigation bar and pages</source>
+            <translation>Adjust the theme background opacity of the title bar, side navigation bar and pages</translation>
+        </message>
+        <message>
             <source>Age</source>
             <translation>Age</translation>
         </message>
@@ -995,6 +1030,10 @@
         <message>
             <source>Background Fill</source>
             <translation>Background Fill</translation>
+        </message>
+        <message>
+            <source>Background image</source>
+            <translation>Background image</translation>
         </message>
         <message>
             <source>Backup settings</source>
@@ -1353,6 +1392,10 @@
             <translation>Connect AI clients to Snow Shot</translation>
         </message>
         <message>
+            <source>Contain</source>
+            <translation>Contain</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>Control when the screenshot color picker is visible</translation>
         </message>
@@ -1451,6 +1494,10 @@
         <message>
             <source>Custom translation endpoints and concurrency</source>
             <translation>Custom translation endpoints and concurrency</translation>
+        </message>
+        <message>
+            <source>Customize the main interface background</source>
+            <translation>Customize the main interface background</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -1669,6 +1716,10 @@
             <translation>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</translation>
         </message>
         <message>
+            <source>Enter or browse to a PNG, JPG or WebP image. Clear the path to remove the skin.</source>
+            <translation>Enter or browse to a PNG, JPG or WebP image. Clear the path to remove the skin.</translation>
+        </message>
+        <message>
             <source>Eraser</source>
             <translation>Eraser</translation>
         </message>
@@ -1877,6 +1928,10 @@
             <translation>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</translation>
         </message>
         <message>
+            <source>Image files (*.png *.jpg *.jpeg *.webp);;PNG images (*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)</source>
+            <translation>Image files (*.png *.jpg *.jpeg *.webp);;PNG images (*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)</translation>
+        </message>
+        <message>
             <source>Image format</source>
             <translation>Image format</translation>
         </message>
@@ -2073,6 +2128,10 @@
             <translation>Manual save image filename format</translation>
         </message>
         <message>
+            <source>Mask Opacity</source>
+            <translation>Mask Opacity</translation>
+        </message>
+        <message>
             <source>Match your system appearance or choose a light or dark theme</source>
             <translation>Match your system appearance or choose a light or dark theme</translation>
         </message>
@@ -2263,6 +2322,14 @@
         <message>
             <source>Other application shortcuts and actions</source>
             <translation>Other application shortcuts and actions</translation>
+        </message>
+        <message>
+            <source>Overlay</source>
+            <translation>Overlay</translation>
+        </message>
+        <message>
+            <source>Overlay fills the window and crops the edges. Contain shows the whole image.</source>
+            <translation>Overlay fills the window and crops the edges. Contain shows the whole image.</translation>
         </message>
         <message>
             <source>PDF</source>
@@ -2777,6 +2844,10 @@
             <translation>Select previously selected area</translation>
         </message>
         <message>
+            <source>Select skin image</source>
+            <translation>Select skin image</translation>
+        </message>
+        <message>
             <source>Select the language used throughout the application</source>
             <translation>Select the language used throughout the application</translation>
         </message>
@@ -2977,6 +3048,26 @@
             <translation>Shutter Sound Notification</translation>
         </message>
         <message>
+            <source>Skin</source>
+            <translation>Skin</translation>
+        </message>
+        <message>
+            <source>Skin Blur Level</source>
+            <translation>Skin Blur Level</translation>
+        </message>
+        <message>
+            <source>Skin Display Mode</source>
+            <translation>Skin Display Mode</translation>
+        </message>
+        <message>
+            <source>Skin Opacity</source>
+            <translation>Skin Opacity</translation>
+        </message>
+        <message>
+            <source>Skin Path</source>
+            <translation>Skin Path</translation>
+        </message>
+        <message>
             <source>Small</source>
             <translation>Small</translation>
         </message>
@@ -3019,6 +3110,10 @@
         <message>
             <source>Snowflake light</source>
             <translation>Snowflake light</translation>
+        </message>
+        <message>
+            <source>Soften the skin image with blur</source>
+            <translation>Soften the skin image with blur</translation>
         </message>
         <message>
             <source>Software updates</source>

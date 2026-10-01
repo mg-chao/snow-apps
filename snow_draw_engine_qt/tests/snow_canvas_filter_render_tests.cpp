@@ -133,6 +133,33 @@ void publicRegionFilterApiRestrictsEffectsToTheRequestedRegion() {
             "the public region-filter API should reject mismatched image sizes");
 }
 
+void publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch() {
+    QImage source(QSize(300, 256), QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < source.height(); ++y) {
+        for (int x = 0; x < source.width(); ++x) {
+            source.setPixelColor(x, y,
+                                 QColor((x * 17 + y * 3) % 256, (x * 5 + y * 19) % 256,
+                                        (x * 11 + y * 7) % 256, 80 + (x + y) % 176));
+        }
+    }
+    SnowCanvasRegionFilterParameters parameters;
+    parameters.logicalSigma = 3.0;
+    parameters.devicePixelRatio = 1.5;
+    const QRegion region(source.rect());
+    QImage normal = source;
+    require(applySnowCanvasRegionFilter(source, normal, region, parameters),
+            "the default public Gaussian execution policy should remain supported");
+    QImage serial = source;
+    SnowCanvasRegionFilterScratch scratch;
+    require(applySnowCanvasRegionFilter(source, serial, region, parameters, &scratch, true),
+            "the public Gaussian API should support isolated single-threaded execution");
+    require(serial == normal,
+            "single-threaded Gaussian execution should preserve default pixels and alpha");
+    scratch.finishFrame();
+    require(scratch.retainedBytes() > 0 && scratch.retainedBytes() <= 16U * 1024U * 1024U,
+            "public scratch diagnostics should report its bounded retained workspace");
+}
+
 void regionFilterSupportPixelsMatchesGaussianPlan() {
     SnowCanvasRegionFilterParameters parameters;
     parameters.type = SnowCanvasFilterType::GaussianBlur;
@@ -3056,6 +3083,13 @@ void tiledRenderMatchesFullRender() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     snow_canvas_render_diagnostics::setEnabled(true);
+    if (application.arguments().contains(QStringLiteral("--public-region-api-only"))) {
+        publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
+        publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
+        regionFilterSupportPixelsMatchesGaussianPlan();
+        croppedRegionFilterMatchesFullFrameRender();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--retained-filter-paint-only"))) {
         retainedFilterCopiesPreserveScratchRowPadding();
         retainedFilterTilesRenderWithoutReopeningAnActivePainter();
@@ -3063,6 +3097,7 @@ int main(int argc, char** argv) {
     }
     brightnessHasNeutralMidpointAndPreservesAlpha();
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
+    publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();
     tiledFiltersCoverFractionalDevicePixels();

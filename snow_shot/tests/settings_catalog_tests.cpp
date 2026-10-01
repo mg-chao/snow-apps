@@ -81,6 +81,53 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsColorBinding::ThemePrimaryColor &&
                 !std::get<settings::SettingsColorDefinition>(primary->payload).alphaChannelEnabled,
             "general settings must expose an opaque theme primary color picker");
+    const auto& skinRegistry = settings::builtInSettingsRegistry();
+    const auto* skin =
+        catalog.section(QStringLiteral("interface-settings"), QStringLiteral("skin"));
+    require(skin != nullptr && skin->title.translated() == QStringLiteral("Skin") &&
+                skin->reset == settings::SettingsSectionReset::Skin && skin->items.size() == 5 &&
+                skinRegistry.fieldsForReset(settings::SettingsSectionReset::Skin).size() == 5,
+            "skin settings must expose exactly five fields in an independent reset group");
+    const auto* skinPath =
+        skinRegistry.fieldForFilePath(settings::SettingsFilePathBinding::SkinPath);
+    const auto* skinMode =
+        skinRegistry.fieldForSelect(settings::SettingsSelectBinding::SkinDisplayMode);
+    require(skinPath != nullptr && skinMode != nullptr &&
+                skinPath->configurationKey == QStringLiteral("interface/skin_path") &&
+                skinPath->defaultValue.toString().isEmpty() &&
+                skinMode->configurationKey == QStringLiteral("interface/skin_display_mode") &&
+                skinMode->defaultValue.toString() == QStringLiteral("overlay") &&
+                std::get<settings::SettingsFilePathDefinition>(skinPath->definition->payload)
+                    .fileFilter.translated()
+                    .contains(QStringLiteral("*.png *.jpg *.jpeg *.webp")),
+            "skin path and display mode must retain their schema and supported image formats");
+    const auto& skinModeOptions =
+        std::get<settings::SettingsSelectDefinition>(skinMode->definition->payload).options;
+    require(skinModeOptions.size() == 2 &&
+                skinModeOptions.at(0).value.toString() == QStringLiteral("overlay") &&
+                skinModeOptions.at(0).label.translated() == QStringLiteral("Overlay") &&
+                skinModeOptions.at(1).value.toString() == QStringLiteral("contain") &&
+                skinModeOptions.at(1).label.translated() == QStringLiteral("Contain"),
+            "skin display modes must expose stable Overlay and Contain choices");
+    for (const auto binding : {settings::SettingsSliderBinding::SkinOpacity,
+                               settings::SettingsSliderBinding::SkinBlurLevel,
+                               settings::SettingsSliderBinding::SkinMaskOpacity}) {
+        const auto* field = skinRegistry.fieldForSlider(binding);
+        const auto* entry = field != nullptr
+                                ? storage::ConfigurationSchema::entry(field->configurationKey)
+                                : nullptr;
+        require(field != nullptr && field->sectionId == QStringLiteral("skin") &&
+                    entry != nullptr && entry->integerRange.has_value() &&
+                    entry->integerRange->minimum == 0 && entry->integerRange->maximum == 100 &&
+                    entry->integerRange->step == 1,
+                "skin sliders must expose integral values from zero to one hundred");
+        const int expectedDefault = binding == settings::SettingsSliderBinding::SkinOpacity ? 100
+                                    : binding == settings::SettingsSliderBinding::SkinBlurLevel
+                                        ? 0
+                                        : 80;
+        require(field->defaultValue.toInt() == expectedDefault,
+                "skin sliders must retain the accepted defaults");
+    }
     const auto* areaTypeHint =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
                       QStringLiteral("interface.screenshot.area-type-hint")});
@@ -273,9 +320,9 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 44, "macOS adds one permissions section");
+    require(sectionCount == 45, "macOS adds one permissions section");
 #else
-    require(sectionCount == 43, "catalog must contain forty-three sections");
+    require(sectionCount == 44, "catalog must contain forty-four sections");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
     // Explicit platform membership also catches substitutions that a total alone would miss.
@@ -305,9 +352,15 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
+<<<<<<< Updated upstream
     require(itemIds.size() == 208,
             qPrintable(QStringLiteral(
                            "catalog must contain 208 shared settings on every platform; found %1")
+=======
+    require(itemIds.size() == 209,
+            qPrintable(QStringLiteral(
+                           "catalog must contain 209 shared settings on every platform; found %1")
+>>>>>>> Stashed changes
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1252,13 +1305,14 @@ void builtInCatalogIsCompleteAndValid() {
     }
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
-    require(interfacePage != nullptr && interfacePage->sections.size() == 7 &&
-                interfacePage->sections.at(1).id == QStringLiteral("interface-screenshot") &&
-                interfacePage->sections.at(2).id == QStringLiteral("interface-text-recognition") &&
-                interfacePage->sections.at(3).id == QStringLiteral("toolbar") &&
-                interfacePage->sections.at(4).id == QStringLiteral("drawing") &&
-                interfacePage->sections.at(5).id == QStringLiteral("pin-to-screen") &&
-                interfacePage->sections.at(6).id == QStringLiteral("tray"),
+    require(interfacePage != nullptr && interfacePage->sections.size() == 8 &&
+                interfacePage->sections.at(1).id == QStringLiteral("skin") &&
+                interfacePage->sections.at(2).id == QStringLiteral("interface-screenshot") &&
+                interfacePage->sections.at(3).id == QStringLiteral("interface-text-recognition") &&
+                interfacePage->sections.at(4).id == QStringLiteral("toolbar") &&
+                interfacePage->sections.at(5).id == QStringLiteral("drawing") &&
+                interfacePage->sections.at(6).id == QStringLiteral("pin-to-screen") &&
+                interfacePage->sections.at(7).id == QStringLiteral("tray"),
             "Interface settings must place Text Recognition immediately below Screenshot");
     const auto* toolbarSize =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("toolbar"),
@@ -1269,8 +1323,8 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* screenshotToolbarEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
                       QStringLiteral("interface.screenshot.screenshot-toolbar-editor")});
-    const auto& screenshotSection = interfacePage->sections.at(1);
-    const auto& toolbarSection = interfacePage->sections.at(3);
+    const auto& screenshotSection = interfacePage->sections.at(2);
+    const auto& toolbarSection = interfacePage->sections.at(4);
     const auto* trayIcon =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("tray"),
                       QStringLiteral("interface.tray.icon")});
@@ -1339,7 +1393,7 @@ void builtInCatalogIsCompleteAndValid() {
         "the interface Screenshot section must expose a selection border color above the mask "
         "color, defaulting to #4096ff");
 
-    const auto& pinSection = interfacePage->sections.at(5);
+    const auto& pinSection = interfacePage->sections.at(6);
     const auto* pinBorderActiveColor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.border-active-color")});

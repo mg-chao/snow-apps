@@ -1,6 +1,7 @@
 #include "input_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -292,6 +293,13 @@ InputVisualStyle resolveInputVisualStyle(const InputStyleInput& input,
     style.selectorHoverBg = compositeOn(style.selectorHoverBg, containerBg);
     style.selectorActiveBg = compositeOn(style.selectorActiveBg, containerBg);
     style.disabledBg = compositeOn(style.disabledBg, containerBg);
+  }
+
+  if (map.backgroundOpacity != 1.0) {
+    for (QColor* background :
+         {&style.selectorBg, &style.selectorHoverBg, &style.selectorActiveBg, &style.disabledBg}) {
+      *background = adqt::theme::applyBackgroundOpacity(*background, map.backgroundOpacity);
+    }
   }
 
   return style;

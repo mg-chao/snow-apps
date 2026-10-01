@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/settings/settingsregistry.h"
 
 #include <QFrame>
+#include <QColor>
 #include <QString>
 #include <QVector>
 
@@ -29,6 +30,7 @@ class MainContentHeaderWidget final : public QFrame {
     setSections(const QVector<snow_shot::presentation::settings::SettingsSectionSummary>& sections);
     void setCurrentSection(const QString& sectionId);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
+    void setSkinMaskOpacity(qreal opacity);
     void retranslateUi();
 
   signals:
@@ -40,10 +42,13 @@ class MainContentHeaderWidget final : public QFrame {
 
   private:
     void updateLayoutMargins(const snow_shot::presentation::styles::ThemeAliasMetricToken& metric);
+    void updateSkinMask();
 
     adqt::widgets::AdTabs* m_tabs = nullptr;
     ApplicationSearchWidget* m_globalSearch = nullptr;
     QVector<snow_shot::presentation::settings::SettingsSectionSummary> m_sections;
+    qreal m_skinMaskOpacity = 1.0;
+    QColor m_surfaceColor;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_MAINCONTENTHEADERWIDGET_H

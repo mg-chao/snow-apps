@@ -185,6 +185,8 @@ AdTag::AdTag(QWidget* parent) : QAbstractButton(parent) {
   setCursor(Qt::PointingHandCursor);
 
   connect(this, &QAbstractButton::toggled, this, [this](bool) { refreshAfterStateChange(false); });
+  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+          qOverload<>(&QWidget::update));
 }
 
 AdTag::AdTag(const QString& text, QWidget* parent) : AdTag(parent) { setText(text); }

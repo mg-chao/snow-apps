@@ -1,35 +1,51 @@
 #include "window_close_shortcut_test_support.h"
 #include "snow_shot/presentation/components/actionrow.h"
 #include "snow_shot/presentation/components/contentcardwidget.h"
+#include "snow_shot/presentation/components/maincontentheaderwidget.h"
+#include "snow_shot/presentation/components/sidebarwidget.h"
 #include "snow_shot/presentation/components/titlebarwidget.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "icon_renderer.h"
 #include <QPainter>
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/mainwindow.h"
+#include "snow_shot/presentation/mainwindowskincontroller.h"
+#include "snow_shot/presentation/mainwindowskinwidget.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "theme/theme_manager.h"
+#include "widgets/button.h"
 #include "widgets/message.h"
 #include "widgets/navigation_menu.h"
+#include "widgets/scroll_area.h"
+#include "widgets/select.h"
+#include "snowimageqtcodec.h"
 
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
 #include <QEvent>
 #include <QImage>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QLinearGradient>
 #include <QPixmap>
 #include <QFontDatabase>
 #include <QLabel>
 #include <QMenu>
 #include <QPointer>
+#include <QPalette>
+#include <QScrollBar>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QWidget>
 
 #include <cstdlib>
 #include <algorithm>
 #include <iostream>
+#include <functional>
 
 namespace settings = snow_shot::presentation::settings;
 namespace styles = snow_shot::presentation::styles;
@@ -244,6 +260,87 @@ void titleBarBackgroundMatchesNavigationMenu() {
             "returning to the light theme must restore the navigation menu item background");
 }
 
+void skinMasksCompositeOnceAndSurviveThemeChanges() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    auto& themeManager = styles::ThemeManager::instance();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(registry, backend);
+    const QColor base(40, 80, 160);
+    QWidget host;
+    host.resize(900, 560);
+    QPalette hostPalette = host.palette();
+    hostPalette.setColor(QPalette::Window, base);
+    host.setPalette(hostPalette);
+    host.setAutoFillBackground(true);
+    TitleBarWidget titleBar(themeManager.themeColorScheme().metricAlias, &host);
+    titleBar.resize(host.width(), titleBar.height());
+    SidebarWidget sidebar(registry, &host);
+    sidebar.setGeometry(0, 50, 220, 500);
+    MainContentHeaderWidget header(registry, themeManager.themeColorScheme().metricAlias, &host);
+    header.setGeometry(230, 50, 650, 90);
+    ContentCardWidget card(registry, session, &host);
+    card.setGeometry(230, 150, 650, 400);
+    host.show();
+    flushEvents();
+
+    const auto composite = [&base](QColor mask, qreal opacity) {
+        QImage image(1, 1, QImage::Format_ARGB32_Premultiplied);
+        image.fill(base);
+        mask.setAlphaF(mask.alphaF() * static_cast<float>(opacity));
+        QPainter painter(&image);
+        painter.fillRect(image.rect(), mask);
+        painter.end();
+        return image.pixelColor(0, 0);
+    };
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        // Set the mask before changing theme so the theme event must preserve it.
+        titleBar.setSkinMaskOpacity(0.5);
+        sidebar.setSkinMaskOpacity(0.5);
+        header.setSkinMaskOpacity(0.5);
+        card.setSkinMaskOpacity(0.5);
+        themeManager.setThemeAppearance(appearance);
+        flushEvents();
+        const QColor navigation =
+            adqt::widgets::AdNavigationMenu::resolveColorTokens(&sidebar).itemBackground;
+        const QColor container = themeManager.themeColorScheme().map.colorBgContainer;
+        for (const qreal opacity : {0.5, 0.0, 1.0}) {
+            titleBar.setSkinMaskOpacity(opacity);
+            sidebar.setSkinMaskOpacity(opacity);
+            header.setSkinMaskOpacity(opacity);
+            card.setSkinMaskOpacity(opacity);
+            flushEvents();
+            const QImage rendered = host.grab().toImage();
+            const qreal scale = rendered.devicePixelRatio();
+            const auto sample = [&rendered, scale](const QWidget& widget, const QPoint& point) {
+                const QPoint hostPoint = widget.pos() + point;
+                return rendered.pixelColor(qRound(hostPoint.x() * scale),
+                                           qRound(hostPoint.y() * scale));
+            };
+            require(sample(titleBar, QPoint(2, 2)) == composite(navigation, opacity),
+                    "the title-bar mask must blend the theme surface once over the skin");
+            require(sample(sidebar, QPoint(2, 2)) == composite(navigation, opacity),
+                    "navigation menu and scroll viewport must not duplicate the sidebar mask");
+            require(sample(sidebar, QPoint(2, sidebar.height() - 10)) ==
+                        composite(navigation, opacity),
+                    "the collapse trigger must share the sidebar's single mask");
+            require(sample(header, QPoint(2, 2)) == composite(container, opacity),
+                    "the header must retain its mask through theme changes");
+            require(sample(card, QPoint(8, 40)) == composite(container, opacity),
+                    "the page card must blend one container mask over the skin");
+            require(sidebar.palette().color(QPalette::Base).alpha() == 255 &&
+                        titleBar.palette().color(QPalette::Base).alpha() == 255 &&
+                        header.palette().color(QPalette::Base).alpha() == 255,
+                    "skin masks must not make inherited control base colors translucent");
+        }
+        require(sidebar.findChild<adqt::widgets::AdNavigationMenu*>()
+                        ->resolvedColorTokens()
+                        .itemBackground == navigation,
+                "clearing a skin mask must restore the original navigation tokens");
+    }
+    themeManager.setThemeAppearance(styles::ThemeAppearance::Light);
+}
+
 void mainWindowTitlesKeepSmoothRendering() {
     const QFont applicationFont = QApplication::font();
     const auto& registry = settings::builtInSettingsRegistry();
@@ -318,6 +415,400 @@ void mainWindowTitlesKeepSmoothRendering() {
     flushEvents();
     require(window.font().family() == applicationFont.family(),
             "main window restores the platform family");
+}
+
+void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory) {
+    namespace presentation = snow_shot::presentation;
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    auto& themeManager = styles::ThemeManager::instance();
+    const auto previousAppearance = themeManager.themeColorScheme().appearance;
+    const auto snapshot = configuration.snapshot();
+    const auto savedTranslationPage =
+        snapshot.value(QStringLiteral("extended_features/translation_page_enabled"));
+    QMap<QString, QJsonValue> savedSkin;
+    for (auto it = snapshot.cbegin(); it != snapshot.cend(); ++it) {
+        if (it.key().startsWith(QStringLiteral("interface/skin_"))) {
+            savedSkin.insert(it.key(), it.value());
+        }
+    }
+    QTemporaryDir fixtureDirectory;
+    require(fixtureDirectory.isValid(), "create the main-window skin fixture directory");
+    QImage source(1200, 700, QImage::Format_ARGB32_Premultiplied);
+    {
+        QPainter painter(&source);
+        QLinearGradient gradient(QPointF(0, 0), QPointF(source.width(), source.height()));
+        gradient.setColorAt(0.0, QColor(245, 196, 164));
+        gradient.setColorAt(0.45, QColor(112, 161, 209));
+        gradient.setColorAt(1.0, QColor(73, 56, 117));
+        painter.fillRect(source.rect(), gradient);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(237, 218, 187));
+        painter.drawEllipse(QRectF(890, 80, 190, 190));
+        painter.setBrush(QColor(177, 218, 231));
+        painter.drawRoundedRect(QRectF(110, 110, 150, 450), 75, 75);
+    }
+    const QString fixturePath = fixtureDirectory.filePath(QStringLiteral("skin.png"));
+    QFile fixture(fixturePath);
+    require(fixture.open(QIODevice::WriteOnly), "open the main-window skin fixture");
+    const QByteArray encoded = snow_shot::image_codec::encodePng(source);
+    require(!encoded.isEmpty() && fixture.write(encoded) == encoded.size(),
+            "write the main-window skin fixture");
+    fixture.close();
+
+    const auto& registry = settings::builtInSettingsRegistry();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(registry, backend);
+    MainWindow window(registry, session);
+    window.showFunctionSettings();
+    flushEvents();
+    // Offscreen screens can constrain the initial show at fractional DPI.
+    // Resize the visible window so these checks use the real 900 by 640 layout.
+    window.resize(900, 640);
+    flushEvents();
+    auto* root = window.centralWidget();
+    auto* titleBar = window.findChild<TitleBarWidget*>();
+    auto* sidebar = window.findChild<SidebarWidget*>();
+    auto* header = window.findChild<MainContentHeaderWidget*>();
+    auto* card = window.findChild<ContentCardWidget*>();
+    require(root && titleBar && sidebar && header && card,
+            "exercise the actual main-window skin and surface hierarchy");
+    require(root->metaObject() == &QWidget::staticMetaObject && root->autoFillBackground() &&
+                window.findChild<presentation::MainWindowSkinWidget*>() == nullptr &&
+                presentation::MainWindowSkinController::existingInstance() == nullptr,
+            "an unset skin must use the original QWidget without any skin runtime or hooks");
+    for (int step = 0; step < 12; ++step) {
+        window.resize(900 + step, 640 + step);
+        QEvent dprChange(QEvent::DevicePixelRatioChange);
+        QApplication::sendEvent(root, &dprChange);
+        flushEvents();
+    }
+    window.resize(900, 640);
+    flushEvents();
+    require(presentation::MainWindowSkinController::existingInstance() == nullptr &&
+                window.findChild<presentation::MainWindowSkinWidget*>() == nullptr,
+            "ordinary no-skin resize, DPI and paint events must never create a skin runtime");
+    const QImage original = root->grab().toImage();
+    const auto waitUntil = [](const std::function<bool()>& ready) {
+        QElapsedTimer timer;
+        timer.start();
+        for (;;) {
+            flushEvents();
+            if (ready()) {
+                return;
+            }
+            require(timer.elapsed() < 15000, "main-window skin preparation must complete");
+            QThread::msleep(1);
+        }
+    };
+    require(configuration.setValues(
+                {{QStringLiteral("interface/skin_path"), fixturePath},
+                 {QStringLiteral("interface/skin_display_mode"), QStringLiteral("overlay")},
+                 {QStringLiteral("interface/skin_opacity"), 100},
+                 {QStringLiteral("interface/skin_blur_level"), 0},
+                 {QStringLiteral("interface/skin_mask_opacity"), 0}}),
+            "configure the main-window skin fixture");
+    waitUntil([&] {
+        auto* skin = window.findChild<presentation::MainWindowSkinWidget*>();
+        auto* controller = presentation::MainWindowSkinController::existingInstance();
+        return skin && skin->skinActive() && controller && !controller->diagnostics().busy;
+    });
+    QPointer<presentation::MainWindowSkinController> controller =
+        presentation::MainWindowSkinController::existingInstance();
+    struct SurfaceSample {
+        QWidget* surface;
+        QPoint point;
+        bool navigation;
+    };
+    const SurfaceSample samples[] = {{titleBar, QPoint(2, 2), true},
+                                     {sidebar, QPoint(2, 10), true},
+                                     {sidebar, QPoint(2, sidebar->height() - 10), true},
+                                     {header, QPoint(2, 10), false},
+                                     {card, QPoint(8, 40), false}};
+    const auto sample = [root](const QImage& image, const QWidget& surface, const QPoint& point) {
+        const QPoint position = surface.mapTo(root, point);
+        const qreal scale = image.devicePixelRatio();
+        return image.pixelColor(qRound(position.x() * scale), qRound(position.y() * scale));
+    };
+    const auto closeColor = [](const QColor& actual, const QColor& expected) {
+        return std::abs(actual.red() - expected.red()) <= 2 &&
+               std::abs(actual.green() - expected.green()) <= 2 &&
+               std::abs(actual.blue() - expected.blue()) <= 2 && actual.alpha() == expected.alpha();
+    };
+    const auto reference =
+        presentation::prepareMainWindowSkin(source, root->size(), root->devicePixelRatioF(),
+                                            presentation::MainWindowSkinDisplayMode::Overlay, 0);
+    require(!reference.image.isNull(), "prepare the continuous main-window reference image");
+    const auto paintCounts = controller->diagnostics();
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        themeManager.setThemeAppearance(appearance);
+        for (const int mask : {0, 50, 100}) {
+            require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), mask),
+                    "adjust the actual main-window mask");
+            waitUntil([&] {
+                return !controller->diagnostics().busy && controller->maskOpacity() == mask / 100.0;
+            });
+            const QImage rendered = root->grab().toImage();
+            QImage skinOnly(rendered.size(), QImage::Format_ARGB32_Premultiplied);
+            skinOnly.setDevicePixelRatio(rendered.devicePixelRatio());
+            {
+                QPainter painter(&skinOnly);
+                painter.setRenderHint(QPainter::SmoothPixmapTransform);
+                painter.fillRect(root->rect(), themeManager.themeColorScheme().map.colorBgLayout);
+                painter.drawImage(QRectF(root->rect()), reference.image,
+                                  QRectF(reference.image.rect()));
+            }
+            for (const auto& surface : samples) {
+                QColor expected = sample(skinOnly, *surface.surface, surface.point);
+                QImage composite(1, 1, QImage::Format_ARGB32_Premultiplied);
+                composite.fill(expected);
+                QColor tint =
+                    surface.navigation
+                        ? adqt::widgets::AdNavigationMenu::resolveColorTokens(root).itemBackground
+                        : themeManager.themeColorScheme().map.colorBgContainer;
+                tint.setAlphaF(tint.alphaF() * static_cast<float>(mask / 100.0));
+                {
+                    QPainter painter(&composite);
+                    painter.fillRect(composite.rect(), tint);
+                }
+                expected = composite.pixelColor(0, 0);
+                const QColor actual = sample(rendered, *surface.surface, surface.point);
+                if (!closeColor(actual, expected)) {
+                    const QPoint position = surface.surface->mapTo(root, surface.point);
+                    std::cerr << "skin surface " << surface.surface->metaObject()->className()
+                              << " at root " << position.x() << ',' << position.y() << " mask "
+                              << mask << " theme "
+                              << (appearance == styles::ThemeAppearance::Light ? "light" : "dark")
+                              << " actual " << actual.name(QColor::HexArgb).toStdString()
+                              << " expected " << expected.name(QColor::HexArgb).toStdString()
+                              << " root " << root->width() << 'x' << root->height() << " raster "
+                              << rendered.width() << 'x' << rendered.height() << " DPR "
+                              << rendered.devicePixelRatio() << " frame "
+                              << controller->frame().image.width() << 'x'
+                              << controller->frame().image.height() << '\n';
+                    const QString diagnosticDirectory =
+                        previewDirectory.isEmpty()
+                            ? QDir::current().absoluteFilePath(QStringLiteral("skin-diagnostics"))
+                            : previewDirectory;
+                    require(QDir().mkpath(diagnosticDirectory), "create skin diagnostics folder");
+                    require(
+                        rendered.save(QDir(diagnosticDirectory)
+                                          .filePath(QStringLiteral("skin-failure-actual.png"))) &&
+                            skinOnly.save(
+                                QDir(diagnosticDirectory)
+                                    .filePath(QStringLiteral("skin-failure-background.png"))),
+                        "save skin compositing failure diagnostics");
+                }
+                require(closeColor(actual, expected),
+                        "title, navigation, header and pages must share one continuous skin image "
+                        "with one mask per surface");
+            }
+            require(closeColor(sample(rendered, *card, QPoint(-4, 40)),
+                               sample(skinOnly, *card, QPoint(-4, 40))),
+                    "structural content fills must expose skin gaps even at 100 percent mask");
+        }
+    }
+    require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 0),
+            "expose the skin for scrolling alignment verification");
+    waitUntil([&] { return !controller->diagnostics().busy && controller->maskOpacity() == 0.0; });
+    auto* pageScroll = card->findChild<adqt::widgets::AdScrollArea*>(settings::generatedObjectName(
+        QStringLiteral("settings-scroll"), QStringLiteral("function-settings")));
+    require(pageScroll && pageScroll->verticalScrollBar()->maximum() > 0,
+            "the actual function settings page must provide real scrolling content");
+    const QImage beforeScroll = root->grab().toImage();
+    QScrollBar* scrollBar = pageScroll->verticalScrollBar();
+    scrollBar->setValue(scrollBar->maximum());
+    waitUntil([&] { return scrollBar->value() > 0; });
+    const QImage afterScroll = root->grab().toImage();
+    for (const int y : {40, card->height() / 2, card->height() - 40}) {
+        const QPoint position(8, y);
+        require(pageScroll->viewport()->rect().contains(
+                    pageScroll->viewport()->mapFrom(card, position)),
+                "scrolling alignment samples must be inside the scrolling page viewport");
+        require(
+            closeColor(sample(afterScroll, *card, position), sample(beforeScroll, *card, position)),
+            "scrolling page content must leave the skin fixed in main-window coordinates");
+    }
+    scrollBar->setValue(scrollBar->minimum());
+    waitUntil([&] { return scrollBar->value() == scrollBar->minimum(); });
+    require(controller->diagnostics().decodeJobs == paintCounts.decodeJobs &&
+                controller->diagnostics().preparationJobs == paintCounts.preparationJobs,
+            "theme, mask and scroll changes in the actual main window must reuse the raster");
+
+    // Exercise actual generated controls and the persistent header selector. Render
+    // their own paint into transparent images so parent card masks cannot disguise
+    // an opaque control fill or whole-widget opacity that also fades its text.
+    // Keep unchanged shadows and border antialiasing in the zero-mask reference.
+    const auto controlImage = [](QWidget& control) {
+        QImage image(control.size(), QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        control.render(&image, QPoint(), QRegion(), QWidget::DrawChildren);
+        return image;
+    };
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        themeManager.setThemeAppearance(appearance);
+        window.showSettingsLocation(QStringLiteral("interface-settings"), QStringLiteral("skin"));
+        require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 100),
+                "restore control backgrounds before taking their reference");
+        waitUntil([&] { return controller->maskOpacity() == 1.0; });
+        auto* select = card->findChild<adqt::widgets::AdSelect*>(settings::generatedObjectName(
+            QStringLiteral("settings-control"), QStringLiteral("interface.skin.display-mode")));
+        auto* button =
+            card->findChild<adqt::widgets::AdButton*>(QStringLiteral("pathInputBrowseButton"));
+        auto* search = header->findChild<adqt::widgets::AdSelect*>();
+        require(select && button && search, "review real settings buttons, selects and search");
+        const QList<QWidget*> controls{select, button, search};
+        QList<QImage> references;
+        for (auto* control : controls) {
+            references.push_back(controlImage(*control));
+        }
+        require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 0),
+                "capture control shadows and ink without background fills");
+        waitUntil([&] { return controller->maskOpacity() == 0.0; });
+        QList<QImage> zeroReferences;
+        for (auto* control : controls) {
+            zeroReferences.push_back(controlImage(*control));
+        }
+        for (const int mask : {50, 0, 100}) {
+            require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), mask),
+                    "change mask with existing controls still alive");
+            waitUntil([&] { return controller->maskOpacity() == mask / 100.0; });
+            for (qsizetype index = 0; index < controls.size(); ++index) {
+                const QImage actual = controlImage(*controls[index]);
+                const QPoint fill(8, 4);
+                const QColor referenceColor = references[index].pixelColor(fill);
+                const QColor zeroColor = zeroReferences[index].pixelColor(fill);
+                require(referenceColor.alpha() > 0, "sample an actual painted control fill");
+                require(
+                    referenceColor != zeroColor,
+                    "zero mask must expose the control's background while retaining its shadow");
+                const int expectedAlpha =
+                    qRound(zeroColor.alpha() +
+                           (referenceColor.alpha() - zeroColor.alpha()) * mask / 100.0);
+                if (std::abs(actual.pixelColor(fill).alpha() - expectedAlpha) > 1) {
+                    std::cerr << "control " << controls[index]->metaObject()->className() << ' '
+                              << controls[index]->objectName().toStdString() << " mask " << mask
+                              << " opacity "
+                              << adqt::theme::ThemeManager::instance().backgroundOpacity(
+                                     controls[index])
+                              << " reference " << referenceColor.name(QColor::HexArgb).toStdString()
+                              << " zero " << zeroColor.name(QColor::HexArgb).toStdString()
+                              << " actual "
+                              << actual.pixelColor(fill).name(QColor::HexArgb).toStdString()
+                              << '\n';
+                }
+                require(std::abs(actual.pixelColor(fill).alpha() - expectedAlpha) <= 1,
+                        "settings and search control backgrounds must track the skin mask");
+                if (mask == 0) {
+                    bool preservesInk = false;
+                    for (int y = 0; y < actual.height(); ++y) {
+                        for (int x = 0; x < actual.width(); ++x) {
+                            preservesInk |= actual.pixelColor(x, y).alpha() > zeroColor.alpha();
+                        }
+                    }
+                    require(preservesInk, "zero background opacity must preserve control ink");
+                }
+            }
+            QWidget dialog(root, Qt::Dialog);
+            adqt::widgets::AdButton dialogButton(&dialog);
+            require(adqt::theme::ThemeManager::instance()
+                            .resolveTheme(&dialogButton)
+                            .backgroundOpacity == 1.0,
+                    "owned dialogs without a skin must keep opaque control backgrounds");
+        }
+    }
+
+    if (!previewDirectory.isEmpty()) {
+        require(QDir().mkpath(previewDirectory), "create the requested main-window preview folder");
+        const auto save = [&](const QString& name) {
+            flushEvents();
+            require(
+                root->grab().save(QDir(previewDirectory).filePath(name + QStringLiteral(".png"))),
+                "save the requested main-window skin preview");
+        };
+        for (const auto appearance :
+             {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+            themeManager.setThemeAppearance(appearance);
+            const QString theme = appearance == styles::ThemeAppearance::Light
+                                      ? QStringLiteral("light")
+                                      : QStringLiteral("dark");
+            window.showSettingsLocation(QStringLiteral("interface-settings"),
+                                        QStringLiteral("skin"));
+            for (const QString& mode : {QStringLiteral("overlay"), QStringLiteral("contain")}) {
+                require(
+                    configuration.setValues({{QStringLiteral("interface/skin_display_mode"), mode},
+                                             {QStringLiteral("interface/skin_blur_level"), 0},
+                                             {QStringLiteral("interface/skin_mask_opacity"), 80}}),
+                    "configure the main-window preview mode");
+                waitUntil([&] {
+                    return !controller->diagnostics().busy &&
+                           window.findChild<presentation::MainWindowSkinWidget*>()->skinActive();
+                });
+                save(QStringLiteral("skin-%1-%2").arg(theme, mode));
+                if (mode == QStringLiteral("overlay")) {
+                    sidebar->setCollapsed(false);
+                    save(QStringLiteral("skin-%1-sidebar-expanded").arg(theme));
+                    sidebar->setCollapsed(true);
+                    save(QStringLiteral("skin-%1-sidebar-collapsed").arg(theme));
+                    sidebar->setCollapsed(false);
+                }
+            }
+            require(configuration.setValues(
+                        {{QStringLiteral("interface/skin_display_mode"), QStringLiteral("overlay")},
+                         {QStringLiteral("interface/skin_blur_level"), 100}}),
+                    "configure the maximum-blur preview");
+            waitUntil([&] {
+                return !controller->diagnostics().busy &&
+                       window.findChild<presentation::MainWindowSkinWidget*>()->skinActive();
+            });
+            save(QStringLiteral("skin-%1-max-blur").arg(theme));
+            window.showAbout();
+            save(QStringLiteral("skin-%1-about").arg(theme));
+            window.showScreenshotHistory();
+            save(QStringLiteral("skin-%1-history").arg(theme));
+            window.showPinToScreenManagement();
+            save(QStringLiteral("skin-%1-pinned").arg(theme));
+
+            require(configuration.setValues(
+                        {{QStringLiteral("interface/skin_blur_level"), 0},
+                         {QStringLiteral("interface/skin_mask_opacity"), 50},
+                         {QStringLiteral("extended_features/translation_page_enabled"), true}}),
+                    "configure clear skin previews for every main-interface page");
+            waitUntil([&] {
+                return !controller->diagnostics().busy && controller->maskOpacity() == 0.5;
+            });
+            for (const auto& page : registry.catalog().pages()) {
+                card->navigateTo({page.id, {}, {}});
+                require(card->currentLocation().pageId == page.id,
+                        "visual review must visit every actual catalog page");
+                save(QStringLiteral("page-%1-%2").arg(theme, page.id));
+                for (const auto& section : page.sections) {
+                    card->navigateTo({page.id, section.id, {}});
+                    save(QStringLiteral("section-%1-%2-%3").arg(theme, page.id, section.id));
+                }
+            }
+        }
+    }
+
+    themeManager.setThemeAppearance(previousAppearance);
+    window.showFunctionSettings();
+    require(configuration.setValues(savedSkin), "restore the original skin preferences");
+    require(configuration.setValue(QStringLiteral("extended_features/translation_page_enabled"),
+                                   savedTranslationPage),
+            "restore the original translation-page preference");
+    waitUntil(
+        [&] { return presentation::MainWindowSkinController::existingInstance() == nullptr; });
+    const QImage restored = root->grab().toImage();
+    require(root->metaObject() == &QWidget::staticMetaObject && root->autoFillBackground() &&
+                window.findChild<presentation::MainWindowSkinWidget*>() == nullptr,
+            "removing the skin must remove its widget and restore the original Qt paint path");
+    for (const auto& surface : samples) {
+        require(sample(restored, *surface.surface, surface.point) ==
+                    sample(original, *surface.surface, surface.point),
+                "removing the skin must recover the original main-window surface colors");
+    }
+    require(sample(restored, *card, QPoint(-4, 40)) == sample(original, *card, QPoint(-4, 40)),
+            "removing the skin must restore the original content-area background");
 }
 
 #ifdef Q_OS_MACOS
@@ -403,7 +894,17 @@ int main(int argc, char** argv) {
     applicationTypographyCoversUnownedSurfaces();
     customTitleBarUsesPlatformWindowControls();
     titleBarBackgroundMatchesNavigationMenu();
+    skinMasksCompositeOnceAndSurviveThemeChanges();
     mainWindowTitlesKeepSmoothRendering();
+    QString skinPreviewDirectory;
+    const QStringList arguments = application.arguments();
+    const auto previewArgument = arguments.indexOf(QStringLiteral("--skin-previews"));
+    if (previewArgument >= 0) {
+        require(previewArgument + 1 < arguments.size(),
+                "--skin-previews requires an output folder");
+        skinPreviewDirectory = QDir(arguments.at(previewArgument + 1)).absolutePath();
+    }
+    mainWindowSkinIsContinuousAndRestoresTheme(skinPreviewDirectory);
 #ifdef Q_OS_MACOS
     standardCloseClosesMainWindow();
     permissionRedirectShowsMainInterfacePrompt();

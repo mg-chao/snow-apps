@@ -1,6 +1,7 @@
 #include "tabs_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 namespace adqt::widgets::detail {
@@ -74,6 +75,13 @@ TabsAppearance resolveTabsAppearance(const AdTabs* tabs, const AdTabs::Component
   result.metrics.font = tabs->font();
   result.metrics.font.setPixelSize(std::max(10, fontPixels));
   result.motionDuration = std::max(0, theme.motionDurationMid);
+  if (theme.backgroundOpacity != 1.0) {
+    result.cardBackground =
+        adqt::theme::applyBackgroundOpacity(result.cardBackground, theme.backgroundOpacity);
+    result.cardActiveBackground =
+        adqt::theme::applyBackgroundOpacity(result.cardActiveBackground, theme.backgroundOpacity);
+    result.surface = adqt::theme::applyBackgroundOpacity(result.surface, theme.backgroundOpacity);
+  }
   return result;
 }
 

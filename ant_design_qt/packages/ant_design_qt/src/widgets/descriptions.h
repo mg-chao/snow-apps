@@ -206,6 +206,7 @@ class AdDescriptions final : public QWidget {
   void semanticStylesChanged();
 
  protected:
+  void paintEvent(QPaintEvent* event) override;
   void changeEvent(QEvent* event) override;
   void resizeEvent(QResizeEvent* event) override;
 

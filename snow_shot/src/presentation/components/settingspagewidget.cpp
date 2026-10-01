@@ -301,7 +301,9 @@ class SettingsPageWidget::Impl {
         // Populate a hidden body, then attach it once. Initializing each row in
         // an already visible shell would repeatedly run show/layout work.
         auto* list = new QWidget(shell);
-        list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        const bool wrappingCopy = section.reset == settings::SettingsSectionReset::Skin;
+        list->setSizePolicy(QSizePolicy::Expanding,
+                            wrappingCopy ? QSizePolicy::Preferred : QSizePolicy::Fixed);
         list->hide();
         const auto metric = colorScheme.metricAlias;
         const auto itemLayout = section.itemLayout;
@@ -362,6 +364,9 @@ class SettingsPageWidget::Impl {
         shell->setFocusPolicy(Qt::NoFocus);
         shell->setMinimumHeight(0);
         shell->setMaximumHeight(QWIDGETSIZE_MAX);
+        if (wrappingCopy) {
+            shell->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        }
         list->show();
         rebuildTabOrder();
     }
@@ -644,8 +649,18 @@ class SettingsPageWidget::Impl {
                 definition.payload);
         }
 
+<<<<<<< Updated upstream
         if (runtime.formField == nullptr && runtime.focusTarget != nullptr &&
             runtime.focusTarget != runtime.anchor) {
+=======
+        if (descriptor != nullptr && descriptor->reset == settings::SettingsSectionReset::Skin &&
+            runtime.anchor != nullptr) {
+            // Skin copy can include a loading or error line. Fixed vertical
+            // policies clamp height-for-width to the unwrapped size hint.
+            runtime.anchor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        }
+        if (runtime.focusTarget != nullptr && runtime.focusTarget != runtime.anchor) {
+>>>>>>> Stashed changes
             runtime.focusTarget->setObjectName(
                 settings::generatedObjectName(QStringLiteral("settings-control"), definition.id));
         }
@@ -731,6 +746,53 @@ class SettingsPageWidget::Impl {
                              }
                              syncField(*item, &state);
                          });
+<<<<<<< Updated upstream
+=======
+        QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::filePathStatusChanged,
+                         &q, [this](settings::SettingsFilePathBinding binding) {
+                             if (binding != settings::SettingsFilePathBinding::SkinPath)
+                                 return;
+                             const auto* descriptor = registry.fieldForFilePath(binding);
+                             RuntimeItem* item =
+                                 descriptor == nullptr ? nullptr : runtimeItem(descriptor->id);
+                             if (item != nullptr) {
+                                 syncFilePathStatus(*item);
+                                 requestVisibleSectionSync();
+                             }
+                         });
+        QObject::connect(
+            &runtimeSession, &settings::SettingsRuntimeSession::optionsChanged, &q,
+            [this](const QString& fieldId, const settings::SettingsOptions& options) {
+                RuntimeItem* item = runtimeItem(fieldId);
+                if (item == nullptr) {
+                    return;
+                }
+                if (item->select != nullptr) {
+                    QList<adqt::widgets::AdSelect::Option> values;
+                    values.reserve(options.values.size());
+                    for (const settings::SettingsRuntimeOption& option : options.values) {
+                        values.push_back(selectOption(option.value, option.label));
+                    }
+                    const QSignalBlocker blocker(item->select);
+                    const auto* definition =
+                        std::get_if<settings::SettingsSelectDefinition>(&item->definition->payload);
+                    setOptions(*item,
+                               definition != nullptr && definition->binding ==
+                                                            settings::SettingsSelectBinding::AppFont
+                                   ? selectOptions(*item)
+                                   : values);
+                }
+                if (item->multiSelect != nullptr) {
+                    QVector<adqt::widgets::AdMultiSelect::Option> values;
+                    values.reserve(options.values.size());
+                    for (const settings::SettingsRuntimeOption& option : options.values) {
+                        values.push_back(selectOption(option.value, option.label));
+                    }
+                    const QSignalBlocker blocker(item->multiSelect);
+                    setOptions(*item, values);
+                }
+            });
+>>>>>>> Stashed changes
 #ifdef Q_OS_MACOS
         if (page != nullptr && page->id == QStringLiteral("app-permissions")) {
             if (auto* service = runtimeSession.appPermissions()) {
@@ -872,6 +934,125 @@ class SettingsPageWidget::Impl {
         }
 
         {
+<<<<<<< Updated upstream
+=======
+            if (runtime.select != nullptr) {
+                const QSignalBlocker blocker(runtime.select);
+                const auto* definition =
+                    std::get_if<settings::SettingsSelectDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    if (definition->binding == settings::SettingsSelectBinding::AppFont) {
+                        setOptions(runtime, selectOptions(runtime));
+                    }
+                    runtime.select->setCurrentValue(
+                        runtimeSession.selectValue(definition->binding));
+                }
+                runtime.select->setEnabled(fieldEnabled);
+            }
+            if (runtime.multiSelect != nullptr) {
+                const QSignalBlocker blocker(runtime.multiSelect);
+                const auto* definition = std::get_if<settings::SettingsMultiSelectDefinition>(
+                    &runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.multiSelect->setSelectedValues(
+                        runtimeSession.multiSelectValue(definition->binding));
+                }
+                runtime.multiSelect->setEnabled(fieldEnabled);
+            }
+            if (runtime.switchControl != nullptr) {
+                // AdSwitch refreshes its rendered thumb from toggled; the sync guard prevents
+                // this programmatic update from being written back as a user change.
+                const auto* definition =
+                    std::get_if<settings::SettingsSwitchDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.switchControl->setChecked(
+                        runtimeSession.switchValue(definition->binding));
+                    runtime.switchControl->setEnabled(
+                        fieldEnabled && definition != nullptr &&
+                        runtimeSession.switchEnabled(definition->binding));
+                    const QString hint = runtimeSession.switchHint(definition->binding);
+                    runtime.switchControl->setToolTip(hint);
+                    if (runtime.description)
+                        runtime.description->setText(
+                            hint.isEmpty() ? runtime.definition->description.translated() : hint);
+                }
+            }
+            if (runtime.integerControl != nullptr) {
+                const QSignalBlocker blocker(runtime.integerControl);
+                const auto* definition =
+                    std::get_if<settings::SettingsIntegerDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.integerControl->setValue(
+                        runtimeSession.integerValue(definition->binding));
+                }
+                runtime.integerControl->setEnabled(fieldEnabled);
+            }
+            if (runtime.sliderControl != nullptr) {
+                const QSignalBlocker blocker(runtime.sliderControl);
+                const auto* definition =
+                    std::get_if<settings::SettingsSliderDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    const int value = runtimeSession.sliderValue(definition->binding);
+                    runtime.sliderControl->setValue(value);
+                    runtime.sliderValue->setText(
+                        QStringLiteral("%1%2").arg(value).arg(definition->suffix.translated()));
+                }
+                runtime.sliderControl->setEnabled(fieldEnabled);
+            }
+            if (runtime.colorControl != nullptr) {
+                const QSignalBlocker blocker(runtime.colorControl);
+                const auto* definition =
+                    std::get_if<settings::SettingsColorDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.colorControl->setValue(adqt::widgets::AdColorValue::solid(
+                        runtimeSession.colorValue(definition->binding)));
+                }
+                runtime.colorControl->setDisabled(!fieldEnabled);
+            }
+            if (runtime.radioGroup != nullptr) {
+                const QSignalBlocker blocker(runtime.radioGroup);
+                const auto* definition =
+                    std::get_if<settings::SettingsRadioDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    const QVariant current = runtimeSession.radioValue(definition->binding);
+                    runtime.radioGroup->setCheckedId(
+                        static_cast<int>(runtime.radioValues.indexOf(current)));
+                }
+                for (adqt::widgets::AdRadio* button : std::as_const(runtime.radioButtons)) {
+                    button->setEnabled(fieldEnabled);
+                }
+            }
+            if (runtime.filePathControl != nullptr) {
+                const QSignalBlocker blocker(runtime.filePathControl);
+                const auto* definition =
+                    std::get_if<settings::SettingsFilePathDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.filePathControl->setText(
+                        runtimeSession.filePathValue(definition->binding));
+                }
+                runtime.filePathControl->setEnabled(fieldEnabled);
+                syncFilePathStatus(runtime);
+            }
+            if (runtime.directoryPathControl != nullptr) {
+                const QSignalBlocker blocker(runtime.directoryPathControl);
+                const auto* definition = std::get_if<settings::SettingsDirectoryPathDefinition>(
+                    &runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.directoryPathControl->setText(
+                        runtimeSession.directoryPathValue(definition->binding));
+                }
+                runtime.directoryPathControl->setEnabled(fieldEnabled);
+            }
+            if (runtime.textControl != nullptr) {
+                const QSignalBlocker blocker(runtime.textControl);
+                const auto* definition =
+                    std::get_if<settings::SettingsTextDefinition>(&runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.textControl->setText(runtimeSession.textValue(definition->binding));
+                }
+                runtime.textControl->setEnabled(fieldEnabled);
+            }
+>>>>>>> Stashed changes
             if (runtime.shortcutControl != nullptr) {
                 const auto* definition = std::get_if<settings::SettingsShortcutActionDefinition>(
                     &runtime.definition->payload);
@@ -1040,6 +1221,33 @@ class SettingsPageWidget::Impl {
         }
     }
 
+    void syncFilePathStatus(RuntimeItem& runtime) {
+        if (runtime.filePathControl == nullptr || runtime.definition == nullptr)
+            return;
+        const auto* definition =
+            std::get_if<settings::SettingsFilePathDefinition>(&runtime.definition->payload);
+        if (definition == nullptr ||
+            definition->binding != settings::SettingsFilePathBinding::SkinPath)
+            return;
+        const QString status = runtimeSession.filePathStatus(definition->binding);
+        const bool error = runtimeSession.filePathStatusError(definition->binding);
+        QString description = runtime.definition->description.translated();
+        if (!status.isEmpty())
+            description += QStringLiteral("\n") + status;
+        runtime.filePathControl->lineEdit()->setStatus(
+            error ? adqt::widgets::AdLineEdit::Status::Error
+                  : adqt::widgets::AdLineEdit::Status::None);
+        runtime.filePathControl->lineEdit()->setAccessibleDescription(description);
+        if (runtime.description != nullptr) {
+            runtime.description->setTextFormat(Qt::PlainText);
+            runtime.description->setText(description);
+            QPalette palette = runtime.description->palette();
+            palette.setColor(QPalette::WindowText, error ? colorScheme.map.colorErrorText
+                                                         : colorScheme.map.colorTextSecondary);
+            runtime.description->setPalette(palette);
+        }
+    }
+
     void retranslateUi(int firstItem = 0) {
         if (firstItem == 0) {
             for (RuntimeSection& runtime : sections) {
@@ -1129,6 +1337,7 @@ class SettingsPageWidget::Impl {
             if (runtime.customControl != nullptr) {
                 runtime.customControl->applyTheme(scheme);
             }
+            syncFilePathStatus(runtime);
         }
         requestVisibleSectionSync();
         q.update();

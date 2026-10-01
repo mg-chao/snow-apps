@@ -10,7 +10,7 @@ foreach(_feature IN ITEMS QR_RECOGNITION TABLE_RECOGNITION IMAGE_CONVERSION
 endforeach()
 
 set(_snow_mini_libraries
-    snow_shot_storage snow_shot_settings_catalog snow_shot_settings_search
+    snow_shot_storage snow_shot_main_window_skin snow_shot_settings_catalog snow_shot_settings_search
     snow_shot_settings snow_shot_global_mouse snow_shot_login_item
     snow_shot_administrator snow_shot_permissions snow_shot_updates
     snow_shot_diagnostics snow_shot_crash_bridge)

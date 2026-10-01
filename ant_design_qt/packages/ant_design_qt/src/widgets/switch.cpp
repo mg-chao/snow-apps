@@ -594,6 +594,8 @@ AdSwitch::AdSwitch(QWidget* parent) : QAbstractButton(parent), d_(std::make_uniq
     refreshFocusOverlay();
     update();
   });
+  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+          qOverload<>(&QWidget::update));
 
   d_->thumbAnimator->snapTo(isChecked() ? 1.0 : 0.0);
   d_->pressAnimator->snapTo(0.0);

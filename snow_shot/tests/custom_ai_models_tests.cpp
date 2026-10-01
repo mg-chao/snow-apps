@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/form.h"
 #include "widgets/input_line_edit.h"
@@ -35,6 +36,8 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLayout>
+#include <QImage>
+#include <QPainter>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QEventLoop>
@@ -68,6 +71,74 @@ void flush() {
     settle.exec();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QCoreApplication::processEvents();
+}
+class SkinBackdrop final : public QWidget {
+  public:
+    QColor color = QColor(35, 90, 145);
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.fillRect(rect(), color);
+    }
+};
+
+void customAiModelRowsRespectSkinMask(const settings::SettingsRegistry& registry,
+                                      settings::SettingsRuntimeSession& session) {
+    SkinBackdrop backdrop;
+    backdrop.resize(880, 760);
+    SettingsPageWidget page(registry, QStringLiteral("api-configuration"), session, &backdrop);
+    page.resize(backdrop.size());
+    backdrop.show();
+    page.show();
+    page.reveal({QStringLiteral("api-configuration"), QStringLiteral("ai-model"), {}});
+    flush();
+    auto* row = page.findChild<QWidget*>(QStringLiteral("customAiModelRow:") +
+                                         session.customAiModels().first().id);
+    require(row != nullptr && row->width() > 100,
+            "seeded custom model mask fixture has a visible row");
+    const QColor fill =
+        presentation::styles::ThemeManager::instance().themeColorScheme().map.colorBgContainer;
+    auto& manager = adqt::theme::ThemeManager::instance();
+    for (const qreal opacity : {0.4, 0.0, 1.0}) {
+        adqt::theme::ThemeOverride overrideValue;
+        overrideValue.backgroundOpacity = opacity;
+        manager.setScopeOverride(&backdrop, overrideValue);
+        flush();
+        QImage rowImage(row->size(), QImage::Format_ARGB32_Premultiplied);
+        rowImage.fill(Qt::transparent);
+        row->render(&rowImage, QPoint(), QRegion(), QWidget::DrawChildren);
+        const QPoint sample(row->width() / 2, 5);
+        require(std::abs(rowImage.pixelColor(sample).alpha() - qRound(fill.alpha() * opacity)) <= 1,
+                "custom model row applies exactly one live scoped mask to its own fill");
+        QImage composite(row->size(), QImage::Format_ARGB32_Premultiplied);
+        composite.fill(backdrop.color);
+        {
+            QPainter painter(&composite);
+            painter.drawImage(QPoint(), rowImage);
+        }
+        const QColor actual = composite.pixelColor(sample);
+        const qreal alpha = static_cast<qreal>(fill.alphaF()) * opacity;
+        require(std::abs(actual.red() -
+                         qRound(fill.red() * alpha + backdrop.color.red() * (1 - alpha))) <= 1 &&
+                    std::abs(actual.green() - qRound(fill.green() * alpha +
+                                                     backdrop.color.green() * (1 - alpha))) <= 1 &&
+                    std::abs(actual.blue() - qRound(fill.blue() * alpha +
+                                                    backdrop.color.blue() * (1 - alpha))) <= 1,
+                "custom model row blends over the skin backdrop and reveals it at zero");
+        const QString reviewDirectory = qEnvironmentVariable("SNOW_SKIN_PAGE_REVIEW_DIR");
+        if (!reviewDirectory.isEmpty()) {
+            require(QDir().mkpath(reviewDirectory), "create seeded custom model review directory");
+            QImage rendered(backdrop.size(), QImage::Format_ARGB32_Premultiplied);
+            rendered.fill(Qt::transparent);
+            backdrop.render(&rendered);
+            require(rendered.save(QDir(reviewDirectory)
+                                      .filePath(QStringLiteral("seeded-ai-models-mask-%1.png")
+                                                    .arg(qRound(opacity * 100)))),
+                    "save seeded custom model skin review");
+        }
+    }
+    manager.clearScopeOverride(&backdrop);
 }
 class EditorPaintObserver final : public QObject {
   public:
@@ -110,7 +181,7 @@ void storageContracts() {
     require(!storage::ConfigurationSchema::normalize(key, QJsonArray{legacy}).valid,
             "reasoning setting requires a boolean");
     legacy.insert(QStringLiteral("supports_reasoning"), false);
-    for (const QJsonValue invalid :
+    for (const QJsonValue& invalid :
          {QJsonValue(0), QJsonValue(17), QJsonValue(1.5), QJsonValue(QStringLiteral("4"))}) {
         legacy.insert(QStringLiteral("concurrency"), invalid);
         require(!storage::ConfigurationSchema::normalize(key, QJsonArray{legacy}).valid,
@@ -214,7 +285,11 @@ void widgetContracts(QApplication& application) {
         require(widget != nullptr, "page constructs custom model renderer");
         auto* header = page.findChild<SectionHeaderWidget*>(settings::generatedObjectName(
             QStringLiteral("settings-section"), QStringLiteral("api-configuration-ai-model")));
+<<<<<<< Updated upstream
         require(header != nullptr, "AI model category header exists");
+=======
+        require(header != nullptr, "custom model category exposes its own section header");
+>>>>>>> Stashed changes
         auto* reset = header->findChild<AdButton*>(QStringLiteral("sectionResetButton"));
         auto* confirmation = header->findChild<AdPopconfirm*>();
         require(reset != nullptr && reset->isVisible() && reset->isEnabled() &&
@@ -468,6 +543,7 @@ void widgetContracts(QApplication& application) {
                     copied[1].name == QStringLiteral("Personal model (Copy)") &&
                     copied[2].name == QStringLiteral("Personal model (Copy 2)"),
                 "copy duplicates immediately with independent identity and name");
+        customAiModelRowsRespectSkinMask(registry, session);
         observer.frames.clear();
         application.installEventFilter(&observer);
         widget->findChild<AdButton*>(QStringLiteral("edit:") + original.id)->click();

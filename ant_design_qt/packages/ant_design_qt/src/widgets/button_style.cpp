@@ -77,6 +77,16 @@ QColor withAlpha(const QColor& color, double alpha) {
   return copy;
 }
 
+QColor compositeOn(const QColor& foreground, const QColor& background) {
+  const float alpha = std::clamp(foreground.alphaF(), 0.0F, 1.0F);
+  QColor mixed;
+  mixed.setRedF(foreground.redF() * alpha + background.redF() * (1.0F - alpha));
+  mixed.setGreenF(foreground.greenF() * alpha + background.greenF() * (1.0F - alpha));
+  mixed.setBlueF(foreground.blueF() * alpha + background.blueF() * (1.0F - alpha));
+  mixed.setAlpha(255);
+  return mixed;
+}
+
 bool isStableChannel(int value) { return value >= 0 && value <= 255; }
 
 QColor resolveAlphaColor(const QColor& frontColor, const QColor& backgroundColor) {
@@ -628,6 +638,25 @@ ButtonVisualStyle resolveButtonVisualStyle(const ButtonStyleInput& input,
   applyVariantStyle(style, style.role, family, map);
   applyGhostStyle(style, style.role, map);
   applyDisabledStyle(style, style.role, map);
+
+  if (style.role.buttonStyle == AdButton::ButtonStyle::Tonal && input.joinsEdges) {
+    // Joined tonal controls resolve their translucent fill before the scoped mask,
+    // so painting never restores opacity after the background has been masked.
+    const QColor containerBg = toColor(map.colorBgContainer, QColor("#ffffff"));
+    for (ButtonStateStyle* state :
+         {&style.normal, &style.hover, &style.active, &style.checked, &style.disabled}) {
+      if (state->background.isValid() && state->background.alpha() < 255) {
+        state->background = compositeOn(state->background, containerBg);
+      }
+    }
+  }
+  if (map.backgroundOpacity != 1.0) {
+    for (ButtonStateStyle* state :
+         {&style.normal, &style.hover, &style.active, &style.checked, &style.disabled}) {
+      state->background =
+          adqt::theme::applyBackgroundOpacity(state->background, map.backgroundOpacity);
+    }
+  }
 
   return style;
 }

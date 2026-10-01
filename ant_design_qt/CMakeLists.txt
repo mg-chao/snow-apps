@@ -334,7 +334,8 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-select-tests packages/ant_design_qt/tests/select_tests.cpp)
     set_target_properties(adqt-select-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-select-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    get_target_property(_adqt_offscreen_qt_core_type Qt6::Core TYPE)
+    if(_adqt_offscreen_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
         target_link_libraries(adqt-select-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-select-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
@@ -344,7 +345,7 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-spin-tests packages/ant_design_qt/tests/tst_spin.cpp)
     set_target_properties(adqt-spin-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-spin-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    if(_adqt_offscreen_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
         target_link_libraries(adqt-spin-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-spin-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
@@ -557,6 +558,17 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-locale-manager-tests COMMAND adqt-locale-manager-tests)
     set_tests_properties(adqt-locale-manager-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(adqt-background-opacity-tests
+        tests/background_opacity_tests.cpp tests/auxiliary_background_opacity_tests.cpp
+        tests/date_picker_background_opacity_tests.cpp)
+    target_link_libraries(adqt-background-opacity-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-background-opacity-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-background-opacity-tests COMMAND adqt-background-opacity-tests)
+    set_tests_properties(adqt-background-opacity-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     add_executable(adqt-theme-typography-tests
         packages/ant_design_qt/tests/theme_typography_tests.cpp)

@@ -1145,9 +1145,22 @@ AdAlert::AdAlert(QWidget* parent) : QFrame(parent), d_ptr(new AdAlertPrivate(thi
   Q_D(AdAlert);
   d->ensureUi();
   d->refresh();
+  connect(
+      &adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+      [this, currentTheme = adqt::theme::ThemeManager::instance().resolve(this).config]() mutable {
+        const auto nextTheme = adqt::theme::ThemeManager::instance().resolve(this).config;
+        if (nextTheme == currentTheme) {
+          return;
+        }
+        currentTheme = nextTheme;
+        auto* const privateState = d_func();
+        privateState->invalidateResolvedCache();
+        privateState->refresh();
+      });
 }
 
 AdAlert::~AdAlert() {
+  disconnect(&adqt::theme::ThemeManager::instance(), nullptr, this, nullptr);
   Q_D(AdAlert);
   if (d->closeAnimation) {
     d->closeAnimation->stop();

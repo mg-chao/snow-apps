@@ -103,6 +103,7 @@ enum class SettingsSelectBinding {
     TrayMiddleClickAction,
     TranslationLayoutProcessing,
     ScreenshotSelectionResizeMode,
+    SkinDisplayMode,
 };
 
 struct SettingsSelectDefinition {
@@ -184,6 +185,9 @@ enum class SettingsSliderBinding {
     ShortcutHintOpacity,
     ScreenshotImageQuality,
     ScreenRecordingVideoQuality,
+    SkinOpacity,
+    SkinBlurLevel,
+    SkinMaskOpacity,
 };
 
 struct SettingsSliderDefinition {
@@ -225,6 +229,7 @@ struct SettingsRadioDefinition {
 
 enum class SettingsFilePathBinding {
     TrayCustomIcon,
+    SkinPath,
 };
 
 struct SettingsFilePathDefinition {
@@ -409,6 +414,7 @@ enum class SettingsSectionReset {
     OtherShortcuts,
     GlobalPinToScreenShortcuts,
     GeneralSettings,
+    Skin,
     HistoryPolicy,
     PinnedHistoryPolicy,
     ScreenshotSettings,

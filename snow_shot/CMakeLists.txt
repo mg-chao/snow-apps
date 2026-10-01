@@ -817,6 +817,15 @@ target_link_libraries(snow_shot_settings_search PUBLIC
     Qt6::Widgets
 )
 
+add_library(snow_shot_main_window_skin STATIC
+    include/snow_shot/presentation/mainwindowskincontroller.h
+    include/snow_shot/presentation/mainwindowskinwidget.h
+    src/presentation/services/mainwindowskincontroller.cpp
+    src/presentation/components/mainwindowskinwidget.cpp)
+target_include_directories(snow_shot_main_window_skin PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_main_window_skin PUBLIC Qt6::Widgets
+    PRIVATE snow_shot_storage snow_shot_image_codec snow_draw_engine_qt_canvas)
+
 set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/selectedtexttranslationcoordinator.h
     src/presentation/services/selectedtexttranslationcoordinator.cpp
@@ -1050,6 +1059,7 @@ set_source_files_properties(
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_settings PUBLIC
+    snow_shot_main_window_skin
     snow_shot_window_shortcuts
     snow_shot_translation
     ant_design_icons_qt
@@ -2242,6 +2252,28 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-main-window-skin-codec-tests tests/main_window_skin_codec_tests.cpp)
+    target_link_libraries(snow-shot-main-window-skin-codec-tests PRIVATE snow_shot_image_codec)
+    add_test(NAME snow-shot-main-window-skin-codec-tests COMMAND snow-shot-main-window-skin-codec-tests)
+    set_tests_properties(snow-shot-main-window-skin-codec-tests PROPERTIES LABELS unit TIMEOUT 60)
+
+    add_executable(snow-shot-main-window-skin-tests tests/main_window_skin_tests.cpp)
+    target_link_libraries(snow-shot-main-window-skin-tests PRIVATE
+        snow_shot_main_window_skin snow_shot_storage snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-main-window-skin-tests)
+    add_test(NAME snow-shot-main-window-skin-tests COMMAND snow-shot-main-window-skin-tests)
+    set_tests_properties(snow-shot-main-window-skin-tests PROPERTIES LABELS unit TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+
+    add_executable(snow-shot-skin-settings-tests tests/skin_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-skin-settings-tests PRIVATE snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-skin-settings-tests)
+    snow_shot_add_translations(snow-shot-skin-settings-tests)
+    add_test(NAME snow-shot-skin-settings-tests COMMAND snow-shot-skin-settings-tests)
+    set_tests_properties(snow-shot-skin-settings-tests PROPERTIES LABELS unit TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
 
     add_executable(snow-shot-app-font-tests
         tests/app_font_tests.cpp
@@ -6761,6 +6793,37 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     target_link_libraries(snow-shot-settings-page-performance-benchmark PRIVATE
         snow_shot_settings snow_shot_image_codec)
     snow_shot_import_offscreen_platform(snow-shot-settings-page-performance-benchmark)
+
+    add_executable(snow-shot-main-window-skin-performance-benchmark
+        tests/main_window_skin_performance_benchmark.cpp)
+    target_link_libraries(snow-shot-main-window-skin-performance-benchmark PRIVATE
+        snow_shot_main_window_skin snow_shot_storage snow_shot_image_codec snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-shot-main-window-skin-performance-benchmark)
+
+    add_executable(snow-shot-main-window-no-skin-performance-benchmark
+        tests/main_window_no_skin_performance_benchmark.cpp
+        include/snow_shot/presentation/mainwindow.h
+        include/snow_shot/presentation/components/contentcardwidget.h
+        include/snow_shot/presentation/components/maincontentheaderwidget.h
+        include/snow_shot/presentation/components/sidebarwidget.h
+        include/snow_shot/presentation/components/titlebarwidget.h
+        src/presentation/mainwindow.cpp
+        src/presentation/components/contentcardwidget.cpp
+        src/presentation/components/maincontentheaderwidget.cpp
+        src/presentation/components/sidebarwidget.cpp
+        src/presentation/components/titlebarwidget.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/platform/windows/windowchrome.cpp)
+    if(APPLE)
+        target_sources(snow-shot-main-window-no-skin-performance-benchmark PRIVATE
+            src/platform/macos/applicationactivation.mm)
+        target_link_libraries(snow-shot-main-window-no-skin-performance-benchmark PRIVATE
+            "-framework AppKit")
+    endif()
+    target_link_libraries(snow-shot-main-window-no-skin-performance-benchmark PRIVATE
+        snow_shot_settings snow_shot_image_codec snow_shot_updates)
+    snow_shot_import_offscreen_platform(snow-shot-main-window-no-skin-performance-benchmark)
+    snow_shot_add_translations(snow-shot-main-window-no-skin-performance-benchmark)
 
     add_executable(snow-shot-pinned-window-management-performance-benchmark
         tests/pinned_window_management_performance_benchmark.cpp)

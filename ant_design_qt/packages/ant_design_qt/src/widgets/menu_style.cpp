@@ -1,5 +1,7 @@
 #include "menu_style.h"
 
+#include "theme/theme_color_utils.h"
+
 #include "theme/theme.h"
 
 #include <algorithm>
@@ -382,6 +384,17 @@ MenuVisualStyle resolveMenuVisualStyle(const MenuStyleInput& input,
   }
 
   applySemanticStyles(input.semanticStyles, style);
+
+  if (input.mode == AdNavigationMenu::Mode::Inline && map.backgroundOpacity != 1.0) {
+    // Inline navigation shares its owner's backdrop. The owner paints the
+    // normal surface once; only interactive item fills need a separate mask.
+    // Detached vertical popup menus keep their original opaque fills.
+    for (MenuStateStyle* state : {&style.hover, &style.active, &style.selected, &style.dangerHover,
+                                  &style.dangerActive, &style.dangerSelected}) {
+      state->background =
+          adqt::theme::applyBackgroundOpacity(state->background, map.backgroundOpacity);
+    }
+  }
 
   return style;
 }

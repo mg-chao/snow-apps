@@ -768,12 +768,25 @@ class FlatIconToolButton final : public QToolButton {
     update();
   }
 
+  void setContentOcclusion(QWidget* sibling) {
+    if (occludingSibling_ == sibling) {
+      return;
+    }
+    occludingSibling_ = sibling;
+    update();
+  }
+
  protected:
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
+    if (occludingSibling_ && occludingSibling_->isVisible()) {
+      const QPoint siblingOrigin = occludingSibling_->mapTo(parentWidget(), QPoint());
+      const QRect occlusion(siblingOrigin - pos(), occludingSibling_->size());
+      painter.setClipRegion(QRegion(rect()).subtracted(QRegion(occlusion)));
+    }
 
     if (background_.isValid() && background_.alpha() > 0) {
       const QRectF fillRect = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
@@ -810,6 +823,7 @@ class FlatIconToolButton final : public QToolButton {
  private:
   QColor background_;
   int radius_ = 0;
+  QPointer<QWidget> occludingSibling_;
 };
 
 class TagChipWidget final : public QWidget {
@@ -1455,6 +1469,11 @@ AdSelect::AdSelect(QWidget* parent) : QWidget(parent) {
       openPopup();
     }
   });
+  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+          [this]() {
+            applyVisualStyle();
+            update();
+          });
 
   applyVisualStyle();
   updateInputMode();
@@ -1466,6 +1485,7 @@ AdSelect::AdSelect(QWidget* parent) : QWidget(parent) {
 }
 
 AdSelect::~AdSelect() {
+  disconnect(&adqt::theme::ThemeManager::instance(), nullptr, this, nullptr);
   detail::syncTopLevelPopupTooltipRoute(this, nullptr, nullptr, false);
   if (sourceModel_) {
     disconnect(sourceModel_, nullptr, this, nullptr);
@@ -1490,6 +1510,9 @@ AdSelect::~AdSelect() {
   suffixSpinnerSubscribed_ = false;
   detail::setPopupInteractionHostOpen(this, false);
   if (popup_) {
+    // QWidget destroys child popups after our QPointer members have been destroyed.
+    // Their destroyed callback must not access those members during base teardown.
+    disconnect(popup_.data(), nullptr, this, nullptr);
     popup_->hide();
     popup_->deleteLater();
     popup_ = nullptr;
@@ -4484,10 +4507,18 @@ void AdSelect::updateClearVisual() {
     clearButton_->setText(QStringLiteral("x"));
   }
 
-  const QColor clearBg = clearButton_->isVisible() ? visualStyle_->clearBg : QColor(0, 0, 0, 0);
+  const bool maskedSurface = adqt::theme::ThemeManager::instance().backgroundOpacity(this) != 1.0;
+  // Clear occupies the suffix slot. On a masked surface, clip the covered suffix
+  // icon instead of repainting the selector and compounding its transparency.
+  const QColor clearBg =
+      clearButton_->isVisible() && !maskedSurface ? visualStyle_->clearBg : QColor(0, 0, 0, 0);
   const int radius = std::max(0, iconSize / 2);
   if (auto* flatButton = dynamic_cast<FlatIconToolButton*>(clearButton_)) {
     flatButton->setBackgroundDecoration(clearBg, radius);
+  }
+  if (auto* flatSuffix = dynamic_cast<FlatIconToolButton*>(suffixButton_)) {
+    flatSuffix->setContentOcclusion(maskedSurface && clearButton_->isVisible() ? clearButton_
+                                                                               : nullptr);
   }
 }
 

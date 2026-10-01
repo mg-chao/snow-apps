@@ -7,6 +7,7 @@
 #include <snow/image/processing.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <exception>
 #include <limits>
@@ -537,9 +538,11 @@ SnowShotImageCodecColorEncoding bridgeColorEncoding(const snow::image::ColorEnco
 class PackedDecodeSink final : public snow::image::PixelSink {
   public:
     PackedDecodeSink(snow::image::Format expectedDocumentFormat,
-                     snow::image::PixelFormat expectedPixelFormat)
+                     snow::image::PixelFormat expectedPixelFormat, bool firstFrameOnly = false,
+                     std::uint64_t maximumOutputBytes = std::numeric_limits<std::uint64_t>::max())
         : expectedDocumentFormat_(expectedDocumentFormat),
-          expectedPixelFormat_(expectedPixelFormat) {}
+          expectedPixelFormat_(expectedPixelFormat), firstFrameOnly_(firstFrameOnly),
+          maximumOutputBytes_(maximumOutputBytes) {}
 
     snow::image::Result<void> begin(const snow::image::DocumentInfo& document) override {
         if (document.format != expectedDocumentFormat_) {
@@ -585,6 +588,10 @@ class PackedDecodeSink final : public snow::image::PixelSink {
                                               "The decoded image size overflows.");
         }
         const std::size_t outputSize = rowStride_ * static_cast<std::size_t>(frame.height);
+        if (outputSize > maximumOutputBytes_) {
+            return snow::image::Status::error(snow::image::ErrorCode::limit_exceeded,
+                                              "The decoded image exceeds its output limit.");
+        }
         pixels_.reset(new (std::nothrow) std::uint8_t[outputSize]);
         if (!pixels_) {
             return snow::image::Status::error(snow::image::ErrorCode::out_of_memory,
@@ -666,6 +673,12 @@ class PackedDecodeSink final : public snow::image::PixelSink {
             completed_ = true;
         }
         activeFrame_ = kNoFrame;
+        if (frameIndex == 0 && firstFrameOnly_) {
+            // The skin needs one composited frame. Stop streaming here rather
+            // than decoding every frame or materializing an animated document.
+            return snow::image::Status::error(snow::image::ErrorCode::cancelled,
+                                              "The first preview frame is complete.");
+        }
         return {};
     }
 
@@ -707,6 +720,8 @@ class PackedDecodeSink final : public snow::image::PixelSink {
 
     snow::image::Format expectedDocumentFormat_;
     snow::image::PixelFormat expectedPixelFormat_;
+    bool firstFrameOnly_ = false;
+    std::uint64_t maximumOutputBytes_ = std::numeric_limits<std::uint64_t>::max();
     std::unique_ptr<std::uint8_t[]> pixels_;
     std::unique_ptr<std::uint8_t[]> iccProfile_;
     SnowShotImageCodecColorEncoding color_{};
@@ -718,6 +733,326 @@ class PackedDecodeSink final : public snow::image::PixelSink {
     bool storageUsed_ = false;
     bool completed_ = false;
 };
+
+constexpr std::uint64_t kSkinInputLimit = 64ULL << 20U;
+constexpr std::uint64_t kSkinPixelLimit = 64ULL * 1000 * 1000;
+constexpr std::uint64_t kSkinMetadataLimit = 8ULL << 20U;
+constexpr std::uint64_t kSkinOutputLimit = 256ULL << 20U;
+constexpr std::uint32_t kSkinDimensionLimit = 16384;
+constexpr std::uint32_t kSkinPreviewExtent = 4096;
+
+// The adapter keeps its QByteArray alive throughout the call. Avoid the extra
+// ownedInput/memory_input copy used by the general screenshot bridge.
+class SkinByteSource final : public snow::image::ByteSource {
+  public:
+    explicit SkinByteSource(std::span<const std::byte> bytes) : m_bytes(bytes) {}
+
+    snow::image::Result<std::uint64_t> size() const override {
+        return static_cast<std::uint64_t>(m_bytes.size());
+    }
+
+    snow::image::Result<std::size_t> read_at(std::uint64_t offset,
+                                             std::span<std::byte> destination) const override {
+        if (offset > m_bytes.size()) {
+            return snow::image::Status::error(snow::image::ErrorCode::io_error,
+                                              "The preview read offset is invalid.");
+        }
+        const std::size_t begin = static_cast<std::size_t>(offset);
+        const std::size_t count = std::min(destination.size(), m_bytes.size() - begin);
+        if (count != 0)
+            std::memcpy(destination.data(), m_bytes.data() + begin, count);
+        return count;
+    }
+
+  private:
+    std::span<const std::byte> m_bytes;
+};
+
+snow::image::Input skinInput(std::span<const std::byte> bytes) {
+    return {std::make_shared<SkinByteSource>(bytes), {}};
+}
+
+std::uint32_t skinFailure(const snow::image::Status& status) {
+    switch (status.code) {
+    case snow::image::ErrorCode::limit_exceeded:
+    case snow::image::ErrorCode::out_of_memory:
+        return SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_RESOURCE_LIMIT;
+    case snow::image::ErrorCode::unsupported_format:
+    case snow::image::ErrorCode::codec_unavailable:
+        return SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_UNSUPPORTED_FORMAT;
+    default:
+        return SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+    }
+}
+
+snow::image::DecodeOptions skinOptions() {
+    snow::image::DecodeOptions options;
+    options.limits.maximum_width = kSkinDimensionLimit;
+    options.limits.maximum_height = kSkinDimensionLimit;
+    options.limits.maximum_pixels = kSkinPixelLimit;
+    options.limits.maximum_input_bytes = kSkinInputLimit;
+    options.limits.maximum_metadata_bytes = kSkinMetadataLimit;
+    options.limits.maximum_owned_output_bytes = kSkinOutputLimit;
+    options.limits.maximum_working_bytes = 512ULL << 20U;
+    options.output_format = snow::image::kRgba8;
+    options.frame_index = 0;
+    // Apply orientation after reducing the preview. Native orientation fallback
+    // can otherwise materialize every frame of an animated WebP.
+    options.orientation = snow::image::OrientationPolicy::preserve;
+    return options;
+}
+
+std::uint32_t bigEndian32(std::span<const std::byte> bytes) {
+    return (std::to_integer<std::uint32_t>(bytes[0]) << 24U) |
+           (std::to_integer<std::uint32_t>(bytes[1]) << 16U) |
+           (std::to_integer<std::uint32_t>(bytes[2]) << 8U) |
+           std::to_integer<std::uint32_t>(bytes[3]);
+}
+
+std::uint32_t exifOrientation(std::span<const std::byte> exif) {
+    if (exif.size() >= 6 && std::memcmp(exif.data(), "Exif\0\0", 6) == 0)
+        exif = exif.subspan(6);
+    if (exif.size() < 8)
+        return 1;
+    const bool little = exif[0] == std::byte{'I'} && exif[1] == std::byte{'I'};
+    const bool big = exif[0] == std::byte{'M'} && exif[1] == std::byte{'M'};
+    if (!little && !big)
+        return 1;
+    const auto read16 = [exif, little](std::size_t offset) -> std::uint16_t {
+        const auto a = std::to_integer<std::uint16_t>(exif[offset]);
+        const auto b = std::to_integer<std::uint16_t>(exif[offset + 1]);
+        return static_cast<std::uint16_t>(little ? a | (b << 8U) : (a << 8U) | b);
+    };
+    const auto read32 = [exif, little](std::size_t offset) -> std::uint32_t {
+        if (!little)
+            return bigEndian32(exif.subspan(offset, 4));
+        return std::to_integer<std::uint32_t>(exif[offset]) |
+               (std::to_integer<std::uint32_t>(exif[offset + 1]) << 8U) |
+               (std::to_integer<std::uint32_t>(exif[offset + 2]) << 16U) |
+               (std::to_integer<std::uint32_t>(exif[offset + 3]) << 24U);
+    };
+    if (read16(2) != 42)
+        return 1;
+    const std::size_t directory = read32(4);
+    if (directory > exif.size() - 2)
+        return 1;
+    const std::size_t count = read16(directory);
+    if (count > (exif.size() - directory - 2) / 12)
+        return 1;
+    for (std::size_t index = 0; index < count; ++index) {
+        const std::size_t entry = directory + 2 + index * 12;
+        if (read16(entry) == 0x0112 && read16(entry + 2) == 3 && read32(entry + 4) == 1) {
+            const std::uint32_t value = read16(entry + 8);
+            return value >= 1 && value <= 8 ? value : 1;
+        }
+    }
+    return 1;
+}
+
+std::uint32_t skinJpegOrientation(std::span<const std::byte> bytes, bool* metadataTooLarge) {
+    std::size_t offset = 2;
+    std::uint64_t metadataBytes = 0;
+    std::uint32_t orientation = 1;
+    while (offset + 4 <= bytes.size() && bytes[offset] == std::byte{0xff}) {
+        while (offset < bytes.size() && bytes[offset] == std::byte{0xff})
+            ++offset;
+        if (offset >= bytes.size())
+            break;
+        const auto marker = std::to_integer<unsigned>(bytes[offset++]);
+        if (marker == 0xda || marker == 0xd9)
+            break;
+        if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7))
+            continue;
+        if (offset + 2 > bytes.size())
+            break;
+        const std::size_t length = (std::to_integer<std::size_t>(bytes[offset]) << 8U) |
+                                   std::to_integer<std::size_t>(bytes[offset + 1]);
+        if (length < 2 || length > bytes.size() - offset)
+            break;
+        if ((marker >= 0xe0 && marker <= 0xef) || marker == 0xfe) {
+            metadataBytes += length - 2;
+            if (metadataBytes > kSkinMetadataLimit) {
+                *metadataTooLarge = true;
+                return 1;
+            }
+        }
+        if (marker == 0xe1 && length >= 8 &&
+            std::memcmp(bytes.data() + offset + 2, "Exif\0\0", 6) == 0) {
+            orientation = exifOrientation(bytes.subspan(offset + 2, length - 2));
+        }
+        offset += length;
+    }
+    return orientation;
+}
+
+std::uint32_t pngCrc(std::span<const std::byte> bytes) {
+    static constexpr auto table = [] {
+        std::array<std::uint32_t, 256> values{};
+        for (std::uint32_t index = 0; index < values.size(); ++index) {
+            std::uint32_t value = index;
+            for (int bit = 0; bit < 8; ++bit)
+                value = (value >> 1U) ^ ((value & 1U) != 0 ? 0xedb88320U : 0U);
+            values[index] = value;
+        }
+        return values;
+    }();
+    std::uint32_t value = 0xffffffffU;
+    for (const std::byte byte : bytes)
+        value = table[(value ^ std::to_integer<unsigned>(byte)) & 0xffU] ^ (value >> 8U);
+    return value ^ 0xffffffffU;
+}
+
+void appendBigEndian32(std::vector<std::byte>& bytes, std::uint32_t value) {
+    for (const unsigned shift : {24U, 16U, 8U, 0U})
+        bytes.push_back(static_cast<std::byte>((value >> shift) & 0xffU));
+}
+
+void appendPngChunk(std::vector<std::byte>& output, const char* type,
+                    std::span<const std::byte> payload) {
+    appendBigEndian32(output, static_cast<std::uint32_t>(payload.size()));
+    const std::size_t crcBegin = output.size();
+    const auto* typeBytes = reinterpret_cast<const std::byte*>(type);
+    output.insert(output.end(), typeBytes, typeBytes + 4);
+    output.insert(output.end(), payload.begin(), payload.end());
+    const std::uint32_t crc = pngCrc(std::span(output).subspan(crcBegin));
+    appendBigEndian32(output, crc);
+}
+
+struct SkinPngFrame final {
+    std::vector<std::byte> encoded;
+    std::uint32_t failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_NONE;
+};
+
+// libpng decodes an APNG's default image, which may be a separate poster.
+// Repackage only the first animation frame as a normal PNG, retaining palette,
+// transparency and color metadata. The adapter places it on the original canvas.
+SkinPngFrame skinPngFirstFrame(std::span<const std::byte> bytes, SnowShotImageCodecSkinInfo* info) {
+    SkinPngFrame result;
+    if (bytes.size() < 33 || bigEndian32(bytes.subspan(8, 4)) != 13 ||
+        std::memcmp(bytes.data() + 12, "IHDR", 4) != 0) {
+        result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+        return result;
+    }
+    info->canvas_width = bigEndian32(bytes.subspan(16, 4));
+    info->canvas_height = bigEndian32(bytes.subspan(20, 4));
+    if (info->canvas_width == 0 || info->canvas_height == 0 ||
+        info->canvas_width > kSkinDimensionLimit || info->canvas_height > kSkinDimensionLimit ||
+        static_cast<std::uint64_t>(info->canvas_width) * info->canvas_height > kSkinPixelLimit) {
+        result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_RESOURCE_LIMIT;
+        return result;
+    }
+    std::vector<std::byte> common;
+    std::vector<std::span<const std::byte>> imageData;
+    std::uint64_t metadataBytes = 0;
+    std::uint32_t frameWidth = info->canvas_width;
+    std::uint32_t frameHeight = info->canvas_height;
+    bool animated = false;
+    bool imageSeen = false;
+    bool selected = false;
+    bool usesDefault = false;
+    std::uint32_t sequence = 0;
+    for (std::size_t offset = 8; offset + 12 <= bytes.size();) {
+        const std::size_t length = bigEndian32(bytes.subspan(offset, 4));
+        if (length > bytes.size() - offset - 12) {
+            result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+            return result;
+        }
+        const auto type = bytes.subspan(offset + 4, 4);
+        const auto data = bytes.subspan(offset + 8, length);
+        const auto is = [type](const char* name) { return std::memcmp(type.data(), name, 4) == 0; };
+        if ((is("IHDR") || is("acTL") || is("fcTL") || (is("IDAT") && selected && usesDefault)) &&
+            pngCrc(bytes.subspan(offset + 4, length + 4)) !=
+                bigEndian32(bytes.subspan(offset + 8 + length, 4))) {
+            result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+            return result;
+        }
+        if (is("acTL")) {
+            animated = true;
+            if (length != 8 || bigEndian32(data.first(4)) == 0 ||
+                bigEndian32(data.first(4)) > 10000) {
+                result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+                return result;
+            }
+        } else if (is("fcTL")) {
+            if (selected)
+                break;
+            if (length != 26 || !animated || bigEndian32(data.first(4)) != sequence++ ||
+                std::to_integer<unsigned>(data[24]) > 2 ||
+                std::to_integer<unsigned>(data[25]) > 1) {
+                result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+                return result;
+            }
+            selected = true;
+            usesDefault = !imageSeen;
+            frameWidth = bigEndian32(data.subspan(4, 4));
+            frameHeight = bigEndian32(data.subspan(8, 4));
+            info->frame_x = bigEndian32(data.subspan(12, 4));
+            info->frame_y = bigEndian32(data.subspan(16, 4));
+            if (frameWidth == 0 || frameHeight == 0 || frameWidth > info->canvas_width ||
+                frameHeight > info->canvas_height ||
+                info->frame_x > info->canvas_width - frameWidth ||
+                info->frame_y > info->canvas_height - frameHeight) {
+                result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+                return result;
+            }
+            if (usesDefault &&
+                (frameWidth != info->canvas_width || frameHeight != info->canvas_height ||
+                 info->frame_x != 0 || info->frame_y != 0)) {
+                result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+                return result;
+            }
+        } else if (is("IDAT")) {
+            imageSeen = true;
+            if (selected && usesDefault)
+                imageData.push_back(data);
+        } else if (is("fdAT")) {
+            if (selected && !usesDefault) {
+                if (length < 4 || bigEndian32(data.first(4)) != sequence++) {
+                    result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+                    return result;
+                }
+                if (pngCrc(bytes.subspan(offset + 4, length + 4)) !=
+                    bigEndian32(bytes.subspan(offset + 8 + length, 4))) {
+                    result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+                    return result;
+                }
+                imageData.push_back(data.subspan(4));
+            }
+        } else if (is("IEND")) {
+            break;
+        } else {
+            metadataBytes += length;
+            if (metadataBytes > kSkinMetadataLimit) {
+                result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_RESOURCE_LIMIT;
+                return result;
+            }
+            if (!imageSeen && !is("IHDR")) {
+                common.insert(common.end(), bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+                              bytes.begin() + static_cast<std::ptrdiff_t>(offset + length + 12));
+            }
+        }
+        offset += length + 12;
+    }
+    if (!animated)
+        return result;
+    if (!selected || imageData.empty()) {
+        result.failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+        return result;
+    }
+    result.encoded.insert(result.encoded.end(), bytes.begin(), bytes.begin() + 8);
+    std::array<std::byte, 13> header{};
+    std::copy_n(bytes.begin() + 16, header.size(), header.begin());
+    for (unsigned index = 0; index < 4; ++index) {
+        header[index] = static_cast<std::byte>((frameWidth >> (24U - index * 8U)) & 0xffU);
+        header[index + 4] = static_cast<std::byte>((frameHeight >> (24U - index * 8U)) & 0xffU);
+    }
+    appendPngChunk(result.encoded, "IHDR", header);
+    result.encoded.insert(result.encoded.end(), common.begin(), common.end());
+    for (const auto data : imageData)
+        appendPngChunk(result.encoded, "IDAT", data);
+    appendPngChunk(result.encoded, "IEND", {});
+    return result;
+}
 
 } // namespace
 
@@ -954,6 +1289,103 @@ int32_t snow_shot_image_codec_decode_rgba8(const uint8_t* encoded, uint64_t enco
     return decodePacked8(encoded, encodedSize, expectedFormat, snow::image::kRgba8,
                          "The decoded image does not contain RGBA pixels.", output, error,
                          errorCapacity);
+}
+
+int32_t snow_shot_image_codec_decode_skin_rgba8(const uint8_t* encoded, uint64_t encodedSize,
+                                                SnowShotImageCodecBuffer* output,
+                                                SnowShotImageCodecSkinInfo* info,
+                                                uint32_t* failure) {
+    if (failure == nullptr)
+        return 0;
+    *failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+    if (info != nullptr)
+        *info = {};
+    if (encoded == nullptr || encodedSize == 0 || info == nullptr ||
+        !prepareBuffer(output, nullptr, 0))
+        return 0;
+    if (encodedSize > kSkinInputLimit) {
+        *failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INPUT_TOO_LARGE;
+        return 0;
+    }
+    try {
+        const auto original = std::span(reinterpret_cast<const std::byte*>(encoded),
+                                        static_cast<std::size_t>(encodedSize));
+        const bool png =
+            original.size() >= 8 && std::memcmp(original.data(), "\x89PNG\r\n\x1a\n", 8) == 0;
+        const bool jpeg = original.size() >= 2 && original[0] == std::byte{0xff} &&
+                          original[1] == std::byte{0xd8};
+        const bool webp = original.size() >= 12 && std::memcmp(original.data(), "RIFF", 4) == 0 &&
+                          std::memcmp(original.data() + 8, "WEBP", 4) == 0;
+        if (!png && !jpeg && !webp) {
+            *failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_UNSUPPORTED_FORMAT;
+            return 0;
+        }
+        const auto format = png ? snow::image::Format::png
+                                : (jpeg ? snow::image::Format::jpeg : snow::image::Format::webp);
+        SkinPngFrame firstPng;
+        std::span<const std::byte> bytes = original;
+        if (png) {
+            firstPng = skinPngFirstFrame(original, info);
+            if (firstPng.failure != SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_NONE) {
+                *failure = firstPng.failure;
+                return 0;
+            }
+            if (!firstPng.encoded.empty())
+                bytes = firstPng.encoded;
+        }
+        bool metadataTooLarge = false;
+        const std::uint32_t jpegOrientation =
+            jpeg ? skinJpegOrientation(original, &metadataTooLarge) : 1;
+        if (metadataTooLarge) {
+            *failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_RESOURCE_LIMIT;
+            return 0;
+        }
+        const auto input = skinInput(bytes);
+        auto options = skinOptions();
+        const auto information = service().inspect(input, options);
+        if (!information) {
+            *failure = skinFailure(information.error());
+            return 0;
+        }
+        if (information.value().format != format || information.value().frames.empty())
+            return 0;
+        info->orientation =
+            jpeg ? jpegOrientation
+                 : static_cast<std::uint32_t>(information.value().metadata.orientation);
+        options.maximum_extent = kSkinPreviewExtent;
+        PackedDecodeSink sink(format, snow::image::kRgba8, true, kSkinOutputLimit);
+        auto decoded = service().decode_to_sink(input, sink, options);
+        // JPEG has a finite native scaling range. A bounded full decode remains
+        // valid when no supported factor fits the requested preview extent.
+        if (!decoded && !sink.hasImage() && jpeg &&
+            decoded.error().code == snow::image::ErrorCode::limit_exceeded) {
+            options.maximum_extent.reset();
+            decoded = service().decode_to_sink(input, sink, options);
+        }
+        if (!sink.hasImage() ||
+            (!decoded && decoded.error().code != snow::image::ErrorCode::cancelled)) {
+            *failure = decoded ? SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE
+                               : skinFailure(decoded.error());
+            return 0;
+        }
+        output->color = sink.releaseColor();
+        output->data = sink.releasePixels();
+        output->width = sink.width();
+        output->height = sink.height();
+        output->row_stride = sink.rowStride();
+        output->size = static_cast<uint64_t>(output->row_stride) * output->height;
+        if (!png) {
+            info->canvas_width = output->width;
+            info->canvas_height = output->height;
+        }
+        *failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_NONE;
+        return 1;
+    } catch (const std::bad_alloc&) {
+        *failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_RESOURCE_LIMIT;
+    } catch (...) {
+        *failure = SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE;
+    }
+    return 0;
 }
 
 int32_t snow_shot_image_codec_decode_icon_rgba8(const uint8_t* encoded, uint64_t encodedSize,

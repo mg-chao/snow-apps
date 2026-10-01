@@ -2,6 +2,7 @@
 
 #include "antd_icons.h"
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <QFontMetrics>
 
@@ -249,6 +250,14 @@ SwitchAppearance resolveSwitchAppearance(const SwitchAppearanceInput& input,
         input.checked ? appearance.checkedTrackColor : appearance.uncheckedTrackColor;
   }
 
+  if (resolved.values.backgroundOpacity != 1.0) {
+    for (QColor* background :
+         {&appearance.uncheckedTrackColor, &appearance.uncheckedTrackHoverColor,
+          &appearance.checkedTrackColor, &appearance.checkedTrackHoverColor}) {
+      *background =
+          adqt::theme::applyBackgroundOpacity(*background, resolved.values.backgroundOpacity);
+    }
+  }
   return appearance;
 }
 

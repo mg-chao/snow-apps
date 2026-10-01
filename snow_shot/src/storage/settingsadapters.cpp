@@ -365,6 +365,46 @@ bool InterfaceSettings::setLanguage(const QString& language) const {
     return cache().setValue(QStringLiteral("interface/language"), language);
 }
 
+QString InterfaceSettings::skinPath() const {
+    return cache().value(QStringLiteral("interface/skin_path")).toString();
+}
+
+bool InterfaceSettings::setSkinPath(const QString& path) const {
+    return cache().setValue(QStringLiteral("interface/skin_path"), path);
+}
+
+QString InterfaceSettings::skinDisplayMode() const {
+    return cache().value(QStringLiteral("interface/skin_display_mode")).toString();
+}
+
+bool InterfaceSettings::setSkinDisplayMode(const QString& mode) const {
+    return cache().setValue(QStringLiteral("interface/skin_display_mode"), mode);
+}
+
+int InterfaceSettings::skinOpacity() const {
+    return cache().value(QStringLiteral("interface/skin_opacity")).toInt();
+}
+
+bool InterfaceSettings::setSkinOpacity(int opacity) const {
+    return cache().setValue(QStringLiteral("interface/skin_opacity"), opacity);
+}
+
+int InterfaceSettings::skinBlurLevel() const {
+    return cache().value(QStringLiteral("interface/skin_blur_level")).toInt();
+}
+
+bool InterfaceSettings::setSkinBlurLevel(int level) const {
+    return cache().setValue(QStringLiteral("interface/skin_blur_level"), level);
+}
+
+int InterfaceSettings::skinMaskOpacity() const {
+    return cache().value(QStringLiteral("interface/skin_mask_opacity")).toInt();
+}
+
+bool InterfaceSettings::setSkinMaskOpacity(int opacity) const {
+    return cache().setValue(QStringLiteral("interface/skin_mask_opacity"), opacity);
+}
+
 bool InterfaceSettings::sidebarCollapsed() const {
     return cache().value(QStringLiteral("interface/sidebar_collapsed")).toBool();
 }

@@ -1,6 +1,7 @@
 #include "select_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 
@@ -445,6 +446,13 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   style.emptyBorderColor = compositeOn(style.emptyBorderColor, style.popupBg);
   style.emptyShadowColor = compositeOn(style.emptyShadowColor, style.popupBg);
   style.emptyContentColor = compositeOn(style.emptyContentColor, style.popupBg);
+
+  if (map.backgroundOpacity != 1.0) {
+    for (QColor* background : {&style.selectorBg, &style.selectorHoverBg, &style.selectorActiveBg,
+                               &style.disabledBg, &style.tagBg, &style.clearBg}) {
+      *background = adqt::theme::applyBackgroundOpacity(*background, map.backgroundOpacity);
+    }
+  }
 
   // Resolve theme and component overrides in reference units, then scale once.
   // Every style refresh must retain the same geometry and typography contract.

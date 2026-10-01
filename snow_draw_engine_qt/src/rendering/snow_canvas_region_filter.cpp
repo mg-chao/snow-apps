@@ -41,6 +41,10 @@ void SnowCanvasRegionFilterScratch::finishFrame() {
     m_impl->workspace.finishFrame(false);
 }
 
+std::size_t SnowCanvasRegionFilterScratch::retainedBytes() const {
+    return m_impl->workspace.retainedBytes();
+}
+
 int snowCanvasRegionFilterSupportPixels(const SnowCanvasRegionFilterParameters& parameters) {
     return snow_canvas_filter_render::samplingRadiusPixels(internalParameters(parameters));
 }
@@ -48,7 +52,7 @@ int snowCanvasRegionFilterSupportPixels(const SnowCanvasRegionFilterParameters& 
 bool applySnowCanvasRegionFilter(const QImage& source, QImage& destination,
                                  const QRegion& destinationPixels,
                                  const SnowCanvasRegionFilterParameters& parameters,
-                                 SnowCanvasRegionFilterScratch* scratch) {
+                                 SnowCanvasRegionFilterScratch* scratch, bool singleThreaded) {
     if (parameters.type == SnowCanvasFilterType::SmartErase ||
         !std::isfinite(parameters.strength) || !std::isfinite(parameters.logicalSigma) ||
         !std::isfinite(parameters.logicalSamplingRadius) ||
@@ -57,6 +61,8 @@ bool applySnowCanvasRegionFilter(const QImage& source, QImage& destination,
     }
     snow_canvas_filter_render::RenderWorkspace* workspace =
         scratch != nullptr ? &SnowCanvasRegionFilterScratchAccess::workspace(*scratch) : nullptr;
-    return snow_canvas_filter_render::applyRegion(source, destination, destinationPixels,
-                                                  internalParameters(parameters), workspace);
+    snow_canvas_filter_render::ExecutionOptions options;
+    options.singleThreaded = singleThreaded;
+    return snow_canvas_filter_render::applyRegion(
+        source, destination, destinationPixels, internalParameters(parameters), workspace, options);
 }

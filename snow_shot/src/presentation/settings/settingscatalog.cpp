@@ -303,6 +303,61 @@ SettingsItemDefinition languageItem() {
     };
 }
 
+QVector<SettingsItemDefinition> skinItems() {
+    SettingsSelectDefinition displayMode;
+    displayMode.binding = SettingsSelectBinding::SkinDisplayMode;
+    displayMode.options = {
+        {QStringLiteral("overlay"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Overlay"))},
+        {QStringLiteral("contain"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Contain"))},
+    };
+    return {
+        {QStringLiteral("interface.skin.path"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin Path")),
+         settingsText(QT_TRANSLATE_NOOP(
+             "SettingsCatalog",
+             "Enter or browse to a PNG, JPG or WebP image. Clear the path to remove the skin.")),
+         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Background image"))},
+         QStringLiteral("interface/skin_path"),
+         SettingsFilePathDefinition{
+             SettingsFilePathBinding::SkinPath,
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Browse")),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Select skin image")),
+             settingsText(QT_TRANSLATE_NOOP(
+                 "SettingsCatalog", "Image files (*.png *.jpg *.jpeg *.webp);;PNG images "
+                                    "(*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)"))}},
+        {QStringLiteral("interface.skin.display-mode"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin Display Mode")),
+         settingsText(QT_TRANSLATE_NOOP(
+             "SettingsCatalog",
+             "Overlay fills the window and crops the edges. Contain shows the whole image.")),
+         {},
+         QStringLiteral("interface/skin_display_mode"),
+         displayMode},
+        {QStringLiteral("interface.skin.opacity"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin Opacity")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Adjust the opacity of the skin image")),
+         {},
+         QStringLiteral("interface/skin_opacity"),
+         SettingsSliderDefinition{SettingsSliderBinding::SkinOpacity,
+                                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}},
+        {QStringLiteral("interface.skin.blur-level"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin Blur Level")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Soften the skin image with blur")),
+         {},
+         QStringLiteral("interface/skin_blur_level"),
+         SettingsSliderDefinition{SettingsSliderBinding::SkinBlurLevel, {}}},
+        {QStringLiteral("interface.skin.mask-opacity"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Mask Opacity")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Adjust the theme background opacity of the "
+                                        "title bar, side navigation bar and pages")),
+         {},
+         QStringLiteral("interface/skin_mask_opacity"),
+         SettingsSliderDefinition{SettingsSliderBinding::SkinMaskOpacity,
+                                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}},
+    };
+}
+
 SettingsItemDefinition appFontItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::AppFont;
@@ -2481,6 +2536,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {themeItem(), themePrimaryColorItem(), languageItem(), appFontItem()},
                 },
                 {
+                    QStringLiteral("skin"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Customize the main interface background")),
+                    SettingsSectionReset::Skin,
+                    skinItems(),
+                },
+                {
                     QStringLiteral("interface-screenshot"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot")),
                     settingsText(QT_TRANSLATE_NOOP(
@@ -3742,6 +3805,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::Theme:
                         expectedKey = QStringLiteral("interface/theme_mode");
                         break;
+                    case SettingsSelectBinding::SkinDisplayMode:
+                        expectedKey = QStringLiteral("interface/skin_display_mode");
+                        break;
                     case SettingsSelectBinding::AppFont:
                         expectedKey = QStringLiteral("interface/app_font");
                         expectedSource = SettingsSelectSource::FontFamilies;
@@ -4196,10 +4262,21 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSliderBinding::ScreenRecordingVideoQuality:
                         expectedKey = QStringLiteral("screen_recording/video_quality");
                         break;
+                    case SettingsSliderBinding::SkinOpacity:
+                        expectedKey = QStringLiteral("interface/skin_opacity");
+                        break;
+                    case SettingsSliderBinding::SkinBlurLevel:
+                        expectedKey = QStringLiteral("interface/skin_blur_level");
+                        break;
+                    case SettingsSliderBinding::SkinMaskOpacity:
+                        expectedKey = QStringLiteral("interface/skin_mask_opacity");
+                        break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
                         schemaEntry->valueKind != storage::ConfigurationValueKind::Integer ||
-                        !schemaEntry->integerRange.has_value() || !slider->suffix.isValid()) {
+                        !schemaEntry->integerRange.has_value() ||
+                        (slider->binding != SettingsSliderBinding::SkinBlurLevel &&
+                         !slider->suffix.isValid())) {
                         errors.push_back(QStringLiteral("slider binding is incompatible: %1")
                                              .arg(itemDefinition.id));
                     }
@@ -4282,6 +4359,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     switch (filePath->binding) {
                     case SettingsFilePathBinding::TrayCustomIcon:
                         expectedKey = QStringLiteral("tray/custom_icon");
+                        break;
+                    case SettingsFilePathBinding::SkinPath:
+                        expectedKey = QStringLiteral("interface/skin_path");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

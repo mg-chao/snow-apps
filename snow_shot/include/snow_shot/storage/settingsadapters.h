@@ -95,6 +95,16 @@ class InterfaceSettings final {
     bool setThemeMode(const QString& mode) const;
     [[nodiscard]] QString language() const;
     bool setLanguage(const QString& language) const;
+    [[nodiscard]] QString skinPath() const;
+    bool setSkinPath(const QString& path) const;
+    [[nodiscard]] QString skinDisplayMode() const;
+    bool setSkinDisplayMode(const QString& mode) const;
+    [[nodiscard]] int skinOpacity() const;
+    bool setSkinOpacity(int opacity) const;
+    [[nodiscard]] int skinBlurLevel() const;
+    bool setSkinBlurLevel(int level) const;
+    [[nodiscard]] int skinMaskOpacity() const;
+    bool setSkinMaskOpacity(int opacity) const;
     [[nodiscard]] bool sidebarCollapsed() const;
     bool setSidebarCollapsed(bool collapsed) const;
 };

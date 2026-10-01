@@ -341,7 +341,7 @@ void SpinTest::automaticProgressPausesWhileHidden() {
   tokens.metrics.autoProgressIntervalMs = 1;
   spin.setComponentTokens(tokens);
   QTRY_COMPARE_WITH_TIMEOUT(spin.displayedPercent(), 99.0, 3000);
-  const int settledSignalCount = displayedSpy.count();
+  const auto settledSignalCount = displayedSpy.count();
   QTest::qWait(30);
   QCOMPARE(displayedSpy.count(), settledSignalCount);
 }

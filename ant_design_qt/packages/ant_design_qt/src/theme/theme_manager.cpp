@@ -4,6 +4,7 @@
 #include <QStyleFactory>
 
 #include <algorithm>
+#include <cmath>
 
 namespace adqt::theme {
 
@@ -302,6 +303,9 @@ const ResolvedTheme& ThemeManager::resolvedTheme() const { return resolved_; }
 
 ThemeConfig ThemeManager::resolvedConfigFor(const QWidget* widget,
                                             const QWidget* logicalOwner) const {
+  if (scopeStates_.isEmpty()) {
+    return config_;
+  }
   ThemeConfig merged = config_;
   const QObject* cursor = logicalOwner ? static_cast<const QObject*>(logicalOwner)
                                        : static_cast<const QObject*>(widget);
@@ -316,7 +320,16 @@ ThemeConfig ThemeManager::resolvedConfigFor(const QWidget* widget,
   for (const QObject* scope : orderedScopes) {
     const auto it = scopeStates_.constFind(const_cast<QObject*>(scope));
     if (it != scopeStates_.cend()) {
-      merged = mergeThemeConfig(merged, it->overrideValue);
+      ThemeOverride overrideValue = it->overrideValue;
+      const QWidget* surface = widget ? widget : logicalOwner;
+      const auto* scopeWidget = qobject_cast<const QWidget*>(scope);
+      // A background belongs to the surface that supplies its backdrop. Owned
+      // dialogs and popup windows inherit typography and accents, but cannot
+      // expose a skin painted in a different top-level window.
+      if (surface && scopeWidget && surface->window() != scopeWidget->window()) {
+        overrideValue.backgroundOpacity.reset();
+      }
+      merged = mergeThemeConfig(merged, overrideValue);
     }
   }
 
@@ -427,6 +440,12 @@ ResolvedTheme ThemeManager::resolve(const QWidget* widget, const QWidget* logica
 
 ThemeMapToken ThemeManager::resolveTheme(const QWidget* widget, const QWidget* logicalOwner) const {
   return resolve(widget, logicalOwner).values;
+}
+
+qreal ThemeManager::backgroundOpacity(const QWidget* widget) const {
+  const double opacity = scopeStates_.isEmpty() ? config_.backgroundOpacity
+                                                : resolvedConfigFor(widget).backgroundOpacity;
+  return std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
 }
 
 const QPalette& ThemeManager::globalPalette() const { return palette_; }

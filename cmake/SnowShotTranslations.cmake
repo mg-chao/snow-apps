@@ -109,6 +109,7 @@ function(snow_shot_add_translations target)
             snow_shot_administrator
             snow_shot
             snow_shot_storage
+            snow_shot_main_window_skin
             snow_shot_settings_catalog
             snow_shot_settings_search
             snow_shot_settings

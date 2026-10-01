@@ -520,6 +520,33 @@
         </message>
     </context>
     <context>
+        <name>MainWindowSkin</name>
+        <message>
+            <source>Choose a PNG, JPG, or WebP image.</source>
+            <translation>请选择 PNG、JPG 或 WebP 图像。</translation>
+        </message>
+        <message>
+            <source>Loading skin...</source>
+            <translation>正在加载皮肤...</translation>
+        </message>
+        <message>
+            <source>The skin image could not be decoded.</source>
+            <translation>无法解码皮肤图像。</translation>
+        </message>
+        <message>
+            <source>The skin image could not be opened.</source>
+            <translation>无法打开皮肤图像。</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds 64 MiB.</source>
+            <translation>皮肤图像文件大小超过 64 MiB。</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds processing limits.</source>
+            <translation>皮肤图像超出处理限制。</translation>
+        </message>
+    </context>
+    <context>
         <name>PermissionGuide</name>
         <message>
             <source>Close guidance</source>
@@ -849,6 +876,14 @@
             <translation>调整 MP4 画质和文件大小</translation>
         </message>
         <message>
+            <source>Adjust the opacity of the skin image</source>
+            <translation>调整皮肤图像的不透明度</translation>
+        </message>
+        <message>
+            <source>Adjust the theme background opacity of the title bar, side navigation bar and pages</source>
+            <translation>调整标题栏、侧边导航栏和页面的主题背景不透明度</translation>
+        </message>
+        <message>
             <source>Age</source>
             <translation>期限</translation>
         </message>
@@ -995,6 +1030,10 @@
         <message>
             <source>Background Fill</source>
             <translation>背景填充</translation>
+        </message>
+        <message>
+            <source>Background image</source>
+            <translation>背景图像</translation>
         </message>
         <message>
             <source>Backup settings</source>
@@ -1353,6 +1392,10 @@
             <translation>将 AI 客户端连接到 Snow Shot</translation>
         </message>
         <message>
+            <source>Contain</source>
+            <translation>适应</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>控制截图颜色拾取器何时显示</translation>
         </message>
@@ -1451,6 +1494,10 @@
         <message>
             <source>Custom translation endpoints and concurrency</source>
             <translation>自定义翻译端点和并发数</translation>
+        </message>
+        <message>
+            <source>Customize the main interface background</source>
+            <translation>自定义主界面背景</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -1669,6 +1716,10 @@
             <translation>输入或浏览选择 PNG 或 ICO 文件；无效文件将使用所选内置图标</translation>
         </message>
         <message>
+            <source>Enter or browse to a PNG, JPG or WebP image. Clear the path to remove the skin.</source>
+            <translation>输入或浏览选择 PNG、JPG 或 WebP 图像路径。清空路径可移除皮肤。</translation>
+        </message>
+        <message>
             <source>Eraser</source>
             <translation>橡皮擦</translation>
         </message>
@@ -1877,6 +1928,10 @@
             <translation>图像文件 (*.png *.ico);;PNG 图像 (*.png);;图标文件 (*.ico)</translation>
         </message>
         <message>
+            <source>Image files (*.png *.jpg *.jpeg *.webp);;PNG images (*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)</source>
+            <translation>图像文件 (*.png *.jpg *.jpeg *.webp);;PNG 图像 (*.png);;JPG 图像 (*.jpg *.jpeg);;WebP 图像 (*.webp)</translation>
+        </message>
+        <message>
             <source>Image format</source>
             <translation>图像格式</translation>
         </message>
@@ -2073,6 +2128,10 @@
             <translation>手动保存图像文件名格式</translation>
         </message>
         <message>
+            <source>Mask Opacity</source>
+            <translation>遮罩不透明度</translation>
+        </message>
+        <message>
             <source>Match your system appearance or choose a light or dark theme</source>
             <translation>跟随系统外观，或选择浅色或深色主题</translation>
         </message>
@@ -2263,6 +2322,14 @@
         <message>
             <source>Other application shortcuts and actions</source>
             <translation>其它应用程序快捷键和操作</translation>
+        </message>
+        <message>
+            <source>Overlay</source>
+            <translation>覆盖</translation>
+        </message>
+        <message>
+            <source>Overlay fills the window and crops the edges. Contain shows the whole image.</source>
+            <translation>覆盖模式铺满窗口并裁剪边缘。适应模式完整显示图像。</translation>
         </message>
         <message>
             <source>PDF</source>
@@ -2777,6 +2844,10 @@
             <translation>选择之前选中的区域</translation>
         </message>
         <message>
+            <source>Select skin image</source>
+            <translation>选择皮肤图像</translation>
+        </message>
+        <message>
             <source>Select the language used throughout the application</source>
             <translation>选择应用程序中使用的语言</translation>
         </message>
@@ -2977,6 +3048,26 @@
             <translation>快门声音通知</translation>
         </message>
         <message>
+            <source>Skin</source>
+            <translation>皮肤</translation>
+        </message>
+        <message>
+            <source>Skin Blur Level</source>
+            <translation>皮肤模糊程度</translation>
+        </message>
+        <message>
+            <source>Skin Display Mode</source>
+            <translation>皮肤显示模式</translation>
+        </message>
+        <message>
+            <source>Skin Opacity</source>
+            <translation>皮肤不透明度</translation>
+        </message>
+        <message>
+            <source>Skin Path</source>
+            <translation>皮肤路径</translation>
+        </message>
+        <message>
             <source>Small</source>
             <translation>小</translation>
         </message>
@@ -3019,6 +3110,10 @@
         <message>
             <source>Snowflake light</source>
             <translation>雪花浅色</translation>
+        </message>
+        <message>
+            <source>Soften the skin image with blur</source>
+            <translation>通过模糊柔化皮肤图像</translation>
         </message>
         <message>
             <source>Software updates</source>
