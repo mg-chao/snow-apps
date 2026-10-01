@@ -1,5 +1,5 @@
-# Installed Mini bundles retain local text OCR on macOS. Only its default model
-# is bundled; QR models, downloaded alternatives, and Full helpers are excluded.
+# Installed Mini bundles retain the local OCR runtime on macOS. Models are
+# downloaded on demand; no model folders or Full helpers may be packaged.
 if(NOT DEFINED SNOW_SHOT_MINI_APP OR NOT IS_DIRECTORY "${SNOW_SHOT_MINI_APP}/Contents")
     message(FATAL_ERROR "Snow Shot Mini bundle was not found")
 endif()
@@ -29,31 +29,7 @@ if(SNOW_SHOT_MINI_STATIC)
     endif()
 endif()
 
-file(READ "${SNOW_SHOT_MINI_OCR_MANIFEST}" _mini_manifest)
-string(JSON _mini_model_count LENGTH "${_mini_manifest}" models)
-math(EXPR _mini_last_model "${_mini_model_count} - 1")
-set(_mini_expected_assets ocr ocr/models ocr/asset-manifest.json)
-set(_mini_found_default_model FALSE)
-foreach(_mini_model_index RANGE ${_mini_last_model})
-    string(JSON _mini_model_type GET "${_mini_manifest}" models ${_mini_model_index} type)
-    if(NOT _mini_model_type STREQUAL "small")
-        continue()
-    endif()
-    set(_mini_found_default_model TRUE)
-    string(JSON _mini_model_id GET "${_mini_manifest}" models ${_mini_model_index} id)
-    list(APPEND _mini_expected_assets "ocr/models/${_mini_model_id}"
-        "ocr/models/${_mini_model_id}/.complete.json")
-    string(JSON _mini_file_count LENGTH "${_mini_manifest}" models ${_mini_model_index} files)
-    math(EXPR _mini_last_file "${_mini_file_count} - 1")
-    foreach(_mini_file_index RANGE ${_mini_last_file})
-        string(JSON _mini_model_file GET "${_mini_manifest}" models ${_mini_model_index}
-            files ${_mini_file_index} name)
-        list(APPEND _mini_expected_assets "ocr/models/${_mini_model_id}/${_mini_model_file}")
-    endforeach()
-endforeach()
-if(NOT _mini_found_default_model)
-    message(FATAL_ERROR "Mini macOS requires the default local text recognition model")
-endif()
+set(_mini_expected_assets ocr ocr/asset-manifest.json)
 set(_mini_assets "${SNOW_SHOT_MINI_APP}/Contents/Resources/assets")
 file(GLOB_RECURSE _mini_actual_assets LIST_DIRECTORIES TRUE RELATIVE "${_mini_assets}"
     "${_mini_assets}/*")

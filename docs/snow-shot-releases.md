@@ -105,8 +105,9 @@ snow_shot`. Windows and ARM64 release packaging requires both editions.
 
 Windows Mini bundles only the trusted OCR asset manifest; manual text recognition
 downloads the local OCR payload on demand. It has no offline installer. macOS
-Mini supports Apple Silicon only and bundles its OCR worker, runtime, and default
-models in `snow-shot-mini-<version>-macos-arm64.dmg`. Mini hides its
+Mini supports Apple Silicon only and bundles its OCR worker and runtime in
+`snow-shot-mini-<version>-macos-arm64.dmg`. It bundles no model files; selected
+models download on demand into its verified application cache. Mini hides its
 text-recognition toolbar button by default on both platforms and disables
 automatic Pin to Screen recognition; users can enable manual text recognition
 in Mini settings.

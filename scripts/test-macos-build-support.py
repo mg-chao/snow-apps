@@ -8,6 +8,7 @@ import plistlib
 from pathlib import Path
 import signal
 import shutil
+import struct
 import subprocess
 import tempfile
 import threading
@@ -104,7 +105,7 @@ class MacOSBundleMetadata(unittest.TestCase):
                     self.assertEqual((stage / (product + '.app') / name).read_bytes(), content)
                 self.assertTrue(os.access(stage / (product + '.app') / 'Contents/MacOS' / target, os.X_OK))
 
-    def test_mini_payload_contains_only_its_helpers_and_default_text_model(self):
+    def test_mini_payload_contains_only_its_helpers_without_models(self):
         cmake = shutil.which('cmake')
         self.assertIsNotNone(cmake)
         manifest = ROOT / 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json'
@@ -116,10 +117,7 @@ class MacOSBundleMetadata(unittest.TestCase):
             assets = bundle / 'Contents/Resources/assets'
             files = [runtime / name for name in ('snow_shot_mini', 'snow-shot-mini-mcp',
                                                 'snow-ocr-process', 'crashpad_handler')]
-            files.extend(assets / ('ocr/models/' + model['id']) / item['name']
-                         for item in model['files'])
             files.extend([assets / 'ocr/asset-manifest.json',
-                          assets / ('ocr/models/' + model['id']) / '.complete.json',
                           bundle / 'Contents/Resources/audios/camera_shutter.mp3',
                           bundle / 'Contents/Resources/snow-shot.icns'])
             files.extend(bundle / ('Contents/Resources/' + language + '.lproj/InfoPlist.strings')
@@ -136,8 +134,7 @@ class MacOSBundleMetadata(unittest.TestCase):
                 return subprocess.run([
                     cmake, '-DSNOW_SHOT_MINI_APP=' + str(bundle),
                     '-DSNOW_SHOT_MINI_STATIC=' + ('ON' if static else 'OFF'),
-                    '-DSNOW_SHOT_MINI_MCP=ON',
-                    '-DSNOW_SHOT_MINI_OCR_MANIFEST=' + str(manifest), '-P',
+                    '-DSNOW_SHOT_MINI_MCP=ON', '-P',
                     str(ROOT / 'cmake/AssertSnowShotMiniMacOSPayload.cmake')],
                     text=True, capture_output=True)
 
@@ -148,6 +145,7 @@ class MacOSBundleMetadata(unittest.TestCase):
                              'Contents/Frameworks/Unused.framework/Unused',
                              'Contents/PlugIns/imageformats/unused.dylib',
                              'Contents/Resources/assets/qrcode/detect.prototxt',
+                             'Contents/Resources/assets/ocr/models/' + model['id'] + '/' + model['files'][0]['name'],
                              'Contents/Resources/assets/ocr/models/unused/engine.onnx',
                              'Contents/Resources/assets/ocr/development-libraries.json',
                              'Contents/Resources/audios/unused.mp3',
@@ -170,10 +168,11 @@ class MacOSBundleMetadata(unittest.TestCase):
                             break
                         parent = parent.parent
                     self.assertEqual(verify().returncode, 0)
-            unused_directory = bundle / 'Contents/Resources/models'
-            unused_directory.mkdir()
-            self.assertNotEqual(verify().returncode, 0)
-            unused_directory.rmdir()
+            for relative in ('Contents/Resources/models', 'Contents/Resources/assets/ocr/models'):
+                unused_directory = bundle / relative
+                unused_directory.mkdir()
+                self.assertNotEqual(verify().returncode, 0)
+                unused_directory.rmdir()
             qt_config = bundle / 'Contents/Resources/qt.conf'
             qt_config.write_text('[Paths]\nPlugins = PlugIns\n')
             self.assertNotEqual(verify().returncode, 0)
@@ -724,7 +723,56 @@ class MacOSSigningDeployment(unittest.TestCase):
             self.assertIn('--static-runtime', call)
         self.assertEqual(calls[-1][0:4], ['codesign', '--verify', '--deep', '--strict'])
 
-    def deploy(self, identity, fail=False, static=False):
+    def test_release_deployment_strips_both_editions_before_signing_and_ocr_hashing(self):
+        for mini in (False, True):
+            with self.subTest(mini=mini):
+                calls, result = self.deploy('-', static=True, config='Release', mini=mini)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                strips = [(index, call) for index, call in enumerate(calls) if call[0] == 'strip']
+                self.assertEqual(len(strips), 4)
+                finalize = next(index for index, call in enumerate(calls) if 'finalize' in call)
+                for index, call in strips:
+                    self.assertEqual(call[1:3], ['-S', '-x'])
+                    self.assertNotIn('helper-link', call[-1])
+                    self.assertNotIn('note.txt', call[-1])
+                    self.assertEqual(calls[index + 1], ['codesign', '--force', '--sign', '-', call[-1]])
+                    self.assertLess(index + 1, finalize)
+                for command in ('prepare-bundle', 'finalize', 'verify'):
+                    call = next(call for call in calls if command in call)
+                    self.assertEqual('--runtime-only' in call, mini)
+                product = 'snow_shot_mini.app' if mini else 'snow_shot.app'
+                self.assertTrue(all('/' + product + '/Contents/' in call[-1] for _, call in strips))
+                outer_sign = next(index for index, call in enumerate(calls)
+                                  if call[0] == 'codesign' and call[-1].endswith(product))
+                self.assertLess(finalize, outer_sign)
+
+    def test_development_deployment_preserves_symbols(self):
+        for static, config, release_static in ((True, 'Debug', True),
+                                               (True, 'RelWithDebInfo', True),
+                                               (True, 'Release', False),
+                                               (False, 'Release', False)):
+            with self.subTest(static=static, config=config, release_static=release_static):
+                calls, result = self.deploy('-', static=static, config=config,
+                                            release_static=release_static)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(any(call[0] == 'strip' for call in calls))
+
+    def test_strip_failure_stops_before_signing_and_ocr_hashing(self):
+        calls, result = self.deploy('-', static=True, config='Release', strip_fail=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(sum(call[0] == 'strip' for call in calls), 1)
+        self.assertFalse(any(call[0] == 'codesign' or 'finalize' in call for call in calls))
+
+    def test_repeated_release_deployment_reseals_each_worker(self):
+        calls, result = self.deploy('-', static=True, config='Release', repeat=2)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sum(call[0] == 'strip' for call in calls), 8)
+        self.assertEqual(sum('finalize' in call for call in calls), 2)
+        self.assertEqual(sum(call[:4] == ['codesign', '--verify', '--deep', '--strict']
+                             for call in calls), 2)
+
+    def deploy(self, identity, fail=False, static=False, config='Debug', release_static=None,
+               mini=False, strip_fail=False, repeat=1):
         with tempfile.TemporaryDirectory(prefix='snow signing tests ') as temp:
             root = Path(temp)
             log = root / 'calls.jsonl'
@@ -734,15 +782,37 @@ name = pathlib.Path(sys.argv[0]).name
 with open(os.environ['SNOW_TEST_LOG'], 'a') as log:
     log.write(json.dumps([name] + sys.argv[1:]) + '\\n')
 if name == 'macdeployqt' and os.environ.get('SNOW_TEST_FAIL_SIGN'): sys.exit(1)
+if name == 'file':
+    print('ASCII text' if sys.argv[-1].endswith('.txt') else 'Mach-O 64-bit executable arm64')
+if name == 'otool':
+    print(sys.argv[-1] + ':\\n\\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)')
+if name == 'strip' and os.environ.get('SNOW_TEST_FAIL_STRIP'): sys.exit(37)
 """
-            for name in ('macdeployqt', 'codesign', 'install_name_tool', 'ocr'):
+            for name in ('macdeployqt', 'codesign', 'install_name_tool', 'ocr', 'file', 'otool', 'strip'):
                 tool = root / name
                 tool.write_text(mock)
                 tool.chmod(0o755)
+            product = 'snow_shot_mini' if mini else 'snow_shot'
+            bridge = 'snow-shot-mini-mcp' if mini else 'snow-shot-mcp'
+            runtime = root / (product + '.app') / 'Contents/MacOS'
+            runtime.mkdir(parents=True)
+            for name in (product, bridge, 'snow-ocr-process', 'crashpad_handler'):
+                (runtime / name).write_text('executable fixture')
+            (runtime / 'helper-link').symlink_to('snow-ocr-process')
+            resources = runtime.parent / 'Resources'
+            resources.mkdir()
+            (resources / 'note.txt').write_text('resource fixture')
             script = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()
+            if mini:
+                script = script.replace('snow_shot.app', 'snow_shot_mini.app')
+                script = script.replace('snow-shot-mcp', 'snow-shot-mini-mcp')
             values = {'SNOW_MACOS_CODESIGN_IDENTITY': identity,
                       'SNOW_MACDEPLOYQT': str(root / 'macdeployqt'),
                       'SNOW_MACOS_OCR_ASSETS_ENABLED': 'ON',
+                      'SNOW_MACOS_OCR_RUNTIME_ONLY': 'ON' if mini else 'OFF',
+                      'SNOW_SHOT_ENABLE_MCP': 'ON',
+                      'SNOW_SHOT_RELEASE_STATIC': 'ON' if (static if release_static is None
+                                                          else release_static) else 'OFF',
                       'SNOW_SHOT_QT_STATIC': 'ON' if static else 'OFF',
                       'SNOW_SHOT_OCR_STATIC_ONNXRUNTIME': 'ON' if static else 'OFF',
                       'Python3_EXECUTABLE': str(root / 'ocr'),
@@ -750,7 +820,7 @@ if name == 'macdeployqt' and os.environ.get('SNOW_TEST_FAIL_SIGN'): sys.exit(1)
                       'SNOW_FFMPEG_ROOT': str(root / 'ffmpeg'), 'CMAKE_BINARY_DIR': str(root)}
             for key, value in values.items():
                 script = script.replace('@' + key + '@', value)
-            for name in ('codesign', 'install_name_tool'):
+            for name in ('codesign', 'install_name_tool', 'file', 'otool', 'strip'):
                 script = script.replace('/usr/bin/' + name, '"' + str(root / name) + '"')
             path = root / 'deploy.cmake'
             path.write_text(script)
@@ -758,10 +828,122 @@ if name == 'macdeployqt' and os.environ.get('SNOW_TEST_FAIL_SIGN'): sys.exit(1)
             env = dict(os.environ, SNOW_TEST_LOG=str(log))
             if fail:
                 env['SNOW_TEST_FAIL_SIGN'] = '1'
-            result = subprocess.run([cmake, '-DCMAKE_INSTALL_PREFIX=' + str(root),
-                                     '-DCMAKE_INSTALL_CONFIG_NAME=Debug', '-P', str(path)],
-                                    env=env, text=True, capture_output=True)
+            if strip_fail:
+                env['SNOW_TEST_FAIL_STRIP'] = '1'
+            for _ in range(repeat):
+                result = subprocess.run([cmake, '-DCMAKE_INSTALL_PREFIX=' + str(root),
+                                         '-DCMAKE_INSTALL_CONFIG_NAME=' + config, '-P', str(path)],
+                                        env=env, text=True, capture_output=True)
+                if result.returncode:
+                    break
             return [json.loads(line) for line in log.read_text().splitlines()], result
+
+
+@unittest.skipUnless(os.environ.get('SNOW_TEST_MACOS_BUNDLE') == '1',
+                     'Set SNOW_TEST_MACOS_BUNDLE=1 for the native stripping fixture')
+class MacOSPackageStripping(unittest.TestCase):
+    @unittest.skipUnless(platform.system() == 'Darwin', 'Mach-O stripping requires macOS')
+    def test_release_copies_preserve_code_exports_uuids_and_external_dsyms(self):
+        """Use small native binaries without Qt, OCR models, network, or a running UI."""
+        def run(*args):
+            result = subprocess.run(args, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return result.stdout
+
+        def uuid(path):
+            return run('xcrun', 'dwarfdump', '--uuid', str(path)).split()[1]
+
+        def sections(binary):
+            data = binary.read_bytes()
+            self.assertEqual(struct.unpack_from('<I', data)[0], 0xfeedfacf)
+            hashes = {}
+            offset = 32
+            for _ in range(struct.unpack_from('<I', data, 16)[0]):
+                command, length = struct.unpack_from('<II', data, offset)
+                if command == 0x19:  # LC_SEGMENT_64
+                    for index in range(struct.unpack_from('<I', data, offset + 64)[0]):
+                        section = offset + 72 + index * 80
+                        name = data[section:section + 16].split(b'\0')[0].decode()
+                        segment = data[section + 16:section + 32].split(b'\0')[0].decode()
+                        size, start = struct.unpack_from('<QI', data, section + 40)
+                        flags = struct.unpack_from('<I', data, section + 64)[0]
+                        if (segment in ('__TEXT', '__DATA', '__DATA_CONST')
+                                and (flags & 0xff) not in (1, 12, 18)):
+                            hashes[(segment, name)] = hashlib.sha256(data[start:start + size]).hexdigest()
+                offset += length
+            self.assertTrue(hashes)
+            return hashes
+
+        cmake = shutil.which('cmake') or str(ROOT / '.tools/macos-dev/bin/cmake')
+        with tempfile.TemporaryDirectory(prefix='snow native strip ') as temp:
+            root = Path(temp)
+            source = root / 'fixture.c'
+            names = [f'snow_fixture_internal_function_with_private_debug_symbol_{index:03}'
+                     for index in range(64)]
+            expression = 'value'
+            for name in names:
+                expression = name + '(' + expression + ')'
+            source.write_text('\n'.join('static int ' + name + '(int value) { return value + 1; }'
+                                        for name in names) + '\n'
+                              'int snow_fixture_exported(int value) { return ' + expression + '; }\n'
+                              'int main(void) { return snow_fixture_exported(0) == 64 ? 0 : 1; }\n')
+            binary = root / 'fixture'
+            run('xcrun', 'clang', '-g', '-O0', str(source), '-o', str(binary))
+            symbols = root / 'fixture.dSYM'
+            run('xcrun', 'dsymutil', str(binary), '-o', str(symbols))
+            original_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
+            original_sections = sections(binary)
+            original_exports = run('/usr/bin/nm', '-gUj', str(binary))
+            original_uuid = uuid(binary)
+            self.assertEqual(uuid(symbols), original_uuid)
+            ocr = root / 'ocr'
+            ocr.write_text('#!/usr/bin/env python3\n')
+            ocr.chmod(0o755)
+            for product in ('snow_shot', 'snow_shot_mini'):
+                app = root / (product + '.app')
+                runtime = app / 'Contents/MacOS'
+                runtime.mkdir(parents=True)
+                resources = app / 'Contents/Resources'
+                resources.mkdir()
+                note = resources / 'note.txt'
+                note.write_text('resource fixture')
+                (runtime / 'helper-link').symlink_to('snow-ocr-process')
+                (app / 'Contents/Info.plist').write_bytes(plistlib.dumps({
+                    'CFBundleExecutable': product, 'CFBundleIdentifier': 'com.snowshot.' + product,
+                    'CFBundlePackageType': 'APPL', 'CFBundleName': 'Snow Shot Fixture',
+                    'CFBundleVersion': '1.0'}))
+                script = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()
+                script = script.replace('snow_shot.app', product + '.app')
+                values = {'SNOW_MACOS_CODESIGN_IDENTITY': '-', 'SNOW_SHOT_ENABLE_MCP': 'OFF',
+                          'SNOW_MACDEPLOYQT': '', 'SNOW_MACOS_OCR_ASSETS_ENABLED': 'OFF',
+                          'SNOW_MACOS_OCR_RUNTIME_ONLY': 'ON' if product == 'snow_shot_mini' else 'OFF',
+                          'SNOW_SHOT_QT_STATIC': 'ON', 'SNOW_SHOT_RELEASE_STATIC': 'ON',
+                          'SNOW_SHOT_OCR_STATIC_ONNXRUNTIME': 'ON', 'Python3_EXECUTABLE': str(ocr),
+                          'SNOW_MACOS_OCR_TOOL': 'ocr.py', 'SNOW_MACOS_OCR_MANIFEST': 'manifest.json',
+                          'SNOW_FFMPEG_ROOT': str(root / 'ffmpeg'), 'CMAKE_BINARY_DIR': str(root)}
+                for key, value in values.items():
+                    script = script.replace('@' + key + '@', value)
+                deployment = root / 'deploy.cmake'
+                deployment.write_text(script)
+                # Reinstalling replaces stripped staging copies with build bytes.
+                for attempt in range(2):
+                    with self.subTest(product=product, attempt=attempt):
+                        for name in (product, 'snow-ocr-process', 'crashpad_handler'):
+                            shutil.copy2(binary, runtime / name)
+                        run(cmake, '-DCMAKE_INSTALL_PREFIX=' + str(root),
+                            '-DCMAKE_INSTALL_CONFIG_NAME=Release', '-P', str(deployment))
+                        run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(app))
+                        for name in (product, 'snow-ocr-process', 'crashpad_handler'):
+                            deployed = runtime / name
+                            self.assertEqual(sections(deployed), original_sections)
+                            self.assertEqual(run('/usr/bin/nm', '-gUj', str(deployed)), original_exports)
+                            self.assertEqual(uuid(deployed), original_uuid)
+                            self.assertLess(deployed.stat().st_size, binary.stat().st_size)
+                            run(str(deployed))
+                        self.assertEqual(hashlib.sha256(binary.read_bytes()).hexdigest(), original_hash)
+                        self.assertEqual(note.read_text(), 'resource fixture')
+                        self.assertTrue((runtime / 'helper-link').is_symlink())
+                        self.assertEqual(uuid(symbols), original_uuid)
 
 
 @unittest.skipUnless(os.environ.get("SNOW_TEST_MACOS_BUNDLE") == "1",

@@ -222,6 +222,8 @@ if(NOT SNOW_MACOS_CODESIGN_IDENTITY STREQUAL "-")
         COMMAND "${CMAKE_COMMAND}" -E rm -f "$<TARGET_FILE:snow_shot>.snow-signing"
         VERBATIM)
 endif()
+# Full includes its default model; Mini supplies its own runtime-only policy.
+set(SNOW_MACOS_OCR_RUNTIME_ONLY OFF)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/DeploySnowShotMacOS.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/DeploySnowShotMacOS.cmake" @ONLY)
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/DeploySnowShotMacOS.cmake" COMPONENT SnowShot)

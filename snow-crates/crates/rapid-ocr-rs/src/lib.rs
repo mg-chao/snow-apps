@@ -4,6 +4,7 @@ mod det;
 mod diagnostics;
 mod error;
 mod input;
+#[cfg(feature = "model-download")]
 mod model_registry;
 mod model_source;
 mod model_store;

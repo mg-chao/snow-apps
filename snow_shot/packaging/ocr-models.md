@@ -135,12 +135,17 @@ by deterministic unit tests.
 macOS 15+ Apple Silicon uses the same seven model IDs and protocol 4 with CPU
 inference. The app supplies a generated schema-3 `macos-arm64` manifest with
 `delivery: bundled`; Windows schema-2 runtime archives and their pinned hashes
-remain separate. Small V6 works offline on first launch. Other model selections
-use the existing verified download cache and never download executable code.
+remain separate. Full bundles Small V6 for offline recognition on first launch.
+Mini bundles only the runtime and trusted model descriptors; it downloads the
+selected model on first use. Both editions reuse verified model caches and
+never download executable code.
 The macOS runtime is updated only with the application.
 
-`scripts/snow-shot-macos-ocr.py` stages pinned models and generates/verifies the
-manifest from finalized native binaries. Runtime hashes are generated after
+`scripts/snow-shot-macos-ocr.py` stages pinned models for Full and uses
+`--runtime-only` for Mini staging, bundle preparation, finalization and verification.
+Mini's model payload must be absent, including stale model directories in reused
+staging trees. The script generates/verifies the manifest from finalized native
+binaries. Runtime hashes are generated after
 Mach-O deployment and nested signing, before signing the outer app bundle.
 See `docs-macos-build.md` for the native seven-model, lifecycle, relocated-bundle,
 and performance checks required before delivery.

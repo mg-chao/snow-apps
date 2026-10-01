@@ -1,6 +1,9 @@
+#[cfg(feature = "image-io")]
 use std::{fs, io::Cursor, path::PathBuf};
 
+#[cfg(feature = "image-io")]
 use exif::{In, Reader as ExifReader, Tag};
+#[cfg(feature = "image-io")]
 use image::{DynamicImage, GrayImage, ImageBuffer, LumaA, RgbImage, RgbaImage};
 #[cfg(feature = "turbojpeg-decode")]
 use turbojpeg::{PixelFormat, decompress};
@@ -12,8 +15,11 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum OcrInput {
+    #[cfg(feature = "image-io")]
     Path(PathBuf),
+    #[cfg(feature = "remote-input")]
     Url(String),
+    #[cfg(feature = "image-io")]
     Bytes(Vec<u8>),
     Bgr {
         width: usize,
@@ -59,8 +65,11 @@ pub struct LoadImage;
 impl LoadImage {
     pub fn load(&self, input: OcrInput) -> Result<RecImage> {
         match input {
+            #[cfg(feature = "image-io")]
             OcrInput::Path(path) => self.load_path(path),
+            #[cfg(feature = "remote-input")]
             OcrInput::Url(url) => self.load_url(&url),
+            #[cfg(feature = "image-io")]
             OcrInput::Bytes(bytes) => self.decode_bytes_with_exif(&bytes, false),
             OcrInput::Bgr {
                 width,
@@ -116,6 +125,7 @@ impl LoadImage {
         }
     }
 
+    #[cfg(feature = "image-io")]
     fn load_path(&self, path: PathBuf) -> Result<RecImage> {
         if !path.exists() {
             return Err(RapidOcrError::FileNotFound(path));
@@ -124,6 +134,7 @@ impl LoadImage {
         self.decode_bytes_with_exif(&bytes, true)
     }
 
+    #[cfg(feature = "remote-input")]
     fn load_url(&self, url: &str) -> Result<RecImage> {
         let response = reqwest::blocking::get(url)?;
         if !response.status().is_success() {
@@ -136,6 +147,7 @@ impl LoadImage {
         self.decode_bytes_with_exif(bytes.as_ref(), true)
     }
 
+    #[cfg(feature = "image-io")]
     fn decode_bytes_with_exif(&self, bytes: &[u8], apply_exif_transpose: bool) -> Result<RecImage> {
         let orientation = if apply_exif_transpose {
             exif_orientation_from_bytes(bytes)
@@ -160,6 +172,7 @@ impl LoadImage {
     }
 }
 
+#[cfg(feature = "image-io")]
 fn exif_orientation_from_bytes(bytes: &[u8]) -> Option<u32> {
     let mut cursor = Cursor::new(bytes);
     let exif = ExifReader::new().read_from_container(&mut cursor).ok()?;
@@ -167,11 +180,12 @@ fn exif_orientation_from_bytes(bytes: &[u8]) -> Option<u32> {
     field.value.get_uint(0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "image-io"))]
 fn exif_transpose_from_bytes(img: DynamicImage, bytes: &[u8]) -> DynamicImage {
     apply_exif_orientation(img, exif_orientation_from_bytes(bytes))
 }
 
+#[cfg(feature = "image-io")]
 fn apply_exif_orientation(img: DynamicImage, orientation: Option<u32>) -> DynamicImage {
     let orientation = orientation.unwrap_or(1);
 
@@ -228,6 +242,7 @@ fn looks_like_jpeg(bytes: &[u8]) -> bool {
     bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF
 }
 
+#[cfg(feature = "image-io")]
 fn dynamic_to_rec_image(img: DynamicImage) -> Result<RecImage> {
     match img {
         DynamicImage::ImageLuma8(gray) => RecImage::from_bgr_u8(
@@ -252,6 +267,7 @@ fn dynamic_to_rec_image(img: DynamicImage) -> Result<RecImage> {
     }
 }
 
+#[cfg(feature = "image-io")]
 fn gray_to_bgr(gray: GrayImage) -> Vec<u8> {
     let mut bgr = vec![0_u8; gray.width() as usize * gray.height() as usize * 3];
     for (src, dst) in gray.as_raw().iter().zip(bgr.chunks_exact_mut(3)) {
@@ -262,6 +278,7 @@ fn gray_to_bgr(gray: GrayImage) -> Vec<u8> {
     bgr
 }
 
+#[cfg(feature = "image-io")]
 fn rgb_to_bgr(rgb: RgbImage) -> Vec<u8> {
     let mut bgr = vec![0_u8; rgb.width() as usize * rgb.height() as usize * 3];
     for (src, dst) in rgb.as_raw().chunks_exact(3).zip(bgr.chunks_exact_mut(3)) {
@@ -272,6 +289,7 @@ fn rgb_to_bgr(rgb: RgbImage) -> Vec<u8> {
     bgr
 }
 
+#[cfg(feature = "image-io")]
 fn gray_alpha_to_bgr_img(gray_alpha: ImageBuffer<LumaA<u8>, Vec<u8>>) -> Vec<u8> {
     gray_alpha_to_bgr(
         gray_alpha.width() as usize,
@@ -296,6 +314,7 @@ fn gray_alpha_to_bgr(width: usize, height: usize, data: &[u8]) -> Vec<u8> {
     out
 }
 
+#[cfg(feature = "image-io")]
 fn rgba_to_bgr_img(rgba: RgbaImage) -> Vec<u8> {
     rgba_to_bgr(rgba.width() as usize, rgba.height() as usize, rgba.as_raw())
 }
@@ -363,9 +382,12 @@ fn ensure_len(width: usize, height: usize, channels: usize, actual_len: usize) -
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "image-io")]
     use image::{DynamicImage, RgbImage};
 
-    use super::{LoadImage, OcrInput, exif_transpose_from_bytes};
+    #[cfg(feature = "image-io")]
+    use super::exif_transpose_from_bytes;
+    use super::{LoadImage, OcrInput};
 
     #[test]
     fn gray_alpha_input_is_supported() {
@@ -409,6 +431,56 @@ mod tests {
         assert_eq!(image.height(), 1);
     }
 
+    #[test]
+    fn raw_worker_pixels_preserve_bgr_bytes_without_reallocating() {
+        let pixels = vec![7, 19, 41, 53, 67, 83];
+        let original_buffer = pixels.as_ptr();
+        let image = LoadImage
+            .load(OcrInput::BgrU8 {
+                width: 2,
+                height: 1,
+                data: pixels,
+            })
+            .expect("raw worker input should load without encoded image features");
+        assert_eq!(image.as_bytes(), &[7, 19, 41, 53, 67, 83]);
+        assert_eq!(image.as_bytes().as_ptr(), original_buffer);
+        assert_eq!(image.color_order(), crate::ColorOrder::Bgr);
+    }
+
+    #[test]
+    fn raw_worker_pixels_reject_invalid_dimensions_and_length() {
+        for (width, height, data) in [(0, 1, vec![]), (2, 1, vec![0; 5])] {
+            assert!(
+                LoadImage
+                    .load(OcrInput::BgrU8 {
+                        width,
+                        height,
+                        data
+                    })
+                    .is_err()
+            );
+        }
+    }
+
+    #[cfg(feature = "image-io")]
+    #[test]
+    fn encoded_png_bytes_and_file_preserve_pixel_conversion() {
+        let rgb = RgbImage::from_raw(2, 1, vec![255, 0, 0, 0, 255, 0]).expect("valid rgb image");
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        DynamicImage::ImageRgb8(rgb)
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .expect("PNG should encode");
+        let bytes = bytes.into_inner();
+        let file = tempfile::NamedTempFile::new().expect("temporary image");
+        std::fs::write(file.path(), &bytes).expect("PNG fixture should write");
+        for input in [OcrInput::Bytes(bytes), OcrInput::Path(file.path().into())] {
+            let image = LoadImage.load(input).expect("encoded input should load");
+            assert_eq!(image.as_bytes(), &[0, 0, 255, 0, 255, 0]);
+            assert_eq!((image.width(), image.height()), (2, 1));
+        }
+    }
+
+    #[cfg(feature = "image-io")]
     #[test]
     fn exif_transpose_is_noop_when_exif_is_missing() {
         let rgb = RgbImage::from_raw(2, 1, vec![255, 0, 0, 0, 255, 0]).expect("valid rgb image");

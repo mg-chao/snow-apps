@@ -1,6 +1,8 @@
+#[cfg(feature = "config-yaml")]
 use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "config-yaml")]
 use serde_yaml::Value;
 
 use crate::{
@@ -69,6 +71,7 @@ impl Default for EngineConfig {
 }
 
 impl EngineConfig {
+    #[cfg(feature = "config-yaml")]
     pub fn from_yaml_str(yaml: &str) -> Result<Self> {
         let root = serde_yaml::from_str::<Value>(yaml)?;
         validate_native_required_sections(&root)?;
@@ -77,6 +80,7 @@ impl EngineConfig {
         Ok(cfg)
     }
 
+    #[cfg(feature = "config-yaml")]
     pub fn from_yaml_file(path: impl AsRef<Path>) -> Result<Self> {
         let text = fs::read_to_string(path)?;
         Self::from_yaml_str(&text)
@@ -174,6 +178,7 @@ impl EngineConfig {
     }
 }
 
+#[cfg(feature = "config-yaml")]
 fn validate_native_required_sections(root: &Value) -> Result<()> {
     let required_sections = ["global", "det", "cls", "rec"];
 
@@ -226,6 +231,7 @@ fn validate_inclusive_range(name: &str, value: f32, min: f32, max: f32) -> Resul
     Ok(())
 }
 
+#[cfg(feature = "config-yaml")]
 fn mapping_get<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value.as_mapping()?.get(Value::String(key.to_string()))
 }
@@ -252,6 +258,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "config-yaml")]
     #[test]
     fn parse_native_yaml_requires_all_sections() {
         let yaml = "global:\n  text_score: 0.77\n";
@@ -262,6 +269,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "config-yaml")]
     #[test]
     fn parse_native_yaml_rejects_unknown_top_level_fields() {
         let mut yaml = serde_yaml::to_string(&EngineConfig::default())

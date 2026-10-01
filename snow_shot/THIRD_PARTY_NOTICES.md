@@ -26,6 +26,12 @@ fix. Cargo retrieves their source and original license files from that fork.
 The release collector includes the selected Rust FFI and static OCR-worker
 dependency graphs, including these Git dependencies.
 
+Windows releases currently redistribute the immutable OCR runtime 1.0.8 from
+the pinned asset manifest. Its license collection retains RapidOCR's original
+CLI, encoded-image, HTTP/TLS, model-download, and YAML dependency closure even
+when the locally built raw-pixel worker omits those features. This collection
+must follow the published runtime until its versioned payload is replaced.
+
 The GPL-3.0-only `snow-shot-updater` sidecar is implemented in Rust and is
 distributed as part of Snow Shot. Its resolved normal and build dependency
 graph—including Tokio, Reqwest with native platform TLS, Serde, RSA/SHA-256,

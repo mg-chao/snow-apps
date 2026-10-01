@@ -14,6 +14,11 @@ if(_snow_codesign_identity STREQUAL "-")
 endif()
 string(TOLOWER "${CMAKE_INSTALL_CONFIG_NAME}" _snow_install_config)
 set(_snow_ocr_runtime_arguments)
+set(_snow_ocr_model_arguments)
+if(@SNOW_MACOS_OCR_RUNTIME_ONLY@)
+    list(APPEND _snow_ocr_model_arguments --runtime-only)
+    list(APPEND _snow_ocr_runtime_arguments --runtime-only)
+endif()
 if(@SNOW_SHOT_OCR_STATIC_ONNXRUNTIME@)
     list(APPEND _snow_ocr_runtime_arguments --static-runtime)
 endif()
@@ -25,10 +30,11 @@ endif()
 if(@SNOW_MACOS_OCR_ASSETS_ENABLED@ AND NOT @SNOW_SHOT_OCR_STATIC_ONNXRUNTIME@)
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" prepare-bundle
         --app "${_app}" --library-dir "${_snow_vcpkg_library_dir}"
+        ${_snow_ocr_model_arguments}
         COMMAND_ERROR_IS_FATAL ANY)
 else()
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" prepare-bundle
-        --app "${_app}" COMMAND_ERROR_IS_FATAL ANY)
+        --app "${_app}" ${_snow_ocr_model_arguments} COMMAND_ERROR_IS_FATAL ANY)
 endif()
 if(NOT @SNOW_SHOT_QT_STATIC@)
     # This dlopen-only library is deliberately renamed to ORT's stable lookup name.
@@ -76,6 +82,14 @@ elseif(@SNOW_SHOT_QT_STATIC@)
                     "Static package contains a non-system dependency: ${_snow_bundle_file}: ${_snow_dependency}")
             endif()
         endforeach()
+        if(@SNOW_SHOT_RELEASE_STATIC@ AND _snow_install_config STREQUAL "release")
+            # The packaging entry point archives UUID-matched dSYMs first. Strip
+            # only deployment copies, retaining external symbols and the build
+            # binaries for diagnostics and development. OCR hashes must describe
+            # the stripped, re-signed worker rather than its build-tree bytes.
+            execute_process(COMMAND /usr/bin/strip -S -x "${_snow_bundle_file}"
+                COMMAND_ERROR_IS_FATAL ANY)
+        endif()
         execute_process(COMMAND /usr/bin/codesign --force --sign "${_snow_codesign_identity}"
             "${_snow_bundle_file}" COMMAND_ERROR_IS_FATAL ANY)
     endforeach()

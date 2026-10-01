@@ -300,8 +300,11 @@ $updaterCargoManifest = Join-Path $repoRoot "snow_shot\rust\snow-shot-updater\Ca
     -CargoManifest @((Join-Path $repoRoot "snow_rust_ffi\Cargo.toml"), $ocrCargoManifest,
         $updaterCargoManifest, (Join-Path $repoRoot "snow_shot\rust\snow-shot-mcp\Cargo.toml")) `
     -CargoOptions @{ (Join-Path $repoRoot "snow_rust_ffi\Cargo.toml") = @('--features', 'selected-text');
+        # The immutable published 1.0.8 worker still contains RapidOCR's former
+        # convenience dependencies. Collect its notices even though the local
+        # raw-pixel worker no longer enables those features.
         $ocrCargoManifest = @('--no-default-features', '--features',
-        'static-onnx-runtime,directml-provider,crash-diagnostics') } `
+        'static-onnx-runtime,directml-provider,crash-diagnostics,rapid-ocr-rs/cli') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `
     -FallbackLicenseDirectory (Join-Path $repoRoot "licenses")
 if ($LASTEXITCODE -ne 0) {

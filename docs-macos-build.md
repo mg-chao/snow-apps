@@ -19,7 +19,9 @@ packaging requires both editions and rejects a Mini-disabled cache.
 Mini removes QR, table, Markdown, HTML, LaTeX, translation, Extended Features,
 and API Configuration. Manual text recognition remains available; its toolbar
 button is hidden by default, and Pin to Screen automatic recognition is off.
-Both macOS bundles include the local OCR worker, runtime, and default models.
+Both macOS bundles include the local OCR worker and runtime. Full also bundles
+the default Small V6 model; Mini downloads the selected model on first use and
+reuses its verified cache afterward.
 
 ```sh
 scripts/build.sh snow-shot-macos-arm64-debug --target snow_shot_mini
@@ -473,8 +475,9 @@ avoid that identity change. Switching from ad-hoc to certificate signing require
 granting permission to the new identity once; later rebuilds retain that grant.
 
 Apple Silicon OCR uses native CPU inference with all seven existing V4/V5/V6
-models. The ARM64 app bundles its worker, ONNX Runtime, and Small V6 model;
-other models download on demand into application storage. No OCR runtime code
+models. Both ARM64 editions bundle their worker and ONNX Runtime. Full also
+bundles Small V6; Mini bundles no model files. Missing selected models download
+on demand into application storage. No OCR runtime code
 is downloaded on macOS. Intel OCR qualification is outside this delivery.
 The Windows updater/installer and DirectML remain Windows-only.
 
@@ -517,7 +520,9 @@ the ARM64 app; verified downloaded models remain reusable.
 
 Build staging checks content on every relevant target build, including a worker-only
 change followed by a host build. Model downloads are verified before promotion and
-cached under `artifacts/`. Packaging requires a complete Small V6 payload. Deployment
+cached under `artifacts/`. Full packaging requires a complete Small V6 payload;
+Mini staging removes previously bundled models and packaging rejects model files
+or directories. Deployment
 resolves the pinned native dependency closure, rewrites relocatable Mach-O loads,
 and signs nested code, generates hashes of the finalized
 runtime, then seals the enclosing app. CPack signs and verifies the DMG before
@@ -558,22 +563,36 @@ the same session, and the worker's resident bytes sampled after each result (not
 peak RSS). Cold means a new worker/model session, without flushing the operating
 system's file cache. They are hardware-dependent observations, not a latency guarantee.
 
-After packaging, relocate the app to a path containing spaces or Unicode and test
-the exact bundle without modifying its signature:
+For a shared performance deployment, relocate the app to a path containing
+spaces or Unicode and test the exact bundle with the matching shared-runtime
+recognition helper, without modifying its signature:
 
 ```sh
 "$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --offline
 "$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --model=extra_small --cache="/tmp/snow-ocr-cache"
 "$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --model=extra_small --cache="/tmp/snow-ocr-cache" --offline
-python3 scripts/snow-shot-macos-ocr.py verify \
-  --runtime-dir="/path/to/Relocated Snow Shot.app/Contents/MacOS" \
-  --app="/path/to/Relocated Snow Shot.app"
 ```
 
-The first run uses a fresh temporary cache and an unreachable download proxy. The
-second acquires another model; the third proves cache reuse without network access.
+For a static Release package, verify its finalized runtime and startup separately:
+
+```sh
+python3 scripts/snow-shot-macos-ocr.py verify \
+  --static-runtime \
+  --runtime-dir="/path/to/Relocated Snow Shot.app/Contents/MacOS" \
+  --app="/path/to/Relocated Snow Shot.app"
+"/path/to/Relocated Snow Shot.app/Contents/MacOS/snow_shot" --startup-probe
+```
+
+The recognition helper's first run uses a fresh temporary cache and an unreachable
+download proxy. The second acquires another model; the third proves cache reuse
+without network access.
 Run with `DYLD_LIBRARY_PATH`, `DYLD_FALLBACK_LIBRARY_PATH`, and `ORT_DYLIB_PATH` unset.
 Also launch the packaged app through Finder and check its screenshot-to-OCR flow.
+
+For Mini, add `--runtime-only` to the Python verification command and use
+`Snow Shot Mini.app` / `snow_shot_mini` for the app and executable paths. A fresh Mini
+cache needs the selected model download before offline recognition can work;
+repeat recognition with the same cache to verify offline reuse.
 
 ## Screenshots
 

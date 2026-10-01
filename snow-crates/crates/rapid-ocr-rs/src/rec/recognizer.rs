@@ -6,9 +6,8 @@ use rayon::prelude::*;
 use crate::{
     config::{LangRec, RecImage, RecognizeOptions, RecognizerConfig, VisionBackend},
     error::{RapidOcrError, Result},
-    model_registry::{ModelRegistry, ResolvedRecModel},
     model_source::{DictionarySource, ModelSource},
-    model_store::{default_model_store_dir, ensure_downloaded, verify_existing_file},
+    model_store::verify_existing_file,
     rec::{
         bidi::reorder_bidi_for_display,
         decode::CtcLabelDecoder,
@@ -19,6 +18,12 @@ use crate::{
     types::{LineResult, RecognizeOutput},
     vision::backend::resolve_backend_strict,
     vision::resize::LinearResizeScratch,
+};
+
+#[cfg(feature = "model-download")]
+use crate::{
+    model_registry::{ModelRegistry, ResolvedRecModel},
+    model_store::{default_model_store_dir, ensure_downloaded},
 };
 
 #[derive(Debug)]
@@ -49,23 +54,29 @@ impl Recognizer {
             ));
         }
 
-        let model_store_dir = config
-            .model_store_dir
-            .clone()
-            .unwrap_or_else(default_model_store_dir);
-        let registry = ModelRegistry::from_default_yaml()?;
-        let resolved = registry.resolve_rec(
-            config.model.ocr_version,
-            config.model.lang,
-            config.model.model_type,
-        )?;
+        #[cfg(feature = "model-download")]
+        let (model_path, character_path) = {
+            let model_store_dir = config
+                .model_store_dir
+                .clone()
+                .unwrap_or_else(default_model_store_dir);
+            let registry = ModelRegistry::from_default_yaml()?;
+            let resolved = registry.resolve_rec(
+                config.model.ocr_version,
+                config.model.lang,
+                config.model.model_type,
+            )?;
 
-        let model_path = resolve_model_path(&config, &resolved, &model_store_dir)?;
-        let character_path = if config.model.rec_keys_path.is_some() {
-            config.model.rec_keys_path.clone()
-        } else {
-            resolve_character_path(&config, &resolved, &model_store_dir)?
+            let model_path = resolve_model_path(&config, &resolved, &model_store_dir)?;
+            let character_path = if config.model.rec_keys_path.is_some() {
+                config.model.rec_keys_path.clone()
+            } else {
+                resolve_character_path(&config, &resolved, &model_store_dir)?
+            };
+            (model_path, character_path)
         };
+        #[cfg(not(feature = "model-download"))]
+        let (model_path, character_path) = resolve_local_sources(&config)?;
 
         Self::new_with_sources(
             config,
@@ -296,6 +307,7 @@ fn align_width(width: usize, alignment: usize) -> Result<usize> {
         .ok_or_else(|| RapidOcrError::InvalidInput("recognition width overflow".to_string()))
 }
 
+#[cfg(feature = "model-download")]
 fn resolve_model_path(
     config: &RecognizerConfig,
     resolved: &ResolvedRecModel,
@@ -318,6 +330,7 @@ fn resolve_model_path(
     )
 }
 
+#[cfg(feature = "model-download")]
 fn resolve_character_path(
     config: &RecognizerConfig,
     resolved: &ResolvedRecModel,
@@ -341,7 +354,29 @@ fn resolve_character_path(
     Ok(Some(path))
 }
 
-#[cfg(all(test, feature = "opencv-backend"))]
+#[cfg(not(feature = "model-download"))]
+fn resolve_local_sources(config: &RecognizerConfig) -> Result<(PathBuf, Option<PathBuf>)> {
+    let path = config.model.model_path.as_ref().ok_or_else(|| {
+        RapidOcrError::Config(
+            "recognizer model_path is not set and model-download feature is disabled".into(),
+        )
+    })?;
+    let model_path = verify_existing_file(path)?;
+    let character_path = config
+        .model
+        .rec_keys_path
+        .as_ref()
+        .map(verify_existing_file)
+        .transpose()?;
+    Ok((model_path, character_path))
+}
+
+#[cfg(all(
+    test,
+    feature = "opencv-backend",
+    feature = "image-io",
+    feature = "model-download"
+))]
 mod tests {
     use std::{fs, path::PathBuf};
 
@@ -494,5 +529,61 @@ mod width_alignment_tests {
     #[test]
     fn zero_width_alignment_is_rejected() {
         assert!(align_width(320, 0).is_err());
+    }
+}
+
+#[cfg(all(test, not(feature = "model-download")))]
+mod local_model_tests {
+    use super::{RecognizerConfig, resolve_local_sources};
+
+    #[test]
+    fn explicit_model_and_dictionary_work_without_registry_or_download_features() {
+        let directory = tempfile::tempdir().expect("temporary model directory");
+        let model_path = directory.path().join("custom-rec.onnx");
+        let dictionary_path = directory.path().join("custom-dict.txt");
+        std::fs::write(&model_path, b"model fixture").expect("model should write");
+        std::fs::write(&dictionary_path, "a\nb\n").expect("dictionary should write");
+        let mut config = RecognizerConfig::default();
+        config.model.model_path = Some(model_path.clone());
+        config.model.rec_keys_path = Some(dictionary_path.clone());
+        config.model.allow_download = false;
+
+        assert_eq!(
+            resolve_local_sources(&config).expect("explicit local files should resolve"),
+            (model_path.clone(), Some(dictionary_path))
+        );
+        config.model.rec_keys_path = None;
+        assert_eq!(
+            resolve_local_sources(&config).expect("embedded model dictionary may be used"),
+            (model_path, None)
+        );
+    }
+
+    #[test]
+    fn missing_local_model_never_falls_back_to_a_download() {
+        let mut config = RecognizerConfig::default();
+        for allow_download in [false, true] {
+            config.model.allow_download = allow_download;
+            let error = resolve_local_sources(&config).expect_err("local model must be supplied");
+            assert!(
+                error
+                    .to_string()
+                    .contains("model-download feature is disabled")
+            );
+        }
+    }
+
+    #[test]
+    fn absent_dictionary_is_rejected_before_runtime_initialization() {
+        let directory = tempfile::tempdir().expect("temporary model directory");
+        let model_path = directory.path().join("rec.onnx");
+        std::fs::write(&model_path, b"model fixture").expect("model should write");
+        let mut config = RecognizerConfig::default();
+        config.model.model_path = Some(model_path);
+        config.model.rec_keys_path = Some(directory.path().join("missing.txt"));
+        assert!(matches!(
+            resolve_local_sources(&config),
+            Err(crate::RapidOcrError::FileNotFound(_))
+        ));
     }
 }

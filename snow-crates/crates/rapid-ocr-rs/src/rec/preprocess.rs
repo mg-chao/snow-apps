@@ -339,7 +339,7 @@ mod tests {
         write_resize_norm_img_into_slice,
     };
     use crate::config::RecImage;
-    #[cfg(feature = "opencv-backend")]
+    #[cfg(all(feature = "opencv-backend", feature = "image-io"))]
     use std::path::PathBuf;
 
     #[test]
@@ -421,7 +421,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "opencv-backend")]
+    #[cfg(all(feature = "opencv-backend", feature = "image-io"))]
     #[test]
     fn pure_rec_preprocess_matches_opencv_on_test_images() {
         let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

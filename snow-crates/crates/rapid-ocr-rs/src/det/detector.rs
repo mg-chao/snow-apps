@@ -7,12 +7,17 @@ use crate::{
     Quad,
     config::{LangDet, ModelType, OcrVersion, RecImage, RuntimeConfig},
     error::{RapidOcrError, Result},
-    model_registry::ModelRegistry,
     model_source::ModelSource,
-    model_store::{default_model_store_dir, ensure_downloaded, verify_existing_file},
+    model_store::verify_existing_file,
     runtime::provider::ProviderResolution,
     runtime::session::{OrtSession, SessionContract},
     vision::backend::resolve_backend_strict,
+};
+
+#[cfg(feature = "model-download")]
+use crate::{
+    model_registry::ModelRegistry,
+    model_store::{default_model_store_dir, ensure_downloaded},
 };
 
 use super::{
@@ -94,22 +99,30 @@ pub struct Detector {
 
 impl Detector {
     pub fn new(config: DetectorConfig) -> Result<Self> {
-        let model_store_dir = config
-            .model_store_dir
-            .clone()
-            .unwrap_or_else(default_model_store_dir);
-
         let model_path = if let Some(path) = &config.model_path {
             verify_existing_file(path)?
         } else if config.allow_download {
-            let registry = ModelRegistry::from_default_yaml()?;
-            let resolved =
-                registry.resolve_det(config.ocr_version, config.lang, config.model_type)?;
-            ensure_downloaded(
-                &resolved.model_url,
-                resolved.sha256.as_deref(),
-                model_store_dir,
-            )?
+            #[cfg(feature = "model-download")]
+            {
+                let model_store_dir = config
+                    .model_store_dir
+                    .clone()
+                    .unwrap_or_else(default_model_store_dir);
+                let registry = ModelRegistry::from_default_yaml()?;
+                let resolved =
+                    registry.resolve_det(config.ocr_version, config.lang, config.model_type)?;
+                ensure_downloaded(
+                    &resolved.model_url,
+                    resolved.sha256.as_deref(),
+                    model_store_dir,
+                )?
+            }
+            #[cfg(not(feature = "model-download"))]
+            {
+                return Err(RapidOcrError::Config(
+                    "detector model_path is not set and model-download feature is disabled".into(),
+                ));
+            }
         } else {
             return Err(RapidOcrError::Config(
                 "detector model_path is not set and allow_download=false".to_string(),
