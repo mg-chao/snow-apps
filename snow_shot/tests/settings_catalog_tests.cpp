@@ -387,9 +387,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 219,
+    require(itemIds.size() == 220,
             qPrintable(QStringLiteral(
-                           "catalog must contain 219 shared settings on every platform; found %1")
+                           "catalog must contain 220 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1347,14 +1347,15 @@ void builtInCatalogIsCompleteAndValid() {
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
     require(interfacePage != nullptr && interfacePage->sections.size() == 8 &&
-                interfacePage->sections.at(1).id == QStringLiteral("skin") &&
-                interfacePage->sections.at(2).id == QStringLiteral("interface-screenshot") &&
-                interfacePage->sections.at(3).id == QStringLiteral("interface-text-recognition") &&
-                interfacePage->sections.at(4).id == QStringLiteral("toolbar") &&
-                interfacePage->sections.at(5).id == QStringLiteral("drawing") &&
-                interfacePage->sections.at(6).id == QStringLiteral("pin-to-screen") &&
-                interfacePage->sections.at(7).id == QStringLiteral("tray"),
-            "Interface settings must place Text Recognition immediately below Screenshot");
+                interfacePage->sections.at(0).id == QStringLiteral("general") &&
+                interfacePage->sections.at(1).id == QStringLiteral("interface-screenshot") &&
+                interfacePage->sections.at(2).id == QStringLiteral("interface-text-recognition") &&
+                interfacePage->sections.at(3).id == QStringLiteral("toolbar") &&
+                interfacePage->sections.at(4).id == QStringLiteral("drawing") &&
+                interfacePage->sections.at(5).id == QStringLiteral("pin-to-screen") &&
+                interfacePage->sections.at(6).id == QStringLiteral("tray") &&
+                interfacePage->sections.at(7).id == QStringLiteral("skin"),
+            "Interface settings must keep the existing section order and place Skin last");
     const auto* toolbarSize =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("toolbar"),
                       QStringLiteral("interface.screenshot.toolbar-size")});
@@ -1364,8 +1365,8 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* screenshotToolbarEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
                       QStringLiteral("interface.screenshot.screenshot-toolbar-editor")});
-    const auto& screenshotSection = interfacePage->sections.at(2);
-    const auto& toolbarSection = interfacePage->sections.at(4);
+    const auto& screenshotSection = interfacePage->sections.at(1);
+    const auto& toolbarSection = interfacePage->sections.at(3);
     const auto* trayIcon =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("tray"),
                       QStringLiteral("interface.tray.icon")});

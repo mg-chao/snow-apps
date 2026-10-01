@@ -3096,6 +3096,14 @@
             <translation>在新的普通截图中默认显示捕获的鼠标光标。</translation>
         </message>
         <message>
+            <source>Show the drawing and close buttons in the upper-right corner of pinned windows</source>
+            <translation>显示贴图窗口右上角的绘图和关闭按钮</translation>
+        </message>
+        <message>
+            <source>Show window buttons</source>
+            <translation>显示窗口按钮</translation>
+        </message>
+        <message>
             <source>Shutter Sound Notification</source>
             <translation>快门声音通知</translation>
         </message>

@@ -513,6 +513,8 @@ class DrawTemplateSettings final {
 
 class PinToScreenSettings final {
   public:
+    [[nodiscard]] bool showWindowButtons() const;
+    bool setShowWindowButtons(bool enabled) const;
     [[nodiscard]] QString doubleClickAction() const;
     bool setDoubleClickAction(const QString& action) const;
     [[nodiscard]] QString middleMouseButtonAction() const;

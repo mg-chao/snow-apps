@@ -1068,6 +1068,9 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
                     if (key.startsWith(QStringLiteral("pin_to_screen_shortcuts/"))) {
                         reloadPinnedWindowShortcuts();
                     }
+                    if (key == QStringLiteral("pin_to_screen/show_window_buttons")) {
+                        updateControlsVisibility();
+                    }
                 });
     }
 }
@@ -3466,9 +3469,10 @@ void ScreenshotPinnedWindow::setControlsPointerInside(bool inside) {
 void ScreenshotPinnedWindow::updateControlsVisibility() {
     if (m_closing)
         return;
-    m_pointerPresence->setPresentation({isVisible(), m_thumbnailMode,
-                                        m_editController != nullptr && m_editController->editMode(),
-                                        m_clickThroughActive, currentNativeGeometry().size()});
+    m_pointerPresence->setPresentation(
+        {isVisible(), m_thumbnailMode, m_editController != nullptr && m_editController->editMode(),
+         m_clickThroughActive, currentNativeGeometry().size(),
+         snow_shot::storage::PinToScreenSettings().showWindowButtons()});
 }
 
 void ScreenshotPinnedWindow::updateControlsGeometry() {

@@ -1967,6 +1967,14 @@ bool DrawTemplateSettings::setTemplates(const QVector<DrawTemplate>& templates) 
     return cache().setValue(QStringLiteral("drawing/draw_templates"), array);
 }
 
+bool PinToScreenSettings::showWindowButtons() const {
+    return cache().value(QStringLiteral("pin_to_screen/show_window_buttons")).toBool();
+}
+
+bool PinToScreenSettings::setShowWindowButtons(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/show_window_buttons"), enabled);
+}
+
 QString PinToScreenSettings::doubleClickAction() const {
     return cache().value(QStringLiteral("pin_to_screen/double_click_action")).toString();
 }

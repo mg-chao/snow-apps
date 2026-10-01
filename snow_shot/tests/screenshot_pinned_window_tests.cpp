@@ -6357,6 +6357,9 @@ void pinnedControlsVisibilityPolicy() {
     suppressed = normal;
     suppressed.clickThrough = true;
     verifySuppression(suppressed);
+    suppressed = normal;
+    suppressed.controlsEnabled = false;
+    verifySuppression(suppressed);
     for (const QSize size : {QSize(), QSize(382, 383), QSize(383, 382)}) {
         suppressed = normal;
         suppressed.nativeSize = size;
@@ -6378,6 +6381,55 @@ void pinnedControlsVisibilityPolicy() {
     presence.setActive(false);
     presence.enter();
     require(!presence.inside(), "inactive pins must ignore late entry");
+}
+
+void pinnedWindowButtonsFollowSettings() {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const bool previous = settings.showWindowButtons();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(settings.setShowWindowButtons(previous)); });
+    require(settings.setShowWindowButtons(false), "disable window buttons before creating a pin");
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto* platform = ScreenshotPinnedWindowTestAccess::installObservedPlatform(window);
+    platform->observed = QRect(40, 40, 600, 400);
+    window.resize(platform->observed.size());
+    window.show();
+    auto* panel = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    auto* edit =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedEditButton"));
+    auto* close =
+        window.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinnedCloseButton"));
+    require(panel && edit && close, "the settings fixture needs both window buttons");
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(50, 50));
+    QCoreApplication::sendEvent(&window, &enter);
+    require(!panel->isVisible() && !edit->isVisible() && !close->isVisible(),
+            "new pinned windows must honor disabled window buttons even on hover");
+    require(settings.setShowWindowButtons(true) && panel->isVisible() && edit->isVisible() &&
+                close->isVisible(),
+            "enabling window buttons must immediately reveal both on a hovered pin");
+    require(settings.setShowWindowButtons(false) && !panel->isVisible() && !edit->isVisible() &&
+                !close->isVisible(),
+            "disabling window buttons must immediately hide both on an existing pin");
+    window.resize(window.size() + QSize(20, 20));
+    QCoreApplication::sendEvent(edit, &enter);
+    require(!panel->isVisible(), "resizing and pointer events must preserve disabled controls");
+    platform->observed.setSize(QSize(382, 400));
+    window.resize(platform->observed.size());
+    require(settings.setShowWindowButtons(true) && !panel->isVisible(),
+            "enabling window buttons must preserve the minimum-size restriction");
+    platform->observed.setSize(QSize(600, 400));
+    window.resize(platform->observed.size());
+    require(panel->isVisible(), "an enabled pin must reveal controls when its size permits");
+    QEvent leave(QEvent::Leave);
+    QCoreApplication::sendEvent(&window, &leave);
+    auto& timer = ScreenshotPinnedWindowTestAccess::pointerPresenceTimer(window);
+    timer.stop();
+    require(QMetaObject::invokeMethod(&timer, "timeout"), "deliver the pointer exit deadline");
+    require(settings.setShowWindowButtons(false) && settings.setShowWindowButtons(true) &&
+                !panel->isVisible(),
+            "enabling window buttons must preserve the hover restriction");
+    window.close();
 }
 
 void pinnedPointerPresenceFollowsEvents() {
@@ -14912,6 +14964,7 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--pointer-presence-only"))) {
             pinnedControlsVisibilityPolicy();
+            pinnedWindowButtonsFollowSettings();
             pinnedPointerPresenceFollowsEvents();
             pinnedPointerPresenceIsDebounced();
             pinnedControlsRemainAboveRecognitionContent();
