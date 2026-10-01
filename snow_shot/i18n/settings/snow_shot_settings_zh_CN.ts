@@ -876,12 +876,12 @@
             <translation>调整 MP4 画质和文件大小</translation>
         </message>
         <message>
-            <source>Adjust the opacity of the skin image</source>
-            <translation>调整皮肤图像的不透明度</translation>
+            <source>Adjust the image opacity for all three skins.</source>
+            <translation>调整三种皮肤的图像不透明度。</translation>
         </message>
         <message>
-            <source>Adjust the theme background opacity of the title bar, side navigation bar and pages</source>
-            <translation>调整标题栏、侧边导航栏和页面的主题背景不透明度</translation>
+            <source>Adjust the theme background opacity over all three skins to keep controls and text readable.</source>
+            <translation>调整三种皮肤上方的主题背景不透明度，以保持控件和文字清晰可读。</translation>
         </message>
         <message>
             <source>Age</source>
@@ -966,6 +966,10 @@
         <message>
             <source>Application shortcuts</source>
             <translation>应用快捷键</translation>
+        </message>
+        <message>
+            <source>Applies to all three skins. Overlay fills each surface and crops the edges. Contain shows the whole image.</source>
+            <translation>适用于三种皮肤。覆盖模式填满各个界面并裁剪边缘，适应模式显示完整图像。</translation>
         </message>
         <message>
             <source>Apply to recognized text when editing or copying</source>
@@ -1060,6 +1064,18 @@
             <translation>边框颜色</translation>
         </message>
         <message>
+            <source>Bottom center</source>
+            <translation>底部居中</translation>
+        </message>
+        <message>
+            <source>Bottom left</source>
+            <translation>左下角</translation>
+        </message>
+        <message>
+            <source>Bottom right</source>
+            <translation>右下角</translation>
+        </message>
+        <message>
             <source>Browse</source>
             <translation>浏览</translation>
         </message>
@@ -1112,8 +1128,20 @@
             <translation>录制时捕获工具栏</translation>
         </message>
         <message>
+            <source>Center</source>
+            <translation>居中</translation>
+        </message>
+        <message>
+            <source>Center left</source>
+            <translation>左侧居中</translation>
+        </message>
+        <message>
             <source>Center on mouse position</source>
             <translation>以鼠标位置为中心</translation>
+        </message>
+        <message>
+            <source>Center right</source>
+            <translation>右侧居中</translation>
         </message>
         <message>
             <source>Check automatically</source>
@@ -1126,6 +1154,14 @@
         <message>
             <source>Child elements</source>
             <translation>子元素</translation>
+        </message>
+        <message>
+            <source>Choose an image for Snow Shot's custom tray menu. Native system menus keep their system appearance. Clear the path to remove this skin.</source>
+            <translation>为 Snow Shot 自定义托盘菜单选择图像。系统原生菜单保留系统外观。清空路径可移除此皮肤。</translation>
+        </message>
+        <message>
+            <source>Choose an image for the screenshot, pin-to-screen, full-screen canvas and screen recording toolbar rows. Clear the path to remove this skin.</source>
+            <translation>为截图、贴图、全屏画布和录屏工具栏选择图像。清空路径可移除此皮肤。</translation>
         </message>
         <message>
             <source>Choose how much execution time the application receives</source>
@@ -1198,6 +1234,10 @@
         <message>
             <source>Choose the functions shown in the system tray menu</source>
             <translation>选择系统托盘菜单中显示的功能</translation>
+        </message>
+        <message>
+            <source>Choose the image alignment within this surface.</source>
+            <translation>选择图像在此界面内的对齐位置。</translation>
         </message>
         <message>
             <source>Choose the page size for manually and automatically saved PDF files</source>
@@ -1496,8 +1536,8 @@
             <translation>自定义翻译端点和并发数</translation>
         </message>
         <message>
-            <source>Customize the main interface background</source>
-            <translation>自定义主界面背景</translation>
+            <source>Customize the main interface, toolbar rows and custom tray menu</source>
+            <translation>自定义主界面、工具栏和自定义托盘菜单</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -1716,8 +1756,8 @@
             <translation>输入或浏览选择 PNG 或 ICO 文件；无效文件将使用所选内置图标</translation>
         </message>
         <message>
-            <source>Enter or browse to a PNG, JPG or WebP image. Clear the path to remove the skin.</source>
-            <translation>输入或浏览选择 PNG、JPG 或 WebP 图像路径。清空路径可移除皮肤。</translation>
+            <source>Enter or browse to a PNG, JPG or WebP image for the main interface. Clear the path to remove this skin.</source>
+            <translation>输入或浏览选择用于主界面的 PNG、JPG 或 WebP 图像。清空路径可移除此皮肤。</translation>
         </message>
         <message>
             <source>Eraser</source>
@@ -2112,6 +2152,14 @@
             <translation>放大镜可见性</translation>
         </message>
         <message>
+            <source>Main Interface Skin Path</source>
+            <translation>主界面皮肤路径</translation>
+        </message>
+        <message>
+            <source>Main Interface Skin Position</source>
+            <translation>主界面皮肤位置</translation>
+        </message>
+        <message>
             <source>Manage Snow Shot's login permission in macOS System Settings</source>
             <translation>在 macOS 系统设置中管理 Snow Shot 的登录权限</translation>
         </message>
@@ -2326,10 +2374,6 @@
         <message>
             <source>Overlay</source>
             <translation>覆盖</translation>
-        </message>
-        <message>
-            <source>Overlay fills the window and crops the edges. Contain shows the whole image.</source>
-            <translation>覆盖模式铺满窗口并裁剪边缘。适应模式完整显示图像。</translation>
         </message>
         <message>
             <source>PDF</source>
@@ -3064,10 +3108,6 @@
             <translation>皮肤不透明度</translation>
         </message>
         <message>
-            <source>Skin Path</source>
-            <translation>皮肤路径</translation>
-        </message>
-        <message>
             <source>Small</source>
             <translation>小</translation>
         </message>
@@ -3112,8 +3152,8 @@
             <translation>雪花浅色</translation>
         </message>
         <message>
-            <source>Soften the skin image with blur</source>
-            <translation>通过模糊柔化皮肤图像</translation>
+            <source>Soften all three skin images with blur.</source>
+            <translation>通过模糊柔化三种皮肤图像。</translation>
         </message>
         <message>
             <source>Software updates</source>
@@ -3304,12 +3344,32 @@
             <translation>工具栏</translation>
         </message>
         <message>
+            <source>Toolbar Skin Path</source>
+            <translation>工具栏皮肤路径</translation>
+        </message>
+        <message>
+            <source>Toolbar Skin Position</source>
+            <translation>工具栏皮肤位置</translation>
+        </message>
+        <message>
             <source>Toolbar size</source>
             <translation>工具栏大小</translation>
         </message>
         <message>
             <source>Tools that forbid quick selection of same-type elements</source>
             <translation>禁止快速选择同类型元素的工具</translation>
+        </message>
+        <message>
+            <source>Top center</source>
+            <translation>顶部居中</translation>
+        </message>
+        <message>
+            <source>Top left</source>
+            <translation>左上角</translation>
+        </message>
+        <message>
+            <source>Top right</source>
+            <translation>右上角</translation>
         </message>
         <message>
             <source>Translate Selected Text</source>
@@ -3342,6 +3402,14 @@
         <message>
             <source>Tray</source>
             <translation>托盘</translation>
+        </message>
+        <message>
+            <source>Tray Menu Skin Path</source>
+            <translation>托盘菜单皮肤路径</translation>
+        </message>
+        <message>
+            <source>Tray Menu Skin Position</source>
+            <translation>托盘菜单皮肤位置</translation>
         </message>
         <message>
             <source>Tray appearance</source>

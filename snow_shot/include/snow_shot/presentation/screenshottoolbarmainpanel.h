@@ -8,7 +8,11 @@
 #include <QFrame>
 #include <QMargins>
 #include <QPainterPath>
+#include <QPixmap>
+#include <QPointer>
 #include <QVector>
+
+#include <optional>
 
 class QBoxLayout;
 class QEvent;
@@ -19,19 +23,39 @@ class QWidget;
 namespace adqt::widgets {
 class AdButton;
 }
+namespace snow_shot::presentation {
+class MainWindowSkinController;
+}
+namespace snow_shot::storage {
+class ConfigurationStore;
+}
 
 // Surface, shadow and separators shared by main and secondary toolbar rows.
 class ScreenshotToolbarPanel : public QFrame {
   public:
     explicit ScreenshotToolbarPanel(QWidget* parent = nullptr);
+    ~ScreenshotToolbarPanel() override;
     void setPanelScale(qreal scale);
     [[nodiscard]] QPainterPath surfacePath() const;
     static QString separatorStyleSheet();
 
   protected:
+    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
   private:
+    void syncSkinConfiguration();
+    void syncSkin();
+    void syncSkinFrame();
+    void syncSkinAppearance(bool frameChanged = false);
+    bool releaseSkin();
+    QPointer<snow_shot::storage::ConfigurationStore> m_skinConfiguration;
+    QPointer<snow_shot::presentation::MainWindowSkinController> m_skinController;
+    QPixmap m_skinFrame;
+    QRectF m_skinPlacement;
+    qreal m_skinImageOpacity = 1.0;
+    std::optional<qreal> m_skinMaskOpacity;
+    bool m_skinAttached = false;
     qreal m_panelRadius = 8.0;
     qreal m_panelScale = 0.0;
 };

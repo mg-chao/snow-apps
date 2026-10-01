@@ -205,6 +205,37 @@ void dirtyRenderTargetCornersAreCleared() {
     }
 }
 
+void preparedSkinPreservesRoundedSurfaceAtFractionalDpi() {
+    for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+        adqt::widgets::AdContextMenu menu;
+        menu.setNativeMenuEnabled(false);
+        populateProductionSizedMenu(menu);
+        menu.ensurePolished();
+        menu.adjustSize();
+        QPixmap skin(20, 20);
+        skin.fill(QColor(QStringLiteral("#e53355")));
+        menu.setBackgroundFrame({skin, QRectF(0.0, 0.0, 1.0, 1.0), 1.0, 0.0});
+        QImage image(QSize(qRound(menu.width() * dpr), qRound(menu.height() * dpr)),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::black);
+        {
+            QPainter painter(&image);
+            menu.render(&painter);
+        }
+        for (const QPoint& corner : cornerPixels(image.size())) {
+            require(image.pixelColor(corner).alpha() == 0,
+                    "prepared skins must preserve transparent popup corners at fractional DPI");
+        }
+        const QColor border = image.pixelColor(image.width() / 2, 0);
+        require(border.blue() > border.red() && border.alpha() > 0,
+                "prepared skins must preserve the themed outer border");
+        menu.resetBackgroundFrame();
+        require(menu.backgroundFrame().image.isNull(),
+                "clearing a skin must release its prepared popup raster");
+    }
+}
+
 void borderGeometryUsesWholeDevicePixels() {
     constexpr std::array<qreal, 4> devicePixelRatios = {1.0, 1.25, 1.5, 2.0};
     for (const qreal devicePixelRatio : devicePixelRatios) {
@@ -444,6 +475,7 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     adqt::theme::ThemeManager::instance().applyTo(application);
     try {
+        preparedSkinPreservesRoundedSurfaceAtFractionalDpi();
 #ifdef Q_OS_MACOS
         adqt::widgets::AdContextMenu menu;
         QMenu baseline;

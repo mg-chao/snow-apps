@@ -285,11 +285,7 @@ void widgetContracts(QApplication& application) {
         require(widget != nullptr, "page constructs custom model renderer");
         auto* header = page.findChild<SectionHeaderWidget*>(settings::generatedObjectName(
             QStringLiteral("settings-section"), QStringLiteral("api-configuration-ai-model")));
-<<<<<<< Updated upstream
         require(header != nullptr, "AI model category header exists");
-=======
-        require(header != nullptr, "custom model category exposes its own section header");
->>>>>>> Stashed changes
         auto* reset = header->findChild<AdButton*>(QStringLiteral("sectionResetButton"));
         auto* confirmation = header->findChild<AdPopconfirm*>();
         require(reset != nullptr && reset->isVisible() && reset->isEnabled() &&

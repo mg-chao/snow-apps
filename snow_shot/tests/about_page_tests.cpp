@@ -33,6 +33,7 @@
 #include <QPointer>
 #include <QProgressBar>
 #include <QScrollBar>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
@@ -75,6 +76,69 @@ void snapshot(QWidget& widget, const QString& name) {
         require(widget.grab().save(QDir(directory).filePath(name + QStringLiteral(".png"))),
                 "save About preview");
     }
+}
+
+class StyleChangeRecorder final : public QObject {
+  public:
+    QStringList styles;
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::StyleChange) {
+            styles.push_back(static_cast<QWidget*>(watched)->styleSheet());
+        }
+        return false;
+    }
+};
+
+void themeAndSkinChangesUpdateOnlyAffectedBackgrounds() {
+    auto& themeManager = styles::ThemeManager::instance();
+    themeManager.setThemeAppearance(styles::ThemeAppearance::Light);
+    AboutPageWidget page;
+    page.resize(920, 680);
+    page.show();
+    flushEvents();
+    auto* panel = child<QWidget>(page, "aboutVersionPanel");
+    auto* name = child<QLabel>(page, "aboutProductName");
+    StyleChangeRecorder recorder;
+    panel->installEventFilter(&recorder);
+    for (const auto appearance : {styles::ThemeAppearance::Dark, styles::ThemeAppearance::Light}) {
+        const QString previous = panel->styleSheet();
+        recorder.styles.clear();
+        themeManager.setThemeAppearance(appearance);
+        require(recorder.styles.size() == 1 && recorder.styles.first() != previous,
+                "an unskinned About theme change must apply its new background exactly once");
+    }
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    QWidget unrelated;
+    adqt::theme::ThemeOverride unrelatedOverride;
+    unrelatedOverride.backgroundOpacity = 0.4;
+    recorder.styles.clear();
+    controlTheme.setScopeOverride(&unrelated, unrelatedOverride);
+    require(recorder.styles.isEmpty(),
+            "an unrelated skin must not restyle the unskinned About backgrounds");
+    controlTheme.clearScopeOverride(&unrelated);
+    const QFont nameFont = name->font();
+    const QString opaque = panel->styleSheet();
+    for (const qreal opacity : {0.4, 0.0, 1.0}) {
+        adqt::theme::ThemeOverride overrideValue;
+        overrideValue.backgroundOpacity = opacity;
+        recorder.styles.clear();
+        controlTheme.setScopeOverride(&page, overrideValue);
+        require(!recorder.styles.isEmpty() && name->font() == nameFont,
+                "About skin opacity edits must update backgrounds without changing typography");
+        if (opacity == 1.0) {
+            require(panel->styleSheet() == opaque,
+                    "full About mask opacity must restore its original background style");
+        } else {
+            require(panel->styleSheet() != opaque,
+                    "About backgrounds must reflect a translucent skin mask");
+        }
+    }
+    recorder.styles.clear();
+    controlTheme.clearScopeOverride(&page);
+    require(recorder.styles.isEmpty(),
+            "removing an already opaque skin scope must not restyle About backgrounds");
 }
 
 void versionIsExactSelectableAndCopyable() {
@@ -913,6 +977,7 @@ int main(int argc, char** argv) {
     require(storage.initialize({directory.path(), directory.path(), 8000}).success,
             "initialize isolated storage");
     styles::ThemeManager::instance().initialize(application);
+    themeAndSkinChangesUpdateOnlyAffectedBackgrounds();
     versionIsExactSelectableAndCopyable();
     absentVersionDoesNotInventARelease();
     stableVersionsDoNotClaimToBePreviews();

@@ -37,6 +37,7 @@
 #include <QPainter>
 #include <QRegion>
 #include <QScopeGuard>
+#include <QStringList>
 #include <QCryptographicHash>
 #include <QUuid>
 #include <QLabel>
@@ -134,6 +135,51 @@ class SkinBackdrop final : public QWidget {
         painter.fillRect(rect(), color);
     }
 };
+
+class StyleChangeRecorder final : public QObject {
+  public:
+    QStringList styles;
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::StyleChange) {
+            styles.push_back(static_cast<QWidget*>(watched)->styleSheet());
+        }
+        return false;
+    }
+};
+
+void historyThemeChangesDoNotRestyleTwice() {
+    auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
+    themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
+    MutableHistoryDataSource source;
+    source.setRecords(historyRecords(2));
+    ScreenshotHistoryPageWidget page(&source, nullptr);
+    page.resize(980, 640);
+    page.show();
+    flushEvents();
+    auto* badge = page.findChild<QLabel*>(QStringLiteral("screenshotHistorySourceBadge"));
+    require(badge != nullptr, "the history theme regression needs a seeded source badge");
+    StyleChangeRecorder recorder;
+    badge->installEventFilter(&recorder);
+    for (const auto appearance : {snow_shot::presentation::styles::ThemeAppearance::Dark,
+                                  snow_shot::presentation::styles::ThemeAppearance::Light}) {
+        const QString previous = badge->styleSheet();
+        recorder.styles.clear();
+        themeManager.setThemeAppearance(appearance);
+        require(recorder.styles.size() == 1 && recorder.styles.first() != previous,
+                "an unskinned history theme change must apply each source badge exactly once");
+    }
+    QWidget unrelated;
+    adqt::theme::ThemeOverride overrideValue;
+    overrideValue.backgroundOpacity = 0.4;
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    recorder.styles.clear();
+    controlTheme.setScopeOverride(&unrelated, overrideValue);
+    controlTheme.clearScopeOverride(&unrelated);
+    require(recorder.styles.isEmpty(),
+            "an unrelated skin must not restyle unskinned history source badges");
+}
 
 void historyRowsRespectSkinMask() {
     MutableHistoryDataSource source;
@@ -1053,6 +1099,7 @@ int main(int argc, char** argv) {
                 .initialize({temporary.path(), temporary.path(), 8000})
                 .success,
             "isolated application storage must initialize");
+    historyThemeChangesDoNotRestyleTwice();
     historyRowsRespectSkinMask();
     continuousHistoryPreview();
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();

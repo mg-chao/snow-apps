@@ -85,9 +85,9 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* skin =
         catalog.section(QStringLiteral("interface-settings"), QStringLiteral("skin"));
     require(skin != nullptr && skin->title.translated() == QStringLiteral("Skin") &&
-                skin->reset == settings::SettingsSectionReset::Skin && skin->items.size() == 5 &&
-                skinRegistry.fieldsForReset(settings::SettingsSectionReset::Skin).size() == 5,
-            "skin settings must expose exactly five fields in an independent reset group");
+                skin->reset == settings::SettingsSectionReset::Skin && skin->items.size() == 10 &&
+                skinRegistry.fieldsForReset(settings::SettingsSectionReset::Skin).size() == 10,
+            "skin settings must expose exactly ten fields in an independent reset group");
     const auto* skinPath =
         skinRegistry.fieldForFilePath(settings::SettingsFilePathBinding::SkinPath);
     const auto* skinMode =
@@ -109,6 +109,41 @@ void builtInCatalogIsCompleteAndValid() {
                 skinModeOptions.at(1).value.toString() == QStringLiteral("contain") &&
                 skinModeOptions.at(1).label.translated() == QStringLiteral("Contain"),
             "skin display modes must expose stable Overlay and Contain choices");
+    const QStringList expectedPositions = {
+        QStringLiteral("top_left"),    QStringLiteral("top_center"),
+        QStringLiteral("top_right"),   QStringLiteral("center_left"),
+        QStringLiteral("center"),      QStringLiteral("center_right"),
+        QStringLiteral("bottom_left"), QStringLiteral("bottom_center"),
+        QStringLiteral("bottom_right")};
+    for (const auto binding : {settings::SettingsSelectBinding::SkinPosition,
+                               settings::SettingsSelectBinding::ToolbarSkinPosition,
+                               settings::SettingsSelectBinding::TrayMenuSkinPosition}) {
+        const auto* field = skinRegistry.fieldForSelect(binding);
+        require(field != nullptr && field->sectionId == QStringLiteral("skin") &&
+                    field->defaultValue.toString() == QStringLiteral("center"),
+                "each surface must have its own centered image-position default");
+        QStringList positions;
+        const auto& options =
+            std::get<settings::SettingsSelectDefinition>(field->definition->payload).options;
+        for (const auto& option : options) {
+            positions.push_back(option.value.toString());
+            require(!option.label.translated().isEmpty(),
+                    "skin positions must have translated labels");
+        }
+        require(positions == expectedPositions,
+                "every skin position selector must expose the same nine stable alignment IDs");
+    }
+    for (const auto binding : {settings::SettingsFilePathBinding::ToolbarSkinPath,
+                               settings::SettingsFilePathBinding::TrayMenuSkinPath}) {
+        const auto* field = skinRegistry.fieldForFilePath(binding);
+        require(
+            field != nullptr && field->sectionId == QStringLiteral("skin") &&
+                field->defaultValue.toString().isEmpty() &&
+                std::get<settings::SettingsFilePathDefinition>(field->definition->payload)
+                    .fileFilter.translated()
+                    .contains(QStringLiteral("*.png *.jpg *.jpeg *.webp")),
+            "toolbar and tray skins must have independent empty paths and supported image filters");
+    }
     for (const auto binding : {settings::SettingsSliderBinding::SkinOpacity,
                                settings::SettingsSliderBinding::SkinBlurLevel,
                                settings::SettingsSliderBinding::SkinMaskOpacity}) {
@@ -352,15 +387,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-<<<<<<< Updated upstream
-    require(itemIds.size() == 208,
+    require(itemIds.size() == 218,
             qPrintable(QStringLiteral(
-                           "catalog must contain 208 shared settings on every platform; found %1")
-=======
-    require(itemIds.size() == 209,
-            qPrintable(QStringLiteral(
-                           "catalog must contain 209 shared settings on every platform; found %1")
->>>>>>> Stashed changes
+                           "catalog must contain 218 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =

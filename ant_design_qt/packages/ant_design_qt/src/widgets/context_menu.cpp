@@ -21,6 +21,7 @@
 #include <QShowEvent>
 #include <QStyleOptionMenuItem>
 #include <algorithm>
+#include <cmath>
 
 #include "theme/theme.h"
 
@@ -390,9 +391,38 @@ class AdContextMenuStyle final : public QProxyStyle {
     painter->fillRect(option->rect, Qt::transparent);
     painter->setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setPen(detail::makeButtonBorderPen(visual.border, logicalBorderWidth, Qt::SolidLine));
-    painter->setBrush(visual.background);
-    painter->drawPath(path);
+    const auto background = menu_->backgroundFrame();
+    if (background.image.isNull()) {
+      painter->setPen(
+          detail::makeButtonBorderPen(visual.border, logicalBorderWidth, Qt::SolidLine));
+      painter->setBrush(visual.background);
+      painter->drawPath(path);
+    } else {
+      QColor base = visual.background;
+      base.setAlpha(255);
+      painter->setPen(Qt::NoPen);
+      painter->setBrush(base);
+      painter->drawPath(path);
+      painter->save();
+      painter->setClipPath(path);
+      const QRectF placement = background.normalizedPlacement;
+      const QRectF target(option->rect.x() + placement.x() * option->rect.width(),
+                          option->rect.y() + placement.y() * option->rect.height(),
+                          placement.width() * option->rect.width(),
+                          placement.height() * option->rect.height());
+      painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+      painter->setOpacity(background.imageOpacity);
+      painter->drawPixmap(target, background.image, QRectF(background.image.rect()));
+      painter->setOpacity(1.0);
+      QColor mask = visual.background;
+      mask.setAlphaF(mask.alphaF() * static_cast<float>(background.maskOpacity));
+      painter->fillRect(option->rect, mask);
+      painter->restore();
+      painter->setPen(
+          detail::makeButtonBorderPen(visual.border, logicalBorderWidth, Qt::SolidLine));
+      painter->setBrush(Qt::NoBrush);
+      painter->drawPath(path);
+    }
     painter->restore();
   }
 
@@ -551,6 +581,7 @@ class AdContextMenu::Private {
  public:
   ColorScheme colorScheme = ColorScheme::Inherit;
   ComponentTokens componentTokens;
+  BackgroundFrame backgroundFrame;
   QPointer<QWidget> triggerWidget;
   QPointer<detail::AdContextMenuStyle> menuStyle;
   quint64 popupGeneration = 0;
@@ -709,6 +740,40 @@ void AdContextMenu::resetComponentTokens() {
   refreshVisuals(true);
   emit componentTokensChanged();
 }
+
+AdContextMenu::BackgroundFrame AdContextMenu::backgroundFrame() const {
+  return d_->backgroundFrame;
+}
+
+void AdContextMenu::setBackgroundFrame(const BackgroundFrame& frame) {
+  BackgroundFrame normalized = frame;
+  const QRectF placement = frame.normalizedPlacement;
+  if (frame.image.isNull() || !placement.isValid() || !std::isfinite(placement.x()) ||
+      !std::isfinite(placement.y()) || !std::isfinite(placement.width()) ||
+      !std::isfinite(placement.height())) {
+    normalized = {};
+  } else {
+    normalized.imageOpacity = std::isfinite(frame.imageOpacity)
+                                  ? std::clamp(frame.imageOpacity, qreal(0.0), qreal(1.0))
+                                  : 1.0;
+    normalized.maskOpacity = std::isfinite(frame.maskOpacity)
+                                 ? std::clamp(frame.maskOpacity, qreal(0.0), qreal(1.0))
+                                 : 0.8;
+  }
+  const auto& previous = d_->backgroundFrame;
+  if (previous.image.cacheKey() == normalized.image.cacheKey() &&
+      previous.normalizedPlacement == normalized.normalizedPlacement &&
+      previous.imageOpacity == normalized.imageOpacity &&
+      previous.maskOpacity == normalized.maskOpacity) {
+    return;
+  }
+  d_->backgroundFrame = std::move(normalized);
+  if (!d_->useNativeMenu) {
+    update();
+  }
+}
+
+void AdContextMenu::resetBackgroundFrame() { setBackgroundFrame({}); }
 
 QWidget* AdContextMenu::triggerWidget() const { return d_->triggerWidget.data(); }
 

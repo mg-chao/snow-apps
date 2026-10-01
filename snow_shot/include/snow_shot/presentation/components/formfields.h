@@ -34,10 +34,10 @@ enum class CommitPolicy { Immediate, OnFinish, Explicit };
 
 struct Metadata {
     QString id;
-    settings::TranslatableText label;
-    settings::TranslatableText description;
-    settings::TranslatableText placeholder;
-    settings::TranslatableText suffix;
+    settings::TranslatableText label = {};
+    settings::TranslatableText description = {};
+    settings::TranslatableText placeholder = {};
+    settings::TranslatableText suffix = {};
 };
 
 struct Options {
@@ -58,8 +58,8 @@ struct Options {
 
 struct Choice {
     QVariant value;
-    settings::TranslatableText label;
-    QString text;
+    settings::TranslatableText label = {};
+    QString text = {};
     bool enabled = true;
 };
 
@@ -99,7 +99,7 @@ class FormField final : public QObject {
     void syncValue(const QVariant& value);
     void synchronize(const std::function<void()>& update);
     void setMetadata(const Metadata& metadata);
-    void setDescriptionOverride(const QString& description);
+    void setDescriptionOverride(const QString& description, bool error = false);
     void setChoices(const QVector<Choice>& choices);
     void setFeedback(const QStringList& errors = {}, const QStringList& warnings = {},
                      bool busy = false);
