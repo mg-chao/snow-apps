@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYCANVASPRESENTER_H
 
 #include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 #include "snow_shot/presentation/screenshottypes.h"
 
@@ -45,6 +46,8 @@ class ScreenshotOverlayCanvasPresenter final {
     void clearGuideLines(const ScreenshotDisplaySession& displaySession) const;
     void setOverlayCursor(ScreenshotOverlayWindow* overlay,
                           ScreenshotSelectionDragMode dragMode) const;
+    static void setOverlayEffectCursor(ScreenshotOverlayWindow* overlay,
+                                       ScreenshotSelectionEffectHandle handle);
     void setCanvasInteractionEnabled(const ScreenshotDisplaySession& displaySession,
                                      bool enabled) const;
     void setCanvasTool(const ScreenshotDisplaySession& displaySession, SnowCanvasTool tool) const;

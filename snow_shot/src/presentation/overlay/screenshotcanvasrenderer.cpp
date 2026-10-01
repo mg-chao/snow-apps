@@ -218,6 +218,26 @@ QRegion selectionStateHandleRegion(const ScreenshotSelectionVisualState& state,
     return damage;
 }
 
+QRegion selectionEffectEditorRegion(const ScreenshotSelectionVisualState& state,
+                                    const QRect& viewportRect, const QTransform& canvasToView) {
+    if (!state.present || !state.effectEditorsVisible || state.toolbarHovered)
+        return {};
+    const auto layout = screenshotSelectionEffectLayout(state.bounds, state.cornerRadius,
+                                                        canvasToView, viewportRect);
+    if (!layout.available)
+        return {};
+    QRegion damage(QRectF(layout.shadowAnchor, layout.shadow)
+                       .normalized()
+                       .adjusted(-9, -9, 9, 9)
+                       .toAlignedRect());
+    const auto handle = screenshotSelectionRadiusHandle(state.activeEffectHandle)
+                            ? state.activeEffectHandle
+                            : state.hoveredEffectHandle;
+    if (screenshotSelectionRadiusHandle(handle))
+        damage += QRectF(layout.position(handle) - QPointF(8, 8), QSizeF(16, 16)).toAlignedRect();
+    return damage.intersected(viewportRect);
+}
+
 QRegion selectionStateDecorationRegion(const ScreenshotSelectionVisualState& state,
                                        const QRect& viewportRect,
                                        const QTransform& canvasToViewTransform) {
@@ -226,7 +246,9 @@ QRegion selectionStateDecorationRegion(const ScreenshotSelectionVisualState& sta
         return {};
     }
     const qreal scale = viewScale(canvasToViewTransform);
-    const qreal shadow = state.toolbarHovered ? std::max(0, state.shadowWidth) * scale : 0.0;
+    const qreal shadow = (state.toolbarHovered || state.effectPreviewVisible)
+                             ? std::max(0, state.shadowWidth) * scale
+                             : 0.0;
     const qreal padding = shadow + kSelectionBorderUpdatePadding;
     QRegion decoration(selectionBounds.adjusted(-padding, -padding, padding, padding)
                            .toAlignedRect()
@@ -241,6 +263,7 @@ QRegion selectionStateDecorationRegion(const ScreenshotSelectionVisualState& sta
     }
 
     decoration += selectionStateHandleRegion(state, viewportRect, canvasToViewTransform);
+    decoration += selectionEffectEditorRegion(state, viewportRect, canvasToViewTransform);
     return decoration;
 }
 
@@ -554,15 +577,25 @@ QRegion planScreenshotSelectionDamage(const ScreenshotSelectionVisualState& prev
     if (!canvasToViewTransform.isInvertible()) {
         return QRegion(viewportRect);
     }
+    auto decorationOnly = previous;
+    decorationOnly.effectEditorsVisible = next.effectEditorsVisible;
+    decorationOnly.hoveredEffectHandle = next.hoveredEffectHandle;
+    decorationOnly.activeEffectHandle = next.activeEffectHandle;
+    if (decorationOnly == next) {
+        return selectionEffectEditorRegion(previous, viewportRect, canvasToViewTransform) |
+               selectionEffectEditorRegion(next, viewportRect, canvasToViewTransform);
+    }
     QRegion dirtyRegion =
         selectionStateDecorationRegion(previous, viewportRect, canvasToViewTransform);
     dirtyRegion += selectionStateDecorationRegion(next, viewportRect, canvasToViewTransform);
     // Shadow changes also repaint the transparent rounded corner squares.
     const bool hoveredShadowChanged =
-        (previous.toolbarHovered || next.toolbarHovered) &&
+        (previous.toolbarHovered || next.toolbarHovered || previous.effectPreviewVisible ||
+         next.effectPreviewVisible) &&
         (previous.shadowWidth != next.shadowWidth || previous.shadowColor != next.shadowColor);
     if (previous.bounds != next.bounds || previous.cornerRadius != next.cornerRadius ||
-        previous.toolbarHovered != next.toolbarHovered || hoveredShadowChanged) {
+        previous.toolbarHovered != next.toolbarHovered ||
+        previous.effectPreviewVisible != next.effectPreviewVisible || hoveredShadowChanged) {
         dirtyRegion +=
             selectionStateRoundedCornerRegion(previous, viewportRect, canvasToViewTransform);
         dirtyRegion += selectionStateRoundedCornerRegion(next, viewportRect, canvasToViewTransform);
@@ -2053,7 +2086,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
     if (m_renderMode == RenderMode::Standard && m_selectionState.present) {
         const QColor selectionAccent = m_selectionBorderColor;
         const QRectF selectionView = context.canvasToViewTransform.mapRect(m_selectionState.bounds);
-        if (m_selectionState.toolbarHovered) {
+        if (m_selectionState.toolbarHovered || m_selectionState.effectPreviewVisible) {
             if (shaped) {
                 const QRect bounds = m_selectionState.region->boundingRect();
                 if (!bounds.isEmpty()) {
@@ -2108,7 +2141,8 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                                       visibleCornerRadius, m_selectionState.shadowWidth,
                                       m_selectionState.shadowColor, &m_canvas);
             }
-        } else if (m_selectionState.borderVisible) {
+        }
+        if (!m_selectionState.toolbarHovered && m_selectionState.borderVisible) {
             painter.setPen(QPen(selectionAccent, kSelectionBorderWidth));
             painter.setBrush(Qt::NoBrush);
             // Cache in local physical-pixel coordinates. Integer-pixel moves
@@ -2151,6 +2185,33 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             painter.setPen(QPen(Qt::white, kSelectionHandleStrokeWidth));
             for (std::size_t index = 0; index < handleCount; ++index) {
                 painter.drawEllipse(handles[index], kSelectionHandleRadius, kSelectionHandleRadius);
+            }
+        }
+        if (m_selectionState.effectEditorsVisible && !m_selectionState.toolbarHovered) {
+            const auto layout = screenshotSelectionEffectLayout(
+                m_selectionState.bounds, visibleCornerRadius, context.canvasToViewTransform,
+                context.viewportRect);
+            if (layout.available) {
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.setPen(QPen(selectionAccent, 1.5));
+                painter.drawLine(layout.shadowAnchor, layout.shadow);
+                painter.setPen(QPen(Qt::white, 1.5));
+                painter.setBrush(selectionAccent);
+                painter.drawRoundedRect(QRectF(layout.shadow - QPointF(6, 6), QSizeF(12, 12)), 3,
+                                        3);
+                painter.setPen(QPen(Qt::white, 1));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRoundedRect(QRectF(layout.shadow - QPointF(2, 1), QSizeF(5, 4)), 1, 1);
+                painter.drawRoundedRect(QRectF(layout.shadow - QPointF(3, 3), QSizeF(5, 4)), 1, 1);
+                const auto handle =
+                    screenshotSelectionRadiusHandle(m_selectionState.activeEffectHandle)
+                        ? m_selectionState.activeEffectHandle
+                        : m_selectionState.hoveredEffectHandle;
+                if (screenshotSelectionRadiusHandle(handle)) {
+                    painter.setBrush(selectionAccent);
+                    painter.setPen(QPen(Qt::white, 1.5));
+                    painter.drawEllipse(layout.position(handle), 4, 4);
+                }
             }
         }
     }

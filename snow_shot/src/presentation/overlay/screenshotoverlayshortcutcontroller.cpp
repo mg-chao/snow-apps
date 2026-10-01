@@ -243,6 +243,9 @@ struct ScreenshotOverlayShortcutController::Impl {
             binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
             binding.autoRepeat = actionId.startsWith(QStringLiteral("move_cursor_"));
             binding.canActivate = [this, actionId](const auto&) {
+                if (inputHandler.effectDragActive() &&
+                    actionId != QStringLiteral("cancel_screenshot"))
+                    return false;
                 if (actionId == QStringLiteral("toggle_guides")) {
                     return !interaction.inactive() && actions.localShortcutInputAllowed();
                 }
@@ -380,7 +383,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return true;
                 }
                 if (actionId == QStringLiteral("cancel_screenshot")) {
-                    return inputHandler.cancelRegionOperation() ||
+                    return inputHandler.cancelEffectDrag() ||
+                           inputHandler.cancelRegionOperation() ||
                            actions.cancelCaptureViaShortcut();
                 }
                 return activateToolbarShortcut(actionId, false);

@@ -7,6 +7,9 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
+#include "snow_draw_engine_qt/snow_canvas_cursor.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
+#include "icon_renderer.h"
 
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include <QGuiApplication>
@@ -337,7 +340,8 @@ void updateOverlayStateForDisplaySession(const ScreenshotDisplaySession& display
         }
     });
     updateOverlayCursorsForDisplaySession(displaySession, intelligentSelecting || manualSelecting,
-                                          dragging);
+                                          dragging || selectionState.hoveredEffectHandle !=
+                                                          ScreenshotSelectionEffectHandle::None);
 }
 } // namespace
 
@@ -521,6 +525,21 @@ void ScreenshotOverlayCanvasPresenter::setOverlayCursor(
         canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
         break;
     }
+}
+
+void ScreenshotOverlayCanvasPresenter::setOverlayEffectCursor(
+    ScreenshotOverlayWindow* overlay, ScreenshotSelectionEffectHandle handle) {
+    auto* canvas = overlay != nullptr ? overlay->canvas() : nullptr;
+    if (canvas == nullptr)
+        return;
+    const qreal dpr = canvas->devicePixelRatioF();
+    const QCursor cursor =
+        handle == ScreenshotSelectionEffectHandle::Shadow
+            ? adqt::icons::makeCursor(
+                  snow_shot::presentation::icons::custom::cursor::SelectionShadowCursor(),
+                  QSize(32, 32), QPoint(3, 3), dpr)
+            : snowCanvasCornerRadiusCursor(dpr);
+    canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, cursor);
 }
 
 namespace {

@@ -28,6 +28,8 @@ def main() -> int:
             defaults = {"secondary": "#9254DE"}
         elif name in {"snow-shot-logo", "snow-shot-mini-logo"}:
             variant = "brand"
+        elif name == "selection-shadow-cursor":
+            variant, model = "cursor", "fullColor"
         entry = {
             "variant": variant,
             "symbol": symbol(name),

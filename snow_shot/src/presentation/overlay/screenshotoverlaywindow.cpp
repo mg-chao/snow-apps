@@ -670,6 +670,11 @@ void ScreenshotOverlayWindow::initializeScreenshotSurface() {
 }
 
 bool ScreenshotOverlayWindow::event(QEvent* event) {
+    if (event != nullptr &&
+        (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate)) {
+        m_eventSink.cancelEffectDrag();
+        m_eventSink.leaveEffectEditors();
+    }
     if (event != nullptr && event->type() == QEvent::Hide) {
         clearScrollingResultPreview();
     }
@@ -722,6 +727,12 @@ bool ScreenshotOverlayWindow::event(QEvent* event) {
 }
 
 bool ScreenshotOverlayWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_canvas && event != nullptr) {
+        if (event->type() == QEvent::Leave)
+            m_eventSink.leaveEffectEditors();
+        if (event->type() == QEvent::UngrabMouse || event->type() == QEvent::Hide)
+            m_eventSink.cancelEffectDrag();
+    }
     if (watched == m_canvas && event != nullptr && event->type() == QEvent::MouseMove &&
         m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->setGuideCursorPosition(static_cast<QMouseEvent*>(event)->position());
@@ -946,6 +957,11 @@ bool ScreenshotOverlayWindow::handleCanvasMouseEvent(QMouseEvent* event) {
     }
 
     if (event->type() == QEvent::MouseButtonDblClick && event->button() == Qt::LeftButton &&
+        m_eventSink.handleEffectDoubleClick(this, event->position())) {
+        event->accept();
+        return true;
+    }
+    if (event->type() == QEvent::MouseButtonDblClick && event->button() == Qt::LeftButton &&
         m_eventSink.handleRegionDoubleClick(this, event->position())) {
         event->accept();
         return true;
@@ -965,11 +981,13 @@ bool ScreenshotOverlayWindow::handleCanvasMouseEvent(QMouseEvent* event) {
     // A drawing gesture owns the pointer until the canvas releases its grab. The
     // selection border may cross that gesture, but cannot take over its moves or release.
     if (m_canvas != nullptr && QWidget::mouseGrabber() == m_canvas &&
+        !m_eventSink.effectDragActive() &&
         (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonRelease)) {
         return false;
     }
 
     if (event->type() == QEvent::MouseMove && !event->buttons().testFlag(Qt::LeftButton)) {
+        m_eventSink.cancelEffectDrag();
         m_eventSink.handleOverlayMouseMove(this, event->position());
     }
 

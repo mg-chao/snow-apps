@@ -3490,6 +3490,13 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-canvas-renderer-tests
         tests/screenshot_canvas_renderer_tests.cpp
+        tests/screenshot_selection_effect_editor_tests.cpp
+        src/presentation/overlay/screenshotoverlayinputhandler.cpp
+        src/presentation/overlay/screenshotoverlayinteractionadapter.cpp
+        src/presentation/overlay/screenshotoverlayshortcutcontroller.cpp
+        include/snow_shot/presentation/screenshotoverlayshortcutcontroller.h
+        src/presentation/selection/screenshotselectioneditworkflow.cpp
+        src/presentation/selection/screenshotselectionsettingsstore.cpp
         tests/screenshot_cursor_tests.cpp
         src/presentation/services/screenshotsourceimagecomposer.cpp
         src/presentation/services/screenshotimagefileservice.cpp
@@ -3545,6 +3552,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-cursor-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --cursor-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-cursor-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-selection-effect-editor-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --selection-effect-editors-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-effect-editor-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-selection-effect-preview-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --selection-effect-preview-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-effect-preview-tests PROPERTIES LABELS "unit")
     snow_shot_link_macos_window_platform(snow-shot-screenshot-canvas-renderer-tests)
     target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"

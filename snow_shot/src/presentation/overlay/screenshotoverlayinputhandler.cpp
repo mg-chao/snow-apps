@@ -11,6 +11,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
+#include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
 #include <QApplication>
 #include <QLineF>
@@ -51,6 +52,173 @@ ScreenshotOverlayInputHandler::ScreenshotOverlayInputHandler(
         if (customRegionInputActive() && m_context.selection.constructionActive())
             updateRegionDraft(m_pendingRegionPointer, m_pendingRegionEdge);
     });
+}
+
+ScreenshotOverlayInputHandler::~ScreenshotOverlayInputHandler() {
+    // Rollback owns only the selection and a guarded mouse-grab widget, not UI services.
+    static_cast<void>(m_context.interaction.cancelEffectDrag());
+}
+
+bool ScreenshotOverlayInputHandler::effectDragActive() const {
+    return m_context.interaction.effectGesture().has_value();
+}
+
+ScreenshotSelectionEffectLayout
+ScreenshotOverlayInputHandler::effectLayout(const ScreenshotOverlayWindow* overlay) const {
+    if (!m_context.interaction.moveToolActive() || !m_context.interaction.movingSelection() ||
+        m_context.interaction.effectEditorsSuppressed() || !m_context.selection.rectangular() ||
+        !m_context.selection.cornerRadiusApplicable() || m_externalDragActive)
+        return {};
+    const auto* canvas = m_context.actions.effectCanvas(overlay);
+    return screenshotSelectionEffectLayout(
+        m_context.selection.normalizedSelection(), m_context.selection.cornerRadius(),
+        canvas != nullptr ? canvas->canvasToViewTransform() : QTransform(),
+        canvas != nullptr ? QRectF(canvas->rect()) : m_context.geometry.canvasBounds());
+}
+
+ScreenshotSelectionEffectHandle
+ScreenshotOverlayInputHandler::effectHandleAt(const ScreenshotOverlayWindow* overlay,
+                                              const QPointF& localPosition) const {
+    const auto layout = effectLayout(overlay);
+    if (!layout.available || m_context.interaction.dragging())
+        return ScreenshotSelectionEffectHandle::None;
+    if (QLineF(localPosition, layout.shadow).length() <= 8)
+        return ScreenshotSelectionEffectHandle::Shadow;
+    const auto hovered = m_context.interaction.hoveredEffectHandle();
+    if (screenshotSelectionRadiusHandle(hovered) &&
+        QLineF(localPosition, layout.position(hovered)).length() <= 8)
+        return hovered;
+    return layout.nearestCorner(localPosition, 8);
+}
+
+bool ScreenshotOverlayInputHandler::updateEffectHover(ScreenshotOverlayWindow* overlay,
+                                                      const QPointF& localPosition) {
+    const auto layout = effectLayout(overlay);
+    auto handle = ScreenshotSelectionEffectHandle::None;
+    if (layout.available && !m_context.interaction.dragging()) {
+        const auto previous = m_context.interaction.hoveredEffectHandle();
+        if (screenshotSelectionRadiusHandle(previous) &&
+            QLineF(localPosition, layout.position(previous)).length() <= 24)
+            handle = previous;
+        else
+            handle = layout.nearestCorner(localPosition, 18);
+        if (QLineF(localPosition, layout.shadow).length() <= 8)
+            handle = ScreenshotSelectionEffectHandle::Shadow;
+    }
+    if (m_context.interaction.hoveredEffectHandle() != handle) {
+        m_context.interaction.setHoveredEffectHandle(handle);
+        m_context.actions.updateOverlayState();
+    }
+    const auto hit = effectHandleAt(overlay, localPosition);
+    if (hit != ScreenshotSelectionEffectHandle::None) {
+        m_context.actions.setEffectCursor(overlay, hit);
+        return true;
+    }
+    return false;
+}
+
+bool ScreenshotOverlayInputHandler::beginEffectDrag(ScreenshotOverlayWindow* overlay,
+                                                    const QPointF& localPosition) {
+    const auto handle = effectHandleAt(overlay, localPosition);
+    if (handle == ScreenshotSelectionEffectHandle::None)
+        return false;
+    const auto layout = effectLayout(overlay);
+    const int original = handle == ScreenshotSelectionEffectHandle::Shadow
+                             ? m_context.selection.shadowWidth()
+                             : m_context.selection.cornerRadius();
+    QPointer<SnowCanvasWidget> grab = m_context.actions.effectCanvas(overlay);
+    auto* selection = &m_context.selection;
+    if (!m_context.interaction.beginEffectDrag(
+            {handle, virtualPositionForOverlay(overlay, localPosition), original,
+             layout.maximumRadius, layout.radiusPerCanvasUnit,
+             [this, selection, handle, original, grab] {
+                 m_consumeEffectRelease = true;
+                 m_effectMouseGrab.clear();
+                 if (handle == ScreenshotSelectionEffectHandle::Shadow)
+                     static_cast<void>(selection->setShadowWidth(original));
+                 else
+                     static_cast<void>(selection->setCornerRadius(original));
+                 if (grab != nullptr) {
+                     grab->clearCursorForLayer(SnowCanvasCursorLayer::Host);
+                     if (QWidget::mouseGrabber() == grab)
+                         grab->releaseMouse();
+                 }
+             }}))
+        return false;
+    m_consumeEffectRelease = false;
+    m_effectMouseGrab = grab;
+    if (grab != nullptr)
+        grab->grabMouse();
+    m_context.actions.updateOverlayState();
+    m_context.actions.setEffectCursor(overlay, handle);
+    return true;
+}
+
+void ScreenshotOverlayInputHandler::updateEffectDrag(const QPointF& canvasPosition) {
+    if (!effectDragActive())
+        return;
+    const auto gesture = *m_context.interaction.effectGesture();
+    const QPointF delta = canvasPosition - gesture.pressPosition;
+    int value = gesture.originalValue;
+    if (gesture.handle == ScreenshotSelectionEffectHandle::Shadow) {
+        value = qRound(std::clamp(
+            value + delta.x(), 0.0,
+            static_cast<qreal>(snow_shot::presentation::kScreenshotSelectionShadowWidthMax)));
+    } else if (!delta.isNull()) {
+        const auto direction = screenshotSelectionRadiusInwardDirection(gesture.handle);
+        value = qRound(std::clamp(std::min<qreal>(value, gesture.maximumRadius) +
+                                      (delta.x() * direction.x() + delta.y() * direction.y()) /
+                                          2.0 * gesture.radiusPerCanvasUnit,
+                                  0.0, std::floor(gesture.maximumRadius)));
+    }
+    if (m_context.actions.previewSelectionEffect)
+        m_context.actions.previewSelectionEffect(gesture.handle, value);
+    else {
+        const bool changed = gesture.handle == ScreenshotSelectionEffectHandle::Shadow
+                                 ? m_context.selection.setShadowWidth(value)
+                                 : m_context.selection.setCornerRadius(value);
+        if (changed)
+            m_context.actions.updateOverlayState();
+    }
+}
+
+void ScreenshotOverlayInputHandler::finishEffectDrag(ScreenshotOverlayWindow* overlay,
+                                                     const QPointF& localPosition) {
+    const auto gesture = *m_context.interaction.effectGesture();
+    updateEffectDrag(virtualPositionForOverlay(overlay, localPosition));
+    const int value = gesture.handle == ScreenshotSelectionEffectHandle::Shadow
+                          ? m_context.selection.shadowWidth()
+                          : m_context.selection.cornerRadius();
+    m_context.interaction.finishEffectDrag();
+    if (m_effectMouseGrab != nullptr && QWidget::mouseGrabber() == m_effectMouseGrab)
+        m_effectMouseGrab->releaseMouse();
+    m_effectMouseGrab.clear();
+    if (value != gesture.originalValue)
+        m_context.actions.commitSelectionEffects();
+    m_context.actions.updateOverlayState();
+    handleHoverMove(overlay, localPosition);
+}
+
+bool ScreenshotOverlayInputHandler::cancelEffectDrag() {
+    if (!m_context.interaction.cancelEffectDrag())
+        return false;
+    m_effectMouseGrab.clear();
+    m_consumeEffectRelease = true;
+    m_context.actions.updateOverlayState();
+    return true;
+}
+
+void ScreenshotOverlayInputHandler::leaveEffectEditors() {
+    if (!effectDragActive() &&
+        m_context.interaction.hoveredEffectHandle() != ScreenshotSelectionEffectHandle::None) {
+        m_context.interaction.setHoveredEffectHandle(ScreenshotSelectionEffectHandle::None);
+        m_context.actions.updateOverlayState();
+    }
+}
+
+bool ScreenshotOverlayInputHandler::handleEffectDoubleClick(ScreenshotOverlayWindow* overlay,
+                                                            const QPointF& position) {
+    return acceptInput() && (effectDragActive() || beginEffectDrag(overlay, position));
 }
 
 ScreenshotSelectionDragMode ScreenshotOverlayInputHandler::selectionResizeDragModeAtCanvasPosition(
@@ -141,6 +309,9 @@ void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* ov
         static_cast<void>(m_context.actions.sampleCanvasColor(overlay, localPosition));
         return;
     }
+    if (effectDragActive() || beginEffectDrag(overlay, localPosition))
+        return;
+    m_consumeEffectRelease = false;
     updateGuideLines(overlay, localPosition);
     m_context.actions.updateColorPickerForOverlay(overlay, localPosition);
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
@@ -323,6 +494,9 @@ void ScreenshotOverlayInputHandler::handleIntelligentSelectionPress(
 bool ScreenshotOverlayInputHandler::shouldHandleMouseEvent(const ScreenshotOverlayWindow* overlay,
                                                            const QPointF& localPosition,
                                                            bool leftButtonActive) const {
+    if (effectDragActive() || m_consumeEffectRelease ||
+        effectHandleAt(overlay, localPosition) != ScreenshotSelectionEffectHandle::None)
+        return true;
     if (m_externalDragActive || customRegionInputActive() || m_consumeRegionRelease)
         return true;
     if (m_canvasColorSamplingArmed) {
@@ -357,6 +531,10 @@ void ScreenshotOverlayInputHandler::handleMouseMove(ScreenshotOverlayWindow* ove
         return;
     if (m_externalDragActive)
         return;
+    if (effectDragActive()) {
+        updateEffectDrag(virtualPositionForOverlay(overlay, localPosition));
+        return;
+    }
     if (m_canvasColorSamplingArmed) {
         m_context.actions.previewCanvasColor(overlay, localPosition);
         return;
@@ -419,6 +597,8 @@ void ScreenshotOverlayInputHandler::handleIntelligentSelectionMove(ScreenshotOve
 
 void ScreenshotOverlayInputHandler::handleHoverMove(ScreenshotOverlayWindow* overlay,
                                                     const QPointF& localPosition) {
+    if (updateEffectHover(overlay, localPosition))
+        return;
     const ScreenshotActiveTool activeTool = m_context.interaction.activeTool();
     if (m_context.interaction.movingSelection() ||
         (m_context.interaction.manualSelecting() && m_context.selection.hasPixelSelection()) ||
@@ -476,6 +656,14 @@ void ScreenshotOverlayInputHandler::handleMouseRelease(ScreenshotOverlayWindow* 
         return;
     if (m_externalDragActive)
         return;
+    if (effectDragActive()) {
+        finishEffectDrag(overlay, localPosition);
+        return;
+    }
+    if (m_consumeEffectRelease) {
+        m_consumeEffectRelease = false;
+        return;
+    }
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
     if (m_consumeRegionRelease) {
         m_consumeRegionRelease = false;
@@ -558,6 +746,8 @@ ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay
     if (!acceptInput())
         return ScreenshotOverlayRightClickResult::Handled;
     if (m_externalDragActive)
+        return ScreenshotOverlayRightClickResult::Handled;
+    if (cancelEffectDrag())
         return ScreenshotOverlayRightClickResult::Handled;
     if (m_canvasColorSamplingArmed) {
         cancelCanvasColorSampling();
@@ -655,6 +845,8 @@ bool ScreenshotOverlayInputHandler::shouldBlockUnhandledKeyInput() const {
 }
 
 bool ScreenshotOverlayInputHandler::activateMoveEntireSelectionShortcut() {
+    if (effectDragActive())
+        return false;
     if (!(m_context.interaction.movingSelection() || m_context.interaction.modifyingSelection() ||
           m_context.interaction.manualSelecting()) ||
         !m_context.actions.localShortcutInputAllowed()) {
@@ -686,6 +878,8 @@ bool ScreenshotOverlayInputHandler::activateMoveEntireSelectionShortcut() {
 
 bool ScreenshotOverlayInputHandler::activateKeepSelectionAspectRatioShortcut(
     bool cycleColorFormatIfUnused) {
+    if (effectDragActive())
+        return false;
     // The shortcut must arm in every state a constrained selection drag can
     // start from. Intelligent selection is the pre-selection state, where the
     // key is held in advance of the pointer drag.
@@ -906,7 +1100,8 @@ void ScreenshotOverlayInputHandler::handleUnhandledMiddleClick() {
 void ScreenshotOverlayInputHandler::executeConfiguredCompletionAction(const QString& action) {
     // Unhandled completion gestures share capture-state eligibility across all tools.
     // Region construction retains ownership until its final release is consumed.
-    if (m_externalDragActive || customRegionInputActive() || m_consumeRegionRelease)
+    if (effectDragActive() || m_externalDragActive || customRegionInputActive() ||
+        m_consumeRegionRelease)
         return;
     if (!(m_context.interaction.movingSelection() || m_context.interaction.editing() ||
           m_context.interaction.scrollingCapture()) ||
@@ -1035,6 +1230,8 @@ void ScreenshotOverlayInputHandler::restoreScrollingCaptureAfterFailedResize() {
 }
 
 void ScreenshotOverlayInputHandler::resetTransientShortcuts() {
+    static_cast<void>(cancelEffectDrag());
+    leaveEffectEditors();
     cancelCanvasColorSampling();
     restoreToolAfterSelectionResize();
     restoreScrollingCaptureAfterFailedResize();
@@ -1119,6 +1316,7 @@ bool ScreenshotOverlayInputHandler::customRegionInputActive() const {
 }
 
 void ScreenshotOverlayInputHandler::setRegionType(ScreenshotRegionType type) {
+    static_cast<void>(cancelEffectDrag());
     if (type == m_context.selection.regionType())
         return;
     m_regionPreviewTimer.stop();

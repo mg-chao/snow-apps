@@ -2,6 +2,10 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTINTERACTIONSTATE_H
 
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
+
+#include <functional>
+#include <optional>
 
 class ScreenshotSelectionModel;
 
@@ -47,6 +51,36 @@ enum class ScreenshotCaptureMode {
 
 class ScreenshotInteractionState final {
   public:
+    struct EffectGesture {
+        ScreenshotSelectionEffectHandle handle = ScreenshotSelectionEffectHandle::None;
+        QPointF pressPosition;
+        int originalValue = 0;
+        qreal maximumRadius = 0;
+        qreal radiusPerCanvasUnit = 0;
+        std::function<void()> rollback;
+    };
+
+    bool beginEffectDrag(EffectGesture gesture);
+    void finishEffectDrag();
+    bool cancelEffectDrag();
+    const std::optional<EffectGesture>& effectGesture() const {
+        return m_effectGesture;
+    }
+    ScreenshotSelectionEffectHandle hoveredEffectHandle() const {
+        return m_hoveredEffectHandle;
+    }
+    void setHoveredEffectHandle(ScreenshotSelectionEffectHandle handle) {
+        m_hoveredEffectHandle = handle;
+    }
+    bool effectEditorsSuppressed() const {
+        return m_effectEditorsSuppressed;
+    }
+    void setEffectEditorsSuppressed(bool suppressed) {
+        m_effectEditorsSuppressed = suppressed;
+        if (suppressed)
+            resetEffectEditors();
+    }
+
     void reset();
     void beginCapture();
     void enterOverlayVisible(bool selectorReady);
@@ -84,6 +118,10 @@ class ScreenshotInteractionState final {
     [[nodiscard]] bool selectionHandlesVisible() const;
 
   private:
+    void resetEffectEditors();
+    std::optional<EffectGesture> m_effectGesture;
+    ScreenshotSelectionEffectHandle m_hoveredEffectHandle = ScreenshotSelectionEffectHandle::None;
+    bool m_effectEditorsSuppressed = false;
     ScreenshotActiveTool m_activeTool = ScreenshotActiveTool::Move;
     ScreenshotCaptureMode m_mode = ScreenshotCaptureMode::Inactive;
     ScreenshotSelectionDragMode m_dragMode = ScreenshotSelectionDragMode::None;

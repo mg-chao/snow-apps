@@ -21,6 +21,11 @@ namespace brand {
 [[nodiscard]] adqt::icons::IconRef SnowShotMiniLogo(const adqt::icons::IconColors& colors = {});
 } // namespace brand
 
+namespace cursor {
+[[nodiscard]] adqt::icons::IconRef
+SelectionShadowCursor(const adqt::icons::IconColors& colors = {});
+} // namespace cursor
+
 namespace outlined {
 [[nodiscard]] adqt::icons::IconRef AlignBottom(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef

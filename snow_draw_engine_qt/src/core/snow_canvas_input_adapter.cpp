@@ -1,4 +1,5 @@
 #include "snow_canvas_input_adapter.h"
+#include "snow_draw_engine_qt/snow_canvas_cursor.h"
 #include "icons/draw_engine_icons.h"
 #include "icon_renderer.h"
 
@@ -10,11 +11,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 
-namespace snow_canvas_input {
-
-namespace {
-
-QCursor cornerRadiusCursor(qreal devicePixelRatio) {
+QCursor snowCanvasCornerRadiusCursor(qreal devicePixelRatio) {
     constexpr int kCursorLogicalSize = 32;
     constexpr QPoint kHotSpot(3, 3);
     return adqt::icons::makeCursor(snow::draw_engine::icons::cursor::CornerRadius(),
@@ -22,7 +19,7 @@ QCursor cornerRadiusCursor(qreal devicePixelRatio) {
                                    devicePixelRatio);
 }
 
-} // namespace
+namespace snow_canvas_input {
 
 QCursor strokeCursor(double diameter, const std::optional<QColor>& color, bool crosshair,
                      qreal devicePixelRatio) {
@@ -70,7 +67,7 @@ QCursor cursorForSnowCursor(SnowCursorStyle style, qreal devicePixelRatio) {
     case SNOW_CURSOR_STYLE_CROSSHAIR:
         return QCursor(Qt::CrossCursor);
     case SNOW_CURSOR_STYLE_CORNER_RADIUS:
-        return cornerRadiusCursor(devicePixelRatio);
+        return snowCanvasCornerRadiusCursor(devicePixelRatio);
     case SNOW_CURSOR_STYLE_GRAB:
     case SNOW_CURSOR_STYLE_GRABBING:
 #ifdef Q_OS_WIN
