@@ -1648,6 +1648,10 @@
             <translation>Disk usage</translation>
         </message>
         <message>
+            <source>Display the original image beside recognition and translation results.</source>
+            <translation>Display the original image beside recognition and translation results.</translation>
+        </message>
+        <message>
             <source>Display translated text in the original image</source>
             <translation>Display translated text in the original image</translation>
         </message>
@@ -3066,6 +3070,10 @@
         <message>
             <source>Show main window</source>
             <translation>Show main window</translation>
+        </message>
+        <message>
+            <source>Show original image preview</source>
+            <translation>Show original image preview</translation>
         </message>
         <message>
             <source>Show screenshot guides when a capture starts</source>

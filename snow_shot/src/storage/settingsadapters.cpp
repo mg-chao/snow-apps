@@ -251,6 +251,15 @@ bool TextRecognitionSettings::setSaveRecognitionResultAsImage(bool enabled) cons
                             enabled);
 }
 
+bool TextRecognitionSettings::showOriginalImagePreview() const {
+    return cache().value(QStringLiteral("text_recognition/show_original_image_preview")).toBool();
+}
+
+bool TextRecognitionSettings::setShowOriginalImagePreview(bool enabled) const {
+    return cache().setValue(QStringLiteral("text_recognition/show_original_image_preview"),
+                            enabled);
+}
+
 QString TextRecognitionSettings::defaultFormatting() const {
     return cache().value(QStringLiteral("text_recognition/default_formatting")).toString();
 }

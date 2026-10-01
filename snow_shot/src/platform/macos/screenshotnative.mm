@@ -597,6 +597,23 @@ void configureScreenshotRecognitionWindow(QWidget* widget) {
     registerScreenshotLayer(widget, kRecognitionLayer);
 }
 
+bool stackScreenshotWindowBelow(QWidget* widget, QWidget* sibling) {
+    if (QGuiApplication::platformName() != QStringLiteral("cocoa") || !widget || !sibling ||
+        widget == sibling || !widget->isWindow() || !sibling->isWindow() || !widget->isVisible() ||
+        !sibling->isVisible() || !widget->internalWinId() || !sibling->internalWinId())
+        return false;
+    NSWindow* native = reinterpret_cast<NSView*>(widget->internalWinId()).window;
+    NSWindow* above = reinterpret_cast<NSView*>(sibling->internalWinId()).window;
+    if (!native || !above || !native.visible || !above.visible)
+        return false;
+    if (native.level != above.level)
+        return native.level < above.level;
+    // QWidget::raise() activates the process in Qt Cocoa. Native relative ordering preserves
+    // the existing owner, window level, key window, and application activation state.
+    [native orderWindow:NSWindowBelow relativeTo:above.windowNumber];
+    return true;
+}
+
 void setScreenshotInputTransparent(QWidget* widget, bool transparent) {
     if (!widget || QGuiApplication::platformName() != QStringLiteral("cocoa"))
         return;

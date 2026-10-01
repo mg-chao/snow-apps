@@ -37,6 +37,7 @@
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "snow_shot/presentation/screenshotoriginalimagepreviewwindow.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/presentation/screenshotfilepinbatch.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
@@ -138,6 +139,22 @@
 void runPinnedOriginalImageTranslationTests();
 void runPinnedHideToTopControllerTests();
 
+class ScreenshotOriginalImagePreviewWindowTestAccess {
+  public:
+    static const QImage& raster(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_viewportImage;
+    }
+    static const QImage& source(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_sourceImage;
+    }
+    static QRectF imageRect(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_imageRectInViewport;
+    }
+    static quint64 rasterGeneration(const ScreenshotOriginalImagePreviewWindow& window) {
+        return window.m_rasterGeneration;
+    }
+};
+
 class FailingPinnedPlatform final : public snow_shot::presentation::PinnedWindowPlatform {
   public:
     FailingPinnedPlatform(QWidget* window, std::unique_ptr<PinnedWindowPlatform> backend)
@@ -236,6 +253,36 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static void beginAuxiliaryInteraction(ScreenshotPinnedWindow& window) {
+        window.beginAuxiliaryWindowInteraction();
+    }
+    static void endAuxiliaryInteraction(ScreenshotPinnedWindow& window) {
+        window.endAuxiliaryWindowInteraction();
+    }
+    static bool auxiliaryInteractionActive(const ScreenshotPinnedWindow& window) {
+        return window.m_auxiliaryWindowInteractionActive;
+    }
+    static void originalPreviewFrameReady(ScreenshotPinnedWindow& window) {
+        window.m_firstContentFramePublished = true;
+    }
+    static bool moveForOriginalPreview(ScreenshotPinnedWindow& window, const QPoint& delta) {
+        return window.applyWindowGeometry(window.authoritativeNativeGeometry().translated(delta),
+                                          ScreenshotPinnedWindow::GeometryMutation::Move);
+    }
+    static ScreenshotImageSource originalPreviewSource(const ScreenshotPinnedWindow& window) {
+        return window.m_screenshotRenderer->imageSourceSnapshot();
+    }
+    static QRect originalPreviewTargetGeometry(const ScreenshotPinnedWindow& window) {
+        return window.m_nativeGeometryController->targetGeometry();
+    }
+    static int originalPreviewGeometryPhase(const ScreenshotPinnedWindow& window) {
+        return static_cast<int>(window.m_nativeGeometryController->phase());
+    }
+    static void setOriginalPreviewSource(ScreenshotPinnedWindow& window,
+                                         ScreenshotImageSource source) {
+        window.m_screenshotRenderer->setImageSource(std::move(source));
+        window.updateRecognitionContentGeometry();
+    }
     static ScreenshotPinnedDragExport& dragExport(ScreenshotPinnedWindow& window) {
         if (!window.m_dragExport)
             window.m_dragExport = std::make_unique<ScreenshotPinnedDragExport>();
@@ -450,6 +497,24 @@ class ScreenshotPinnedWindowTestAccess {
         static_cast<void>(window.handleMiddleClick(window.rect().center()));
     }
 #ifdef Q_OS_WIN
+    static bool beginPreviewNativeMove(ScreenshotPinnedWindow& window) {
+        if (!window.m_nativeGeometryController->beginMove(QPoint())) {
+            return false;
+        }
+        window.m_windowDragActive = true;
+        return true;
+    }
+    static bool previewNativeMoveActive(const ScreenshotPinnedWindow& window) {
+        return window.m_windowDragActive;
+    }
+    static void previewNativeMessage(ScreenshotPinnedWindow& window, UINT message) {
+        MSG nativeMessage{};
+        nativeMessage.hwnd = reinterpret_cast<HWND>(window.winId());
+        nativeMessage.message = message;
+        qintptr result = 0;
+        static_cast<void>(PinnedWindowWindowsEvents::handle(
+            window, QByteArrayLiteral("windows_generic_MSG"), &nativeMessage, &result));
+    }
     static bool beginNoMotionNativeMove(ScreenshotPinnedWindow& window) {
         POINT cursor{};
         return GetCursorPos(&cursor) != FALSE && window.m_nativeGeometryController != nullptr &&
@@ -1684,6 +1749,302 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
     config.recognitionResults.key = QStringLiteral("cached-ocr-audit");
     config.recognitionResults.text = ScreenshotOcrRecognitionResult{presentation, {}, {}, {}};
     return config;
+}
+
+void pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using PreviewAccess = ScreenshotOriginalImagePreviewWindowTestAccess;
+    const snow_shot::storage::TextRecognitionSettings settings;
+    const bool previousPreview = settings.showOriginalImagePreview();
+    const auto restoreSetting = qScopeGuard(
+        [&] { static_cast<void>(settings.setShowOriginalImagePreview(previousPreview)); });
+    require(settings.setShowOriginalImagePreview(true), "enable the original-image preview");
+    const snow_shot::storage::PinToScreenSettings pinSettings;
+    const QString previousSelection = pinSettings.textSelectionOnRecognitionResults();
+    const auto restoreSelection = qScopeGuard([&] {
+        static_cast<void>(pinSettings.setTextSelectionOnRecognitionResults(previousSelection));
+    });
+    require(pinSettings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
+            "enable hidden text selection for the preview fixture");
+
+    auto config = cachedOcrPinConfig(nullptr);
+    config.initialWindowSize = QSize(321, 181);
+    config.nativeGeometry.setSize(config.initialWindowSize);
+    QImage image(config.imageSource.materializedImage.size(), QImage::Format_RGB32);
+    {
+        QPainter painter(&image);
+        const int halfWidth = image.width() / 2;
+        const int halfHeight = image.height() / 2;
+        painter.fillRect(QRect(0, 0, halfWidth, halfHeight), Qt::red);
+        painter.fillRect(QRect(halfWidth, 0, halfWidth, halfHeight), Qt::green);
+        painter.fillRect(QRect(0, halfHeight, halfWidth, halfHeight), Qt::blue);
+        painter.fillRect(QRect(halfWidth, halfHeight, halfWidth, halfHeight), Qt::yellow);
+    }
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    ScreenshotPinnedWindow window;
+    auto* session = Access::hiddenSelectionOffscreen(window, config);
+    Access::originalPreviewFrameReady(window);
+    require(session != nullptr, "the pin preview fixture needs a recognition session");
+    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    waitForUi(30);
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>(
+        QStringLiteral("screenshotPinnedRecognitionContent"));
+    QPointer<ScreenshotOriginalImagePreviewWindow> preview =
+        content != nullptr ? content->findChild<ScreenshotOriginalImagePreviewWindow*>(
+                                 QStringLiteral("screenshotOriginalImagePreviewWindow"))
+                           : nullptr;
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(content != nullptr && preview == nullptr && canvas != nullptr &&
+                window.findChild<ScreenshotPinnedEditController*>() == nullptr,
+            "text recognition must hide the comparison image when there is no toolbar");
+    Access::editSelectionOffscreen(window, true);
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    require(controller != nullptr && controller->toolbarWindow() != nullptr &&
+                controller->toolbarWindow()->isVisible(),
+            "the preview fixture needs a visible pinned toolbar");
+    waitForUi(30);
+    preview = content->findChild<ScreenshotOriginalImagePreviewWindow*>(
+        QStringLiteral("screenshotOriginalImagePreviewWindow"));
+    require(preview != nullptr && preview->isVisible(),
+            "showing the pinned toolbar must show the comparison image");
+    const auto requirePreviewDestroyed = [&](const char* message) {
+        require(!preview || preview->isHidden(), "a dismissed pin preview must hide immediately");
+        waitForUi(20);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(preview.isNull() &&
+                    content->findChild<ScreenshotOriginalImagePreviewWindow*>() == nullptr,
+                message);
+    };
+    const auto refreshPreview = [&] {
+        waitForUi(30);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const auto previews = content->findChildren<ScreenshotOriginalImagePreviewWindow*>();
+        require(previews.size() == 1 && previews.front()->isVisible(),
+                "an active pin comparison must have exactly one visible preview window");
+        preview = previews.front();
+    };
+    session->setShowOriginalImage(true);
+    requirePreviewDestroyed("original-image mode must destroy the pinned comparison");
+    require(controller->toolbarWindow()->isVisible(),
+            "original-image mode must preserve the visible pinned toolbar");
+    session->setShowOriginalImage(false);
+    refreshPreview();
+    controller->toolbarWindow()->hide();
+    requirePreviewDestroyed("hiding the toolbar must destroy the pinned comparison");
+    controller->toolbarWindow()->show();
+    controller->toolbarWindow()->hide();
+    requirePreviewDestroyed("a queued refresh must not create a comparison without a toolbar");
+    controller->toolbarWindow()->show();
+    refreshPreview();
+    require(canvas->internalWinId() == 0 && content->internalWinId() == 0,
+            "creating the preview must preserve the pin's shared nonnative recognition canvas");
+    int projectionPass = 0;
+    const auto verifyProjection = [&] {
+        ++projectionPass;
+        refreshPreview();
+        const auto source = Access::originalPreviewSource(window);
+        const bool physical = ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry();
+        const qreal scale = physical ? canvas->devicePixelRatioF() : 1.0;
+        QRectF expectedRect =
+            canvas->canvasToViewTransform().mapRect(source.materializedCanvasRect);
+        expectedRect = QRectF(expectedRect.topLeft() * scale, expectedRect.size() * scale);
+        if (!preview->isVisible() || PreviewAccess::imageRect(*preview) != expectedRect ||
+            PreviewAccess::source(*preview).cacheKey() != source.materializedImage.cacheKey()) {
+            const QRectF observed = PreviewAccess::imageRect(*preview);
+            std::cerr << "pin projection pass " << projectionPass << ": visible "
+                      << preview->isVisible() << "; expected mapping " << expectedRect.x() << ','
+                      << expectedRect.y() << ' ' << expectedRect.width() << 'x'
+                      << expectedRect.height() << "; observed mapping " << observed.x() << ','
+                      << observed.y() << ' ' << observed.width() << 'x' << observed.height()
+                      << "; source key " << source.materializedImage.cacheKey() << "/"
+                      << PreviewAccess::source(*preview).cacheKey() << '\n';
+        }
+        require(preview->isVisible() && PreviewAccess::imageRect(*preview) == expectedRect &&
+                    PreviewAccess::source(*preview).cacheKey() ==
+                        source.materializedImage.cacheKey(),
+                "the preview must share the displayed source image and its exact viewport mapping");
+        const QRect result = physical
+                                 ? window.currentNativeGeometry()
+                                 : ScreenshotOriginalImagePreviewWindow::nativeClientRect(&window);
+        if (ScreenshotOriginalImagePreviewWindow::nativeClientRect(preview).size() !=
+            result.size()) {
+            const QSize observed =
+                ScreenshotOriginalImagePreviewWindow::nativeClientRect(preview).size();
+            const QRect target = Access::originalPreviewTargetGeometry(window);
+            std::cerr << "pin projection pass " << projectionPass << ": expected extent "
+                      << result.width() << 'x' << result.height() << "; observed extent "
+                      << observed.width() << 'x' << observed.height() << "; target "
+                      << target.width() << 'x' << target.height() << "; phase "
+                      << Access::originalPreviewGeometryPhase(window) << "; logical sizes "
+                      << window.width() << 'x' << window.height() << '/' << canvas->width() << 'x'
+                      << canvas->height() << '\n';
+        }
+        require(ScreenshotOriginalImagePreviewWindow::nativeClientRect(preview).size() ==
+                    result.size(),
+                "the preview and recognition result must have matching native dimensions");
+        const QImage& raster = PreviewAccess::raster(*preview);
+        require(!raster.isNull(), "the original-image preview needs a painted viewport");
+        if (physical) {
+            require(raster.size() == result.size(),
+                    "the pin preview raster must retain every odd native client pixel");
+        }
+        const qreal rasterScale = physical ? 1.0 : preview->devicePixelRatioF();
+        for (const QPointF fraction :
+             {QPointF(.25, .25), QPointF(.75, .25), QPointF(.25, .75), QPointF(.75, .75)}) {
+            const QPoint pixel(
+                qRound((expectedRect.x() + expectedRect.width() * fraction.x()) * rasterScale),
+                qRound((expectedRect.y() + expectedRect.height() * fraction.y()) * rasterScale));
+            const QPoint sourcePixel(qRound(source.materializedImage.width() * fraction.x()),
+                                     qRound(source.materializedImage.height() * fraction.y()));
+            require(raster.rect().contains(pixel) &&
+                        raster.pixelColor(pixel) ==
+                            source.materializedImage.pixelColor(sourcePixel),
+                    "source landmarks must keep their position and color in the preview viewport");
+        }
+        const quint64 generation = PreviewAccess::rasterGeneration(*preview);
+        QImage expectedPaint = raster.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        expectedPaint.setDevicePixelRatio(1.0);
+        for (int pass = 0; pass < 3; ++pass) {
+            window.repaint();
+            preview->repaint();
+            waitForUi(5);
+            QImage painted = preview->grab().toImage();
+            require(painted.width() >= expectedPaint.width() &&
+                        painted.height() >= expectedPaint.height(),
+                    "the pin preview backing surface must cover the complete cached viewport");
+            painted = painted.copy(expectedPaint.rect())
+                          .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            painted.setDevicePixelRatio(1.0);
+            require(painted == expectedPaint &&
+                        PreviewAccess::rasterGeneration(*preview) == generation &&
+                        ScreenshotOriginalImagePreviewWindow::nativeClientRect(preview).size() ==
+                            result.size(),
+                    "repainting must preserve the preview pixels, cache, and native extent");
+        }
+    };
+    verifyProjection();
+#ifdef Q_OS_WIN
+    require(Access::beginPreviewNativeMove(window), "prepare a pending native preview drag");
+    Access::previewNativeMessage(window, WM_CAPTURECHANGED);
+    require(
+        Access::previewNativeMoveActive(window) && preview->isVisible() &&
+            !Access::auxiliaryInteractionActive(window),
+        "Qt's pending system-move capture handoff must neither suppress nor cancel the preview");
+    Access::previewNativeMessage(window, WM_ENTERSIZEMOVE);
+    require(preview->isHidden() && Access::auxiliaryInteractionActive(window),
+            "native move-loop entry must suppress the preview before the first geometry frame");
+    Access::previewNativeMessage(window, WM_CAPTURECHANGED);
+    verifyProjection();
+    require(
+        !Access::previewNativeMoveActive(window) && !Access::auxiliaryInteractionActive(window),
+        "capture loss after native entry must restore auxiliaries even before a geometry frame");
+    require(Access::beginPreviewNativeMove(window), "prepare a canceled pending preview drag");
+    Access::previewNativeMessage(window, WM_CANCELMODE);
+    require(!Access::previewNativeMoveActive(window) && !Access::auxiliaryInteractionActive(window),
+            "cancel mode must finish a pending system move without leaving suppression active");
+#endif
+    session->beginTextEditing();
+    verifyProjection();
+    require(session->editing(), "text editing must keep its original-image preview visible");
+    session->endTextEditing();
+
+    const auto initialSource = Access::originalPreviewSource(window);
+    auto clippedSource = initialSource;
+    clippedSource.materializedCanvasRect = config.canvasSourceRect.adjusted(-20, -10, 20, 10);
+    Access::setOriginalPreviewSource(window, clippedSource);
+    verifyProjection();
+    Access::setOriginalPreviewSource(window, initialSource);
+    for (const auto* actionName :
+         {"screenshotPinnedRotateClockwiseAction", "screenshotPinnedFlipHorizontalAction",
+          "screenshotPinnedFlipVerticalAction", "screenshotPinnedIncreaseScaleAction",
+          "screenshotPinnedDecreaseScaleAction"}) {
+        auto* action = window.findChild<QAction*>(QString::fromLatin1(actionName));
+        require(action != nullptr, "the preview fixture needs image transform actions");
+        action->trigger();
+        verifyProjection();
+    }
+
+    const QPointer<ScreenshotOriginalImagePreviewWindow> movingPreview = preview;
+    Access::beginAuxiliaryInteraction(window);
+    requirePreviewDestroyed("pin dragging must destroy the preview with the toolbar");
+    require(Access::moveForOriginalPreview(window, QPoint(20, 15)), "move the preview's pin");
+    requirePreviewDestroyed("pin movement must not create a preview while interaction is active");
+    Access::endAuxiliaryInteraction(window);
+    verifyProjection();
+    require(movingPreview.isNull(), "moving the pin must release its preceding preview window");
+
+    Access::beginAuxiliaryInteraction(window);
+    requirePreviewDestroyed("pin interaction must destroy the preview");
+    require(controller->toolbarWindow()->isHidden(), "pin interaction must hide the toolbar");
+    Access::endAuxiliaryInteraction(window);
+    verifyProjection();
+    require(controller->toolbarWindow()->isVisible(),
+            "pin interaction completion must restore the toolbar with the preview");
+    Access::beginAuxiliaryInteraction(window);
+    require(settings.setShowOriginalImagePreview(false),
+            "disable the hidden original-image preview");
+    Access::endAuxiliaryInteraction(window);
+    requirePreviewDestroyed("interaction completion must respect preview disablement");
+    require(settings.setShowOriginalImagePreview(true), "re-enable the original-image preview");
+    verifyProjection();
+    window.hide();
+    requirePreviewDestroyed("hiding the pin must destroy its original-image preview");
+    window.show();
+    verifyProjection();
+
+    Access::beginAuxiliaryInteraction(window);
+    session->deactivate();
+    Access::editSelectionOffscreen(window, false);
+    Access::endAuxiliaryInteraction(window);
+    requirePreviewDestroyed("hidden text-selection overlays must not create an original preview");
+    require(Access::hiddenSelection(window), "deactivation preserves hidden text selection");
+    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    requirePreviewDestroyed("recognition reactivation without a toolbar must not create a preview");
+    Access::editSelectionOffscreen(window, true);
+    verifyProjection();
+    Access::beginAuxiliaryInteraction(window);
+    ScreenshotClipboardContent replacement;
+    replacement.image = image;
+    replacement.image.fill(Qt::magenta);
+    require(Access::replace(window, std::move(replacement)), "replace the pin's original input");
+    Access::endAuxiliaryInteraction(window);
+    requirePreviewDestroyed("replacing input must not retain the preceding recognition preview");
+    Access::beginAuxiliaryInteraction(window);
+    window.close();
+    require(!Access::auxiliaryInteractionActive(window),
+            "closing a pin must clear every auxiliary interaction suppression flag");
+}
+
+void pinnedOriginalImagePreviewSupportsTranslationModes() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const bool previousMode = settings.originalImageTranslationEnabled();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(settings.setOriginalImageTranslationEnabled(previousMode)); });
+    for (const bool originalImage : {true, false}) {
+        require(settings.setOriginalImageTranslationEnabled(originalImage),
+                "set the translation view");
+        auto config = cachedOcrPinConfig(nullptr);
+        if (originalImage) {
+            config.recognitionResults.translatedText = std::make_shared<ScreenshotOcrPresentation>(
+                *config.recognitionResults.text->presentation);
+            config.recognitionResults.translatedText->setLineText(0,
+                                                                  QStringLiteral("Translated OCR"));
+        }
+        ScreenshotPinnedWindow window;
+        auto* session = ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(window, config);
+        session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+        session->beginTextTranslation();
+        ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(window, true);
+        waitForUi(30);
+        auto* preview = window.findChild<ScreenshotOriginalImagePreviewWindow*>(
+            QStringLiteral("screenshotOriginalImagePreviewWindow"));
+        require(session->translating() && session->editing() == !originalImage &&
+                    preview != nullptr && preview->isVisible(),
+                "original-image translation and translation editing must both preview the input");
+        window.close();
+    }
+#endif
 }
 
 void pinnedRecognitionContextMenuCopiesLocally() {
@@ -14235,6 +14596,19 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--original-image-preview-only"))) {
+            const double expectedDpr = qEnvironmentVariable("SNOW_PREVIEW_TEST_DPR").toDouble();
+            if (expectedDpr > 0) {
+                require(QGuiApplication::primaryScreen() != nullptr &&
+                            qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(),
+                                          expectedDpr),
+                        "preview fixture must run at the registered DPR, independently of monitor "
+                        "settings");
+            }
+            pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle();
+            pinnedOriginalImagePreviewSupportsTranslationModes();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--color-space-only"))) {
             pinnedImportedColorsMatchLiveRendering();
             return 0;

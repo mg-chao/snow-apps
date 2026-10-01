@@ -43,6 +43,7 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "snow_shot/presentation/screenshotoriginalimagepreviewwindow.h"
 #include "snow_shot/presentation/screenshotimageconversionpersistence.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
@@ -833,8 +834,10 @@ class PinnedControlButton final : public adqt::widgets::AdButton {
 class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
   public:
     ScreenshotPinnedCanvasWidget(SnowCanvasRuntime& runtime, QWidget* parent,
-                                 std::function<void()> afterPaint)
-        : SnowCanvasWidget(runtime, parent), m_afterPaint(std::move(afterPaint)) {
+                                 std::function<void()> afterPaint,
+                                 std::function<void()> afterResize)
+        : SnowCanvasWidget(runtime, parent), m_afterPaint(std::move(afterPaint)),
+          m_afterResize(std::move(afterResize)) {
 #ifdef Q_OS_MACOS
         setCommandKeyResolver(
             [](const QKeyEvent& event) { return snow_shot::shortcuts::commandKey(event); });
@@ -842,6 +845,15 @@ class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
     }
 
   protected:
+    void resizeEvent(QResizeEvent* event) override {
+        // The engine consumes event->size(). Reconcile the pin's covering extent only after
+        // that write, so an outer resize cannot overwrite a nested resize's settled viewport.
+        SnowCanvasWidget::resizeEvent(event);
+        if (m_afterResize) {
+            m_afterResize();
+        }
+    }
+
     void paintEvent(QPaintEvent* event) override {
         SNOW_SHOT_PIN_PERF_SCOPE("paint.event");
         SNOW_SHOT_PIN_PERF_MILESTONE("paint.event.enter");
@@ -854,6 +866,7 @@ class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
 
   private:
     std::function<void()> m_afterPaint;
+    std::function<void()> m_afterResize;
 };
 
 void configurePinnedControlButton(adqt::widgets::AdButton* button) {
@@ -1447,7 +1460,9 @@ ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
     }
     m_quickSavePending = false;
     m_materializationCallbacks.clear();
+    m_closing = true;
     finishWindowMove();
+    endAuxiliaryWindowInteraction();
     clearWindowDragCursor();
     livePinnedWindows().removeAll(QPointer<ScreenshotPinnedWindow>(this));
     stopRecognition();
@@ -1751,6 +1766,14 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
          event->type() == QEvent::WindowStateChange || scaleMayHaveChanged ||
          assignedScreenMayHaveChanged);
     const bool handled = QWidget::event(event);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (event != nullptr && event->type() == QEvent::WinIdChange && m_platform != nullptr &&
+        !m_platform->usesControlledInteraction()) {
+        if (QWindow* handle = windowHandle()) {
+            handle->installEventFilter(this);
+        }
+    }
+#endif
     if (m_hideToTop != nullptr && (pointerPresenceChanged || nativeGeometryMayHaveSettled)) {
         m_hideToTop->refreshPointer();
     }
@@ -1918,6 +1941,8 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
 
     // Qt may recreate an existing native window when its screen changes. Set
     // the screen before winId() so every native operation uses the final HWND.
+    m_auxiliaryWindowInteractionActive = false;
+    m_forwardingNativeExposeEvent = false;
     setScreen(config.screen);
     m_canvasSourceRect = contentCanvasRect;
     m_backgroundCanvasRect = m_canvasSourceRect;
@@ -2249,11 +2274,41 @@ QRect ScreenshotPinnedWindow::authoritativeNativeGeometry() const {
 }
 
 bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (m_presented && !m_closing && watched == windowHandle() && event != nullptr &&
+        event->type() == QEvent::Expose &&
+        ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry() &&
+        !m_platform->usesControlledInteraction() && !m_auxiliaryWindowInteractionActive &&
+        !m_forwardingNativeExposeEvent) {
+        // QWidgetWindow flushes its layered backing store directly on exposure, bypassing
+        // UpdateRequest. After a hide/show, restore the pin's exact physical client extent
+        // once that dispatch finishes, before the preview samples the restored result area.
+        const QPointer<ScreenshotPinnedWindow> alive(this);
+        m_forwardingNativeExposeEvent = true;
+        QCoreApplication::sendEvent(watched, event);
+        if (alive) {
+            static_cast<void>(reconcilePassiveNativeGeometry());
+        }
+        if (alive) {
+            if (!m_closing && m_recognitionContent != nullptr) {
+                m_recognitionContent->refreshOriginalImagePreview();
+            }
+            m_forwardingNativeExposeEvent = false;
+        }
+        return true;
+    }
+#endif
     // Controlled moves/resizes install this filter on QApplication. Let QWindow
     // translate native input before handling the resulting QWidget events: eating
     // its release would leave Qt's implicit press target on the pinned canvas,
     // redirecting later hover events even after our explicit mouse grab ends.
     if (watched == nullptr || !watched->isWidgetType() || event == nullptr || m_closing) {
+        return QWidget::eventFilter(watched, event);
+    }
+    if (m_editController != nullptr && watched == m_editController->toolbarWindow()) {
+        if (event->type() == QEvent::Show || event->type() == QEvent::Hide) {
+            updateOriginalImagePreviewVisibility();
+        }
         return QWidget::eventFilter(watched, event);
     }
     if (handleExportDrag(watched, event))
@@ -2317,12 +2372,6 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched != m_canvas && watched != m_recognitionContent) {
         return QWidget::eventFilter(watched, event);
     }
-    if (watched == m_canvas && event->type() == QEvent::Resize) {
-        // The canvas is laid out independently of the top-level native window.
-        // Keep its camera tied to the actual paint surface as that layout settles.
-        updateCanvasViewport();
-        return QWidget::eventFilter(watched, event);
-    }
     if (event->type() == QEvent::ContextMenu) {
         if (watched == m_recognitionContent) {
             return QWidget::eventFilter(watched, event);
@@ -2381,6 +2430,7 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
             if (mouseEvent->button() == Qt::LeftButton && m_windowDragActive) {
                 static_cast<void>(finishNativeGeometryInteraction());
                 finishWindowMove();
+                endAuxiliaryWindowInteraction();
                 mouseEvent->accept();
                 return true;
             }
@@ -2488,6 +2538,7 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     }
     m_quickSavePending = false;
     finishWindowMove();
+    endAuxiliaryWindowInteraction();
     clearWindowDragCursor();
     m_systemSizingActive = false;
     stopRecognition();
@@ -2559,6 +2610,10 @@ void ScreenshotPinnedWindow::moveEvent(QMoveEvent* event) {
     if (m_editController != nullptr && !m_passiveGeometryReconciliationActive && !passiveMismatch) {
         m_editController->updateAfterPinnedWindowMove(logicalDelta);
     }
+    if (m_recognitionContent != nullptr && !m_passiveGeometryReconciliationActive &&
+        !passiveMismatch) {
+        m_recognitionContent->refreshOriginalImagePreview();
+    }
     if (m_clickThroughActive && !updateClickThroughExitButtonGeometry()) {
         static_cast<void>(setClickThroughMode(false));
     }
@@ -2624,6 +2679,7 @@ void ScreenshotPinnedWindow::mouseReleaseEvent(QMouseEvent* event) {
     }
     if (event != nullptr && event->button() == Qt::LeftButton && m_windowDragActive) {
         finishWindowMove();
+        endAuxiliaryWindowInteraction();
         event->accept();
         return;
     }
@@ -2661,8 +2717,13 @@ void ScreenshotPinnedWindow::createUi() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    m_canvas = new ScreenshotPinnedCanvasWidget(m_runtime, this,
-                                                [this]() { handleFirstContentFramePainted(); });
+    m_canvas = new ScreenshotPinnedCanvasWidget(
+        m_runtime, this, [this]() { handleFirstContentFramePainted(); },
+        [this]() {
+            if (!m_closing) {
+                updateCanvasViewport();
+            }
+        });
     m_canvas->setAttribute(Qt::WA_NativeWindow, false);
     m_canvas->setAttribute(Qt::WA_OpaquePaintEvent, false);
     m_canvas->setMinimumSize(1, 1);
@@ -3864,6 +3925,7 @@ void ScreenshotPinnedWindow::ensureEditController() {
                 }
                 synchronizeHiddenTextSelection();
                 updateControlsGeometry();
+                updateOriginalImagePreviewVisibility();
             });
     connect(m_editController, &ScreenshotPinnedEditController::toolbarCreated, this,
             &ScreenshotPinnedWindow::configureEditToolbar);
@@ -3901,6 +3963,7 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     if (toolbarWindow == nullptr || toolbarWindow->palette() == nullptr) {
         return;
     }
+    toolbarWindow->installEventFilter(this);
 
     ScreenshotToolPalette* toolbar = toolbarWindow->palette();
     connect(toolbar, &ScreenshotToolPalette::quickSaveRequested, this,
@@ -4024,7 +4087,42 @@ void ScreenshotPinnedWindow::updateRecognitionContentGeometry() {
         QRectF(QPointF(), QSizeF(m_canvas->size())));
     static_cast<void>(
         m_recognitionContent->updateSelectionGeometry(m_canvas->geometry(), viewport));
+    m_recognitionContent->refreshOriginalImagePreview();
     updateBorderOutline();
+}
+
+void ScreenshotPinnedWindow::updateOriginalImagePreviewVisibility() {
+    if (m_recognitionContent != nullptr) {
+        const auto* toolbar =
+            m_editController != nullptr ? m_editController->toolbarWindow() : nullptr;
+        m_recognitionContent->setOriginalImagePreviewSuppressed(
+            m_auxiliaryWindowInteractionActive || toolbar == nullptr || !toolbar->isVisible());
+    }
+}
+
+void ScreenshotPinnedWindow::beginAuxiliaryWindowInteraction() {
+    m_auxiliaryWindowInteractionActive = true;
+    updateOriginalImagePreviewVisibility();
+    if (m_editController != nullptr) {
+        m_editController->beginNativeWindowInteraction();
+    }
+}
+
+void ScreenshotPinnedWindow::endAuxiliaryWindowInteraction() {
+    if (!m_auxiliaryWindowInteractionActive) {
+        return;
+    }
+    m_auxiliaryWindowInteractionActive = false;
+    if (!m_closing) {
+        updateCanvasViewport();
+    }
+    if (m_editController != nullptr) {
+        m_editController->endNativeWindowInteraction();
+    }
+    if (m_recognitionContent != nullptr) {
+        updateOriginalImagePreviewVisibility();
+        m_recognitionContent->refreshOriginalImagePreview();
+    }
 }
 
 void ScreenshotPinnedWindow::activateRecognitionMode(int mode, bool showToolbar) {
@@ -4608,6 +4706,34 @@ ScreenshotRecognitionWindow* ScreenshotPinnedWindow::ensureRecognitionContent() 
             this, ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild,
             m_shortcutManager.get());
         content->setObjectName(QStringLiteral("screenshotPinnedRecognitionContent"));
+        content->setOriginalImagePreviewProvider(
+            [this]() -> std::optional<ScreenshotOriginalImagePreviewState> {
+                if (m_closing || m_canvas == nullptr || m_screenshotRenderer == nullptr) {
+                    return std::nullopt;
+                }
+                const ScreenshotImageSource source = m_screenshotRenderer->imageSourceSnapshot();
+                if (!source.isMaterialized()) {
+                    return std::nullopt;
+                }
+                const bool physical = ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry();
+                const qreal scale = physical ? m_canvas->devicePixelRatioF() : 1.0;
+                QRectF imageRect =
+                    m_canvas->canvasToViewTransform().mapRect(source.materializedCanvasRect);
+                imageRect = QRectF(imageRect.topLeft() * scale, imageRect.size() * scale);
+                return ScreenshotOriginalImagePreviewState{
+                    source.materializedImage,
+                    imageRect,
+                    physical ? currentNativeGeometry()
+                             : ScreenshotOriginalImagePreviewWindow::nativeClientRect(this),
+                    this,
+                    true,
+                    m_alwaysOnTop};
+            },
+            this);
+        content->setOriginalImagePreviewAboveSiblingProvider([this]() -> QWidget* {
+            return m_editController != nullptr ? m_editController->toolbarWindow() : nullptr;
+        });
+        content->syncOriginalImagePreviewStacking(m_alwaysOnTop);
         content->installEventFilter(this);
         connect(content, &ScreenshotRecognitionWindow::embeddedContextMenuRequested, this,
                 &ScreenshotPinnedWindow::showContextMenu);
@@ -4623,6 +4749,7 @@ ScreenshotRecognitionWindow* ScreenshotPinnedWindow::ensureRecognitionContent() 
         }
         content->hide();
         m_recognitionContent = content;
+        updateOriginalImagePreviewVisibility();
         updateRecognitionContentGeometry();
     }
     return m_recognitionContent;
@@ -6395,6 +6522,9 @@ void ScreenshotPinnedWindow::setAlwaysOnTop(bool enabled) {
     }
     m_alwaysOnTop = enabled;
     applyStaysOnTopFlag(this, enabled, m_platform.get());
+    if (m_recognitionContent != nullptr) {
+        m_recognitionContent->syncOriginalImagePreviewStacking(enabled);
+    }
     // The click-through overlay controls are separate top-level surfaces of
     // this pin; they must stay in the same stacking band as the pin itself.
     if (m_clickThroughExitButton != nullptr) {
@@ -7106,6 +7236,7 @@ void ScreenshotPinnedWindow::finishWindowMove() {
             m_hideToTop->animation().resume();
         }
         updateWindowDragCursor(mapFromGlobal(QCursor::pos()));
+        endAuxiliaryWindowInteraction();
     }
 }
 

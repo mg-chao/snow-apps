@@ -218,6 +218,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         // WM_EXITSIZEMOVE and mouse release still finish the transaction.
         const bool pendingSystemMoveHandoff =
             nativeMessage->message == WM_CAPTURECHANGED && nativeMessage->lParam == 0 &&
+            !window.m_auxiliaryWindowInteractionActive &&
             window.m_nativeGeometryController != nullptr &&
             window.m_nativeGeometryController->phase() ==
                 ScreenshotPinnedNativeGeometryController::Phase::MovePending;
@@ -240,8 +241,8 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
             if (window.m_editController != nullptr) {
                 window.m_editController->endTemporaryResizeWindowTool();
-                window.m_editController->endNativeWindowInteraction();
             }
+            window.endAuxiliaryWindowInteraction();
         }
         if (nativeMessage->message == WM_WINDOWPOSCHANGING &&
             window.m_nativeGeometryController != nullptr) {
@@ -504,8 +505,8 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
             if (window.m_editController != nullptr) {
                 window.m_editController->endTemporaryResizeWindowTool();
-                window.m_editController->endNativeWindowInteraction();
             }
+            window.endAuxiliaryWindowInteraction();
         }
 
         if (nativeMessage->message == WM_NCLBUTTONDOWN) {
@@ -535,9 +536,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
 
         if (nativeMessage->message == WM_ENTERSIZEMOVE) {
             window.stopAttentionShake();
-            if (window.m_editController != nullptr && window.m_editController->editMode()) {
-                window.m_editController->beginNativeWindowInteraction();
-            }
+            window.beginAuxiliaryWindowInteraction();
             if (window.m_nativeGeometryController != nullptr) {
                 const auto phase = window.m_nativeGeometryController->phase();
                 if (phase == ScreenshotPinnedNativeGeometryController::Phase::ResizePending ||
@@ -602,8 +601,8 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
             if (window.m_editController != nullptr) {
                 window.m_editController->endTemporaryResizeWindowTool();
-                window.m_editController->endNativeWindowInteraction();
             }
+            window.endAuxiliaryWindowInteraction();
         }
 
         if (nativeMessage->message == WM_WINDOWPOSCHANGED &&

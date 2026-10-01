@@ -247,6 +247,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void updateConversionState() const;
     void updateConversionMessage();
     void updateTextState() const;
+    void updateOriginalImagePreview() const;
     void updateTableState(const ScreenshotTableCommandState& state) const;
     void clearTextEditingState();
     [[nodiscard]] bool shouldRenderRecognitionInWorker() const;

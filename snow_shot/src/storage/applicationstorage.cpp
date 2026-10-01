@@ -25,6 +25,8 @@
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
+#elif defined(Q_OS_MACOS)
+#include <mach-o/dyld.h>
 #endif
 
 namespace snow_shot::storage {
@@ -135,6 +137,15 @@ ApplicationStorage::resolveDirectory(const StorageInitializationOptions& options
         const DWORD length = GetModuleFileNameW(nullptr, path, 32768);
         executableDirectory =
             QFileInfo(QString::fromWCharArray(path, static_cast<int>(length))).absolutePath();
+#elif defined(Q_OS_MACOS)
+        // Diagnostics locate the bundled crash handler before QApplication exists.
+        // Qt's applicationDirPath() is unavailable until that application is created.
+        uint32_t size = 0;
+        _NSGetExecutablePath(nullptr, &size);
+        QByteArray path(static_cast<qsizetype>(size), Qt::Uninitialized);
+        if (_NSGetExecutablePath(path.data(), &size) == 0) {
+            executableDirectory = QFileInfo(QFile::decodeName(path.constData())).canonicalPath();
+        }
 #else
         executableDirectory = QCoreApplication::applicationDirPath();
 #endif

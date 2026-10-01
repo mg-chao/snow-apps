@@ -13,6 +13,8 @@ void configureGlobalCanvasWindow(QWidget* widget);
 void configureScreenRecordingAreaWindow(QWidget* widget);
 void configureScreenRecordingToolbarWindow(QWidget* widget);
 void configureScreenshotRecognitionWindow(QWidget* widget);
+// Order an already-visible passive tool without activating the application or changing levels.
+[[nodiscard]] bool stackScreenshotWindowBelow(QWidget* widget, QWidget* sibling);
 // Cocoa masks clip drawing, but do not route input to windows underneath.
 void setScreenshotInputTransparent(QWidget* widget, bool transparent);
 void configureScreenshotToolbarWindow(QWidget* widget);

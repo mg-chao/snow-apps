@@ -1648,6 +1648,10 @@
             <translation>磁盘用量</translation>
         </message>
         <message>
+            <source>Display the original image beside recognition and translation results.</source>
+            <translation>在识别和翻译结果旁显示原始图像。</translation>
+        </message>
+        <message>
             <source>Display translated text in the original image</source>
             <translation>在原始图像中显示翻译后的文字</translation>
         </message>
@@ -3066,6 +3070,10 @@
         <message>
             <source>Show main window</source>
             <translation>显示主窗口</translation>
+        </message>
+        <message>
+            <source>Show original image preview</source>
+            <translation>显示原图预览</translation>
         </message>
         <message>
             <source>Show screenshot guides when a capture starts</source>

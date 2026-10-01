@@ -302,6 +302,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #endif
     {QStringLiteral("text_recognition/save_recognition_result_as_image"), true,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("text_recognition/show_original_image_preview"), true,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/default_formatting"),
      QStringLiteral("none"),
      ConfigurationValueKind::String,

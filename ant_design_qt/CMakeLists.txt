@@ -73,6 +73,28 @@ file(GLOB_RECURSE ADQT_WIDGET_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/*.h"
 )
+# Window DPI support needs only Qt. Keep it usable by passive auxiliary windows without
+# pulling in icon rendering and image codecs, while the widget library shares its implementation.
+set(ADQT_WINDOW_DPI_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/control_scale.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/control_scale.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/dpi_stable_window_controller.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/dpi_stable_window_controller.cpp")
+list(REMOVE_ITEM ADQT_WIDGET_SOURCES ${ADQT_WINDOW_DPI_SOURCES})
+add_library(ant_design_qt_dpi_window STATIC ${ADQT_WINDOW_DPI_SOURCES})
+add_library(adqt::dpi_window ALIAS ant_design_qt_dpi_window)
+snow_apply_release_options(ant_design_qt_dpi_window)
+target_include_directories(ant_design_qt_dpi_window SYSTEM PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src")
+target_link_libraries(ant_design_qt_dpi_window PUBLIC Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(ant_design_qt_dpi_window PRIVATE comctl32 user32)
+    target_compile_definitions(ant_design_qt_dpi_window PRIVATE NOMINMAX)
+endif()
+if(MSVC)
+    target_compile_options(ant_design_qt_dpi_window PRIVATE /utf-8)
+endif()
+
 add_library(ant_design_qt STATIC ${ADQT_WIDGET_SOURCES})
 snow_apply_release_options(ant_design_qt)
 # Keep the modal-blocking query behind a private adapter so native input and
@@ -104,7 +126,7 @@ add_library(adqt::widgets ALIAS ant_design_qt)
 target_include_directories(ant_design_qt SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src"
 )
-target_link_libraries(ant_design_qt PUBLIC adqt::icon_core adqt::icons
+target_link_libraries(ant_design_qt PUBLIC adqt::dpi_window adqt::icon_core adqt::icons
     Qt6::Widgets Qt6::Svg Qt6::Network snow_image::snow_image_static)
 target_precompile_headers(ant_design_qt PRIVATE
     <algorithm>

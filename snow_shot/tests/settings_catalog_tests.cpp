@@ -387,9 +387,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 218,
+    require(itemIds.size() == 219,
             qPrintable(QStringLiteral(
-                           "catalog must contain 218 shared settings on every platform; found %1")
+                           "catalog must contain 219 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -675,7 +675,7 @@ void builtInCatalogIsCompleteAndValid() {
     const auto& recognition = functionPage->sections.at(2);
     require(recognition.reset == settings::SettingsSectionReset::TextRecognitionBehavior &&
                 recognition.title.translated() == QStringLiteral("Text Recognition") &&
-                recognition.items.size() == 3,
+                recognition.items.size() == 4,
             "dedicated recognition behavior section");
     const auto& recognitionSave = recognition.items.front();
     require(
@@ -684,6 +684,18 @@ void builtInCatalogIsCompleteAndValid() {
                 settings::SettingsSwitchBinding::SaveRecognitionResultAsImage &&
             storage::ConfigurationSchema::defaultValue(recognitionSave.configurationKey).toBool(),
         "recognition save switch must default on");
+    const auto& recognitionPreview = recognition.items.back();
+    require(recognitionPreview.id ==
+                    QStringLiteral("text-recognition.show-original-image-preview") &&
+                recognitionPreview.title.translated() ==
+                    QStringLiteral("Show original image preview") &&
+                recognitionPreview.configurationKey ==
+                    QStringLiteral("text_recognition/show_original_image_preview") &&
+                std::get<settings::SettingsSwitchDefinition>(recognitionPreview.payload).binding ==
+                    settings::SettingsSwitchBinding::ShowOriginalImagePreview &&
+                storage::ConfigurationSchema::defaultValue(recognitionPreview.configurationKey)
+                    .toBool(),
+            "original image preview belongs to recognition behavior and defaults on");
     const auto checkRecognitionDefault = [&](qsizetype index, const QString& title,
                                              const QString& key,
                                              settings::SettingsSelectBinding binding,
@@ -2168,6 +2180,14 @@ void searchIndexIsGeneratedAndRanked() {
                 recognition.constFirst().location.itemId ==
                     QStringLiteral("text-recognition.save-recognition-result-as-image"),
             "search should navigate directly to the recognition image saving toggle");
+    const auto recognitionPreview = index.search(QStringLiteral("Show original image preview"));
+    require(!recognitionPreview.isEmpty() &&
+                recognitionPreview.constFirst().location ==
+                    settings::SettingsLocation{
+                        QStringLiteral("function-settings"),
+                        QStringLiteral("text-recognition-settings"),
+                        QStringLiteral("text-recognition.show-original-image-preview")},
+            "search should navigate directly to the original image preview toggle");
 
     int pages = 0;
     int sections = 0;

@@ -3,6 +3,8 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/configurationarchive.h"
 
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
@@ -330,6 +332,59 @@ void selectedTextShortcutSettings() {
         reloaded.setShortcuts(action, {});
     }
 }
+void originalImagePreviewDefaultsPersistsAndResets() {
+    namespace storage = snow_shot::storage;
+    namespace settings = snow_shot::presentation::settings;
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const storage::TextRecognitionSettings recognition;
+    constexpr auto binding = settings::SettingsSwitchBinding::ShowOriginalImagePreview;
+    const QString key = QStringLiteral("text_recognition/show_original_image_preview");
+    const QString itemId = QStringLiteral("text-recognition.show-original-image-preview");
+    require(storage::ConfigurationSchema::defaultValue(key).toBool() &&
+                backend.switchEnabled(binding) && backend.switchValue(binding) &&
+                recognition.showOriginalImagePreview(),
+            "original image preview must default on through schema, backend and typed settings");
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    require(session.state(itemId).acceptedValue.toBool() && session.state(itemId).enabled,
+            "original image preview is an enabled function settings switch");
+    require(session.submitDraft(itemId, false) && !backend.switchValue(binding) &&
+                !recognition.showOriginalImagePreview() &&
+                applicationStorage.configuration().flushNow().success,
+            "the preview switch must persist a disabled value through the runtime session");
+    storage::ConfigurationStore reloaded(
+        QDir(applicationStorage.configurationDirectory()).filePath(QStringLiteral("config.json")),
+        true, true, 60000);
+    require(!reloaded.value(key).toBool(), "disabled preview survives configuration reload");
+    const QString archivePath =
+        QDir(applicationStorage.configurationDirectory()).filePath(QStringLiteral("preview.zip"));
+    require(storage::ConfigurationArchive::write(
+                archivePath, {{key, false}}, storage::ConfigurationStore::currentSchemaVersion())
+                .isEmpty(),
+            "the preview preference must be exportable in configuration archives");
+    const auto imported = storage::ConfigurationArchive::read(archivePath);
+    require(imported.isValid() && imported.values.contains(key) &&
+                !imported.values.value(key).toBool() &&
+                reloaded.applySnapshot(imported.values, imported.schemaVersion) &&
+                !reloaded.value(key).toBool(),
+            "imported configuration restores the disabled preview preference");
+    require(reloaded.applySnapshot({{QStringLiteral("text_recognition/default_formatting"),
+                                     QStringLiteral("keep")}}) &&
+                reloaded.value(key).toBool(),
+            "older configuration snapshots missing the preference use the enabled default");
+    require(!applicationStorage.configuration().setValue(key, QStringLiteral("false")) &&
+                !recognition.showOriginalImagePreview(),
+            "the preview setting must reject nonboolean writes without changing the preference");
+    require(session.reset(settings::SettingsSectionReset::TextRecognitionBehavior) &&
+                backend.switchValue(binding) && recognition.showOriginalImagePreview(),
+            "resetting Text Recognition behavior restores the enabled preview default");
+    require(recognition.setShowOriginalImagePreview(false), "typed preview setter disables");
+    session.refreshAll();
+    require(!session.state(itemId).acceptedValue.toBool(),
+            "externally changed preview preference refreshes the settings switch");
+    require(recognition.setShowOriginalImagePreview(true), "restore enabled preview default");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -346,6 +401,12 @@ int main(int argc, char** argv) {
     auto& applicationStorage = storage::ApplicationStorage::instance();
     require(applicationStorage.initialize({executable, temporary.path(), 60000}).success,
             "initialize translation settings storage");
+    if (application.arguments().contains(QStringLiteral("--original-image-preview-only"))) {
+        originalImagePreviewDefaultsPersistsAndResets();
+        applicationStorage.shutdown();
+        return 0;
+    }
+    originalImagePreviewDefaultsPersistsAndResets();
     selectedTextShortcutSettings();
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;

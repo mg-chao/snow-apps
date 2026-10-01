@@ -55,6 +55,7 @@
 #include <cmath>
 #include <iostream>
 #include <functional>
+#include <limits>
 #include <utility>
 
 #ifdef Q_OS_MACOS
@@ -2353,9 +2354,148 @@ void tableCommandsUsePhysicalKeys() {
 #endif
 }
 
+void originalImagePreviewPreservesSelectionAndOwnerLifecycle() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "preview fixture requires a screen");
+    auto* window = new ScreenshotRecognitionWindow(ScreenshotRecognitionWindowActions{});
+    const QRect geometry(screen->geometry().topLeft() + QPoint(110, 120), QSize(83, 24));
+    const QRectF selection(100, 50, 166, 48);
+    QImage input(166, 48, QImage::Format_ARGB32_Premultiplied);
+    input.fill(QColor(18, 72, 156));
+    input.setDevicePixelRatio(2.0);
+    require(window->findChild<ScreenshotOriginalImagePreviewWindow*>() == nullptr,
+            "creating recognition content must not eagerly create a preview");
+    window->setOriginalImagePreviewSource(input, selection);
+    window->setOriginalImagePreviewEnabled(true);
+    require(window->findChild<ScreenshotOriginalImagePreviewWindow*>() == nullptr,
+            "enabling a preview on hidden recognition content must not create a window");
+    require(window->present({screen, nullptr, geometry, selection}),
+            "small selection preview result presents");
+    const auto flush = [] {
+        for (int i = 0; i < 4; ++i) {
+            QApplication::sendPostedEvents();
+            QApplication::processEvents();
+            QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        }
+    };
+    flush();
+    QPointer<ScreenshotOriginalImagePreviewWindow> preview =
+        window->findChild<ScreenshotOriginalImagePreviewWindow*>();
+    const auto requirePreviewVisible = [&](const char* message) {
+        flush();
+        const auto previews = window->findChildren<ScreenshotOriginalImagePreviewWindow*>();
+        require(previews.size() == 1 && previews.front()->isVisible(), message);
+        preview = previews.front();
+    };
+    const auto requirePreviewDestroyed = [&](const char* message) {
+        flush();
+        require(preview.isNull() &&
+                    window->findChild<ScreenshotOriginalImagePreviewWindow*>() == nullptr,
+                message);
+    };
+    require(preview && preview->isWindow() && preview->isVisible() &&
+                preview->size() == geometry.size() && !preview->hasFocus(),
+            "preview is a separate passive selection-sized window");
+    require(preview->grab().toImage().pixelColor(40, 12) == QColor(18, 72, 156),
+            "preview displays the input pixels independently of source DPR metadata");
+    const QPointer<ScreenshotOriginalImagePreviewWindow> stackingPreview = preview;
+    window->syncOriginalImagePreviewStacking(false);
+    requirePreviewVisible("changing stacking policy must keep the preview visible");
+    window->syncOriginalImagePreviewStacking(true);
+    requirePreviewVisible("restoring stacking policy must keep the preview visible");
+    require(stackingPreview && stackingPreview == preview,
+            "temporary window-flag remapping must not destroy a visible preview");
+    QTextDocument document;
+    document.setPlainText(QStringLiteral("A long draft that must not expand the selection"));
+    window->showTextEditor(&document);
+    flush();
+    require(preview->isVisible(), "text editing preserves the separate preview");
+    window->setShowOriginalImage(true);
+    require(preview->isHidden(), "original-image mode must hide the preview immediately");
+    requirePreviewDestroyed("showing the original image destroys its separate preview");
+    require(window->geometry() == geometry,
+            "showing the original image preserves selection geometry");
+    window->setShowOriginalImage(false);
+    window->setShowOriginalImage(true);
+    requirePreviewDestroyed("a queued preview refresh must respect the original-image mode");
+    window->setShowOriginalImage(false);
+    requirePreviewVisible("returning to recognition results creates a new preview");
+    window->hideTextEditor();
+    window->refreshOriginalImagePreview();
+    window->setOriginalImagePreviewSuppressed(true);
+    require(preview->isHidden(), "interaction suppression must hide the preview immediately");
+    requirePreviewDestroyed(
+        "interaction suppression destroys the preview despite queued refreshes");
+    window->setOriginalImagePreviewEnabled(false);
+    window->setOriginalImagePreviewSuppressed(false);
+    requirePreviewDestroyed("suppression end cannot create a disabled preview");
+    window->setOriginalImagePreviewEnabled(true);
+    requirePreviewVisible("reenabling a preview creates a window from its retained input source");
+    require(preview->grab().toImage().pixelColor(40, 12) == QColor(18, 72, 156),
+            "recreated previews retain the original source pixels");
+    window->setOriginalImagePreviewEnabled(false);
+    requirePreviewDestroyed("disabling a visible preview destroys its window");
+    window->setOriginalImagePreviewEnabled(true);
+    requirePreviewVisible("reenabling a visible host creates a preview on demand");
+    window->hide();
+    require(preview->isHidden(), "hiding results must hide the companion immediately");
+    requirePreviewDestroyed("hiding results destroys the companion");
+    window->show();
+    requirePreviewVisible("showing results creates a new companion");
+    window->showMinimized();
+    requirePreviewDestroyed("minimizing results destroys the companion");
+    window->showNormal();
+    requirePreviewVisible("restoring results creates a new companion");
+    const QPointer<ScreenshotOriginalImagePreviewWindow> directlyHiddenPreview = preview;
+    window->refreshOriginalImagePreview();
+    preview->hide();
+    requirePreviewVisible("a queued refresh must recreate a directly hidden preview");
+    require(directlyHiddenPreview.isNull(),
+            "a queued refresh must not reuse a directly hidden preview");
+    preview->hide();
+    requirePreviewDestroyed("directly hiding a preview automatically destroys it");
+    window->refreshOriginalImagePreview();
+    requirePreviewVisible("an explicit refresh recreates a directly hidden preview");
+    preview->close();
+    requirePreviewDestroyed("closing a preview automatically destroys it");
+    window->refreshOriginalImagePreview();
+    requirePreviewVisible("an explicit refresh recreates a closed preview");
+    window->setOriginalImagePreviewSource({}, {});
+    requirePreviewDestroyed("clearing the source destroys the preview");
+    window->setOriginalImagePreviewSource(input, selection);
+    requirePreviewVisible("restoring valid source data creates a new preview");
+    window->setOriginalImagePreviewProvider([] { return std::nullopt; }, window);
+    requirePreviewDestroyed("an unavailable provider destroys the preview");
+    window->setOriginalImagePreviewProvider(
+        [&]() -> std::optional<ScreenshotOriginalImagePreviewState> {
+            ScreenshotOriginalImagePreviewState state;
+            state.image = input;
+            state.imageRectInViewport = QRectF(0, 0, std::numeric_limits<qreal>::infinity(), 48);
+            state.resultRect = geometry;
+            return state;
+        },
+        window);
+    requirePreviewDestroyed("failed presentation must not retain a newly created hidden preview");
+    window->setOriginalImagePreviewProvider({}, window);
+    requirePreviewVisible("recovering from failed presentation creates a valid preview");
+    const QPointer<ScreenshotOriginalImagePreviewWindow> retiredPreview = preview;
+    window->setOriginalImagePreviewSuppressed(true);
+    window->setOriginalImagePreviewSuppressed(false);
+    requirePreviewVisible("ending suppression before deferred deletion creates a fresh preview");
+    require(retiredPreview.isNull(), "a retired preview must never be reused by a queued refresh");
+    window->refreshOriginalImagePreview();
+    delete window;
+    require(preview.isNull(), "destroying results destroys the separate preview");
+    flush();
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--preview-window-only"))) {
+        originalImagePreviewPreservesSelectionAndOwnerLifecycle();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--ocr-double-click-only"))) {
         ocrDoubleClickCopiesOnlyTheClickedBlock();
         ocrDoubleClickPreservesEditorsAndResizeHandles();
