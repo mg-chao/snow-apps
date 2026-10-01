@@ -459,7 +459,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #ifdef Q_OS_MACOS
      QJsonObject(),
 #else
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+     QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
                  {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
 #endif
      ConfigurationValueKind::Structured},
@@ -467,7 +467,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #ifdef Q_OS_MACOS
      QJsonObject(),
 #else
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+     QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
                  {QStringLiteral("mouse_button"), QStringLiteral("wheel_drag")}},
 #endif
      ConfigurationValueKind::Structured},
@@ -475,7 +475,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #ifdef Q_OS_MACOS
      QJsonObject(),
 #else
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+     QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
                  {QStringLiteral("mouse_button"), QStringLiteral("right_drag")}},
 #endif
      ConfigurationValueKind::Structured},
