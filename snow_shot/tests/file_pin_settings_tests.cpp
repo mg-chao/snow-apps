@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include <QApplication>
 #include <QHash>
@@ -43,6 +44,41 @@ class Backend final : public GlobalShortcutBackend {
         registrations.remove(id);
     }
 };
+void windowButtonSettings() {
+    const storage::PinToScreenSettings stored;
+    const auto binding = settings::SettingsSwitchBinding::PinShowWindowButtons;
+    GlobalShortcutManager manager(std::make_unique<Backend>(), nullptr, [] { return false; });
+    settings::BuiltInSettingsBackend backend(manager);
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    const auto* field = settings::builtInSettingsRegistry().fieldForSwitch(binding);
+    require(field && field->pageId == QStringLiteral("function-settings") &&
+                field->sectionId == QStringLiteral("pin-to-screen-settings") &&
+                field->id == QStringLiteral("pin-to-screen.show-window-buttons") &&
+                field->configurationKey == QStringLiteral("pin_to_screen/show_window_buttons") &&
+                field->reset == settings::SettingsSectionReset::PinToScreenBehavior,
+            "window buttons switch belongs to Pin to screen in function settings");
+    require(stored.showWindowButtons() && backend.switchValue(binding) &&
+                session.state(field->id).visible && session.state(field->id).enabled,
+            "window buttons default on and their setting is available");
+    require(session.applySwitchValue(binding, false) && !stored.showWindowButtons() &&
+                !backend.switchValue(binding),
+            "the settings switch must disable both window buttons");
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    require(applicationStorage.configuration().flushNow().success,
+            "window button preferences must be flushable");
+    storage::ConfigurationStore reloaded(applicationStorage.configurationDirectory() +
+                                             QStringLiteral("/config.json"),
+                                         true, true, 60000);
+    require(!reloaded.value(QStringLiteral("pin_to_screen/show_window_buttons")).toBool(true),
+            "disabled window buttons must survive a configuration reload");
+    require(session.applySwitchValue(binding, true) && stored.showWindowButtons(),
+            "the settings switch must enable window buttons again");
+    require(session.applySwitchValue(binding, false) &&
+                backend.resetSection(settings::SettingsSectionReset::PinToScreenBehavior) &&
+                stored.showWindowButtons() && backend.switchValue(binding),
+            "resetting pin behavior must restore visible window buttons");
+}
+
 void textSelectionSettings() {
     const storage::PinToScreenSettings stored;
     const auto binding = settings::SettingsSelectBinding::PinTextSelectionOnRecognitionResults;
@@ -236,6 +272,7 @@ int main(int argc, char** argv) {
     require(
         storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path()}).success,
         "temporary storage must initialize");
+    windowButtonSettings();
     textSelectionSettings();
     duplicateContentSettings();
     clipboardSourceIdentity();

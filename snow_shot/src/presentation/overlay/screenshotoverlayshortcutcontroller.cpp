@@ -198,6 +198,27 @@ struct ScreenshotOverlayShortcutController::Impl {
                     [this]() {
                         return inputHandler.acceptInput() && actions.cycleColorPickerFormat();
                     })));
+
+        auto snap = fixedBinding(
+            QStringLiteral("screenshot.selection_aspect_ratio_snap"),
+            {QKeyCombination(Qt::ControlModifier, Qt::Key_Control)},
+            ShortcutManager::StandardPriority::WindowCommand,
+            [this]() {
+                return (interaction.selecting() || interaction.movingSelection() ||
+                        interaction.modifyingSelection() || interaction.editing()) &&
+                       actions.localShortcutInputAllowed();
+            },
+            [this]() {
+                return inputHandler.acceptInput() &&
+                       inputHandler.activateSelectionAspectRatioSnapShortcut();
+            });
+        snap.allowModifierOnlyControl = true;
+        snap.allowedAdditionalModifiers = Qt::ShiftModifier;
+        snap.release = [this](const auto&) {
+            return inputHandler.releaseSelectionAspectRatioSnapShortcut();
+        };
+        snap.cancel = [this] { inputHandler.cancelSelectionAspectRatioSnapShortcut(); };
+        static_cast<void>(shortcutManager.addBinding(&q, std::move(snap)));
     }
 
     void registerConfiguredBindings() {

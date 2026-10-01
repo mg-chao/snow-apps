@@ -259,8 +259,8 @@ bool ScreenshotPinnedWindow::beginControlledInteraction(const QPointF& desktopPo
     if (m_editController) {
         if (handle && m_editController->editMode())
             static_cast<void>(m_editController->beginTemporaryResizeWindowTool());
-        m_editController->beginNativeWindowInteraction();
     }
+    beginAuxiliaryWindowInteraction();
     if (!m_clickThroughActive)
         static_cast<void>(m_platform->activate());
     m_interactionGrabber = QWidget::mouseGrabber();
@@ -387,7 +387,6 @@ void ScreenshotPinnedWindow::endControlledInteraction(bool cancel) {
     clearWindowDragCursor();
     if (m_editController) {
         m_editController->endTemporaryResizeWindowTool();
-        m_editController->endNativeWindowInteraction();
     }
     if (!m_closing) {
         updateCanvasViewport();
@@ -397,6 +396,7 @@ void ScreenshotPinnedWindow::endControlledInteraction(bool cancel) {
             reconcilePlatformEnvironment();
         schedulePersistence();
     }
+    endAuxiliaryWindowInteraction();
 }
 
 bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* event) {

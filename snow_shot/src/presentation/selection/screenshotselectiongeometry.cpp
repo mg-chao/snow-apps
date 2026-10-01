@@ -64,27 +64,23 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
         horizontalSpan < 0.0 ? -horizontalDirection : horizontalDirection;
     const int resizedVerticalDirection =
         verticalSpan < 0.0 ? -verticalDirection : verticalDirection;
-    const qreal horizontalScale = std::abs(horizontalSpan) / originWidth;
-    const qreal verticalScale = std::abs(verticalSpan) / originHeight;
-    qreal scale = 1.0;
-    if (horizontalDirection != 0 && verticalDirection != 0) {
-        scale = std::abs(horizontalSpan / originWidth - 1.0) >=
-                        std::abs(verticalSpan / originHeight - 1.0)
-                    ? horizontalScale
-                    : verticalScale;
-    } else {
-        scale = horizontalDirection != 0 ? horizontalScale : verticalScale;
-    }
+    // Keep the driven pointer span exact and derive only the other dimension.
+    // Snapping may request a ratio different from the drag origin's ratio.
+    const bool resizeFromWidth =
+        horizontalDirection != 0 &&
+        (verticalDirection == 0 || std::abs(horizontalSpan / originWidth - 1.0) >=
+                                       std::abs(verticalSpan / originHeight - 1.0));
+    const qreal minimumSpan =
+        resizeFromWidth ? std::max(minimumSelectionSize, minimumSelectionSize / lockedAspectRatio)
+                        : std::max(minimumSelectionSize, minimumSelectionSize * lockedAspectRatio);
+    const qreal span =
+        std::max(resizeFromWidth ? std::abs(horizontalSpan) : std::abs(verticalSpan), minimumSpan);
 
-    const qreal minimumScale =
-        std::max(minimumSelectionSize / originWidth, minimumSelectionSize / originHeight);
-    scale = std::max(scale, minimumScale);
-
-    const auto rectForScale = [origin, horizontalDirection, verticalDirection,
-                               resizedHorizontalDirection, resizedVerticalDirection, originWidth,
-                               lockedAspectRatio](qreal nextScale) {
-        const qreal width = originWidth * nextScale;
-        const qreal height = width * lockedAspectRatio;
+    const auto rectForSpan = [origin, horizontalDirection, verticalDirection,
+                              resizedHorizontalDirection, resizedVerticalDirection, resizeFromWidth,
+                              lockedAspectRatio](qreal nextSpan) {
+        const qreal width = resizeFromWidth ? nextSpan : nextSpan / lockedAspectRatio;
+        const qreal height = resizeFromWidth ? nextSpan * lockedAspectRatio : nextSpan;
         qreal left = origin.center().x() - width / 2.0;
         qreal right = left + width;
         qreal top = origin.center().y() - height / 2.0;
@@ -116,7 +112,7 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
     };
 
     if (bounds.isNull()) {
-        return rectForScale(scale);
+        return rectForSpan(span);
     }
 
     const QRectF normalizedBounds = bounds.normalized();
@@ -125,21 +121,21 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
                rect.right() <= normalizedBounds.right() &&
                rect.bottom() <= normalizedBounds.bottom();
     };
-    if (fitsBounds(rectForScale(scale))) {
-        return rectForScale(scale);
+    if (fitsBounds(rectForSpan(span))) {
+        return rectForSpan(span);
     }
 
-    qreal lowerScale = minimumScale;
-    qreal upperScale = scale;
+    qreal lowerSpan = minimumSpan;
+    qreal upperSpan = span;
     for (int iteration = 0; iteration < 40; ++iteration) {
-        const qreal middleScale = (lowerScale + upperScale) / 2.0;
-        if (fitsBounds(rectForScale(middleScale))) {
-            lowerScale = middleScale;
+        const qreal middleSpan = (lowerSpan + upperSpan) / 2.0;
+        if (fitsBounds(rectForSpan(middleSpan))) {
+            lowerSpan = middleSpan;
         } else {
-            upperScale = middleScale;
+            upperSpan = middleSpan;
         }
     }
-    return rectForScale(lowerScale);
+    return rectForSpan(lowerSpan);
 }
 
 QRectF aspectRatioLockedMarqueeRect(const QPointF& originPosition, const QPointF& position,

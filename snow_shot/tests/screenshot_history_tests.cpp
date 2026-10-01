@@ -4977,6 +4977,223 @@ void aspectRatioDragConfirmationPreservesPreview() {
     }
 }
 
+void controlSnapTracksPresetsAndPersistsSelectionRatio() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const QString ratioKey = QStringLiteral("screenshot_selection/aspect_ratio");
+    const QString lockKey = QStringLiteral("screenshot_selection/lock_aspect_ratio");
+    require(configuration.setValues({{ratioKey, QStringLiteral("16:9")}, {lockKey, true}}),
+            "snap fixture must begin with a configured ratio");
+
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel display;
+    display.active = true;
+    display.physicalRect = QRect(0, 0, 1920, 1080);
+    display.logicalRect = display.physicalRect;
+    displays.appendDisplay(display);
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Landscape16x9, {}, 1.0));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    int saved = 0;
+    int confirmed = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.persistSelectionAspectRatioPreference = [&](Preset preset, bool locked) {
+        ++saved;
+        require(configuration.setValues({{ratioKey, screenshotSelectionAspectRatioPresetId(preset)},
+                                         {lockKey, locked}}),
+                "snap must write the actual aspect ratio preference immediately");
+    };
+    actions.selectionConfirmed = [&] { ++confirmed; };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    QWidget shortcutWindow;
+    shortcutWindow.show();
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&shortcutWindow);
+    ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction, intelligent,
+                                                  actions);
+
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Control, Qt::ControlModifier),
+            "Ctrl must arm before a rectangular marquee starts");
+    require(configuration.value(ratioKey) == QStringLiteral("16:9") && saved == 0,
+            "Ctrl before a drag must leave an idle selection preference untouched");
+    handler.handleMousePress(nullptr, QPointF(100, 100));
+    handler.handleMouseMove(nullptr, QPointF(250, 200));
+    require(selection.aspectRatioPreset() == Preset::Landscape3x2 &&
+                configuration.value(ratioKey) == QStringLiteral("3:2") && saved == 1,
+            "the unconstrained pointer ratio must override the configured preset immediately");
+    handler.handleMouseMove(nullptr, QPointF(250, 350));
+    require(selection.aspectRatioPreset() == Preset::Portrait9x16 &&
+                configuration.value(ratioKey) == QStringLiteral("9:16") && saved == 2,
+            "a held Ctrl must track a changing nearest preset without repeated writes");
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Control),
+            "releasing Ctrl must stop target tracking");
+    handler.handleMouseMove(nullptr, QPointF(350, 300));
+    require(selection.aspectRatioPreset() == Preset::Portrait9x16 && saved == 2 &&
+                qFuzzyCompare(selection.normalizedSelection().height() /
+                                  selection.normalizedSelection().width(),
+                              screenshotSelectionAspectRatioHeightOverWidth(Preset::Portrait9x16)),
+            "releasing Ctrl must keep the last snapped ratio through the rest of the drag");
+    handler.handleMouseRelease(nullptr, QPointF(350, 300));
+    require(confirmed == 1 && selection.aspectRatioPreset() == Preset::Portrait9x16 &&
+                configuration.value(ratioKey) == QStringLiteral("9:16") &&
+                configuration.value(lockKey).toBool(),
+            "confirmation must preserve the selected snap and saved lock");
+
+    interaction.enterOverlayVisible(false);
+    selection.clearSelection();
+    require(handler.activateKeepSelectionAspectRatioShortcut(false),
+            "Shift must arm before the competing marquee drag");
+    handler.handleMousePress(nullptr, QPointF(100, 100));
+    handler.handleMouseMove(nullptr, QPointF(180, 240));
+    require(qFuzzyCompare(selection.normalizedSelection().width(),
+                          selection.normalizedSelection().height()),
+            "Shift must initially preview a square");
+    require(
+        dispatchShortcut(shortcutWindow, Qt::Key_Control, Qt::ControlModifier | Qt::ShiftModifier),
+        "Ctrl pressed mid-drag must activate snapping");
+    require(selection.aspectRatioPreset() == Preset::Portrait9x16 &&
+                !qFuzzyCompare(selection.normalizedSelection().width(),
+                               selection.normalizedSelection().height()),
+            "Ctrl must supersede Shift using the unconstrained current gesture");
+    handler.handleMouseMove(nullptr, QPointF(280, 200));
+    require(selection.aspectRatioPreset() == Preset::Landscape16x9 &&
+                configuration.value(ratioKey) == QStringLiteral("16:9"),
+            "Ctrl plus Shift must continue tracking the nearest preset");
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Control, Qt::ShiftModifier),
+            "Ctrl release must preserve the last target even while Shift remains held");
+    require(handler.activateToolbarShortcutForSelection(
+                [&] { return selection.aspectRatioPreset() == Preset::Landscape16x9; }),
+            "toolbar confirmation must see the snapped ratio before command activation");
+    handler.handleMouseRelease(nullptr, QPointF(280, 200));
+    require(confirmed == 2 && selection.aspectRatioPreset() == Preset::Landscape16x9 &&
+                configuration.value(ratioKey) == QStringLiteral("16:9"),
+            "toolbar confirmation must retain the final snapped preference");
+
+    const int savesBeforeMove = saved;
+    require(handler.activateMoveEntireSelectionShortcut(),
+            "the whole-selection modifier must arm for the move-only check");
+    const QPointF center = selection.normalizedSelection().center();
+    handler.handleMousePress(nullptr, center);
+    require(interaction.dragging() && interaction.dragMode() == ScreenshotSelectionDragMode::All,
+            "the retained rectangle must start a whole-selection move");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_Control, Qt::ControlModifier),
+            "Ctrl may be held during a whole-selection move");
+    handler.handleMouseMove(nullptr, center + QPointF(20, 10));
+    require(saved == savesBeforeMove && configuration.value(ratioKey) == QStringLiteral("16:9"),
+            "a whole-selection move must not choose or persist another snap preset");
+    handler.handleMouseRelease(nullptr, center + QPointF(20, 10));
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Control) &&
+                handler.releaseMoveEntireSelectionShortcut(),
+            "move-only modifiers must release after the gesture");
+
+    interaction.enterOverlayVisible(false);
+    selection.setRegionType(ScreenshotRegionType::Polyline);
+    require(!handler.activateSelectionAspectRatioSnapShortcut(),
+            "nonrectangular region input must not arm Ctrl snapping");
+    selection.setRegionType(ScreenshotRegionType::Rectangle);
+    selection.beginRegionOperation(ScreenshotSelectionModel::RegionOperation::Add);
+    require(!handler.activateSelectionAspectRatioSnapShortcut(),
+            "Boolean region operations must not arm Ctrl snapping");
+    selection.cancelRegionOperation();
+}
+
+void controlSnapBorderResizePreservesDrivenEdge() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const QString ratioKey = QStringLiteral("screenshot_selection/aspect_ratio");
+    const QString lockKey = QStringLiteral("screenshot_selection/lock_aspect_ratio");
+    for (const bool followPosition : {false, true}) {
+        require(storage::ScreenshotSettings().setSelectionResizeMode(
+                    followPosition ? QStringLiteral("follow_mouse_position")
+                                   : QStringLiteral("follow_mouse_movement")),
+                "border snap fixture must select its grab behavior");
+        for (const bool snapBeforeDrag : {false, true}) {
+            require(configuration.setValues({{ratioKey, QStringLiteral("free")}, {lockKey, false}}),
+                    "border snap fixture must begin with an unlocked selection");
+            ScreenshotCaptureState capture;
+            ScreenshotDisplaySession displays;
+            CapturedDisplayModel display;
+            display.active = true;
+            display.physicalRect = QRect(0, 0, 1920, 1080);
+            display.logicalRect = display.physicalRect;
+            displays.appendDisplay(display);
+            ScreenshotGeometryMapper geometry;
+            geometry.rebuild(displays);
+            ScreenshotSelectionModel selection;
+            selection.setSelectionRect(QRectF(100, 100, 150, 100));
+            ScreenshotIntelligentSelectionModel intelligent;
+            ScreenshotInteractionState interaction;
+            interaction.confirmSelection();
+            int saved = 0;
+            int confirmed = 0;
+            ScreenshotOverlayInputActions actions;
+            actions.persistSelectionAspectRatioPreference = [&](Preset preset, bool locked) {
+                ++saved;
+                require(configuration.setValues(
+                            {{ratioKey, screenshotSelectionAspectRatioPresetId(preset)},
+                             {lockKey, locked}}),
+                        "border snapping must persist the chosen ratio");
+            };
+            actions.selectionConfirmed = [&] { ++confirmed; };
+            ScreenshotOverlayInputHandler handler(
+                {capture, interaction, selection, intelligent, geometry, displays, actions});
+            QWidget shortcutWindow;
+            shortcutWindow.show();
+            snow_shot::presentation::WindowShortcutManager manager;
+            manager.addScopeWindow(&shortcutWindow);
+            ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction,
+                                                          intelligent, actions);
+            if (snapBeforeDrag)
+                require(dispatchShortcut(shortcutWindow, Qt::Key_Control, Qt::ControlModifier),
+                        "Ctrl must arm before a border drag");
+            handler.handleMousePress(nullptr, QPointF(175, 200));
+            require(interaction.dragMode() == ScreenshotSelectionDragMode::Bottom,
+                    "the bottom border must start a vertical resize");
+            handler.handleMouseMove(nullptr, QPointF(175, 250));
+            if (!snapBeforeDrag)
+                require(dispatchShortcut(shortcutWindow, Qt::Key_Control, Qt::ControlModifier),
+                        "Ctrl must snap an in-progress border drag");
+            const qreal grabbedCellOffset = followPosition ? 1.0 : 0.0;
+            const QRectF square = selection.normalizedSelection();
+            require(selection.aspectRatioPreset() == Preset::Square && square.top() == 100 &&
+                        square.center().x() == 175 && square.bottom() == 250 + grabbedCellOffset &&
+                        square.width() == square.height(),
+                    "a square snap must preserve the dragged bottom edge and opposite anchor");
+            handler.handleMouseMove(nullptr, QPointF(175, 300));
+            require(selection.aspectRatioPreset() == Preset::Portrait3x4 && saved == 2 &&
+                        selection.normalizedSelection().bottom() == 300 + grabbedCellOffset &&
+                        selection.pixelSelection().bottom() + 1 == 300 + grabbedCellOffset &&
+                        configuration.value(ratioKey) == QStringLiteral("3:4"),
+                    "changing the nearest ratio must keep the bottom border on the pointer");
+            require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Control),
+                    "Ctrl must release during a border drag");
+            handler.handleMouseMove(nullptr, QPointF(175, 350));
+            const QRectF preview = selection.normalizedSelection();
+            require(
+                selection.aspectRatioPreset() == Preset::Portrait3x4 && saved == 2 &&
+                    preview.top() == 100 && preview.center().x() == 175 &&
+                    preview.bottom() == 350 + grabbedCellOffset &&
+                    selection.pixelSelection().bottom() + 1 == 350 + grabbedCellOffset &&
+                    qFuzzyCompare(preview.height() / preview.width(), 4.0 / 3.0),
+                "Ctrl release must retain the snapped ratio while the border follows the pointer");
+            handler.handleMouseRelease(nullptr, QPointF(175, 350));
+            require(confirmed == 1 && selection.normalizedSelection() == preview &&
+                        selection.aspectRatioPreset() == Preset::Portrait3x4 &&
+                        configuration.value(lockKey).toBool(),
+                    "confirmation must preserve the border snap preview and persisted lock");
+        }
+    }
+    require(storage::ScreenshotSettings().setSelectionResizeMode(
+                QStringLiteral("follow_mouse_movement")),
+            "restore movement-follow resizing after the border snap fixture");
+}
+
 int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -4995,6 +5212,8 @@ int main(int argc, char** argv) {
         rememberedRatioNormalizesSmartPicksBeforePresentation();
         rectangularRegionEditsPreserveExactGeometryWithRememberedRatio();
         aspectRatioDragConfirmationPreservesPreview();
+        controlSnapTracksPresetsAndPersistsSelectionRatio();
+        controlSnapBorderResizePreservesDrivenEdge();
         appStorage.shutdown();
         return 0;
     }

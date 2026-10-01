@@ -1648,6 +1648,10 @@
             <translation>磁碟用量</translation>
         </message>
         <message>
+            <source>Display the original image beside recognition and translation results.</source>
+            <translation>在辨識和翻譯結果旁顯示原始影像。</translation>
+        </message>
+        <message>
             <source>Display translated text in the original image</source>
             <translation>在原始影像中顯示翻譯後的文字</translation>
         </message>
@@ -3068,6 +3072,10 @@
             <translation>顯示主視窗</translation>
         </message>
         <message>
+            <source>Show original image preview</source>
+            <translation>顯示原圖預覽</translation>
+        </message>
+        <message>
             <source>Show screenshot guides when a capture starts</source>
             <translation>開始截圖時顯示輔助線</translation>
         </message>
@@ -3086,6 +3094,14 @@
         <message>
             <source>Show the captured mouse cursor by default in new normal screenshots.</source>
             <translation>在新的一般螢幕擷取中預設顯示擷取的滑鼠游標。</translation>
+        </message>
+        <message>
+            <source>Show the drawing and close buttons in the upper-right corner of pinned windows</source>
+            <translation>顯示貼圖視窗右上角的繪圖和關閉按鈕</translation>
+        </message>
+        <message>
+            <source>Show window buttons</source>
+            <translation>顯示視窗按鈕</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>

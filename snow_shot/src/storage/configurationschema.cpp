@@ -302,6 +302,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #endif
     {QStringLiteral("text_recognition/save_recognition_result_as_image"), true,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("text_recognition/show_original_image_preview"), true,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/default_formatting"),
      QStringLiteral("none"),
      ConfigurationValueKind::String,
@@ -459,7 +461,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #ifdef Q_OS_MACOS
      QJsonObject(),
 #else
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+     QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
                  {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
 #endif
      ConfigurationValueKind::Structured},
@@ -467,7 +469,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #ifdef Q_OS_MACOS
      QJsonObject(),
 #else
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+     QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
                  {QStringLiteral("mouse_button"), QStringLiteral("wheel_drag")}},
 #endif
      ConfigurationValueKind::Structured},
@@ -475,7 +477,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
 #ifdef Q_OS_MACOS
      QJsonObject(),
 #else
-     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+     QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
                  {QStringLiteral("mouse_button"), QStringLiteral("right_drag")}},
 #endif
      ConfigurationValueKind::Structured},
@@ -1128,6 +1130,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
       QStringLiteral("hide_to_top"), QStringLiteral("close")}},
+    {QStringLiteral("pin_to_screen/show_window_buttons"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("pin_to_screen/automatic_text_recognition"), !app::edition::isMini,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("pin_to_screen/text_selection_on_recognition_results"),

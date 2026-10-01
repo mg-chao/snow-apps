@@ -474,6 +474,10 @@
             <translation>从中心缩放</translation>
         </message>
         <message>
+            <source>Selection Aspect Ratio Snap</source>
+            <translation>选区宽高比吸附</translation>
+        </message>
+        <message>
             <source>Switch color format</source>
             <translation>切换颜色格式</translation>
         </message>

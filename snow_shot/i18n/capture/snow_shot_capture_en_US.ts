@@ -474,6 +474,10 @@
             <translation>Scale from center</translation>
         </message>
         <message>
+            <source>Selection Aspect Ratio Snap</source>
+            <translation>Selection Aspect Ratio Snap</translation>
+        </message>
+        <message>
             <source>Switch color format</source>
             <translation>Switch color format</translation>
         </message>

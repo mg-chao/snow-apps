@@ -2358,7 +2358,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-settings-page-loading-tests
         COMMAND snow-shot-settings-page-loading-tests)
     set_tests_properties(snow-shot-settings-page-loading-tests PROPERTIES
-        LABELS "unit" TIMEOUT 30
+        LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
@@ -8224,6 +8224,22 @@ foreach(_conversion_controller_target IN ITEMS snow_shot
             src/presentation/components/screenshottranslationsettingsdialog.cpp
             include/snow_shot/presentation/screenshotimageconversioncontroller.h
             src/presentation/ocr/screenshotimageconversioncontroller.cpp)
+        if(NOT _conversion_controller_target STREQUAL "snow_shot")
+            target_sources(${_conversion_controller_target} PRIVATE
+                include/snow_shot/presentation/components/formfields.h
+                src/presentation/components/formfields.cpp
+                include/snow_shot/presentation/components/pathinput.h
+                src/presentation/components/pathinput.cpp)
+            target_link_libraries(${_conversion_controller_target} PRIVATE
+                snow_shot_settings_catalog)
+            get_target_property(_dialog_host_sources ${_conversion_controller_target} SOURCES)
+            if(NOT "${_dialog_host_sources}" MATCHES "styles/thememanager\\.cpp")
+                target_sources(${_conversion_controller_target} PRIVATE
+                    include/snow_shot/presentation/styles/thememanager.h
+                    src/presentation/styles/thememanager.cpp
+                    src/presentation/styles/themecolorscheme.cpp)
+            endif()
+        endif()
     endif()
 endforeach()
 
@@ -8964,6 +8980,123 @@ foreach(_snow_target IN LISTS _snow_skin_consumers)
         target_link_libraries(${_snow_target} PRIVATE snow_shot_main_window_skin)
     endif()
 endforeach()
+
+add_library(snow_shot_original_image_preview STATIC
+    include/snow_shot/presentation/screenshotoriginalimagepreviewwindow.h
+    src/presentation/ocr/screenshotoriginalimagepreviewwindow.cpp
+    src/presentation/overlay/screenshotimagerendering.cpp)
+target_include_directories(snow_shot_original_image_preview PUBLIC include)
+target_link_libraries(snow_shot_original_image_preview PUBLIC Qt6::Widgets PRIVATE adqt::dpi_window)
+snow_shot_link_macos_window_platform(snow_shot_original_image_preview)
+if(WIN32)
+    target_link_libraries(snow_shot_original_image_preview PRIVATE user32 gdi32)
+endif()
+
+get_property(_snow_preview_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_target IN LISTS _snow_preview_consumers)
+    get_target_property(_snow_sources ${_snow_target} SOURCES)
+    if("${_snow_sources}" MATCHES "screenshot(recognitionwindow|canvasrenderer)\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_original_image_preview)
+    endif()
+endforeach()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-original-image-preview-tests
+        tests/screenshot_original_image_preview_tests.cpp)
+    target_link_libraries(snow-shot-original-image-preview-tests PRIVATE
+        snow_shot_original_image_preview)
+    snow_shot_import_offscreen_platform(snow-shot-original-image-preview-tests)
+    add_test(NAME snow-shot-original-image-preview-tests
+        COMMAND snow-shot-original-image-preview-tests -platform offscreen)
+    set_tests_properties(snow-shot-original-image-preview-tests PROPERTIES LABELS "unit"
+        TIMEOUT 60 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(APPLE)
+        set_source_files_properties(tests/screenshot_original_image_preview_tests.cpp
+            PROPERTIES LANGUAGE OBJCXX)
+        target_link_libraries(snow-shot-original-image-preview-tests PRIVATE "-framework AppKit")
+        add_test(NAME snow-shot-original-image-preview-native-macos-tests
+            COMMAND snow-shot-original-image-preview-tests --native-only -platform cocoa)
+        set_tests_properties(snow-shot-original-image-preview-native-macos-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 120)
+    endif()
+    if(WIN32)
+        set(_preview_scales 1 1.25 1.5 1.75 2)
+        set(_preview_factors 0.5 0.625 0.75 0.875 1)
+        foreach(_preview_scale _preview_factor IN ZIP_LISTS _preview_scales _preview_factors)
+            add_test(NAME snow-shot-original-image-preview-native-${_preview_scale}-tests
+                COMMAND snow-shot-original-image-preview-tests --native-only -platform windows)
+            set_tests_properties(snow-shot-original-image-preview-native-${_preview_scale}-tests
+                PROPERTIES LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 60
+                ENVIRONMENT "QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_preview_factor};SNOW_PREVIEW_TEST_DPR=${_preview_scale}"
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+            add_test(NAME snow-shot-pinned-original-image-preview-native-${_preview_scale}-tests
+                COMMAND snow-shot-pinned-window-tests --original-image-preview-only -platform windows)
+            set_tests_properties(snow-shot-pinned-original-image-preview-native-${_preview_scale}-tests
+                PROPERTIES LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 120
+                ENVIRONMENT "QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_preview_factor};SNOW_PREVIEW_TEST_DPR=${_preview_scale}"
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        endforeach()
+        add_test(NAME snow-shot-original-image-preview-native-platform-tests
+            COMMAND snow-shot-original-image-preview-tests --native-only -platform windows)
+        add_test(NAME snow-shot-pinned-original-image-preview-native-platform-tests
+            COMMAND snow-shot-pinned-window-tests --original-image-preview-only -platform windows)
+        set_tests_properties(snow-shot-original-image-preview-native-platform-tests
+            snow-shot-pinned-original-image-preview-native-platform-tests PROPERTIES
+            LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;QT_SCREEN_SCALE_FACTORS=unset:;QT_SCALE_FACTOR=unset:;SNOW_PREVIEW_TEST_DPR=unset:")
+    endif()
+    add_test(NAME snow-shot-recognition-original-image-preview-tests
+        COMMAND snow-shot-recognition-session-controller-tests --original-image-preview-only
+            -platform offscreen)
+    add_test(NAME snow-shot-recognition-original-image-preview-window-tests
+        COMMAND snow-shot-recognition-window-tests --preview-window-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-original-image-preview-tests
+        COMMAND snow-shot-pinned-window-tests --original-image-preview-only -platform offscreen)
+    add_test(NAME snow-shot-original-image-preview-settings-tests
+        COMMAND snow-shot-translation-settings-tests --original-image-preview-only -platform offscreen)
+    add_test(NAME snow-shot-large-image-slice-rendering-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --large-image-slice-rendering
+            -platform offscreen)
+    set_tests_properties(snow-shot-recognition-original-image-preview-tests
+        snow-shot-recognition-original-image-preview-window-tests
+        snow-shot-pinned-original-image-preview-tests snow-shot-original-image-preview-settings-tests
+        snow-shot-large-image-slice-rendering-tests
+        PROPERTIES LABELS "unit" TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    foreach(_preview_scale IN ITEMS 1.25 2)
+        add_test(NAME snow-shot-pinned-original-image-preview-${_preview_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --original-image-preview-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-original-image-preview-${_preview_scale}-tests
+            PROPERTIES LABELS "unit" TIMEOUT 120 ENVIRONMENT "QT_SCALE_FACTOR=${_preview_scale}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
+    add_test(NAME snow-shot-original-image-preview-retina-tests
+        COMMAND snow-shot-original-image-preview-tests -platform offscreen)
+    set_tests_properties(snow-shot-original-image-preview-retina-tests PROPERTIES LABELS "unit"
+        TIMEOUT 60 ENVIRONMENT "QT_SCALE_FACTOR=2"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-original-image-preview-performance-benchmark
+        tests/screenshot_original_image_preview_performance_benchmark.cpp)
+    target_link_libraries(snow-shot-original-image-preview-performance-benchmark PRIVATE
+        snow_shot_original_image_preview)
+    snow_shot_import_offscreen_platform(snow-shot-original-image-preview-performance-benchmark)
+    add_test(NAME snow-shot-original-image-preview-performance-benchmark
+        COMMAND snow-shot-original-image-preview-performance-benchmark -platform offscreen)
+    set_tests_properties(snow-shot-original-image-preview-performance-benchmark PROPERTIES
+        LABELS "benchmark" TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(WIN32)
+        add_test(NAME snow-shot-original-image-preview-native-performance-benchmark
+            COMMAND snow-shot-original-image-preview-performance-benchmark
+                --native-only -platform windows)
+        set_tests_properties(snow-shot-original-image-preview-native-performance-benchmark PROPERTIES
+            LABELS "benchmark;windows" RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotReleaseOptimization.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

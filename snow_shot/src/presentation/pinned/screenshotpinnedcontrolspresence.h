@@ -17,10 +17,11 @@ class ScreenshotPinnedControlsPresence final : public QObject {
         bool editing = false;
         bool clickThrough = false;
         QSize nativeSize;
+        bool controlsEnabled = true;
 
         [[nodiscard]] bool allowsControls() const {
             constexpr int minimumNativeDimension = 383;
-            return windowVisible && !thumbnail && !editing && !clickThrough &&
+            return controlsEnabled && windowVisible && !thumbnail && !editing && !clickThrough &&
                    nativeSize.width() >= minimumNativeDimension &&
                    nativeSize.height() >= minimumNativeDimension;
         }

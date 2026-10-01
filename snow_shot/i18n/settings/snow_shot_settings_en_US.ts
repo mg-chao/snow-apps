@@ -1648,6 +1648,10 @@
             <translation>Disk usage</translation>
         </message>
         <message>
+            <source>Display the original image beside recognition and translation results.</source>
+            <translation>Display the original image beside recognition and translation results.</translation>
+        </message>
+        <message>
             <source>Display translated text in the original image</source>
             <translation>Display translated text in the original image</translation>
         </message>
@@ -3068,6 +3072,10 @@
             <translation>Show main window</translation>
         </message>
         <message>
+            <source>Show original image preview</source>
+            <translation>Show original image preview</translation>
+        </message>
+        <message>
             <source>Show screenshot guides when a capture starts</source>
             <translation>Show screenshot guides when a capture starts</translation>
         </message>
@@ -3086,6 +3094,14 @@
         <message>
             <source>Show the captured mouse cursor by default in new normal screenshots.</source>
             <translation>Show the captured mouse cursor by default in new normal screenshots.</translation>
+        </message>
+        <message>
+            <source>Show the drawing and close buttons in the upper-right corner of pinned windows</source>
+            <translation>Show the drawing and close buttons in the upper-right corner of pinned windows</translation>
+        </message>
+        <message>
+            <source>Show window buttons</source>
+            <translation>Show window buttons</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>

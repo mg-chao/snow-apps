@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotimageconversion.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
+#include "snow_shot/presentation/screenshotoriginalimagepreviewwindow.h"
 #include <optional>
 
 #include <QPointF>
@@ -26,6 +27,7 @@ class QMouseEvent;
 class QPaintEvent;
 class QResizeEvent;
 class QScreen;
+class QWindow;
 class QStackedLayout;
 class QTextDocument;
 class QTextBrowser;
@@ -105,6 +107,16 @@ class ScreenshotRecognitionWindow final : public QWidget {
                                                const QRectF& canvasSelection);
 
     void setShowOriginalImage(bool show);
+    void setOriginalImagePreviewEnabled(bool enabled);
+    [[nodiscard]] bool originalImagePreviewEnabled() const;
+    void setOriginalImagePreviewSource(QImage image, const QRectF& canvasRect);
+    void setOriginalImagePreviewProvider(
+        std::function<std::optional<ScreenshotOriginalImagePreviewState>()> provider,
+        QWidget* host);
+    void setOriginalImagePreviewSuppressed(bool suppressed);
+    void setOriginalImagePreviewAboveSiblingProvider(std::function<QWidget*()> provider);
+    void refreshOriginalImagePreview();
+    void syncOriginalImagePreviewStacking(bool staysOnTop);
     void setOcrCopyDefaultsEnabled(bool enabled);
     void setOcrPresentation(
         std::shared_ptr<ScreenshotOcrPresentation> presentation,
@@ -165,6 +177,9 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void registerWindowShortcuts();
     void synchronizeTextLayer();
     void updateTextEditorSpinGeometry();
+    void updateOriginalImagePreview();
+    void destroyOriginalImagePreview();
+    void observeOriginalImagePreviewHost();
     void installSelectionResizeEventFilters(QWidget* widget);
     [[nodiscard]] bool activeContentOwnsContextMenu(const QObject* watched) const;
     void showOcrContextMenu(const QPoint& globalPosition);
@@ -178,6 +193,20 @@ class ScreenshotRecognitionWindow final : public QWidget {
     cursorForSelectionResize(ScreenshotSelectionDragMode dragMode);
 
     ScreenshotRecognitionWindowActions m_actions;
+    QPointer<ScreenshotOriginalImagePreviewWindow> m_originalImagePreview;
+    QPointer<QWidget> m_originalImagePreviewHost;
+    QPointer<QWidget> m_originalImagePreviewTransientOwner;
+    QPointer<QWindow> m_originalImagePreviewHostHandle;
+    QVector<QMetaObject::Connection> m_originalImagePreviewConnections;
+    std::function<std::optional<ScreenshotOriginalImagePreviewState>()>
+        m_originalImagePreviewProvider;
+    std::function<QWidget*()> m_originalImagePreviewAboveSiblingProvider;
+    QImage m_originalImagePreviewSource;
+    QRectF m_originalImagePreviewCanvasRect;
+    bool m_originalImagePreviewEnabled = false;
+    bool m_originalImagePreviewSuppressed = false;
+    bool m_originalImagePreviewRefreshPending = false;
+    bool m_originalImagePreviewStaysOnTop = true;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_ownedShortcutManager;
     snow_shot::presentation::WindowShortcutManager* m_shortcutManager = nullptr;
     std::shared_ptr<ScreenshotOcrPresentation> m_ocrPresentation;

@@ -31,6 +31,8 @@
 #include <QTimer>
 #include <QTemporaryDir>
 #include <QDir>
+#include <QScreen>
+#include <QScopeGuard>
 
 #include <iostream>
 #include <memory>
@@ -397,6 +399,139 @@ void recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy() {
 
 // A cached launch pays asset re-verification and helper start-up before the
 // first recognition can run; none of that may surface the download prompt.
+void originalImagePreviewFollowsTextSessionLifecycle() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    const snow_shot::storage::TextRecognitionSettings settings;
+    const bool previousEnabled = settings.showOriginalImagePreview();
+    const snow_shot::storage::ScreenshotTranslationSettings translationSettings;
+    const bool previousTranslationMode = translationSettings.originalImageTranslationEnabled();
+    const auto restore = qScopeGuard([&]() {
+        static_cast<void>(settings.setShowOriginalImagePreview(previousEnabled));
+        static_cast<void>(
+            translationSettings.setOriginalImageTranslationEnabled(previousTranslationMode));
+    });
+    require(settings.setShowOriginalImagePreview(true), "enable the preview fixture");
+    QPointer<ScreenshotRecognitionWindow> window;
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() -> ScreenshotRecognitionWindow* {
+        if (window == nullptr) {
+            window = new ScreenshotRecognitionWindow({});
+            require(window->present({QGuiApplication::primaryScreen(), nullptr,
+                                     QRect(300, 180, 96, 72), QRectF(10, 20, 64, 48)}),
+                    "present the recognition preview fixture");
+        }
+        return window.data();
+    };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    const auto installTarget = [&](const QString& key, const QColor& color) {
+        QImage image(64, 48, QImage::Format_ARGB32_Premultiplied);
+        image.fill(color);
+        session.setTarget({key, image, QRectF(10, 20, 64, 48)});
+        auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+        presentation->selection = QRect(10, 20, 64, 48);
+        ScreenshotOcrLine line;
+        line.text = QStringLiteral("Source text");
+        line.quad = {QPointF(15, 25), QPointF(65, 25), QPointF(65, 45), QPointF(15, 45)};
+        presentation->lines.push_back(line);
+        presentation->prepareForRendering();
+        ScreenshotRecognitionResults cached;
+        cached.key = key;
+        cached.text = ScreenshotOcrRecognitionResult{presentation, {}, {}, {}};
+        session.seedRecognitionResults(std::move(cached));
+    };
+    const auto preview = [&]() -> QWidget* {
+        return window != nullptr ? window->findChild<QWidget*>(
+                                       QStringLiteral("screenshotOriginalImagePreviewWindow"))
+                                 : nullptr;
+    };
+    const auto requirePreviewVisible = [&](const char* message) {
+        processFor(5);
+        require(window != nullptr && window->originalImagePreviewEnabled() &&
+                    preview() != nullptr && preview()->isVisible(),
+                message);
+    };
+    const auto requirePreviewDestroyed = [&](const char* message) {
+        processFor(5);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(preview() == nullptr, message);
+    };
+    installTarget(QStringLiteral("preview-first"), Qt::blue);
+    session.activate(Mode::Text);
+    requirePreviewVisible("default text recognition shows its original input preview");
+    const QPointer<QWidget> firstPreview = preview();
+    session.beginTextEditing();
+    session.setTextDraft(QStringLiteral("Edited source"));
+    require(session.editing(), "source editor fixture is active");
+    requirePreviewVisible("source text editing retains the preview");
+    session.endTextEditing();
+    require(translationSettings.setOriginalImageTranslationEnabled(true),
+            "select image translation fixture");
+    session.beginTextTranslation();
+    require(session.originalImageTranslationActive(), "image translation fixture is active");
+    requirePreviewVisible("original-image translation retains the original input preview");
+    session.endTextEditing();
+    require(translationSettings.setOriginalImageTranslationEnabled(false),
+            "select translation editor fixture");
+    session.beginTextTranslation();
+    require(session.translating() && session.editing() && !session.originalImageTranslationActive(),
+            "translation editor fixture is active");
+    requirePreviewVisible("translation editing retains the original input preview");
+    require(preview() == firstPreview, "visible text submodes reuse the same companion window");
+    session.setShowOriginalImage(true);
+    requirePreviewDestroyed("original-image viewing destroys the separate companion");
+    require(firstPreview.isNull(), "original-image viewing releases the preceding companion");
+    session.setShowOriginalImage(false);
+    requirePreviewVisible("leaving original-image viewing creates a new companion");
+    const QPointer<QWidget> suppressedPreview = preview();
+    window->setOriginalImagePreviewSuppressed(true);
+    requirePreviewDestroyed("temporary host interaction destroys the preview");
+    require(suppressedPreview.isNull(), "suppression releases the preceding companion window");
+    require(settings.setShowOriginalImagePreview(false), "disable preview during host interaction");
+    window->setOriginalImagePreviewSuppressed(false);
+    require(!window->originalImagePreviewEnabled(), "live setting change disables the preview");
+    requirePreviewDestroyed("interaction completion does not override a disabled preference");
+    window->setOriginalImagePreviewSuppressed(true);
+    require(settings.setShowOriginalImagePreview(true), "enable preview during host interaction");
+    requirePreviewDestroyed("enabling the preference respects interaction suppression");
+    window->setOriginalImagePreviewSuppressed(false);
+    requirePreviewVisible("interaction completion restores an enabled preview");
+    window->hide();
+    requirePreviewDestroyed("hiding the recognition host destroys its preview");
+    window->show();
+    requirePreviewVisible("showing an active recognition host restores its preview");
+    session.activate(Mode::Qr);
+    require(!window->originalImagePreviewEnabled(), "nontext recognition disables the preview");
+    requirePreviewDestroyed("nontext recognition cannot retain a text preview");
+    session.activate(Mode::Text);
+    requirePreviewVisible("returning to text recognition restores its preview");
+    session.deactivate();
+    require(!window->originalImagePreviewEnabled(), "deactivation disables the preview");
+    requirePreviewDestroyed("deactivation cannot retain a separate preview");
+    installTarget(QStringLiteral("preview-second"), Qt::red);
+    session.activate(Mode::Text);
+    requirePreviewVisible("a replacement target restores its own preview");
+    const QImage displayed = preview()->grab().toImage();
+    require(displayed.pixelColor(displayed.width() / 2, displayed.height() / 2) == QColor(Qt::red),
+            "preview content must come from the replacement original image");
+    const QPointer<QWidget> replacedPreview = preview();
+    delete window.data();
+    require(window == nullptr && replacedPreview == nullptr,
+            "destroying recognition content also destroys its separate companion");
+    session.activate(Mode::Text);
+    requirePreviewVisible("recreated recognition content restores active preview state");
+    session.invalidate();
+    requirePreviewDestroyed("invalidation tears down the active preview");
+    delete window.data();
+    ScreenshotRecognitionSessionActions headlessActions;
+    headlessActions.ensureContent = []() -> ScreenshotRecognitionWindow* { return nullptr; };
+    ScreenshotRecognitionSessionController headless(nullptr, nullptr, nullptr, headlessActions);
+    QImage headlessImage(8, 8, QImage::Format_ARGB32_Premultiplied);
+    headlessImage.fill(Qt::green);
+    headless.setTarget({QStringLiteral("preview-headless"), headlessImage, QRectF(0, 0, 8, 8)});
+    headless.activate(Mode::Text);
+    require(headless.active(), "headless text recognition remains usable with preview enabled");
+}
+
 void originalImageOverridePreservesSessionState() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
     ControllableOcrRecognition recognition;
@@ -883,6 +1018,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--original-image-preview-only"))) {
+        originalImagePreviewFollowsTextSessionLifecycle();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--ocr-defaults-only"))) {
         recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -904,6 +1044,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     headlessWorkflowResultsAndEdits();
+    originalImagePreviewFollowsTextSessionLifecycle();
     deactivationNotifiesOnlyOnStateTransition();
     tablePreparationPreservesSessionAndSiblingPopovers();
     cachedRecognitionUsesTheSelectedFillStyle();

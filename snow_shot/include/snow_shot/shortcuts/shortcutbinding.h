@@ -63,10 +63,12 @@ struct ShortcutIdentity {
 
 [[nodiscard]] QString canonicalPortableText(const QString& text,
                                             bool allowModifierOnlyShift = false,
-                                            bool allowModifierOnlyAlt = false);
+                                            bool allowModifierOnlyAlt = false,
+                                            bool allowModifierOnlyControl = false);
 [[nodiscard]] ShortcutBinding canonicalBinding(const ShortcutBinding& binding,
                                                bool allowModifierOnlyShift = false,
-                                               bool allowModifierOnlyAlt = false);
+                                               bool allowModifierOnlyAlt = false,
+                                               bool allowModifierOnlyControl = false);
 [[nodiscard]] ShortcutBinding bindingFromPortableText(const QString& text,
                                                       bool allowModifierOnlyShift = false,
                                                       bool allowModifierOnlyAlt = false);

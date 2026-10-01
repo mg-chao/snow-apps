@@ -387,9 +387,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 218,
+    require(itemIds.size() == 220,
             qPrintable(QStringLiteral(
-                           "catalog must contain 218 shared settings on every platform; found %1")
+                           "catalog must contain 220 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -675,7 +675,7 @@ void builtInCatalogIsCompleteAndValid() {
     const auto& recognition = functionPage->sections.at(2);
     require(recognition.reset == settings::SettingsSectionReset::TextRecognitionBehavior &&
                 recognition.title.translated() == QStringLiteral("Text Recognition") &&
-                recognition.items.size() == 3,
+                recognition.items.size() == 4,
             "dedicated recognition behavior section");
     const auto& recognitionSave = recognition.items.front();
     require(
@@ -684,6 +684,18 @@ void builtInCatalogIsCompleteAndValid() {
                 settings::SettingsSwitchBinding::SaveRecognitionResultAsImage &&
             storage::ConfigurationSchema::defaultValue(recognitionSave.configurationKey).toBool(),
         "recognition save switch must default on");
+    const auto& recognitionPreview = recognition.items.back();
+    require(recognitionPreview.id ==
+                    QStringLiteral("text-recognition.show-original-image-preview") &&
+                recognitionPreview.title.translated() ==
+                    QStringLiteral("Show original image preview") &&
+                recognitionPreview.configurationKey ==
+                    QStringLiteral("text_recognition/show_original_image_preview") &&
+                std::get<settings::SettingsSwitchDefinition>(recognitionPreview.payload).binding ==
+                    settings::SettingsSwitchBinding::ShowOriginalImagePreview &&
+                storage::ConfigurationSchema::defaultValue(recognitionPreview.configurationKey)
+                    .toBool(),
+            "original image preview belongs to recognition behavior and defaults on");
     const auto checkRecognitionDefault = [&](qsizetype index, const QString& title,
                                              const QString& key,
                                              settings::SettingsSelectBinding binding,
@@ -1335,14 +1347,15 @@ void builtInCatalogIsCompleteAndValid() {
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
     require(interfacePage != nullptr && interfacePage->sections.size() == 8 &&
-                interfacePage->sections.at(1).id == QStringLiteral("skin") &&
-                interfacePage->sections.at(2).id == QStringLiteral("interface-screenshot") &&
-                interfacePage->sections.at(3).id == QStringLiteral("interface-text-recognition") &&
-                interfacePage->sections.at(4).id == QStringLiteral("toolbar") &&
-                interfacePage->sections.at(5).id == QStringLiteral("drawing") &&
-                interfacePage->sections.at(6).id == QStringLiteral("pin-to-screen") &&
-                interfacePage->sections.at(7).id == QStringLiteral("tray"),
-            "Interface settings must place Text Recognition immediately below Screenshot");
+                interfacePage->sections.at(0).id == QStringLiteral("general") &&
+                interfacePage->sections.at(1).id == QStringLiteral("interface-screenshot") &&
+                interfacePage->sections.at(2).id == QStringLiteral("interface-text-recognition") &&
+                interfacePage->sections.at(3).id == QStringLiteral("toolbar") &&
+                interfacePage->sections.at(4).id == QStringLiteral("drawing") &&
+                interfacePage->sections.at(5).id == QStringLiteral("pin-to-screen") &&
+                interfacePage->sections.at(6).id == QStringLiteral("tray") &&
+                interfacePage->sections.at(7).id == QStringLiteral("skin"),
+            "Interface settings must keep the existing section order and place Skin last");
     const auto* toolbarSize =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("toolbar"),
                       QStringLiteral("interface.screenshot.toolbar-size")});
@@ -1352,8 +1365,8 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* screenshotToolbarEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
                       QStringLiteral("interface.screenshot.screenshot-toolbar-editor")});
-    const auto& screenshotSection = interfacePage->sections.at(2);
-    const auto& toolbarSection = interfacePage->sections.at(4);
+    const auto& screenshotSection = interfacePage->sections.at(1);
+    const auto& toolbarSection = interfacePage->sections.at(3);
     const auto* trayIcon =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("tray"),
                       QStringLiteral("interface.tray.icon")});
@@ -2168,6 +2181,14 @@ void searchIndexIsGeneratedAndRanked() {
                 recognition.constFirst().location.itemId ==
                     QStringLiteral("text-recognition.save-recognition-result-as-image"),
             "search should navigate directly to the recognition image saving toggle");
+    const auto recognitionPreview = index.search(QStringLiteral("Show original image preview"));
+    require(!recognitionPreview.isEmpty() &&
+                recognitionPreview.constFirst().location ==
+                    settings::SettingsLocation{
+                        QStringLiteral("function-settings"),
+                        QStringLiteral("text-recognition-settings"),
+                        QStringLiteral("text-recognition.show-original-image-preview")},
+            "search should navigate directly to the original image preview toggle");
 
     int pages = 0;
     int sections = 0;

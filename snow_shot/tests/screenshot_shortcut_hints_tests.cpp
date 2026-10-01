@@ -196,7 +196,7 @@ void configuredShortcutRowsUseActualValues() {
     };
 
     const QVector<ScreenshotShortcutHintRow> rows = screenshotShortcutHintRows(context);
-    require(rows.size() == 12, "manual-selection configured hint row count changed");
+    require(rows.size() == 13, "manual-selection configured hint row count changed");
     require(rows.at(0).label == QStringLiteral("Move cursor up") &&
                 rows.at(0).shortcut ==
                     shortcutDisplay({QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")}) &&
@@ -209,23 +209,27 @@ void configuredShortcutRowsUseActualValues() {
             "cursor directions must use four independent configured rows");
     require(rows.at(4).shortcut == shortcutDisplay({QStringLiteral("Ctrl+M")}) &&
                 rows.at(5).shortcut == shortcutDisplay({QStringLiteral("Alt+R")}) &&
-                rows.at(6).shortcut == shortcutDisplay({QStringLiteral("P")}) &&
-                rows.at(7).shortcut == shortcutDisplay({QStringLiteral("Alt+C")}),
+                rows.at(6).label == QStringLiteral("Selection Aspect Ratio Snap") &&
+                rows.at(6).shortcut ==
+                    snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                        Qt::ControlModifier) &&
+                rows.at(7).shortcut == shortcutDisplay({QStringLiteral("P")}) &&
+                rows.at(8).shortcut == shortcutDisplay({QStringLiteral("Alt+C")}),
             "selection action hints must use configured shortcuts");
-    require(rows.at(8).label == QStringLiteral("Toggle Global/Relative Coordinates") &&
-                rows.at(8).shortcut == shortcutDisplay({QStringLiteral("Alt+P")}),
+    require(rows.at(9).label == QStringLiteral("Toggle Global/Relative Coordinates") &&
+                rows.at(9).shortcut == shortcutDisplay({QStringLiteral("Alt+P")}),
             "coordinate toggle must follow Copy color and show the configured binding");
-    require(rows.at(9).label == QStringLiteral("Toggle cursor visibility") &&
-                rows.at(9).shortcut == shortcutDisplay({QStringLiteral("`")}),
+    require(rows.at(10).label == QStringLiteral("Toggle cursor visibility") &&
+                rows.at(10).shortcut == shortcutDisplay({QStringLiteral("`")}),
             "cursor visibility must show its configurable backtick default");
-    require(rows.at(10).label == QStringLiteral("Switch color format") &&
-                rows.at(10).shortcut == shortcutDisplay({QStringLiteral("Shift")}),
+    require(rows.at(11).label == QStringLiteral("Switch color format") &&
+                rows.at(11).shortcut == shortcutDisplay({QStringLiteral("Shift")}),
             "the fixed color-format shortcut must remain visible");
-    require(rows.at(11).label == QStringLiteral("Switch screenshot history") &&
-                rows.at(11).shortcut ==
+    require(rows.at(12).label == QStringLiteral("Switch screenshot history") &&
+                rows.at(12).shortcut ==
                     shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("["),
                                      QStringLiteral("PgDown"), QStringLiteral("]")}) &&
-                rows.at(11).shortcutChips ==
+                rows.at(12).shortcutChips ==
                     QStringList{shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("[")}),
                                 shortcutDisplay({QStringLiteral("PgDown"), QStringLiteral("]")})},
             "history hint must split the previous and next shortcuts into separate chips");
@@ -235,6 +239,14 @@ void coordinateHintFollowsCopyColor() {
     for (const auto mode :
          {ScreenshotShortcutHintMode::Selection, ScreenshotShortcutHintMode::SmartSelection}) {
         const auto rows = screenshotShortcutHintRows(mode);
+        const auto snap = std::find_if(rows.cbegin(), rows.cend(), [](const auto& row) {
+            return row.label == QStringLiteral("Selection Aspect Ratio Snap");
+        });
+        require(snap != rows.cend() &&
+                    snap->shortcut ==
+                        snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                            Qt::ControlModifier),
+                "both selection stages must show the fixed Ctrl snap hint");
         const auto copy = std::find_if(rows.cbegin(), rows.cend(), [](const auto& row) {
             return row.label == QStringLiteral("Copy color");
         });

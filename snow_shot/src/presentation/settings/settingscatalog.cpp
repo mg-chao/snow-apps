@@ -1421,6 +1421,16 @@ SettingsItemDefinition saveRecognitionResultAsImageItem() {
                       SettingsSwitchBinding::SaveRecognitionResultAsImage);
 }
 
+SettingsItemDefinition showOriginalImagePreviewItem() {
+    return switchItem(
+        QStringLiteral("text-recognition.show-original-image-preview"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Show original image preview"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Display the original image beside recognition and translation results."),
+        QStringLiteral("text_recognition/show_original_image_preview"),
+        SettingsSwitchBinding::ShowOriginalImagePreview);
+}
+
 SettingsItemDefinition defaultOcrFormattingItem() {
     return fixedSelectItem(
         QStringLiteral("text-recognition.default-formatting"),
@@ -1446,6 +1456,17 @@ SettingsItemDefinition defaultOcrPunctuationItem() {
          {QStringLiteral("half"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Half-width"))},
          {QStringLiteral("full"),
           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Full-width"))}});
+}
+
+SettingsItemDefinition pinShowWindowButtonsItem() {
+    return switchItem(
+        QStringLiteral("pin-to-screen.show-window-buttons"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Show window buttons"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Show the drawing and close buttons in the upper-right corner of pinned windows"),
+        QStringLiteral("pin_to_screen/show_window_buttons"),
+        SettingsSwitchBinding::PinShowWindowButtons);
 }
 
 SettingsItemDefinition pinAutomaticOcrItem() {
@@ -2537,7 +2558,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::PinToScreenBehavior,
                     {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
                      pinAutomaticOcrItem(), pinTextSelectionItem(), pinAutoResizeItem(),
-                     pinDuplicateContentItem()},
+                     pinDuplicateContentItem(), pinShowWindowButtonsItem()},
                 },
                 {
                     QStringLiteral("text-recognition-settings"),
@@ -2546,7 +2567,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition output settings")),
                     SettingsSectionReset::TextRecognitionBehavior,
                     {saveRecognitionResultAsImageItem(), defaultOcrFormattingItem(),
-                     defaultOcrPunctuationItem()},
+                     defaultOcrPunctuationItem(), showOriginalImagePreviewItem()},
                 },
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                 {
@@ -2606,15 +2627,6 @@ QVector<SettingsPageDefinition> builtInPages() {
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Appearance and language settings")),
                     SettingsSectionReset::GeneralSettings,
                     {themeItem(), themePrimaryColorItem(), languageItem(), appFontItem()},
-                },
-                {
-                    QStringLiteral("skin"),
-                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin")),
-                    settingsText(QT_TRANSLATE_NOOP(
-                        "SettingsCatalog",
-                        "Customize the main interface, toolbar rows and custom tray menu")),
-                    SettingsSectionReset::Skin,
-                    skinItems(),
                 },
                 {
                     QStringLiteral("interface-screenshot"),
@@ -2722,6 +2734,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                                                    "System tray availability and icon settings")),
                     SettingsSectionReset::Tray,
                     {trayEnabledItem(), trayIconItem(), trayCustomIconItem()},
+                },
+                {
+                    QStringLiteral("skin"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin")),
+                    settingsText(QT_TRANSLATE_NOOP(
+                        "SettingsCatalog",
+                        "Customize the main interface, toolbar rows and custom tray menu")),
+                    SettingsSectionReset::Skin,
+                    skinItems(),
                 },
             },
         },
@@ -4124,11 +4145,18 @@ QStringList SettingsCatalog::validationErrors() const {
                         expectedKey =
                             QStringLiteral("text_recognition/save_recognition_result_as_image");
                         break;
+                    case SettingsSwitchBinding::ShowOriginalImagePreview:
+                        expectedKey =
+                            QStringLiteral("text_recognition/show_original_image_preview");
+                        break;
                     case SettingsSwitchBinding::PinAutomaticTextRecognition:
                         expectedKey = QStringLiteral("pin_to_screen/automatic_text_recognition");
                         break;
                     case SettingsSwitchBinding::PinAutoResizeWindow:
                         expectedKey = QStringLiteral("pin_to_screen/auto_resize_window");
+                        break;
+                    case SettingsSwitchBinding::PinShowWindowButtons:
+                        expectedKey = QStringLiteral("pin_to_screen/show_window_buttons");
                         break;
                     case SettingsSwitchBinding::StandaloneTranslationWindow:
                         expectedKey =

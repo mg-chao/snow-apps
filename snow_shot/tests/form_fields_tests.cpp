@@ -202,6 +202,19 @@ void descriptionOverrides() {
                 row.item()->tooltipText() == temporary &&
                 row.editor->accessibleDescription().contains(temporary),
             "runtime descriptions appear in settings copy, tooltips and accessibility");
+    row.field->setDescriptionOverride(temporary, true);
+    auto& themes = snow_shot::presentation::styles::ThemeManager::instance();
+    require(description->palette().color(QPalette::WindowText) ==
+                themes.themeColorScheme().map.colorErrorText,
+            "runtime error descriptions use the theme's error color");
+    row.field->applyTheme(themes.themeColorScheme());
+    require(description->palette().color(QPalette::WindowText) ==
+                themes.themeColorScheme().map.colorErrorText,
+            "theme refreshes preserve runtime description severity");
+    row.field->setDescriptionOverride(temporary);
+    require(description->palette().color(QPalette::WindowText) ==
+                themes.themeColorScheme().map.colorTextSecondary,
+            "clearing runtime severity restores the normal description color");
     const QString error = QStringLiteral("Invalid value");
     row.field->setFeedback({error});
     row.field->setDescriptionOverride({});

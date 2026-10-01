@@ -55,6 +55,7 @@ struct Fixture {
     std::unique_ptr<ScreenshotSelectionEditWorkflow> workflow;
     std::unique_ptr<ScreenshotOverlayInputHandler> input;
     int writes = 0;
+    int aspectRatioWrites = 0;
     int updates = 0;
     int captureCancellations = 0;
     int toolbarRadius = 0;
@@ -94,6 +95,11 @@ struct Fixture {
         actions.effectCanvas = [](const ScreenshotOverlayWindow* owner) {
             return owner != nullptr ? owner->canvas() : nullptr;
         };
+        actions.persistSelectionAspectRatioPreference =
+            [this](ScreenshotSelectionAspectRatioPreset preset, bool locked) {
+                ++aspectRatioWrites;
+                settings.setAspectRatioPreference(preset, locked);
+            };
         actions.cancelCaptureViaShortcut = [this] {
             ++captureCancellations;
             return true;
@@ -176,7 +182,8 @@ void radiusHandlesShareValuesAndPreserveBounds() {
         require(f.selection.normalizedSelection() == bounds && f.interaction.movingSelection(),
                 "effect drags must retain confirmed selection geometry");
         require(!f.input->activateMoveEntireSelectionShortcut() &&
-                    !f.input->activateKeepSelectionAspectRatioShortcut(false),
+                    !f.input->activateKeepSelectionAspectRatioShortcut(false) &&
+                    !f.input->activateSelectionAspectRatioSnapShortcut(),
                 "geometry modifiers must not take over effect drags");
         f.input->handleMouseRelease(&f.overlay, end);
         require(!f.interaction.dragging() && f.writes == writes + 1 &&
@@ -358,6 +365,48 @@ void escapeCancelsBeforeCaptureAndResizeRemainsSeparate() {
             "border resizing must remain independent of the shadow badge");
 }
 
+void aspectRatioSnappingAndEffectEditingPreserveEachOther() {
+    Fixture f;
+    const QPointF border(250, 125);
+    f.input->handleMousePress(&f.overlay, border);
+    require(f.interaction.dragMode() == ScreenshotSelectionDragMode::Right &&
+                f.input->activateSelectionAspectRatioSnapShortcut(),
+            "Ctrl snapping must remain available during border resizing");
+    const QPointF end = border + QPointF(25, 0);
+    f.input->handleMouseMove(&f.overlay, end);
+    require(f.input->releaseSelectionAspectRatioSnapShortcut(),
+            "Ctrl release must end the temporary snap modifier");
+    f.input->handleMouseRelease(&f.overlay, end);
+    const auto bounds = f.selection.normalizedSelection();
+    const auto preset = ScreenshotSelectionAspectRatioPreset::Landscape3x2;
+    require(bounds == QRectF(50, 50, 225, 150) && f.selection.aspectRatioPreset() == preset &&
+                f.selection.aspectRatioLocked() && f.settings.aspectRatioPreset() == preset &&
+                f.settings.aspectRatioLocked() && f.aspectRatioWrites > 0 && f.writes == 0,
+            "snapping must retain its anchor and persist the ratio independently of effects");
+
+    const int ratioWrites = f.aspectRatioWrites;
+    require(f.input->activateSelectionAspectRatioSnapShortcut(),
+            "Ctrl snapping may be armed before an effect drag");
+    const auto shadow = f.layout().shadow;
+    f.input->handleMousePress(&f.overlay, shadow);
+    f.input->handleMouseMove(&f.overlay, shadow + QPointF(20, 0));
+    require(f.input->effectDragActive() && f.selection.shadowWidth() == 20 &&
+                f.selection.normalizedSelection() == bounds &&
+                f.selection.aspectRatioPreset() == preset && f.aspectRatioWrites == ratioWrites &&
+                f.writes == 0,
+            "an armed snap modifier must leave effect previews and selection geometry independent");
+    require(!f.input->activateSelectionAspectRatioSnapShortcut() &&
+                f.selection.normalizedSelection() == bounds &&
+                f.input->releaseSelectionAspectRatioSnapShortcut(),
+            "Ctrl during an effect drag must preserve the gesture and release an armed modifier");
+    f.input->handleMouseRelease(&f.overlay, shadow + QPointF(20, 0));
+    require(!f.interaction.dragging() && f.writes == 1 && f.settings.shadowWidth() == 20 &&
+                f.selection.normalizedSelection() == bounds &&
+                f.settings.aspectRatioPreset() == preset && f.settings.aspectRatioLocked() &&
+                f.aspectRatioWrites == ratioWrites,
+            "effect commit must preserve the snapped ratio and persist only its own settings");
+}
+
 QImage render(SnowCanvasWidget& canvas, qreal dpr) {
     QImage output(QSize(qCeil(canvas.width() * dpr), qCeil(canvas.height() * dpr)),
                   QImage::Format_ARGB32_Premultiplied);
@@ -454,6 +503,7 @@ void runScreenshotSelectionEffectEditorTests() {
     shadowDraggingCancellationAndPointerOwnership();
     geometryAndCursorsRespectDisplayScale();
     escapeCancelsBeforeCaptureAndResizeRemainsSeparate();
+    aspectRatioSnappingAndEffectEditingPreserveEachOther();
     editorDamageCoversEveryChangedPixel();
     storage.shutdown();
 }

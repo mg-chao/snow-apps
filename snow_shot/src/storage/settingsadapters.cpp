@@ -251,6 +251,15 @@ bool TextRecognitionSettings::setSaveRecognitionResultAsImage(bool enabled) cons
                             enabled);
 }
 
+bool TextRecognitionSettings::showOriginalImagePreview() const {
+    return cache().value(QStringLiteral("text_recognition/show_original_image_preview")).toBool();
+}
+
+bool TextRecognitionSettings::setShowOriginalImagePreview(bool enabled) const {
+    return cache().setValue(QStringLiteral("text_recognition/show_original_image_preview"),
+                            enabled);
+}
+
 QString TextRecognitionSettings::defaultFormatting() const {
     return cache().value(QStringLiteral("text_recognition/default_formatting")).toString();
 }
@@ -1956,6 +1965,14 @@ bool DrawTemplateSettings::setTemplates(const QVector<DrawTemplate>& templates) 
             {QStringLiteral("payload"), QString::fromLatin1(drawTemplate.payload.toBase64())}});
     }
     return cache().setValue(QStringLiteral("drawing/draw_templates"), array);
+}
+
+bool PinToScreenSettings::showWindowButtons() const {
+    return cache().value(QStringLiteral("pin_to_screen/show_window_buttons")).toBool();
+}
+
+bool PinToScreenSettings::setShowWindowButtons(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/show_window_buttons"), enabled);
 }
 
 QString PinToScreenSettings::doubleClickAction() const {

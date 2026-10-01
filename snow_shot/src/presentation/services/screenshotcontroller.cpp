@@ -1983,6 +1983,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
     actions.effectCanvas = [](const ScreenshotOverlayWindow* overlay) {
         return overlay != nullptr ? overlay->canvas() : nullptr;
     };
+    actions.persistSelectionAspectRatioPreference =
+        [this](ScreenshotSelectionAspectRatioPreset preset, bool locked) {
+            m_selectionSettings->setAspectRatioPreference(preset, locked);
+        };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
             m_captureState,

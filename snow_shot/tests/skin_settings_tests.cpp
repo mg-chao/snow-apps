@@ -9,6 +9,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "widgets/form.h"
 
 #include <QApplication>
 #include <QDir>
@@ -16,6 +17,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFontDatabase>
+#include <QJsonDocument>
 #include <QImage>
 #include <QLabel>
 #include <QPointer>
@@ -253,7 +255,17 @@ void invalidStoredSkinValuesUseDefaults(const QString& path) {
         "toolbar_skin_path":123,"toolbar_skin_position":"unknown","tray_menu_skin_path":false,
         "tray_menu_skin_position":42,"skin_display_mode":"stretch","skin_opacity":-1,
         "skin_blur_level":0.5,"skin_mask_opacity":101}})";
-    require(file.write(bytes) == bytes.size(), "write the invalid skin configuration fixture");
+    // Include unrelated defaults so their normalization happens on the first load.
+    // The reload equality check then isolates recovery of the invalid skin values.
+    QJsonObject document = storage::ConfigurationSchema::completeDefaultDocument();
+    QJsonObject interface = document.value(QStringLiteral("interface")).toObject();
+    const QJsonObject invalidInterface =
+        QJsonDocument::fromJson(bytes).object().value(QStringLiteral("interface")).toObject();
+    for (auto it = invalidInterface.constBegin(); it != invalidInterface.constEnd(); ++it)
+        interface.insert(it.key(), it.value());
+    document.insert(QStringLiteral("interface"), interface);
+    const QByteArray fixture = QJsonDocument(document).toJson(QJsonDocument::Compact);
+    require(file.write(fixture) == fixture.size(), "write the invalid skin configuration fixture");
     file.close();
     storage::ConfigurationStore configuration(path, true, true, 60000);
     require(
@@ -767,13 +779,22 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
     page.reveal({page.pageId(), QStringLiteral("skin"), {}});
     drainEvents();
     auto* generalRow = page.findChild<QWidget*>(QStringLiteral("settings-item-interface-theme"));
-    require(generalRow != nullptr, "the General row must be materialized alongside Skin");
+    require(generalRow != nullptr &&
+                generalRow->sizePolicy().verticalPolicy() == QSizePolicy::Preferred,
+            "General rows must retain the shared form field's wrapping sizing policy");
     const QSizePolicy generalSizePolicy = generalRow->sizePolicy();
 
     auto& languages = presentation::LanguageManager::instance();
     auto& themes = presentation::styles::ThemeManager::instance();
     const auto initialTheme = themes.themeMode();
     const QString pathId = QStringLiteral("interface.skin.path");
+    auto* pathInput =
+        page.findChild<FilePathInput*>(QStringLiteral("settings-control-interface-skin-path"));
+    require(pathInput != nullptr, "Skin Path must use the shared form field editor");
+    const QString persistedPath =
+        session.filePathValue(settings::SettingsFilePathBinding::SkinPath);
+    const QString draftPath = QStringLiteral("/skins/uncommitted.webp");
+    pathInput->setText(draftPath);
     const QStringList fieldIds = {pathId,
                                   QStringLiteral("interface.skin.position"),
                                   QStringLiteral("interface.skin.toolbar-path"),
@@ -840,20 +861,41 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
                         require(pathDescription->height() > readyHeight,
                                 "loading and error status must expand the Skin Path description");
                     }
-                    auto* input = page.findChild<FilePathInput*>(
-                        QStringLiteral("settings-control-interface-skin-path"));
-                    require(
-                        input != nullptr &&
-                            input->lineEdit()->accessibleDescription() == pathDescription->text() &&
-                            input->lineEdit()->status() ==
-                                (status == SkinStatusBackend::Status::Error
-                                     ? adqt::widgets::AdLineEdit::Status::Error
-                                     : adqt::widgets::AdLineEdit::Status::None) &&
-                            pathDescription->palette().color(QPalette::WindowText) ==
-                                (status == SkinStatusBackend::Status::Error
-                                     ? themes.themeColorScheme().map.colorErrorText
-                                     : themes.themeColorScheme().map.colorTextSecondary),
-                        "Skin status must retranslate accessibly and keep its themed error style");
+                    for (const auto& fieldId :
+                         {pathId, QStringLiteral("interface.skin.toolbar-path"),
+                          QStringLiteral("interface.skin.tray-menu-path")}) {
+                        auto* input = page.findChild<FilePathInput*>(settings::generatedObjectName(
+                            QStringLiteral("settings-control"), fieldId));
+                        auto* row = page.findChild<QWidget*>(settings::generatedObjectName(
+                            QStringLiteral("settings-item"), fieldId));
+                        auto* item =
+                            row != nullptr ? row->findChild<adqt::widgets::AdFormItem*>() : nullptr;
+                        auto* description =
+                            descriptionForField(page, registry, fieldId, pathStatus);
+                        const bool statusError = status == SkinStatusBackend::Status::Error;
+                        require(input != nullptr && item != nullptr &&
+                                    input->lineEdit()->accessibleDescription() ==
+                                        description->text() &&
+                                    item->validateStatus() ==
+                                        (statusError
+                                             ? adqt::widgets::AdFormItem::ValidateStatus::Error
+                                             : adqt::widgets::AdFormItem::ValidateStatus::None) &&
+                                    input->lineEdit()->status() ==
+                                        (statusError ? adqt::widgets::AdLineEdit::Status::Error
+                                                     : adqt::widgets::AdLineEdit::Status::None) &&
+                                    description->palette().color(QPalette::WindowText) ==
+                                        (statusError
+                                             ? themes.themeColorScheme().map.colorErrorText
+                                             : themes.themeColorScheme().map.colorTextSecondary),
+                                "all skin paths must retain and clear accessible, themed form and "
+                                "input error states across status, language and theme changes");
+                    }
+                    require(pathInput->text() == draftPath &&
+                                session.filePathValue(
+                                    settings::SettingsFilePathBinding::SkinPath) == persistedPath &&
+                                !session.state(pathId).dirty && !session.hasPendingWrites(),
+                            "status, language, theme and resize updates must preserve an "
+                            "uncommitted skin path without writing it");
                 }
             }
         }
@@ -861,6 +903,11 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
     require(languages.setLanguage(QStringLiteral("en_US")),
             "restore English after the layout check");
     themes.setThemeMode(initialTheme);
+    require(QMetaObject::invokeMethod(pathInput, "editingFinished", Qt::DirectConnection),
+            "finish the preserved Skin Path draft through the shared form field");
+    drainEvents();
+    require(session.filePathValue(settings::SettingsFilePathBinding::SkinPath) == draftPath,
+            "the preserved Skin Path draft must still commit when editing finishes");
 }
 } // namespace
 
