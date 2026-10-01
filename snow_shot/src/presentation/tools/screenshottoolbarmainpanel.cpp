@@ -8,6 +8,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 
 #include "antd_icons.h"
+#include "theme/theme_manager.h"
 #include "widgets/control_scale.h"
 
 #include <QBoxLayout>
@@ -145,11 +146,10 @@ void ScreenshotToolbarPanel::syncSkin() {
                               .toString()
                               .isEmpty();
     if (!enabled) {
-        const bool hadFrame = !m_skinFrame.isNull();
         const QPointer<ScreenshotToolbarPanel> lifetime(this);
         releaseSkin();
-        if (lifetime && hadFrame) {
-            update();
+        if (lifetime) {
+            syncSkinAppearance();
         }
         return;
     }
@@ -163,7 +163,7 @@ void ScreenshotToolbarPanel::syncSkin() {
                     }
                 });
         connect(m_skinController, &MainWindowSkinController::appearanceChanged, this,
-                [this] { update(); });
+                [this] { syncSkinAppearance(); });
     }
     if (!m_skinAttached) {
         m_skinAttached = true;
@@ -181,7 +181,21 @@ void ScreenshotToolbarPanel::syncSkinFrame() {
     m_skinFrame = m_skinController ? m_skinController->pixmap(this) : QPixmap{};
     m_skinPlacement =
         m_skinController ? m_skinController->frame(this).normalizedPlacement : QRectF{};
+    syncSkinAppearance();
+}
+
+void ScreenshotToolbarPanel::syncSkinAppearance() {
     update();
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    auto overrideValue = controlTheme.scopeOverride(this);
+    // The row supplies the backdrop for its controls. Only a loaded skin can
+    // replace their theme fills; text, icons, borders and preview colors stay intact.
+    if (!m_skinFrame.isNull() && m_skinController && m_skinController->maskOpacity() < 1.0) {
+        overrideValue.backgroundOpacity = m_skinController->maskOpacity();
+    } else {
+        overrideValue.backgroundOpacity.reset();
+    }
+    controlTheme.setScopeOverride(this, overrideValue);
 }
 
 bool ScreenshotToolbarPanel::event(QEvent* event) {
@@ -210,6 +224,9 @@ bool ScreenshotToolbarPanel::event(QEvent* event) {
         }
     } else if (event->type() == QEvent::Hide) {
         releaseSkin();
+        if (lifetime) {
+            syncSkinAppearance();
+        }
     } else if (m_skinAttached && m_skinController &&
                (event->type() == QEvent::Resize ||
                 event->type() == QEvent::DevicePixelRatioChange)) {

@@ -14,10 +14,12 @@
 #include "widgets/select.h"
 #include "widgets/slider.h"
 #include "widgets/tooltip.h"
+#include "theme/theme_manager.h"
 #include "antd_icons.h"
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QEvent>
 #include <QFont>
 #include <QFrame>
@@ -102,6 +104,28 @@ QColor renderedCenterColor(QWidget& widget) {
     widget.render(&painter);
     painter.end();
     return image.pixelColor(widget.rect().center());
+}
+
+QImage renderToolbarWidget(QWidget& widget) {
+    QImage image(widget.size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    widget.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+    painter.end();
+    return image;
+}
+
+bool imageContainsOpaqueColor(const QImage& image, const QColor& expected) {
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const QColor actual = image.pixelColor(x, y);
+            if (actual.alpha() >= 250 && actual.red() == expected.red() &&
+                actual.green() == expected.green() && actual.blue() == expected.blue()) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool imageContainsColor(const QImage& image, const QColor& expected) {
@@ -1119,12 +1143,98 @@ void toolbarSkinProfilesAndLifecycle() {
             "restore the skin fixture mask");
     waitUntil([&] { return controller.maskOpacity() == 0.0; });
 
+    ScreenshotToolbarPanel probes;
+    probes.setGraphicsEffect(nullptr);
+    probes.resize(304, 48);
+    adqt::widgets::AdButton button(&probes);
+    button.setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Solid);
+    button.setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+    button.setIconRef(
+        adqt::icons::antd::filled::Heart().withColors(adqt::icons::IconColors::primary(Qt::green)));
+    button.setIconSize(QSize(16, 16));
+    button.setGeometry(8, 8, 40, 32);
+    adqt::widgets::AdRadio radio(&probes);
+    radio.setVariant(adqt::widgets::AdRadio::Variant::Button);
+    radio.setButtonStyle(adqt::widgets::AdRadio::ButtonStyle::Solid);
+    radio.setChecked(true);
+    radio.setGeometry(56, 8, 40, 32);
+    adqt::widgets::AdSelect select(&probes);
+    select.setPlaceholder(QString());
+    select.setGeometry(104, 8, 96, 32);
+    adqt::widgets::AdColorPicker picker(&probes);
+    picker.setCssText(QStringLiteral("#d52f61"));
+    picker.setGeometry(208, 8, 32, 32);
+    ColorSwatchButton swatch(&probes);
+    const QColor semanticColor(QStringLiteral("#d52f61"));
+    swatch.setSwatchColor(semanticColor);
+    swatch.setGeometry(248, 8, 32, 32);
+    QWidget detachedPopup(&probes, Qt::Tool);
+    for (QWidget* control : {static_cast<QWidget*>(&button), static_cast<QWidget*>(&radio),
+                             static_cast<QWidget*>(&select), static_cast<QWidget*>(&picker),
+                             static_cast<QWidget*>(&swatch)}) {
+        control->setFocusPolicy(Qt::NoFocus);
+    }
+    probes.show();
+    waitUntil([&] { return !controller.diagnostics().busy && controller.skinActive(&probes); });
+
+    auto& componentThemes = adqt::theme::ThemeManager::instance();
+    const auto requireRowOpacity = [&componentThemes, &controller](QWidget* row, qreal expected) {
+        require(row != nullptr && controller.skinActive(row),
+                "visible toolbar rows must have an active skin before checking child surfaces");
+        require(qAbs(componentThemes.backgroundOpacity(row) - expected) < 0.0001,
+                "toolbar rows must publish their active skin mask to component backgrounds");
+        for (QWidget* child : row->findChildren<QWidget*>()) {
+            if (!child->isVisibleTo(row) || child->window() != row->window()) {
+                continue;
+            }
+            require(qAbs(componentThemes.backgroundOpacity(child) - expected) < 0.0001,
+                    "visible toolbar child surfaces must inherit the skin mask opacity");
+        }
+    };
+
     std::vector<std::unique_ptr<ScreenshotToolPalette>> workflows;
     for (int index = 0; index < 4; ++index) {
         ScreenshotToolPalette::Options options;
         options.showDragHandle = true;
+        options.showHistoryActions = true;
+        options.showMoveTool = index < 2;
+        options.showMoveOptionsToolbar = index == 0;
+        options.showLineTool = true;
+        options.showFreeDrawTool = true;
+        options.showHighlightTool = true;
+        options.showPenHighlightTool = index == 3;
+        options.showSpotlightTool = true;
+        options.showEraserTool = true;
+        options.showFilterTool = true;
+        options.showWatermarkTool = true;
+        options.showTextTool = true;
+        options.showSerialNumberTool = true;
+        options.showOcrTool = index < 2;
+        options.showTextTranslationTool = index < 2;
+        options.showTableTool = index < 2;
+        options.showQrTool = index < 2;
+        options.showImageConversionTools = index < 2;
+        options.showSaveButton = index < 2;
+        options.showScrollingScreenshotTool = index == 0;
+        options.showScreenRecordButton = index == 0;
+        options.showGlobalCanvasActions = index == 2;
         options.enableStyleToolbar = true;
         options.showRecordingControls = index == 3;
+        options.recordingDrawingMode = index == 3;
+        if (index == 0) {
+            options.separatorBeforeShape = true;
+            options.actions = ScreenshotToolPalette::PinAction |
+                              ScreenshotToolPalette::CancelAction |
+                              ScreenshotToolPalette::CopyAction;
+        } else if (index == 1) {
+            options.moveToolPresentation =
+                ScreenshotToolPalette::MoveToolPresentation::ResizeWindow;
+            options.copyButtonWithNeutralIcon = true;
+            options.saveButtonWithResultActions = true;
+            options.separatorBeforeConfirm = true;
+            options.actions =
+                ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
+        }
         auto palette = std::make_unique<ScreenshotToolPalette>(options);
         prepare(*palette);
         palette->show();
@@ -1156,11 +1266,212 @@ void toolbarSkinProfilesAndLifecycle() {
     const auto cached = controller.diagnostics();
     second.hide();
     require(!controller.skinActive(&second), "hidden toolbar rows must release their active frame");
+    require(componentThemes.backgroundOpacity(&second) == 1.0,
+            "hidden toolbar rows must restore opaque component backgrounds");
     second.show();
     waitUntil([&] { return !controller.diagnostics().busy && controller.skinActive(&second); });
     require(controller.diagnostics().decodeJobs == cached.decodeJobs &&
                 controller.diagnostics().preparationJobs == cached.preparationJobs,
             "reopening a cached toolbar must reuse its source and prepared frame");
+
+    using Tool = ScreenshotToolPalette::Tool;
+    const std::vector<std::pair<Tool, const char*>> tools{
+        {Tool::Move, "move"},
+        {Tool::Select, "selection"},
+        {Tool::Shape, "shape"},
+        {Tool::Arrow, "arrow"},
+        {Tool::Line, "line"},
+        {Tool::FreeDraw, "free-draw"},
+        {Tool::RectangleHighlight, "rectangle-highlight"},
+        {Tool::PenHighlight, "pen-highlight"},
+        {Tool::Eraser, "eraser"},
+        {Tool::RectangleFilter, "rectangle-filter"},
+        {Tool::Watermark, "watermark"},
+        {Tool::Text, "text"},
+        {Tool::SerialNumber, "serial-number"},
+        {Tool::Ocr, "ocr"},
+        {Tool::TextTranslation, "text-translation"},
+        {Tool::Table, "table"},
+        {Tool::Qr, "qr"},
+        {Tool::ScrollingScreenshot, "scrolling-screenshot"},
+        {Tool::PenFilter, "pen-filter"},
+        {Tool::Spotlight, "spotlight"},
+        {Tool::Markdown, "markdown"},
+        {Tool::Html, "html"},
+        {Tool::AutoFilter, "auto-filter"},
+        {Tool::Latex, "latex"},
+    };
+    const QString snapshotDirectory = qEnvironmentVariable("SNOW_TOOLBAR_SKIN_SNAPSHOTS");
+    auto& applicationThemes = presentation::styles::ThemeManager::instance();
+    const auto originalAppearance = applicationThemes.themeColorScheme().appearance;
+    for (const auto appearance : {presentation::styles::ThemeAppearance::Light,
+                                  presentation::styles::ThemeAppearance::Dark}) {
+        applicationThemes.setThemeAppearance(appearance);
+        for (const int maskPercent : {0, 45, 100}) {
+            require(
+                configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), maskPercent),
+                "configure toolbar component mask opacity");
+            const qreal expectedOpacity = maskPercent / 100.0;
+            waitUntil([&] { return controller.maskOpacity() == expectedOpacity; });
+            workflows.front()->setActiveTool(Tool::Move);
+            flushEvents();
+            waitUntil([&] { return !controller.diagnostics().busy; });
+            requireRowOpacity(&probes, expectedOpacity);
+            require(componentThemes.backgroundOpacity(&detachedPopup) == 1.0,
+                    "owned popup windows must retain opaque surfaces outside the toolbar backdrop");
+            // The solid button paints an offset shadow beneath its fill. Sample
+            // the top interior above that shadow, away from its centered icon.
+            for (const auto& sample :
+                 {std::make_pair(static_cast<QWidget*>(&button), QPoint(20, 1)),
+                  std::make_pair(static_cast<QWidget*>(&radio), QPoint(20, 16)),
+                  std::make_pair(static_cast<QWidget*>(&select), QPoint(48, 16))}) {
+                const QImage rendered = renderToolbarWidget(*sample.first);
+                const QColor actual = rendered.pixelColor(sample.second);
+                const int expectedAlpha = qRound(255 * expectedOpacity);
+                if (qAbs(actual.alpha() - expectedAlpha) > 1) {
+                    std::cerr << sample.first->metaObject()->className() << " mask=" << maskPercent
+                              << " appearance=" << int(appearance)
+                              << " rgba=" << actual.name(QColor::HexArgb).toStdString()
+                              << " expected-alpha=" << expectedAlpha << '\n';
+                    if (!snapshotDirectory.isEmpty()) {
+                        QDir().mkpath(snapshotDirectory);
+                        rendered.save(QDir(snapshotDirectory)
+                                          .filePath(QStringLiteral("failed-component-probe.png")));
+                    }
+                }
+                require(
+                    qAbs(actual.alpha() - expectedAlpha) <= 1,
+                    "button, checked radio and select fills must render at the skin mask alpha");
+            }
+            require(imageContainsOpaqueColor(renderToolbarWidget(button), QColor(Qt::green)),
+                    "skin masks must preserve opaque foreground icons");
+            require(imageContainsOpaqueColor(renderToolbarWidget(swatch), semanticColor) &&
+                        imageContainsOpaqueColor(renderToolbarWidget(picker), semanticColor),
+                    "skin masks must preserve the actual colors of drawing swatches and pickers");
+
+            QList<QPair<QString, QImage>> snapshots;
+            const auto capture = [&snapshots, &snapshotDirectory](const QString& label,
+                                                                  QWidget* row) {
+                if (!snapshotDirectory.isEmpty()) {
+                    snapshots.append({label, renderToolbarWidget(*row)});
+                }
+            };
+            capture(QStringLiteral("component surfaces and semantic color probes"), &probes);
+            for (const auto& palette : workflows) {
+                for (QWidget* row :
+                     {palette->mainPanel(), palette->stylePanel(), palette->actionPanel(),
+                      palette->recordingExportSettingsPanel()}) {
+                    if (row != nullptr && row->isVisible()) {
+                        requireRowOpacity(row, expectedOpacity);
+                    }
+                }
+            }
+            const QStringList workflowNames{QStringLiteral("screenshot"), QStringLiteral("pinned"),
+                                            QStringLiteral("global canvas"),
+                                            QStringLiteral("recording")};
+            for (std::size_t index = 0; index < workflows.size(); ++index) {
+                capture(workflowNames.at(static_cast<qsizetype>(index)) +
+                            QStringLiteral(" main toolbar"),
+                        workflows.at(index)->mainPanel());
+            }
+            for (const auto& tool : tools) {
+                workflows.front()->setActiveTool(tool.first);
+                flushEvents();
+                waitUntil([&] { return !controller.diagnostics().busy; });
+                for (QWidget* row :
+                     {workflows.front()->stylePanel(), workflows.front()->actionPanel()}) {
+                    if (row != nullptr && row->isVisible()) {
+                        requireRowOpacity(row, expectedOpacity);
+                        capture(QString::fromLatin1(tool.second), row);
+                    }
+                }
+            }
+            for (const auto state : {ScreenshotToolPalette::RecordingState::Idle,
+                                     ScreenshotToolPalette::RecordingState::Recording,
+                                     ScreenshotToolPalette::RecordingState::Paused}) {
+                workflows.back()->setRecordingState(state);
+                flushEvents();
+                requireRowOpacity(workflows.back()->mainPanel(), expectedOpacity);
+                capture(QStringLiteral("recording main toolbar, state %1").arg(int(state)),
+                        workflows.back()->mainPanel());
+            }
+            workflows.back()->setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
+            recordingExport->show();
+            waitUntil([&] {
+                return !controller.diagnostics().busy && controller.skinActive(recordingExport);
+            });
+            requireRowOpacity(recordingExport, expectedOpacity);
+            capture(QStringLiteral("recording drawing toolbar"), workflows.back()->stylePanel());
+            capture(QStringLiteral("recording export toolbar"), recordingExport);
+            if (!snapshotDirectory.isEmpty()) {
+                require(QDir().mkpath(snapshotDirectory), "create toolbar visual review directory");
+                int width = 400;
+                int height = 16;
+                for (const auto& snapshot : snapshots) {
+                    width = qMax(width, snapshot.second.width() + 32);
+                    height += snapshot.second.height() + 32;
+                }
+                QImage montage(width, height, QImage::Format_ARGB32_Premultiplied);
+                montage.fill(appearance == presentation::styles::ThemeAppearance::Dark
+                                 ? QColor(QStringLiteral("#202020"))
+                                 : QColor(QStringLiteral("#eeeeee")));
+                QPainter montagePainter(&montage);
+                montagePainter.setPen(appearance == presentation::styles::ThemeAppearance::Dark
+                                          ? Qt::white
+                                          : Qt::black);
+                int y = 16;
+                for (const auto& snapshot : snapshots) {
+                    montagePainter.drawText(QPoint(16, y + 12), snapshot.first);
+                    montagePainter.drawImage(QPoint(16, y + 20), snapshot.second);
+                    y += snapshot.second.height() + 32;
+                }
+                montagePainter.end();
+                const QString filename =
+                    QStringLiteral("toolbar-%1-mask-%2.png")
+                        .arg(appearance == presentation::styles::ThemeAppearance::Dark
+                                 ? QStringLiteral("dark")
+                                 : QStringLiteral("light"))
+                        .arg(maskPercent);
+                require(montage.save(QDir(snapshotDirectory).filePath(filename)),
+                        "save toolbar visual review montage");
+            }
+        }
+    }
+    applicationThemes.setThemeAppearance(originalAppearance);
+    require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 0),
+            "restore the skin mask for lifecycle checks");
+    waitUntil([&] { return controller.maskOpacity() == 0.0; });
+
+    probes.hide();
+    require(componentThemes.backgroundOpacity(&button) == 1.0,
+            "hiding a toolbar must restore its child component backgrounds");
+    probes.show();
+    waitUntil([&] { return !controller.diagnostics().busy && controller.skinActive(&probes); });
+    requireRowOpacity(&probes, 0.0);
+
+    const QString invalidPath = temporary.filePath(QStringLiteral("invalid.png"));
+    QFile invalid(invalidPath);
+    require(invalid.open(QIODevice::WriteOnly) && invalid.write("invalid image") > 0,
+            "write a failed toolbar skin fixture");
+    invalid.close();
+    require(configuration.setValue(QStringLiteral("interface/toolbar_skin_path"), invalidPath),
+            "replace toolbar image with an invalid source");
+    require(
+        componentThemes.backgroundOpacity(&button) ==
+            (controller.skinActive(&probes) ? controller.maskOpacity() : 1.0),
+        "loading a replacement skin must keep child backgrounds consistent with its visible frame");
+    waitUntil([&] {
+        return controller.hasError(presentation::SkinSurface::Toolbar) &&
+               !controller.diagnostics().busy;
+    });
+    require(controller.hasError(presentation::SkinSurface::Toolbar) &&
+                !controller.skinActive(&probes) &&
+                componentThemes.backgroundOpacity(&button) == 1.0,
+            "failed toolbar skins must leave normal component backgrounds restored");
+    require(configuration.setValue(QStringLiteral("interface/toolbar_skin_path"), toolbarPath),
+            "recover the valid toolbar skin");
+    waitUntil([&] { return !controller.diagnostics().busy && controller.skinActive(&probes); });
+    requireRowOpacity(&probes, 0.0);
     require(configuration.setValue(QStringLiteral("interface/toolbar_skin_path"), QString()),
             "remove only the toolbar image");
     waitUntil([&] { return !controller.skinActive(&first); });
@@ -1169,6 +1480,9 @@ void toolbarSkinProfilesAndLifecycle() {
                                                   .themeColorScheme()
                                                   .map.colorBgContainer,
             "clearing toolbar skin must preserve the main skin and restore the normal toolbar");
+    require(componentThemes.backgroundOpacity(&button) == 1.0 &&
+                renderToolbarWidget(select).pixelColor(48, 16).alpha() == 255,
+            "removing a toolbar skin must restore opaque descendant surfaces");
     require(configuration.setValue(QStringLiteral("interface/skin_path"), QString()),
             "clear isolated main-window fixture");
     flushEvents();

@@ -5674,7 +5674,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-toolbar-skin-tests
         COMMAND snow-shot-toolbar-main-panel-tests --skin-only -platform offscreen)
     set_tests_properties(snow-shot-toolbar-skin-tests PROPERTIES
-        LABELS "unit" TIMEOUT 60 ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-toolbar-icon-centering-hidpi-tests

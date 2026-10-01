@@ -45,6 +45,7 @@ class ScreenshotToolbarPanel : public QFrame {
     void syncSkinConfiguration();
     void syncSkin();
     void syncSkinFrame();
+    void syncSkinAppearance();
     void releaseSkin();
     QPointer<snow_shot::storage::ConfigurationStore> m_skinConfiguration;
     QPointer<snow_shot::presentation::MainWindowSkinController> m_skinController;
