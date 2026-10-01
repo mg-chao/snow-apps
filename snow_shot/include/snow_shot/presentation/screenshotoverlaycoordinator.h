@@ -19,6 +19,7 @@
 #include <QVector>
 
 #include <cstdint>
+#include <optional>
 
 class ScreenshotColorPickerWindow;
 class ScreenshotDisplaySession;
@@ -60,6 +61,10 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
                             bool intelligentSelecting, bool manualSelecting, bool dragging);
     void setScrollingCaptureMode(const ScreenshotDisplaySession& displaySession,
                                  const QRectF& selection, bool enabled);
+    void setScrollingResultPreview(const ScreenshotDisplaySession& displaySession,
+                                   const QImage& image, const QRectF& canvasRect,
+                                   std::optional<Qt::Orientation> cropGuide = std::nullopt);
+    void clearScrollingResultPreview(const ScreenshotDisplaySession& displaySession);
     void updateOverlayCursors(const ScreenshotDisplaySession& displaySession, bool selecting,
                               bool dragging) const;
     void setSelectionBorderColor(const ScreenshotDisplaySession& displaySession,

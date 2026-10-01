@@ -167,6 +167,7 @@ impl InputObserver {
         let worker = std::thread::Builder::new()
             .name("snow-input".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let result = run(thread_state, keyboard, mouse, &ready_tx);
                 if let Err(error) = result {
                     let _ = ready_tx.try_send(Err(error));

@@ -247,6 +247,7 @@ mod platform {
             let join = std::thread::Builder::new()
                 .name("snow-recording-mouse-hook".to_string())
                 .spawn(move || {
+                    snow_core::qos::apply_current_thread();
                     let thread_id = unsafe { GetCurrentThreadId() };
                     let mut message = MSG::default();
                     unsafe {
@@ -432,6 +433,7 @@ mod platform {
             let generation = Arc::new(AtomicU64::new(0));
             let shared = generation.clone();
             let worker = std::thread::Builder::new().name("snow-mouse-adapter".into()).spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let mut held = [false;5];
                 let mut input_generation = input.generation();
                 let mut continuity = 0;

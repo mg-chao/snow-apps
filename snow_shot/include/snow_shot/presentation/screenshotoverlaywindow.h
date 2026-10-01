@@ -7,13 +7,16 @@
 
 #include <QColor>
 #include <QJsonObject>
+#include <QRectF>
 #include <QRegion>
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include <QWidget>
 
 #include <memory>
+#include <optional>
 
 class QEvent;
+class CanvasStatusReadout;
 class QImage;
 class QKeyEvent;
 class QMouseEvent;
@@ -85,7 +88,8 @@ class ScreenshotOverlayWindow final : public QWidget {
     void setScrollingCaptureMode(bool enabled);
     void beginScrollingThumbnail(
         const QRect& localSelection,
-        ScreenshotScrollingRecognitionMode mode = ScreenshotScrollingRecognitionMode::Vertical);
+        ScreenshotScrollingRecognitionMode mode = ScreenshotScrollingRecognitionMode::Vertical,
+        const QSize& captureViewportSize = {});
     void updateScrollingThumbnail(const QImage& previewImage, const QSize& sourceSize,
                                   ScreenshotScrollingStitchChange change, int addedRows,
                                   bool replacePreview = false, int replacedPreviewRows = 0);
@@ -94,6 +98,11 @@ class ScreenshotOverlayWindow final : public QWidget {
     [[nodiscard]] QWidget* scrollingThumbnailWindow() const;
     [[nodiscard]] ScreenshotScrollingTrimRange scrollingThumbnailTrim() const;
     void setScrollingTrimModel(std::shared_ptr<ScreenshotScrollingTrimRange> trim);
+    void setScrollingResultPreview(const QImage& image, const QRectF& canvasRect,
+                                   bool showStatus = true,
+                                   std::optional<Qt::Orientation> cropGuide = std::nullopt);
+    // Repaint the cleared surface before the controller resumes capture.
+    void clearScrollingResultPreview();
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     [[nodiscard]] quint64 windowMaskApplicationCountForTesting() const;
     [[nodiscard]] quint64 transparentClearCountForTesting() const;
@@ -106,6 +115,9 @@ class ScreenshotOverlayWindow final : public QWidget {
     void releaseNativeSurface();
     // Recreate the native window and backing store after releaseNativeSurface().
     void restoreNativeSurface();
+
+  signals:
+    void scrollingThumbnailHoverChanged(const QRect& sourceRect, bool cropping);
 
   protected:
     bool event(QEvent* event) override;
@@ -126,6 +138,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void layoutScrollingThumbnail();
     void updateWindowMask();
     void updateScrollingInputTransparency();
+    void updateScrollingResultPreviewReadout();
 
     ScreenshotOverlayEventSink& m_eventSink;
     QMargins m_captureFrameMargins;
@@ -133,11 +146,14 @@ class ScreenshotOverlayWindow final : public QWidget {
     SnowCanvasWidget* m_canvas = nullptr;
     ScreenshotRegionTypeControl* m_regionTypeControl = nullptr;
     ScreenshotScrollingThumbnailWidget* m_scrollingThumbnail = nullptr;
+    CanvasStatusReadout* m_scrollingResultPreviewReadout = nullptr;
     std::unique_ptr<ScreenshotOverlayFramePresenter> m_framePresenter;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
     QRect m_scrollingVisualHole;
     QRegion m_appliedWindowMask;
     QRect m_scrollingThumbnailAnchor;
+    QRectF m_scrollingResultPreviewCanvasRect;
+    bool m_scrollingResultPreviewStatusVisible = false;
     ScreenshotScrollingRecognitionMode m_scrollingThumbnailMode =
         ScreenshotScrollingRecognitionMode::Vertical;
     bool m_scrollingCaptureMode = false;

@@ -939,12 +939,38 @@ unsafe fn scale_hdr_rgb_ps(
     let denom = _mm256_max_ps(_mm256_max_ps(y_in, eps), _mm256_mul_ps(max_rgb, y_out));
     let scale = _mm256_div_ps(y_out, denom);
     let scale = _mm256_andnot_ps(_mm256_cmp_ps(y_in, eps, _CMP_LE_OQ), scale);
-    rgb.map(|channel| _mm256_mul_ps(channel, scale))
+    let t = _mm256_min_ps(
+        _mm256_max_ps(
+            _mm256_mul_ps(
+                _mm256_sub_ps(
+                    max_rgb,
+                    _mm256_set1_ps(super::f16::HDR_SDR_TRANSITION_START),
+                ),
+                _mm256_set1_ps(super::f16::HDR_SDR_TRANSITION_INV_WIDTH),
+            ),
+            _mm256_setzero_ps(),
+        ),
+        one,
+    );
+    let weight = _mm256_mul_ps(
+        _mm256_mul_ps(t, t),
+        _mm256_sub_ps(_mm256_set1_ps(3.0), _mm256_mul_ps(_mm256_set1_ps(2.0), t)),
+    );
+    rgb.map(|channel| {
+        let hdr = _mm256_mul_ps(channel, scale);
+        let blended = _mm256_add_ps(channel, _mm256_mul_ps(_mm256_sub_ps(hdr, channel), weight));
+        let blended = _mm256_blendv_ps(
+            blended,
+            channel,
+            _mm256_cmp_ps(t, _mm256_setzero_ps(), _CMP_LE_OQ),
+        );
+        _mm256_blendv_ps(blended, hdr, _mm256_cmp_ps(t, one, _CMP_GE_OQ))
+    })
 }
 
 // F16 HDR->sRGB via AVX2 + F16C.
 // This path keeps the entire per-pixel hot loop in SIMD (except scalar tail),
-// including inverse boost, continuous BT.2390 mapping, and sRGB encode.
+// including inverse boost, the smooth SDR/BT.2390 handoff, and sRGB encode.
 
 #[target_feature(enable = "avx2,f16c")]
 pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_prepared_unchecked(

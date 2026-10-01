@@ -1244,7 +1244,6 @@ set(PROJECT_CXX_SOURCES
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
-    src/platform/windows/monitorgeometry.cpp
     src/platform/windows/windowchrome.cpp
     src/platform/windows/windowcursorrefresh.h
     src/platform/windows/scrollinput.cpp
@@ -1269,6 +1268,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotscrollingpipeline.cpp
     src/presentation/capture/screenshotscrollingnativesource.cpp
     src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
+    src/presentation/capture/scrollinghoverpreview.h
     src/presentation/services/screenshotcanvascolorsampler.cpp
     src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
     src/presentation/services/screenshotcolorpickercontroller.cpp
@@ -1290,9 +1290,6 @@ set(PROJECT_CXX_SOURCES
         src/presentation/services/screenshotpdfexport.cpp
     src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
     src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
-    src/presentation/services/historypinplacement.cpp
-    src/presentation/services/screenshotselectionpin.cpp
-    src/presentation/core/screenshotgeometry.cpp
     src/presentation/core/screenshotcanvastoolstyles.cpp
     src/presentation/core/screenshotstylebinding.cpp
     src/presentation/core/screenshotintelligentselectionmodel.cpp
@@ -1354,7 +1351,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/overlay/screenshotoverlaycanvaswidget.h
     src/presentation/ocr/screenshotocrtextlayout.cpp
     src/presentation/overlay/screenshotcanvasrenderer.cpp
-    src/presentation/overlay/screenshotselectionshadowrenderer.cpp
     src/presentation/overlay/screenshotoverlaycoordinator.cpp
     src/presentation/overlay/screenshotoverlayinteractionadapter.cpp
     src/presentation/overlay/screenshotoverlayinputhandler.cpp
@@ -6283,6 +6279,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Core
         Qt6::Gui
     )
+    if(APPLE)
+        target_link_libraries(snow-shot-qr-recognition-service-tests PRIVATE snow_shot_rust_ffi_bundle)
+    endif()
     add_test(
         NAME snow-shot-qr-recognition-service-tests
         COMMAND snow-shot-qr-recognition-service-tests
@@ -6550,6 +6549,7 @@ endif()
 
 function(snow_shot_configure_scrolling_replay_target target)
     target_sources(${target} PRIVATE
+        include/snow_shot/presentation/screenshotscrollingthumbnailwidget.h
         tests/scrolling_image_replay.cpp
         src/presentation/capture/screenshotscrollingpipeline.cpp
         src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
@@ -6674,14 +6674,43 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-scrolling-image-performance-benchmark
         tests/scrolling_image_performance_benchmark.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-performance-benchmark)
+    add_executable(snow-shot-scrolling-hover-preview-benchmark
+        tests/scrolling_hover_preview_benchmark.cpp)
+    snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-hover-preview-benchmark)
 endif()
 
 if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-scrolling-hover-preview-tests tests/scrolling_hover_preview_tests.cpp)
+    target_include_directories(snow-shot-scrolling-hover-preview-tests PRIVATE src)
+    target_link_libraries(snow-shot-scrolling-hover-preview-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-scrolling-hover-preview-tests
+        COMMAND snow-shot-scrolling-hover-preview-tests)
+    set_tests_properties(snow-shot-scrolling-hover-preview-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-scrolling-hover-geometry-tests
+        tests/scrolling_hover_geometry_tests.cpp
+        include/snow_shot/presentation/screenshotscrollingthumbnailwidget.h
+        src/presentation/capture/screenshotscrollingthumbnailwidget.cpp)
+    target_include_directories(snow-shot-scrolling-hover-geometry-tests PRIVATE include)
+    target_compile_definitions(snow-shot-scrolling-hover-geometry-tests PRIVATE
+        SNOW_SHOT_BENCH_INTERNALS=1)
+    target_link_libraries(snow-shot-scrolling-hover-geometry-tests PRIVATE ant_design_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-scrolling-hover-geometry-tests)
+    add_test(NAME snow-shot-scrolling-hover-geometry-tests
+        COMMAND snow-shot-scrolling-hover-geometry-tests -platform offscreen)
+    set_tests_properties(snow-shot-scrolling-hover-geometry-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-scrolling-image-replay-tests tests/scrolling_image_replay_tests.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-replay-tests)
     add_test(NAME snow-shot-scrolling-image-replay-tests COMMAND snow-shot-scrolling-image-replay-tests)
     add_test(NAME snow-shot-scrolling-thumbnail-drag-tests
         COMMAND snow-shot-scrolling-image-replay-tests --thumbnail-drag-only)
+    add_test(NAME snow-shot-scrolling-hover-pipeline-tests
+        COMMAND snow-shot-scrolling-image-replay-tests --hover-preview-only)
+    set_tests_properties(snow-shot-scrolling-hover-pipeline-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-scrolling-thumbnail-drag-tests PROPERTIES LABELS "unit")
     set_tests_properties(snow-shot-scrolling-image-replay-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -8035,6 +8064,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-physical-authority-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-clipboard-appearance-presentation-tests
+        COMMAND snow-shot-pinned-window-tests --clipboard-appearance-only -platform offscreen)
+    set_tests_properties(snow-shot-clipboard-appearance-presentation-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-history-selection-presentation-tests
         COMMAND snow-shot-pinned-window-tests --history-selection-only -platform offscreen)
     set_tests_properties(snow-shot-history-selection-presentation-tests PROPERTIES
@@ -8272,6 +8306,18 @@ foreach(_cursor_host IN ITEMS snow_shot snow-shot-physical-cursor-tests snow-sho
 endforeach()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-application-qos-tests tests/application_qos_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-application-qos-tests PRIVATE snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-application-qos-tests)
+    foreach(_snow_qos IN ITEMS user_interactive user_initiated default utility background invalid missing)
+        add_test(NAME snow-shot-application-qos-${_snow_qos}-tests COMMAND snow-shot-application-qos-tests ${_snow_qos})
+        set_tests_properties(snow-shot-application-qos-${_snow_qos}-tests PROPERTIES LABELS "unit;macos" TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+    unset(_snow_qos)
+endif()
+
+if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-login-item-settings-tests tests/login_item_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
     target_link_libraries(snow-shot-login-item-settings-tests PRIVATE snow_shot_settings snow_shot_image_codec)
@@ -8403,9 +8449,26 @@ if(SNOW_SHOT_BUILD_TESTS)
     unset(_snow_clipboard_qpa_environment)
 endif()
 
+# History copying shares the same placement and outline calculations as direct pinning.
+add_library(snow_shot_history_pin STATIC
+    src/platform/windows/monitorgeometry.cpp
+    src/presentation/services/historypinplacement.cpp
+    src/presentation/services/screenshotselectionpin.cpp
+    src/presentation/core/screenshotgeometry.cpp
+    src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
+target_include_directories(snow_shot_history_pin PUBLIC include)
+target_link_libraries(snow_shot_history_pin PUBLIC Qt6::Widgets PRIVATE ant_design_qt)
+if(APPLE)
+    target_link_libraries(snow_shot_history_pin PRIVATE "-framework AppKit")
+elseif(WIN32)
+    target_link_libraries(snow_shot_history_pin PRIVATE user32)
+endif()
+target_link_libraries(snow_shot_settings PRIVATE snow_shot_history_pin snow_shot_clipboard_placement)
+
 # Shared clipboard metadata must have one native MIME converter per process.
 add_library(snow_shot_clipboard_placement STATIC
-    src/presentation/services/screenshotclipboardplacement.cpp)
+    src/presentation/services/screenshotclipboardplacement.cpp
+    src/presentation/services/screenshotclipboardappearance.cpp)
 target_include_directories(snow_shot_clipboard_placement PUBLIC include)
 target_link_libraries(snow_shot_clipboard_placement PUBLIC Qt6::Gui)
 if(APPLE)

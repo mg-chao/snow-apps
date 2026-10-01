@@ -156,6 +156,14 @@ pub(crate) trait MonitorCapturer: Send {
     ) -> CaptureResult<()> {
         Ok(())
     }
+    /// A request-scoped matrix sampled concurrently with raw acquisition.
+    /// Backends whose pixels exclude the Magnifier effect can ignore it.
+    fn set_pending_screen_color_transform(
+        &mut self,
+        _snapshot: Option<crate::color_effect::PendingScreenColorTransform>,
+    ) -> CaptureResult<()> {
+        Ok(())
+    }
     /// Identifies the backend that will service the next capture.
     ///
     /// Automatic capturers update this value after selecting a concrete

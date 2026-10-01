@@ -1,4 +1,5 @@
 #include "snow_shot/app/mcp/mcpedition.h"
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 
 #include <QCoreApplication>
@@ -587,6 +588,7 @@ bool ScreenshotMcpServer::start(QString* error) {
                 QCoreApplication::instance()->setProperty("snowShotMcpConnections", count);
         },
         Qt::QueuedConnection);
+    snow_shot::platform::configureApplicationQoSThread(m_thread.get());
     m_thread->start();
     QString listenError;
     QMetaObject::invokeMethod(

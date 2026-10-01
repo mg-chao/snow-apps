@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "../pinned/screenshotclipboardplacementgeometry.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
@@ -151,8 +152,9 @@ class ScreenshotExportWorker final : public QObject {
         ScreenshotSelectionClipboardResult result;
         result.image =
             renderSelection(documentSession, smartErase, selection, style, sources, spec);
-        result.payload =
-            ScreenshotClipboardService::prepareImage(result.image, encoding, std::move(placement));
+        result.payload = ScreenshotClipboardService::prepareImage(
+            result.image, encoding, std::move(placement),
+            screenshotSelectionClipboardAppearance(selection.size(), style));
         return result;
     }
 
@@ -175,6 +177,7 @@ ScreenshotExportService::ScreenshotExportService(ScreenshotExportServiceContext 
     m_thread->setObjectName(QStringLiteral("ScreenshotExportWorker"));
     m_worker->moveToThread(m_thread.get());
     QObject::connect(m_thread.get(), &QThread::finished, m_worker, &QObject::deleteLater);
+    snow_shot::platform::configureApplicationQoSThread(m_thread.get());
     m_thread->start();
 }
 

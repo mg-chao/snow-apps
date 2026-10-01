@@ -106,6 +106,7 @@ struct AutomaticWindowsCapturer {
     wgc_update_mode: WgcUpdateMode,
     output_pixel_format: CapturePixelFormat,
     screen_color_transform: Option<crate::color_effect::ScreenColorTransform>,
+    pending_screen_color_transform: Option<crate::color_effect::PendingScreenColorTransform>,
     #[cfg(feature = "stage-timing")]
     record_stage_timings: bool,
 }
@@ -136,6 +137,7 @@ impl AutomaticWindowsCapturer {
             wgc_update_mode: WgcUpdateMode::Auto,
             output_pixel_format: CapturePixelFormat::Rgba8,
             screen_color_transform: None,
+            pending_screen_color_transform: None,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
@@ -173,6 +175,8 @@ impl AutomaticWindowsCapturer {
             #[cfg(feature = "stage-timing")]
             capturer.set_record_stage_timings(self.record_stage_timings)?;
             capturer.set_screen_color_transform(self.screen_color_transform)?;
+            capturer
+                .set_pending_screen_color_transform(self.pending_screen_color_transform.clone())?;
             self.candidates[index].capturer = Some(capturer);
         }
         self.candidates[index]
@@ -551,6 +555,16 @@ impl MonitorCapturer for AutomaticWindowsCapturer {
         }
         self.screen_color_transform = transform;
         self.apply_to_prepared(|capturer| capturer.set_screen_color_transform(transform))
+    }
+
+    fn set_pending_screen_color_transform(
+        &mut self,
+        snapshot: Option<crate::color_effect::PendingScreenColorTransform>,
+    ) -> CaptureResult<()> {
+        self.pending_screen_color_transform = snapshot.clone();
+        self.apply_to_prepared(|capturer| {
+            capturer.set_pending_screen_color_transform(snapshot.clone())
+        })
     }
 
     #[cfg(feature = "stage-timing")]

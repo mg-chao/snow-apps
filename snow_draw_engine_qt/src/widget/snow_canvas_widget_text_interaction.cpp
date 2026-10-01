@@ -95,6 +95,11 @@ void SnowCanvasWidgetTextInteraction::invalidateArrowTextMetrics() {
     m_arrowMetricsInvalid = true;
 }
 
+void SnowCanvasWidgetTextInteraction::resetDocumentRetainedState() {
+    m_session.releaseRetainedState();
+    invalidateArrowTextMetrics();
+}
+
 snow_canvas_commands::MutationResult
 SnowCanvasWidgetTextInteraction::measureArrowText(SnowRuntime runtime, SnowViewport viewport) {
     snow_canvas_commands::MutationResult result;

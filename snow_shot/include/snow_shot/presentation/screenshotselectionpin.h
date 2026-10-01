@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotselectionexportworkflowports.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
+#include "snow_shot/presentation/screenshotclipboardappearance.h"
 
 class ScreenshotDisplaySession;
 
@@ -22,6 +23,18 @@ screenshotSelectionBorderAppearance(const QSize& contentSize, const ScreenshotRe
            (appearance->region->custom() || appearance->region->rectCount() != 1 ||
             appearance->region->boundingRect() !=
                 QRect(QPoint(), appearance->contentRect.size().toSize()));
+}
+
+// Snapshot the presentation of an already composited selection. Raster size is
+// finalized by the export worker, independently of the platform window units.
+[[nodiscard]] inline ScreenshotClipboardAppearance
+screenshotSelectionClipboardAppearance(const QSize& contentSize,
+                                       const ScreenshotResultStyle& style) {
+    ScreenshotClipboardAppearance result;
+    result.borderAppearance = screenshotSelectionBorderAppearance(contentSize, style);
+    result.rasterSize = result.borderAppearance->sourceSize;
+    result.checkerboardEnabled = screenshotSelectionNeedsCheckerboard(result.borderAppearance);
+    return result;
 }
 
 // Window geometry for one composited selection. Live Pin to Screen and history pins both

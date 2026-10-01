@@ -14,6 +14,7 @@
 #include <QScreen>
 #include <QWidget>
 
+#include <algorithm>
 #include <limits>
 
 ScreenshotOverlayCoordinator::ScreenshotOverlayCoordinator(
@@ -245,6 +246,54 @@ void ScreenshotOverlayCoordinator::setScrollingCaptureMode(
         }
 
         overlay->setScrollingCaptureMode(false);
+    });
+}
+
+void ScreenshotOverlayCoordinator::setScrollingResultPreview(
+    const ScreenshotDisplaySession& displaySession, const QImage& image, const QRectF& canvasRect,
+    std::optional<Qt::Orientation> cropGuide) {
+    const QRectF selection = canvasRect.normalized();
+    if (image.isNull() || !selection.isValid() || selection.isEmpty()) {
+        clearScrollingResultPreview(displaySession);
+        return;
+    }
+    ScreenshotOverlayWindow* statusOwner = nullptr;
+    bool foundBottomLeftOwner = false;
+    const QPointF bottomLeft(selection.left() + std::min(qreal(0.5), selection.width() / 2),
+                             selection.bottom() - std::min(qreal(0.5), selection.height() / 2));
+    displaySession.forEachActiveOverlay(
+        [&](qsizetype, const CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
+            const QRectF displayRect = ScreenshotGeometryMapper::displayCanvasRect(display);
+            if (overlay == nullptr || !selection.intersects(displayRect)) {
+                return;
+            }
+            if (statusOwner == nullptr) {
+                statusOwner = overlay;
+            }
+            if (!foundBottomLeftOwner && displayRect.contains(bottomLeft)) {
+                statusOwner = overlay;
+                foundBottomLeftOwner = true;
+            }
+        });
+    displaySession.forEachActiveOverlay([&](qsizetype, const CapturedDisplayModel& display,
+                                            ScreenshotOverlayWindow* overlay) {
+        if (overlay == nullptr) {
+            return;
+        }
+        if (selection.intersects(ScreenshotGeometryMapper::displayCanvasRect(display))) {
+            overlay->setScrollingResultPreview(image, selection, overlay == statusOwner, cropGuide);
+        } else {
+            overlay->clearScrollingResultPreview();
+        }
+    });
+}
+
+void ScreenshotOverlayCoordinator::clearScrollingResultPreview(
+    const ScreenshotDisplaySession& displaySession) {
+    displaySession.forEachOverlay([](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay != nullptr) {
+            overlay->clearScrollingResultPreview();
+        }
     });
 }
 

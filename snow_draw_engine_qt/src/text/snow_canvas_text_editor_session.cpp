@@ -393,6 +393,11 @@ void SnowCanvasTextEditorSession::resetState() {
     m_draft.reset();
 }
 
+void SnowCanvasTextEditorSession::releaseRetainedState() {
+    resetState();
+    m_draft.releaseRetainedState();
+}
+
 void SnowCanvasTextEditorSession::updatePreviewLayout(const QFont& baseFont, bool forceLayout) {
     if (!m_hasPreview) {
         return;

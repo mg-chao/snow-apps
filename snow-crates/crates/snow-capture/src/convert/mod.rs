@@ -4,14 +4,17 @@ mod f16;
 pub(crate) mod hdr_tests;
 mod parallel;
 #[cfg(test)]
-pub(crate) use parallel::pool_initialized;
+pub(crate) use parallel::{conversion_workers, pool_initialized};
 mod scalar;
 #[cfg(target_arch = "x86_64")]
 mod simd_x86;
 
 use crate::frame::CapturePixelFormat;
 #[cfg(windows)]
-pub(crate) use f16::{HDR_LUMA_LUT_SIZE, build_bt2390_luma_lut};
+pub(crate) use f16::{
+    HDR_LUMA_LUT_SIZE, HDR_SDR_TRANSITION_INV_WIDTH, HDR_SDR_TRANSITION_START,
+    build_bt2390_luma_lut,
+};
 pub(crate) use f16::{HdrPreparedContext, prepare_hdr_context_cached};
 use parallel::{install_conversion_pool, parallel_chunk_pixels, should_parallelize};
 use std::sync::OnceLock;
@@ -104,8 +107,9 @@ pub enum HdrInputModel {
 /// This context is auto-derived by the Windows backend from display metadata.
 /// It intentionally excludes user-tunable curve parameters so the HDR->SDR
 /// pipeline follows one consistent standard flow.
-/// Every pixel on a surface with this context follows the same tone curve;
-/// SDR content and sub-white HDR content cannot be distinguished by pixel intensity.
+/// After undoing Windows' SDR white-level scale, SDR-range colors are preserved.
+/// A smooth handoff at SDR white leads into the existing BT.2390 luminance mapping
+/// and hue-preserving gamut compression.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HdrFrameContext {
     /// SDR white level in nits reported by the platform. On Windows this

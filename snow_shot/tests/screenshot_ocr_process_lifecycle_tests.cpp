@@ -277,6 +277,10 @@ void ocrProcessLifecycleTests() {
                 "recognize must return before asynchronous process startup is delivered");
         require(first != 0 && waitUntil([&] { return submitted(first); }),
                 "first inference must reach the controlled child");
+        const auto transports =
+            service.findChildren<QThread*>(QStringLiteral("snow-ocr-transport"));
+        require(transports.size() == 1 && transports.front()->isRunning(),
+                "an active OCR child must own exactly one running transport thread");
         require(
             waitUntil([&] { return !recordsFor(QStringLiteral("ocr.engine_ready")).isEmpty(); }),
             "worker stage events must be relayed as structured records");
@@ -422,6 +426,21 @@ void ocrProcessLifecycleTests() {
                                 .toObject();
         require(fields.value(QStringLiteral("shared_memory_bytes")).toInteger() == 32 * 32 * 4 + 32,
                 "replacement mapping must fit the largest queued image exactly");
+        require(waitUntil([&] {
+                    return service.findChildren<QThread*>(QStringLiteral("snow-ocr-transport"))
+                        .isEmpty();
+                }),
+                "nonresident idle OCR must release its transport thread");
+        submitImage(8);
+        require(waitUntil([&] { return completed.size() == 4 && service.processId() == 0; }),
+                "OCR must restart after its transport thread has retired");
+        require(recordsFor(QStringLiteral("ocr.process_started")).size() == initialStarts + 2,
+                "recognition after idle must create exactly one replacement child");
+        require(waitUntil([&] {
+                    return service.findChildren<QThread*>(QStringLiteral("snow-ocr-transport"))
+                        .isEmpty();
+                }),
+                "a restarted nonresident transport must also retire at idle");
     }
     const auto events = [&]() {
         QFile file(markerPath + QStringLiteral(".events"));

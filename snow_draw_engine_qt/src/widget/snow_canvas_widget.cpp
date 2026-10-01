@@ -321,6 +321,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void attachRuntime(SnowRuntime runtime) override;
     void detachRuntimeOwner(SnowCanvasRuntime* owner) override;
     void clearRenderState() override;
+    void resetDocumentRetainedState() override;
     void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
     void smartEraseChanged() override {
         clearRenderState();
@@ -1531,7 +1532,7 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
         flushLiveStrokeMoves();
     }
     clearTextStylePopupInteraction();
-    pendingLiveStrokeMoves.clear();
+    std::vector<SnowInputEvent>().swap(pendingLiveStrokeMoves);
     pendingLiveStrokePreservesEverySample = false;
     pendingEraserMove.reset();
     pendingWatermarkPreview.reset();
@@ -1549,6 +1550,7 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
         syncChangedViewports(cancelResult.changedViewports.get());
     }
     displayState.resetRetainedState();
+    textInteraction.resetDocumentRetainedState();
     if (textSessionWasActive) {
         emit widget.styleToolbarStateChanged();
     }
@@ -1566,6 +1568,13 @@ void SnowCanvasWidget::Impl::clearRenderState() {
     if (installedCustomRenderer != nullptr) {
         installedCustomRenderer->clearRenderState();
     }
+}
+
+void SnowCanvasWidget::Impl::resetDocumentRetainedState() {
+    displayState.resetDocumentRetainedState();
+    textInteraction.resetDocumentRetainedState();
+    std::vector<SnowInputEvent>().swap(pendingLiveStrokeMoves);
+    clearRenderState();
 }
 
 bool SnowCanvasWidget::Impl::hasViewport() const {

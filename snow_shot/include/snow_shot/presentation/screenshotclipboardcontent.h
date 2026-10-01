@@ -3,6 +3,7 @@
 
 #include "snow_shot/storage/pinnedsourceidentity.h"
 #include "snow_shot/presentation/screenshotclipboardplacement.h"
+#include "snow_shot/presentation/screenshotclipboardappearance.h"
 #include <QByteArray>
 #include <QColor>
 #include <QDateTime>
@@ -46,6 +47,7 @@ struct ScreenshotClipboardContent {
     qreal formattedTextDevicePixelRatio = 1.0;
     ScreenshotClipboardOriginalContent originalContent;
     std::optional<ScreenshotClipboardPlacement> placement = std::nullopt;
+    std::optional<ScreenshotClipboardAppearance> appearance = std::nullopt;
 
     [[nodiscard]] bool isValid() const {
         return !image.isNull() && !image.size().isEmpty() &&
@@ -96,6 +98,7 @@ struct ScreenshotClipboardContentSnapshot final {
     QColor baseColor;
     qreal devicePixelRatio = 1.0;
     std::optional<ScreenshotClipboardPlacement> placement = std::nullopt;
+    std::optional<ScreenshotClipboardAppearance> appearance = std::nullopt;
 
     [[nodiscard]] bool isValid() const {
         return !encodedImages.isEmpty() || (nativeDib.has_value() && nativeDib->isValid()) ||

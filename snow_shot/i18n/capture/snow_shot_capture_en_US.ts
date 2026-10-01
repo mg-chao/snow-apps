@@ -186,6 +186,10 @@
             <source>Loading screenshot history</source>
             <translation>Loading screenshot history</translation>
         </message>
+        <message>
+            <source>Result Preview in Progress</source>
+            <translation>Result Preview in Progress</translation>
+        </message>
     </context>
     <context>
         <name>ScreenshotQrController</name>

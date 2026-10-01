@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
+#include "../src/presentation/pinned/screenshotclipboardplacementgeometry.h"
 #include <QNativeGestureEvent>
 #ifdef Q_OS_MACOS
 #include <CoreGraphics/CoreGraphics.h>
@@ -3948,6 +3949,127 @@ void historySelectionPresentationPreservesCompositedCanvas() {
             window->close();
             require(processUntilDeleted(guardedWindow, 2000),
                     "history selection pin was not closed");
+        }
+    }
+}
+
+void clipboardAppearancePresentationAndViewportSnapshots() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "clipboard appearance needs a screen");
+    for (int shape : {0, 1, 2}) {
+        for (int backingScale : {1, 2}) {
+            ScreenshotResultStyle style{12, 8, Qt::black};
+            if (shape == 1)
+                style.region = QRegion(QRect(0, 0, 100, 30)) + QRegion(QRect(0, 30, 60, 20));
+            else if (shape == 2) {
+                QPainterPath path;
+                path.addEllipse(QRectF(0, 0, 100, 50));
+                style.region =
+                    ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+            }
+            auto physicalStyle = style;
+            physicalStyle.cornerRadius *= backingScale;
+            physicalStyle.shadowWidth *= backingScale;
+            physicalStyle.regionScale = backingScale;
+            QImage pixels(QSize(100, 50) * backingScale, QImage::Format_ARGB32_Premultiplied);
+            pixels.fill(QColor(84, 168, 112));
+            const auto image = ScreenshotResultCompositor::compose(pixels, physicalStyle);
+            ScreenshotPinnedWindow::Config config;
+            config.screen = screen;
+            config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), QSize(116, 66));
+            config.initialWindowSize = QSize(116, 66);
+            config.canvasSourceRect = QRectF(0, 0, 116, 66);
+            config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+            config.borderAppearance = screenshotSelectionBorderAppearance(QSize(100, 50), style);
+            config.checkerboardEnabled =
+                screenshotSelectionNeedsCheckerboard(config.borderAppearance);
+            config.initialBorderVisible = false;
+            config.automaticTextRecognition = false;
+            ScreenshotPinnedWindow source;
+            Access::restoreOffscreen(source, config);
+            source.show();
+            waitForUi(20);
+            Access::transformForHideTest(source, false);
+            Access::setFractionalScale(source, 125);
+            Access::setGeneralOpacity(source, 55);
+            waitForUi(20);
+            const auto geometry = source.currentNativeGeometry();
+            const auto artifact = source.automationArtifact(false, true);
+            require(artifact != nullptr, "viewport snapshot was not created");
+            source.move(source.pos() + QPoint(20, 15));
+            Access::transformForHideTest(source, false);
+            Access::setGeneralOpacity(source, 90);
+            bool completed = false;
+            ScreenshotExportClipboardResult exported;
+            require(artifact->requestClipboard(&source,
+                                               [&](ScreenshotExportClipboardResult result) {
+                                                   exported = std::move(result);
+                                                   completed = true;
+                                               }),
+                    "viewport clipboard snapshot could not start");
+            QElapsedTimer timer;
+            timer.start();
+            while (!completed && timer.elapsed() < 10000)
+                waitForUi(5);
+            require(completed && exported.succeeded(),
+                    "viewport clipboard snapshot did not finish");
+            const auto placement =
+                decodeScreenshotClipboardPlacement(exported.payload.placementBytes());
+            const auto appearance =
+                decodeScreenshotClipboardAppearance(exported.payload.appearanceBytes());
+            require(placement && appearance && appearance->borderAppearance &&
+                        placement->windowRect == geometry &&
+                        placement->placement.windowSize == geometry.size() &&
+                        appearance->rasterSize.width() < appearance->rasterSize.height() &&
+                        appearance->showBorder == false &&
+                        appearance->checkerboardEnabled == *config.checkerboardEnabled,
+                    "viewport snapshot observes later position, rotation, or presentation changes");
+            QMimeData mime;
+            mime.setData(QStringLiteral("image/png"), exported.payload.pngBytes());
+            mime.setData(screenshotClipboardPlacementNativeMimeType(),
+                         exported.payload.placementBytes());
+            mime.setData(screenshotClipboardAppearanceNativeMimeType(),
+                         exported.payload.appearanceBytes());
+            const auto content =
+                ScreenshotClipboardContentReader::readMimeData(&mime, screen->devicePixelRatio());
+            require(content && content->appearance &&
+                        qAbs(content->image.pixelColor(content->image.rect().center()).alpha() -
+                             140) <= 1,
+                    "viewport snapshot loses configured opacity or appearance");
+            const auto fit = screenshotClipboardPinGeometry(
+                content->placement, content->image.size(), content->image.size(), screen, true);
+            ScreenshotSelectionExportUiServices services;
+            bool presented = false;
+            require(
+                services.presentPinnedImage(
+                    content->image, fit.screen, fit.fit.nativeGeometry, fit.fit.initialWindowSize,
+                    {}, {}, 1.0, {}, {}, [&](bool success, QImage) { presented = success; },
+                    content->appearance->borderAppearance, content->appearance->checkerboardEnabled,
+                    snow_shot::storage::PinnedWindowCreationSource::Clipboard, {},
+                    content->appearance->showBorder),
+                "clipboard appearance presentation did not start");
+            timer.restart();
+            while (!presented && timer.elapsed() < 10000)
+                waitForUi(5);
+            require(presented, "clipboard appearance presentation did not finish");
+            ScreenshotPinnedWindow* restored = nullptr;
+            for (auto* widget : QApplication::topLevelWidgets()) {
+                auto* window = qobject_cast<ScreenshotPinnedWindow*>(widget);
+                if (window && window != &source && window->isVisible())
+                    restored = window;
+            }
+            require(restored != nullptr, "restored clipboard pin is missing");
+            const auto snapshot = restored->persistenceSnapshot();
+            require(snapshot.nativeGeometry == geometry && snapshot.image == content->image &&
+                        snapshot.borderAppearance == content->appearance->borderAppearance &&
+                        snapshot.checkerboardEnabled == config.checkerboardEnabled &&
+                        !snapshot.showBorder && snapshot.opacityPercent == 100 &&
+                        snapshot.imageTransform.isIdentity(),
+                    "clipboard pin reapplies baked effects or loses presentation metadata");
+            QPointer<ScreenshotPinnedWindow> guarded(restored);
+            restored->close();
+            require(processUntilDeleted(guarded, 2000), "clipboard appearance pin did not close");
         }
     }
 }
@@ -11253,6 +11375,13 @@ void pinnedSharedImageExportOffscreen() {
                                 .size() == 1,
                         "combined options save exactly once");
             }
+            auto clipboard =
+                ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
+            require(clipboard.has_value(), "viewport clipboard snapshot is missing");
+            auto copied = ScreenshotClipboardContentReader::decode(std::move(*clipboard));
+            require(copied && copied->appearance && copied->placement &&
+                        copied->placement->windowRect == window.currentNativeGeometry(),
+                    "viewport image or file copy loses appearance and position");
             if (copyFile) {
                 require(QApplication::clipboard()->mimeData()->urls() ==
                             QList<QUrl>{QUrl::fromLocalFile(path)},
@@ -11544,12 +11673,12 @@ void pinnedQuickSaveKeepsWindowAndConfiguredOutput() {
                     QImage(QDir(output).filePath(name)).size() == image.size(),
                 "quick-save must bypass both dialogs and retain the edited pin");
     }
-    require(
-        QDir(output).entryList(QDir::Files).size() == 2 &&
-            QApplication::clipboard()->text() == QStringLiteral("Keep clipboard") &&
-            settings.lastManualSaveDirectory() == directory.path() &&
-            settings.lastManualSaveFormat() == QStringLiteral("jpeg"),
-        "duplicate quick-save requests must coalesce without changing clipboard/manual settings");
+    require(QDir(output).entryList(QDir::Files).size() == 2 &&
+                QApplication::clipboard()->text() == QStringLiteral("Keep clipboard") &&
+                settings.lastManualSaveDirectory() == directory.path() &&
+                settings.lastManualSaveFormat() == QStringLiteral("jpeg"),
+            "duplicate quick-save requests must coalesce without changing clipboard/manual "
+            "settings");
     require(settings.setImageSaveDirectory(QString()), "empty directory setup failed");
     quick->click();
     waitForUi(100);
@@ -14439,6 +14568,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--async-presentation-only"))) {
             pinnedAsyncPresentationDefersContent(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--clipboard-appearance-only"))) {
+            clipboardAppearancePresentationAndViewportSnapshots();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--history-selection-only"))) {

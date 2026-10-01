@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
 #include "snowimageqtcodec.h"
@@ -1294,6 +1295,7 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
 
     if (m_impl->writeAvailable) {
         m_impl->writer = std::thread([impl = m_impl.get()]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             std::unique_lock lock(impl->mutex);
             int retryMilliseconds = 0;
             for (;;) {

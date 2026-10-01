@@ -3215,6 +3215,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "proptest",
+ "rayon",
  "smallvec",
  "snow-media",
  "windows",
@@ -3433,6 +3434,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-foundation",
+ "snow-core",
  "windows",
 ]
 
@@ -3462,6 +3464,7 @@ name = "snow-stitch-images-c"
 version = "0.1.0"
 dependencies = [
  "png",
+ "snow-core",
  "snow-stitch-images",
  "tempfile",
 ]
@@ -3482,6 +3485,7 @@ dependencies = [
 name = "snow-ui-selector-c"
 version = "0.1.0"
 dependencies = [
+ "snow-core",
  "snow-ui-selector",
  "windows",
 ]
@@ -4018,6 +4022,7 @@ dependencies = [
  "opencv",
  "serde",
  "serde_json",
+ "snow-core",
 ]
 
 [[package]]

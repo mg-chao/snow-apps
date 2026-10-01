@@ -266,7 +266,10 @@ impl PreviewSession {
         let shared = Arc::clone(&latest);
         let worker = std::thread::Builder::new()
             .name("snow-effects-preview".into())
-            .spawn(move || run(config, receiver, shared, notify))
+            .spawn(move || {
+                snow_core::qos::apply_current_thread();
+                run(config, receiver, shared, notify)
+            })
             .map_err(|e| e.to_string())?;
         Ok(Self {
             sender,

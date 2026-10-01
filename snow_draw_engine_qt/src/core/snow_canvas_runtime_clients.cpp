@@ -73,6 +73,15 @@ void ClientRegistry::clearRenderState() {
     }
 }
 
+void ClientRegistry::resetDocumentRetainedState() {
+    const QList<Client*> snapshot = m_clients;
+    for (Client* client : snapshot) {
+        if (client != nullptr && m_clients.contains(client)) {
+            client->resetDocumentRetainedState();
+        }
+    }
+}
+
 bool ClientRegistry::resetEditingState() {
     const QList<Client*> snapshot = m_clients;
     for (Client* client : snapshot) {

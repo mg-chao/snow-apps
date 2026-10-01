@@ -85,6 +85,8 @@ class SnowCanvasDisplayCache {
     std::size_t executionPlanBuildCount() const {
         return m_executionPlan.buildCount;
     }
+    // Owned container capacity, excluding payloads inside display items and the execution plan.
+    std::size_t retainedStorageBytes() const;
     const WatermarkDisplayInfo& watermarkInfo() const;
     const SpotlightDisplayInfo& spotlightInfo() const;
     const OverlayDisplayInfo& overlayInfo() const;

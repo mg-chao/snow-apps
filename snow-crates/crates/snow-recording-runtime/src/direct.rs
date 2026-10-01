@@ -731,6 +731,7 @@ impl DirectRecordingSession {
         let resize_pool = if self.resize_threads > 1 {
             Some(
                 rayon::ThreadPoolBuilder::new()
+                    .start_handler(|_| snow_core::qos::apply_current_thread())
                     .num_threads(usize::from(self.resize_threads))
                     .build()
                     .map_err(|error| {
@@ -833,6 +834,7 @@ impl DirectRecordingSession {
         let worker = std::thread::Builder::new()
             .name("snow-direct-recording".to_string())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 let result = (|| {
                     let mut compositor = VisualCompositor::new(config.output_dimensions());
                     compositor.mouse_input_style = config
@@ -977,6 +979,7 @@ impl DirectRecordingSession {
                             });
                             compositor.resize_pool = Some(
                                 rayon::ThreadPoolBuilder::new()
+                                    .start_handler(|_| snow_core::qos::apply_current_thread())
                                     .num_threads(usize::from(selected))
                                     .build()
                                     .map_err(|error| {

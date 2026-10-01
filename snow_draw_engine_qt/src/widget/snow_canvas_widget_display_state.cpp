@@ -21,9 +21,13 @@ const snow_canvas_state::Snapshot& SnowCanvasWidgetDisplayState::snapshot() cons
 }
 
 void SnowCanvasWidgetDisplayState::resetRetainedState() {
+    resetDocumentRetainedState();
+    m_engineState.reset();
+}
+
+void SnowCanvasWidgetDisplayState::resetDocumentRetainedState() {
     m_displayCache.reset(SnowColorRgba8{255, 255, 255, 255});
     m_dirtyVisualizationRegion = QRegion();
-    m_engineState.reset();
 }
 
 std::uint64_t SnowCanvasWidgetDisplayState::initializeEngine(SnowRuntime runtime,

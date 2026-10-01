@@ -187,6 +187,7 @@ impl AudioRecordingSession {
         let join_handle = std::thread::Builder::new()
             .name("snow-audio-recording".to_string())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 run_audio_recording_worker(stream, config, clock, worker_stop, worker_pause)
             })
             .map_err(|err| {

@@ -58,13 +58,38 @@ void naturalLayoutCacheTracksTypographyAndHasABoundedBudget() {
     cache.measure(text, bold, item);
     cache.measure(text + QStringLiteral("!"), bold, item);
     require(cache.measurementCount() == 4, "base font and contents are part of the cache key");
+    require(cache.retainedBytes() > 0, "measuring labels must retain their natural-layout entries");
     cache.clear();
+    require(cache.retainedBytes() == 0,
+            "document or font invalidation must release cached layouts");
     cache.measure(text, bold, item);
     require(cache.measurementCount() == 5, "font database invalidation clears cached metrics");
     snow_canvas_text_measurement::NaturalTextLayoutCache tiny(1);
     tiny.measure(text, font, item);
     tiny.measure(text, font, item);
     require(tiny.measurementCount() == 2, "entries larger than the budget are not retained");
+}
+
+void documentCleanupReleasesTextDraftHistoryStorage() {
+    SnowCanvasTextDraft draft;
+    draft.begin(QStringLiteral("Old label"));
+    for (int index = 0; index < 64; ++index) {
+        require(draft.replaceSelection(QStringLiteral("a")), "populate text-draft undo history");
+    }
+    require(draft.undoEdit(), "populate text-draft redo history");
+    const auto historyBytes = draft.retainedHistoryStorageBytes();
+    require(historyBytes > 0, "text editing must allocate retained undo and redo storage");
+    draft.reset();
+    require(draft.retainedHistoryStorageBytes() == historyBytes,
+            "ordinary text-edit reset should retain reusable history storage within a document");
+    draft.releaseRetainedState();
+    require(draft.retainedHistoryStorageBytes() == 0 && draft.text().isEmpty() &&
+                !draft.undoEdit() && !draft.redoEdit(),
+            "document cleanup must release text-draft history capacity and old edits");
+    draft.begin(QStringLiteral("Next label"));
+    require(draft.replaceSelection(QStringLiteral("!")) && draft.undoEdit() &&
+                draft.text() == QStringLiteral("Next label"),
+            "a new text draft must still support editing and undo after releasing retained state");
 }
 
 void mouse(SnowCanvasWidget& canvas, QEvent::Type type, QPointF point, Qt::MouseButton button,
@@ -121,6 +146,31 @@ void openLabel(SnowCanvasWidget& canvas) {
     require(canvas.hasActiveTextEditing(), "double-click opens an attached text editor");
     require(canvas.canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedText,
             "arrow draft exposes text style controls");
+}
+
+void documentClearRebuildsArrowLabelLayouts() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    QImage previous;
+    for (int document = 0; document < 2; ++document) {
+        createArrow(canvas, runtime);
+        openLabel(canvas);
+        key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("Reused label"));
+        key(canvas, Qt::Key_Return, Qt::ControlModifier);
+        require(records(runtime, QStringLiteral("Text")).size() == 1,
+                "each document must commit its own arrow label");
+        const QImage image =
+            runtime.renderToImage(QRectF(-300, -180, 600, 360), QSize(600, 360), {});
+        require(!image.isNull() && (previous.isNull() || previous == image),
+                "rebuilding document-scoped text layouts must preserve exported pixels");
+        previous = image;
+        require(runtime.clearDocumentPreservingViewports() &&
+                    records(runtime, QStringLiteral("Text")).isEmpty() && !runtime.canUndo(),
+                "document cleanup must discard old labels and history before reusing the canvas");
+    }
 }
 
 void arrowLabelRemeasuresAfterHostFontChange() {
@@ -1133,6 +1183,10 @@ int main(int argc, char** argv) {
 #endif
     QApplication app(argc, argv);
     naturalLayoutCacheTracksTypographyAndHasABoundedBudget();
+    documentCleanupReleasesTextDraftHistoryStorage();
+    documentClearRebuildsArrowLabelLayouts();
+    if (app.arguments().contains(QStringLiteral("--layout-cache-only")))
+        return 0;
     arrowLabelRemeasuresAfterHostFontChange();
     arrowRatioEditsRenderAndRoundTrip();
     taperedShaftsRenderAndRoundTrip();

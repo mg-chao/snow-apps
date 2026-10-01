@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 
 #include "snowimageqtcodec.h"
@@ -11,6 +12,8 @@
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snow_shot/presentation/historypinplacement.h"
+#include "../pinned/screenshotclipboardplacementgeometry.h"
 
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -112,6 +115,7 @@ class ScreenshotHistoryTaskExecutor final {
         try {
             m_pool.start(
                 [this, function = std::forward<Function>(function), persistence]() mutable {
+                    snow_shot::platform::applyApplicationQoSToCurrentThread();
                     struct Completion final {
                         ScreenshotHistoryTaskExecutor* executor;
                         bool persistence;
@@ -371,7 +375,24 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
                             quint64 generation) override {
         const QPointer<ApplicationStorageHistoryDataSource> guarded(this);
         const auto cancellationToken = m_cancellationToken;
-        historyTaskExecutor().submit([guarded, record, generation, cancellationToken]() {
+        const auto request = snow_shot::presentation::historySelectionPinPlacement(record);
+        const auto placement =
+            request.isPrepared()
+                ? screenshotClipboardSelectionPlacement(request.geometry.nativeGeometry,
+                                                        request.initialWindowSize, request.screen)
+                : std::nullopt;
+        std::optional<ScreenshotClipboardAppearance> appearance;
+        if (record.contentKind == storage::CaptureHistoryContentKind::ScreenshotSession &&
+            record.result) {
+            appearance.emplace();
+            appearance->rasterSize = record.result->imageSize;
+            appearance->borderAppearance =
+                snow_shot::presentation::historySelectionBorderAppearance(record);
+            appearance->checkerboardEnabled =
+                screenshotSelectionNeedsCheckerboard(appearance->borderAppearance);
+        }
+        historyTaskExecutor().submit([guarded, record, generation, cancellationToken, placement,
+                                      appearance]() {
             if (guarded == nullptr || cancellationToken->load(std::memory_order_acquire)) {
                 return;
             }
@@ -386,7 +407,8 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
                     if (!image.isNull() && image.size() == png->pixelSize()) {
                         payload = std::make_shared<ScreenshotClipboardPayload>(
                             ScreenshotClipboardService::prepareEncoded(
-                                snow_shot::image_codec::srgbRowSource(image), png->bytes()));
+                                snow_shot::image_codec::srgbRowSource(image), png->bytes(),
+                                placement, appearance));
                     } else {
                         applicationStorage.captureHistory().reportReadFailure(
                             record, QStringLiteral("Unable to read a capture-history payload"));

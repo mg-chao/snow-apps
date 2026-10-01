@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
 
 #include "screenshotcaptureworker.h"
@@ -130,6 +131,7 @@ void ScreenshotCaptureCoordinator::ensureWorker() {
     m_worker = new ScreenshotCaptureWorker;
     m_worker->moveToThread(m_thread);
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    snow_shot::platform::configureApplicationQoSThread(m_thread);
     m_thread->start();
 }
 

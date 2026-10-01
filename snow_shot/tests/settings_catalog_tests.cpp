@@ -2574,6 +2574,42 @@ int main(int argc, char** argv) {
         return 0;
     }
     const auto adminCatalog = settings::buildBuiltInSettingsCatalog();
+    const auto* qos = adminCatalog.item({QStringLiteral("system-settings"), QStringLiteral("core"),
+                                         QStringLiteral("system.application-qos")});
+    const auto* priority =
+        adminCatalog.item({QStringLiteral("system-settings"), QStringLiteral("core"),
+                           QStringLiteral("system.application-priority")});
+    require(storage::ConfigurationSchema::defaultValue(QStringLiteral("system/application_qos")) ==
+                QJsonValue(QStringLiteral("user_interactive")),
+            "QoS defaults to Responsive on every platform's shared schema");
+    require(!storage::ConfigurationSchema::normalize(QStringLiteral("system/application_qos"),
+                                                     QStringLiteral("invalid"))
+                 .valid,
+            "invalid QoS is rejected by the schema");
+#ifdef Q_OS_MACOS
+    require(qos && !priority, "macOS replaces legacy priority with QoS");
+    const auto& qosSelect = std::get<settings::SettingsSelectDefinition>(qos->payload);
+    require(qosSelect.binding == settings::SettingsSelectBinding::ApplicationQoS &&
+                qosSelect.options.size() == 5,
+            "QoS has five native choices");
+    const QStringList qosValues{QStringLiteral("user_interactive"),
+                                QStringLiteral("user_initiated"), QStringLiteral("default"),
+                                QStringLiteral("utility"), QStringLiteral("background")};
+    for (qsizetype i = 0; i < qosValues.size(); ++i)
+        require(qosSelect.options[i].value.toString() == qosValues[i],
+                "QoS option order and wire values");
+    const auto& qosRegistry = settings::builtInSettingsRegistry();
+    require(qosRegistry.field(QStringLiteral("system.application-qos")) != nullptr &&
+                qosRegistry.field(QStringLiteral("system.application-priority")) == nullptr,
+            "registry exposes only the effective macOS scheduling control");
+    const settings::SettingsSearchIndex qosIndex(qosRegistry);
+    require(!qosIndex.search(QStringLiteral("QoS")).isEmpty() &&
+                qosIndex.search(QStringLiteral("Application priority")).isEmpty(),
+            "macOS search exposes QoS and omits legacy priority");
+#else
+    require(priority && !qos, "other platforms retain application priority");
+#endif
+
 #ifdef Q_OS_MACOS
     const auto* login =
         adminCatalog.item({QStringLiteral("system-settings"), QStringLiteral("system-general"),

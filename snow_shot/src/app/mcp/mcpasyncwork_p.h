@@ -1,5 +1,7 @@
 #pragma once
 
+#include "snow_shot/platform/applicationqos.h"
+
 #include <QFuture>
 #include <QPromise>
 #include <QThreadPool>
@@ -16,6 +18,7 @@ template <typename Work> auto runMcpWork(QThreadPool* pool, Work work) {
     auto future = promise.future();
     promise.start();
     pool->start([promise = std::move(promise), work = std::move(work)]() mutable {
+        platform::applyApplicationQoSToCurrentThread();
         try {
             if (!promise.isCanceled()) {
                 if constexpr (std::is_void_v<Result>)
