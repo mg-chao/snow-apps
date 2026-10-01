@@ -1245,6 +1245,7 @@ void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
     preferences.selectionMaskColor = QColor();
     preferences.shortcutHintOpacity = 1.5;
     preferences.cursorGuideLineColor = QColor();
+    preferences.selectionCenterGuideLineColor = QColor();
     preferences.monitorCenterGuideLineColor = QColor();
     preferences.colorPickerCenterGuideLineColor = QColor();
     const ScreenshotUiPreferences normalized = preferences.normalized();
@@ -1255,10 +1256,11 @@ void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
             "invalid screenshot mask colors must normalize to the default mask");
     require(normalized.shortcutHintOpacity == 1.0,
             "shortcut hint opacity must normalize to its maximum");
-    require(normalized.cursorGuideLineColor == QColor(0, 0, 0, 0) &&
-                normalized.monitorCenterGuideLineColor == QColor(0, 0, 0, 0) &&
+    require(!normalized.showGuidesByDefault && normalized.cursorGuideLineColor == QColor(0, 0, 0) &&
+                normalized.selectionCenterGuideLineColor == QColor(0x40, 0x96, 0xff) &&
+                normalized.monitorCenterGuideLineColor == QColor(255, 0, 0) &&
                 normalized.colorPickerCenterGuideLineColor == QColor(0, 0, 0, 0),
-            "invalid screenshot guide colors must normalize to transparent");
+            "invalid screenshot guide colors must normalize to their configured defaults");
     preferences.shortcutHintOpacity = -0.25;
     require(preferences.normalized().shortcutHintOpacity == 0.0,
             "shortcut hint opacity must normalize to its minimum");
@@ -1301,6 +1303,26 @@ void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
                 0.0,
             "always-hide mode must override selection-drag picker visibility without changing "
             "the underlying color-sampling feature");
+}
+
+void guideVisibilityResetsAtEachCaptureSession() {
+    ScreenshotUiPreferences preferences;
+    ScreenshotGuideVisibilityState visibility;
+    visibility.beginSession(preferences);
+    require(!visibility.visible(),
+            "new screenshot sessions must start with guides hidden by default");
+
+    visibility.toggle();
+    require(visibility.visible(), "a session shortcut must make both screenshot guides visible");
+    preferences.showGuidesByDefault = true;
+    require(visibility.visible(), "changing the default must not change the active session");
+
+    visibility.beginSession(preferences);
+    require(visibility.visible(), "the next session must use the updated visible default");
+    visibility.toggle();
+    require(!visibility.visible(), "the session shortcut must also hide visible guides");
+    visibility.beginSession(preferences);
+    require(visibility.visible(), "a later session must clear the previous session's toggle");
 }
 
 void shortcutHintStagesUseTheExactRequiredLines() {
@@ -1449,6 +1471,66 @@ void cursorAndMonitorGuideLinesUseDashedAndSolidPixels() {
                     "transparent guide colors must disable guide rendering");
         }
     }
+}
+
+void selectionCenterGuideTracksSelectionAndRemainsOverlayOnly() {
+    SnowCanvasWidget canvas;
+    canvas.resize(100, 80);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0),
+            "selection center guide test needs a stable camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    renderer.setMaskVisible(false);
+    renderer.setSelectionBorderVisible(false);
+    const QColor guideColor(0x40, 0x96, 0xff);
+    renderer.setSelectionCenterGuideLineColor(guideColor);
+    renderer.setSelection(QRectF(-10.0, -10.0, 20.0, 20.0), false);
+    const QImage first = renderCanvas(canvas);
+    require(first.pixelColor(50, 5) == guideColor && first.pixelColor(5, 40) == guideColor,
+            "selection center guide must span the full viewport in both axes");
+
+    canvas.show();
+    QApplication::processEvents();
+    CanvasPaintRegionObserver observer;
+    canvas.installEventFilter(&observer);
+    observer.begin();
+    renderer.setSelection(QRectF(0.0, -10.0, 20.0, 20.0), false);
+    QApplication::processEvents();
+    const QRegion damage = observer.region();
+    require(damage.contains(QPoint(50, 5)) && damage.contains(QPoint(60, 5)),
+            "moving the selection must invalidate both old and new full-height guides");
+    canvas.removeEventFilter(&observer);
+    const QImage moved = renderCanvas(canvas);
+    require(moved.pixelColor(50, 5) != guideColor && moved.pixelColor(60, 5) == guideColor,
+            "moving the selection must clear the old vertical guide and draw the new one");
+    renderer.setSelectionCenterGuideLineColor(Qt::transparent);
+    const QImage hidden = renderCanvas(canvas);
+    require(hidden.pixelColor(60, 5) != guideColor,
+            "transparent selection center guide color must hide the overlay");
+    canvas.setCustomRenderer(nullptr);
+}
+
+void cursorGuideFollowsCanvasPointerDuringDrawingInput() {
+    NoopOverlayEventSink sink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(sink, canvas);
+    overlay.resize(80, 60);
+    overlay.show();
+    QApplication::processEvents();
+    require(canvas->setCanvasTool(SnowCanvasTool::Shape), "activate drawing tool");
+    canvas->setInteractionEnabled(true);
+    const QColor cursorColor(210, 30, 40);
+    overlay.setScreenshotGuideLines(QPointF(10.0, 11.0), cursorColor, Qt::transparent);
+    const QImage before = renderCanvas(*canvas);
+    QMouseEvent move(QEvent::MouseMove, QPointF(20.0, 21.0), QPointF(20.0, 21.0),
+                     QPointF(20.0, 21.0), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &move);
+    const QImage after = renderCanvas(*canvas);
+    require(imageRectContainsColor(before, QRect(10, 30, 1, 20), cursorColor) &&
+                !imageRectContainsColor(after, QRect(10, 30, 1, 20), cursorColor) &&
+                imageRectContainsColor(after, QRect(20, 30, 1, 20), cursorColor),
+            "the cursor guide must follow drawing pointer moves without taking the gesture");
 }
 
 qint64 regionArea(const QRegion& region) {
@@ -1613,10 +1695,31 @@ void onlyTheInputOverlayOwnsGuideLines() {
     require(!firstRenderer->guideLinesVisible() && !secondRenderer->guideLinesVisible(),
             "guide lines must clear outside smart and manual selection");
 
+    presenter.updateGuideLines(displays, &firstOverlay, QPointF(12.0, 14.0), true,
+                               QColor(220, 30, 40), QColor(30, 80, 220));
+    require(firstRenderer->guideLinesVisible() && !secondRenderer->guideLinesVisible(),
+            "both configured guides must reappear on the active overlay after visibility returns");
+    presenter.updateGuideLines(displays, &secondOverlay, QPointF(4.0, 6.0), false,
+                               QColor(220, 30, 40), QColor(30, 80, 220));
+    require(!firstRenderer->guideLinesVisible() && !secondRenderer->guideLinesVisible(),
+            "hidden guide state must persist while the cursor moves to another overlay");
+
     presenter.updateGuideLines(displays, &firstOverlay, QPointF(12.0, 14.0), true, Qt::transparent,
                                Qt::transparent);
     require(!firstRenderer->guideLinesVisible() && !secondRenderer->guideLinesVisible(),
             "transparent configured colors must keep every overlay guide-free");
+
+    firstOverlay.setScreenshotSelection(QRectF(-10.0, -10.0, 40.0, 40.0), false, 0);
+    secondOverlay.setScreenshotSelection(QRectF(-10.0, -10.0, 40.0, 40.0), false, 0);
+    require(firstCanvas->setCanvasTool(SnowCanvasTool::Select), "activate Move tool");
+    presenter.updateGuideLines(displays, &firstOverlay, QPointF(12.0, 14.0), true, Qt::transparent,
+                               Qt::transparent, QColor(0x40, 0x96, 0xff));
+    require(firstRenderer->guideLinesVisible() && secondRenderer->guideLinesVisible(),
+            "selection-center guides must remain on affected overlays with Move active");
+    presenter.updateGuideLines(displays, &firstOverlay, QPointF(12.0, 14.0), false, Qt::transparent,
+                               Qt::transparent, QColor(0x40, 0x96, 0xff));
+    require(!firstRenderer->guideLinesVisible() && !secondRenderer->guideLinesVisible(),
+            "hiding guides must clear selection-center lines on every overlay");
 }
 
 void guideLinesInitializeFromGlobalCursorPosition() {
@@ -5791,9 +5894,12 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--screenshot-ui-preferences"))) {
         screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();
+        guideVisibilityResetsAtEachCaptureSession();
         shortcutHintStagesUseTheExactRequiredLines();
         configurableSelectionMaskUsesRequestedPixels();
         cursorAndMonitorGuideLinesUseDashedAndSolidPixels();
+        selectionCenterGuideTracksSelectionAndRemainsOverlayOnly();
+        cursorGuideFollowsCanvasPointerDuringDrawingInput();
         cursorGuideLineMovementInvalidatesOnlyChangedAxes();
         hiddenAndSamePixelCursorMovementDoesNotRepaintGuideLines();
         cursorGuideLineDamageCoversChangedPixelsAtFractionalDprs();
@@ -5905,9 +6011,12 @@ int main(int argc, char** argv) {
     overlayPresenterRespectsSelectionHandleVisibility();
     resettingDisplaySessionEditingStateResetsEveryCanvas();
     screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();
+    guideVisibilityResetsAtEachCaptureSession();
     shortcutHintStagesUseTheExactRequiredLines();
     configurableSelectionMaskUsesRequestedPixels();
     cursorAndMonitorGuideLinesUseDashedAndSolidPixels();
+    selectionCenterGuideTracksSelectionAndRemainsOverlayOnly();
+    cursorGuideFollowsCanvasPointerDuringDrawingInput();
     cursorGuideLineMovementInvalidatesOnlyChangedAxes();
     hiddenAndSamePixelCursorMovementDoesNotRepaintGuideLines();
     cursorGuideLineDamageCoversChangedPixelsAtFractionalDprs();

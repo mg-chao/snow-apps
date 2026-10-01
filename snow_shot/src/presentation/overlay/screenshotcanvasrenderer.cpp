@@ -329,6 +329,14 @@ QPoint monitorCenterGuideLinePosition(const QRect& viewportRect) {
     return guideLinePixelPosition(center);
 }
 
+std::optional<QPoint> selectionCenterGuideLinePosition(const ScreenshotSelectionVisualState& state,
+                                                       const QTransform& canvasToViewTransform) {
+    if (!state.present || state.bounds.isEmpty()) {
+        return std::nullopt;
+    }
+    return guideLinePixelPosition(canvasToViewTransform.map(state.bounds.center()));
+}
+
 QRegion planGuideLineDamage(const QRect& viewportRect, const QPoint& previousCursorPosition,
                             const QColor& previousCursorColor,
                             const QColor& previousMonitorCenterColor,
@@ -1300,7 +1308,8 @@ void ScreenshotCanvasRenderer::setGuideLines(const QPointF& cursorPosition,
     const QColor nextMonitorColor = normalizedGuideLineColor(monitorCenterColor);
     const QPoint nextCursorPosition =
         nextCursorColor.alpha() > 0 ? guideLinePixelPosition(cursorPosition) : QPoint();
-    const bool nextVisible = nextCursorColor.alpha() > 0 || nextMonitorColor.alpha() > 0;
+    const bool nextVisible = nextCursorColor.alpha() > 0 || nextMonitorColor.alpha() > 0 ||
+                             m_selectionCenterGuideLineColor.alpha() > 0;
     if (m_guideLineCursorPosition == nextCursorPosition &&
         m_cursorGuideLineColor == nextCursorColor &&
         m_monitorCenterGuideLineColor == nextMonitorColor && m_guideLinesVisible == nextVisible) {
@@ -1322,8 +1331,33 @@ void ScreenshotCanvasRenderer::setGuideLines(const QPointF& cursorPosition,
     }
 }
 
+void ScreenshotCanvasRenderer::setGuideCursorPosition(const QPointF& cursorPosition) {
+    if (m_cursorGuideLineColor.alpha() > 0) {
+        setGuideLines(cursorPosition, m_cursorGuideLineColor, m_monitorCenterGuideLineColor);
+    }
+}
+
+void ScreenshotCanvasRenderer::setSelectionCenterGuideLineColor(const QColor& color) {
+    const QColor nextColor = normalizedGuideLineColor(color);
+    if (m_selectionCenterGuideLineColor == nextColor) {
+        return;
+    }
+    const auto center =
+        selectionCenterGuideLinePosition(m_selectionState, m_canvas.canvasToViewTransform());
+    if (center.has_value()) {
+        const QRegion dirty = guideLineCrosshairRegion(m_canvas.rect(), *center);
+        if (!dirty.isEmpty()) {
+            m_canvas.update(dirty);
+        }
+    }
+    m_selectionCenterGuideLineColor = nextColor;
+    m_guideLinesVisible = m_cursorGuideLineColor.alpha() > 0 ||
+                          m_monitorCenterGuideLineColor.alpha() > 0 || nextColor.alpha() > 0;
+}
+
 void ScreenshotCanvasRenderer::clearGuideLines() {
     setGuideLines({}, Qt::transparent, Qt::transparent);
+    setSelectionCenterGuideLineColor(Qt::transparent);
 }
 
 void ScreenshotCanvasRenderer::setSelection(const QRectF& selection, bool handlesVisible,
@@ -1381,8 +1415,17 @@ void ScreenshotCanvasRenderer::applySelectionState(const ScreenshotSelectionVisu
 #else
     const QTransform canvasToViewTransform = m_canvas.canvasToViewTransform();
 #endif
-    const QRegion dirtyRegion = planScreenshotSelectionDamage(
-        previous, m_selectionState, m_canvas.rect(), canvasToViewTransform, m_maskVisible);
+    QRegion dirtyRegion = planScreenshotSelectionDamage(previous, m_selectionState, m_canvas.rect(),
+                                                        canvasToViewTransform, m_maskVisible);
+    if (m_selectionCenterGuideLineColor.alpha() > 0) {
+        if (const auto center = selectionCenterGuideLinePosition(previous, canvasToViewTransform)) {
+            dirtyRegion += guideLineCrosshairRegion(m_canvas.rect(), *center);
+        }
+        if (const auto center =
+                selectionCenterGuideLinePosition(m_selectionState, canvasToViewTransform)) {
+            dirtyRegion += guideLineCrosshairRegion(m_canvas.rect(), *center);
+        }
+    }
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     g_selectionDamageRegion += dirtyRegion;
 #endif
@@ -1609,6 +1652,7 @@ void ScreenshotCanvasRenderer::reset() {
     m_maskVisible = false;
     m_guideLineCursorPosition = {};
     m_cursorGuideLineColor = QColor(0, 0, 0, 0);
+    m_selectionCenterGuideLineColor = QColor(0, 0, 0, 0);
     m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     m_guideLinesVisible = false;
     m_ocrPresentation.reset();
@@ -1966,6 +2010,12 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         paintScreenshotGuideLines(painter, viewport, QPointF(m_guideLineCursorPosition),
                                   m_cursorGuideLineColor, m_monitorCenterGuideLineColor,
                                   &context.exposedRegion);
+        if (m_selectionCenterGuideLineColor.alpha() > 0 && m_selectionState.present) {
+            paintScreenshotGuideLineCrosshair(
+                painter, viewport,
+                context.canvasToViewTransform.map(m_selectionState.bounds.center()),
+                m_selectionCenterGuideLineColor, false);
+        }
     }
     const auto draftViewPath = context.canvasToViewTransform.map(m_selectionState.draftPath);
     const bool sharedDraftOutline =

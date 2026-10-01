@@ -2490,6 +2490,68 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
             "failed to restore selection shortcuts after route test");
 }
 
+void guideToggleShortcutFollowsSessionInputAndRemapping() {
+    const storage::ScreenshotShortcutSettings settings;
+    const auto original = settings.allShortcuts();
+    auto configured = original;
+    configured.insert(QStringLiteral("toggle_guides"), {QStringLiteral("Alt")});
+    require(settings.setAllShortcutsAtomic(configured),
+            "failed to configure the standalone guide shortcut");
+
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(true);
+    QWidget window;
+    window.show();
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    bool inputAllowed = true;
+    int toggles = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.localShortcutInputAllowed = [&] { return inputAllowed; };
+    actions.toggleGuidesForCurrentSession = [&] {
+        ++toggles;
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayShortcutController controller(manager, handler, interaction, intelligent,
+                                                   actions);
+
+    dispatchShortcut(window, Qt::Key_Alt, Qt::AltModifier);
+    require(toggles == 0, "guide shortcut must wait for Alt release");
+    dispatchShortcutRelease(window, Qt::Key_Alt);
+    require(toggles == 1, "standalone Alt must route to guide visibility");
+    inputAllowed = false;
+    dispatchShortcut(window, Qt::Key_Alt, Qt::AltModifier);
+    dispatchShortcutRelease(window, Qt::Key_Alt);
+    require(toggles == 1, "guide toggle must respect suspended local shortcut input");
+    inputAllowed = true;
+
+    configured.insert(QStringLiteral("toggle_guides"), {QStringLiteral("Ctrl+G")});
+    require(settings.setAllShortcutsAtomic(configured), "failed to remap the guide shortcut");
+    controller.reloadConfiguredShortcuts();
+    dispatchShortcut(window, Qt::Key_Alt, Qt::AltModifier);
+    dispatchShortcutRelease(window, Qt::Key_Alt);
+    require(toggles == 1, "remapping guides must retire the old Alt binding");
+    dispatchShortcut(window, Qt::Key_G, Qt::ControlModifier);
+    dispatchShortcutRelease(window, Qt::Key_G, Qt::ControlModifier);
+    require(toggles == 2, "remapped guide shortcut must toggle in the active session");
+
+    configured.insert(QStringLiteral("toggle_guides"), {});
+    require(settings.setAllShortcutsAtomic(configured), "failed to clear the guide shortcut");
+    controller.reloadConfiguredShortcuts();
+    dispatchShortcut(window, Qt::Key_G, Qt::ControlModifier);
+    dispatchShortcutRelease(window, Qt::Key_G, Qt::ControlModifier);
+    require(toggles == 2, "an unset guide shortcut must remain inactive");
+    require(settings.setAllShortcutsAtomic(original),
+            "failed to restore screenshot shortcuts after guide test");
+}
+
 void screenshotTextEditingTakesPriorityOverCancelShortcut() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -4377,6 +4439,7 @@ int main(int argc, char** argv) {
         colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
         sharedShiftShortcutChoosesResizeOrColorFormat();
         configuredSelectionShortcutsRouteTabHistoryAndColorActions();
+        guideToggleShortcutFollowsSessionInputAndRemapping();
         intelligentSelectionSupportsCursorMovementShortcuts();
         cursorMovementEligibilityFollowsInteractionState();
         screenshotTextEditingTakesPriorityOverCancelShortcut();
@@ -4429,6 +4492,7 @@ int main(int argc, char** argv) {
     colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
     sharedShiftShortcutChoosesResizeOrColorFormat();
     configuredSelectionShortcutsRouteTabHistoryAndColorActions();
+    guideToggleShortcutFollowsSessionInputAndRemapping();
     intelligentSelectionSupportsCursorMovementShortcuts();
     cursorMovementEligibilityFollowsInteractionState();
     screenshotTextEditingTakesPriorityOverCancelShortcut();

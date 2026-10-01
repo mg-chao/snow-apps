@@ -54,6 +54,7 @@ struct ShortcutKeyRowConfig {
     std::function<bool(int)> delaySetter;
     bool showRegistrationStatus = true;
     ValidationScope validationScope = ValidationScope::GlobalShortcut;
+    bool allowModifierOnlyAlt = false;
     Presentation presentation = Presentation::ActionCard;
 };
 
@@ -98,6 +99,7 @@ class ShortcutKeyRow : public ActionRow {
     bool m_showRegistrationStatus = true;
     ShortcutKeyRowConfig::ValidationScope m_validationScope =
         ShortcutKeyRowConfig::ValidationScope::GlobalShortcut;
+    bool m_allowModifierOnlyAlt = false;
     int m_maxShortcutCount = 2;
     bool m_adjustableDelay = false;
     int m_delaySeconds = 3;

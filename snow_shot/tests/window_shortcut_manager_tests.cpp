@@ -8,6 +8,7 @@
 #include <QDialog>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QSpinBox>
 #include <QPlainTextEdit>
 #include <QTextBrowser>
@@ -66,6 +67,16 @@ void sharedShortcutDomainCanonicalizesIdentityAndDisplay() {
                 shortcut_domain::canonicalPortableText(QStringLiteral("Shift"), true) ==
                     QStringLiteral("Shift"),
             "modifier-only Shift must remain an explicit per-scope policy");
+    require(shortcut_domain::canonicalPortableText(QStringLiteral("Alt"), true).isEmpty() &&
+                shortcut_domain::canonicalPortableText(QStringLiteral("Alt"), true, true) ==
+                    QStringLiteral("Alt") &&
+                shortcut_domain::effectiveIdentity(
+                    shortcut_domain::bindingFromPortableText(QStringLiteral("Alt"), true, true))
+                        .key == Qt::Key_Alt &&
+                !shortcut_domain::formatShortcutDisplayText(
+                     shortcut_domain::bindingFromPortableText(QStringLiteral("Alt"), true, true))
+                     .isEmpty(),
+            "modifier-only Alt must be accepted and displayed only under an explicit policy");
 
 #ifdef Q_OS_MACOS
     shortcut_domain::ShortcutBinding physical{QStringLiteral("Ctrl+A")};
@@ -1323,6 +1334,67 @@ void canceledCloseDoesNotStealAnotherManagersFreshPress() {
     require(closes == 1, "canceled ownership must not steal another window's fresh gesture");
 }
 
+void standaloneModifierTapIgnoresChordsAndInterruptions() {
+    QWidget window;
+    window.show();
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    int toggles = 0;
+    int chordActivations = 0;
+    WindowShortcutManager::Binding tap;
+    tap.id = QStringLiteral("guide-tap");
+    tap.shortcutBindings = {
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Alt"), true, true)};
+    tap.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Tap;
+    tap.activate = [&](const auto&) {
+        ++toggles;
+        return true;
+    };
+    require(manager.addBinding(&window, std::move(tap)) != 0, "standalone Alt tap must register");
+    auto chord = binding(QStringLiteral("alt-r"), Qt::Key_R, 100, [&] {
+        ++chordActivations;
+        return true;
+    });
+    chord.keyCombinations = {QKeyCombination(Qt::AltModifier, Qt::Key_R)};
+    require(manager.addBinding(&window, std::move(chord)) != 0, "Alt+R fixture must register");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    require(toggles == 0, "Alt press must not toggle before release");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier, true);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "a standalone Alt tap must toggle exactly once");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_R, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_R, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1 && chordActivations == 1,
+            "Alt+R must activate its chord without toggling guides");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    QMouseEvent mousePress(QEvent::MouseButtonPress, QPointF(4, 4), QPointF(4, 4), Qt::LeftButton,
+                           Qt::LeftButton, Qt::AltModifier);
+    QCoreApplication::sendEvent(&window, &mousePress);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "Alt plus a mouse action must not count as a tap");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    const auto suspension = manager.suspendInput();
+    manager.resumeInput(suspension);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "interrupted Alt input must not toggle");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    QEvent focusLoss(QEvent::WindowDeactivate);
+    QCoreApplication::sendEvent(&window, &focusLoss);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "losing focus while Alt is held must cancel the tap");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 2, "a fresh Alt tap must work after interruption");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1335,6 +1407,7 @@ int main(int argc, char** argv) {
     managerDestructionRetiresObserversBeforeItsState();
     windowCloseShortcutStaysWithinItsOwnSurface();
     sharedShortcutDomainCanonicalizesIdentityAndDisplay();
+    standaloneModifierTapIgnoresChordsAndInterruptions();
     canceledCloseDoesNotStealAnotherManagersFreshPress();
     releaseActivationOwnsTheWholeSequence();
     interruptedReleaseActivationNeverClosesLater();

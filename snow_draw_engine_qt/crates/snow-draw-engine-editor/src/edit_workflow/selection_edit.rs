@@ -627,14 +627,15 @@ impl Editor {
                 ) {
                     let anchors_x = resize_snap_anchors_for_sign(dragged_x_sign);
                     let anchors_y = resize_snap_anchors_for_sign(dragged_y_sign);
-                    let snap_result = OBJECT_SNAP_SERVICE.snap_resize(
-                        unsnapped_rect,
-                        &plan.references,
-                        plan.snap_distance,
-                        &anchors_x,
-                        &anchors_y,
-                        plan.enable_point_snaps,
-                    );
+                    let snap_result = plan.snap_rect(ObjectSnapRectRequest {
+                        target_rect: unsnapped_rect,
+                        reference_rects: &plan.references,
+                        snap_distance: plan.snap_distance,
+                        target_anchors_x: &anchors_x,
+                        target_anchors_y: &anchors_y,
+                        enable_point_snaps: plan.enable_point_snaps,
+                        enable_gap_snaps: false,
+                    });
                     (
                         DrawRect::new(
                             unsnapped_rect.min_x + if snap_min_x { snap_result.dx } else { 0.0 },

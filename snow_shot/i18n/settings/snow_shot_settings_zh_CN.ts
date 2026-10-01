@@ -1597,12 +1597,16 @@
             <translation>拖动截图工具可重新排序，或将它们堆叠到同一工具栏位置。</translation>
         </message>
         <message>
-            <source>Draw a dashed crosshair at the pointer while selecting</source>
-            <translation>选择时在鼠标指针处绘制虚线十字辅助线</translation>
+            <source>Draw a dashed crosshair at the pointer while guides are enabled</source>
+            <translation>启用辅助线时在鼠标指针处绘制虚线十字辅助线</translation>
         </message>
         <message>
-            <source>Draw a solid crosshair at the active monitor center while selecting</source>
-            <translation>选择时在当前显示器中心绘制实线十字辅助线</translation>
+            <source>Draw a solid crosshair at the active monitor center while guides are enabled</source>
+            <translation>启用辅助线时在当前显示器中心绘制实线十字辅助线</translation>
+        </message>
+        <message>
+            <source>Draw a solid crosshair at the screenshot selection center</source>
+            <translation>在截图选区中心绘制实线十字辅助线</translation>
         </message>
         <message>
             <source>Draw four guide segments around the sampled center pixel</source>
@@ -2801,6 +2805,10 @@
             <translation>选择窗口/窗口子元素</translation>
         </message>
         <message>
+            <source>Selection Center Guide Color</source>
+            <translation>选区中心辅助线颜色</translation>
+        </message>
+        <message>
             <source>Selection animation</source>
             <translation>选区动画</translation>
         </message>
@@ -2929,6 +2937,10 @@
             <translation>截图工具和光标移动的快捷键</translation>
         </message>
         <message>
+            <source>Show Guides by Default</source>
+            <translation>默认显示辅助线</translation>
+        </message>
+        <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>在文本识别工具栏中显示一个按钮，将识别出的文本发送到翻译页面。</translation>
         </message>
@@ -2943,6 +2955,10 @@
         <message>
             <source>Show main window</source>
             <translation>显示主窗口</translation>
+        </message>
+        <message>
+            <source>Show screenshot guides when a capture starts</source>
+            <translation>开始截图时显示辅助线</translation>
         </message>
         <message>
             <source>Show text recognition results</source>
@@ -3171,6 +3187,10 @@
         <message>
             <source>Toggle Global/Relative Coordinates</source>
             <translation>切换全局/相对坐标</translation>
+        </message>
+        <message>
+            <source>Toggle Guides</source>
+            <translation>切换辅助线</translation>
         </message>
         <message>
             <source>Toggle hotkeys</source>

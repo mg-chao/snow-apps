@@ -278,6 +278,36 @@ void toolbarLayoutSectionResetsRemainIndependent() {
             "Drawing reset must restore only the drawing toolbar layout");
 }
 
+void screenshotGuideSettingsPersistAndReset() {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const storage::ScreenshotUiSettings ui;
+    const storage::ScreenshotShortcutSettings shortcutSettings;
+    require(ui.setShowGuidesByDefault(true) && ui.setCursorGuideLineColor(QColor(12, 34, 56, 78)) &&
+                ui.setSelectionCenterGuideLineColor(QColor(22, 33, 44, 55)) &&
+                ui.setMonitorCenterGuideLineColor(QColor(90, 80, 70, 60)) &&
+                shortcutSettings.setShortcuts(QStringLiteral("toggle_guides"),
+                                              {QStringLiteral("Ctrl+G")}),
+            "guide settings must accept saved preferences and a remapped shortcut");
+    require(ui.showGuidesByDefault() && ui.cursorGuideLineColor() == QColor(12, 34, 56, 78) &&
+                ui.selectionCenterGuideLineColor() == QColor(22, 33, 44, 55) &&
+                ui.monitorCenterGuideLineColor() == QColor(90, 80, 70, 60) &&
+                shortcutSettings.toggleGuides().size() == 1 &&
+                shortcutSettings.toggleGuides().first().portableText == QStringLiteral("Ctrl+G"),
+            "saved guide preferences and shortcut must remain intact before reset");
+
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
+                !ui.showGuidesByDefault() && ui.cursorGuideLineColor() == QColor(0, 0, 0) &&
+                ui.selectionCenterGuideLineColor() == QColor(0x40, 0x96, 0xff) &&
+                ui.monitorCenterGuideLineColor() == QColor(255, 0, 0) &&
+                shortcutSettings.toggleGuides().first().portableText == QStringLiteral("Ctrl+G"),
+            "screenshot interface reset must restore guide defaults without resetting shortcuts");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotEditorShortcuts) &&
+                shortcutSettings.toggleGuides().size() == 1 &&
+                shortcutSettings.toggleGuides().first().portableText == QStringLiteral("Alt"),
+            "screenshot shortcut reset must restore the standalone Alt guide shortcut");
+}
+
 #ifndef Q_OS_MACOS
 void changedApiRefreshesServiceAndRejectsOldResults() {
     ScreenshotSelectorCoordinator coordinator;
@@ -641,7 +671,8 @@ void nativeWindowIdentitySurvivesClientCallbacksAndRefinement() {
         require(received.nativeWindowId == hit, "client must copy native window identity");
         require(client.startRefinement(received), "native identity refinement rejected");
         const auto& query = refinements.last().query;
-        require(query.window_id == hit.value_or(0) && query.window_hit_tested == hit.has_value(),
+        require(query.window_id == hit.value_or(0) &&
+                    (query.window_hit_tested != 0) == hit.has_value(),
                 "refinement must preserve desktop, window, and unresolved native hits");
     }
     automaticReply = true;
@@ -720,6 +751,11 @@ int main(int argc, char** argv) {
         applicationStorage.shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--guide-settings-only"))) {
+        screenshotGuideSettingsPersistAndReset();
+        applicationStorage.shutdown();
+        return 0;
+    }
     const bool selectorOnly = application.arguments().contains(QStringLiteral("--selector-only"));
     if (application.arguments().contains(
             QStringLiteral("--shortcut-exit-confirmation-settings-only"))) {
@@ -743,6 +779,7 @@ int main(int argc, char** argv) {
             temporary.filePath(QStringLiteral("data/config.json")));
         ownUiCapturePreferencesPersistAndReset();
         toolbarLayoutSectionResetsRemainIndependent();
+        screenshotGuideSettingsPersistAndReset();
     }
 #ifndef Q_OS_MACOS
     changedApiRefreshesServiceAndRejectsOldResults();

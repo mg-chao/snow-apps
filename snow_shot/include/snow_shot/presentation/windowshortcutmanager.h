@@ -38,7 +38,7 @@ class WindowShortcutManager final : public QObject {
     };
 
     struct Binding {
-        enum class ActivationTrigger { Press, Release };
+        enum class ActivationTrigger { Press, Release, Tap };
 
         QString id;
         shortcuts::ShortcutBindingList shortcutBindings;
@@ -47,8 +47,9 @@ class WindowShortcutManager final : public QObject {
         QList<QKeyCombination> keyCombinations;
         int priority = 0;
         bool autoRepeat = false;
-        // Release actions reserve the initial press and execute only after its
-        // physical release. They cannot also define held-control callbacks.
+        // Release actions execute on physical release. Tap actions also cancel
+        // when another key or mouse action occurs during the hold.
+        // Neither can define held-control callbacks.
         ActivationTrigger activationTrigger = ActivationTrigger::Press;
         // Held contextual shortcuts may tolerate a narrowly scoped extra
         // modifier (for example Shift followed by Space during a resize).

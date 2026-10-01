@@ -292,6 +292,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void reloadDrawingPreferences();
     void updateSmartSelectionSettingForCurrentSession(bool enabled);
     void applyUiPreferences(const ScreenshotUiPreferences& preferences);
+    void resetGuideVisibilityForSession();
+    [[nodiscard]] bool toggleGuidesForCurrentSession();
     void shutdown();
     void startHistoryEdit(const QString& recordId);
     void handleCapturePresented();
@@ -647,6 +649,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotIntelligentSelectionModel m_intelligentSelection;
     QSet<SnowCanvasTool> m_quickSelectionDisabledTools;
     ScreenshotUiPreferences m_uiPreferences;
+    ScreenshotGuideVisibilityState m_guideVisibility;
     std::function<bool(bool, bool, bool)> m_recordingPermissionCheck;
     std::unique_ptr<ScreenRecordingController> m_screenRecordingController;
     bool m_constructingRecognitionFeature = false;
@@ -787,7 +790,9 @@ void ScreenshotController::Impl::reloadUiPreferences() {
         preferences.shortcutHintOpacity =
             static_cast<qreal>(settings.shortcutHintOpacity()) / 100.0;
         preferences.screenshotAreaTypeHintEnabled = settings.screenshotAreaTypeHintEnabled();
+        preferences.showGuidesByDefault = settings.showGuidesByDefault();
         preferences.cursorGuideLineColor = settings.cursorGuideLineColor();
+        preferences.selectionCenterGuideLineColor = settings.selectionCenterGuideLineColor();
         preferences.monitorCenterGuideLineColor = settings.monitorCenterGuideLineColor();
         preferences.colorPickerCenterGuideLineColor = settings.colorPickerCenterGuideLineColor();
     }
@@ -803,13 +808,13 @@ void ScreenshotController::Impl::applyUiPreferences(const ScreenshotUiPreference
         m_overlayCoordinator->setColorPickerCenterGuideLineColor(
             m_uiPreferences.colorPickerCenterGuideLineColor);
         m_overlayCoordinator->clearGuideLines(m_displaySession);
-        if (m_interaction.selecting()) {
-            if (ScreenshotOverlayWindow* overlay = overlayUnderCursor()) {
-                m_overlayCoordinator->updateGuideLines(m_displaySession, overlay,
-                                                       overlay->canvasLocalPosition(QCursor::pos()),
-                                                       true, m_uiPreferences.cursorGuideLineColor,
-                                                       m_uiPreferences.monitorCenterGuideLineColor);
-            }
+        if (!m_interaction.inactive() && m_guideVisibility.visible()) {
+            ScreenshotOverlayWindow* overlay = overlayUnderCursor();
+            m_overlayCoordinator->updateGuideLines(
+                m_displaySession, overlay,
+                overlay != nullptr ? overlay->canvasLocalPosition(QCursor::pos()) : QPointF(), true,
+                m_uiPreferences.cursorGuideLineColor, m_uiPreferences.monitorCenterGuideLineColor,
+                m_uiPreferences.selectionCenterGuideLineColor);
         }
     }
     if (m_presentationServices != nullptr) {
@@ -819,6 +824,30 @@ void ScreenshotController::Impl::applyUiPreferences(const ScreenshotUiPreference
                 m_presentationServices->colorPickerContext());
         }
     }
+}
+
+void ScreenshotController::Impl::resetGuideVisibilityForSession() {
+    m_guideVisibility.beginSession(m_uiPreferences);
+    if (m_presentationServices != nullptr) {
+        m_presentationServices->setGuideLinesVisible(m_guideVisibility.visible());
+    }
+    if (!m_guideVisibility.visible() && m_overlayCoordinator != nullptr) {
+        m_overlayCoordinator->clearGuideLines(m_displaySession);
+    }
+}
+
+bool ScreenshotController::Impl::toggleGuidesForCurrentSession() {
+    if (m_interaction.inactive()) {
+        return false;
+    }
+    m_guideVisibility.toggle();
+    if (m_presentationServices != nullptr) {
+        m_presentationServices->setGuideLinesVisible(m_guideVisibility.visible());
+    }
+    if (!m_guideVisibility.visible() && m_overlayCoordinator != nullptr) {
+        m_overlayCoordinator->clearGuideLines(m_displaySession);
+    }
+    return true;
 }
 
 void ScreenshotController::Impl::createHistoryService() {
@@ -1604,6 +1633,7 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
     m_pendingHistoryEditRecordId = recordId;
     invalidateRecognitionSession();
     m_historyService->resetCaptureNavigation();
+    resetGuideVisibilityForSession();
     emit owner.captureAvailabilityChanged(false);
     m_captureWorkflow->startCapture();
 }
@@ -1804,8 +1834,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         },
         [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
             m_overlayCoordinator->updateGuideLines(
-                m_displaySession, overlay, localPosition, m_interaction.selecting(),
-                m_uiPreferences.cursorGuideLineColor, m_uiPreferences.monitorCenterGuideLineColor);
+                m_displaySession, overlay, localPosition,
+                !m_interaction.inactive() && m_guideVisibility.visible(),
+                m_uiPreferences.cursorGuideLineColor, m_uiPreferences.monitorCenterGuideLineColor,
+                m_uiPreferences.selectionCenterGuideLineColor);
         },
         [this](const QPointF& virtualPosition) {
             m_colorPickerController->updateForSelectionDrag(
@@ -1904,6 +1936,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
                 toolbar->suppressRememberedDrawingTool();
             }
         },
+        [this]() { return toggleGuidesForCurrentSession(); },
     };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
@@ -5159,6 +5192,7 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
     if (m_historyService != nullptr) {
         m_historyService->resetCaptureNavigation();
     }
+    resetGuideVisibilityForSession();
     emit owner.captureAvailabilityChanged(false);
     using ToolbarPreparation = ScreenshotCaptureWorkflow::ToolbarPreparation;
     using ToolbarVisibility = ScreenshotCaptureWorkflow::ToolbarVisibility;

@@ -44,7 +44,9 @@ QJsonArray stringArray(const QStringList& values) {
 
 shortcuts::ShortcutBindingList shortcutValue(const QString& key) {
     const bool allowModifierOnlyShift = key.startsWith(QStringLiteral("screenshot_shortcuts/"));
-    return shortcuts::shortcutBindingsFromJson(cache().value(key), allowModifierOnlyShift);
+    const bool allowModifierOnlyAlt = key == QStringLiteral("screenshot_shortcuts/toggle_guides");
+    return shortcuts::shortcutBindingsFromJson(cache().value(key), allowModifierOnlyShift, -1,
+                                               nullptr, nullptr, allowModifierOnlyAlt);
 }
 
 bool setShortcutValue(const QString& key, const shortcuts::ShortcutBindingList& bindings) {
@@ -78,6 +80,7 @@ const QStringList& screenshotShortcutActionIds() {
             QStringLiteral("recapture"),
             QStringLiteral("copy_color"),
             QStringLiteral("toggle_coordinate_mode"),
+            QStringLiteral("toggle_guides"),
             QStringLiteral("table_recognition"),
             QStringLiteral("qr_code_recognition"),
             QStringLiteral("video_recording"),
@@ -984,6 +987,10 @@ shortcuts::ShortcutBindingList ScreenshotShortcutSettings::toggleCoordinateMode(
     return shortcuts(QStringLiteral("toggle_coordinate_mode"));
 }
 
+shortcuts::ShortcutBindingList ScreenshotShortcutSettings::toggleGuides() const {
+    return shortcuts(QStringLiteral("toggle_guides"));
+}
+
 shortcuts::ShortcutBindingList ScreenshotShortcutSettings::copyColor() const {
     return shortcuts(QStringLiteral("copy_color"));
 }
@@ -1086,7 +1093,9 @@ bool ScreenshotShortcutSettings::setAllShortcutsAtomic(
         if (!normalized.valid) {
             return false;
         }
-        const auto normalizedBindings = shortcuts::shortcutBindingsFromJson(normalized.value, true);
+        const auto normalizedBindings =
+            shortcuts::shortcutBindingsFromJson(normalized.value, true, -1, nullptr, nullptr,
+                                                actionId == QStringLiteral("toggle_guides"));
         for (const auto& binding : normalizedBindings) {
             const bool duplicate =
                 std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
@@ -1396,12 +1405,28 @@ bool ScreenshotUiSettings::setScreenshotAreaTypeHintEnabled(bool enabled) const 
     return cache().setValue(QStringLiteral("screenshot_ui/area_type_hint_enabled"), enabled);
 }
 
+bool ScreenshotUiSettings::showGuidesByDefault() const {
+    return cache().value(QStringLiteral("screenshot_ui/show_guides_by_default")).toBool();
+}
+
+bool ScreenshotUiSettings::setShowGuidesByDefault(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/show_guides_by_default"), enabled);
+}
+
 QColor ScreenshotUiSettings::cursorGuideLineColor() const {
     return colorValue(QStringLiteral("screenshot_ui/cursor_guide_line_color"));
 }
 
 bool ScreenshotUiSettings::setCursorGuideLineColor(const QColor& color) const {
     return setColorValue(QStringLiteral("screenshot_ui/cursor_guide_line_color"), color);
+}
+
+QColor ScreenshotUiSettings::selectionCenterGuideLineColor() const {
+    return colorValue(QStringLiteral("screenshot_ui/selection_center_guide_line_color"));
+}
+
+bool ScreenshotUiSettings::setSelectionCenterGuideLineColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screenshot_ui/selection_center_guide_line_color"), color);
 }
 
 QColor ScreenshotUiSettings::monitorCenterGuideLineColor() const {

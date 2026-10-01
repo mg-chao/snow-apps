@@ -287,17 +287,24 @@ impl Editor {
                 GRID_SNAP_SERVICE.snap_point(current, self.config.grid.size),
                 Vec::new(),
             ),
-            SnappingMode::Object if self.config.snap.enable_point_snaps => {
-                let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
-                    point: current,
-                    threshold: self.zoom_adjusted_snap_distance(),
-                    include_grid: false,
-                    grid_size: self.config.grid.size,
-                });
+            SnappingMode::Object => {
+                let (point, guides) =
+                    if self.config.snap.enabled && self.config.snap.enable_point_snaps {
+                        let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
+                            point: current,
+                            threshold: self.zoom_adjusted_snap_distance(),
+                            include_grid: false,
+                            grid_size: self.config.grid.size,
+                        });
+                        (snap.point, snap.guides)
+                    } else {
+                        (current, Vec::new())
+                    };
+                let (point, guides) = self.snap_point_to_external_guides(current, point, guides);
                 (
-                    snap.point,
+                    point,
                     if self.config.snap.show_guides {
-                        snap.guides
+                        guides
                     } else {
                         Vec::new()
                     },
@@ -337,17 +344,24 @@ impl Editor {
                 GRID_SNAP_SERVICE.snap_point(current, self.config.grid.size),
                 Vec::new(),
             ),
-            SnappingMode::Object if self.config.snap.enable_point_snaps => {
-                let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
-                    point: current,
-                    threshold: self.zoom_adjusted_snap_distance(),
-                    include_grid: false,
-                    grid_size: self.config.grid.size,
-                });
+            SnappingMode::Object => {
+                let (point, guides) =
+                    if self.config.snap.enabled && self.config.snap.enable_point_snaps {
+                        let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
+                            point: current,
+                            threshold: self.zoom_adjusted_snap_distance(),
+                            include_grid: false,
+                            grid_size: self.config.grid.size,
+                        });
+                        (snap.point, snap.guides)
+                    } else {
+                        (current, Vec::new())
+                    };
+                let (point, guides) = self.snap_point_to_external_guides(current, point, guides);
                 (
-                    snap.point,
+                    point,
                     if self.config.snap.show_guides {
-                        snap.guides
+                        guides
                     } else {
                         Vec::new()
                     },

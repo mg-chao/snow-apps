@@ -63,8 +63,9 @@ styles::ThemeMode themeModeForValue(const QVariant& value) {
 
 shortcuts::ShortcutBindingList shortcutListDefault(const QString& key) {
     const bool allowModifierOnlyShift = key.startsWith(QStringLiteral("screenshot_shortcuts/"));
-    return shortcuts::shortcutBindingsFromJson(storage::ConfigurationSchema::defaultValue(key),
-                                               allowModifierOnlyShift, 2);
+    return shortcuts::shortcutBindingsFromJson(
+        storage::ConfigurationSchema::defaultValue(key), allowModifierOnlyShift, 2, nullptr,
+        nullptr, key == QStringLiteral("screenshot_shortcuts/toggle_guides"));
 }
 
 bool resetAvailableConfigurationValues(QMap<QString, QJsonValue> values) {
@@ -581,6 +582,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotUiSettings().selectionTransitionAnimationEnabled();
     case SettingsSwitchBinding::ScreenshotAreaTypeHint:
         return storage::ScreenshotUiSettings().screenshotAreaTypeHintEnabled();
+    case SettingsSwitchBinding::ShowGuidesByDefault:
+        return storage::ScreenshotUiSettings().showGuidesByDefault();
     case SettingsSwitchBinding::TrayEnabled:
         return storage::TraySettings().enabled();
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
@@ -791,6 +794,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotAreaTypeHint) {
         return storage::ScreenshotUiSettings().setScreenshotAreaTypeHintEnabled(value);
     }
+    if (binding == SettingsSwitchBinding::ShowGuidesByDefault) {
+        return storage::ScreenshotUiSettings().setShowGuidesByDefault(value);
+    }
     if (binding == SettingsSwitchBinding::TrayEnabled) {
         return storage::TraySettings().setEnabled(value);
     }
@@ -906,6 +912,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
         return false;
     case SettingsSwitchBinding::SelectionTransitionAnimation:
     case SettingsSwitchBinding::ScreenshotAreaTypeHint:
+    case SettingsSwitchBinding::ShowGuidesByDefault:
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
     case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
@@ -1067,6 +1074,8 @@ QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
         return screenshot.selectionMaskColor();
     case SettingsColorBinding::CursorGuideLineColor:
         return screenshot.cursorGuideLineColor();
+    case SettingsColorBinding::SelectionCenterGuideLineColor:
+        return screenshot.selectionCenterGuideLineColor();
     case SettingsColorBinding::MonitorCenterGuideLineColor:
         return screenshot.monitorCenterGuideLineColor();
     case SettingsColorBinding::ColorPickerCenterGuideLineColor:
@@ -1090,6 +1099,8 @@ bool BuiltInSettingsBackend::applyColorValue(SettingsColorBinding binding, const
         return screenshot.setSelectionMaskColor(value);
     case SettingsColorBinding::CursorGuideLineColor:
         return screenshot.setCursorGuideLineColor(value);
+    case SettingsColorBinding::SelectionCenterGuideLineColor:
+        return screenshot.setSelectionCenterGuideLineColor(value);
     case SettingsColorBinding::MonitorCenterGuideLineColor:
         return screenshot.setMonitorCenterGuideLineColor(value);
     case SettingsColorBinding::ColorPickerCenterGuideLineColor:
@@ -1240,7 +1251,8 @@ BuiltInSettingsBackend::validateLocalShortcut(SettingsLocalShortcutScope scope,
     const QString key = localShortcutKey(scope, shortcutId);
     const bool allowModifierOnlyShift = scope == SettingsLocalShortcutScope::Screenshot;
     const shortcuts::ShortcutBinding canonical =
-        shortcuts::canonicalBinding(shortcut, allowModifierOnlyShift);
+        shortcuts::canonicalBinding(shortcut, allowModifierOnlyShift,
+                                    key == QStringLiteral("screenshot_shortcuts/toggle_guides"));
     if (canonical.portableText.isEmpty()) {
         return {shortcut.portableText, false, GlobalShortcutFailureReason::InvalidShortcut,
                 canonical};
@@ -1901,9 +1913,15 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot_ui/shortcut_hint_opacity"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/shortcut_hint_opacity"))},
+            {QStringLiteral("screenshot_ui/show_guides_by_default"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_ui/show_guides_by_default"))},
             {QStringLiteral("screenshot_ui/cursor_guide_line_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/cursor_guide_line_color"))},
+            {QStringLiteral("screenshot_ui/selection_center_guide_line_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_ui/selection_center_guide_line_color"))},
             {QStringLiteral("screenshot_ui/monitor_center_guide_line_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/monitor_center_guide_line_color"))},
@@ -1968,6 +1986,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("recapture"),
               QStringLiteral("copy_color"),
               QStringLiteral("toggle_coordinate_mode"),
+              QStringLiteral("toggle_guides"),
               QStringLiteral("pin_to_screen"),
               QStringLiteral("video_recording"),
               QStringLiteral("scrolling_screenshot"),

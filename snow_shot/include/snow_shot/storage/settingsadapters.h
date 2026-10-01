@@ -269,6 +269,7 @@ class ScreenshotShortcutSettings final {
     [[nodiscard]] shortcuts::ShortcutBindingList recapture() const;
     [[nodiscard]] shortcuts::ShortcutBindingList copyColor() const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleCoordinateMode() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleGuides() const;
 
     [[nodiscard]] shortcuts::ShortcutBindingList shortcuts(const QString& actionId) const;
     bool setShortcuts(const QString& actionId,
@@ -366,8 +367,12 @@ class ScreenshotUiSettings final {
     bool setShortcutHintOpacity(int opacity) const;
     [[nodiscard]] bool screenshotAreaTypeHintEnabled() const;
     bool setScreenshotAreaTypeHintEnabled(bool enabled) const;
+    [[nodiscard]] bool showGuidesByDefault() const;
+    bool setShowGuidesByDefault(bool enabled) const;
     [[nodiscard]] QColor cursorGuideLineColor() const;
     bool setCursorGuideLineColor(const QColor& color) const;
+    [[nodiscard]] QColor selectionCenterGuideLineColor() const;
+    bool setSelectionCenterGuideLineColor(const QColor& color) const;
     [[nodiscard]] QColor monitorCenterGuideLineColor() const;
     bool setMonitorCenterGuideLineColor(const QColor& color) const;
     [[nodiscard]] QColor colorPickerCenterGuideLineColor() const;

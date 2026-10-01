@@ -372,6 +372,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     SnowCanvasHistoryState canvasHistoryState() const;
     SnowCanvasSnapConfig canvasSnapConfig() const;
     bool setCanvasSnapConfig(const SnowCanvasSnapConfig& config);
+    bool setCanvasSnapGuideTargets(const SnowCanvasSnapGuideTargets& targets);
     SnowCanvasGridConfig canvasGridConfig() const;
     bool setCanvasGridConfig(const SnowCanvasGridConfig& config);
     bool interactionEnabled() const;
@@ -1140,6 +1141,20 @@ bool SnowCanvasWidget::Impl::setCanvasSnapConfig(const SnowCanvasSnapConfig& con
 
 bool SnowCanvasWidget::setCanvasSnapConfig(const SnowCanvasSnapConfig& config) {
     return m_impl->setCanvasSnapConfig(config);
+}
+
+bool SnowCanvasWidget::Impl::setCanvasSnapGuideTargets(const SnowCanvasSnapGuideTargets& targets) {
+    if (targets.verticalXs.size() > 2 || targets.horizontalYs.size() > 2) {
+        return false;
+    }
+    return applyMutationResult(snow_canvas_commands::setSnapGuideTargets(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(), targets.verticalXs.constData(),
+        static_cast<size_t>(targets.verticalXs.size()), targets.horizontalYs.constData(),
+        static_cast<size_t>(targets.horizontalYs.size())));
+}
+
+bool SnowCanvasWidget::setCanvasSnapGuideTargets(const SnowCanvasSnapGuideTargets& targets) {
+    return m_impl->setCanvasSnapGuideTargets(targets);
 }
 
 SnowCanvasGridConfig SnowCanvasWidget::Impl::canvasGridConfig() const {

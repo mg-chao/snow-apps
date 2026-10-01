@@ -54,6 +54,7 @@ class ScreenshotPresentationServices final {
     void raiseToolbarForCanvasInteraction();
     void setSelectionToolbarHovered(bool hovered);
     void setUiPreferences(const ScreenshotUiPreferences& preferences);
+    void setGuideLinesVisible(bool visible);
     void setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void reloadConfiguredShortcuts();
 
@@ -71,6 +72,7 @@ class ScreenshotPresentationServices final {
     ScreenshotPresentationServicesContext m_context;
     ScreenshotSmartSelectionTransition m_smartSelectionTransition;
     ScreenshotUiPreferences m_uiPreferences;
+    bool m_guideLinesVisible = false;
     std::optional<snow_shot::shortcuts::ShortcutBindingMap> m_configuredShortcuts;
     bool m_selectionToolbarHovered = false;
     bool m_selectionMovementActive = false;

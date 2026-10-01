@@ -2533,12 +2533,15 @@ if(SNOW_SHOT_BUILD_TESTS)
                      --shortcut-exit-confirmation-settings-only)
     add_test(NAME snow-shot-auto-qr-settings-tests
              COMMAND snow-shot-window-element-api-tests --auto-qr-settings-only)
+    add_test(NAME snow-shot-screenshot-guide-settings-reset-tests
+             COMMAND snow-shot-window-element-api-tests --guide-settings-only)
     snow_shot_import_offscreen_platform(snow-shot-window-element-api-tests)
     set_tests_properties(
         snow-shot-window-element-api-tests
         snow-shot-selector-phased-tests
         snow-shot-shortcut-exit-confirmation-settings-tests
         snow-shot-auto-qr-settings-tests
+        snow-shot-screenshot-guide-settings-reset-tests
         PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -3480,6 +3483,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-canvas-renderer-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests
     )
+    add_test(NAME snow-shot-screenshot-guide-preferences-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --screenshot-ui-preferences)
     add_test(NAME snow-shot-direct-capture-history-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
     add_test(NAME snow-shot-pinned-filter-reference-tests
@@ -3546,6 +3551,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(
         snow-shot-screenshot-canvas-renderer-tests
+        snow-shot-screenshot-guide-preferences-tests
         snow-shot-overlay-pool-prewarm-tests
         PROPERTIES
         ENVIRONMENT

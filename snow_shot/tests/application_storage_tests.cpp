@@ -407,6 +407,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("recapture"), QJsonArray{QStringLiteral("Alt+R")}},
         {QStringLiteral("copy_color"), QJsonArray{QStringLiteral("C")}},
         {QStringLiteral("toggle_coordinate_mode"), QJsonArray{QStringLiteral("Ctrl+P")}},
+        {QStringLiteral("toggle_guides"), QJsonArray{QStringLiteral("Alt")}},
         {QStringLiteral("table_recognition"), QJsonArray{QStringLiteral("Ctrl+X")}},
         {QStringLiteral("qr_code_recognition"), QJsonArray{QStringLiteral("Ctrl+Q")}},
         {QStringLiteral("video_recording"), QJsonArray{QStringLiteral("Ctrl+R")}},
@@ -429,6 +430,18 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                     entry->maximumListItems == 2,
                 "screenshot shortcut defaults and list limits must remain stable");
     }
+    require(storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("screenshot_ui/show_guides_by_default")) == QJsonValue(false) &&
+                storage::ConfigurationSchema::defaultValue(
+                    QStringLiteral("screenshot_ui/cursor_guide_line_color")) ==
+                    QJsonValue(QStringLiteral("#000000FF")) &&
+                storage::ConfigurationSchema::defaultValue(
+                    QStringLiteral("screenshot_ui/selection_center_guide_line_color")) ==
+                    QJsonValue(QStringLiteral("#4096FFFF")) &&
+                storage::ConfigurationSchema::defaultValue(
+                    QStringLiteral("screenshot_ui/monitor_center_guide_line_color")) ==
+                    QJsonValue(QStringLiteral("#FF0000FF")),
+            "screenshot guide defaults must start hidden with opaque configured colors");
 
     const QMap<QString, QJsonArray> pinToScreenShortcutDefaults{
         {QStringLiteral("copy_to_clipboard"), QJsonArray{QStringLiteral("Ctrl+C")}},
@@ -850,6 +863,11 @@ void screenshotUiSchemaRepairsStructuredValues() {
     require(validColor.valid && validColor.changed &&
                 validColor.value.toString() == QStringLiteral("#ABCDEF80"),
             "RGBA colors were not normalized canonically");
+    const auto savedTransparentColor = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#00000000"));
+    require(savedTransparentColor.valid && !savedTransparentColor.changed &&
+                savedTransparentColor.value.toString() == QStringLiteral("#00000000"),
+            "existing transparent guide colors must remain valid after default changes");
     require(!storage::ConfigurationSchema::normalize(
                  QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#ABCDEF"))
                  .valid,
@@ -985,6 +1003,17 @@ void screenshotUiAdaptersRoundTripTypedValues() {
                 screenshot.setScreenshotAreaTypeHintEnabled(false) &&
                 !screenshot.screenshotAreaTypeHintEnabled(),
             "screenshot area type hint defaults on and its adapter accepts the switch value");
+    require(!screenshot.showGuidesByDefault() &&
+                screenshot.cursorGuideLineColor() == QColor(0, 0, 0) &&
+                screenshot.selectionCenterGuideLineColor() == QColor(0x40, 0x96, 0xff) &&
+                screenshot.monitorCenterGuideLineColor() == QColor(255, 0, 0) &&
+                screenshot.setShowGuidesByDefault(true) && screenshot.showGuidesByDefault() &&
+                screenshot.setShowGuidesByDefault(false) && !screenshot.showGuidesByDefault(),
+            "guide visibility and opaque color defaults must round-trip through screenshot UI "
+            "settings");
+    require(screenshot.setSelectionCenterGuideLineColor(QColor(14, 25, 36, 47)) &&
+                screenshot.selectionCenterGuideLineColor() == QColor(14, 25, 36, 47),
+            "selection center guide color must preserve its RGBA value");
     require(screenshot.setSelectionMaskColor(QColor(18, 52, 86, 120)) &&
                 screenshot.selectionMaskColor() == QColor(18, 52, 86, 120) &&
                 storage::colorToRgbaString(screenshot.selectionMaskColor()) ==
@@ -1660,7 +1689,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 27 &&
+        screenshotDefaults.size() == 28 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -1687,6 +1716,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             portable(screenshotShortcuts.copyColor()) == QStringList{QStringLiteral("C")} &&
             portable(screenshotShortcuts.toggleCoordinateMode()) ==
                 QStringList{QStringLiteral("Ctrl+P")} &&
+            portable(screenshotShortcuts.toggleGuides()) == QStringList{QStringLiteral("Alt")} &&
             portable(screenshotDefaults.value(QStringLiteral("pin_to_screen"))) ==
                 QStringList{QStringLiteral("Ctrl+F")} &&
             portable(screenshotDefaults.value(QStringLiteral("quick_save"))) ==
@@ -1704,6 +1734,14 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             screenshotShortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !screenshotShortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
         "screenshot shortcut adapter must expose all stable actions and defaults");
+    require(screenshotShortcuts.setShortcuts(QStringLiteral("toggle_guides"),
+                                             {QStringLiteral("Ctrl+G")}) &&
+                portable(screenshotShortcuts.toggleGuides()) ==
+                    QStringList{QStringLiteral("Ctrl+G")} &&
+                screenshotShortcuts.setShortcuts(QStringLiteral("toggle_guides"),
+                                                 {QStringLiteral("Alt")}) &&
+                portable(screenshotShortcuts.toggleGuides()) == QStringList{QStringLiteral("Alt")},
+            "guide toggle shortcut must round-trip through the typed adapter");
     require(
         screenshotShortcuts.setShortcuts(QStringLiteral("cancel_screenshot"),
                                          {QStringLiteral("Esc")}) &&

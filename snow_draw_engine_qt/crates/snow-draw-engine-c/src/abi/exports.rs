@@ -1,4 +1,4 @@
-use snow_draw_engine::{Point, Runtime, ViewportConfig};
+use snow_draw_engine::{Point, Runtime, SnapGuideTargets, ViewportConfig};
 
 use crate::abi::convert::*;
 use crate::abi::handles::*;
@@ -554,6 +554,48 @@ pub unsafe extern "C" fn snow_viewport_set_snap_config_ex(
             |runtime, id| {
                 let result = runtime
                     .set_viewport_snap_config(id, unsafe { (*config).into() })
+                    .map_err(SnowError::from)?;
+                write_changed_viewports(out_changed_viewports, result.changed_viewports);
+                Ok(())
+            },
+        ))
+    })
+}
+
+/// # Safety
+/// Non-null arrays must be readable for their supplied lengths; the output must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_snap_guide_targets_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    vertical_xs: *const f64,
+    vertical_count: usize,
+    horizontal_ys: *const f64,
+    horizontal_count: usize,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null()
+            || vertical_count > 2
+            || horizontal_count > 2
+            || (vertical_count > 0 && vertical_xs.is_null())
+            || (horizontal_count > 0 && horizontal_ys.is_null())
+        {
+            return SnowError::InvalidArgument;
+        }
+        let mut targets = SnapGuideTargets::default();
+        for index in 0..vertical_count {
+            targets.vertical_xs[index] = Some(unsafe { *vertical_xs.add(index) });
+        }
+        for index in 0..horizontal_count {
+            targets.horizontal_ys[index] = Some(unsafe { *horizontal_ys.add(index) });
+        }
+        ffi_status(with_runtime_viewport_mut(
+            runtime,
+            viewport,
+            |runtime, id| {
+                let result = runtime
+                    .set_viewport_snap_guide_targets(id, targets)
                     .map_err(SnowError::from)?;
                 write_changed_viewports(out_changed_viewports, result.changed_viewports);
                 Ok(())

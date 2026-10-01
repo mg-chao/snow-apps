@@ -711,6 +711,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("screenshot_shortcuts/toggle_guides"),
+     QJsonArray{QStringLiteral("Alt")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("screenshot_shortcuts/copy_color"),
      QJsonArray{QStringLiteral("C")},
      ConfigurationValueKind::StringList,
@@ -1059,9 +1065,13 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("screenshot_ui/shortcut_hint_opacity"), 100, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{0, 100, 1}},
     {QStringLiteral("screenshot_ui/area_type_hint_enabled"), true, ConfigurationValueKind::Boolean},
-    {QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#00000000"),
+    {QStringLiteral("screenshot_ui/show_guides_by_default"), false,
+     ConfigurationValueKind::Boolean},
+    {QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#000000FF"),
      ConfigurationValueKind::String},
-    {QStringLiteral("screenshot_ui/monitor_center_guide_line_color"), QStringLiteral("#00000000"),
+    {QStringLiteral("screenshot_ui/selection_center_guide_line_color"), QStringLiteral("#4096FFFF"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("screenshot_ui/monitor_center_guide_line_color"), QStringLiteral("#FF0000FF"),
      ConfigurationValueKind::String},
     {QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"),
      QStringLiteral("#00000000"), ConfigurationValueKind::String},
@@ -1319,9 +1329,11 @@ bool shortcutConfigurationKey(const QString& key) {
            key.startsWith(QStringLiteral("pin_to_screen_shortcuts/"));
 }
 
-QJsonArray shortcutDefaults(const QJsonValue& value) {
+QJsonArray shortcutDefaults(const QString& key, const QJsonValue& value) {
     return snow_shot::shortcuts::shortcutBindingsToJson(
-        snow_shot::shortcuts::shortcutBindingsFromJson(value, true));
+        snow_shot::shortcuts::shortcutBindingsFromJson(
+            value, true, -1, nullptr, nullptr,
+            key == QStringLiteral("screenshot_shortcuts/toggle_guides")));
 }
 
 #ifdef Q_OS_MACOS
@@ -1340,7 +1352,7 @@ QVector<ConfigurationSchemaEntry> buildEntries() {
             continue;
         }
         entry.valueKind = ConfigurationValueKind::ShortcutList;
-        entry.defaultValue = shortcutDefaults(entry.defaultValue);
+        entry.defaultValue = shortcutDefaults(entry.key, entry.defaultValue);
     }
 #ifdef Q_OS_MACOS
     const auto replaceDefault = [&result](const QString& key, const QJsonArray& value) {
@@ -1457,11 +1469,12 @@ ConfigurationNormalization normalizeLanguage(const QJsonValue& value) {
 }
 
 ConfigurationNormalization normalizeShortcuts(const QJsonValue& value, int maximumItems,
-                                              bool allowModifierOnlyShift) {
+                                              bool allowModifierOnlyShift,
+                                              bool allowModifierOnlyAlt) {
     bool changed = false;
     bool valid = false;
     const auto bindings = snow_shot::shortcuts::shortcutBindingsFromJson(
-        value, allowModifierOnlyShift, maximumItems, &valid, &changed);
+        value, allowModifierOnlyShift, maximumItems, &valid, &changed, allowModifierOnlyAlt);
     return {snow_shot::shortcuts::shortcutBindingsToJson(bindings), valid, changed};
 }
 
@@ -1639,6 +1652,7 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screenshot_ui/selection_border_color") ||
            key == QStringLiteral("screenshot_ui/selection_mask_color") ||
            key == QStringLiteral("screenshot_ui/cursor_guide_line_color") ||
+           key == QStringLiteral("screenshot_ui/selection_center_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/monitor_center_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||
            key == QStringLiteral("pin_to_screen/border_color") ||
@@ -2147,7 +2161,8 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return normalizeAllowedStringList(*schemaEntry, value);
     case ConfigurationValueKind::ShortcutList:
         return normalizeShortcuts(value, schemaEntry->maximumListItems,
-                                  key.startsWith(QStringLiteral("screenshot_shortcuts/")));
+                                  key.startsWith(QStringLiteral("screenshot_shortcuts/")),
+                                  key == QStringLiteral("screenshot_shortcuts/toggle_guides"));
     case ConfigurationValueKind::Structured:
         return exactType(value, QJsonValue::Object);
     }

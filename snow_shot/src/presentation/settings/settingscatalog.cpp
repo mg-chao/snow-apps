@@ -402,6 +402,16 @@ SettingsItemDefinition screenshotAreaTypeHintItem() {
             SettingsSwitchDefinition{SettingsSwitchBinding::ScreenshotAreaTypeHint}};
 }
 
+SettingsItemDefinition showGuidesByDefaultItem() {
+    return {QStringLiteral("interface.screenshot.show-guides-by-default"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show Guides by Default")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Show screenshot guides when a capture starts")),
+            {},
+            QStringLiteral("screenshot_ui/show_guides_by_default"),
+            SettingsSwitchDefinition{SettingsSwitchBinding::ShowGuidesByDefault}};
+}
+
 SettingsItemDefinition drawingToolbarEditorItem() {
     return {QStringLiteral("interface.toolbar.drawing-toolbar-editor"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing toolbar settings")),
@@ -1723,6 +1733,9 @@ QVector<SettingsItemDefinition> screenshotShortcutItems() {
             SettingsLocalShortcutScope::Screenshot, QStringLiteral("toggle_coordinate_mode"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Toggle Global/Relative Coordinates"),
             []() { return outlined_icons::Swap(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("toggle_guides"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Toggle Guides"),
+                          []() { return outlined_icons::Swap(); }),
         localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("pin_to_screen"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen"),
                           []() { return custom_outlined_icons::PinToScreen(); }),
@@ -2489,20 +2502,30 @@ QVector<SettingsPageDefinition> builtInPages() {
                             SettingsColorBinding::SelectionMaskColor),
                         shortcutHintOpacityItem(),
                         screenshotAreaTypeHintItem(),
+                        showGuidesByDefaultItem(),
                         screenshotColorItem(
                             QStringLiteral("interface.screenshot.cursor-guide-line-color"),
                             QT_TRANSLATE_NOOP("SettingsCatalog", "Cursor guide line color"),
                             QT_TRANSLATE_NOOP(
                                 "SettingsCatalog",
-                                "Draw a dashed crosshair at the pointer while selecting"),
+                                "Draw a dashed crosshair at the pointer while guides are enabled"),
                             QStringLiteral("screenshot_ui/cursor_guide_line_color"),
                             SettingsColorBinding::CursorGuideLineColor),
+                        screenshotColorItem(
+                            QStringLiteral(
+                                "interface.screenshot.selection-center-guide-line-color"),
+                            QT_TRANSLATE_NOOP("SettingsCatalog", "Selection Center Guide Color"),
+                            QT_TRANSLATE_NOOP(
+                                "SettingsCatalog",
+                                "Draw a solid crosshair at the screenshot selection center"),
+                            QStringLiteral("screenshot_ui/selection_center_guide_line_color"),
+                            SettingsColorBinding::SelectionCenterGuideLineColor),
                         screenshotColorItem(
                             QStringLiteral("interface.screenshot.monitor-center-guide-line-color"),
                             QT_TRANSLATE_NOOP("SettingsCatalog", "Monitor center guide line color"),
                             QT_TRANSLATE_NOOP("SettingsCatalog",
                                               "Draw a solid crosshair at the active monitor center "
-                                              "while selecting"),
+                                              "while guides are enabled"),
                             QStringLiteral("screenshot_ui/monitor_center_guide_line_color"),
                             SettingsColorBinding::MonitorCenterGuideLineColor),
                         screenshotColorItem(
@@ -3911,6 +3934,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenshotAreaTypeHint:
                         expectedKey = QStringLiteral("screenshot_ui/area_type_hint_enabled");
                         break;
+                    case SettingsSwitchBinding::ShowGuidesByDefault:
+                        expectedKey = QStringLiteral("screenshot_ui/show_guides_by_default");
+                        break;
                     case SettingsSwitchBinding::TrayEnabled:
                         expectedKey = QStringLiteral("tray/enabled");
                         break;
@@ -4190,6 +4216,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsColorBinding::CursorGuideLineColor:
                         expectedKey = QStringLiteral("screenshot_ui/cursor_guide_line_color");
+                        break;
+                    case SettingsColorBinding::SelectionCenterGuideLineColor:
+                        expectedKey =
+                            QStringLiteral("screenshot_ui/selection_center_guide_line_color");
                         break;
                     case SettingsColorBinding::MonitorCenterGuideLineColor:
                         expectedKey =

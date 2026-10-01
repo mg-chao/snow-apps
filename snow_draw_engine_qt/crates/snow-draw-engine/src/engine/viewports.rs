@@ -3,6 +3,28 @@ use std::sync::Arc;
 use super::*;
 
 impl Engine {
+    pub fn set_viewport_snap_guide_targets(
+        &mut self,
+        id: ViewportId,
+        targets: snow_draw_engine_editor::SnapGuideTargets,
+    ) -> Result<MutationResult, ErrorCode> {
+        if targets
+            .vertical_xs
+            .iter()
+            .chain(targets.horizontal_ys.iter())
+            .flatten()
+            .any(|value| !value.is_finite())
+        {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        let slot = self.viewport_slot_mut(id)?;
+        if slot.view.snap_guide_targets == targets {
+            return Ok(MutationResult::default());
+        }
+        slot.view.snap_guide_targets = targets;
+        self.refresh_single_viewport(id)
+    }
+
     pub fn create_viewport(&mut self, config: ViewportConfig) -> Result<ViewportId, ErrorCode> {
         if !self.session_config_seeded {
             self.editor.set_config(config.engine)?;
@@ -123,5 +145,44 @@ impl Engine {
         id: ViewportId,
     ) -> Result<&mut ViewportSlot, ErrorCode> {
         self.viewports.get_mut(&id).ok_or(ErrorCode::NotFound)
+    }
+}
+
+#[cfg(test)]
+mod external_guide_tests {
+    use super::*;
+
+    #[test]
+    fn guide_targets_are_transient_and_per_viewport() {
+        let mut engine = Engine::default();
+        let first = engine.create_viewport(ViewportConfig::default()).unwrap();
+        let second = engine.create_viewport(ViewportConfig::default()).unwrap();
+        let mut targets = snow_draw_engine_editor::SnapGuideTargets::default();
+        targets.vertical_xs[0] = Some(120.0);
+        engine
+            .set_viewport_snap_guide_targets(first, targets)
+            .unwrap();
+        assert_eq!(
+            engine.viewport_slot(first).unwrap().view.snap_guide_targets,
+            targets
+        );
+        assert_eq!(
+            engine
+                .viewport_slot(second)
+                .unwrap()
+                .view
+                .snap_guide_targets,
+            snow_draw_engine_editor::SnapGuideTargets::default()
+        );
+        engine
+            .set_viewport_snap_guide_targets(
+                first,
+                snow_draw_engine_editor::SnapGuideTargets::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            engine.viewport_slot(first).unwrap().view.snap_guide_targets,
+            snow_draw_engine_editor::SnapGuideTargets::default()
+        );
     }
 }

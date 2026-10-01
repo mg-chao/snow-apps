@@ -1597,12 +1597,16 @@
             <translation>Drag screenshot tools to reorder them or stack them in the same toolbar position.</translation>
         </message>
         <message>
-            <source>Draw a dashed crosshair at the pointer while selecting</source>
-            <translation>Draw a dashed crosshair at the pointer while selecting</translation>
+            <source>Draw a dashed crosshair at the pointer while guides are enabled</source>
+            <translation>Draw a dashed crosshair at the pointer while guides are enabled</translation>
         </message>
         <message>
-            <source>Draw a solid crosshair at the active monitor center while selecting</source>
-            <translation>Draw a solid crosshair at the active monitor center while selecting</translation>
+            <source>Draw a solid crosshair at the active monitor center while guides are enabled</source>
+            <translation>Draw a solid crosshair at the active monitor center while guides are enabled</translation>
+        </message>
+        <message>
+            <source>Draw a solid crosshair at the screenshot selection center</source>
+            <translation>Draw a solid crosshair at the screenshot selection center</translation>
         </message>
         <message>
             <source>Draw four guide segments around the sampled center pixel</source>
@@ -2801,6 +2805,10 @@
             <translation>Select window/window sub-element</translation>
         </message>
         <message>
+            <source>Selection Center Guide Color</source>
+            <translation>Selection Center Guide Color</translation>
+        </message>
+        <message>
             <source>Selection animation</source>
             <translation>Selection animation</translation>
         </message>
@@ -2929,6 +2937,10 @@
             <translation>Shortcut keys for screenshot tools and cursor movement</translation>
         </message>
         <message>
+            <source>Show Guides by Default</source>
+            <translation>Show Guides by Default</translation>
+        </message>
+        <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</translation>
         </message>
@@ -2943,6 +2955,10 @@
         <message>
             <source>Show main window</source>
             <translation>Show main window</translation>
+        </message>
+        <message>
+            <source>Show screenshot guides when a capture starts</source>
+            <translation>Show screenshot guides when a capture starts</translation>
         </message>
         <message>
             <source>Show text recognition results</source>
@@ -3171,6 +3187,10 @@
         <message>
             <source>Toggle Global/Relative Coordinates</source>
             <translation>Toggle Global/Relative Coordinates</translation>
+        </message>
+        <message>
+            <source>Toggle Guides</source>
+            <translation>Toggle Guides</translation>
         </message>
         <message>
             <source>Toggle hotkeys</source>

@@ -320,16 +320,19 @@ void ScreenshotOverlayCoordinator::updateGuideLines(const ScreenshotDisplaySessi
                                                     ScreenshotOverlayWindow* owner,
                                                     const QPointF& localPosition, bool selecting,
                                                     const QColor& cursorColor,
-                                                    const QColor& monitorCenterColor) const {
+                                                    const QColor& monitorCenterColor,
+                                                    const QColor& selectionCenterColor) const {
     m_canvasPresenter.updateGuideLines(displaySession, owner, localPosition, selecting, cursorColor,
-                                       monitorCenterColor);
+                                       monitorCenterColor, selectionCenterColor);
 }
 
 void ScreenshotOverlayCoordinator::updateGuideLinesAtGlobalPosition(
     const ScreenshotDisplaySession& displaySession, const QPoint& globalPosition, bool selecting,
-    const QColor& cursorColor, const QColor& monitorCenterColor) const {
+    const QColor& cursorColor, const QColor& monitorCenterColor,
+    const QColor& selectionCenterColor) const {
     m_canvasPresenter.updateGuideLinesAtGlobalPosition(displaySession, globalPosition, selecting,
-                                                       cursorColor, monitorCenterColor);
+                                                       cursorColor, monitorCenterColor,
+                                                       selectionCenterColor);
 }
 
 void ScreenshotOverlayCoordinator::clearGuideLines(

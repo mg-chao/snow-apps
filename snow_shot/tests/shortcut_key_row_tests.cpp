@@ -794,6 +794,56 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
         "the outer shortcut control must display a committed bare Shift key without duplication");
 }
 
+void guideShortcutRecorderAcceptsStandaloneAlt() {
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Toggle Guides");
+    config.validationScope = ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut;
+    config.allowModifierOnlyAlt = true;
+    config.shortcutValidator = [](const auto& candidate) {
+        return shortcuts::GlobalShortcutValidationResult{
+            candidate.portableText, true, shortcuts::GlobalShortcutFailureReason::None, candidate};
+    };
+    ShortcutKeyRow row(config, scheme.metricAlias,
+                       styles::buildMainWindowComponentMetricToken(scheme));
+    shortcut_domain::ShortcutBindingList saved;
+    QObject::connect(&row, &ShortcutKeyRow::shortcutsChanged, &row,
+                     [&saved](const auto& bindings) { saved = bindings; });
+    row.show();
+    QApplication::processEvents();
+    auto* shortcutButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+    require(shortcutButton != nullptr, "guide shortcut editor must be available");
+    shortcutButton->click();
+    QApplication::processEvents();
+    auto* content = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
+    auto* modal = row.findChild<adqt::widgets::AdModal*>();
+    require(content != nullptr && modal != nullptr, "guide recorder must open");
+
+    PhysicalKeyEvent altPress(QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    QCoreApplication::sendEvent(content, &altPress);
+    auto* actionButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigActionButton"));
+    require(actionButton != nullptr && !actionButton->isEnabled(),
+            "Alt press must wait for a standalone release before recording");
+    PhysicalKeyEvent altRelease(QEvent::KeyRelease, Qt::Key_Alt, Qt::NoModifier);
+    QCoreApplication::sendEvent(content, &altRelease);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    actionButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigActionButton"));
+    require(actionButton != nullptr && actionButton->isEnabled(),
+            "standalone Alt release must become a valid guide shortcut");
+    actionButton->click();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    modal->acceptButton()->click();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    require(portableText(saved) == QStringList{QStringLiteral("Alt")},
+            "guide shortcut recorder must save standalone Alt");
+}
+
 void recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates() {
 #ifdef Q_OS_MACOS
     const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
@@ -1758,6 +1808,7 @@ int main(int argc, char** argv) {
     actionRowBordersRetainEqualThicknessAtFractionalScale();
     statusPresentationUsesSemanticTokens();
     recorderAcceptsOnlyBackendSupportedShortcuts();
+    guideShortcutRecorderAcceptsStandaloneAlt();
     recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates();
     globalRecorderRestoresRegistrationOnEveryExitPath();
     globalRecorderSuspensionSurvivesTransientModalHide();

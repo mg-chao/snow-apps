@@ -134,6 +134,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setMaskColor(const QColor& color);
     void setGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,
                        const QColor& monitorCenterColor);
+    void setGuideCursorPosition(const QPointF& cursorPosition);
+    void setSelectionCenterGuideLineColor(const QColor& color);
     void clearGuideLines();
     void setSelection(const QRectF& selection, bool handlesVisible = true, int cornerRadius = 0,
                       int shadowWidth = 0, const QColor& shadowColor = QColor(0x33, 0x33, 0x33));
@@ -238,6 +240,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QColor m_maskColor = QColor(0, 0, 0, 128);
     QPoint m_guideLineCursorPosition;
     QColor m_cursorGuideLineColor = QColor(0, 0, 0, 0);
+    QColor m_selectionCenterGuideLineColor = QColor(0, 0, 0, 0);
     QColor m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     bool m_guideLinesVisible = false;
     bool m_ocrVisible = true;

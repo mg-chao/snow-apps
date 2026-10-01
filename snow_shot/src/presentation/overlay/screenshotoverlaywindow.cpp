@@ -168,6 +168,16 @@ void ScreenshotOverlayWindow::setScreenshotGuideLines(const QPointF& cursorPosit
     }
 }
 
+void ScreenshotOverlayWindow::setSelectionCenterGuideLineColor(const QColor& color) {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setSelectionCenterGuideLineColor(color);
+    }
+}
+
+QRectF ScreenshotOverlayWindow::screenshotSelection() const {
+    return m_screenshotRenderer != nullptr ? m_screenshotRenderer->selection() : QRectF();
+}
+
 void ScreenshotOverlayWindow::clearScreenshotGuideLines() {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->clearGuideLines();
@@ -711,6 +721,10 @@ bool ScreenshotOverlayWindow::event(QEvent* event) {
 }
 
 bool ScreenshotOverlayWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_canvas && event != nullptr && event->type() == QEvent::MouseMove &&
+        m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setGuideCursorPosition(static_cast<QMouseEvent*>(event)->position());
+    }
     if (watched == m_canvas && event != nullptr && event->type() == QEvent::Paint) {
         SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.canvas.paint_dispatches", 1);
 #if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION)
