@@ -11367,6 +11367,109 @@ void pinnedDragFileRetention() {
             "application-owned retention destruction must remove accepted temporary files");
 }
 
+void pinnedHiddenTextSelectionDragExportOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    IsolatedPinnedStorage storage;
+#ifdef Q_OS_WIN
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "load offscreen selection font");
+    QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+#endif
+    const snow_shot::storage::PinToScreenSettings pinSettings;
+    const snow_shot::storage::ScreenshotSettings screenshotSettings;
+    require(pinSettings.setTextSelectionOnRecognitionResults(QStringLiteral("always")) &&
+                screenshotSettings.setImageFormat(QStringLiteral("png")),
+            "enable hidden selection with image drag export");
+    auto config = cachedOcrPinConfig(nullptr);
+    config.imageSource.materializedImage.setColorSpace(QColorSpace::SRgb);
+    ScreenshotPinnedWindow window;
+    auto* session = Access::hiddenSelectionOffscreen(window, config);
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>(
+        QStringLiteral("screenshotPinnedRecognitionContent"));
+    require(content && content->isVisible() && Access::hiddenSelection(window),
+            "hidden selection overlays the pinned image");
+    const QPoint textStart(48, 60);
+    const QPoint textEnd(205, 60);
+    const QPoint blank(12, 12);
+    require(!content->isOcrBackgroundAt(textStart) && content->isOcrBackgroundAt(blank),
+            "drag fixture covers recognized text and image background");
+    const auto mouse = [&](QEvent::Type type, QPoint position, Qt::KeyboardModifiers modifiers,
+                           Qt::MouseButtons buttons) {
+        const auto button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+        QMouseEvent event(type, position, content->mapToGlobal(position), button, buttons,
+                          modifiers);
+        QApplication::sendEvent(content, &event);
+    };
+    const auto selectText = [&] {
+        mouse(QEvent::MouseButtonPress, textStart, Qt::NoModifier, Qt::LeftButton);
+        mouse(QEvent::MouseMove, textEnd, Qt::NoModifier, Qt::LeftButton);
+        mouse(QEvent::MouseButtonRelease, textEnd, Qt::NoModifier, Qt::NoButton);
+        require(!Access::exportGesture(window) &&
+                    !Access::displayedRecognition(window).selectedText().isEmpty(),
+                "ordinary dragging selects hidden text");
+    };
+    selectText();
+    const QString selected = Access::displayedRecognition(window).selectedText();
+    const auto revision = Access::displayedRecognition(window).selectionRevision();
+    const QRect geometry = window.currentNativeGeometry();
+    int executions = 0;
+    auto& exporter = Access::dragExport(window);
+    exporter.setExecutor([&](QDrag& drag) {
+        ++executions;
+        const auto* mime = drag.mimeData();
+        require(mime->hasImage() && mime->urls().size() == 1,
+                "hidden selection drag exports image pixels and a file URL");
+        const auto expected =
+            config.imageSource.materializedImage.convertToFormat(QImage::Format_ARGB32);
+        require(
+            qvariant_cast<QImage>(mime->imageData()).convertToFormat(QImage::Format_ARGB32) ==
+                    expected &&
+                QImage(mime->urls().first().toLocalFile()).convertToFormat(QImage::Format_ARGB32) ==
+                    expected,
+            "text-selection highlights are excluded from exported pixels and file");
+        return Qt::IgnoreAction;
+    });
+    for (const QPoint origin : {textStart, blank}) {
+        const int previousExecutions = executions;
+        const QPoint destination = origin + QPoint(QApplication::startDragDistance() + 3, 0);
+        mouse(QEvent::MouseButtonPress, origin, Qt::ControlModifier, Qt::LeftButton);
+        require(
+            Access::exportGesture(window),
+            "Ctrl press on the hidden overlay reserves image export over selection and movement");
+        mouse(QEvent::MouseMove, origin + QPoint(1, 0), Qt::ControlModifier, Qt::LeftButton);
+        require(!exporter.busy(), "hidden overlay obeys the image drag threshold");
+        mouse(QEvent::MouseButtonRelease, origin, Qt::ControlModifier, Qt::NoButton);
+        require(!Access::exportGesture(window) && executions == previousExecutions,
+                "Ctrl click on the hidden overlay releases image export without dragging");
+
+        mouse(QEvent::MouseButtonPress, origin, Qt::ControlModifier, Qt::LeftButton);
+        mouse(QEvent::MouseMove, destination, Qt::ControlModifier, Qt::LeftButton);
+        QElapsedTimer timer;
+        timer.start();
+        while (executions == previousExecutions && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(executions == previousExecutions + 1 && !Access::exportGesture(window) &&
+                    !exporter.busy(),
+                "Ctrl drag from text or background completes image export and releases ownership");
+        mouse(QEvent::MouseButtonRelease, destination, Qt::ControlModifier, Qt::NoButton);
+        require(
+            window.currentNativeGeometry() == geometry &&
+                Access::displayedRecognition(window).selectedText() == selected &&
+                Access::displayedRecognition(window).selectionRevision() == revision &&
+                !Access::displayedRecognition(window).textSelectionActive() && !session->active(),
+            "image export preserves window geometry, hidden text selection, and recognition mode");
+    }
+    selectText();
+    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(!Access::hiddenSelection(window), "display recognition results explicitly");
+    mouse(QEvent::MouseButtonPress, textStart, Qt::ControlModifier, Qt::LeftButton);
+    require(!Access::exportGesture(window) &&
+                Access::displayedRecognition(window).textSelectionActive(),
+            "displayed recognition keeps text-selection ownership of Ctrl dragging");
+    mouse(QEvent::MouseMove, textEnd, Qt::ControlModifier, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, textEnd, Qt::ControlModifier, Qt::NoButton);
+}
+
 void pinnedDragExportOffscreen() {
     using Access = ScreenshotPinnedWindowTestAccess;
     IsolatedPinnedStorage storage;
@@ -11384,8 +11487,10 @@ void pinnedDragExportOffscreen() {
     const auto normalize = [](QImage image) {
         return image.convertToFormat(QImage::Format_ARGB32);
     };
+    auto config = cachedOcrPinConfig(nullptr);
+    config.imageSource.materializedImage.setColorSpace(QColorSpace::SRgb);
     ScreenshotPinnedWindow window;
-    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    Access::restoreOffscreen(window, config);
     window.show();
     waitForUi(20);
     auto* canvas = window.findChild<SnowCanvasWidget*>();
@@ -11705,8 +11810,10 @@ void pinnedCtrlHoverKeepsWindowCursorOffscreen() {
 
 void pinnedDragExportNativeHitTest() {
     using Access = ScreenshotPinnedWindowTestAccess;
+    IsolatedPinnedStorage storage;
+    const auto config = cachedOcrPinConfig(nullptr);
     ScreenshotPinnedWindow window;
-    Access::restoreOffscreen(window, cachedOcrPinConfig(nullptr));
+    Access::restoreOffscreen(window, config);
     window.show();
     waitForUi(20);
     BYTE originalKeys[256]{};
@@ -11720,10 +11827,38 @@ void pinnedDragExportNativeHitTest() {
         return SendMessageW(toNativeHwnd(window.winId()), WM_NCHITTEST, 0,
                             MAKELPARAM(static_cast<WORD>(point.x()), static_cast<WORD>(point.y())));
     };
-    const auto center = window.rect().center();
-    require(hit(center, false) == HTCAPTION, "ordinary image drag uses native caption");
-    require(hit(center, true) == HTCLIENT, "Ctrl image drag is delivered to Qt");
+    const QPoint imagePoint(12, 12);
+    require(Access::exportEligible(window, imagePoint),
+            "native fixture targets the image interior");
+    require(hit(imagePoint, false) == HTCAPTION, "ordinary image drag uses native caption");
+    require(hit(imagePoint, true) == HTCLIENT, "Ctrl image drag is delivered to Qt");
     require(hit(QPoint(1, 1), true) == HTTOPLEFT, "Ctrl leaves resize borders native");
+    const snow_shot::storage::PinToScreenSettings settings;
+    require(settings.setTextSelectionOnRecognitionResults(QStringLiteral("always")),
+            "enable hidden selection for native drag routing");
+    Access::hiddenSelectionOffscreen(window, config);
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>(
+        QStringLiteral("screenshotPinnedRecognitionContent"));
+    require(content && content->isVisible() && Access::hiddenSelection(window),
+            "native drag fixture has an input-bearing hidden selection overlay");
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas, "native drag fixture has an image canvas");
+    const QPoint text = canvas->mapTo(
+        &window,
+        canvas->canvasToViewTransform()
+            .map(
+                config.recognitionResults.text->presentation->lines[0].quad.boundingRect().center())
+            .toPoint());
+    const QPoint blank = content->mapTo(&window, QPoint(12, 12));
+    require(!content->isOcrBackgroundAt(content->mapFrom(&window, text)) &&
+                content->isOcrBackgroundAt(content->mapFrom(&window, blank)),
+            "native drag fixture maps text and background through the current display scale");
+    require(hit(text, false) == HTCLIENT && hit(text, true) == HTCLIENT,
+            "hidden text receives Qt input for selection and Ctrl image dragging");
+    require(hit(blank, false) == HTCAPTION && hit(blank, true) == HTCLIENT,
+            "Ctrl routes hidden selection background to Qt instead of native window movement");
+    require(hit(QPoint(1, 1), true) == HTTOPLEFT,
+            "hidden selection Ctrl dragging preserves native resize borders");
     window.close();
 }
 #endif
@@ -14685,6 +14820,7 @@ int main(int argc, char* argv[]) {
         }
 #endif
         if (app.arguments().contains(QStringLiteral("--drag-export-only"))) {
+            pinnedHiddenTextSelectionDragExportOffscreen();
             pinnedDragFileRetention();
             pinnedDragExportOffscreen();
             return 0;
