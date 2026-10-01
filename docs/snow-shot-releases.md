@@ -438,8 +438,13 @@ winget upgrade --exact --id mg-chao.snow-shot --source winget
 winget uninstall --exact --id mg-chao.snow-shot --source winget
 ```
 
-Installation is machine-wide and requires elevation. Close Snow Shot before a silent
-upgrade or uninstall: installer exit code 10 maps to WinGet's `packageInUse` response.
+Installation is machine-wide and requires elevation. Newly built silent installers
+(`winget upgrade --silent` or the installer executable with `/S`) close the affected
+Snow Shot installation, install the update, and restart it on the interactive desktop
+after successful installation. Closing may interrupt tasks and discard unsaved screenshots
+or annotations. Fresh silent installations and upgrades of an already stopped app do not
+launch it. Interactive setup still asks before closing; close Snow Shot before a standalone
+silent uninstall. Installer exit code 10 maps to WinGet's `packageInUse` response.
 The existing in-app updater remains enabled and updates the uninstall registration.
 WinGet uses that registration to identify the installed version.
 
@@ -456,14 +461,17 @@ enable local manifests with `winget settings --enable LocalManifestFiles`, insta
 `winget install --manifest <manifest-directory> --silent`, and confirm detection with
 `winget list --exact --id mg-chao.snow-shot`. Install an older version first to exercise
 an upgrade, including a custom installation directory and a user-settings sentinel.
-Confirm the version changes, directory/settings survive, the app does not launch during
-silent installation, and an upgrade while the app is running refuses without killing it.
+Confirm the version changes, directory/settings survive, a fresh silent install does not
+launch the app, and an upgrade of a running app closes and restarts it after installing.
 Finally uninstall silently and verify owned files/registration are removed and user data
 is preserved. Fixture tests and manifest validation do not substitute for this VM check.
 
 The **Snow Shot WinGet verification** workflow automates this lifecycle on a disposable
 GitHub-hosted Windows runner. It runs installation checks for WinGet changes in pull
-requests; manual runs accept `tag` and `previous_tag`. Pushes to `codex/winget-*`
+requests; manual runs accept `tag`, `previous_tag`, and `running_app_behavior`. Choose
+`Restart` for releases containing the silent-upgrade restart change; the default `Refuse`
+keeps the immutable historical release fixtures valid. The underlying verification script
+accepts the same expectation with `-RunningAppBehavior Restart`. Pushes to `codex/winget-*`
 preparation branches run fixture and credential checks only, avoiding duplicate installs.
 Installation checks need no submission token and never open upstream PRs. Trusted
 preparation-branch pushes and manual runs also perform a read-only check of the

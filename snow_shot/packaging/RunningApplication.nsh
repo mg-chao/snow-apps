@@ -4,10 +4,19 @@
 
 !include "${__FILEDIR__}\InstallerStrings.nsh"
 
+Var SnowShotAppWasClosed
+Var SnowShotRestartRequired
+
 !ifmacrondef SnowShotConfirmClose
-!macro SnowShotConfirmClose
+!macro SnowShotConfirmClose Prefix
+!if "${Prefix}" == ""
+  ; Silent setup authorizes closing the affected installation. Standalone
+  ; silent uninstall still requires the application to have exited already.
+  IfSilent closeApp
+!else
   IfSilent declined
-  MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "$(SnowShotClosePrompt)" /SD IDNO IDYES closeApp
+!endif
+  MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "$(SnowShotClosePrompt)" /SD IDNO IDYES closeApp IDNO declined
 !macroend
 !endif
 
@@ -23,8 +32,8 @@ Function ${Prefix}SnowShotEnsureAppClosed
   Push $4
   Push $5
   Push $6
-  IfFileExists "$0" 0 finished
   StrCpy $6 0
+  IfFileExists "$0" 0 finished
 startSession:
   System::Call 'rstrtmgr::RmStartSession(*i .r1, i 0, w .r2) i.r2'
   StrCmp $2 0 0 failed
@@ -39,7 +48,7 @@ startSession:
   StrCmp $2 0 sessionFinished
   StrCmp $2 234 0 sessionFailed ; ERROR_MORE_DATA means there are file holders.
   StrCmp $6 1 sessionFailed
-  !insertmacro SnowShotConfirmClose
+  !insertmacro SnowShotConfirmClose "${Prefix}"
 declined:
   System::Call 'rstrtmgr::RmEndSession(i r1)'
   SetErrorLevel 10
@@ -65,6 +74,9 @@ failed:
   SetErrorLevel 11
   Quit
 finished:
+!if "${Prefix}" == ""
+  StrCpy $SnowShotAppWasClosed $6
+!endif
   Pop $6
   Pop $5
   Pop $4
@@ -77,4 +89,13 @@ FunctionEnd
 
 !insertmacro SnowShotRunningApplicationFunction ""
 !insertmacro SnowShotRunningApplicationFunction "un."
+
+; Only closing the main executable requires a restart. Crashpad or another
+; file holder must not cause a previously stopped application to be launched.
+; Keep this intent across .onInit, the old uninstaller, and destination checks.
+Function SnowShotEnsureMainAppClosed
+  Call SnowShotEnsureAppClosed
+  StrCmp $SnowShotAppWasClosed 1 0 +2
+    StrCpy $SnowShotRestartRequired 1
+FunctionEnd
 !endif

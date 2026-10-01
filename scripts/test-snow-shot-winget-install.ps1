@@ -5,7 +5,9 @@ param(
     [string]$PreviousTag = 'v1.1.4-beta',
     [string]$Winget = 'winget.exe',
     [switch]$AllowUnrecognizedRelease,
-    [ValidateSet('Full', 'Mini')][string]$Edition = 'Full'
+    [ValidateSet('Full', 'Mini')][string]$Edition = 'Full',
+    # Historical release fixtures refuse; newly built installers close and restart.
+    [ValidateSet('Refuse', 'Restart')][string]$RunningAppBehavior = 'Refuse'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -181,20 +183,44 @@ try {
 
     $app = Start-Process -FilePath $executable -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 5
-    if ($app.HasExited) { throw 'The installed app did not remain running for the refusal test.' }
+    if ($app.HasExited) { throw 'The installed app did not remain running for the upgrade test.' }
     $before = (Get-FileHash -LiteralPath $executable).Hash
     $result = Invoke-WingetBounded @('upgrade', '--manifest', $current, '--silent',
         '--accept-package-agreements', '--accept-source-agreements')
-    if ($result -eq 0 -or $app.HasExited -or (Get-FileHash -LiteralPath $executable).Hash -cne $before) {
-        throw 'Upgrade failed to preserve the running application.'
+    if ($RunningAppBehavior -eq 'Refuse') {
+        if ($result -eq 0 -or $app.HasExited -or (Get-FileHash -LiteralPath $executable).Hash -cne $before) {
+            throw 'Historical upgrade failed to preserve the running application.'
+        }
+        Assert-InstalledVersion $previousVersion
+        Stop-Process -Id $app.Id
+        $app.WaitForExit()
+    } else {
+        if ($result -ne 0 -or -not $app.WaitForExit(10000)) {
+            throw 'Silent upgrade did not close the running application and complete installation.'
+        }
+        Assert-InstalledVersion $version
+        if ((Get-FileHash -LiteralPath $executable).Hash -ceq $before) {
+            throw 'Silent upgrade did not replace the old executable.'
+        }
+        $restartDeadline = [DateTime]::UtcNow.AddSeconds(30)
+        $restarted = @()
+        do {
+            $restarted = @(Get-Process $product.Executable -ErrorAction SilentlyContinue |
+                Where-Object { $_.Path -ieq $executable })
+            if ($restarted.Count) { break }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $restartDeadline)
+        if ($restarted.Count -ne 1) { throw 'Silent upgrade must restart the updated application once.' }
+        $app = $restarted[0]
+        Stop-Process -Id $app.Id
+        $app.WaitForExit()
     }
-    Assert-InstalledVersion $previousVersion
-    Stop-Process -Id $app.Id
-    $app.WaitForExit()
     $app = $null
 
-    Invoke-WingetChecked @('upgrade', '--manifest', $current, '--silent',
-        '--accept-package-agreements', '--accept-source-agreements')
+    if ($RunningAppBehavior -eq 'Refuse') {
+        Invoke-WingetChecked @('upgrade', '--manifest', $current, '--silent',
+            '--accept-package-agreements', '--accept-source-agreements')
+    }
     Assert-InstalledVersion $version
     if (-not (Test-Path -LiteralPath $executable)) { throw 'Upgrade did not preserve the custom directory.' }
     if ([IO.File]::ReadAllText($sentinel) -cne $sentinelValue) { throw 'Upgrade changed user data.' }
@@ -222,7 +248,7 @@ try {
         throw 'Uninstall left the executable or registration behind.'
     }
     if ([IO.File]::ReadAllText($sentinel) -cne $sentinelValue) { throw 'Uninstall changed user data.' }
-    Write-Output 'PASS: real WinGet install, detection, running-app refusal, upgrade, uninstall, and data preservation.'
+    Write-Output "PASS: real WinGet install, detection, running-app behavior ($RunningAppBehavior), upgrade, uninstall, and data preservation."
 } finally {
     if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id }
     if ($savedReputationPolicy) {

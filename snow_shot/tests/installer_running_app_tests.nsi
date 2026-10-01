@@ -4,7 +4,7 @@ OutFile "${OUTPUT}"
 RequestExecutionLevel user
 !include "LogicLib.nsh"
 !ifdef ANSWER
-!macro SnowShotConfirmClose
+!macro SnowShotConfirmClose Prefix
   StrCmp "${ANSWER}" "closeApp" closeApp declined
 !macroend
 !endif
@@ -15,7 +15,7 @@ Section
   StrCpy $INSTDIR "${DESTINATION}"
 !ifdef GUARD
   Push "$INSTDIR\snow_shot.exe"
-  Call SnowShotEnsureAppClosed
+  Call SnowShotEnsureMainAppClosed
 !endif
   SetOutPath "$INSTDIR"
   File /oname=snow_shot.exe "${PAYLOAD}"
