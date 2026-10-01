@@ -37,6 +37,7 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QStyle>
 #include <QGridLayout>
 #include <QHash>
 #include <QHelpEvent>
@@ -2650,6 +2651,69 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
                 !hasSeparatorBetween(buttons.at(11), buttons.at(12)) &&
                 !hasSeparatorBetween(buttons.at(12), buttons.at(13)),
             "Arrow and Line grouping should not introduce an internal separator");
+}
+
+void groupedToolbarHoverSwitchesWithVisibleTooltips() {
+    adqt::widgets::AdTooltip::installApplicationTooltips();
+    const QPoint previousCursor = QCursor::pos();
+    const auto restoreCursor = qScopeGuard([&]() { QCursor::setPos(previousCursor); });
+    ScreenshotToolPalette::Options options;
+    options.showLineTool = true;
+    options.showHighlightTool = true;
+    options.showSpotlightTool = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.resize(palette.contentSizeHint());
+    palette.move(QApplication::primaryScreen()->availableGeometry().center() -
+                 palette.rect().center());
+    palette.show();
+    palette.activateWindow();
+    QCoreApplication::processEvents();
+    auto* arrow =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
+    auto* highlight =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHighlightButton"));
+    require(arrow && highlight, "hover switching fixture contains neighboring drawing groups");
+    for (auto* trigger : {arrow, highlight, arrow, highlight}) {
+        auto* popover = popoverForTrigger(trigger);
+        require(popover, "each drawing group has a hover popover");
+        const QPoint center = trigger->rect().center();
+        const QPoint global = trigger->mapToGlobal(center);
+        QCursor::setPos(global);
+        QEventLoop opening;
+        QObject::connect(popover, &adqt::widgets::AdPopover::visibleChanged, &opening,
+                         [&opening](bool visible) {
+                             if (visible)
+                                 opening.quit();
+                         });
+        QMouseEvent move(QEvent::MouseMove, center, global, Qt::NoButton, Qt::NoButton,
+                         Qt::NoModifier);
+        QApplication::sendEvent(trigger, &move);
+        QTimer::singleShot(1000, &opening, &QEventLoop::quit);
+        if (!popover->isVisible())
+            opening.exec();
+        require(popover->isVisible() && popover->surfaceWidget()->isVisible(),
+                "visible source tooltips must allow hovering directly to a neighboring group");
+        auto* sibling = popoverForTrigger(trigger == arrow ? highlight : arrow);
+        require(sibling && !sibling->isVisible(),
+                "hovering another group dismisses the previous group's popover");
+        QEventLoop tooltipWake;
+        QTimer::singleShot(
+            trigger->style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, trigger),
+            &tooltipWake, &QEventLoop::quit);
+        tooltipWake.exec();
+        QHelpEvent help(QEvent::ToolTip, center, global);
+        QApplication::sendEvent(trigger, &help);
+        bool visible = false;
+        for (auto* tooltip : qApp->findChildren<adqt::widgets::AdTooltip*>()) {
+            visible |= tooltip->isVisible() && tooltip->targetWidget() == trigger &&
+                       tooltip->text() == trigger->toolTip();
+        }
+        require(help.isAccepted() && visible,
+                "the grouped toolbar description follows the newly hovered button");
+    }
+    palette.hide();
+    QCoreApplication::processEvents();
 }
 
 void groupedDrawingOptionsShowShortcutTooltips() {
@@ -13301,6 +13365,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--popover-hover-switching-only"))) {
+        groupedToolbarHoverSwitchesWithVisibleTooltips();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--move-options-only"))) {
         regionControlsFollowTheActiveCaptureType();
         moveToolExposesCaptureCursorAndRecaptureOptions();
@@ -13533,6 +13602,7 @@ int main(int argc, char** argv) {
     scrollingScreenshotExposesAxisRecognitionModes();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
     moveToolPresentationUsesTheOwningShortcutScope();
+    groupedToolbarHoverSwitchesWithVisibleTooltips();
     groupedDrawingOptionsShowShortcutTooltips();
     groupedActionOptionsShowShortcutTooltips();
     screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
