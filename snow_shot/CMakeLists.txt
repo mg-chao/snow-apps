@@ -1380,6 +1380,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/recording/recordingrenderjob.cpp
     src/presentation/recording/recordingrenderjob.h
     src/presentation/recording/screenrecordingcontroller.cpp
+    src/presentation/recording/recordingcolorsampler.cpp
+    src/presentation/recording/recordingcolorsampler.h
     src/presentation/recording/screenrecordingfolder.cpp
     src/presentation/recording/recordingcountdownoverlay.cpp
     src/presentation/recording/recordingcountdownoverlay.h
@@ -4791,6 +4793,8 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-global-canvas-tests
         tests/global_canvas_tests.cpp
+        src/presentation/services/screenshotcanvascolorsampler.cpp
+        src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         include/snow_shot/presentation/globalcanvascontroller.h
         src/presentation/globalcanvas/globalcanvascontroller.cpp
         src/presentation/globalcanvas/globalcanvasplatform.cpp
@@ -4832,6 +4836,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-global-canvas-native-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        add_test(NAME snow-shot-global-canvas-color-sampling-native-tests
+            COMMAND snow-shot-global-canvas-tests --color-sampling-native-only -platform windows)
+        set_tests_properties(snow-shot-global-canvas-color-sampling-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
     if(APPLE)
         add_test(NAME snow-shot-global-canvas-platform-tests
@@ -4846,6 +4855,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-global-canvas-tests)
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-global-canvas-color-sampling-tests
+        COMMAND snow-shot-global-canvas-tests --color-sampling-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-color-sampling-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     if(WIN32)
@@ -5650,6 +5663,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-screen-recording-controller-tests
         ${_recording_test_sources}
         tests/screen_recording_controller_tests.cpp
+        tests/recording_color_sampler_tests.cpp
         include/snow_shot/presentation/screenrecordingcontroller.h
         include/snow_shot/presentation/screenrecordingfolder.h
         include/snow_shot/presentation/screenrecordingareawindow.h
@@ -5659,6 +5673,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/recording/recordingrenderjob.cpp
         src/presentation/recording/recordingrenderjob.h
         src/presentation/recording/screenrecordingcontroller.cpp
+        src/presentation/recording/recordingcolorsampler.cpp
+        src/presentation/recording/recordingcolorsampler.h
+        src/presentation/services/screenshotcanvascolorsampler.cpp
+        src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/recording/screenrecordingfolder.cpp
         src/presentation/recording/recordingeffectpreview.cpp
@@ -5727,12 +5745,22 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_test(NAME snow-shot-screen-recording-toolbar-ready-display-tests
             COMMAND snow-shot-screen-recording-controller-tests
                 --native-toolbar-ready-display-only -platform windows)
+        add_test(NAME snow-shot-recording-color-sampler-native-tests
+            COMMAND snow-shot-screen-recording-controller-tests
+                --color-sampling-native-only -platform windows)
+        set_tests_properties(snow-shot-recording-color-sampler-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
         set_tests_properties(snow-shot-screen-recording-toolbar-display-tests
             snow-shot-screen-recording-toolbar-ready-display-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30 SKIP_RETURN_CODE 77
             ENVIRONMENT "QT_QPA_PLATFORM=windows"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
+    add_test(NAME snow-shot-recording-color-sampler-tests
+        COMMAND snow-shot-screen-recording-controller-tests --color-sampling-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-color-sampler-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recording-style-wheel-tests
         COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)

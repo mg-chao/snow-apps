@@ -228,6 +228,19 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
 
+    add_executable(snow-canvas-fill-render-tests tests/snow_canvas_fill_render_tests.cpp)
+    target_include_directories(snow-canvas-fill-render-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-fill-render-tests PRIVATE snow_draw_engine_qt_canvas)
+    qt_import_plugins(snow-canvas-fill-render-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    add_test(NAME snow-canvas-fill-render-tests COMMAND snow-canvas-fill-render-tests)
+    set_tests_properties(snow-canvas-fill-render-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "unit"
+    )
+
     add_executable(snow-canvas-text-draft-tests
         tests/snow_canvas_text_draft_tests.cpp
     )

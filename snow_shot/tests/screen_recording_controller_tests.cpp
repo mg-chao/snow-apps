@@ -13,6 +13,8 @@
 #endif
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include <QDialog>
+#include <QAbstractButton>
+#include <QKeyEvent>
 #include <QPainter>
 #include <QLineF>
 #include <QTranslator>
@@ -2687,6 +2689,102 @@ void recordingPostProcessingLifecycle() {
     }
 }
 
+void recordingColorSamplerInteractions();
+
+void recordingColorSamplingIsConnected(bool nativeDesktop = false) {
+    QWidget background;
+    QRect region(10, 10, 640, 480);
+    const QColor desktopColor(35, 153, 76);
+    if (nativeDesktop) {
+        QScreen* screen = QGuiApplication::primaryScreen();
+        require(screen != nullptr, "native color sampling needs a screen");
+        background.setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        const QRect logicalRegion(screen->geometry().center() - QPoint(180, 140), QSize(360, 280));
+        background.setGeometry(logicalRegion);
+        QPalette colors = background.palette();
+        colors.setColor(QPalette::Window, desktopColor);
+        background.setPalette(colors);
+        background.setAutoFillBackground(true);
+        background.show();
+#ifdef Q_OS_MACOS
+        region = logicalRegion;
+#else
+        region = ScreenshotGeometryMapper::nativeRectForLogicalRect(
+            logicalRegion, screen->geometry(),
+            ScreenshotGeometryMapper::physicalRectForScreen(*screen));
+#endif
+    }
+    ScreenRecordingController controller(testEffectsSource);
+    controller.open(region);
+    controller.startRecording();
+    waitForRecording(controller);
+    auto* tools = palette();
+    require(tools->activateDrawingShortcut(QStringLiteral("shape")), "activate shape for sampling");
+    adqt::widgets::AdColorPicker* picker = nullptr;
+    for (auto* candidate : tools->findChildren<adqt::widgets::AdColorPicker*>()) {
+        if (candidate->accessibleName() == QStringLiteral("Stroke color"))
+            picker = candidate;
+    }
+    require(picker != nullptr, "recording shape stroke picker exists");
+    picker->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto* sampler = qobject_cast<QAbstractButton*>(picker->previewContent());
+    require(sampler != nullptr, "recording stroke picker exposes its eyedropper");
+    sampler->click();
+    require(!picker->popupVisible() && QApplication::overrideCursor() != nullptr,
+            "recording eyedropper must enter sampling mode instead of dropping the request");
+    QWidget* toolbar = tools->window();
+    if (nativeDesktop) {
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget))
+                area = candidate;
+        }
+        require(area != nullptr, "recording sampling area exists");
+        QElapsedTimer repaint;
+        repaint.start();
+        while (repaint.elapsed() < 200) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
+        auto* canvas = area->canvas();
+        const QPointF point(100.25, 80.5);
+        const QPointF global = canvas->mapToGlobal(point);
+        for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(type, point, global, Qt::LeftButton,
+                              type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(canvas, &event);
+        }
+        const QColor picked = picker->value().solidColor;
+        qInfo() << "Sampled desktop color" << picked << "expected" << desktopColor;
+        require(qAbs(picked.red() - desktopColor.red()) <= 2 &&
+                    qAbs(picked.green() - desktopColor.green()) <= 2 &&
+                    qAbs(picked.blue() - desktopColor.blue()) <= 2,
+                "recording eyedropper must sample the composited desktop beneath its transparent "
+                "canvas");
+        require(!canvas->canvasHistoryState().canUndo,
+                "native sampling must not add an annotation");
+    } else {
+        for (const auto type : {QEvent::ShortcutOverride, QEvent::KeyPress, QEvent::KeyRelease}) {
+            QKeyEvent escape(type, Qt::Key_Escape, Qt::NoModifier);
+            QApplication::sendEvent(toolbar, &escape);
+        }
+    }
+    require(QApplication::overrideCursor() == nullptr && controller.isOpen() &&
+                controller.isRecording(),
+            "finishing sampling must leave the recording running and restore its cursor");
+    if (!nativeDesktop) {
+        sampler->click();
+        require(QApplication::overrideCursor() != nullptr,
+                "sampling can restart before closing the recording");
+    }
+    tools->recordingCloseRequested();
+    require(QApplication::overrideCursor() == nullptr, "closing recording must clean up sampling");
+    waitForIdle(controller);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 int main(int argc, char** argv) {
 #ifdef SNOW_RECORDING_EFFECTS_BENCHMARK
     RecordingEffectsBenchmarkApplication app(argc, argv);
@@ -2775,6 +2873,17 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--settings-dialog-only"))) {
         recordingSettingsDialog();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--color-sampling-only"))) {
+        recordingColorSamplingIsConnected();
+        recordingColorSamplerInteractions();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--color-sampling-native-only"))) {
+        recordingColorSamplingIsConnected(true);
         ApplicationStorage::instance().shutdown();
         return 0;
     }
