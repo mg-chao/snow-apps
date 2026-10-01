@@ -10,11 +10,13 @@
 
 #include <QApplication>
 #include <QEvent>
+#include <QHideEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QScopedValueRollback>
+#include <QScopeGuard>
 #include <QTimer>
 #include <QWindow>
 
@@ -290,6 +292,11 @@ QRect ScreenshotOriginalImagePreviewWindow::placement(const QRect& result, const
 
 bool ScreenshotOriginalImagePreviewWindow::present(
     const ScreenshotOriginalImagePreviewState& state) {
+    const auto notifyHidden = qScopeGuard([this] {
+        if (!isVisible())
+            emit hidden();
+    });
+    const QScopedValueRollback<bool> presenting(m_presenting, true);
     if (state.image.isNull() || !finiteRect(state.imageRectInViewport) ||
         !state.resultRect.isValid() || state.resultRect.isEmpty()) {
         clear();
@@ -532,6 +539,12 @@ bool ScreenshotOriginalImagePreviewWindow::refreshRaster() {
     ++m_rasterGeneration;
     update();
     return true;
+}
+
+void ScreenshotOriginalImagePreviewWindow::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    if (!m_presenting)
+        emit hidden();
 }
 
 void ScreenshotOriginalImagePreviewWindow::paintEvent(QPaintEvent* event) {

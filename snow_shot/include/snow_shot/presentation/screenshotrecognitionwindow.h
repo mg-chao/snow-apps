@@ -178,6 +178,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void synchronizeTextLayer();
     void updateTextEditorSpinGeometry();
     void updateOriginalImagePreview();
+    void destroyOriginalImagePreview();
     void observeOriginalImagePreviewHost();
     void installSelectionResizeEventFilters(QWidget* widget);
     [[nodiscard]] bool activeContentOwnsContextMenu(const QObject* watched) const;

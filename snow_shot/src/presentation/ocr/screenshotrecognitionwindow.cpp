@@ -381,9 +381,6 @@ void ScreenshotRecognitionWindow::setOriginalImagePreviewEnabled(bool enabled) {
         return;
     }
     m_originalImagePreviewEnabled = enabled;
-    if (!enabled && m_originalImagePreview) {
-        m_originalImagePreview->clear();
-    }
     refreshOriginalImagePreview();
 }
 
@@ -443,9 +440,7 @@ void ScreenshotRecognitionWindow::refreshOriginalImagePreview() {
     if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || m_showOriginalImage ||
         !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
-        if (m_originalImagePreview) {
-            m_originalImagePreview->hide();
-        }
+        destroyOriginalImagePreview();
         return;
     }
     if (m_originalImagePreviewRefreshPending) {
@@ -456,6 +451,18 @@ void ScreenshotRecognitionWindow::refreshOriginalImagePreview() {
         m_originalImagePreviewRefreshPending = false;
         updateOriginalImagePreview();
     });
+}
+
+void ScreenshotRecognitionWindow::destroyOriginalImagePreview() {
+    if (!m_originalImagePreview) {
+        return;
+    }
+    auto* preview = m_originalImagePreview.data();
+    m_originalImagePreview = nullptr;
+    preview->removeEventFilter(this);
+    preview->hide();
+    // Hide can arrive while Qt is dispatching events to the preview or its host.
+    preview->deleteLater();
 }
 
 void ScreenshotRecognitionWindow::observeOriginalImagePreviewHost() {
@@ -493,9 +500,7 @@ void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
     if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || m_showOriginalImage ||
         !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
-        if (m_originalImagePreview) {
-            m_originalImagePreview->hide();
-        }
+        destroyOriginalImagePreview();
         return;
     }
     observeOriginalImagePreviewHost();
@@ -520,9 +525,7 @@ void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
     }
     if (!state || state->image.isNull() || state->resultRect.isEmpty() ||
         !state->imageRectInViewport.isValid()) {
-        if (m_originalImagePreview) {
-            m_originalImagePreview->clear();
-        }
+        destroyOriginalImagePreview();
         return;
     }
     state->staysOnTop = m_originalImagePreviewStaysOnTop;
@@ -531,9 +534,15 @@ void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
     }
     if (!m_originalImagePreview) {
         m_originalImagePreview = new ScreenshotOriginalImagePreviewWindow(this);
+        auto* preview = m_originalImagePreview.data();
+        connect(preview, &ScreenshotOriginalImagePreviewWindow::hidden, this, [this, preview] {
+            if (m_originalImagePreview == preview) {
+                destroyOriginalImagePreview();
+            }
+        });
     }
     if (!m_originalImagePreview->present(*state)) {
-        m_originalImagePreview->hide();
+        destroyOriginalImagePreview();
     }
 }
 
@@ -1428,9 +1437,7 @@ bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
         switch (event->type()) {
         case QEvent::Hide:
         case QEvent::Close:
-            if (m_originalImagePreview) {
-                m_originalImagePreview->hide();
-            }
+            destroyOriginalImagePreview();
             refreshOriginalImagePreview();
             break;
         case QEvent::Show:

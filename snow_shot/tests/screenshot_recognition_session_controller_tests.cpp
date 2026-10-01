@@ -450,9 +450,10 @@ void originalImagePreviewFollowsTextSessionLifecycle() {
                     preview() != nullptr && preview()->isVisible(),
                 message);
     };
-    const auto requirePreviewHidden = [&](const char* message) {
+    const auto requirePreviewDestroyed = [&](const char* message) {
         processFor(5);
-        require(preview() == nullptr || !preview()->isVisible(), message);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(preview() == nullptr, message);
     };
     installTarget(QStringLiteral("preview-first"), Qt::blue);
     session.activate(Mode::Text);
@@ -475,33 +476,37 @@ void originalImagePreviewFollowsTextSessionLifecycle() {
     require(session.translating() && session.editing() && !session.originalImageTranslationActive(),
             "translation editor fixture is active");
     requirePreviewVisible("translation editing retains the original input preview");
+    require(preview() == firstPreview, "visible text submodes reuse the same companion window");
     session.setShowOriginalImage(true);
-    requirePreviewVisible("the existing original-image peek is independent of the companion");
+    requirePreviewDestroyed("original-image viewing destroys the separate companion");
+    require(firstPreview.isNull(), "original-image viewing releases the preceding companion");
     session.setShowOriginalImage(false);
-    require(preview() == firstPreview, "text submodes reuse the same companion window");
+    requirePreviewVisible("leaving original-image viewing creates a new companion");
+    const QPointer<QWidget> suppressedPreview = preview();
     window->setOriginalImagePreviewSuppressed(true);
-    requirePreviewHidden("temporary host interaction suppresses the preview");
+    requirePreviewDestroyed("temporary host interaction destroys the preview");
+    require(suppressedPreview.isNull(), "suppression releases the preceding companion window");
     require(settings.setShowOriginalImagePreview(false), "disable preview during host interaction");
     window->setOriginalImagePreviewSuppressed(false);
     require(!window->originalImagePreviewEnabled(), "live setting change disables the preview");
-    requirePreviewHidden("interaction completion does not override a disabled preference");
+    requirePreviewDestroyed("interaction completion does not override a disabled preference");
     window->setOriginalImagePreviewSuppressed(true);
     require(settings.setShowOriginalImagePreview(true), "enable preview during host interaction");
-    requirePreviewHidden("enabling the preference respects interaction suppression");
+    requirePreviewDestroyed("enabling the preference respects interaction suppression");
     window->setOriginalImagePreviewSuppressed(false);
     requirePreviewVisible("interaction completion restores an enabled preview");
     window->hide();
-    requirePreviewHidden("hiding the recognition host hides its preview");
+    requirePreviewDestroyed("hiding the recognition host destroys its preview");
     window->show();
     requirePreviewVisible("showing an active recognition host restores its preview");
     session.activate(Mode::Qr);
     require(!window->originalImagePreviewEnabled(), "nontext recognition disables the preview");
-    requirePreviewHidden("nontext recognition cannot expose a text preview");
+    requirePreviewDestroyed("nontext recognition cannot retain a text preview");
     session.activate(Mode::Text);
     requirePreviewVisible("returning to text recognition restores its preview");
     session.deactivate();
     require(!window->originalImagePreviewEnabled(), "deactivation disables the preview");
-    requirePreviewHidden("deactivation cannot leave a separate preview visible");
+    requirePreviewDestroyed("deactivation cannot retain a separate preview");
     installTarget(QStringLiteral("preview-second"), Qt::red);
     session.activate(Mode::Text);
     requirePreviewVisible("a replacement target restores its own preview");
@@ -515,7 +520,7 @@ void originalImagePreviewFollowsTextSessionLifecycle() {
     session.activate(Mode::Text);
     requirePreviewVisible("recreated recognition content restores active preview state");
     session.invalidate();
-    requirePreviewHidden("invalidation tears down the active preview");
+    requirePreviewDestroyed("invalidation tears down the active preview");
     delete window.data();
     ScreenshotRecognitionSessionActions headlessActions;
     headlessActions.ensureContent = []() -> ScreenshotRecognitionWindow* { return nullptr; };

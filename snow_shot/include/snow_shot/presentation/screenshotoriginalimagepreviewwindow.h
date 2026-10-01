@@ -42,7 +42,12 @@ class ScreenshotOriginalImagePreviewWindow final : public QWidget {
     [[nodiscard]] static QRect nativeClientRect(QWidget* widget);
     [[nodiscard]] static bool usesPhysicalGeometry();
 
+  signals:
+    // Presentation can briefly unmap the window while applying native flags.
+    void hidden();
+
   protected:
+    void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool event(QEvent* event) override;
@@ -74,6 +79,7 @@ class ScreenshotOriginalImagePreviewWindow final : public QWidget {
     bool m_pinned = false;
     bool m_staysOnTop = true;
     bool m_refreshPending = false;
+    bool m_presenting = false;
     bool m_applyingGeometry = false;
     bool m_adjustingPaintSurface = false;
     bool m_forwardingWindowEvent = false;
