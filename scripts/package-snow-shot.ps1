@@ -156,10 +156,10 @@ function Assert-SnowShotStaticDependencies {
     })
     $expectedFfmpegComponents = [ordered]@{
         BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
-        DECODER = @("APNG", "GIF", "H264", "PNG", "VP8", "WEBP", "WEBP_ANIM")
+        DECODER = @("APNG", "GIF", "H264", "HEVC", "PNG", "VP8", "WEBP", "WEBP_ANIM")
         ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
         HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2")
-        PARSER = @("AAC", "AC3", "H264", "MPEGAUDIO")
+        PARSER = @("AAC", "AC3", "H264", "HEVC", "MPEGAUDIO")
         DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
         MUXER = @("APNG", "AVI", "GIF", "MATROSKA", "MOV", "MP4", "WEBP")
         PROTOCOL = @("FILE")
@@ -173,6 +173,18 @@ function Assert-SnowShotStaticDependencies {
             ForEach-Object { $_.Name })
         Assert-ExactStringSet -Description "Enabled FFmpeg $($entry.Key) components" `
             -Expected $entry.Value -Actual $actual
+    }
+
+    $main10CapabilityPath = Join-Path $Prefix "share\x265\snow-main10-capability.json"
+    if (-not (Test-Path -LiteralPath $main10CapabilityPath -PathType Leaf)) {
+        throw "The audited x265 Main10 capability metadata was not found: $main10CapabilityPath"
+    }
+    $main10Capability = Get-Content -LiteralPath $main10CapabilityPath -Raw | ConvertFrom-Json
+    if ($main10Capability.schemaVersion -ne 1 -or
+        $main10Capability.bitDepth8 -ne $true -or
+        $main10Capability.bitDepth10 -ne $true -or
+        $main10Capability.singlePublicApi -ne $true) {
+        throw "The Snow Shot x265 build must provide both 8-bit and Main10 encoding."
     }
 
     $libraryDirectory = Join-Path $Prefix "lib"
@@ -578,6 +590,7 @@ $expectedFfmpegRegistrations = @(
     "ff_apng_decoder",
     "ff_gif_decoder",
     "ff_h264_decoder",
+    "ff_hevc_decoder",
     "ff_png_decoder",
     "ff_vp8_decoder",
     "ff_webp_decoder",
@@ -601,6 +614,7 @@ $expectedFfmpegRegistrations = @(
     "ff_aac_parser",
     "ff_ac3_parser",
     "ff_h264_parser",
+    "ff_hevc_parser",
     "ff_mpegaudio_parser",
     "ff_apng_demuxer",
     "ff_gif_demuxer",

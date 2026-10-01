@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "window_close_shortcut_test_support.h"
+#include "../src/presentation/recording/recordingrenderjob.h"
 #include <QFontDatabase>
 #include "recording_effect_test_source.h"
 #include "../src/presentation/recording/recordingeffectstyle.h"
@@ -30,6 +31,8 @@
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
 #include <QtMath>
 #include <QDir>
 #include <QFileInfo>
@@ -44,9 +47,12 @@
 #include <QTimer>
 #include <QJsonArray>
 #include <QMessageBox>
+#include <QLabel>
+#include <QLayout>
 #include "widgets/color_picker.h"
 #include "widgets/form.h"
 #include "widgets/modal.h"
+#include "widgets/progress.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
 #include "widgets/switch.h"
@@ -68,11 +74,14 @@ const char* nativeCaptureError() {
 #pragma pop_macro("snow_recording_last_error_message")
 #endif
 #include <atomic>
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
 struct SnowRecordingSessionImpl {};
+struct SnowRecordingSourceImpl {};
+struct SnowRecordingRenderTaskImpl {};
 namespace {
 std::vector<std::weak_ptr<RecordingEffectTestState>> effectSources;
 std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
@@ -92,6 +101,24 @@ SnowCaptureDirectRecordingConfig lastDirectConfig{};
 QByteArray lastKeyboardFontFamily;
 QByteArray lastKeyboardCjkFontFamily;
 std::vector<uint32_t> lastExcludedWindows;
+std::atomic<int> deferredCreates = 0;
+std::atomic<bool> recordingStopRequested = false;
+SnowRecordingDeferredOptions lastDeferredOptions{};
+std::atomic<int> renderStarts = 0;
+std::atomic<int> sourceDestroys = 0;
+std::atomic<int> sourceDiscards = 0;
+std::atomic<int> taskDestroys = 0;
+std::atomic<int> activeRenderTasks = 0;
+std::atomic<bool> failSourceDiscard = false;
+std::atomic<bool> failRenderPoll = false;
+std::atomic<int> renderPolls = 0;
+std::shared_future<void> renderStartGate;
+std::atomic<bool> renderStartEntered = false;
+std::shared_future<void> renderCancelGate;
+std::atomic<bool> renderCancelEntered = false;
+std::atomic<uint32_t> renderState = SNOW_RECORDING_RENDER_STATE_RUNNING;
+std::atomic<float> renderPercent = 0;
+QByteArray renderSourcePath("D:/recordings/test-source");
 std::atomic<int> exports = 0;
 std::shared_future<void> exportGate;
 std::promise<void>* exportEntered = nullptr;
@@ -116,6 +143,20 @@ ScreenshotToolPalette* palette() {
     return nullptr;
 }
 
+void requireModalCenteredOnArea(adqt::widgets::AdModal* modal, const QRect& areaGeometry,
+                                QScreen* screen) {
+    const auto* window = modal->contentWidget()->window();
+    const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
+    QPoint expected(areaGeometry.center().x() - window->width() / 2,
+                    areaGeometry.center().y() - window->height() / 2);
+    expected.setX(
+        std::clamp(expected.x(), available.left(), available.right() - window->width() + 1));
+    expected.setY(
+        std::clamp(expected.y(), available.top(), available.bottom() - window->height() + 1));
+    require((window->geometry().topLeft() - expected).manhattanLength() <= 2,
+            "recording modals must center on the recording area within the available display");
+}
+
 class ErrorObserver final : public QObject {
   public:
     int shown = 0;
@@ -128,6 +169,18 @@ class ErrorObserver final : public QObject {
                 QTimer::singleShot(0, dialog, &QMessageBox::accept);
             }
         }
+        return false;
+    }
+};
+
+class WindowInputBlockObserver final : public QObject {
+  public:
+    bool blocked = false;
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::WindowBlocked)
+            blocked = true;
+        else if (event->type() == QEvent::WindowUnblocked)
+            blocked = false;
         return false;
     }
 };
@@ -618,6 +671,78 @@ class PreviewTestTranslator final : public QTranslator {
     }
 };
 
+#ifdef Q_OS_MACOS
+void effectsPreviewPhysicalPixels() {
+    auto state = std::make_shared<RecordingEffectTestState>();
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(QRect(40, 40, 640, 480));
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
+    RecordingEffectPreview preview(area, std::make_unique<RecordingEffectTestSource>(state));
+    area.show();
+    pumpPreview();
+    const qreal dpr = area.devicePixelRatioF();
+    const QSize canvasSize(qRound(640 * dpr), qRound(480 * dpr));
+    for (const QSize exportSize : {QSize(320, 240), QSize(1920, 1080)}) {
+        preview.configure(area.recordingRegion(), exportSize, Qt::red, Qt::transparent, true);
+        preview.setEligible(true);
+        pumpPreview();
+        require(state->output == canvasSize,
+                "macOS preview must rasterize desktop points into physical display pixels");
+        state->publish(false);
+        QImage keycap(64, 64, QImage::Format_RGBA8888_Premultiplied);
+        keycap.fill(Qt::blue);
+        state->frame->tiles.push_back({QRect(128, 128, 64, 64), keycap, canvasSize});
+        QImage mouse(82, 82, QImage::Format_RGBA8888_Premultiplied);
+        mouse.fill(Qt::red);
+        const QPoint center(canvasSize.width() / 2, canvasSize.height() / 2);
+        state->frame->tiles.push_back({QRect(center - QPoint(41, 41), mouse.size()), mouse, {}});
+        state->notify();
+        pumpPreview();
+        QImage rendered(
+            QSize(qRound(area.canvas()->width() * dpr), qRound(area.canvas()->height() * dpr)),
+            QImage::Format_RGBA8888_Premultiplied);
+        rendered.setDevicePixelRatio(dpr);
+        rendered.fill(Qt::transparent);
+        QPainter painter(&rendered);
+        area.canvas()->render(&painter);
+        painter.end();
+        QRect keyboardPixels;
+        QRect mousePixels;
+        for (int y = 0; y < rendered.height(); ++y) {
+            for (int x = 0; x < rendered.width(); ++x) {
+                const QColor color = rendered.pixelColor(x, y);
+                if (color.blue() > 128)
+                    keyboardPixels |= QRect(x, y, 1, 1);
+                if (color.red() > 128)
+                    mousePixels |= QRect(x, y, 1, 1);
+            }
+        }
+        require(keyboardPixels == QRect(128, 128, 64, 64),
+                "macOS keycap size and placement must use physical pixels at every DPI");
+        require(mousePixels == QRect(center - QPoint(41, 41), QSize(82, 82)),
+                "macOS mouse effects must keep their pixel size and align with the pointer");
+        state->publish(false);
+        pumpPreview();
+        const QImage cleared = previewImage(*area.canvas());
+        require(
+            cleared.pixelColor(qRound(128 / dpr), qRound(128 / dpr)).alpha() == 0 &&
+                cleared.pixelColor(qRound(center.x() / dpr), qRound(center.y() / dpr)).alpha() == 0,
+            "expired effects must clear their display-scaled canvas regions");
+        for (const auto eventType :
+             {QEvent::DevicePixelRatioChange, QEvent::ScreenChangeInternal}) {
+            const int startsBeforeScaleChange = state->starts;
+            const quint64 generationBeforeScaleChange = preview.generation();
+            QEvent scaleChange(eventType);
+            QCoreApplication::sendEvent(&area, &scaleChange);
+            pumpPreview();
+            require(preview.generation() > generationBeforeScaleChange &&
+                        state->starts == startsBeforeScaleChange && state->active,
+                    "display scale changes must reconfigure the active preview canvas");
+        }
+    }
+}
+#endif
+
 void effectsPreviewLifecycle() {
     for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
         const QRect selected(-2001, -1103, 641, 479);
@@ -685,7 +810,7 @@ void effectsPreviewLifecycle() {
         pumpPreview();
     }
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
-    // Exercise the renderer itself with independent layer coordinates, not just its transform.
+    // Exercise both capture-coordinate layers through the renderer at different export sizes.
     for (const QSize captureSize : {QSize(640, 480), QSize(960, 720)}) {
         area.setRecordingRegion(QRect(QPoint(40, 40), captureSize));
         for (const QSize exportSize : {QSize(320, 240), QSize(1920, 1080)}) {
@@ -695,19 +820,28 @@ void effectsPreviewLifecycle() {
             QImage keycap(64, 64, QImage::Format_RGBA8888_Premultiplied);
             keycap.fill(Qt::blue);
             state->frame->tiles.push_back({QRect(128, 128, 64, 64), keycap, captureSize});
+            QImage mouse(82, 82, QImage::Format_RGBA8888_Premultiplied);
+            mouse.fill(Qt::red);
+            state->frame->tiles.push_back({QRect(240, 128, 82, 82), mouse, {}});
             state->notify();
             pumpPreview();
             const QImage rendered = previewImage(*area.canvas());
             QRect pixels;
+            QRect mousePixels;
             for (int y = 0; y < rendered.height(); ++y) {
                 for (int x = 0; x < rendered.width(); ++x) {
                     if (rendered.pixelColor(x, y).blue() > 128) {
                         pixels |= QRect(x, y, 1, 1);
                     }
+                    if (rendered.pixelColor(x, y).red() > 128) {
+                        mousePixels |= QRect(x, y, 1, 1);
+                    }
                 }
             }
             require(pixels.size() == QSize(64, 64),
                     "keyboard tiles must not grow with capture area or export scale");
+            require(mousePixels.size() == QSize(82, 82),
+                    "mouse tiles must not grow with capture area or export scale");
         }
     }
     area.setRecordingRegion(QRect(40, 40, 640, 480));
@@ -1615,6 +1749,7 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     // may be touched here. The preview label invariant is asserted on the GUI
     // thread by controllerPreviewTransitions instead.
     lastDirectConfig = *config;
+    recordingStopRequested = false;
     lastKeyboardFontFamily = config->keyboard_font_family_utf8;
     lastKeyboardCjkFontFamily = config->keyboard_cjk_font_family_utf8;
     lastExcludedWindows.clear();
@@ -1634,6 +1769,92 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     *result = &session;
     return SNOW_RECORDING_RESULT_OK;
 }
+SnowRecordingResult
+snow_recording_session_create_deferred(const SnowCaptureDirectRecordingConfig* config,
+                                       const SnowRecordingDeferredOptions* options,
+                                       SnowRecordingSession** result) {
+    ++deferredCreates;
+    lastDeferredOptions = *options;
+    return snow_recording_session_create_direct(config, result);
+}
+SnowRecordingResult snow_recording_session_finalize_deferred(SnowRecordingSession* recording,
+                                                             SnowRecordingSource** source) {
+    const auto result = snow_recording_session_stop(recording);
+    *source = result == SNOW_RECORDING_RESULT_OK ? new SnowRecordingSource : nullptr;
+    return result;
+}
+SnowRecordingResult snow_recording_source_render_start(SnowRecordingSource*,
+                                                       SnowRecordingRenderTask** task) {
+    ++renderStarts;
+    const auto gate = renderStartGate;
+    renderStartEntered = true;
+    if (gate.valid())
+        gate.wait();
+    ++activeRenderTasks;
+    renderState = SNOW_RECORDING_RENDER_STATE_RUNNING;
+    renderPercent = 0;
+    *task = new SnowRecordingRenderTask;
+    return SNOW_RECORDING_RESULT_OK;
+}
+size_t snow_recording_source_path(const SnowRecordingSource*, char* buffer, size_t capacity) {
+    const QByteArray& value = renderSourcePath;
+    if (buffer && capacity) {
+        const size_t count = std::min(capacity - 1, static_cast<size_t>(value.size()));
+        std::copy_n(value.constData(), count, buffer);
+        buffer[count] = '\0';
+    }
+    return static_cast<size_t>(value.size()) + 1;
+}
+SnowRecordingResult snow_recording_source_discard(SnowRecordingSource*) {
+    require(activeRenderTasks == 0, "source discard must follow task disposal");
+    if (failSourceDiscard)
+        return SNOW_RECORDING_RESULT_IO_ERROR;
+    ++sourceDiscards;
+    return SNOW_RECORDING_RESULT_OK;
+}
+void snow_recording_source_destroy(SnowRecordingSource* source) {
+    require(activeRenderTasks == 0, "source must outlive every render attempt");
+    ++sourceDestroys;
+    delete source;
+}
+SnowRecordingResult snow_recording_render_task_poll(const SnowRecordingRenderTask*,
+                                                    SnowRecordingRenderProgress* progress) {
+    ++renderPolls;
+    require(progress->version == SNOW_RECORDING_RENDER_PROGRESS_VERSION &&
+                progress->struct_size == sizeof(*progress),
+            "render poll must initialize the versioned progress header");
+    if (failRenderPoll)
+        return SNOW_RECORDING_RESULT_INTERNAL_ERROR;
+    progress->state = renderState;
+    progress->stage = SNOW_RECORDING_RENDER_STAGE_RENDER;
+    progress->percent = renderPercent;
+    progress->duration_ms = 2300;
+    return SNOW_RECORDING_RESULT_OK;
+}
+SnowRecordingResult snow_recording_render_task_cancel(SnowRecordingRenderTask*) {
+    const auto gate = renderCancelGate;
+    renderCancelEntered = true;
+    if (gate.valid())
+        gate.wait();
+    uint32_t running = SNOW_RECORDING_RENDER_STATE_RUNNING;
+    renderState.compare_exchange_strong(running, SNOW_RECORDING_RENDER_STATE_CANCELED);
+    return SNOW_RECORDING_RESULT_OK;
+}
+size_t snow_recording_render_task_error(const SnowRecordingRenderTask*, char* buffer,
+                                        size_t capacity) {
+    const QByteArray value("test rendering failure");
+    if (buffer && capacity) {
+        const size_t count = std::min(capacity - 1, static_cast<size_t>(value.size()));
+        std::copy_n(value.constData(), count, buffer);
+        buffer[count] = '\0';
+    }
+    return static_cast<size_t>(value.size()) + 1;
+}
+void snow_recording_render_task_destroy(SnowRecordingRenderTask* task) {
+    ++taskDestroys;
+    --activeRenderTasks;
+    delete task;
+}
 void snow_recording_session_destroy(SnowRecordingSession*) {
     ++destroyedSessions;
 }
@@ -1648,6 +1869,8 @@ uint8_t snow_recording_session_resume(SnowRecordingSession*) {
     return 1;
 }
 SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
+    require(recordingStopRequested,
+            "Stop must freeze its endpoint before asynchronous finalization");
     // Snapshot the gate before publishing entry. The UI may release and clear
     // the global shared_future as soon as exportEntered becomes ready.
     const auto gate = exportGate;
@@ -1660,6 +1883,10 @@ SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
     }
     ++exports;
     return failure ? SNOW_RECORDING_RESULT_INVALID_ARGUMENT : SNOW_RECORDING_RESULT_OK;
+}
+SnowRecordingResult snow_recording_session_request_stop(SnowRecordingSession*) {
+    recordingStopRequested = true;
+    return SNOW_RECORDING_RESULT_OK;
 }
 uint8_t snow_recording_session_state(const SnowRecordingSession*, SnowRecordingState* state) {
     *state = SNOW_RECORDING_STATE_RUNNING;
@@ -1691,6 +1918,10 @@ void recordingSettingsDialog() {
     require(modal != nullptr && modal->isOpen(), "settings button must open a popup window");
     require(modal->mode() == AdModal::Mode::Window && modal->ownerWindow() != nullptr,
             "recording settings must be a standalone owned popup");
+    require(qobject_cast<ScreenRecordingAreaWindow*>(modal->ownerWindow()) != nullptr,
+            "recording settings must use the recording area as their placement anchor");
+    requireModalCenteredOnArea(modal, modal->ownerWindow()->frameGeometry(),
+                               modal->ownerWindow()->screen());
     auto* form =
         modal->contentWidget()->findChild<AdForm*>(QStringLiteral("screenRecordingSettingsForm"));
     require(form != nullptr, "recording preferences must use Ant Design Qt Form");
@@ -1804,9 +2035,12 @@ void recordingSettingsDialog() {
     modal->accept();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(retired.isNull(), "closing recording settings must release its form and popup windows");
+    controller.open(QRect(200, 150, 320, 240));
     button->click();
     modal = controller.findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal"));
     require(modal != nullptr && modal->isOpen(), "recording settings must reopen after dismissal");
+    requireModalCenteredOnArea(modal, modal->ownerWindow()->frameGeometry(),
+                               modal->ownerWindow()->screen());
     require(modal->contentWidget()
                     ->findChild<AdSelect*>(QStringLiteral("screen-recording.frame-rate"))
                     ->currentValue()
@@ -1836,6 +2070,621 @@ void recordingSettingsDialog() {
             "the next recording must use preferences saved in the popup");
     toolbarPalette->recordingCloseRequested();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void recordingRenderLayout() {
+    using namespace adqt::widgets;
+    const auto wait = [](const std::function<bool()>& condition, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!condition() && timer.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents,
+                                            100);
+        require(condition(), message);
+    };
+    const QFont previousFont = QApplication::font();
+    QApplication::setFont(QFontDatabase::systemFont(QFontDatabase::GeneralFont));
+    const QByteArray previousPath = renderSourcePath;
+    for (const auto& path :
+         {QByteArray("/Users/chao/Movies/b6180d62-5b37-4800-8883-0b5d83aa4c1d.snowrec"),
+          QByteArray("/Users/chao/Movies/Recordings saved for later/Project recordings/"
+                     "b6180d62-5b37-4800-8883-0b5d83aa4c1d.snowrec")}) {
+        renderSourcePath = path;
+        RecordingRenderJob job(new SnowRecordingSource, true, nullptr, nullptr);
+        job.start();
+        auto* modal = job.findChild<AdModal*>(QStringLiteral("screenRecordingRenderModal"));
+        require(modal && modal->isOpen(), "render layout test must open its modal");
+        auto* progress = modal->contentWidget()->findChild<AdProgress*>(
+            QStringLiteral("screenRecordingRenderProgress"));
+        wait([&] { return renderState == SNOW_RECORDING_RENDER_STATE_RUNNING && renderPolls > 0; },
+             "render layout test must start its task");
+        renderPercent = 45;
+        wait([&] { return progress->percent() == 45; }, "render progress must update");
+        modal->footerWidget()
+            ->findChild<AdButton*>(QStringLiteral("screenRecordingRenderCancel"))
+            ->click();
+        const auto retained = [&] {
+            return job.state().value(QStringLiteral("source_retained")).toBool();
+        };
+        wait(retained, "canceling must show the retained source layout");
+
+        const auto verifyLayout = [&] {
+            QCoreApplication::processEvents();
+            auto* surface = modal->contentWidget()->window();
+            auto* panel = surface->findChild<QWidget*>(QStringLiteral("ad-modal-panel"));
+            require(panel && surface->rect().contains(panel->geometry()),
+                    "the render panel must fit entirely within its modal window");
+            auto* footer = modal->footerWidget()->parentWidget();
+            const int bottomInset = footer->layout()->contentsMargins().bottom();
+            const int footerBottom = modal->footerWidget()->mapTo(surface, QPoint(0, 0)).y() +
+                                     modal->footerWidget()->height();
+            require(bottomInset > 0 && surface->height() - footerBottom >= bottomInset,
+                    "render actions must preserve the modal bottom padding");
+            for (auto* label : modal->contentWidget()->findChildren<QLabel*>()) {
+                require(!label->isVisible() ||
+                            label->height() >= label->heightForWidth(label->width()),
+                        "render labels must have enough height for their wrapped text");
+            }
+            for (auto* button : modal->footerWidget()->findChildren<AdButton*>()) {
+                require(!button->isVisible() ||
+                            modal->footerWidget()->rect().contains(button->geometry()),
+                        "every render action must fit within the footer");
+            }
+        };
+        const auto verifyLanguages = [&](const QString& phase) {
+            for (const auto* locale : {"en_US", "zh_CN", "zh_TW"}) {
+                QTranslator translator;
+                require(translator.load(QDir(QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR))
+                                            .filePath(QStringLiteral("snow_shot_%1.qm")
+                                                          .arg(QString::fromLatin1(locale)))),
+                        "load the complete render dialog catalog");
+                QCoreApplication::installTranslator(&translator);
+                verifyLayout();
+                const QSize size = modal->contentWidget()->window()->size();
+                modal->open();
+                modal->open();
+                verifyLayout();
+                require(modal->contentWidget()->window()->size() == size,
+                        "repeated render dialog refreshes must preserve its fitted size");
+                if (const QString snapshots =
+                        qEnvironmentVariable("SNOW_RECORDING_RENDER_SNAPSHOT_DIR");
+                    !snapshots.isEmpty()) {
+                    QDir().mkpath(snapshots);
+                    const QString name = QStringLiteral("%1-%2-%3.png")
+                                             .arg(phase, QString::fromLatin1(locale))
+                                             .arg(path.contains("Project") ? 1 : 0);
+                    require(modal->contentWidget()->window()->grab().save(
+                                QDir(snapshots).filePath(name)),
+                            "render dialog layout snapshot must save");
+                }
+                QCoreApplication::removeTranslator(&translator);
+            }
+        };
+        verifyLanguages(QStringLiteral("canceled"));
+        const int retainedHeight = modal->contentWidget()->window()->height();
+        modal->footerWidget()
+            ->findChild<AdButton*>(QStringLiteral("screenRecordingRenderRetry"))
+            ->click();
+        wait([&] { return renderState == SNOW_RECORDING_RENDER_STATE_RUNNING; },
+             "retry must start a fresh render task");
+        verifyLayout();
+        require(modal->contentWidget()->window()->height() < retainedHeight,
+                "retry must shrink the dialog after hiding source details");
+        renderState = SNOW_RECORDING_RENDER_STATE_FAILED;
+        wait(retained, "render failure must show source details again");
+        verifyLanguages(QStringLiteral("failed"));
+        require(job.release(false), "layout test must keep its source");
+        wait([&] { return !modal->isOpen(); }, "layout test must finish source cleanup");
+    }
+    renderSourcePath = previousPath;
+    QApplication::setFont(previousFont);
+}
+
+void recordingPostProcessingLifecycle() {
+    using namespace adqt::widgets;
+    using snow_shot::storage::RecordingSettings;
+    const RecordingSettings settings;
+    require(!settings.postProcessingEnabled() &&
+                settings.postProcessingEffect() == QStringLiteral("progress_bar") &&
+                settings.progressBarColor() == QColor(22, 119, 255),
+            "post processing defaults preserve real-time recording");
+    const auto wait = [](const std::function<bool()>& condition, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!condition() && timer.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents,
+                                            100);
+        require(condition(), message);
+    };
+    {
+        ScreenRecordingController controller(testEffectsSource);
+        int finalizedCount = 0;
+        QObject::connect(&controller, &ScreenRecordingController::finalized, &controller,
+                         [&] { ++finalizedCount; });
+        controller.open(QRect(80, 80, 320, 240));
+        auto* controls = palette();
+        auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(controls->window());
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget))
+                area = candidate;
+        }
+        require(area != nullptr, "rendering must retain the recording area");
+        WindowInputBlockObserver areaInput;
+        WindowInputBlockObserver toolbarInput;
+        area->installEventFilter(&areaInput);
+        toolbar->installEventFilter(&toolbarInput);
+        controls->recordingPostProcessingEnabledChanged(true);
+        controls->recordingPostProcessingEffectChanged(QStringLiteral("playback_time"));
+        controls->recordingProgressBarColorChanged(QColor(20, 100, 200, 128));
+        require(settings.postProcessingEnabled() &&
+                    settings.postProcessingEffect() == QStringLiteral("playback_time") &&
+                    settings.progressBarColor() == QColor(20, 100, 200, 128),
+                "controller must persist every post-processing control");
+        require(settings.setPostProcessingEnabled(false) &&
+                    settings.setPostProcessingEffect(QStringLiteral("progress_bar")) &&
+                    settings.setProgressBarColor(QColor(22, 119, 255)) &&
+                    !controls->recordingPostProcessingEnabled() &&
+                    controls->recordingPostProcessingEffect() == QStringLiteral("progress_bar") &&
+                    controls->recordingProgressBarColor() == QColor(22, 119, 255),
+                "an open toolbar follows externally reset post-processing preferences");
+        controls->recordingPostProcessingEnabledChanged(true);
+        controls->recordingPostProcessingEffectChanged(QStringLiteral("playback_time"));
+        controls->recordingProgressBarColorChanged(QColor(20, 100, 200, 128));
+        const int oldStarts = renderStarts.load();
+        controller.startRecording();
+        waitForRecording(controller);
+        require(lastDeferredOptions.overlay == SNOW_RECORDING_PLAYBACK_OVERLAY_PLAYBACK_TIME &&
+                    lastDeferredOptions.progress_bar_rgba == 0x1464c880 &&
+                    !controls->recordingBusy(),
+                "automatic mode snapshots playback effect and RGBA color");
+        controller.stopRecordingAndCopy();
+        wait([&] { return renderStarts > oldStarts; }, "stopping must start deferred rendering");
+        QPointer<AdModal> modal =
+            controller.findChild<AdModal*>(QStringLiteral("screenRecordingRenderModal"));
+        require(modal && modal->isOpen() && modal->windowModeDetached() &&
+                    modal->windowModality() == Qt::ApplicationModal && !modal->ownerWindow(),
+                "rendering must open a detached application modal owned by the controller");
+        require(areaInput.blocked && toolbarInput.blocked,
+                "render progress must block clicks on the recording area and toolbar");
+        auto* renderWindow = modal->contentWidget()->window();
+        const QRect recordingAreaGeometry = area->frameGeometry();
+        QScreen* recordingScreen = area->screen();
+        requireModalCenteredOnArea(modal, recordingAreaGeometry, recordingScreen);
+        require(renderWindow->windowFlags().testFlag(Qt::WindowStaysOnTopHint),
+                "render progress must stay above the recording area and toolbar");
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            const HWND renderHandle = reinterpret_cast<HWND>(renderWindow->winId());
+            for (auto* window : {static_cast<QWidget*>(area), static_cast<QWidget*>(toolbar)}) {
+                const HWND handle = reinterpret_cast<HWND>(window->winId());
+                require(!IsWindowEnabled(handle),
+                        "render progress must disable native recording window input");
+                bool renderAboveWindow = false;
+                for (HWND candidate = GetWindow(handle, GW_HWNDPREV); candidate;
+                     candidate = GetWindow(candidate, GW_HWNDPREV))
+                    renderAboveWindow |= candidate == renderHandle;
+                require(renderAboveWindow,
+                        "native render progress must stay above both recording windows");
+            }
+        }
+#endif
+        auto* progress = modal->contentWidget()->findChild<AdProgress*>(
+            QStringLiteral("screenRecordingRenderProgress"));
+        require(progress && controls->recordingBusyOperation() ==
+                                ScreenshotToolPalette::RecordingBusyOperation::Copying,
+                "rendering uses AdProgress and preserves copy intent");
+        require(progress->formattedText() == QStringLiteral("0%"),
+                "render modal must start with a whole percentage");
+        renderPercent = 41.75f;
+        wait([&] { return progress->percent() == 41; }, "native progress must reach AdProgress");
+        require(progress->formattedText() == QStringLiteral("41%") &&
+                    controller.automationState().value(QStringLiteral("render_progress")) == 41.75,
+                "render modal must show whole percentages while retaining precise native progress");
+        class RenderTranslator final : public QTranslator {
+          public:
+            bool isEmpty() const override {
+                return false;
+            }
+            QString translate(const char* context, const char* source, const char*,
+                              int) const override {
+                return QByteArray(context) == "RecordingRenderDialog"
+                           ? QStringLiteral("Translated: ") + QString::fromUtf8(source)
+                           : QString();
+            }
+        } translator;
+        QCoreApplication::installTranslator(&translator);
+        QCoreApplication::processEvents();
+        require(modal->windowTitle() == QStringLiteral("Translated: Rendering recording") &&
+                    progress->accessibleName() == QStringLiteral("Translated: Rendering progress"),
+                "open render dialog must retranslate without replacing its progress");
+        QCoreApplication::removeTranslator(&translator);
+        QCoreApplication::processEvents();
+        const QString snapshots = qEnvironmentVariable("SNOW_RECORDING_RENDER_SNAPSHOT_DIR");
+        if (!snapshots.isEmpty()) {
+            QDir().mkpath(snapshots);
+            require(modal->contentWidget()->window()->grab().save(
+                        QDir(snapshots).filePath(QStringLiteral("rendering.png"))),
+                    "rendering dialog snapshot must save");
+        }
+        renderPercent = 20;
+        QElapsedTimer monotonic;
+        monotonic.start();
+        while (monotonic.elapsed() < 250)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        require(progress->percent() == 41, "render progress must remain monotonic");
+        renderPercent = 99.75f;
+        wait([&] { return progress->percent() == 99; },
+             "incomplete native progress must not display 100 percent");
+        require(progress->formattedText() == QStringLiteral("99%"),
+                "render modal must omit decimals near completion");
+        controls->recordingCloseRequested();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(!controller.isOpen() && modal->isOpen(),
+                "closing recording selection must not close the render modal");
+        auto* cancel = modal->footerWidget()->findChild<AdButton*>(
+            QStringLiteral("screenRecordingRenderCancel"));
+        cancel->click();
+        wait(
+            [&] {
+                return controller.automationState()
+                    .value(QStringLiteral("source_retained"))
+                    .toBool();
+            },
+            "canceling waits for task disposal and retains source");
+        require(controller.isRecording() &&
+                    !controller.automationState().value(QStringLiteral("finalized")).toBool(),
+                "cancelled output cannot be finalized or copied");
+        requireModalCenteredOnArea(modal, recordingAreaGeometry, recordingScreen);
+        if (!snapshots.isEmpty())
+            require(modal->contentWidget()->window()->grab().save(
+                        QDir(snapshots).filePath(QStringLiteral("canceled.png"))),
+                    "retained source dialog snapshot must save");
+        const int discardedBefore = sourceDiscards.load();
+        const int retryBefore = renderStarts.load();
+        modal->footerWidget()
+            ->findChild<AdButton*>(QStringLiteral("screenRecordingRenderRetry"))
+            ->click();
+        wait([&] { return renderStarts > retryBefore; },
+             "retry must render the same retained source");
+        requireModalCenteredOnArea(modal, recordingAreaGeometry, recordingScreen);
+        require(deferredCreates == 1 && sourceDiscards == discardedBefore &&
+                    lastDeferredOptions.overlay == SNOW_RECORDING_PLAYBACK_OVERLAY_PLAYBACK_TIME,
+                "retry must retain immutable options and avoid recapturing or deleting source");
+        renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+        renderPercent = 100;
+        waitForIdle(controller);
+        require(controller.automationState().value(QStringLiteral("finalized")).toBool() &&
+                    controller.automationState().value(QStringLiteral("duration_ms")).toInteger() ==
+                        2300 &&
+                    sourceDiscards == discardedBefore && (!modal || !modal->isOpen()),
+                "successful publication completes the job without repeating backend cleanup");
+        require(finalizedCount == 1 && !QApplication::clipboard()->mimeData()->urls().isEmpty(),
+                "successful retry must preserve the original copy request");
+        controller.open(QRect(80, 80, 320, 240));
+        controls = palette();
+        controls->recordingStartDelaySecondsChanged(1);
+        controller.startRecording();
+        QString error;
+        require(controller.automationState().value(QStringLiteral("operation")).toString() ==
+                        QStringLiteral("counting_down") &&
+                    !controller.automationState().value(QStringLiteral("finalized")).toBool() &&
+                    !controller.controlAutomation(QStringLiteral("copy"), {}, &error),
+                "accepting a new countdown clears previous output copy eligibility");
+        controls->recordingCloseRequested();
+        settings.setStartDelaySeconds(0);
+    }
+    settings.setPostProcessingEnabled(false);
+    settings.setPostProcessingEffect(QStringLiteral("progress_bar"));
+    settings.setProgressBarColor(QColor(22, 119, 255));
+    for (const bool deferred : {false, true}) {
+        QTemporaryDir destination;
+        require(destination.isValid(), "completion observer output directory must exist");
+        const QString expectedPath = destination.filePath(QStringLiteral("completed.mp4"));
+        QApplication::clipboard()->clear();
+        QPointer<ScreenRecordingController> controller =
+            new ScreenRecordingController(testEffectsSource);
+        QObject::connect(controller, &ScreenRecordingController::finalized, [&] {
+            require(controller->automationState().value(QStringLiteral("path")).toString() ==
+                        expectedPath,
+                    "finalized observers must see the successfully published output path");
+            delete controller.data();
+        });
+        QString error;
+        require(controller->startAutomation(QRect(80, 80, 320, 240),
+                                            {{QStringLiteral("post_processing"), deferred},
+                                             {QStringLiteral("format"), QStringLiteral("mp4")},
+                                             {QStringLiteral("path"), expectedPath}},
+                                            &error),
+                "prepare a completion observer that synchronously destroys its controller");
+        waitForRecording(*controller);
+        require(controller->controlAutomation(QStringLiteral("copy"), {}, &error),
+                "Copy must survive finalized observer destruction for both export workflows");
+        if (deferred) {
+            wait(
+                [&] {
+                    return controller && controller->automationState()
+                                                 .value(QStringLiteral("render_duration_ms"))
+                                                 .toInteger() == 2300;
+                },
+                "deferred completion must adopt its render task before the terminal snapshot");
+            renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+            renderPercent = 100;
+        }
+        wait(
+            [&] {
+                return !controller && QApplication::clipboard()->mimeData()->urls() ==
+                                          QList<QUrl>{QUrl::fromLocalFile(expectedPath)};
+            },
+            "completed Copy uses its immutable path after a finalized observer deletes the owner");
+    }
+    {
+        auto controller = std::make_unique<ScreenRecordingController>(testEffectsSource);
+        QString error;
+        require(controller->startAutomation(QRect(80, 80, 320, 240),
+                                            {{QStringLiteral("post_processing"), true}}, &error),
+                "prepare a deferred source finalization barrier");
+        waitForRecording(*controller);
+        std::promise<void> releaseExport;
+        std::promise<void> enteredPromise;
+        auto entered = enteredPromise.get_future();
+        exportGate = releaseExport.get_future().share();
+        exportEntered = &enteredPromise;
+        const int oldSessions = destroyedSessions.load();
+        const int oldSources = sourceDestroys.load();
+        const int oldDiscards = sourceDiscards.load();
+        require(controller->controlAutomation(QStringLiteral("stop"), {}, &error),
+                "deferred stop must enter the controlled finalization worker");
+        require(entered.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+                "the deferred finalization must reach its barrier");
+        QElapsedTimer destruction;
+        destruction.start();
+        controller.reset();
+        require(destruction.elapsed() < 500 && destroyedSessions == oldSessions,
+                "controller destruction never joins or releases a pending source finalization");
+        releaseExport.set_value();
+        exportEntered = nullptr;
+        exportGate = {};
+        wait([&] { return sourceDestroys > oldSources && destroyedSessions > oldSessions; },
+             "retired finalization eventually releases the session and preserves source media");
+        require(sourceDiscards == oldDiscards,
+                "destroying a controller never implicitly discards its finalized source");
+    }
+    for (const bool discard : {false, true}) {
+        ScreenRecordingController controller(testEffectsSource);
+        QString error;
+        const int oldStarts = renderStarts.load();
+        const int oldDiscards = sourceDiscards.load();
+        require(controller.startAutomation(
+                    QRect(80, 80, 320, 240),
+                    {{QStringLiteral("post_processing"), true},
+                     {QStringLiteral("post_processing_effect"), QStringLiteral("progress_bar")},
+                     {QStringLiteral("progress_bar_color"), QStringLiteral("#1464C880")}},
+                    &error),
+                "automation supports isolated post-processing options");
+        waitForRecording(controller);
+        require(lastDeferredOptions.progress_bar_rgba == 0x1464c880 &&
+                    controller.automationState()
+                            .value(QStringLiteral("options"))
+                            .toObject()
+                            .value(QStringLiteral("progress_bar_color")) ==
+                        QStringLiteral("#1464C880"),
+                "automation progress bar colors use round-trippable RGBA alpha ordering");
+        require(controller.controlAutomation(QStringLiteral("stop"), {}, &error),
+                "automated recording must stop");
+        wait([&] { return renderStarts > oldStarts; }, "automated stop must render");
+        require(!controller.findChild<AdModal*>(QStringLiteral("screenRecordingRenderModal")),
+                "automated rendering suppresses all dialogs");
+        if (!discard) {
+            require(controller.controlAutomation(QStringLiteral("cancel"), {}, &error) &&
+                        controller.isRecording(),
+                    "legacy cancel closes recording UI without canceling a render job");
+            require(controller.controlAutomation(QStringLiteral("cancel_render"), {}, &error),
+                    "explicit cancel_render cancels the current render attempt");
+            wait(
+                [&] {
+                    return controller.automationState()
+                        .value(QStringLiteral("source_retained"))
+                        .toBool();
+                },
+                "cancel_render must retain source after worker teardown");
+            const int beforeRetry = renderStarts.load();
+            require(controller.controlAutomation(QStringLiteral("retry"), {}, &error),
+                    "automation can retry its canceled render");
+            wait([&] { return renderStarts > beforeRetry; },
+                 "automation retry must start a new attempt");
+        }
+        renderState = SNOW_RECORDING_RENDER_STATE_FAILED;
+        wait(
+            [&] {
+                return controller.automationState()
+                    .value(QStringLiteral("source_retained"))
+                    .toBool();
+            },
+            "render error must retain source and expose failure");
+        require(controller.automationState().value(QStringLiteral("error")).toString() ==
+                    QStringLiteral("test rendering failure"),
+                "owned task error must be exposed without a message box");
+        require(!controller.controlAutomation(QStringLiteral("pause"), {}, &error) &&
+                    controller.automationState().value(QStringLiteral("error")).toString() ==
+                        QStringLiteral("test rendering failure"),
+                "an unavailable render action must preserve the retained failure diagnostics");
+        if (discard) {
+            failSourceDiscard = true;
+            require(controller.controlAutomation(QStringLiteral("discard"), {}, &error),
+                    "explicit discard begins asynchronously");
+            wait(
+                [&] {
+                    return controller.automationState().value(QStringLiteral("error")).toString() ==
+                               QStringLiteral("test backend") &&
+                           controller.automationState()
+                               .value(QStringLiteral("source_retained"))
+                               .toBool();
+                },
+                "failed source deletion must restore retained ownership");
+            require(controller.isRecording(),
+                    "failed source deletion must retain the original busy operation");
+            failSourceDiscard = false;
+        }
+        require(controller.controlAutomation(discard ? QStringLiteral("discard")
+                                                     : QStringLiteral("keep_source"),
+                                             {}, &error),
+                "retained source supports explicit keep and discard actions");
+        waitForIdle(controller);
+        require(sourceDiscards == oldDiscards + (discard ? 1 : 0) &&
+                    controller.automationState()
+                            .value(QStringLiteral("source_path"))
+                            .toString()
+                            .isEmpty() == discard &&
+                    !settings.postProcessingEnabled(),
+                "Keep Source preserves files and unlocks UI without mutating preferences");
+        require(!controller.automationState().value(QStringLiteral("finalized")).toBool() &&
+                    !controller.controlAutomation(QStringLiteral("copy"), {}, &error),
+                "kept or discarded source is never eligible as a completed output");
+        require(controller.controlAutomation(QStringLiteral("close"), {}, &error) &&
+                    controller.startAutomation(QRect(80, 80, 320, 240), {}, &error),
+                "releasing a retained job allows a new recording in the same session");
+        waitForRecording(controller);
+        require(controller.automationState()
+                        .value(QStringLiteral("source_path"))
+                        .toString()
+                        .isEmpty() &&
+                    controller.automationState().value(QStringLiteral("render_mode")).toString() ==
+                        QStringLiteral("realtime"),
+                "a new recording clears retained UI state and uses saved automatic preferences");
+        require(controller.controlAutomation(QStringLiteral("stop"), {}, &error),
+                "the next recording stops through the real-time path");
+        waitForIdle(controller);
+    }
+    for (const int mode : {0, 1, 2, 3}) {
+        auto releaseCancel = std::make_shared<std::promise<void>>();
+        renderCancelGate = releaseCancel->get_future().share();
+        renderCancelEntered = false;
+        renderStartEntered = false;
+        const int oldTasks = taskDestroys.load();
+        const int oldSources = sourceDestroys.load();
+        const int oldDiscards = sourceDiscards.load();
+        // A watchdog bounds the regression's synchronous-cancel failure without
+        // using a GUI timer, which cannot run while that failure blocks the GUI.
+        std::promise<void> watchdogDone;
+        auto watchdog = std::async(
+            std::launch::async, [releaseCancel, done = watchdogDone.get_future()]() mutable {
+                if (done.wait_for(std::chrono::seconds(2)) != std::future_status::ready)
+                    releaseCancel->set_value();
+            });
+        auto* job = new RecordingRenderJob(new SnowRecordingSource, false, nullptr, nullptr);
+        int published = 0;
+        job->finished = [&published](RecordingRenderJob::Outcome outcome) {
+            published += outcome == RecordingRenderJob::Outcome::Succeeded;
+        };
+        failRenderPoll = mode == 2;
+        QElapsedTimer responsiveness;
+        job->start();
+        if (mode != 2) {
+            wait([] { return renderStartEntered.load(); }, "blocked-cancel render must start");
+            wait([&] { return job->state().value(QStringLiteral("render_duration_ms")) == 2300; },
+                 "the GUI must adopt the completed start before testing native cancellation");
+            renderPercent = 41;
+            wait([&] { return job->state().value(QStringLiteral("render_progress")) == 41; },
+                 "the adopted task must report its updated rendering progress");
+        }
+        responsiveness.start();
+        if (mode != 2)
+            require(job->cancel() && responsiveness.elapsed() < 500,
+                    "Cancel acceptance must never wait on native publication synchronization");
+        wait([] { return renderCancelEntered.load(); },
+             "native cancellation must reach its barrier");
+        bool heartbeat = false;
+        QTimer::singleShot(0, [&heartbeat] { heartbeat = true; });
+        QCoreApplication::processEvents();
+        require(heartbeat && responsiveness.elapsed() < 500 && taskDestroys == oldTasks,
+                "blocked cancellation preserves responsive GUI events and a live task lease");
+        if (mode == 1) {
+            responsiveness.restart();
+            delete job;
+            job = nullptr;
+            require(
+                responsiveness.elapsed() < 500 && sourceDestroys == oldSources,
+                "destruction transfers pending cancellation without joining or releasing source");
+        } else {
+            const int previousPolls = renderPolls.load();
+            renderState = mode == 3 ? SNOW_RECORDING_RENDER_STATE_SUCCEEDED
+                                    : SNOW_RECORDING_RENDER_STATE_CANCELED;
+            if (mode != 2)
+                wait([&] { return renderPolls > previousPolls; },
+                     "terminal polling must run while native cancellation remains blocked");
+            require(taskDestroys == oldTasks && sourceDestroys == oldSources,
+                    "terminal observation never disposes a task borrowed by pending cancellation");
+        }
+        watchdogDone.set_value();
+        watchdog.get();
+        releaseCancel->set_value();
+        renderCancelGate = {};
+        failRenderPoll = false;
+        if (mode == 3) {
+            wait([&] { return published == 1 && sourceDestroys > oldSources; },
+                 "publication that wins cancellation must complete as a successful output");
+            require(job->state().value(QStringLiteral("render_progress")) == 100 && !job->retry() &&
+                        !job->release(false),
+                    "late cancellation cannot expose a published output as retained source");
+            delete job;
+        } else if (job) {
+            wait([&] { return job->state().value(QStringLiteral("source_retained")).toBool(); },
+                 "completed cancellation joins its task before exposing retained source actions");
+            require(job->release(false), "Keep Source must work after blocked native cancellation");
+            wait([&] { return sourceDestroys > oldSources; },
+                 "Keep Source eventually releases the preserved source handle");
+            delete job;
+        } else {
+            wait([&] { return sourceDestroys > oldSources; },
+                 "detached destruction waits for cancellation before releasing task and source");
+        }
+        require(taskDestroys == oldTasks + 1 && sourceDiscards == oldDiscards,
+                "blocked cancellation disposes exactly once and never deletes source files");
+    }
+    {
+        std::promise<void> releaseStart;
+        renderStartGate = releaseStart.get_future().share();
+        renderStartEntered = false;
+        const int oldDestroyed = sourceDestroys.load();
+        auto* job = new RecordingRenderJob(new SnowRecordingSource, false, nullptr, nullptr);
+        job->start();
+        wait([] { return renderStartEntered.load(); }, "render worker must reach controlled start");
+        QElapsedTimer destruction;
+        destruction.start();
+        delete job;
+        require(destruction.elapsed() < 500,
+                "destroying the UI must never join a pending render start");
+        releaseStart.set_value();
+        renderStartGate = {};
+        wait([&] { return sourceDestroys > oldDestroyed; },
+             "detached cleanup must release task before its preserved source");
+    }
+    {
+        RecordingRenderJob job(new SnowRecordingSource, true, nullptr, nullptr);
+        failRenderPoll = true;
+        job.start();
+        wait([&] { return job.state().value(QStringLiteral("source_retained")).toBool(); },
+             "native poll failures must cancel and retain rather than wait forever");
+        failRenderPoll = false;
+        int kept = 0;
+        job.finished = [&kept](RecordingRenderJob::Outcome outcome) {
+            kept += outcome == RecordingRenderJob::Outcome::Kept;
+        };
+        auto* modal = job.findChild<AdModal*>(QStringLiteral("screenRecordingRenderModal"));
+        require(!job.error().isEmpty() && modal && modal->isOpen(),
+                "poll errors preserve source and show a retained source view");
+        if (const QString snapshots = qEnvironmentVariable("SNOW_RECORDING_RENDER_SNAPSHOT_DIR");
+            !snapshots.isEmpty())
+            require(modal->contentWidget()->window()->grab().save(
+                        QDir(snapshots).filePath(QStringLiteral("failed.png"))),
+                    "failed rendering dialog snapshot must save");
+        modal->closeRequested(AdModal::CloseReason::Keyboard);
+        wait([&] { return kept == 1; }, "Escape in the retained view must keep source files");
+        modal->closeRequested(AdModal::CloseReason::Keyboard);
+        require(!job.release(false) && !job.release(true) && !job.retry() && kept == 1,
+                "completed modal callbacks cannot release or retry its source again");
+    }
 }
 
 int main(int argc, char** argv) {
@@ -1907,14 +2756,24 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (const QString previewFont =
+            qEnvironmentVariable("SNOW_TEST_RECORDING_SETTINGS_PREVIEW_FONT");
+        !previewFont.isEmpty()) {
+        const int fontId = QFontDatabase::addApplicationFont(previewFont);
+        require(fontId >= 0, "load recording settings preview font");
+        QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(fontId).first()));
+    }
+    if (app.arguments().contains(QStringLiteral("--render-layout-only"))) {
+        recordingRenderLayout();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--post-processing-only"))) {
+        recordingPostProcessingLifecycle();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--settings-dialog-only"))) {
-        if (const QString previewFont =
-                qEnvironmentVariable("SNOW_TEST_RECORDING_SETTINGS_PREVIEW_FONT");
-            !previewFont.isEmpty()) {
-            const int fontId = QFontDatabase::addApplicationFont(previewFont);
-            require(fontId >= 0, "load recording settings preview font");
-            QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(fontId).first()));
-        }
         recordingSettingsDialog();
         ApplicationStorage::instance().shutdown();
         return 0;
@@ -2091,6 +2950,13 @@ int main(int argc, char** argv) {
         ApplicationStorage::instance().shutdown();
         return 0;
     }
+#ifdef Q_OS_MACOS
+    if (app.arguments().contains(QStringLiteral("--effects-preview-dpi-only"))) {
+        effectsPreviewPhysicalPixels();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+#endif
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
         class KeyTranslator : public QTranslator {
           public:

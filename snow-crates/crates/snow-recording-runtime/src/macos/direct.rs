@@ -82,7 +82,7 @@ fn output_dimensions(
     );
     PixelSize::new(width, height).map_err(|e| ScreenRecorderError::InvalidConfig(e.to_string()))
 }
-fn native_config(
+pub(super) fn native_config(
     config: DirectRecordingConfig,
     cancellation: snow_macos::CancellationToken,
 ) -> Result<NativeRecordingConfig> {
@@ -94,6 +94,12 @@ fn native_config(
         config.maximum_height,
         config.format,
     )?;
+    let effects = config
+        .render_config(
+            (output.width, output.height),
+            snow_recording_model::PlaybackOverlay::None,
+        )
+        .effects;
     let audio = (config.format == ExportFormat::Mp4
         && (config.enable_microphone || config.enable_system_audio))
         .then(|| {
@@ -113,7 +119,7 @@ fn native_config(
         format: config.format,
         loop_animated_images: config.loop_animated_images,
         video: snow_recording_model::VideoEncodeConfig {
-            quality: 80,
+            quality: config.quality,
             speed: config.preset,
         },
         codec: config.codec,
@@ -124,16 +130,16 @@ fn native_config(
         },
         audio,
         effects: NativeEffectsConfig {
-            clicks: config.mouse_click_rgba[3] != 0,
-            trail: config.mouse_trail_rgba[3] != 0,
-            click_rgba: config.mouse_click_rgba,
-            trail_rgba: config.mouse_trail_rgba,
-            trail_duration_ms: config.mouse_trail_duration_ms,
-            keyboard: config.keyboard,
-            show_keyboard: config.show_keyboard,
-            record_mouse_clicks: config.record_mouse_clicks,
-            highlight_rgba: if config.show_cursor {
-                config.mouse_highlight_rgba
+            clicks: effects.mouse_click_rgba[3] != 0,
+            trail: effects.mouse_trail_rgba[3] != 0,
+            click_rgba: effects.mouse_click_rgba,
+            trail_rgba: effects.mouse_trail_rgba,
+            trail_duration_ms: effects.mouse_trail_duration_ms,
+            keyboard: effects.keyboard,
+            show_keyboard: effects.show_keyboard,
+            record_mouse_clicks: effects.record_mouse_clicks,
+            highlight_rgba: if effects.show_cursor {
+                effects.mouse_highlight_rgba
             } else {
                 [0; 4]
             },
@@ -141,16 +147,19 @@ fn native_config(
     })
 }
 enum Command {
-    Pause,
-    Resume,
-    Finish,
+    Pause(Instant),
+    Resume(Instant),
+    Finish(Instant),
 }
 pub struct DirectSession {
     config: Option<DirectRecordingConfig>,
-    commands: Option<mpsc::Sender<Command>>,
+    commands: Option<crossbeam_channel::Sender<Command>>,
     worker: Option<JoinHandle<Result<NativeRecordingReport>>>,
     state: Arc<AtomicU8>,
     cancellation: snow_macos::CancellationToken,
+    stop_requested: std::sync::atomic::AtomicBool,
+    stop_boundary: Arc<std::sync::Mutex<Option<Instant>>>,
+    control_clock: Arc<std::sync::Mutex<Option<RecordingClock>>>,
 }
 impl DirectSession {
     pub fn create(config: DirectRecordingConfig) -> Result<Self> {
@@ -169,16 +178,21 @@ impl DirectSession {
             worker: None,
             state: Arc::new(AtomicU8::new(0)),
             cancellation: Default::default(),
+            stop_requested: std::sync::atomic::AtomicBool::new(false),
+            stop_boundary: Arc::new(std::sync::Mutex::new(None)),
+            control_clock: Arc::new(std::sync::Mutex::new(None)),
         })
     }
     pub fn start(&mut self) -> Result<()> {
         let config = self.config.take().ok_or_else(|| {
             ScreenRecorderError::InvalidConfig("recording already started".into())
         })?;
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = crossbeam_channel::bounded(64);
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let state = self.state.clone();
         let cancellation = self.cancellation.clone();
+        let stop_boundary = Arc::clone(&self.stop_boundary);
+        let control_clock = Arc::clone(&self.control_clock);
         self.worker = Some(
             std::thread::Builder::new()
                 .name("snow-macos-recording".into())
@@ -187,32 +201,42 @@ impl DirectSession {
                     let result = (|| {
                         let mut recording =
                             NativeRecordingSession::start(native_config(config, cancellation)?)?;
+                        recording.set_stop_boundary(Arc::clone(&stop_boundary));
+                        *control_clock.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(recording.source_clock());
                         state.store(1, Ordering::Release);
                         let _ = ready_tx.send(());
                         loop {
+                            if let Some(at) =
+                                *stop_boundary.lock().unwrap_or_else(|e| e.into_inner())
+                            {
+                                recording.freeze_source(at);
+                                return recording.finish();
+                            }
                             let command = if recording.paused {
                                 match rx.recv_timeout(Duration::from_millis(20)) {
                                     Ok(command) => Some(command),
-                                    Err(mpsc::RecvTimeoutError::Timeout) => None,
+                                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
                                     Err(_) => return Err(ScreenRecorderError::ExportCanceled),
                                 }
                             } else {
                                 match rx.try_recv() {
                                     Ok(command) => Some(command),
-                                    Err(mpsc::TryRecvError::Empty) => None,
+                                    Err(crossbeam_channel::TryRecvError::Empty) => None,
                                     Err(_) => return Err(ScreenRecorderError::ExportCanceled),
                                 }
                             };
                             match command {
-                                Some(Command::Pause) => {
-                                    recording.pause();
-                                    state.store(2, Ordering::Release);
+                                Some(Command::Pause(at)) => {
+                                    recording.pause_capture_at(at);
                                 }
-                                Some(Command::Resume) => {
-                                    recording.resume();
-                                    state.store(1, Ordering::Release);
+                                Some(Command::Resume(_)) => {
+                                    recording.resume_capture();
                                 }
-                                Some(Command::Finish) => return recording.finish(),
+                                Some(Command::Finish(at)) => {
+                                    recording.freeze_source(at);
+                                    return recording.finish();
+                                }
                                 None => {}
                             }
                             if let Err(error) = recording.step(Duration::from_millis(20)) {
@@ -235,14 +259,47 @@ impl DirectSession {
         self.commands
             .as_ref()
             .ok_or_else(|| ScreenRecorderError::InvalidConfig("recording has not started".into()))?
-            .send(command)
+            .try_send(command)
             .map_err(|_| ScreenRecorderError::Encode("recording worker stopped".into()))
     }
     pub fn pause(&self) -> Result<()> {
-        self.send(Command::Pause)
+        self.transition(1, 2)
     }
     pub fn resume(&self) -> Result<()> {
-        self.send(Command::Resume)
+        self.transition(2, 1)
+    }
+    fn transition(&self, from: u8, to: u8) -> Result<()> {
+        let control = self.control_clock.lock().unwrap_or_else(|e| e.into_inner());
+        let sender = self.commands.as_ref().ok_or_else(|| {
+            ScreenRecorderError::InvalidConfig("recording has not started".into())
+        })?;
+        if self.stop_requested.load(Ordering::Acquire) || self.state.load(Ordering::Acquire) != from
+        {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "invalid recording state transition".into(),
+            ));
+        }
+        if sender.is_full() {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "recording control queue is full".into(),
+            ));
+        }
+        let at = Instant::now();
+        let command = if to == 2 {
+            Command::Pause(at)
+        } else {
+            Command::Resume(at)
+        };
+        if let Some(clock) = control.as_ref() {
+            match command {
+                Command::Pause(at) => clock.controller().mark_pause(at),
+                Command::Resume(at) => clock.controller().mark_resume(at),
+                _ => {}
+            }
+        }
+        self.send(command)?;
+        self.state.store(to, Ordering::Release);
+        Ok(())
     }
     pub fn state(&self) -> RecordingState {
         match self.state.load(Ordering::Acquire) {
@@ -253,8 +310,25 @@ impl DirectSession {
         }
     }
     pub fn stop(mut self) -> Result<NativeRecordingReport> {
-        let _ = self.send(Command::Finish);
+        self.request_stop()?;
         self.join()
+    }
+    pub fn request_stop(&self) -> Result<()> {
+        let control = self.control_clock.lock().unwrap_or_else(|e| e.into_inner());
+        if self.commands.is_none() {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "recording has not started".into(),
+            ));
+        }
+        if !self.stop_requested.swap(true, Ordering::AcqRel) {
+            let at = Instant::now();
+            if let Some(clock) = control.as_ref() {
+                clock.controller().mark_pause(at);
+            }
+            *self.stop_boundary.lock().unwrap_or_else(|e| e.into_inner()) = Some(at);
+            let _ = self.send(Command::Finish(at));
+        }
+        Ok(())
     }
     fn join(&mut self) -> Result<NativeRecordingReport> {
         self.worker

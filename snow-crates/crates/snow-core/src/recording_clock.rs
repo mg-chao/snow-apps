@@ -7,6 +7,14 @@ pub struct PauseInterval {
     pub end_ms: u64,
 }
 
+/// One precise wall-clock interval belonging to active recording.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActiveRecordingSpan {
+    pub start: Instant,
+    pub end: Instant,
+    pub timeline_start: Duration,
+}
+
 #[derive(Debug)]
 struct RecordingClockState {
     started_at: Instant,
@@ -113,6 +121,43 @@ impl RecordingClock {
                 .any(|(start, end)| at >= *start && at < *end)
     }
 
+    /// Visits active portions of `[start, end)` using one consistent clock snapshot.
+    /// The visitor runs under the clock lock and must not call back into this clock.
+    pub fn visit_active_spans(
+        &self,
+        start: Instant,
+        end: Instant,
+        mut visit: impl FnMut(ActiveRecordingSpan),
+    ) {
+        let state = self.inner.lock().unwrap();
+        let end = state.pause_started_at.map_or(end, |paused| end.min(paused));
+        let mut cursor = start.max(state.started_at);
+        for (paused, resumed) in &state.precise_intervals {
+            if cursor >= end {
+                return;
+            }
+            if *resumed <= cursor {
+                continue;
+            }
+            if cursor < *paused {
+                let span_end = end.min(*paused);
+                visit(ActiveRecordingSpan {
+                    start: cursor,
+                    end: span_end,
+                    timeline_start: state.active_elapsed_duration(cursor),
+                });
+            }
+            cursor = cursor.max(*resumed);
+        }
+        if cursor < end {
+            visit(ActiveRecordingSpan {
+                start: cursor,
+                end,
+                timeline_start: state.active_elapsed_duration(cursor),
+            });
+        }
+    }
+
     pub fn active_elapsed_from_stream_offset(&self, offset: Duration) -> Duration {
         let started_at = self.started_at();
         let at = started_at.checked_add(offset).unwrap_or(started_at);
@@ -209,5 +254,47 @@ mod tests {
             assert_eq!(clock.active_elapsed_ms(at), media);
             assert_eq!(clock.is_active_at(at), active);
         }
+    }
+
+    #[test]
+    fn active_spans_clip_startup_pauses_and_an_open_stop_boundary_precisely() {
+        let start = Instant::now();
+        let clock = RecordingClock::new(start);
+        let controller = clock.controller();
+        controller.mark_pause(start);
+        controller.mark_resume(start + Duration::from_micros(2_500));
+        controller.mark_pause(start + Duration::from_micros(7_500));
+        controller.mark_resume(start + Duration::from_micros(12_500));
+        controller.mark_pause(start + Duration::from_micros(17_500));
+        let mut spans = Vec::new();
+        clock.visit_active_spans(start, start + Duration::from_millis(30), |span| {
+            spans.push((
+                span.start.duration_since(start),
+                span.end.duration_since(start),
+                span.timeline_start,
+            ));
+        });
+        assert_eq!(
+            spans,
+            [
+                (
+                    Duration::from_micros(2_500),
+                    Duration::from_micros(7_500),
+                    Duration::ZERO,
+                ),
+                (
+                    Duration::from_micros(12_500),
+                    Duration::from_micros(17_500),
+                    Duration::from_millis(5),
+                ),
+            ]
+        );
+        let mut count = 0;
+        clock.visit_active_spans(
+            start + Duration::from_millis(20),
+            start + Duration::from_millis(30),
+            |_| count += 1,
+        );
+        assert_eq!(count, 0);
     }
 }

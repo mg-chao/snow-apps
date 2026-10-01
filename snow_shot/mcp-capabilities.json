@@ -250,6 +250,7 @@
         "animated_clarity",
         "encoder",
         "encoding_preset",
+        "quality",
         "loop",
         "capture_toolbar",
         "show_cursor",
@@ -262,7 +263,10 @@
         "keyboard_foreground",
         "mouse_trail",
         "mouse_click",
-        "mouse_highlight_color"
+        "mouse_highlight_color",
+        "post_processing",
+        "post_processing_effect",
+        "progress_bar_color"
       ]
     },
     "settings_shortcut_adjustments": {

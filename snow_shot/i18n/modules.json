@@ -71,6 +71,7 @@
   ],
   "recording": [
     "RecordingEffectPreview",
+    "RecordingRenderDialog",
     "RecordingKeyboardLabels",
     "ScreenRecordingSettingsDialog",
     "ScreenRecordingController"

@@ -50,6 +50,7 @@ pub struct SnowRecordingEffectsConfig {
     pub keyboard_font_family_utf8: *const c_char,
     pub keyboard_cjk_font_family_utf8: *const c_char,
     pub keyboard_font_weight: u32,
+    pub canvas_scale: f64,
 }
 #[repr(C)]
 pub struct SnowRecordingEffectsTile {
@@ -93,7 +94,8 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
         1 | 2 => std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
         3 => std::mem::offset_of!(SnowRecordingEffectsConfig, highlight_rgba),
         4 => std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_font_family_utf8),
-        5 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
+        5 => std::mem::offset_of!(SnowRecordingEffectsConfig, canvas_scale),
+        6 => std::mem::size_of::<SnowRecordingEffectsConfig>(),
         _ => return Err("unsupported effects configuration version".into()),
     };
     if unsafe { *header.add(1) } != size as u32 {
@@ -104,6 +106,14 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
         std::ptr::copy_nonoverlapping(raw.cast::<u8>(), (&raw mut value).cast::<u8>(), size);
     }
     let raw = &value;
+    let canvas_scale = if raw.version >= 6 {
+        raw.canvas_scale
+    } else {
+        1.0
+    };
+    if !canvas_scale.is_finite() || canvas_scale <= 0.0 {
+        return Err("invalid preview canvas scale".into());
+    }
     if raw.show_keyboard > 1
         || (raw.version >= 4 && raw.record_mouse_clicks > 1)
         || (raw.version == 1 && raw.trail_duration_ms != 0)
@@ -131,6 +141,10 @@ unsafe fn config(raw: *const SnowRecordingEffectsConfig) -> Result<PreviewConfig
     }
     let value = PreviewConfig {
         region: (raw.x, raw.y, raw.width, raw.height),
+        canvas: (
+            (f64::from(raw.width) * canvas_scale).round() as u32,
+            (f64::from(raw.height) * canvas_scale).round() as u32,
+        ),
         output: (raw.output_width, raw.output_height),
         trail: raw.trail_rgba.to_be_bytes(),
         trail_duration_ms: if raw.version == 1 {
@@ -344,7 +358,7 @@ pub unsafe extern "C" fn snow_recording_effects_frame_info(
     };
     1
 }
-/// Keyboard tiles are a separate, complete layer in native composition coordinates.
+/// Keyboard tiles are a separate, complete layer in desktop capture coordinates.
 /// Both layer views borrow the same immutable frame lease.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_recording_effects_frame_keyboard_info(
@@ -379,6 +393,59 @@ pub extern "C" fn snow_recording_effects_last_error() -> *const c_char {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn preview_canvas_scale_preserves_desktop_input_units_and_legacy_configs() {
+        let mut raw = valid();
+        raw.width = 641;
+        raw.height = 479;
+        for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+            raw.canvas_scale = scale;
+            let parsed = unsafe { config(&raw) }.unwrap();
+            assert_eq!(parsed.region, (-1920, -100, 641, 479));
+            assert_eq!(parsed.output, (1280, 720));
+            assert_eq!(
+                parsed.canvas,
+                (
+                    (641.0 * scale).round() as u32,
+                    (479.0 * scale).round() as u32
+                )
+            );
+        }
+        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY, 100.0, 0.00001] {
+            raw.canvas_scale = scale;
+            assert!(unsafe { config(&raw) }.is_err());
+        }
+        for (version, size) in [
+            (
+                1,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
+            ),
+            (
+                2,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_size),
+            ),
+            (
+                3,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, highlight_rgba),
+            ),
+            (
+                4,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, keyboard_font_family_utf8),
+            ),
+            (
+                5,
+                std::mem::offset_of!(SnowRecordingEffectsConfig, canvas_scale),
+            ),
+        ] {
+            raw.version = version;
+            raw.struct_size = size as u32;
+            raw.trail_duration_ms = if version == 1 { 0 } else { 500 };
+            raw.canvas_scale = f64::NAN;
+            let parsed = unsafe { config(&raw) }.unwrap();
+            assert_eq!(parsed.canvas, (641, 479));
+        }
+    }
+
     #[test]
     fn keyboard_font_is_owned_validated_and_legacy_compatible() {
         let mut raw = valid();
@@ -450,7 +517,7 @@ mod tests {
 
     fn valid() -> SnowRecordingEffectsConfig {
         SnowRecordingEffectsConfig {
-            version: 5,
+            version: 6,
             struct_size: std::mem::size_of::<SnowRecordingEffectsConfig>() as u32,
             x: -1920,
             y: -100,
@@ -475,6 +542,7 @@ mod tests {
             keyboard_font_family_utf8: std::ptr::null(),
             keyboard_cjk_font_family_utf8: std::ptr::null(),
             keyboard_font_weight: 0,
+            canvas_scale: 1.0,
         }
     }
     #[test]
@@ -570,7 +638,8 @@ mod tests {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (sender, receiver) = std::sync::mpsc::channel::<()>();
-        let raw = valid();
+        let mut raw = valid();
+        raw.canvas_scale = 1.5;
         let handle = unsafe {
             snow_recording_effects_create(&raw, Some(notify), (&raw const sender).cast_mut().cast())
         };
@@ -594,7 +663,7 @@ mod tests {
         );
         let info = unsafe { info.assume_init() };
         assert_eq!(info.generation, 12);
-        assert_eq!((info.width, info.height), (1280, 720));
+        assert_eq!((info.width, info.height), (2880, 1620));
         assert_eq!(info.tile_count, 0);
         assert!(info.error_utf8.is_null());
         let mut keyboard = std::mem::MaybeUninit::uninit();
@@ -604,10 +673,7 @@ mod tests {
         );
         let keyboard = unsafe { keyboard.assume_init() };
         assert_eq!(keyboard.generation, 12);
-        #[cfg(target_os = "macos")]
-        assert_eq!((keyboard.width, keyboard.height), (1280, 720));
-        #[cfg(not(target_os = "macos"))]
-        assert_eq!((keyboard.width, keyboard.height), (1920, 1080));
+        assert_eq!((keyboard.width, keyboard.height), (2880, 1620));
         assert_eq!(keyboard.tile_count, 0);
         assert_eq!(
             unsafe { snow_recording_effects_frame_keyboard_info(frame, std::ptr::null_mut()) },

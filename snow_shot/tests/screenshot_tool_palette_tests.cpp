@@ -493,6 +493,149 @@ void recordingCursorOptionsAreIndependentAndLazy() {
             "busy recording must dismiss and disable cursor options");
 }
 
+void recordingPostProcessingOptionsBindState() {
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    options.enableStyleToolbar = true;
+    ScreenshotToolPalette palette(options);
+    auto* exportSettings = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingExportSettings"));
+    require(exportSettings != nullptr, "recording must expose Export Settings");
+    exportSettings->click();
+    palette.show();
+    palette.prepareForDisplay();
+    QCoreApplication::processEvents();
+    auto* button = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingPostProcessing"));
+    auto* keyboard =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowKeyboard"));
+    auto* separator =
+        palette.findChild<QFrame*>(QStringLiteral("screenRecordingExportSettingsSeparator"));
+    auto* popover = palette.findChild<adqt::widgets::AdPopover*>(
+        QStringLiteral("screenRecordingPostProcessingPopover"));
+    require(button && keyboard && separator && popover && !popover->contentWidget(),
+            "post-processing must expose an icon button with lazy options");
+    require(button->text().isEmpty() && button->isCheckable() && !button->isChecked() &&
+                button->x() > keyboard->x() && separator->x() > button->x() &&
+                button->height() == keyboard->height(),
+            "post-processing must follow the keystroke button within the same control group");
+    require(popover->sourceWidget() == button &&
+                popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
+                popover->placement() == adqt::widgets::AdPopover::Placement::Bottom &&
+                popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool,
+            "post-processing must use a downward native hover popover");
+    keyboard->click();
+    button->click();
+    for (const bool hovered : {false, true}) {
+        keyboard->setAttribute(Qt::WA_UnderMouse, hovered);
+        button->setAttribute(Qt::WA_UnderMouse, hovered);
+        require(buttonBackgroundSample(*button) == buttonBackgroundSample(*keyboard),
+                "post-processing must match the keystroke button's active and hovered backgrounds");
+    }
+    keyboard->setAttribute(Qt::WA_UnderMouse, false);
+    button->setAttribute(Qt::WA_UnderMouse, false);
+    keyboard->click();
+    button->click();
+    require(buttonBackgroundSample(*button) == buttonBackgroundSample(*keyboard),
+            "post-processing must also match the inactive keystroke button background");
+    const QPoint previousCursor = QCursor::pos();
+    const auto restoreCursor = qScopeGuard([&] { QCursor::setPos(previousCursor); });
+    const QPoint local = button->rect().center();
+    QCursor::setPos(button->mapToGlobal(local));
+    QEventLoop loop;
+    QObject::connect(popover, &adqt::widgets::AdPopover::visibleChanged, &loop,
+                     [&loop](bool visible) {
+                         if (visible)
+                             loop.quit();
+                     });
+    QEnterEvent enter(local, button->mapTo(button->window(), local), button->mapToGlobal(local));
+    QCoreApplication::sendEvent(button, &enter);
+    QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+    if (!popover->isVisible())
+        loop.exec();
+    require(popover->isVisible() && popover->contentWidget(),
+            "hovering the post-processing button must open its options");
+    // Hover opening was verified above. Keep the options explicitly open while
+    // scale changes move the trigger and language delivery drains hover events.
+    popover->show();
+    QPointer<adqt::widgets::AdRadio> progress =
+        popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
+            QStringLiteral("screenRecordingShowProgressBar"));
+    QPointer<adqt::widgets::AdRadio> playback =
+        popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
+            QStringLiteral("screenRecordingShowPlaybackTime"));
+    require(progress && playback && progress->isChecked() && !playback->isChecked(),
+            "progress bar must be the initial radio choice");
+    require(popover->contentWidget()->layout()->count() == 2,
+            "post-processing options must show only the two effect choices");
+    const QString snapshots = qEnvironmentVariable("SNOW_RECORDING_UI_SNAPSHOT_DIR");
+    if (!snapshots.isEmpty()) {
+        QDir().mkpath(snapshots);
+        require(palette.grab().save(QDir(snapshots).filePath(QStringLiteral("export-row.png"))) &&
+                    popover->contentWidget()->window()->grab().save(
+                        QDir(snapshots).filePath(QStringLiteral("post-processing-options.png"))),
+                "save the post-processing toolbar and popover fixtures");
+    }
+    const auto configuration =
+        snow_shot::storage::ApplicationStorage::instance().configuration().snapshot();
+    button->click();
+    playback->click();
+    require(button->isChecked() && playback->isChecked() && !progress->isChecked() &&
+                palette.recordingCursorVisible() && !palette.recordingKeyboardVisible() &&
+                snow_shot::storage::ApplicationStorage::instance().configuration().snapshot() ==
+                    configuration,
+            "palette state and exclusive effect choice must match without owning persistence");
+    require(palette.recordingPostProcessingEnabled() &&
+                palette.recordingPostProcessingEffect() == QStringLiteral("playback_time"),
+            "post-processing controls must expose their effective state");
+    palette.setRecordingPostProcessingEffect(QStringLiteral("progress_bar"));
+    require(progress->isChecked() && !playback->isChecked(),
+            "controller updates must reconcile already-open post-processing options");
+    palette.setRecordingPostProcessingEffect(QStringLiteral("playback_time"));
+    require(palette.setPhysicalScale(1.5), "post-processing scale change must apply");
+    require(button->height() == keyboard->height() && progress->font().pixelSize() == 21 &&
+                popover->contentWidget()->layout()->spacing() == 12,
+            "post-processing button and radio options must follow toolbar scale");
+    require(palette.setPhysicalScale(1.0), "restore the recording toolbar scale");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    const QStringList locales{QStringLiteral("en_US"), QStringLiteral("zh_CN"),
+                              QStringLiteral("zh_TW")};
+    for (const auto& locale : locales) {
+        require(language.setLanguage(locale), "post-processing translation catalog must load");
+        QCoreApplication::processEvents();
+        const auto translated = [](const char* source) {
+            return QCoreApplication::translate("ScreenshotToolPalette", source);
+        };
+        require(progress && playback &&
+                    button->accessibleName() == translated("Post-processing effects") &&
+                    button->toolTip() == translated("Post-processing effects") &&
+                    progress->text() == translated("Show Progress Bar") &&
+                    progress->accessibleName() == translated("Show Progress Bar") &&
+                    playback->text() == translated("Show Playback Time") &&
+                    playback->accessibleName() == translated("Show Playback Time") &&
+                    playback->isChecked(),
+                "language changes must retranslate options and preserve their choice");
+    }
+    require(language.setLanguage(QStringLiteral("en_US")), "restore English recording labels");
+    popover->hide();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!popover->contentWidget() && !progress && !playback,
+            "hiding post-processing must release its options and invalidate widget handles");
+    popover->show();
+    playback = popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
+        QStringLiteral("screenRecordingShowPlaybackTime"));
+    require(playback && playback->isChecked() && button->isChecked(),
+            "reopening the popover must retain the UI draft");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    require(!popover->isVisible() && !popover->contentWidget(),
+            "switching tools must dismiss post-processing options");
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::starting());
+    require(!button->isEnabled() && !popover->isEnabled(),
+            "busy recording must lock post-processing controls");
+}
+
 void recordingEffectSettingsModal() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = true;
@@ -567,6 +710,7 @@ void recordingEffectSettingsModal() {
         adqt::widgets::AdInputNumber* keyboardSize = nullptr;
         adqt::widgets::AdColorPicker* background = nullptr;
         adqt::widgets::AdColorPicker* foreground = nullptr;
+        adqt::widgets::AdColorPicker* progressBar = nullptr;
     };
     // Every open rebuilds the dialog, so pointers must be re-acquired and never
     // cached across a close.
@@ -598,14 +742,18 @@ void recordingEffectSettingsModal() {
             QStringLiteral("screenRecordingKeyboardBackgroundColor"));
         settings.foreground = settings.form->findChild<adqt::widgets::AdColorPicker*>(
             QStringLiteral("screenRecordingKeyboardForegroundColor"));
+        settings.progressBar = settings.form->findChild<adqt::widgets::AdColorPicker*>(
+            QStringLiteral("screenRecordingProgressBarColor"));
         require(settings.duration && settings.keyboardSize && settings.background &&
-                    settings.foreground,
+                    settings.foreground && settings.progressBar,
                 "the rebuilt form must expose every effect control");
         return settings;
     };
 
     QWidget recordingOwner;
     recordingOwner.setGeometry(40, 40, 600, 500);
+    recordingOwner.move(QGuiApplication::primaryScreen()->availableGeometry().center() -
+                        recordingOwner.rect().center());
     recordingOwner.show();
     palette.setRecordingSettingsOwnerWindow(&recordingOwner);
     const Settings opened = openSettings();
@@ -673,6 +821,29 @@ void recordingEffectSettingsModal() {
     const QRect first = form->field(QStringLiteral("duration"))->geometry();
     const QRect left = form->field(QStringLiteral("background"))->geometry();
     const QRect right = form->field(QStringLiteral("foreground"))->geometry();
+    const QRect progressBar = form->field(QStringLiteral("progressBarColor"))->geometry();
+    require(progressBar.top() > form->field(QStringLiteral("highlightColor"))->geometry().top() &&
+                progressBar.width() == form->width() && opened.progressBar->width() == 154 &&
+                opened.progressBar->triggerTextVisible() &&
+                opened.progressBar->value().solidColor == QColor(22, 119, 255),
+            "progress bar color must use a final full-width form row with the existing picker");
+    const auto configuration =
+        snow_shot::storage::ApplicationStorage::instance().configuration().snapshot();
+    opened.progressBar->commitValue(adqt::widgets::AdColorValue::solid(QColor(20, 100, 200, 128)));
+    require(snow_shot::storage::ApplicationStorage::instance().configuration().snapshot() ==
+                configuration,
+            "progress bar color must not write recording configuration");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const auto& locale :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(language.setLanguage(locale), "progress bar color translation catalog must load");
+        QCoreApplication::processEvents();
+        const auto label =
+            QCoreApplication::translate("ScreenshotToolPalette", "Progress Bar Color");
+        require(form->field(QStringLiteral("progressBarColor"))->label() == label &&
+                    opened.progressBar->accessibleName() == label,
+                "progress bar color label and accessible name must retranslate in place");
+    }
     require(first.width() == form->width() && left.top() > first.top() &&
                 left.top() == right.top() && left.width() == right.width() &&
                 right.left() - left.right() - 1 == 16 && left.width() == 218 &&
@@ -752,7 +923,8 @@ void recordingEffectSettingsModal() {
     const Settings reopened = openSettings();
     require(reopened.duration->value() == 1200 && reopened.keyboardSize->value() == 48 &&
                 reopened.background->value().solidColor == QColor(40, 80, 120, 128) &&
-                reopened.foreground->value().solidColor == QColor(Qt::white),
+                reopened.foreground->value().solidColor == QColor(Qt::white) &&
+                reopened.progressBar->value().solidColor == QColor(20, 100, 200, 128),
             "reopening settings must re-seed every value from the palette state");
     require(changes == changesBeforeRebuild && sizeChanges == sizeChangesBeforeRebuild &&
                 backgroundChanges == backgroundChangesBeforeRebuild &&
@@ -13146,6 +13318,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
         recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
         recordingCursorOptionsAreIndependentAndLazy();
+        recordingPostProcessingOptionsBindState();
         recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
@@ -13328,6 +13501,7 @@ int main(int argc, char** argv) {
     }
     colorPresetEditorsPreserveCommandsAcrossRebinding();
     recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
+    recordingPostProcessingOptionsBindState();
     recordingControlsRemainLaidOutAcrossStateChanges();
     translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();

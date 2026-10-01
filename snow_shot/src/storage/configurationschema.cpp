@@ -449,6 +449,15 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("screen_recording/keyboard_foreground_color"), QStringLiteral("#FFFFFFFF"),
      ConfigurationValueKind::String},
     {QStringLiteral("screen_recording/show_keyboard"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/post_processing_enabled"), false,
+     ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/post_processing_effect"),
+     QStringLiteral("progress_bar"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("progress_bar"), QStringLiteral("playback_time")}},
+    {QStringLiteral("screen_recording/progress_bar_color"), QStringLiteral("#1677FFFF"),
+     ConfigurationValueKind::String},
     {QStringLiteral("screen_recording/show_cursor"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/mouse_highlight_enabled"), false,
      ConfigurationValueKind::Boolean},
@@ -1556,6 +1565,7 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screen_recording/mouse_trail_color") ||
            key == QStringLiteral("screen_recording/mouse_click_color") ||
            key == QStringLiteral("screen_recording/mouse_highlight_color") ||
+           key == QStringLiteral("screen_recording/progress_bar_color") ||
            key == QStringLiteral("screen_recording/keyboard_background_color") ||
            key == QStringLiteral("screen_recording/keyboard_foreground_color");
 }

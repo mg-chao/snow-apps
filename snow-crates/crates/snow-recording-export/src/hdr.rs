@@ -3,6 +3,17 @@ use crate::error::{RecordingExportError, Result};
 use ffmpeg_next as ffmpeg;
 use rayon::prelude::*;
 
+/// Whether the selected output retains HDR rather than requiring SDR pixels.
+/// Native capture capability checks remain separate: live HDR capture currently
+/// requires this policy to be true; decoded exports can also tone-map SDR.
+pub fn preserves_hdr_output(
+    source_hdr: bool,
+    format: crate::ExportFormat,
+    codec: crate::VideoCodec,
+) -> bool {
+    source_hdr && format == crate::ExportFormat::Mp4 && codec == crate::VideoCodec::H265
+}
+
 pub(crate) fn pixel_format(codec: ffmpeg::codec::Video) -> Result<ffmpeg::format::Pixel> {
     use ffmpeg::format::Pixel;
     let formats: Vec<_> = codec.formats().map(|f| f.collect()).unwrap_or_default();
@@ -181,6 +192,24 @@ impl ToneMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hdr_retention_requires_hdr_source_and_main10_mp4_selection() {
+        for format in [
+            crate::ExportFormat::Mp4,
+            crate::ExportFormat::Avi,
+            crate::ExportFormat::Gif,
+            crate::ExportFormat::Apng,
+            crate::ExportFormat::Webp,
+        ] {
+            for codec in [crate::VideoCodec::H264, crate::VideoCodec::H265] {
+                assert!(!preserves_hdr_output(false, format, codec));
+                assert_eq!(
+                    preserves_hdr_output(true, format, codec),
+                    format == crate::ExportFormat::Mp4 && codec == crate::VideoCodec::H265
+                );
+            }
+        }
+    }
     #[test]
     fn padded_hdr_rows_are_tone_mapped_without_touching_padding() {
         ffmpeg::init().unwrap();

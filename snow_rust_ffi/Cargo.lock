@@ -1352,6 +1352,7 @@ dependencies = [
  "crossbeam-channel",
  "snow-core",
  "snow-macos",
+ "snow-recording-model",
  "windows",
 ]
 
@@ -1366,6 +1367,7 @@ dependencies = [
 name = "snow-recording-export"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "crossbeam-channel",
  "ffmpeg-next",
  "num_cpus",
@@ -1375,6 +1377,7 @@ dependencies = [
  "snow-core",
  "snow-d3d11",
  "snow-media",
+ "snow-recording-effects",
  "snow-recording-model",
  "tempfile",
  "thiserror",

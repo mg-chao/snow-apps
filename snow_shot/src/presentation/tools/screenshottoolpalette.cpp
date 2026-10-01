@@ -1577,6 +1577,7 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
     updateRecordingExportSettingsControls();
     refreshRecordingMouseOptions();
     updateRecordingControlMetrics();
+    refreshRecordingPostProcessingOptions();
 }
 
 void ScreenshotToolPalette::updatePenFilterStrokeWidthControls() {
@@ -2195,6 +2196,37 @@ QColor ScreenshotToolPalette::recordingMouseHighlightColor() const {
     return m_recordingMouseHighlightColor;
 }
 
+void ScreenshotToolPalette::setRecordingPostProcessingEnabled(bool enabled) {
+    m_recordPostProcessingEnabled = enabled;
+    if (m_recordPostProcessingButton) {
+        const QSignalBlocker blocker(m_recordPostProcessingButton);
+        m_recordPostProcessingButton->setChecked(enabled);
+        setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton, enabled);
+    }
+}
+bool ScreenshotToolPalette::recordingPostProcessingEnabled() const {
+    return m_recordPostProcessingEnabled;
+}
+void ScreenshotToolPalette::setRecordingPostProcessingEffect(const QString& effect) {
+    m_recordPlaybackTimeSelected = effect == QStringLiteral("playback_time");
+    refreshRecordingPostProcessingOptions();
+}
+QString ScreenshotToolPalette::recordingPostProcessingEffect() const {
+    return m_recordPlaybackTimeSelected ? QStringLiteral("playback_time")
+                                        : QStringLiteral("progress_bar");
+}
+void ScreenshotToolPalette::setRecordingProgressBarColor(const QColor& color) {
+    m_recordProgressBarColor = color.isValid() ? color : QColor(22, 119, 255);
+    if (m_recordProgressBarColorPicker) {
+        const QSignalBlocker blocker(m_recordProgressBarColorPicker);
+        m_recordProgressBarColorPicker->setValue(
+            adqt::widgets::AdColorValue::solid(m_recordProgressBarColor));
+    }
+}
+QColor ScreenshotToolPalette::recordingProgressBarColor() const {
+    return m_recordProgressBarColor;
+}
+
 void ScreenshotToolPalette::refreshRecordingMouseOptions() {
     if (!m_recordHighlightCheckbox || !m_recordClicksCheckbox) {
         return;
@@ -2218,6 +2250,34 @@ void ScreenshotToolPalette::refreshRecordingMouseOptions() {
         checkbox->setFont(textFont);
     }
     if (auto* content = m_recordCursorPopover->contentWidget()) {
+        content->layout()->setSpacing(scaledMetric(8));
+    }
+}
+
+void ScreenshotToolPalette::refreshRecordingPostProcessingOptions() {
+    if (!m_recordProgressBarRadio || !m_recordPlaybackTimeRadio) {
+        return;
+    }
+    const QSignalBlocker progressBlocker(m_recordProgressBarRadio);
+    const QSignalBlocker playbackBlocker(m_recordPlaybackTimeRadio);
+    m_recordProgressBarRadio->setText(tr("Show Progress Bar"));
+    m_recordProgressBarRadio->setAccessibleName(tr("Show Progress Bar"));
+    m_recordPlaybackTimeRadio->setText(tr("Show Playback Time"));
+    m_recordPlaybackTimeRadio->setAccessibleName(tr("Show Playback Time"));
+    m_recordProgressBarRadio->setChecked(!m_recordPlaybackTimeSelected);
+    m_recordPlaybackTimeRadio->setChecked(m_recordPlaybackTimeSelected);
+    for (auto* radio : {m_recordProgressBarRadio.data(), m_recordPlaybackTimeRadio.data()}) {
+        auto tokens = adqt::widgets::AdRadio::ComponentTokens{};
+        tokens.metrics.radioSize = scaledMetric(16);
+        tokens.metrics.dotSize = scaledMetric(8);
+        tokens.metrics.labelPaddingInlineStart = scaledMetric(8);
+        tokens.metrics.textLineHeight = scaledMetric(22);
+        radio->setComponentTokens(tokens);
+        QFont textFont = font();
+        textFont.setPixelSize(scaledMetric(14));
+        radio->setFont(textFont);
+    }
+    if (auto* content = m_recordPostProcessingPopover->contentWidget()) {
         content->layout()->setSpacing(scaledMetric(8));
     }
 }
@@ -3263,6 +3323,12 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                                                   "Show keystrokes in recording",
                                                   styleButtonMetrics(m_physicalScale));
     }
+    if (m_recordPostProcessingButton != nullptr) {
+        configureScreenshotToolPaletteStyleButton(m_recordPostProcessingButton,
+                                                  "Post-processing effects",
+                                                  styleButtonMetrics(m_physicalScale));
+    }
+    refreshRecordingPostProcessingOptions();
     if (m_recordPreferencesButton != nullptr) {
         configureScreenshotToolPaletteStyleButton(m_recordPreferencesButton, "Recording settings",
                                                   styleButtonMetrics(m_physicalScale));
@@ -6110,6 +6176,52 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingKeyboard(), styleButtonMetrics(m_physicalScale));
     m_recordKeyboardButton->setObjectName(QStringLiteral("screenRecordingShowKeyboard"));
     layout->addWidget(m_recordKeyboardButton);
+    m_recordPostProcessingButton = createScreenshotToolPaletteStyleActionButton(
+        m_recordExportSettingsPanel, "Post-processing effects",
+        custom_outlined_icons::RecordingPostProcessing(), styleButtonMetrics(m_physicalScale));
+    m_recordPostProcessingButton->setObjectName(QStringLiteral("screenRecordingPostProcessing"));
+    m_recordPostProcessingButton->setCheckable(true);
+    m_recordPostProcessingButton->setChecked(m_recordPostProcessingEnabled);
+    m_recordPostProcessingButton->setCheckedUsesActiveStyle(false);
+    layout->addWidget(m_recordPostProcessingButton);
+    connect(m_recordPostProcessingButton, &adqt::widgets::AdButton::toggled, this,
+            [this](bool checked) {
+                m_recordPostProcessingEnabled = checked;
+                setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton, checked);
+                emit recordingPostProcessingEnabledChanged(checked);
+            });
+    m_recordPostProcessingPopover = new adqt::widgets::AdPopover(m_recordPostProcessingButton);
+    m_recordPostProcessingPopover->setObjectName(
+        QStringLiteral("screenRecordingPostProcessingPopover"));
+    m_recordPostProcessingPopover->setSourceWidget(m_recordPostProcessingButton);
+    m_recordPostProcessingPopover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    m_recordPostProcessingPopover->setPlacement(adqt::widgets::AdPopover::Placement::Bottom);
+    m_recordPostProcessingPopover->setPopupLayerMode(
+        adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    m_recordPostProcessingPopover->setContentFactory(
+        [this]() -> QWidget* {
+            auto* content = new QWidget;
+            content->setObjectName(QStringLiteral("screenRecordingPostProcessingOptions"));
+            auto* options = new QVBoxLayout(content);
+            options->setContentsMargins(0, 0, 0, 0);
+            options->setSpacing(scaledMetric(8));
+            m_recordProgressBarRadio = new adqt::widgets::AdRadio(content);
+            m_recordProgressBarRadio->setObjectName(
+                QStringLiteral("screenRecordingShowProgressBar"));
+            m_recordPlaybackTimeRadio = new adqt::widgets::AdRadio(content);
+            m_recordPlaybackTimeRadio->setObjectName(
+                QStringLiteral("screenRecordingShowPlaybackTime"));
+            options->addWidget(m_recordProgressBarRadio);
+            options->addWidget(m_recordPlaybackTimeRadio);
+            refreshRecordingPostProcessingOptions();
+            connect(m_recordPlaybackTimeRadio, &QAbstractButton::toggled, this,
+                    [this](bool checked) {
+                        m_recordPlaybackTimeSelected = checked;
+                        emit recordingPostProcessingEffectChanged(recordingPostProcessingEffect());
+                    });
+            return content;
+        },
+        adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
     addSeparator(QStringLiteral("screenRecordingExportSettingsSeparator"));
     m_recordDelayButton = createScreenshotToolPaletteRecordingDelayEditor(
         m_recordExportSettingsPanel, "Delay recording (scroll to adjust)",
@@ -6242,6 +6354,10 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
                 if (m_recordHighlightColorPicker) {
                     m_recordHighlightColorPicker->setPopupVisible(false);
                 }
+                if (m_recordProgressBarColorPicker) {
+                    m_recordProgressBarColorPicker->setPopupVisible(false);
+                }
+                m_recordProgressBarColorPicker = nullptr;
                 m_recordHighlightColorPicker = nullptr;
                 m_recordHighlightSwatch = nullptr;
                 m_recordSettingsModal = nullptr;
@@ -6364,6 +6480,16 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
                     emit recordingMouseHighlightColorChanged(m_recordingMouseHighlightColor);
                 }
             });
+    m_recordProgressBarColorPicker = addKeyboardPicker(
+        QStringLiteral("screenRecordingProgressBarColor"), tr("Progress Bar Color"),
+        QStringLiteral("progressBarColor"), m_recordProgressBarColor);
+    connect(m_recordProgressBarColorPicker, &adqt::widgets::AdColorPicker::valueChanged, this,
+            [this](const adqt::widgets::AdColorValue& value) {
+                if (value.isSolid() && value.solidColor.isValid()) {
+                    setRecordingProgressBarColor(value.solidColor);
+                    emit recordingProgressBarColorChanged(m_recordProgressBarColor);
+                }
+            });
     for (auto* item : form->items()) {
         item->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     }
@@ -6373,6 +6499,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     form->field(QStringLiteral("foreground"))->setFixedWidth(kRecordingSettingsColumnWidth);
     form->field(QStringLiteral("highlightColor"))->setFixedWidth(kRecordingSettingsColumnWidth);
     form->field(QStringLiteral("highlightPreview"))->setFixedWidth(kRecordingSettingsColumnWidth);
+    form->field(QStringLiteral("progressBarColor"))->setFixedWidth(kRecordingSettingsContentWidth);
     modal->setContentWidget(form);
     modal->setInitialFocusWidget(m_recordTrailDurationInput);
     m_recordSettingsForm = form;
@@ -6431,6 +6558,9 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
     m_recordTrailDurationInput->setAccessibleName(tr("Mouse Trail Duration"));
     m_recordKeyboardBackgroundPicker->setAccessibleName(tr("Keyboard Background Color"));
     m_recordKeyboardForegroundPicker->setAccessibleName(tr("Keyboard Foreground Color"));
+    m_recordProgressBarColorPicker->setAccessibleName(tr("Progress Bar Color"));
+    m_recordSettingsForm->field(QStringLiteral("progressBarColor"))
+        ->setLabel(tr("Progress Bar Color"));
     m_recordSettingsForm->field(QStringLiteral("keyboardSize"))->setLabel(tr("Keyboard Size"));
     m_recordSettingsForm->field(QStringLiteral("duration"))->setLabel(tr("Mouse Trail Duration"));
     m_recordSettingsForm->field(QStringLiteral("background"))
@@ -6445,6 +6575,12 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
         m_recordPreferencesButton->setAccessibleName(tr("Recording settings"));
     }
     refreshRecordingMouseOptions();
+    refreshRecordingPostProcessingOptions();
+    if (m_recordPostProcessingButton != nullptr) {
+        configureScreenshotToolPaletteTooltip(m_recordPostProcessingButton,
+                                              "Post-processing effects");
+        m_recordPostProcessingButton->setAccessibleName(tr("Post-processing effects"));
+    }
     if (m_recordSettingsButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordSettingsButton, "Settings");
         m_recordSettingsButton->setAccessibleName(tr("Settings"));
@@ -6484,6 +6620,9 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
 }
 
 void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
+    if (!visible && m_recordPostProcessingPopover) {
+        m_recordPostProcessingPopover->hide();
+    }
     if (!visible && m_recordCursorPopover) {
         m_recordCursorPopover->hide();
     }
@@ -6512,6 +6651,12 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
 
 void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     const bool editable = m_recordingSession.state() == RecordingState::Idle && !recordingBusy();
+    if (m_recordPostProcessingPopover) {
+        m_recordPostProcessingPopover->setEnabled(editable);
+        if (!editable) {
+            m_recordPostProcessingPopover->hide();
+        }
+    }
     if (m_recordCursorPopover) {
         m_recordCursorPopover->setEnabled(editable);
         if (!editable) {
@@ -6526,6 +6671,7 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
             }
             m_recordKeyboardBackgroundPicker->setPopupVisible(false);
             m_recordKeyboardForegroundPicker->setPopupVisible(false);
+            m_recordProgressBarColorPicker->setPopupVisible(false);
             // close() destroys the dialog and nulls every member above, so it has
             // to stay last in this block.
             m_recordSettingsModal->close();
@@ -6560,6 +6706,11 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     if (m_recordKeyboardButton != nullptr) {
         m_recordKeyboardButton->setEnabled(editable);
         setScreenshotToolPaletteButtonActive(m_recordKeyboardButton, m_recordingKeyboardVisible);
+    }
+    if (m_recordPostProcessingButton != nullptr) {
+        m_recordPostProcessingButton->setEnabled(editable);
+        setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton,
+                                             m_recordPostProcessingButton->isChecked());
     }
 }
 

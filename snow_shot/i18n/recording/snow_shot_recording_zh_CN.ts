@@ -32,6 +32,71 @@
         </message>
     </context>
     <context>
+        <name>RecordingRenderDialog</name>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Cancelling rendering...</source>
+            <translation>正在取消渲染...</translation>
+        </message>
+        <message>
+            <source>Discard</source>
+            <translation>丢弃</translation>
+        </message>
+        <message>
+            <source>Finalizing recording...</source>
+            <translation>正在完成录制导出...</translation>
+        </message>
+        <message>
+            <source>Keep Source</source>
+            <translation>保留源文件</translation>
+        </message>
+        <message>
+            <source>Preparing recording...</source>
+            <translation>正在准备录制...</translation>
+        </message>
+        <message>
+            <source>Rendering canceled</source>
+            <translation>渲染已取消</translation>
+        </message>
+        <message>
+            <source>Rendering failed</source>
+            <translation>渲染失败</translation>
+        </message>
+        <message>
+            <source>Rendering progress</source>
+            <translation>渲染进度</translation>
+        </message>
+        <message>
+            <source>Rendering recording</source>
+            <translation>渲染录制</translation>
+        </message>
+        <message>
+            <source>Rendering video...</source>
+            <translation>正在渲染视频...</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重试</translation>
+        </message>
+        <message>
+            <source>Source files are preserved in:
+%1</source>
+            <translation>源文件已保留在：
+%1</translation>
+        </message>
+        <message>
+            <source>Unable to read rendering progress</source>
+            <translation>无法读取渲染进度</translation>
+        </message>
+        <message>
+            <source>Unable to start rendering</source>
+            <translation>无法开始渲染</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenRecordingController</name>
         <message>
             <source>Keyboard recording failed: %1</source>

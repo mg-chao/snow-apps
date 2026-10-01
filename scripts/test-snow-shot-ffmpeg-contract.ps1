@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([string]$ComponentsHeader = "")
+param(
+    [string]$ComponentsHeader = "",
+    [switch]$ComponentsOnly
+)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -52,6 +55,19 @@ foreach ($audit in @(
     if ($difference.Count -gt 0) {
         throw "FFmpeg $($audit.Name) audit differs from the compiled component set: $($difference | Out-String)"
     }
+}
+$prefix = Split-Path (Split-Path (Split-Path $ComponentsHeader -Parent) -Parent) -Parent
+$main10CapabilityPath = Join-Path $prefix "share/x265/snow-main10-capability.json"
+$main10Capability = Get-Content -LiteralPath $main10CapabilityPath -Raw | ConvertFrom-Json
+if ($main10Capability.schemaVersion -ne 1 -or
+    $main10Capability.bitDepth8 -ne $true -or
+    $main10Capability.bitDepth10 -ne $true -or
+    $main10Capability.singlePublicApi -ne $true) {
+    throw "The FFmpeg dependency contract requires a combined 8-bit/Main10 x265 build."
+}
+if ($ComponentsOnly) {
+    Write-Output "FFmpeg component contract verified: $($actual.Count) compiled components and Main10 support."
+    return
 }
 $linkMap = Join-Path $repoRoot "build/snow-shot-msvc-release/snow_shot/Release/snow_shot.map"
 $linked = @(Select-String -LiteralPath $linkMap -Pattern (

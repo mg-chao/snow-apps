@@ -1,5 +1,6 @@
 pub mod bench_timing;
 pub mod config;
+pub mod deferred;
 pub mod direct;
 pub mod error;
 pub mod recording;
@@ -9,7 +10,6 @@ pub(crate) mod ffmpeg_util;
 pub(crate) mod keyboard_hook;
 pub(crate) mod keyboard_overlay;
 pub(crate) mod keyboard_rasterizer;
-pub(crate) mod laser_trail;
 pub(crate) mod mouse_hook;
 mod output_schedule;
 pub use keyboard_overlay::{KeyboardOverlayConfig, KeyboardOverlayFont};
@@ -21,6 +21,10 @@ pub use config::{
     AudioChannels, CaptureBackendKind, MonitorSelector, RecordingAudioConfig,
     RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig, RecordingRegion,
     RecordingTarget, WindowId,
+};
+pub use deferred::{
+    DeferredRecordingOptions, DeferredRecordingSession, DeferredRecordingSource,
+    DeferredRenderProgress, DeferredRenderState, DeferredRenderTask,
 };
 pub use direct::{
     DirectRecordingConfig, DirectRecordingReport, DirectRecordingSession, RecordingAudioMode,

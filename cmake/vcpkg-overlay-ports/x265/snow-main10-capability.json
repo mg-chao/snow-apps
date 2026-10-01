@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "bitDepth8": true,
+  "bitDepth10": true,
+  "singlePublicApi": true
+}
