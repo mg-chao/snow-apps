@@ -96,12 +96,9 @@ impl ElementRegionService {
                 reason: StopReason::Complete,
             });
         };
-        let Some(window) = self
-            .snapshot
-            .windows
-            .iter()
-            .find(|w| w.id != 0 && w.bounds.contains(position))
-        else {
+        let Some(window) = self.snapshot.windows.iter().find(|w| {
+            w.id != 0 && point.window_id.is_none_or(|id| w.id == id) && w.bounds.contains(position)
+        }) else {
             // Desktop gaps and the excluded Dock surface still offer a selection:
             // use the queried display, not the union of a mixed-scale desktop.
             return Ok(QueryResult {

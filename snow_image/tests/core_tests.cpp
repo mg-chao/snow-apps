@@ -1221,6 +1221,59 @@ void test_jpeg_round_trip(Service& service) {
     require(std::search(encoded->begin(), encoded->end(), progressiveMarker.begin(),
                         progressiveMarker.end()) != encoded->end(),
             "progressive JPEG output uses a progressive frame marker");
+
+    // ICC profiles are opaque to the codec. Split a large payload across APP2
+    // markers to exercise libjpeg-turbo's assembly as well as every decode route.
+    const std::vector<std::byte> profile(70'000, std::byte{0xA5});
+    std::vector<std::byte> markers;
+    for (int index = 0; index < 2; ++index) {
+        constexpr std::size_t chunk_size = 35'000;
+        constexpr std::size_t marker_size = 2 + 14 + chunk_size;
+        markers.insert(markers.end(),
+                       {std::byte{0xFF}, std::byte{0xE2}, static_cast<std::byte>(marker_size >> 8U),
+                        static_cast<std::byte>(marker_size & 0xFFU)});
+        for (const char byte : std::string_view("ICC_PROFILE\0", 12))
+            markers.push_back(static_cast<std::byte>(byte));
+        markers.push_back(static_cast<std::byte>(index + 1));
+        markers.push_back(std::byte{2});
+        const auto first = profile.begin() + index * static_cast<std::ptrdiff_t>(chunk_size);
+        markers.insert(markers.end(), first, first + static_cast<std::ptrdiff_t>(chunk_size));
+    }
+    auto profiled_bytes = std::make_shared<std::vector<std::byte>>(*encoded);
+    profiled_bytes->insert(profiled_bytes->begin() + 2, markers.begin(), markers.end());
+    const auto profiled_input = snow::image::memory_input(profiled_bytes);
+    const auto profiled_info = take(service.inspect(profiled_input), "inspect profiled JPEG");
+    require(profiled_info.color.icc_profile == profile &&
+                profiled_info.frames.front().color.icc_profile == profile,
+            "JPEG inspection preserves the complete ICC profile on document and frame");
+    const auto profiled_document = take(service.decode(profiled_input), "decode profiled JPEG");
+    require(profiled_document.color.icc_profile == profile &&
+                profiled_document.frames.front().color.icc_profile == profile,
+            "owning JPEG decode retains its ICC profile");
+    StorageSink profiled_sink;
+    require(service.decode_to_sink(profiled_input, profiled_sink).has_value() &&
+                profiled_sink.info.color.icc_profile == profile &&
+                profiled_sink.info.frames.front().color.icc_profile == profile,
+            "streaming JPEG decode retains its ICC profile");
+    snow::image::DecodeOptions profiled_native;
+    profiled_native.raster_layout = snow::image::RasterLayoutPolicy::native;
+    const auto profiled_descriptor = take(service.inspect_raster(profiled_input, profiled_native),
+                                          "inspect profiled JPEG raster");
+    require(profiled_descriptor.color.icc_profile == profile &&
+                profiled_descriptor.frames.front().color.icc_profile == profile,
+            "native planar JPEG inspection retains its RGB ICC declaration");
+    snow::image::DecodeOptions profile_limit;
+    profile_limit.limits.maximum_metadata_bytes = profile.size() - 1;
+    const auto rejected_profile = service.decode(profiled_input, profile_limit);
+    require(!rejected_profile && rejected_profile.error().code == ErrorCode::limit_exceeded,
+            "JPEG color metadata respects the configured size limit");
+    profile_limit.preserve_metadata = false;
+    const auto stripped_profile =
+        take(service.decode(profiled_input, profile_limit), "decode JPEG without metadata");
+    require(stripped_profile.color.icc_profile.empty() &&
+                stripped_profile.frames.front().color.icc_profile.empty(),
+            "JPEG metadata stripping omits ICC profiles without rejecting their size");
+
     const auto input = snow::image::memory_input(encoded);
     require(take(service.detect(input), "detect JPEG") == Format::jpeg,
             "JPEG detected by signature");

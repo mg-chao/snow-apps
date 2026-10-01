@@ -1,5 +1,6 @@
 #include "snow_ui_selector.h"
 #include "snow_shot/platform/windowcaptureexclusion.h"
+#include "../src/platform/macos/selectorwindowtarget_p.h"
 #include <QAccessible>
 #include <QApplication>
 #include <QElapsedTimer>
@@ -100,7 +101,18 @@ int main(int argc, char** argv) {
                               qRound(bounds.origin.x + (logical.x() - bounds.origin.x) * scaleX),
                               qRound(bounds.origin.y + (logical.y() - bounds.origin.y) * scaleY),
                               SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW,
-                              display};
+                              display,
+                              0,
+                              0};
+    const auto displays = snow_shot::platform::detail::selectorDisplayGeometry();
+    const auto resolveWindow = [&](std::span<const std::uintptr_t> excluded = {}) {
+        const auto hit = snow_shot::platform::detail::selectorWindowAtPhysicalPoint(
+            QPoint(query.x, query.y), query.display_id, displays, excluded);
+        require(hit.has_value(), "native physical pointer must resolve a mouse hit");
+        query.window_id = *hit;
+        query.window_hit_tested = 1;
+    };
+    resolveWindow();
     State state;
     auto* service = snow_ui_selector_service_create(event, refresh, &state);
     require(service != nullptr, "service creation failed");
@@ -140,6 +152,32 @@ int main(int argc, char** argv) {
     const auto child = state.rects.front();
     require(std::abs((child.right - child.left) - edit->width() * scaleX) <= 4,
             "AX child width must match Retina pixels");
+
+    QWidget clickThrough(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+                                      Qt::WindowTransparentForInput);
+    clickThrough.setAttribute(Qt::WA_TranslucentBackground);
+    clickThrough.setGeometry(window.screen()->geometry());
+    clickThrough.show();
+    QApplication::processEvents();
+    const auto clickThroughId = snow_shot::platform::captureWindowId(&clickThrough);
+    require(clickThroughId.has_value(), "click-through surface must expose a CGWindowID");
+    resolveWindow();
+    require(query.window_id != *clickThroughId,
+            "native mouse hit must bypass a full-screen click-through surface");
+    state.refreshed = false;
+    state.delivered = false;
+    query.epoch = 2;
+    query.request_id++;
+    require(snow_ui_selector_service_refresh(service, query.epoch,
+                                             SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY, nullptr, 0),
+            "click-through refresh rejected");
+    wait(state.refreshed);
+    require(snow_ui_selector_service_query(service, &query), "click-through AX query rejected");
+    wait(state.delivered);
+    require(state.ok && state.reason == SNOW_UI_SELECTOR_COMPLETE && state.rects.size() > 1 &&
+                state.rects.front().left == child.left && state.rects.front().right == child.right,
+            "click-through surface must preserve underlying element selection");
+
     QWidget overlay(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     overlay.setGeometry(window.frameGeometry());
     overlay.show();
@@ -147,13 +185,14 @@ int main(int argc, char** argv) {
     const auto overlayId = snow_shot::platform::captureWindowId(&overlay);
     require(overlayId.has_value(), "overlay must expose a CGWindowID");
     const uintptr_t excluded = *overlayId;
+    resolveWindow({&excluded, 1});
     state.refreshed = false;
     state.delivered = false;
-    query.epoch = 2;
+    query.epoch = 3;
     query.request_id++;
     query.mode = SNOW_UI_SELECTOR_HIT_TEST_MODE_WINDOW;
-    require(snow_ui_selector_service_refresh(service, 2, SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY,
-                                             &excluded, 1),
+    require(snow_ui_selector_service_refresh(service, query.epoch,
+                                             SNOW_UI_SELECTOR_BACKEND_ACCESSIBILITY, &excluded, 1),
             "exclusion refresh rejected");
     wait(state.refreshed);
     require(snow_ui_selector_service_query(service, &query), "excluded-overlay query rejected");
@@ -162,5 +201,6 @@ int main(int argc, char** argv) {
                 state.rects.front().top == windowRect.top,
             "excluded overlay must not replace the selected window");
     snow_ui_selector_service_destroy(service);
-    std::cout << "Native window, AX ancestry, Retina geometry, and overlay exclusion passed\n";
+    std::cout << "Native window, AX ancestry, Retina geometry, click-through surfaces, and overlay "
+                 "exclusion passed\n";
 }

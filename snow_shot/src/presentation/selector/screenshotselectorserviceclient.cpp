@@ -12,8 +12,7 @@
 #include <QByteArray>
 #include <QMetaObject>
 #ifdef Q_OS_MACOS
-#include <QCursor>
-#include <CoreGraphics/CoreGraphics.h>
+#include "../../platform/macos/selectorwindowtarget_p.h"
 #endif
 
 #include <utility>
@@ -127,8 +126,13 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
         snow_ui_selector_service_refresh(m_service, requestId,
                                          static_cast<SnowUiSelectorBackend>(m_serviceBackend), data,
                                          static_cast<size_t>(excludedHwnds.size())) != 0;
-    if (started)
+    if (started) {
+#ifdef Q_OS_MACOS
+        m_excludedWindowIds = excludedHwnds;
+        m_displays = snow_shot::platform::detail::selectorDisplayGeometry();
+#endif
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
+    }
     return started;
 }
 
@@ -157,8 +161,15 @@ bool ScreenshotSelectorServiceClient::startRefreshWithDisplays(
             m_service, requestId, static_cast<SnowUiSelectorBackend>(m_serviceBackend), data,
             static_cast<size_t>(excludedHwnds.size()), descriptors.constData(),
             static_cast<size_t>(descriptors.size())) != 0;
-    if (started)
+    if (started) {
+#ifdef Q_OS_MACOS
+        m_excludedWindowIds = excludedHwnds;
+        m_displays = displays;
+        for (auto& display : m_displays)
+            display.image = {};
+#endif
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
+    }
     return started;
 }
 
@@ -168,9 +179,17 @@ bool ScreenshotSelectorServiceClient::startHitTest(quint64 epoch, quint64 reques
                                                    quint32 displayId) {
     if (!hasService())
         return false;
-    const SnowUiSelectorQuery query{epoch,     requestId, generation,
-                                    point.x(), point.y(), hitTestModeForRequestedTarget(mode),
-                                    displayId};
+    SnowUiSelectorQuery query{epoch,     requestId, generation,
+                              point.x(), point.y(), hitTestModeForRequestedTarget(mode),
+                              displayId, 0,         0};
+#ifdef Q_OS_MACOS
+    if (const auto window = snow_shot::platform::detail::selectorWindowAtPhysicalPoint(
+            point, displayId, m_displays,
+            {m_excludedWindowIds.constData(), static_cast<size_t>(m_excludedWindowIds.size())})) {
+        query.window_id = *window;
+        query.window_hit_tested = 1;
+    }
+#endif
     const bool started = snow_ui_selector_service_query(m_service, &query) != 0;
     if (started)
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_dispatched");
@@ -180,10 +199,15 @@ bool ScreenshotSelectorServiceClient::startHitTest(quint64 epoch, quint64 reques
 bool ScreenshotSelectorServiceClient::startRefinement(const ScreenshotSelectorResult& initial) {
     if (!hasService() || !initial.canRefine)
         return false;
-    const SnowUiSelectorQuery query{initial.epoch,      initial.requestId,
-                                    initial.generation, initial.point.x(),
-                                    initial.point.y(),  SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT,
-                                    initial.displayId};
+    const SnowUiSelectorQuery query{initial.epoch,
+                                    initial.requestId,
+                                    initial.generation,
+                                    initial.point.x(),
+                                    initial.point.y(),
+                                    SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT,
+                                    initial.displayId,
+                                    initial.nativeWindowId.value_or(0),
+                                    static_cast<uint8_t>(initial.nativeWindowId.has_value())};
     return snow_ui_selector_service_refine(m_service, &query) != 0;
 }
 
@@ -221,6 +245,8 @@ void ScreenshotSelectorServiceClient::resultCallback(const SnowUiSelectorEvent* 
     result.ok = event->ok != 0;
     result.elapsedUs = event->elapsed_us;
     result.displayId = event->query.display_id;
+    if (event->query.window_hit_tested)
+        result.nativeWindowId = event->query.window_id;
     result.rects.reserve(static_cast<qsizetype>(event->count));
     for (size_t i = 0; i < event->count; ++i) {
         const auto& rect = event->rects[i];

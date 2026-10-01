@@ -40,6 +40,11 @@ typedef struct SnowUiSelectorQuery {
     SnowUiSelectorHitTestMode mode;
     /* CGDirectDisplayID on macOS; zero selects the first matching display. Ignored on Windows. */
     uint32_t display_id;
+    /* macOS UI-thread mouse hit, preserved for refinement. When window_hit_tested is 1,
+       window_id=0 means desktop. Only matching snapshot windows may be selected.
+       Set window_hit_tested=0 for rectangle-based selection. Ignored on Windows. */
+    uintptr_t window_id;
+    uint8_t window_hit_tested;
 } SnowUiSelectorQuery;
 typedef struct SnowUiSelectorEvent {
     SnowUiSelectorQuery query;

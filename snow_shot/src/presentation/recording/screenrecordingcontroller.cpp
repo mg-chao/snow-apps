@@ -1190,7 +1190,7 @@ struct ScreenRecordingController::Impl {
 #endif
             }
             renderJob = new RecordingRenderJob(result.source, !automationOwned, screen, &owner,
-                                               anchorGeometry);
+                                               anchorGeometry, areaWindow);
             renderJob->changed = [this, job = renderJob] {
                 if (renderJob != job)
                     return;
@@ -1281,6 +1281,8 @@ struct ScreenRecordingController::Impl {
         auto* retiring = uiSession;
         if (retiring->settingsModal)
             retiring->settingsModal->close();
+        if (renderJob)
+            renderJob->detachWindowOwner();
         uiSession = nullptr;
         areaWindow = nullptr;
         toolbarWindow = nullptr;

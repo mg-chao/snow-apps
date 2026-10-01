@@ -343,12 +343,13 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                 }
             });
     if (QCoreApplication::instance() != nullptr) {
-        connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, [this]() {
-            // Consumers still hold repository pointers while their destructors run.
-            // Keep storage initialized until its owner calls shutdown after them;
-            // otherwise a settings read can reinitialize and replace those repositories.
-            static_cast<void>(flushNow());
-        });
+        m_aboutToQuitConnection =
+            connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, [this]() {
+                // Consumers still hold repository pointers while their destructors run.
+                // Keep storage initialized until its owner calls shutdown after them;
+                // otherwise a settings read can reinitialize and replace those repositories.
+                static_cast<void>(flushNow());
+            });
     }
 
     qCInfo(storageLog) << "Storage initialized at" << effectiveDirectory
@@ -418,6 +419,8 @@ StorageResult ApplicationStorage::flushNow() {
 }
 
 void ApplicationStorage::shutdown() {
+    disconnect(m_aboutToQuitConnection);
+    m_aboutToQuitConnection = {};
     if (m_directoryWorker.valid())
         m_directoryWorker.wait();
     if (!m_initialized) {

@@ -43,6 +43,21 @@ test checks native click-through, drawing input, stacking and fullscreen Space
 policies through repeated show/hide cycles. Native desktop geometry tests exercise
 mixed display density without requiring multiple physical displays.
 
+Recording settings and render progress share recording-area ownership and application
+modality. Render progress detaches before area teardown so rendering, cancellation,
+and retry can continue independently. Run the focused offscreen and Cocoa checks:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(macos-)?recording-modal-stacking-tests$'
+```
+
+The Cocoa fixture uses the controller with a fake recording backend; it does not
+capture the desktop or open audio devices. It checks native window levels and order
+above both recording controls after raises, cancellation, and retry. On 2026-10-01,
+the render-progress check reproduced the detached dialog's stacking failure before
+the fix and passed afterward, along with its offscreen ownership/lifecycle check.
+
 Recording border input has a focused Cocoa check (requires permission to post mouse
 events; otherwise CTest reports a skip):
 

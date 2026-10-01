@@ -1,11 +1,13 @@
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "../src/presentation/services/screenshotclipboardcontentsnapshot.h"
 #include "snowimageqtcodec.h"
+#include "snowimagecodecbridge.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QBuffer>
 #include <QClipboard>
+#include <QColorSpace>
 #include <QImage>
 #include <QMimeData>
 #include <QPalette>
@@ -19,6 +21,7 @@
 
 #include <cstdlib>
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <future>
@@ -181,6 +184,112 @@ void encodedImageAndTextAreSupported() {
                 textContent->originalContent.text == longText &&
                 textContent->image.width() == 1024 && !textContent->image.isNull(),
             "plain clipboard text should be rendered with a bounded image");
+}
+
+void imageColorProfilesSurviveImport() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "profile fixture directory should exist");
+    const QColorSpace custom(QColorSpace::Primaries::DciP3D65, QColorSpace::TransferFunction::Gamma,
+                             2.4f);
+    for (const QColorSpace& space :
+         {QColorSpace{}, QColorSpace(QColorSpace::SRgb), QColorSpace(QColorSpace::DisplayP3),
+          QColorSpace(QColorSpace::AdobeRgb), QColorSpace(QColorSpace::SRgbLinear), custom}) {
+        QImage source(4, 3, QImage::Format_RGBA8888);
+        source.fill(QColor(200, 100, 50));
+        source.setPixelColor(1, 1, QColor(80, 120, 160, 128));
+        source.setColorSpace(space);
+        const QByteArray encoded = pngBytes(source);
+        require(QImage::fromData(encoded, "PNG").colorSpace() == space,
+                "PNG fixture must retain its intended profile");
+        const auto requireOriginalImage = [&](const QImage& decoded) {
+            require(!decoded.isNull() && decoded.colorSpace() == space,
+                    "image import must retain the source color space");
+            require(decoded.convertToFormat(QImage::Format_RGBA8888) == source,
+                    "image import must preserve the source pixels and alpha");
+        };
+        requireOriginalImage(
+            snow_shot::image_codec::decode(encoded, snow::image::Format::png, "image/png"));
+
+        const QString path = directory.filePath(QStringLiteral("profile.png"));
+        require(source.save(path, "PNG"), "profiled file fixture must encode");
+        requireOriginalImage(snow_shot::image_codec::decodeFile(path, snow::image::Format::png));
+        requireOriginalImage(
+            snow_shot::image_codec::decodeFileBgra(path, snow::image::Format::png));
+
+        QMimeData encodedMime;
+        encodedMime.setData(QStringLiteral("image/png"), encoded);
+        const auto clipboard = ScreenshotClipboardContentReader::readMimeData(&encodedMime, 1.0);
+        require(clipboard.has_value(), "profiled clipboard image must decode");
+        requireOriginalImage(clipboard->image);
+
+        QMimeData fileMime;
+        fileMime.setUrls({QUrl::fromLocalFile(path)});
+        const auto file = ScreenshotClipboardContentReader::readMimeData(&fileMime, 1.0);
+        require(file.has_value(), "profiled file URL must decode");
+        requireOriginalImage(file->image);
+    }
+
+    QImage srgb(4, 3, QImage::Format_RGBA8888);
+    srgb.setColorSpace(QColorSpace::SRgb);
+    srgb.fill(QColor(200, 100, 50));
+    const auto canonical = snow_shot::image_codec::encodePng(srgb);
+    require(snow_shot::image_codec::decode(canonical, snow::image::Format::png, "image/png") ==
+                srgb,
+            "the standard PNG sRGB declaration must survive import without an ICC profile");
+
+    QImage p3 = srgb;
+    p3.setColorSpace(QColorSpace::DisplayP3);
+    QByteArray jpeg;
+    QBuffer jpegBuffer(&jpeg);
+    require(jpegBuffer.open(QIODevice::WriteOnly) && p3.save(&jpegBuffer, "JPEG", 100),
+            "profiled JPEG fixture must encode");
+    require(QImage::fromData(jpeg, "JPEG").colorSpace() == p3.colorSpace(),
+            "JPEG fixture must retain its intended profile");
+    const auto jpegImage =
+        snow_shot::image_codec::decode(jpeg, snow::image::Format::jpeg, "image/jpeg");
+    require(!jpegImage.isNull() && jpegImage.colorSpace() == p3.colorSpace(),
+            "JPEG import must preserve its embedded ICC profile");
+
+    QColorSpace retainedSpace;
+    {
+        const auto decoded =
+            snow_shot::image_codec::decode(pngBytes(p3), snow::image::Format::png, "image/png");
+        retainedSpace = decoded.colorSpace();
+    }
+    require(QColorSpace::fromIccProfile(retainedSpace.iccProfile()) == p3.colorSpace(),
+            "a retained color space must own its ICC bytes after the pixel buffer is released");
+}
+
+void decodedBufferOwnsItsProfile() {
+    QImage source(2, 2, QImage::Format_RGBA8888);
+    source.setColorSpace(QColorSpace::DisplayP3);
+    source.fill(QColor(200, 100, 50));
+    const QByteArray encoded = pngBytes(source);
+    const auto* bytes = reinterpret_cast<const uint8_t*>(encoded.constData());
+    const auto size = static_cast<uint64_t>(encoded.size());
+    SnowShotImageCodecBuffer output{};
+    std::array<char, 512> error{};
+    require(snow_shot_image_codec_decode_rgba8(bytes, size, SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG,
+                                               &output, error.data(), error.size()) != 0,
+            "backend profile fixture must decode");
+    require(output.color.icc_profile != nullptr && output.color.icc_profile_size != 0,
+            "native decode must publish the owned color profile alongside its pixels");
+    const QByteArray profile(reinterpret_cast<const char*>(output.color.icc_profile),
+                             static_cast<qsizetype>(output.color.icc_profile_size));
+    require(QColorSpace::fromIccProfile(profile) == source.colorSpace(),
+            "the bridge must carry the original ICC profile");
+    const auto* pixels = output.data;
+    const auto* icc = output.color.icc_profile;
+    require(snow_shot_image_codec_decode_rgba8(bytes, size, SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG,
+                                               &output, error.data(), error.size()) == 0 &&
+                output.data == pixels && output.color.icc_profile == icc,
+            "unreleased decode buffers must retain both allocations when reuse is rejected");
+    snow_shot_image_codec_release_buffer(&output);
+    require(output.data == nullptr && output.color.icc_profile == nullptr &&
+                output.color.icc_profile_size == 0 && output.color.primaries == 0 &&
+                output.color.transfer == 0,
+            "releasing a native decode buffer must clear pixels and color metadata");
+    snow_shot_image_codec_release_buffer(&output);
 }
 
 void formattedTextRetainsOriginalClipboardInput() {
@@ -719,6 +828,8 @@ int main(int argc, char** argv) {
     oversizedDirectImagesAreIgnored();
     automationAdmissionPrecedesDecodeAndRasterization();
     encodedImageAndTextAreSupported();
+    imageColorProfilesSurviveImport();
+    decodedBufferOwnsItsProfile();
     formattedTextRetainsOriginalClipboardInput();
     encodedImagesPrecedeDetachedImagesAndCorruptionFallsBack();
     nativeSnapshotRetainsPreferredEncodedImages();

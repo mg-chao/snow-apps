@@ -47,6 +47,7 @@
 #endif
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/loginitemservice.h"
+#include "snow_shot/platform/macos/rastercolorspace.h"
 #include <QScopeGuard>
 #include <future>
 #include <thread>
@@ -452,6 +453,7 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
 
 #ifdef Q_OS_MACOS
+    snow_shot::platform::macos::configureRasterColorSpace();
     snow_shot::platform::macos::observeNativeLoginItemLaunch();
 #endif
     // The internal application name also owns settings and single-instance keys.

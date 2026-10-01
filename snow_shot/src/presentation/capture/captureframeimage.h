@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_CAPTUREFRAMEIMAGE_H
 
 #include "snow_capture.h"
+#include <QColorSpace>
 #include <QImage>
 #include <limits>
 
@@ -83,6 +84,10 @@ inline QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8
                  static_cast<int>(strideBytes), format, &releaseFrameLease, lease);
     if (image.isNull()) {
         snow_capture_frame_lease_release(lease);
+    } else {
+        // The capture FFI publishes SDR pixels in sRGB, including tone-mapped HDR.
+        // Setting metadata retains the native lease without copying its pixels.
+        image.setColorSpace(QColorSpace::SRgb);
     }
     return image;
 }

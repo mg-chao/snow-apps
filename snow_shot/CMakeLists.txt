@@ -1,5 +1,6 @@
 if(APPLE)
     set_source_files_properties(src/presentation/core/screenshotgeometry.cpp
+        src/presentation/selector/screenshotselectorserviceclient.cpp
         src/presentation/recording/screenrecordingareawindow.cpp
         src/presentation/globalcanvas/globalcanvasplatform.cpp
         tests/global_canvas_tests.cpp
@@ -893,6 +894,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
     include/snow_shot/presentation/components/screenrecordingsettingsdialog.h
+    include/snow_shot/presentation/components/screenrecordingmodal.h
     src/presentation/components/screenrecordingsettingsdialog.cpp
     src/presentation/components/actionrow.cpp
     src/presentation/components/shortcutkeyrow.cpp
@@ -2521,7 +2523,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
     )
     if(APPLE)
-        target_link_libraries(snow-shot-window-element-api-tests PRIVATE "-framework CoreGraphics")
+        target_link_libraries(snow-shot-window-element-api-tests PRIVATE
+            "-framework CoreGraphics" "-framework AppKit")
     endif()
     add_test(NAME snow-shot-window-element-api-tests
              COMMAND snow-shot-window-element-api-tests)
@@ -3259,6 +3262,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_source_files_properties(tests/screenshot_color_picker_tests.cpp
             PROPERTIES LANGUAGE OBJCXX)
         target_link_libraries(snow-shot-screenshot-color-picker-tests PRIVATE "-framework AppKit")
+        add_test(NAME snow-shot-macos-color-picker-animation-native-tests
+            COMMAND snow-shot-screenshot-color-picker-tests --magnifier-animation-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-color-picker-animation-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     add_test(NAME snow-shot-screenshot-color-picker-tests
         COMMAND snow-shot-screenshot-color-picker-tests)
@@ -3528,6 +3535,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-overlay-safe-area-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-safe-area -platform offscreen)
+    add_test(NAME snow-shot-overlay-window-shadow-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --window-shadow-only -platform offscreen)
+    set_tests_properties(snow-shot-overlay-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-overlay-boundary-input-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform offscreen)
     set_tests_properties(snow-shot-overlay-boundary-input-tests PROPERTIES LABELS "unit")
@@ -3536,6 +3546,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             ../cmake/test-support/macos_native_input.mm)
         target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
             ../cmake/test-support)
+        add_test(NAME snow-shot-macos-overlay-window-shadow-native-tests
+            COMMAND snow-shot-screenshot-canvas-renderer-tests --window-shadow-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-overlay-window-shadow-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
         add_test(NAME snow-shot-macos-overlay-boundary-input-native-tests
             COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform cocoa)
         set_tests_properties(snow-shot-macos-overlay-boundary-input-native-tests PROPERTIES
@@ -4081,6 +4095,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_image_codec Qt6::Widgets
         ${SNOW_SELECTED_FILES_LIBRARIES})
+    if(APPLE)
+        target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_rust_ffi_bundle)
+    endif()
     if(WIN32)
         target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE ole32 oleaut32 shell32 uuid)
         add_executable(snow-shot-selected-files-native-smoke-tests
@@ -4851,8 +4868,15 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-global-canvas-tests --native-only -platform cocoa)
         set_tests_properties(snow-shot-global-canvas-native-tests PROPERTIES
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 90)
+        add_test(NAME snow-shot-global-canvas-window-shadow-native-tests
+            COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform cocoa)
+        set_tests_properties(snow-shot-global-canvas-window-shadow-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-global-canvas-tests)
+    add_test(NAME snow-shot-global-canvas-window-shadow-tests
+        COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -5709,7 +5733,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(APPLE)
         target_sources(snow-shot-screen-recording-controller-tests PRIVATE
             src/platform/macos/windowcaptureexclusion.mm
-            tests/macos_capture_exclusion_probe.mm)
+            tests/macos_capture_exclusion_probe.mm
+            tests/macos_recording_modal_probe.mm)
         target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE "${SNOW_SHOT_APPKIT_FRAMEWORK}")
     endif()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
@@ -5775,6 +5800,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-recording-settings-dialog-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-recording-modal-stacking-tests
+        COMMAND snow-shot-screen-recording-controller-tests --modal-stacking-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-modal-stacking-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    if(APPLE)
+        add_test(NAME snow-shot-macos-recording-modal-stacking-tests
+            COMMAND snow-shot-screen-recording-controller-tests --modal-stacking-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-recording-modal-stacking-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
     if(WIN32)
@@ -8141,6 +8175,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-clipboard-appearance-presentation-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-color-space-tests
+        COMMAND snow-shot-pinned-window-tests --color-space-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-color-space-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-history-selection-presentation-tests
         COMMAND snow-shot-pinned-window-tests --history-selection-only -platform offscreen)
     set_tests_properties(snow-shot-history-selection-presentation-tests PROPERTIES
@@ -8254,6 +8293,19 @@ foreach(_target IN LISTS _region_switcher_targets)
 endforeach()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-raster-color-space-tests
+        tests/macos_raster_color_space_tests.mm)
+    target_include_directories(snow-shot-macos-raster-color-space-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-raster-color-space-tests PRIVATE Qt6::Widgets
+        "-framework AppKit")
+    snow_shot_import_offscreen_platform(snow-shot-macos-raster-color-space-tests)
+    add_test(NAME snow-shot-raster-color-space-tests
+        COMMAND snow-shot-macos-raster-color-space-tests -platform offscreen)
+    set_tests_properties(snow-shot-raster-color-space-tests PROPERTIES LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-raster-color-space-tests
+        COMMAND snow-shot-macos-raster-color-space-tests -platform cocoa)
+    set_tests_properties(snow-shot-macos-raster-color-space-tests PROPERTIES LABELS "unit;macos")
+
     add_executable(snow-shot-macos-screenshot-window-target-tests
         tests/macos_screenshot_window_target_tests.mm)
     target_link_libraries(snow-shot-macos-screenshot-window-target-tests PRIVATE Qt6::Core

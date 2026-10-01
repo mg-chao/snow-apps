@@ -9,6 +9,7 @@
 #include <memory>
 
 class QScreen;
+class QWidget;
 
 // Owns one immutable source and its serial render attempts independently of the
 // recording selection windows. All potentially blocking native disposal is off-thread.
@@ -16,9 +17,12 @@ class RecordingRenderJob final : public QObject {
   public:
     enum class Outcome { Succeeded, Kept, Discarded };
     RecordingRenderJob(SnowRecordingSource* source, bool showDialog, QScreen* screen,
-                       QObject* parent, const QRect& anchorGeometry = {});
+                       QObject* parent, const QRect& anchorGeometry = {},
+                       QWidget* windowOwner = nullptr);
     ~RecordingRenderJob() override;
     void start();
+    // Detach before the recording area is hidden or destroyed, preserving the job's UI.
+    void detachWindowOwner();
     bool cancel();
     bool retry();
     bool release(bool discard);
