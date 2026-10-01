@@ -62,6 +62,10 @@ QStringList withDefaultCursorHints(std::initializer_list<QString> remaining) {
 }
 
 void toolMatrixMatchesRequestedVisibility() {
+    require(hintLines(ScreenshotActiveTool::Move) ==
+                QStringList{shortcutLine(QStringLiteral("Toggle cursor visibility"),
+                                         {QStringLiteral("`")})},
+            "Move must expose the cursor visibility shortcut");
     const QStringList transformHints = withDefaultCursorHints({
         shortcutLine(QStringLiteral("Maintain aspect ratio"), {QStringLiteral("Shift")}),
         shortcutLine(QStringLiteral("Fixed-angle rotation"), {QStringLiteral("Shift")}),
@@ -163,7 +167,6 @@ void toolMatrixMatchesRequestedVisibility() {
                 hintLines(ScreenshotActiveTool::Ocr).isEmpty() &&
                 hintLines(ScreenshotActiveTool::Table).isEmpty() &&
                 hintLines(ScreenshotActiveTool::Qr).isEmpty() &&
-                hintLines(ScreenshotActiveTool::Move).isEmpty() &&
                 hintLines(ScreenshotActiveTool::Spotlight).isEmpty() &&
                 hintLines(ScreenshotActiveTool::Watermark).isEmpty(),
             "tools without requested shortcuts must not expose hint rows");
@@ -193,7 +196,7 @@ void configuredShortcutRowsUseActualValues() {
     };
 
     const QVector<ScreenshotShortcutHintRow> rows = screenshotShortcutHintRows(context);
-    require(rows.size() == 11, "manual-selection configured hint row count changed");
+    require(rows.size() == 12, "manual-selection configured hint row count changed");
     require(rows.at(0).label == QStringLiteral("Move cursor up") &&
                 rows.at(0).shortcut ==
                     shortcutDisplay({QStringLiteral("Ctrl+Alt+I"), QStringLiteral("Up")}) &&
@@ -212,14 +215,17 @@ void configuredShortcutRowsUseActualValues() {
     require(rows.at(8).label == QStringLiteral("Toggle Global/Relative Coordinates") &&
                 rows.at(8).shortcut == shortcutDisplay({QStringLiteral("Alt+P")}),
             "coordinate toggle must follow Copy color and show the configured binding");
-    require(rows.at(9).label == QStringLiteral("Switch color format") &&
-                rows.at(9).shortcut == shortcutDisplay({QStringLiteral("Shift")}),
+    require(rows.at(9).label == QStringLiteral("Toggle cursor visibility") &&
+                rows.at(9).shortcut == shortcutDisplay({QStringLiteral("`")}),
+            "cursor visibility must show its configurable backtick default");
+    require(rows.at(10).label == QStringLiteral("Switch color format") &&
+                rows.at(10).shortcut == shortcutDisplay({QStringLiteral("Shift")}),
             "the fixed color-format shortcut must remain visible");
-    require(rows.at(10).label == QStringLiteral("Switch screenshot history") &&
-                rows.at(10).shortcut ==
+    require(rows.at(11).label == QStringLiteral("Switch screenshot history") &&
+                rows.at(11).shortcut ==
                     shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("["),
                                      QStringLiteral("PgDown"), QStringLiteral("]")}) &&
-                rows.at(10).shortcutChips ==
+                rows.at(11).shortcutChips ==
                     QStringList{shortcutDisplay({QStringLiteral("PgUp"), QStringLiteral("[")}),
                                 shortcutDisplay({QStringLiteral("PgDown"), QStringLiteral("]")})},
             "history hint must split the previous and next shortcuts into separate chips");

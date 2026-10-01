@@ -180,8 +180,8 @@ class ScreenshotSettings final {
 #endif
     [[nodiscard]] bool confirmBeforeExitingViaShortcut() const;
     bool setConfirmBeforeExitingViaShortcut(bool enabled) const;
-    [[nodiscard]] bool captureCursor() const;
-    bool setCaptureCursor(bool enabled) const;
+    [[nodiscard]] bool showCursor() const;
+    bool setShowCursor(bool enabled) const;
     [[nodiscard]] int scrollingAutoScrollIntervalMs() const;
     bool setScrollingAutoScrollIntervalMs(int milliseconds) const;
     [[nodiscard]] bool captureUiInScrollingScreenshot() const;

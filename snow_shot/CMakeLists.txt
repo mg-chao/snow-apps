@@ -3422,6 +3422,8 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-canvas-renderer-tests
         tests/screenshot_canvas_renderer_tests.cpp
+        tests/screenshot_cursor_tests.cpp
+        src/presentation/services/screenshotsourceimagecomposer.cpp
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotpdfexport.cpp
         include/snow_shot/presentation/screenshothistoryservice.h
@@ -3460,6 +3462,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
     )
+    if(SNOW_APPS_BUILD_BENCHMARKS)
+        target_sources(snow-shot-screenshot-canvas-renderer-tests PRIVATE
+            tests/screenshot_cursor_performance_benchmark.cpp)
+        target_compile_definitions(snow-shot-screenshot-canvas-renderer-tests PRIVATE
+            SNOW_SHOT_CURSOR_BENCHMARK=1)
+        if(WIN32)
+            target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE Psapi)
+        endif()
+        add_test(NAME snow-shot-screenshot-cursor-benchmark
+            COMMAND snow-shot-screenshot-canvas-renderer-tests --cursor-benchmark -platform offscreen)
+        set_tests_properties(snow-shot-screenshot-cursor-benchmark PROPERTIES LABELS "benchmark")
+    endif()
+    add_test(NAME snow-shot-screenshot-cursor-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --cursor-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-cursor-tests PROPERTIES LABELS "unit")
     snow_shot_link_macos_window_platform(snow-shot-screenshot-canvas-renderer-tests)
     target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -8044,7 +8061,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshotautofiltercontroller.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
         include/snow_shot/presentation/screenshotautofiltercontroller.h)
-    target_include_directories(snow-shot-auto-filter-tests PRIVATE include "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-visual-region-detector-c/include")
+    target_include_directories(snow-shot-auto-filter-tests PRIVATE include
+        "${SNOW_SHOT_SNOW_IMAGE_DIR}/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-visual-region-detector-c/include")
     target_link_libraries(snow-shot-auto-filter-tests PRIVATE snow_draw_engine_qt_canvas snow_visual_region_detector_c Qt6::Widgets)
     snow_shot_import_offscreen_platform(snow-shot-auto-filter-tests)
     add_test(NAME snow-shot-auto-filter-tests COMMAND snow-shot-auto-filter-tests)

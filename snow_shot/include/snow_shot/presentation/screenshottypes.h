@@ -76,6 +76,8 @@ struct CapturedDisplayModel {
     QRect logicalRect;
     QPointer<QScreen> screen;
     QImage image;
+    QImage cursorPatch{};
+    QRect cursorPixelRect{};
     bool active = false;
     ScreenshotCaptureBackend backend = ScreenshotCaptureBackend::Auto;
     // Desktop points and image pixels are independent on macOS. physicalRect
@@ -102,6 +104,7 @@ struct ScreenshotCaptureResult {
     QString errorMessage;
     bool succeeded = false;
     ScreenshotCapturePurpose purpose = ScreenshotCapturePurpose::Initial;
+    bool cursorAvailable = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTTYPES_H

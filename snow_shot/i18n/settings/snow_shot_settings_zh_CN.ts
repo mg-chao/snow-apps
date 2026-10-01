@@ -1057,10 +1057,6 @@
             <translation>捕获后端</translation>
         </message>
         <message>
-            <source>Capture cursor</source>
-            <translation>捕获光标</translation>
-        </message>
-        <message>
             <source>Capture every monitor and copy the monitor under the pointer</source>
             <translation>截取所有显示器并复制指针所在显示器</translation>
         </message>
@@ -1911,10 +1907,6 @@
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
             <translation>保存图片时包含当前显示的文字识别或原图翻译结果。</translation>
-        </message>
-        <message>
-            <source>Include the mouse cursor in normal screenshots.</source>
-            <translation>在常规截图中包含鼠标光标。</translation>
         </message>
         <message>
             <source>Include the screen recording toolbar in the recorded video.</source>
@@ -2929,6 +2921,10 @@
             <translation>截图工具和光标移动的快捷键</translation>
         </message>
         <message>
+            <source>Show Cursor</source>
+            <translation>显示光标</translation>
+        </message>
+        <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>在文本识别工具栏中显示一个按钮，将识别出的文本发送到翻译页面。</translation>
         </message>
@@ -2955,6 +2951,10 @@
         <message>
             <source>Show the area type hint at the top of the screenshot window</source>
             <translation>在截图窗口顶部显示区域类型提示</translation>
+        </message>
+        <message>
+            <source>Show the captured mouse cursor by default in new normal screenshots.</source>
+            <translation>在新的普通截图中默认显示捕获的鼠标光标。</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>
@@ -3171,6 +3171,10 @@
         <message>
             <source>Toggle Global/Relative Coordinates</source>
             <translation>切换全局/相对坐标</translation>
+        </message>
+        <message>
+            <source>Toggle cursor visibility</source>
+            <translation>切换光标显示</translation>
         </message>
         <message>
             <source>Toggle hotkeys</source>

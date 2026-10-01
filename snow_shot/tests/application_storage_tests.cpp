@@ -405,6 +405,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("next_screenshot_history"), QJsonArray{QStringLiteral(".")}},
         {QStringLiteral("select_previously_selected_area"), QJsonArray{QStringLiteral("R")}},
         {QStringLiteral("recapture"), QJsonArray{QStringLiteral("Alt+R")}},
+        {QStringLiteral("toggle_cursor_visibility"), QJsonArray{QStringLiteral("`")}},
         {QStringLiteral("copy_color"), QJsonArray{QStringLiteral("C")}},
         {QStringLiteral("toggle_coordinate_mode"), QJsonArray{QStringLiteral("Ctrl+P")}},
         {QStringLiteral("table_recognition"), QJsonArray{QStringLiteral("Ctrl+X")}},
@@ -1412,22 +1413,22 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     require(system.setAutoStartAtBoot(true) && !system.launchAsAdministrator(),
             "re-enabling auto-start must not restore elevation implicitly");
     const storage::ScreenshotSettings screenshot;
-    require(!screenshot.captureCursor(), "cursor capture must default off");
-    require(screenshot.setCaptureCursor(true) && storage::ScreenshotSettings().captureCursor(),
+    require(!screenshot.showCursor(), "cursor capture must default off");
+    require(screenshot.setShowCursor(true) && storage::ScreenshotSettings().showCursor(),
             "cursor capture must persist when enabled");
     require(applicationStorage.configuration().flushNow().success,
             "enabled cursor capture must be flushable");
     applicationStorage.shutdown();
     static_cast<void>(initialize(executable, temporary.path()));
-    require(storage::ScreenshotSettings().captureCursor(),
+    require(storage::ScreenshotSettings().showCursor(),
             "enabled cursor capture must survive storage restart");
-    require(screenshot.setCaptureCursor(false) && !storage::ScreenshotSettings().captureCursor(),
+    require(screenshot.setShowCursor(false) && !storage::ScreenshotSettings().showCursor(),
             "cursor capture must support disabling");
     require(applicationStorage.configuration().flushNow().success,
             "disabled cursor capture must be flushable");
     applicationStorage.shutdown();
     static_cast<void>(initialize(executable, temporary.path()));
-    require(!storage::ScreenshotSettings().captureCursor(),
+    require(!storage::ScreenshotSettings().showCursor(),
             "disabled cursor capture must survive storage restart");
     require(screenshot.restoreOriginalScreenColors(), "screen color restoration must default on");
     require(screenshot.setRestoreOriginalScreenColors(false) &&
@@ -1447,7 +1448,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     require(screenshot.autoExecuteAfterTextRecognition() == QStringLiteral("no_action") &&
                 screenshot.doubleClickAction() == QStringLiteral("copy") &&
                 screenshot.middleMouseButtonAction() == QStringLiteral("pin") &&
-                !screenshot.captureCursor() && !screenshot.autoSaveAfterCopy() &&
+                !screenshot.showCursor() && !screenshot.autoSaveAfterCopy() &&
                 !screenshot.copyImageFileToClipboard() &&
                 screenshot.imageFormat() == QStringLiteral("png") &&
                 screenshot.compressionLevel() == QStringLiteral("medium") &&
@@ -1660,7 +1661,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 27 &&
+        screenshotDefaults.size() == 28 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -1684,6 +1685,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             portable(screenshotShortcuts.selectPreviouslySelectedArea()) ==
                 QStringList{QStringLiteral("R")} &&
             portable(screenshotShortcuts.recapture()) == QStringList{QStringLiteral("Alt+R")} &&
+            portable(screenshotShortcuts.shortcuts(QStringLiteral("toggle_cursor_visibility"))) ==
+                QStringList{QStringLiteral("`")} &&
             portable(screenshotShortcuts.copyColor()) == QStringList{QStringLiteral("C")} &&
             portable(screenshotShortcuts.toggleCoordinateMode()) ==
                 QStringList{QStringLiteral("Ctrl+P")} &&
@@ -1721,6 +1724,11 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 portable(screenshotShortcuts.recapture()) ==
                     QStringList{QStringLiteral("Ctrl+Alt+R")},
             "screenshot shortcuts must round-trip through the typed adapter");
+    require(screenshotShortcuts.setShortcuts(QStringLiteral("toggle_cursor_visibility"),
+                                             {QStringLiteral("Alt+`")}) &&
+                portable(screenshotShortcuts.shortcuts(QStringLiteral(
+                    "toggle_cursor_visibility"))) == QStringList{QStringLiteral("Alt+`")},
+            "cursor visibility shortcut must be configurable through the typed adapter");
     require(screenshotShortcuts.setMoveCursorRight({QStringLiteral("1")}) &&
                 portable(screenshotShortcuts.moveCursorRight()) == QStringList{QStringLiteral("1")},
             "screenshot shortcuts must allow a key assigned in the drawing category");
@@ -2268,15 +2276,14 @@ void applicationQuitPreservesStorageForConsumerDestruction(
     auto* history = &applicationStorage.captureHistory();
     auto* pins = &applicationStorage.pinnedWindows();
     auto* configuration = &applicationStorage.configuration();
-    require(storage::ScreenshotSettings().setCaptureCursor(true),
-            "pending settings must be accepted");
+    require(storage::ScreenshotSettings().setShowCursor(true), "pending settings must be accepted");
     QTimer::singleShot(0, QCoreApplication::instance(), &QCoreApplication::quit);
     QCoreApplication::exec();
     require(unrelatedQuitNotifications == 1,
             "storage lifecycle changes must preserve unrelated application quit callbacks");
     require(applicationStorage.isInitialized(),
             "aboutToQuit must preserve initialized storage until consumers are destroyed");
-    require(storage::ScreenshotSettings().captureCursor(), "destructors must still read settings");
+    require(storage::ScreenshotSettings().showCursor(), "destructors must still read settings");
     require(&applicationStorage.captureHistory() == history &&
                 &applicationStorage.pinnedWindows() == pins &&
                 &applicationStorage.configuration() == configuration,

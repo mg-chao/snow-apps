@@ -36,7 +36,7 @@ constexpr qint64 kMaximumCanvasBytes = 16 * kMiB;
 constexpr qint64 kMaximumPixelsPerImage = 64'000'000;
 constexpr qint64 kMaximumPixelsPerRecord = 128'000'000;
 constexpr int kMaximumDisplays = 32;
-constexpr int kIndexVersion = 2;
+constexpr int kIndexVersion = 3;
 // Bounds arithmetic on persisted sizes without consulting payload files.
 constexpr qint64 kMaximumStoredBytes = 1LL << 40;
 constexpr auto kWorkerIdleTimeout = std::chrono::seconds(5);
@@ -139,6 +139,14 @@ QJsonObject recordJson(const StoredRecord& stored) {
                                                               ? QStringLiteral("points")
                                                               : QStringLiteral("pixels"));
         }
+        if (display.cursor) {
+            const auto& cursor = *display.cursor;
+            auto patch = imageJson(cursor.pixelRect.size(), cursor.encodedBytes,
+                                   QStringLiteral("cursor_%1.png").arg(i));
+            patch.insert(QStringLiteral("x"), cursor.pixelRect.x());
+            patch.insert(QStringLiteral("y"), cursor.pixelRect.y());
+            object.insert(QStringLiteral("cursor_patch"), patch);
+        }
         displays.append(object);
     }
     QJsonObject object{
@@ -155,6 +163,8 @@ QJsonObject recordJson(const StoredRecord& stored) {
         {QStringLiteral("canvas_byte_size"), record.canvasBytes},
         {QStringLiteral("total_record_size"), record.totalBytes},
         {QStringLiteral("displays"), displays}};
+    object.insert(QStringLiteral("cursor_visible"), record.cursorVisible);
+    object.insert(QStringLiteral("cursor_available"), record.cursorAvailable);
     if (record.result.has_value()) {
         object.insert(QStringLiteral("result"),
                       imageJson(record.result->imageSize, record.result->encodedBytes,
@@ -197,6 +207,13 @@ bool parseImage(const QJsonObject& object, const QString& file, QSize* size, qin
 
 bool parseRecord(const QJsonObject& object, StoredRecord* stored) {
     auto& record = stored->record;
+    for (const auto* key : {"cursor_visible", "cursor_available"}) {
+        const auto value = object.value(QLatin1String(key));
+        if (!value.isUndefined() && !value.isBool())
+            return false;
+    }
+    record.cursorVisible = object.value(QStringLiteral("cursor_visible")).toBool();
+    record.cursorAvailable = object.value(QStringLiteral("cursor_available")).toBool();
     const QJsonValue contentKind = object.value(QStringLiteral("content_kind"));
     if (!contentKind.isUndefined()) {
         if (contentKind.toString() != QStringLiteral("image"))
@@ -338,10 +355,33 @@ bool parseRecord(const QJsonObject& object, StoredRecord* stored) {
             if (!std::isfinite(image.backingScale) || image.backingScale <= 0)
                 return false;
         }
+        const auto cursor = display.value(QStringLiteral("cursor_patch"));
+        if (!cursor.isUndefined()) {
+            QSize patchSize;
+            qint64 patchBytes = 0, patchX = 0, patchY = 0;
+            const auto patch = cursor.toObject();
+            if (!cursor.isObject() ||
+                !parseImage(patch, QStringLiteral("cursor_%1.png").arg(i), &patchSize, &patchBytes,
+                            &pixels) ||
+                !integer(patch.value(QStringLiteral("x")), 0, image.imageSize.width(), &patchX) ||
+                !integer(patch.value(QStringLiteral("y")), 0, image.imageSize.height(), &patchY) ||
+                patchX + patchSize.width() > image.imageSize.width() ||
+                patchY + patchSize.height() > image.imageSize.height())
+                return false;
+            image.cursor =
+                CaptureHistoryCursorRecord{QRect(static_cast<int>(patchX), static_cast<int>(patchY),
+                                                 patchSize.width(), patchSize.height()),
+                                           patchBytes};
+            bytes += patchBytes;
+        }
         record.displays.append(image);
         stored->displayFileNames.append(file);
         bytes += image.encodedBytes;
     }
+    record.cursorAvailable =
+        record.cursorAvailable &&
+        std::any_of(record.displays.cbegin(), record.displays.cend(),
+                    [](const auto& display) { return display.cursor.has_value(); });
     return record.totalBytes == bytes &&
            (record.contentKind != CaptureHistoryContentKind::Image ||
             (record.displays.size() == 1 && record.result.has_value()));
@@ -418,6 +458,8 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
     record.source = draft.source;
     record.scrolling = draft.scrolling;
     record.desktopGeometry = draft.desktopGeometry;
+    record.cursorVisible = draft.cursorVisible;
+    record.cursorAvailable = draft.cursorAvailable;
     record.canvasBytes = draft.canvasHistory.size();
     record.totalBytes = record.canvasBytes;
     result->files.insert(stored.canvasFileName, draft.canvasHistory);
@@ -490,11 +532,30 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quota, EncodedDraft* r
         });
         if (bytes == 0)
             return false;
+        std::optional<CaptureHistoryCursorRecord> cursor;
+        if (!display.cursorPatch.isNull()) {
+            if (display.cursorPatch.size() != display.cursorPixelRect.size() ||
+                !display.image.rect().contains(display.cursorPixelRect))
+                return false;
+            const qint64 patchBytes =
+                addImage(display.cursorPatch.size(), QStringLiteral("cursor_%1.png").arg(i), [&] {
+                    return snow_shot::image_codec::encodePng(display.cursorPatch,
+                                                             draft.displayPngCompressionLevel);
+                });
+            if (patchBytes <= 0)
+                return false;
+            cursor = CaptureHistoryCursorRecord{display.cursorPixelRect, patchBytes};
+        }
         stored.displayFileNames.append(name);
         record.displays.append({display.stableId, display.name, display.image.size(), bytes,
                                 display.sourceCanvasOrigin, display.sourceCanvasRect,
-                                display.canvasUsesPoints, backingScale, display.nativeDisplayId});
+                                display.canvasUsesPoints, backingScale, display.nativeDisplayId,
+                                cursor});
     }
+    record.cursorAvailable =
+        record.cursorAvailable &&
+        std::any_of(record.displays.cbegin(), record.displays.cend(),
+                    [](const auto& display) { return display.cursor.has_value(); });
     return record.totalBytes <= quota;
 }
 
@@ -651,6 +712,17 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             if (!image)
                 return std::nullopt;
             payload.displayImages.append(*image);
+            QImage patch;
+            if (record.displays[i].cursor) {
+                const auto loaded =
+                    readImage(record, directory.filePath(QStringLiteral("cursor_%1.png").arg(i)),
+                              record.displays[i].cursor->pixelRect.size(),
+                              record.displays[i].cursor->encodedBytes);
+                if (!loaded)
+                    return std::nullopt;
+                patch = *loaded;
+            }
+            payload.cursorPatches.append(patch);
         }
         return payload;
     }
@@ -793,9 +865,14 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     std::optional<QImage> readImage(const CaptureHistoryRecord& record, const QString& path,
-                                    const QSize& size) const {
+                                    const QSize& size, qint64 encodedBytes = -1) const {
         observe(CaptureHistoryOperation::PayloadRead);
-        const QImage image = containedPath(m_root, path) ? decodeImage(path) : QImage();
+        if (!containedPath(m_root, path) ||
+            (encodedBytes >= 0 && QFileInfo(path).size() != encodedBytes)) {
+            readFailed(record);
+            return std::nullopt;
+        }
+        const QImage image = decodeImage(path);
         if (image.isNull() || image.size() != size) {
             readFailed(record);
             return std::nullopt;
@@ -880,7 +957,8 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         const QJsonObject object = document.object();
         if (file.error() != QFileDevice::NoError || !document.isObject() ||
             (object.value(QStringLiteral("format_version")).toInteger() != kIndexVersion &&
-             object.value(QStringLiteral("format_version")).toInteger() != 1) ||
+             object.value(QStringLiteral("format_version")).toInteger() != 1 &&
+             object.value(QStringLiteral("format_version")).toInteger() != 2) ||
             !object.value(QStringLiteral("records")).isArray() ||
             !object.value(QStringLiteral("pending_deletions")).isArray()) {
             indexFailed();

@@ -117,6 +117,8 @@ struct ScreenshotOverlayInputActions {
     // Suppress automatic tool restoration and pending quick actions before an
     // explicit command confirms the selection and shows the toolbar.
     std::function<void()> prepareExplicitSelectionCommand = []() {};
+    std::function<bool()> cursorVisibilityAvailable = [] { return false; };
+    std::function<bool()> toggleCursorVisibility = [] { return false; };
 };
 
 struct ScreenshotOverlayInputHandlerContext {

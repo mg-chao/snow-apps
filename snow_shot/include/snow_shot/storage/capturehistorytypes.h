@@ -54,6 +54,8 @@ struct CaptureHistoryDisplayDraft {
     bool canvasUsesPoints = false;
     qreal backingScale = 0.0;
     quint32 nativeDisplayId = 0;
+    QImage cursorPatch{};
+    QRect cursorPixelRect{};
 };
 
 struct CaptureHistoryResultRecord {
@@ -104,6 +106,15 @@ struct CaptureHistoryDraft {
     // Absent on records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};
     std::optional<CaptureHistoryDesktopGeometry> desktopGeometry{};
+    bool cursorVisible = false;
+    bool cursorAvailable = false;
+};
+
+struct CaptureHistoryCursorRecord {
+    QRect pixelRect;
+    qint64 encodedBytes = 0;
+    friend bool operator==(const CaptureHistoryCursorRecord&,
+                           const CaptureHistoryCursorRecord&) = default;
 };
 
 struct CaptureHistoryDisplayRecord {
@@ -117,6 +128,8 @@ struct CaptureHistoryDisplayRecord {
     qreal backingScale = 0.0;
     quint32 nativeDisplayId = 0;
 
+    std::optional<CaptureHistoryCursorRecord> cursor{};
+
     friend bool operator==(const CaptureHistoryDisplayRecord& first,
                            const CaptureHistoryDisplayRecord& second) {
         return first.stableId == second.stableId && first.name == second.name &&
@@ -125,7 +138,7 @@ struct CaptureHistoryDisplayRecord {
                first.sourceCanvasRect == second.sourceCanvasRect &&
                first.canvasUsesPoints == second.canvasUsesPoints &&
                first.backingScale == second.backingScale &&
-               first.nativeDisplayId == second.nativeDisplayId;
+               first.nativeDisplayId == second.nativeDisplayId && first.cursor == second.cursor;
     }
 };
 
@@ -143,6 +156,8 @@ struct CaptureHistoryRecord {
     // Absent on records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};
     std::optional<CaptureHistoryDesktopGeometry> desktopGeometry{};
+    bool cursorVisible = false;
+    bool cursorAvailable = false;
 
     friend bool operator==(const CaptureHistoryRecord& first, const CaptureHistoryRecord& second) {
         return first.contentKind == second.contentKind && first.id == second.id &&
@@ -151,7 +166,9 @@ struct CaptureHistoryRecord {
                first.result == second.result && first.canvasBytes == second.canvasBytes &&
                first.totalBytes == second.totalBytes && first.source == second.source &&
                first.scrolling == second.scrolling &&
-               first.desktopGeometry == second.desktopGeometry;
+               first.desktopGeometry == second.desktopGeometry &&
+               first.cursorVisible == second.cursorVisible &&
+               first.cursorAvailable == second.cursorAvailable;
     }
 };
 
@@ -185,6 +202,7 @@ struct CaptureHistoryAssetSet {
 struct CaptureHistoryPayload {
     QByteArray canvasHistory;
     QVector<QImage> displayImages;
+    QVector<QImage> cursorPatches;
 };
 
 struct CaptureHistoryPolicy {

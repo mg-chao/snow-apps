@@ -156,6 +156,22 @@ void emptyFailureAndDisposal() {
     f.complete();
     require(!f.canvas.autoFilterRegions(), "disposed session rejects completion");
 }
+void sourceChangePreservesCompletedAnnotations() {
+    Fixture f;
+    f.activate();
+    f.complete();
+    f.controller.fillCategory(QStringLiteral("text"));
+    const QByteArray document = f.runtime.serializeDocumentSession();
+    const quint64 generation = f.canvas.autoFilterGeneration();
+    f.controller.resetSession();
+    require(f.runtime.serializeDocumentSession() == document &&
+                f.canvas.autoFilterGeneration() == generation && f.fills() == 1,
+            "source change preserves completed filter annotations and undo history");
+    require(!f.controller.detecting() && !f.controller.flashing(),
+            "source change clears only transient detection and flash state");
+    f.controller.validate();
+    require(f.runs == 1, "source change preserves completed identification");
+}
 void renderingAndExport() {
     Fixture f;
     f.activate();
@@ -389,6 +405,7 @@ int main(int argc, char** argv) {
     lifecycle();
     races();
     emptyFailureAndDisposal();
+    sourceChangePreservesCompletedAnnotations();
     styles();
     renderingAndExport();
     fallbackGesturesAndUnrelatedEdits();

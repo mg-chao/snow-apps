@@ -159,6 +159,8 @@ void applySnapshotToDisplay(CapturedDisplayModel& display, const CapturedDisplay
     display.geometryResolved = false;
     display.primary = false;
     display.image = snapshot.image;
+    display.cursorPatch = snapshot.cursorPatch;
+    display.cursorPixelRect = snapshot.cursorPixelRect;
     display.active = true;
 }
 
@@ -216,5 +218,7 @@ void ScreenshotCaptureDisplayModelReconciler::clearCaptureMetadata(CapturedDispl
     display.geometryResolved = false;
     display.primary = false;
     display.image = QImage();
+    display.cursorPatch = {};
+    display.cursorPixelRect = {};
     display.active = false;
 }

@@ -271,6 +271,8 @@ void ScreenshotColorPickerWindow::prepareNativeSurface() {
 
 void ScreenshotColorPickerWindow::resetForNewCapture() {
     m_captureImage = QImage();
+    m_cursorPatch = {};
+    m_cursorPixelRect = {};
     m_physicalRect = QRect();
     m_previewImage = QImage();
     m_currentPhysicalPoint = QPoint();
@@ -281,12 +283,20 @@ void ScreenshotColorPickerWindow::resetForNewCapture() {
     hidePicker();
 }
 
-void ScreenshotColorPickerWindow::setCaptureImage(const QImage& image, const QRect& physicalRect) {
-    if (m_captureImage.cacheKey() == image.cacheKey() && m_physicalRect == physicalRect) {
+void ScreenshotColorPickerWindow::setCaptureImage(const QImage& image, const QRect& physicalRect,
+                                                  const QImage& cursorPatch,
+                                                  const QRect& cursorPixelRect) {
+    if (m_captureImage.cacheKey() == image.cacheKey() && m_physicalRect == physicalRect &&
+        m_cursorPatch.cacheKey() == cursorPatch.cacheKey() &&
+        m_cursorPixelRect == cursorPixelRect) {
         return;
     }
 
     m_captureImage = image;
+    const bool validPatch = !cursorPatch.isNull() && cursorPatch.size() == cursorPixelRect.size() &&
+                            image.rect().contains(cursorPixelRect);
+    m_cursorPatch = validPatch ? cursorPatch : QImage();
+    m_cursorPixelRect = validPatch ? cursorPixelRect : QRect();
     m_physicalRect = physicalRect;
     if (m_previewImage.size() != QSize(kPreviewPickerSize, kPreviewPickerSize) ||
         m_previewImage.format() != QImage::Format_ARGB32_Premultiplied) {
@@ -535,17 +545,22 @@ bool ScreenshotColorPickerWindow::updatePreview(const QPoint& physicalPoint) {
             QImage(kPreviewPickerSize, kPreviewPickerSize, QImage::Format_ARGB32_Premultiplied);
     }
 
+    const auto sample = [this](int x, int y) {
+        if (!m_cursorPatch.isNull() && m_cursorPixelRect.contains(x, y))
+            return rgbaPixelAt(m_cursorPatch, x - m_cursorPixelRect.x(), y - m_cursorPixelRect.y());
+        return rgbaPixelAt(m_captureImage, x, y);
+    };
     const int halfPicker = kPreviewPickerSize / 2;
     for (int y = 0; y < kPreviewPickerSize; ++y) {
         auto* previewLine = reinterpret_cast<QRgb*>(m_previewImage.scanLine(y));
         for (int x = 0; x < kPreviewPickerSize; ++x) {
             const int sourceX = std::clamp(imageX + x - halfPicker, 0, maxImageX);
             const int sourceY = std::clamp(imageY + y - halfPicker, 0, maxImageY);
-            previewLine[x] = premultipliedArgb(rgbaPixelAt(m_captureImage, sourceX, sourceY));
+            previewLine[x] = premultipliedArgb(sample(sourceX, sourceY));
         }
     }
 
-    const RgbaPixel centerPixel = rgbaPixelAt(m_captureImage, imageX, imageY);
+    const RgbaPixel centerPixel = sample(imageX, imageY);
     m_currentColor = QColor(centerPixel.red, centerPixel.green, centerPixel.blue, 255);
     m_hasCurrentColor = true;
     return true;

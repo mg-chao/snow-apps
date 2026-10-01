@@ -1111,13 +1111,16 @@ bool ScreenshotCanvasRenderer::PathRasterCache::draw(QPainter& painter, const QP
     return true;
 }
 
-ScreenshotCanvasRenderer::ScreenshotCanvasRenderer(SnowCanvasWidget& canvas) : m_canvas(canvas) {
+ScreenshotCanvasRenderer::ScreenshotCanvasRenderer(SnowCanvasWidget& canvas)
+    : m_canvas(canvas), m_canvasGuard(&canvas) {
     m_themeConnection = QObject::connect(&adqt::theme::ThemeManager::instance(),
                                          &adqt::theme::ThemeManager::themeChanged, &canvas,
                                          [&canvas]() { canvas.update(); });
 }
 
 ScreenshotCanvasRenderer::~ScreenshotCanvasRenderer() {
+    if (m_canvasGuard && m_canvasGuard->customRenderer() == this)
+        m_canvasGuard->setCustomRenderer(nullptr);
     QObject::disconnect(m_themeConnection);
     delete m_ocrTextLayer.data();
 }
@@ -1187,7 +1190,7 @@ bool ScreenshotCanvasRenderer::hasScrollingResultPreview() const {
     return !m_scrollingResultPreviewImage.isNull();
 }
 
-void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source) {
+void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, const QRectF& damage) {
     if (source.isMaterialized()) {
         source.materializedImage.setDevicePixelRatio(1.0);
     }
@@ -1197,14 +1200,27 @@ void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source) {
         baseSources.push_back(
             {m_imageSource.materializedImage, m_imageSource.materializedCanvasRect, {}});
     } else {
-        for (const auto& layer : m_imageSource.layers)
-            baseSources.push_back(
-                {layer.image, layer.imageCanvasRect, layer.destinationCanvasRect});
+        for (const auto& layer : m_imageSource.layers) {
+            if (!layer.smartEraseSource)
+                continue;
+            // An empty coverage means the entire image canvas rect. Keep the
+            // same reconstruction key when a plain image gains a cursor layer.
+            const QRectF coverage = layer.destinationCanvasRect == layer.imageCanvasRect
+                                        ? QRectF{}
+                                        : layer.destinationCanvasRect;
+            baseSources.push_back({layer.image, layer.imageCanvasRect, coverage});
+        }
     }
-    m_canvas.setBaseImageSources(baseSources);
+    if (damage.isEmpty())
+        m_canvas.setBaseImageSources(baseSources);
+    else
+        m_canvas.setBaseImageSources(baseSources, canvasImageDamageRegion(damage));
     clearOcrFilteredImage();
     invalidateCachedContent();
-    m_canvas.update();
+    if (damage.isEmpty())
+        m_canvas.update();
+    else
+        m_canvas.update(canvasImageDamageRegion(damage));
 }
 
 void ScreenshotCanvasRenderer::setImageViewportPhysicalSize(const QSize& size) {

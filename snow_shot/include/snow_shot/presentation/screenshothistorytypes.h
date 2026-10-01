@@ -26,6 +26,8 @@ struct ScreenshotHistoryDisplay {
     bool canvasUsesPoints = false;
     qreal backingScale = 0.0;
     quint32 nativeDisplayId = 0;
+    QImage cursorPatch{};
+    QRect cursorPixelRect{};
 };
 
 struct ScreenshotHistoryEntry {
@@ -44,6 +46,8 @@ struct ScreenshotHistoryEntry {
     // Absent on entries restored from records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};
     std::optional<snow_shot::storage::CaptureHistoryDesktopGeometry> desktopGeometry{};
+    bool cursorVisible = false;
+    bool cursorAvailable = false;
     bool intelligentSelectionMode = false;
     bool persistent = true;
     std::optional<ScreenshotIntelligentSelectionModel> liveIntelligentSelection;

@@ -76,6 +76,7 @@ const QStringList& screenshotShortcutActionIds() {
             QStringLiteral("next_screenshot_history"),
             QStringLiteral("select_previously_selected_area"),
             QStringLiteral("recapture"),
+            QStringLiteral("toggle_cursor_visibility"),
             QStringLiteral("copy_color"),
             QStringLiteral("toggle_coordinate_mode"),
             QStringLiteral("table_recognition"),
@@ -671,11 +672,11 @@ bool ScreenshotSettings::setConfirmBeforeExitingViaShortcut(bool enabled) const 
                             enabled);
 }
 
-bool ScreenshotSettings::captureCursor() const {
+bool ScreenshotSettings::showCursor() const {
     return cache().value(QStringLiteral("screenshot/capture_cursor")).toBool();
 }
 
-bool ScreenshotSettings::setCaptureCursor(bool enabled) const {
+bool ScreenshotSettings::setShowCursor(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/capture_cursor"), enabled);
 }
 

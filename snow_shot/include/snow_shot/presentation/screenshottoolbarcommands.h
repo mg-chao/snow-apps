@@ -26,6 +26,15 @@ class ScreenshotToolbarCommandSink {
     virtual void addScreenshotRegion() {}
     virtual void subtractScreenshotRegion() {}
     virtual void requestRecapture() {}
+    virtual bool screenshotCursorVisible() const {
+        return false;
+    }
+    virtual bool screenshotCursorAvailable() const {
+        return false;
+    }
+    virtual bool setScreenshotCursorVisible(bool) {
+        return false;
+    }
     virtual void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit) {}
     virtual void setSelectionToolbarHiddenForSession(bool) {}
     virtual void setMoveTool() = 0;

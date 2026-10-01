@@ -19,6 +19,8 @@ struct ScreenshotImageLayer {
     QImage image;
     QRectF imageCanvasRect;
     QRectF destinationCanvasRect;
+    // Visual overlays such as the captured cursor are not reconstruction donors.
+    bool smartEraseSource = true;
 
     [[nodiscard]] bool isValid() const {
         return !image.isNull() && imageCanvasRect.isValid() && !imageCanvasRect.isEmpty() &&

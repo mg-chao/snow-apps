@@ -47,6 +47,7 @@
 #include <QWindow>
 
 #include <cstdlib>
+#include <cstring>
 #include <chrono>
 #include <condition_variable>
 #include <iostream>
@@ -95,6 +96,19 @@ ScreenshotHistoryEntry takeSnapshot(std::optional<ScreenshotHistoryEntry> snapsh
         std::exit(1);
     }
     return std::move(*snapshot);
+}
+
+bool equalPixels(const QImage& left, const QImage& right) {
+    if (left.size() != right.size())
+        return false;
+    const auto a = left.convertToFormat(QImage::Format_RGBA8888);
+    const auto b = right.convertToFormat(QImage::Format_RGBA8888);
+    for (int y = 0; y < a.height(); ++y) {
+        if (std::memcmp(a.constScanLine(y), b.constScanLine(y),
+                        static_cast<size_t>(a.width()) * 4) != 0)
+            return false;
+    }
+    return true;
 }
 
 void waitForNavigation(ScreenshotHistoryService& history, const char* timeoutMessage) {
@@ -352,8 +366,7 @@ void directImagesPersistWithoutTouchingTheEditor(
                                                : storage::CaptureHistorySource::CurrentMonitor),
             "direct history metadata did not survive restart");
     const auto restoredImage = repository->loadResultImage(records.front());
-    require(restoredImage.has_value() && restoredImage->convertToFormat(QImage::Format_ARGB32) ==
-                                             image.convertToFormat(QImage::Format_ARGB32),
+    require(restoredImage.has_value() && equalPixels(*restoredImage, image),
             "direct history pixels did not survive restart");
     ScreenshotDisplaySession displays;
     const QImage liveImage = solidImage(QSize(200, 120), qRgb(100, 120, 140));
@@ -382,8 +395,7 @@ void directImagesPersistWithoutTouchingTheEditor(
     const QRect expectedBounds = legacy ? QRect(QPoint(-100, -50), image.size()) : physicalBounds;
     require(selection.pixelSelection() == expectedBounds, "direct image selection was misplaced");
     for (int i = 0; i < 2; ++i) {
-        require(displays.displayAt(i).image.convertToFormat(QImage::Format_ARGB32) ==
-                        image.convertToFormat(QImage::Format_ARGB32) &&
+        require(equalPixels(displays.displayAt(i).image, image) &&
                     displays.displayAt(i).imageSourceCanvasRect == expectedBounds,
                 "direct image pixels and selection use different canvas origins");
     }
@@ -410,9 +422,7 @@ void directImagesPersistWithoutTouchingTheEditor(
     const QImage rendered =
         runtime.renderToImage(editedSelection, editedSelection.size(),
                               {{restoredDisplay.image, restoredDisplay.imageSourceCanvasRect}});
-    require(rendered.convertToFormat(QImage::Format_ARGB32) ==
-                image.copy(QRect(QPoint(3, 3), editedSelection.size()))
-                    .convertToFormat(QImage::Format_ARGB32),
+    require(equalPixels(rendered, image.copy(QRect(QPoint(3, 3), editedSelection.size()))),
             "edited direct capture exported pixels from the wrong region");
 }
 
@@ -599,8 +609,7 @@ void explicitHistoryEditSeesExternalPublications(const QString& root) {
             "Edit ignored a direct capture published after the editor was constructed");
     waitForNavigation(history, "external history edit timed out");
     require(selection.pixelSelection() == frame.physicalBounds &&
-                displays.displayAt(0).image.convertToFormat(QImage::Format_ARGB32) ==
-                    desktop.convertToFormat(QImage::Format_ARGB32),
+                equalPixels(displays.displayAt(0).image, desktop),
             "Edit did not load the externally published capture");
 }
 
@@ -651,8 +660,7 @@ void directCaptureRetainsTheWholeDesktop(const QString& root) {
         auto repository = storage::makeCaptureHistoryRepository(directory);
         const auto record = repository->records().front();
         const auto result = repository->loadResultImage(record);
-        require(result && result->convertToFormat(QImage::Format_ARGB32) ==
-                              frame.image.convertToFormat(QImage::Format_ARGB32),
+        require(result && equalPixels(*result, frame.image),
                 "direct history lost the separate window or monitor result image");
         ScreenshotDisplaySession displays;
         for (const auto& captured : capturedDisplays) {
@@ -677,8 +685,7 @@ void directCaptureRetainsTheWholeDesktop(const QString& root) {
                 geometry.canvasRectForPhysicalRect(displays, frame.physicalBounds).toAlignedRect(),
             "complete direct history restored the wrong target selection");
         for (qsizetype index = 0; index < capturedDisplays.size(); ++index) {
-            require(displays.displayAt(index).image.convertToFormat(QImage::Format_ARGB32) ==
-                            capturedDisplays[index].image.convertToFormat(QImage::Format_ARGB32) &&
+            require(equalPixels(displays.displayAt(index).image, capturedDisplays[index].image) &&
                         displays.displayAt(index).imageSourceCanvasRect ==
                             displays.displayAt(index).canvasRect,
                     "editing direct history lost a display image or its position");
@@ -707,6 +714,11 @@ void navigationMatchesDisplaysAndRestoresLiveEndpoint(const QString& root) {
                                    QRect(100, 0, 100, 80),
                                    solidImage(QSize(80, 60), qRgba(0, 255, 0, 255))));
 
+    displays.cursorVisible = true;
+    displays.cursorAvailable = true;
+    displays.displayAt(1).cursorPixelRect = QRect(3, 4, 2, 2);
+    displays.displayAt(1).cursorPatch = solidImage(QSize(2, 2), qRgba(200, 100, 50, 255));
+    const QImage historicalCursor = displays.displayAt(1).cursorPatch;
     SnowCanvasRuntime runtime;
     ScreenshotSelectionModel selection;
     selection.setSelectionRect(QRectF(10, 10, 170, 60));
@@ -739,6 +751,11 @@ void navigationMatchesDisplaysAndRestoresLiveEndpoint(const QString& root) {
     std::swap(displays.displayAt(0).name, displays.displayAt(1).name);
     displays.displayAt(0).image = solidImage(QSize(100, 80), qRgba(0, 0, 255, 255));
     displays.displayAt(1).image = solidImage(QSize(100, 80), qRgba(255, 255, 0, 255));
+    displays.cursorVisible = false;
+    displays.cursorAvailable = true;
+    displays.displayAt(0).cursorPatch = solidImage(QSize(2, 2), qRgba(10, 20, 30, 255));
+    displays.displayAt(0).cursorPixelRect = QRect(8, 9, 2, 2);
+    const QImage liveCursor = displays.displayAt(0).cursorPatch;
     const QImage liveFirst = displays.displayAt(0).image;
     const QImage liveSecond = displays.displayAt(1).image;
     selection.setSelectionRect(QRectF(20, 15, 40, 30));
@@ -750,6 +767,12 @@ void navigationMatchesDisplaysAndRestoresLiveEndpoint(const QString& root) {
             "asynchronous history navigation changed displays before completion");
     require(!history.navigatePrevious(), "concurrent history navigation was accepted");
     waitForNavigation(history, "previous history navigation timed out");
+    require(displays.cursorVisible && displays.cursorAvailable,
+            "history must restore cursor visibility and availability");
+    require(equalPixels(displays.displayAt(0).cursorPatch, historicalCursor) &&
+                displays.displayAt(0).cursorPixelRect == QRect(3, 4, 2, 2),
+            "history must restore its cursor independently of the live screenshot");
+    displays.cursorVisible = false;
     require(interaction.manualSelecting(), "persistent entry did not enter manual mode");
     require(displays.displayAt(0).image.pixel(0, 0) == qRgba(0, 255, 0, 255),
             "stable-id monitor matching failed");
@@ -762,6 +785,10 @@ void navigationMatchesDisplaysAndRestoresLiveEndpoint(const QString& root) {
             "historical entry unexpectedly requested intelligent selection");
 
     require(history.navigateNext(), "live endpoint navigation failed");
+    require(!displays.cursorVisible && displays.cursorAvailable &&
+                displays.displayAt(0).cursorPatch == liveCursor &&
+                displays.displayAt(0).cursorPixelRect == QRect(8, 9, 2, 2),
+            "returning to live must restore its cursor pixels and own visibility");
     require(interaction.intelligentSelecting(), "live intelligent mode was not restored");
     require(displays.displayAt(0).image == liveFirst, "first live image was not restored");
     require(displays.displayAt(1).image == liveSecond, "second live image was not restored");
@@ -944,13 +971,18 @@ void persistenceAndExactRetentionCutoff(const QString& root) {
     reader.resetCaptureNavigation();
 }
 
-void corruptLazyEntryDoesNotBlockOlderEntries(const QString& root) {
+void corruptLazyEntryDoesNotBlockOlderEntries(const QString& root, bool cursorPatch = false) {
     QDateTime clock =
         QDateTime::fromString(QStringLiteral("2026-08-03T12:00:00.000Z"), Qt::ISODateWithMs);
     ScreenshotDisplaySession displays;
     displays.appendDisplay(display(QStringLiteral("only"), QStringLiteral("Only"),
                                    QRect(0, 0, 64, 64),
                                    solidImage(QSize(64, 64), qRgba(255, 0, 0, 255))));
+    if (cursorPatch) {
+        displays.cursorAvailable = true;
+        displays.displayAt(0).cursorPixelRect = QRect(4, 5, 2, 2);
+        displays.displayAt(0).cursorPatch = solidImage(QSize(2, 2), qRgb(20, 30, 40));
+    }
     const QRgb olderPixel = displays.displayAt(0).image.pixel(0, 0);
     SnowCanvasRuntime runtime;
     ScreenshotSelectionModel selection;
@@ -991,7 +1023,8 @@ void corruptLazyEntryDoesNotBlockOlderEntries(const QString& root) {
         historyDirectory(root).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
     require(directories.size() == 2, "history entries were not persisted");
     QFile corrupt(QDir(historyDirectory(root).filePath(newerId))
-                      .filePath(QStringLiteral("canvas_history.json")));
+                      .filePath(cursorPatch ? QStringLiteral("cursor_0.png")
+                                            : QStringLiteral("canvas_history.json")));
     require(corrupt.open(QIODevice::WriteOnly | QIODevice::Truncate),
             "failed to open session for corruption");
     require(corrupt.write("{") == 1, "failed to corrupt session");
@@ -2629,6 +2662,13 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     actions.localShortcutInputAllowed = [&localShortcutInputAllowed]() {
         return localShortcutInputAllowed;
     };
+    bool cursorAvailable = true;
+    int cursorVisibilityToggles = 0;
+    actions.cursorVisibilityAvailable = [&cursorAvailable] { return cursorAvailable; };
+    actions.toggleCursorVisibility = [&cursorVisibilityToggles] {
+        ++cursorVisibilityToggles;
+        return true;
+    };
     actions.recaptureAvailable = [&recaptureAvailable]() { return recaptureAvailable; };
     actions.moveCursorOnePixel = [&cursorMoves,
                                   &cursorMoveHandles](PhysicalCursorDirection direction) {
@@ -2709,6 +2749,25 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     require(moveToolActivations == 1 && interaction.moveToolActive(),
             "default Move shortcut must activate the Move tool");
 
+    require(dispatchShortcut(shortcutWindow, Qt::Key_QuoteLeft) && cursorVisibilityToggles == 1,
+            "backtick must toggle captured cursor visibility");
+    interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+    require(dispatchShortcut(shortcutWindow, Qt::Key_QuoteLeft) && cursorVisibilityToggles == 2,
+            "cursor visibility shortcut must work outside the move tool");
+    cursorAvailable = false;
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_QuoteLeft) && cursorVisibilityToggles == 2,
+            "missing cursor data must not consume backtick");
+    cursorAvailable = true;
+    localShortcutInputAllowed = false;
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_QuoteLeft),
+            "cursor visibility must respect text input and modal shortcut suspension");
+    localShortcutInputAllowed = true;
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_QuoteLeft, Qt::ShiftModifier),
+            "shifted backtick must not activate the unmodified default");
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_QuoteLeft, Qt::NoModifier, true) &&
+                cursorVisibilityToggles == 2,
+            "cursor visibility must disable autorepeat");
+    interaction.setMoveTool(true, false);
     require(dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
                 recaptureActivations == 1,
             "default recapture shortcut must dispatch through the screenshot action path");
@@ -2734,6 +2793,8 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "recapture shortcut must remain inactive during selection drags");
     interaction.finishDrag();
     interaction.enterScrollingCapture();
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_QuoteLeft),
+            "scrolling capture must suppress cursor visibility shortcuts");
     require(!dispatchShortcut(shortcutWindow, Qt::Key_R, Qt::AltModifier) &&
                 recaptureActivations == 1,
             "recapture shortcut must remain inactive during scrolling capture");
@@ -4410,6 +4471,8 @@ int main(int argc, char** argv) {
         QDir(temporary.path()).filePath(QStringLiteral("retention")));
     corruptLazyEntryDoesNotBlockOlderEntries(
         QDir(temporary.path()).filePath(QStringLiteral("corrupt")));
+    corruptLazyEntryDoesNotBlockOlderEntries(
+        QDir(temporary.path()).filePath(QStringLiteral("corrupt-cursor")), true);
     expiredCurrentEntryCanReturnToConfirmedLiveSelection(
         QDir(temporary.path()).filePath(QStringLiteral("expired-navigation")));
     multipleValidEntriesCanBeTraversed(

@@ -1057,10 +1057,6 @@
             <translation>Capture backend</translation>
         </message>
         <message>
-            <source>Capture cursor</source>
-            <translation>Capture cursor</translation>
-        </message>
-        <message>
             <source>Capture every monitor and copy the monitor under the pointer</source>
             <translation>Capture every monitor and copy the monitor under the pointer</translation>
         </message>
@@ -1911,10 +1907,6 @@
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
             <translation>Include the displayed text recognition or original-image translation result when saving an image.</translation>
-        </message>
-        <message>
-            <source>Include the mouse cursor in normal screenshots.</source>
-            <translation>Include the mouse cursor in normal screenshots.</translation>
         </message>
         <message>
             <source>Include the screen recording toolbar in the recorded video.</source>
@@ -2929,6 +2921,10 @@
             <translation>Shortcut keys for screenshot tools and cursor movement</translation>
         </message>
         <message>
+            <source>Show Cursor</source>
+            <translation>Show Cursor</translation>
+        </message>
+        <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</translation>
         </message>
@@ -2955,6 +2951,10 @@
         <message>
             <source>Show the area type hint at the top of the screenshot window</source>
             <translation>Show the area type hint at the top of the screenshot window</translation>
+        </message>
+        <message>
+            <source>Show the captured mouse cursor by default in new normal screenshots.</source>
+            <translation>Show the captured mouse cursor by default in new normal screenshots.</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>
@@ -3171,6 +3171,10 @@
         <message>
             <source>Toggle Global/Relative Coordinates</source>
             <translation>Toggle Global/Relative Coordinates</translation>
+        </message>
+        <message>
+            <source>Toggle cursor visibility</source>
+            <translation>Toggle cursor visibility</translation>
         </message>
         <message>
             <source>Toggle hotkeys</source>

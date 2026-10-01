@@ -132,10 +132,6 @@
             <translation>Cancel screenshot</translation>
         </message>
         <message>
-            <source>Capture cursor</source>
-            <translation>Capture cursor</translation>
-        </message>
-        <message>
             <source>Center horizontally</source>
             <translation>Center horizontally</translation>
         </message>
@@ -234,6 +230,10 @@
         <message>
             <source>Current watermark font size</source>
             <translation>Current watermark font size</translation>
+        </message>
+        <message>
+            <source>Cursor data is unavailable for this screenshot.</source>
+            <translation>Cursor data is unavailable for this screenshot.</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -870,6 +870,10 @@
         <message>
             <source>Shape</source>
             <translation>Shape</translation>
+        </message>
+        <message>
+            <source>Show Cursor</source>
+            <translation>Show Cursor</translation>
         </message>
         <message>
             <source>Show Playback Time</source>

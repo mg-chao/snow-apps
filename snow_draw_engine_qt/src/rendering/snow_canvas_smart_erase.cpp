@@ -144,7 +144,8 @@ Coordinator::Coordinator(std::function<void()> repaint, Compute compute)
     : m_impl(std::make_unique<Impl>(std::move(repaint), std::move(compute))) {}
 Coordinator::~Coordinator() = default;
 
-void Coordinator::setSources(const void* owner, const QList<SnowCanvasBaseImageSource>& sources) {
+void Coordinator::setSources(const void* owner, const QList<SnowCanvasBaseImageSource>& sources,
+                             bool notify) {
     auto& state = *m_impl;
     state.owners[owner] = sources;
     QList<SnowCanvasBaseImageSource> combined;
@@ -185,7 +186,8 @@ void Coordinator::setSources(const void* owner, const QList<SnowCanvasBaseImageS
         (void)id;
         record.entry.result.reset();
     }
-    state.repaint();
+    if (notify)
+        state.repaint();
 }
 
 void Coordinator::removeSources(const void* owner) {

@@ -132,10 +132,6 @@
             <translation>取消截图</translation>
         </message>
         <message>
-            <source>Capture cursor</source>
-            <translation>捕获光标</translation>
-        </message>
-        <message>
             <source>Center horizontally</source>
             <translation>水平居中</translation>
         </message>
@@ -234,6 +230,10 @@
         <message>
             <source>Current watermark font size</source>
             <translation>当前水印字体大小</translation>
+        </message>
+        <message>
+            <source>Cursor data is unavailable for this screenshot.</source>
+            <translation>此截图没有可用的光标数据。</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -870,6 +870,10 @@
         <message>
             <source>Shape</source>
             <translation>图形</translation>
+        </message>
+        <message>
+            <source>Show Cursor</source>
+            <translation>显示光标</translation>
         </message>
         <message>
             <source>Show Playback Time</source>

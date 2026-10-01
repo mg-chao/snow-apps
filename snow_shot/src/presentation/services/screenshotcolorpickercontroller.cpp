@@ -113,9 +113,10 @@ void ScreenshotColorPickerController::updateAtPhysicalPoint(
         context.selectionDisplayUnit, conversion.canvasUsesPoints,
         screenshotMagnifierRelativeDisplayPosition(m_geometry, *display, physicalPoint,
                                                    context.selectionPixels, conversion)};
-    m_overlayCoordinator.updateColorPicker(overlay, display->image, display->physicalRect,
-                                           physicalPoint, overlayLocalPosition, pickerOpacity,
-                                           displayValues);
+    m_overlayCoordinator.updateColorPicker(
+        overlay, display->image, display->physicalRect, physicalPoint, overlayLocalPosition,
+        pickerOpacity, displayValues,
+        m_displaySession.cursorVisible ? display->cursorPatch : QImage{}, display->cursorPixelRect);
     m_overlay = overlay;
 }
 

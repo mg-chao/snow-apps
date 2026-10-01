@@ -587,8 +587,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().autoSaveAfterCopy();
     case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
         return storage::ScreenshotSettings().quickSelectionModification();
-    case SettingsSwitchBinding::ScreenshotCaptureCursor:
-        return storage::ScreenshotSettings().captureCursor();
+    case SettingsSwitchBinding::ScreenshotShowCursor:
+        return storage::ScreenshotSettings().showCursor();
     case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
         return storage::ScreenshotSettings().captureUiInScrollingScreenshot();
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
@@ -760,8 +760,8 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotQuickSelectionModification) {
         return storage::ScreenshotSettings().setQuickSelectionModification(value);
     }
-    if (binding == SettingsSwitchBinding::ScreenshotCaptureCursor) {
-        return storage::ScreenshotSettings().setCaptureCursor(value);
+    if (binding == SettingsSwitchBinding::ScreenshotShowCursor) {
+        return storage::ScreenshotSettings().setShowCursor(value);
     }
     if (binding == SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot) {
         return storage::ScreenshotSettings().setCaptureUiInScrollingScreenshot(value);
@@ -909,7 +909,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
     case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
-    case SettingsSwitchBinding::ScreenshotCaptureCursor:
+    case SettingsSwitchBinding::ScreenshotShowCursor:
     case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
     case SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode:

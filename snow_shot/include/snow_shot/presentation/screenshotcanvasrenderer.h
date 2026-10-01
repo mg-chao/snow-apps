@@ -106,7 +106,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
 
     void setRenderMode(RenderMode mode);
     void setImage(QImage image, const QRectF& canvasRect);
-    void setImageSource(ScreenshotImageSource source);
+    void setImageSource(ScreenshotImageSource source, const QRectF& damage = {});
     void setScrollingResultPreview(QImage image, const QRectF& canvasRect,
                                    std::optional<Qt::Orientation> cropGuide = std::nullopt);
     void clearScrollingResultPreview();
@@ -211,6 +211,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     [[nodiscard]] QRegion canvasImageDamageRegion(const QRectF& canvasRect) const;
 
     SnowCanvasWidget& m_canvas;
+    QPointer<SnowCanvasWidget> m_canvasGuard;
     QMetaObject::Connection m_themeConnection;
     std::uint64_t m_contentRevision = 0;
     ScreenshotImageSource m_imageSource;

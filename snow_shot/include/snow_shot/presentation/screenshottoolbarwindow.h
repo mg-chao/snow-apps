@@ -27,6 +27,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setScreenshotRegionType(ScreenshotRegionType type);
     void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit);
     void setRecaptureBusy(bool busy);
+    void synchronizeCursorState();
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void restoreRememberedDrawingTool();
     void suppressRememberedDrawingTool();
@@ -66,7 +67,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void connectStyleCommands(ScreenshotToolPalette& toolPalette);
     void connectSerialNumberCommands(ScreenshotToolPalette& toolPalette);
     void connectScrollingScreenshotCommands(ScreenshotToolPalette& toolPalette);
-    void synchronizeCaptureCursorSetting();
+
     void synchronizeJumpToTranslationPageSetting();
     void setActiveToolAndReposition(ScreenshotToolPalette::Tool tool);
 

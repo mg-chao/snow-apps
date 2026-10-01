@@ -267,6 +267,9 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
     appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
                                               QStringLiteral("toggle_coordinate_mode"),
                                               "Toggle Global/Relative Coordinates");
+    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
+                                              QStringLiteral("toggle_cursor_visibility"),
+                                              "Toggle cursor visibility");
     rows.push_back(screenshotFixedShortcutHintRow("Switch color format: Shift"));
 
     const snow_shot::shortcuts::ShortcutBindingList previousHistoryShortcuts =
@@ -438,6 +441,11 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Delete selected elements: Delete",
                !disabled(SnowCanvasTool::RectangleFilter));
         break;
+    case ScreenshotActiveTool::Move:
+        appendScreenshotConfiguredShortcutHintRow(rows, context.configuredShortcuts,
+                                                  QStringLiteral("toggle_cursor_visibility"),
+                                                  "Toggle cursor visibility");
+        break;
     case ScreenshotActiveTool::Eraser:
     case ScreenshotActiveTool::Ocr:
     case ScreenshotActiveTool::Table:
@@ -445,7 +453,6 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
     case ScreenshotActiveTool::Latex:
     case ScreenshotActiveTool::Markdown:
     case ScreenshotActiveTool::Html:
-    case ScreenshotActiveTool::Move:
     case ScreenshotActiveTool::Spotlight:
     case ScreenshotActiveTool::Watermark:
     case ScreenshotActiveTool::AutoFilter:

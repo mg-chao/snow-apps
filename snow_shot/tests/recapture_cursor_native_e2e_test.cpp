@@ -244,7 +244,14 @@ bool verifyCursor(const ScreenshotCaptureResult& result, const QPoint& position,
             continue;
         }
         const QPoint local = position - display.physicalRect.topLeft();
-        const QImage crop = display.image.copy(QRect(local - QPoint(8, 8), QSize(96, 96)));
+        const QRect cropRect(local - QPoint(8, 8), QSize(96, 96));
+        QImage crop = display.image.copy(cropRect);
+        require(result.cursorAvailable && !display.cursorPatch.isNull(),
+                "normal capture must retain a separate cursor patch");
+        QPainter painter(&crop);
+        painter.drawImage(display.cursorPixelRect.topLeft() - cropRect.topLeft(),
+                          display.cursorPatch);
+        painter.end();
         require(crop.save(artifact), "could not save cursor evidence");
         int red = 0;
         int blue = 0;

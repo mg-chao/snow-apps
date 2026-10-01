@@ -13,6 +13,9 @@ snow-core = { path = "../snow-core" }
 anyhow.workspace = true
 
 
+[dev-dependencies]
+snow-cursor = { path = "../snow-cursor" }
+
 [[example]]
 name = "desktop_session_benchmark"
 

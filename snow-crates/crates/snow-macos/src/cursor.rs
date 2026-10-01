@@ -9,6 +9,12 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+
+/// Public Quartz visibility sampling; hidden cursors must not be resurrected.
+#[allow(deprecated)]
+pub fn cursor_visible() -> bool {
+    CGCursorIsVisible()
+}
 #[derive(Clone)]
 pub struct CursorShape {
     pub width: u32,

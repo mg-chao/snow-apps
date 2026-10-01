@@ -77,7 +77,11 @@ live authenticated endpoint. A later call discovers the endpoint again.
    that pending operation and retains the editor, except an unfinished begin.
 
 `snow_shot_screenshot_state` reports the current capture phase, region, canvas tool,
-undo/redo state, display mapping, revision, and pending operation. User edits in
+undo/redo state, display mapping, revision, and pending operation. Normal screenshots
+always retain cursor data separately. `capture_cursor` selects initial cursor inclusion
+in the output; `show_cursor` reports current session visibility and `cursor_available`
+reports whether a captured cursor patch can be shown. Toolbar and shortcut changes
+affect this screenshot only, including its exports. User edits in
 visible sessions increment the revision. A stale call returns `stale_revision`
 and the current state in `error.details.state`; refresh and decide what to do
 before sending another edit.

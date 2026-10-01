@@ -17,6 +17,7 @@
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
 class QCursor;
+class QRegion;
 class QEnterEvent;
 class QEvent;
 class QFocusEvent;
@@ -154,6 +155,8 @@ class SnowCanvasWidget : public QWidget {
     SnowCanvasCustomRenderer* customRenderer() const;
     void setCustomRenderer(SnowCanvasCustomRenderer* renderer);
     void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
+    void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources,
+                             const QRegion& damage);
     [[nodiscard]] QTransform canvasToViewTransform() const;
     QRect viewRectForCanvasRect(const QRectF& canvasRect, int paddingPx = 0) const;
 

@@ -166,6 +166,63 @@ pub struct SnowCaptureFrameInfo {
     pub rgba_len: usize,
 }
 
+/// Produces an immutable, display-local replacement patch without changing the desktop frame.
+/// A successful hidden/out-of-frame observation returns a null lease.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_screenshot_result_cursor_patch(
+    result: *const SnowCaptureScreenshotResultImpl,
+    snapshot: *const SnowCaptureCursorSnapshotImpl,
+    index: usize,
+    out_info: *mut SnowCaptureFrameInfo,
+    out_lease: *mut *mut SnowCaptureFrameLeaseImpl,
+) -> u8 {
+    if out_info.is_null() || out_lease.is_null() {
+        set_last_error("cursor patch outputs must not be null");
+        return 0;
+    }
+    unsafe {
+        *out_lease = ptr::null_mut();
+    }
+    let (Some(display), Some(snapshot)) = (
+        (unsafe { result.as_ref() }).and_then(|r| r.frames.get(index)),
+        unsafe { snapshot.as_ref() },
+    ) else {
+        set_last_error("cursor patch display or snapshot is unavailable");
+        return 0;
+    };
+    let Some(patch) = snapshot
+        .snapshot
+        .patch(&display.frame, display.entry.x, display.entry.y)
+    else {
+        clear_last_error();
+        return 1;
+    };
+    let frame = Arc::new(patch.frame);
+    unsafe {
+        *out_info = SnowCaptureFrameInfo {
+            stable_id: ptr::null(),
+            name: ptr::null(),
+            x: patch.x as i32,
+            y: patch.y as i32,
+            width: frame.width(),
+            height: frame.height(),
+            is_primary: 0,
+            backend_kind: 0,
+            pixel_format: match frame.pixel_format() {
+                CapturePixelFormat::Rgba8 => 0,
+                CapturePixelFormat::Bgra8 => 1,
+            },
+            reserved0: 0,
+            stride_bytes: frame.width() * 4,
+            rgba_bytes: frame.as_bytes().as_ptr(),
+            rgba_len: frame.as_bytes().len(),
+        };
+        *out_lease = Box::into_raw(Box::new(SnowCaptureFrameLeaseImpl { _frame: frame }));
+    }
+    clear_last_error();
+    1
+}
+
 #[repr(C)]
 pub struct SnowCaptureRegionSessionConfig {
     pub x: i32,
@@ -2706,6 +2763,88 @@ mod tests {
         let ok = unsafe { snow_capture_screenshot_result_display_info(ptr::null(), 0, &mut info) };
         assert_eq!(ok, 0);
         assert!(!snow_capture_last_error_message().is_null());
+    }
+
+    #[test]
+    fn cursor_patch_is_clipped_immutable_and_outlives_result_and_snapshot() {
+        use snow_cursor::{CursorCompositionMode, CursorShape, CursorShapeCapture, CursorSnapshot};
+        unsafe {
+            let result = test_result();
+            let snapshot = Box::into_raw(Box::new(SnowCaptureCursorSnapshotImpl {
+                snapshot: ScreenshotCursorSnapshot::from_snapshot(CursorSnapshot {
+                    absolute_x: -10,
+                    absolute_y: 20,
+                    visible: true,
+                    shape: CursorShapeCapture::Captured(CursorShape::from_rgba(
+                        1,
+                        0,
+                        2,
+                        1,
+                        CursorCompositionMode::AlphaBlend,
+                        vec![255, 0, 0, 255, 20, 40, 60, 255],
+                    )),
+                })
+                .unwrap(),
+            }));
+            let mut info: SnowCaptureFrameInfo = std::mem::zeroed();
+            let mut lease = ptr::null_mut();
+            assert_eq!(
+                snow_capture_screenshot_result_cursor_patch(
+                    result, snapshot, 0, &mut info, &mut lease
+                ),
+                1
+            );
+            assert_eq!(
+                (info.x, info.y, info.width, info.height, info.rgba_len),
+                (0, 0, 1, 1, 4)
+            );
+            assert!(!lease.is_null());
+            assert_eq!((&*result).frames[0].frame.as_bytes(), &[7; 16]);
+            snow_capture_screenshot_result_destroy(result);
+            snow_capture_cursor_snapshot_destroy(snapshot);
+            assert_eq!(
+                std::slice::from_raw_parts(info.rgba_bytes, info.rgba_len),
+                &[20, 40, 60, 255]
+            );
+            snow_capture_frame_lease_release(lease);
+
+            let result = test_result();
+            let hidden = SnowCaptureCursorSnapshotImpl {
+                snapshot: ScreenshotCursorSnapshot::from_snapshot(CursorSnapshot {
+                    absolute_x: -10,
+                    absolute_y: 20,
+                    visible: false,
+                    shape: CursorShapeCapture::Unavailable,
+                })
+                .unwrap(),
+            };
+            assert_eq!(
+                snow_capture_screenshot_result_cursor_patch(
+                    result, &hidden, 0, &mut info, &mut lease
+                ),
+                1
+            );
+            assert!(lease.is_null());
+            assert_eq!(
+                snow_capture_screenshot_result_cursor_patch(
+                    result, &hidden, 4, &mut info, &mut lease
+                ),
+                0
+            );
+            assert!(lease.is_null());
+            assert_eq!(
+                snow_capture_screenshot_result_cursor_patch(
+                    result,
+                    ptr::null(),
+                    0,
+                    &mut info,
+                    &mut lease
+                ),
+                0
+            );
+            assert!(lease.is_null());
+            snow_capture_screenshot_result_destroy(result);
+        }
     }
 
     #[test]

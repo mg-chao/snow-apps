@@ -53,6 +53,25 @@ class PickerUnitTranslator final : public QTranslator {
     }
 };
 
+void cursorPatchSamplingIsReversibleAndDoesNotModifyTheDesktop() {
+    ScreenshotColorPickerWindow picker;
+    QImage clean(16, 16, QImage::Format_RGBA8888);
+    clean.fill(Qt::red);
+    QImage patch(3, 3, QImage::Format_RGBA8888);
+    patch.fill(Qt::blue);
+    const QRect rect(7, 7, 3, 3);
+    const auto cleanPointer = clean.constBits();
+    picker.setCaptureImage(clean, clean.rect(), patch, rect);
+    picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0);
+    require(picker.currentColorText() == QStringLiteral("#0000FF"),
+            "shown cursor pixels must be sampled by the magnifier");
+    picker.setCaptureImage(clean, clean.rect());
+    picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0);
+    require(picker.currentColorText() == QStringLiteral("#FF0000") &&
+                clean.constBits() == cleanPointer && clean.pixelColor(8, 8) == QColor(Qt::red),
+            "hiding the cursor must restore clean sampling without detaching the desktop");
+}
+
 void positionTextTracksFontAndLanguage() {
     ScreenshotColorPickerWindow picker;
     sampleRed(picker);
@@ -512,6 +531,7 @@ int main(int argc, char** argv) {
     require(fontId >= 0, "offscreen picker tests require the Windows UI font");
     application.setFont(QFont(QFontDatabase::applicationFontFamilies(fontId).first()));
 #endif
+    cursorPatchSamplingIsReversibleAndDoesNotModifyTheDesktop();
     positionTextTracksFontAndLanguage();
     selectionUnitPersistsAndCoordinatesDoNotResample();
     coordinateModePersistsAndRefreshesWithoutResampling();

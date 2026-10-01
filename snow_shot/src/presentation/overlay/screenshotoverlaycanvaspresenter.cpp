@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotcursorimagesource.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -84,15 +85,14 @@ void applyDisplayModelsToDisplaySession(
                 QList<ScreenshotImageLayer> layers;
                 displaySession.forEachImageSource(
                     [&](qsizetype, const CapturedDisplayModel& source) {
-                        const QRectF rect =
-                            ScreenshotGeometryMapper::displayImageSourceCanvasRect(source);
-                        layers.push_back({source.image, rect, rect});
+                        layers.append(
+                            screenshotDisplayImageLayers(source, displaySession.cursorVisible));
                     });
                 overlay->setScreenshotImageSource(
                     ScreenshotImageSource::fromLayers(std::move(layers)));
             } else {
-                overlay->setScreenshotImage(
-                    display.image, ScreenshotGeometryMapper::displayImageSourceCanvasRect(display));
+                overlay->setScreenshotImageSource(
+                    screenshotDisplayImageSource(display, displaySession.cursorVisible));
             }
         }
         canvas->setViewportCamera(viewport.canvasCenter.x(), viewport.canvasCenter.y(),

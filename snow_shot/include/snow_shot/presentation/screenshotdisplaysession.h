@@ -18,6 +18,9 @@ class ScreenshotDisplaySession final {
     };
 
   public:
+    bool cursorVisible = false;
+    bool cursorAvailable = false;
+
     // Same object the capture workflow owns. Null after the workflow is destroyed.
     std::shared_ptr<ScreenshotStartupContext> startup;
     [[nodiscard]] QPoint logicalCursorPosition() const {
@@ -42,6 +45,8 @@ class ScreenshotDisplaySession final {
     void clear() {
         m_slots.clear();
         m_sources.clear();
+        cursorVisible = false;
+        cursorAvailable = false;
     }
 
     // Restored screenshot sources are independent of the currently attached displays.

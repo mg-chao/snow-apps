@@ -44,7 +44,8 @@ class ScreenshotOverlayUiHost final {
     void updateColorPicker(ScreenshotOverlayWindow* overlay, const QImage& image,
                            const QRect& physicalRect, const QPoint& physicalPoint,
                            const QPointF& localPosition, qreal opacity,
-                           const ScreenshotCoordinateDisplayValues& displayValues);
+                           const ScreenshotCoordinateDisplayValues& displayValues,
+                           const QImage& cursorPatch = {}, const QRect& cursorPixelRect = {});
     void hideColorPicker();
     void setColorPickerCenterGuideLineColor(const QColor& color);
     void resetColorPickerForNewCapture();

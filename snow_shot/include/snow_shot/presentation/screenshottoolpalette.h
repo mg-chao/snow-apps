@@ -325,9 +325,10 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] bool activateRememberedDrawingTool();
     void setScrollingAutoScrollIntervalMs(int milliseconds);
     [[nodiscard]] int scrollingAutoScrollIntervalMs() const;
-    void setCaptureCursorEnabled(bool enabled);
+    void setCursorVisible(bool enabled);
+    void setCursorAvailable(bool available);
     void setScreenshotRegionType(ScreenshotRegionType type);
-    [[nodiscard]] bool captureCursorEnabled() const;
+    [[nodiscard]] bool cursorVisible() const;
     void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit);
     void setSelectionToolbarHidden(bool hidden);
     [[nodiscard]] bool selectionToolbarHidden() const;
@@ -448,7 +449,7 @@ class ScreenshotToolPalette final : public QWidget,
     void undoRequested();
     void redoRequested();
     void moveRequested();
-    void captureCursorToggled(bool enabled);
+    void cursorVisibilityToggled(bool enabled);
     void recaptureRequested();
     void qrCodeVisibilityRequested(bool visible);
     void screenshotRegionTypeRequested(int type);
@@ -845,7 +846,7 @@ class ScreenshotToolPalette final : public QWidget,
     QSpacerItem* m_shapeStyleGroupSeparatorLeadingSpacing = nullptr;
     QSpacerItem* m_shapeStyleGroupSeparatorTrailingSpacing = nullptr;
     adqt::widgets::AdButton* m_moveButton = nullptr;
-    adqt::widgets::AdButton* m_captureCursorButton = nullptr;
+    adqt::widgets::AdButton* m_cursorButton = nullptr;
     adqt::widgets::AdButton* m_hideSelectionToolbarButton = nullptr;
     adqt::widgets::AdButton* m_recaptureButton = nullptr;
     adqt::widgets::AdButton* m_addRegionButton = nullptr;
@@ -1034,7 +1035,8 @@ class ScreenshotToolPalette final : public QWidget,
     QColor m_recordingMouseClickColor = QColor(0, 0, 0, 0);
     bool m_recordingKeyboardVisible = false;
     bool m_recordingCursorVisible = true;
-    bool m_captureCursorEnabled = false;
+    bool m_cursorVisible = false;
+    bool m_cursorAvailable = true;
     ScreenshotRegionType m_screenshotRegionType = ScreenshotRegionType::Rectangle;
     ScreenshotSelectionDisplayUnit m_selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool m_selectionToolbarHidden = false;

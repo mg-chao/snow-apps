@@ -214,6 +214,7 @@ struct ScreenshotOverlayShortcutController::Impl {
             QStringLiteral("next_screenshot_history"),
             QStringLiteral("select_previously_selected_area"),
             QStringLiteral("recapture"),
+            QStringLiteral("toggle_cursor_visibility"),
             QStringLiteral("copy_color"),
             QStringLiteral("toggle_coordinate_mode"),
             QStringLiteral("table_recognition"),
@@ -282,6 +283,11 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return interaction.moveToolActive() && !interaction.dragging() &&
                            !interaction.scrollingCapture() && actions.localShortcutInputAllowed();
                 }
+                if (actionId == QStringLiteral("toggle_cursor_visibility")) {
+                    return !inputHandler.externalDragActive() && !interaction.dragging() &&
+                           !interaction.scrollingCapture() && actions.localShortcutInputAllowed() &&
+                           actions.cursorVisibilityAvailable();
+                }
                 if (actionId == QStringLiteral("recapture")) {
                     return interaction.moveToolActive() && !interaction.dragging() &&
                            !interaction.scrollingCapture() && actions.localShortcutInputAllowed() &&
@@ -320,6 +326,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return actions.moveCursorOnePixel(
                         snow_shot::platform::PhysicalCursorDirection::Right);
                 }
+                if (actionId == QStringLiteral("toggle_cursor_visibility"))
+                    return actions.toggleCursorVisibility();
                 if (actionId == QStringLiteral("move_entire_selection")) {
                     return inputHandler.activateMoveEntireSelectionShortcut();
                 }

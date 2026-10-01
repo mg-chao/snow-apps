@@ -106,12 +106,14 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
     draft.canvasBounds = entry.recordedCanvasBounds;
     draft.selection = persistedSelection(entry.selection);
     draft.canvasHistory = entry.canvasHistory;
+    draft.cursorVisible = entry.cursorVisible;
+    draft.cursorAvailable = entry.cursorAvailable;
     draft.source = entry.source;
     for (const ScreenshotHistoryDisplay& display : entry.displays) {
-        draft.displays.push_back({display.stableId, display.name, display.image,
-                                  display.sourceCanvasOrigin, display.sourceCanvasRect,
-                                  display.canvasUsesPoints, display.backingScale,
-                                  display.nativeDisplayId});
+        draft.displays.push_back(
+            {display.stableId, display.name, display.image, display.sourceCanvasOrigin,
+             display.sourceCanvasRect, display.canvasUsesPoints, display.backingScale,
+             display.nativeDisplayId, display.cursorPatch, display.cursorPixelRect});
     }
     draft.resultImage = entry.resultImage;
     draft.preparedResultImage = entry.preparedResultImage;
@@ -148,6 +150,8 @@ placeholderRecord(const snow_shot::storage::CaptureHistoryDraft& draft) {
     record.source = draft.source;
     record.scrolling = draft.scrolling;
     record.desktopGeometry = draft.desktopGeometry;
+    record.cursorVisible = draft.cursorVisible;
+    record.cursorAvailable = draft.cursorAvailable;
     record.canvasBytes = draft.canvasHistory.size();
     if (draft.resultImage.has_value() || draft.preparedResultImage.has_value()) {
         const QSize resultSize = draft.preparedResultImage.has_value()
@@ -156,10 +160,14 @@ placeholderRecord(const snow_shot::storage::CaptureHistoryDraft& draft) {
         record.result = snow_shot::storage::CaptureHistoryResultRecord{resultSize, 0};
     }
     for (const snow_shot::storage::CaptureHistoryDisplayDraft& display : draft.displays) {
-        record.displays.push_back({display.stableId, display.name, display.image.size(), 0,
-                                   display.sourceCanvasOrigin, display.sourceCanvasRect,
-                                   display.canvasUsesPoints, display.backingScale,
-                                   display.nativeDisplayId});
+        record.displays.push_back(
+            {display.stableId, display.name, display.image.size(), 0, display.sourceCanvasOrigin,
+             display.sourceCanvasRect, display.canvasUsesPoints, display.backingScale,
+             display.nativeDisplayId,
+             display.cursorPatch.isNull()
+                 ? std::nullopt
+                 : std::optional<snow_shot::storage::CaptureHistoryCursorRecord>(
+                       {display.cursorPixelRect, 0})});
     }
     return record;
 }
@@ -182,12 +190,16 @@ presentationEntry(const snow_shot::storage::CaptureHistoryRecord& record,
     entry.scrolling = record.scrolling;
     entry.desktopGeometry = record.desktopGeometry;
     entry.persistent = true;
+    entry.cursorVisible = record.cursorVisible;
+    entry.cursorAvailable = record.cursorAvailable;
     for (qsizetype index = 0; index < record.displays.size(); ++index) {
         entry.displays.push_back(
             {record.displays[index].stableId, record.displays[index].name,
              payload.displayImages[index], record.displays[index].sourceCanvasOrigin,
              record.displays[index].sourceCanvasRect, record.displays[index].canvasUsesPoints,
-             record.displays[index].backingScale, record.displays[index].nativeDisplayId});
+             record.displays[index].backingScale, record.displays[index].nativeDisplayId,
+             payload.cursorPatches.value(index),
+             record.displays[index].cursor ? record.displays[index].cursor->pixelRect : QRect{}});
     }
     // Early direct-capture sessions stored absolute desktop coordinates instead of canvas ones.
     const bool directCapture =
@@ -412,6 +424,8 @@ ScreenshotHistoryService::snapshotCurrent(bool persistent) const {
         entry.selection.selection.isEmpty()) {
         return std::nullopt;
     }
+    entry.cursorVisible = m_context.displays.cursorVisible;
+    entry.cursorAvailable = m_context.displays.cursorAvailable;
     m_context.displays.forEachImageSource([&entry](qsizetype, const CapturedDisplayModel& display) {
         if (display.image.isNull()) {
             return;
@@ -428,7 +442,8 @@ ScreenshotHistoryService::snapshotCurrent(bool persistent) const {
                       ScreenshotGeometryMapper::displayImageSourceCanvasRect(display)
                           .toAlignedRect())
                 : std::nullopt,
-            display.canvasUsesPoints, display.backingScale, display.nativeDisplayId});
+            display.canvasUsesPoints, display.backingScale, display.nativeDisplayId,
+            display.cursorPatch, display.cursorPixelRect});
     });
     if (entry.displays.isEmpty()) {
         return std::nullopt;
@@ -589,6 +604,7 @@ void ScreenshotHistoryService::finishPersistentNavigation(
     if (targetStillExists)
         index = static_cast<int>(std::distance(m_entries.cbegin(), target)) + 1;
     if (!entry.has_value()) {
+        m_unreadableEntries.insert(entryId);
         if (targetStillExists) {
             m_entries.removeAt(index - 1);
             if (index < m_navigationIndex) {
@@ -662,6 +678,8 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
             source.name = saved.name;
             source.nativeDisplayId = saved.nativeDisplayId;
             source.image = saved.image;
+            source.cursorPatch = saved.cursorPatch;
+            source.cursorPixelRect = saved.cursorPixelRect;
             source.imageSourceCanvasRect = saved.sourceCanvasRect.value_or(
                 QRect(saved.sourceCanvasOrigin.value_or(QPoint()), saved.image.size()));
             source.canvasRect = source.imageSourceCanvasRect;
@@ -676,6 +694,8 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
         }
     }
     m_context.displays.setImageSources(std::move(sources));
+    m_context.displays.cursorVisible = entry.cursorVisible;
+    m_context.displays.cursorAvailable = entry.cursorAvailable;
 
     QVector<qsizetype> current;
     m_context.displays.forEachActiveDisplay(
@@ -711,6 +731,8 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
 
     for (qsizetype currentOrder = 0; currentOrder < current.size(); ++currentOrder) {
         CapturedDisplayModel& display = m_context.displays.displayAt(current[currentOrder]);
+        display.cursorPatch = {};
+        display.cursorPixelRect = {};
         if (imageOnly) {
             display.image = entry.displays.front().image;
             display.imageSourceCanvasRect = QRect(
@@ -726,6 +748,8 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
         }
         const QImage& image = entry.displays[savedIndex].image;
         display.image = image;
+        display.cursorPatch = entry.displays[savedIndex].cursorPatch;
+        display.cursorPixelRect = entry.displays[savedIndex].cursorPixelRect;
         display.imageSourceCanvasRect = entry.displays[savedIndex].sourceCanvasRect.value_or(
             QRect(entry.displays[savedIndex].sourceCanvasOrigin.value_or(
                       ScreenshotGeometryMapper::displayCanvasRect(display).topLeft().toPoint()),
@@ -840,6 +864,18 @@ void ScreenshotHistoryService::refreshMetadata() {
             refreshed.push_back(*existing);
         }
     }
+    // Payload deletion runs on the repository worker. Do not reintroduce a failed
+    // entry while that worker is still committing its removal.
+    QSet<QString> retainedUnreadable;
+    refreshed.erase(std::remove_if(refreshed.begin(), refreshed.end(),
+                                   [&](const auto& record) {
+                                       if (!m_unreadableEntries.contains(record.id))
+                                           return false;
+                                       retainedUnreadable.insert(record.id);
+                                       return true;
+                                   }),
+                    refreshed.end());
+    m_unreadableEntries = std::move(retainedUnreadable);
     std::sort(refreshed.begin(), refreshed.end(), [](const auto& first, const auto& second) {
         return first.createdUtc > second.createdUtc;
     });

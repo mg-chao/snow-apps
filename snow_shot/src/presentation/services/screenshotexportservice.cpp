@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotcursorimagesource.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "../pinned/screenshotclipboardplacementgeometry.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
@@ -32,7 +33,7 @@ QList<CanvasExportSource> exportSourcesForSelection(const ScreenshotDisplaySessi
     QList<CanvasExportSource> sources;
     sources.reserve(displaySession.size());
     const ScreenshotHalfOpenRect selectionRect = ScreenshotHalfOpenRect::fromRect(selection);
-    displaySession.forEachImageSource([&sources, &selectionRect](
+    displaySession.forEachImageSource([&sources, &selectionRect, &displaySession](
                                           qsizetype, const CapturedDisplayModel& display) {
         const QRectF canvasRect = ScreenshotGeometryMapper::displayImageSourceCanvasRect(display);
         if (display.image.isNull() ||
@@ -40,10 +41,9 @@ QList<CanvasExportSource> exportSourcesForSelection(const ScreenshotDisplaySessi
             return;
         }
 
-        sources.push_back(CanvasExportSource{
-            display.image,
-            canvasRect,
-        });
+        for (const auto& layer :
+             screenshotDisplayImageLayers(display, displaySession.cursorVisible))
+            sources.push_back(CanvasExportSource{layer.image, layer.destinationCanvasRect});
     });
     return sources;
 }

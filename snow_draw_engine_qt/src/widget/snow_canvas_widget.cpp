@@ -322,7 +322,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void detachRuntimeOwner(SnowCanvasRuntime* owner) override;
     void clearRenderState() override;
     void resetDocumentRetainedState() override;
-    void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
+    void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources,
+                             const QRegion& damage = {}, bool partialDamage = false);
     void smartEraseChanged() override {
         clearRenderState();
         widget.update();
@@ -3102,15 +3103,26 @@ bool SnowCanvasWidget::fillAutoFilterCategory(const QString& category) {
     return m_impl->fillAutoFilterCategory(category);
 }
 
-void SnowCanvasWidget::Impl::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources) {
+void SnowCanvasWidget::Impl::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources,
+                                                 const QRegion& damage, bool partialDamage) {
     if (auto* owner = runtimeBinding.runtimeOwner()) {
         auto& coordinator = snow_canvas_runtime::Access::smartErase(*owner);
-        coordinator.setSources(this, sources);
+        coordinator.setSources(this, sources, !partialDamage);
         coordinator.sync(runtimeBinding.engine());
-        smartEraseChanged();
+        if (!partialDamage)
+            smartEraseChanged();
+        else {
+            clearRenderState();
+            widget.update(damage);
+        }
     }
 }
 
 void SnowCanvasWidget::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources) {
     m_impl->setBaseImageSources(sources);
+}
+
+void SnowCanvasWidget::setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources,
+                                           const QRegion& damage) {
+    m_impl->setBaseImageSources(sources, damage, true);
 }

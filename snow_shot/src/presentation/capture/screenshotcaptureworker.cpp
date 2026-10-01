@@ -161,9 +161,6 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
     if (request.restoreOriginalScreenColors) {
         nativeRequest.flags |= SNOW_CAPTURE_SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS;
     }
-    if (request.captureCursor && !request.cursorSnapshot) {
-        nativeRequest.flags |= SNOW_CAPTURE_SCREENSHOT_REQUEST_INCLUDE_CURSOR;
-    }
     nativeRequest.cancellation_token = cancellationToken;
 
     SnowCaptureScreenshotResult* nativeResult = nullptr;
@@ -178,15 +175,6 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
         const QString captureError = nativeCaptureError("Screenshot capture failed");
         static_cast<void>(snow_capture_desktop_session_reset_to_prepared(m_session));
         captureResult.errorMessage = captureError;
-        postCaptureResult(coordinator, std::move(captureResult));
-        return;
-    }
-
-    if (request.captureCursor && request.cursorSnapshot &&
-        snow_capture_screenshot_result_composite_cursor(nativeResult,
-                                                        request.cursorSnapshot.get()) == 0) {
-        captureResult.errorMessage = nativeCaptureError("Failed to composite the captured cursor");
-        snow_capture_screenshot_result_destroy(nativeResult);
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
@@ -238,6 +226,22 @@ void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
 #endif
         display.canvasRect = display.physicalRect;
         display.image = std::move(image);
+        if (request.captureCursor && request.cursorSnapshot) {
+            SnowCaptureFrameInfo patchInfo{};
+            SnowCaptureFrameLease* patchLease = nullptr;
+            if (snow_capture_screenshot_result_cursor_patch(
+                    nativeResult, request.cursorSnapshot.get(), index, &patchInfo, &patchLease) &&
+                patchLease != nullptr) {
+                display.cursorPatch = imageFromFrameLease(
+                    patchLease, patchInfo.rgba_bytes, patchInfo.rgba_len, patchInfo.width,
+                    patchInfo.height, patchInfo.stride_bytes, patchInfo.pixel_format,
+                    snow_shot::presentation::capture::FrameAlphaMode::Opaque);
+                display.cursorPixelRect =
+                    QRect(patchInfo.x, patchInfo.y, static_cast<int>(patchInfo.width),
+                          static_cast<int>(patchInfo.height));
+                captureResult.cursorAvailable |= !display.cursorPatch.isNull();
+            }
+        }
         display.active = true;
         display.backend = backendFromNative(info.backend_kind);
         captureResult.displays.push_back(std::move(display));

@@ -1203,21 +1203,21 @@ void initialCaptureSnapshotsScreenshotSettings() {
     ScreenshotCaptureWorkflowContext context{
         state, runtime, geometry, displays, interaction, selection, intelligentSelection, {}};
     context.restoreOriginalScreenColors = [&enabled]() { return enabled; };
-    context.captureCursor = [&captureCursor]() { return captureCursor; };
+    context.showCursor = [&captureCursor]() { return captureCursor; };
     ScreenshotCaptureWorkflow workflow(context);
     workflow.startCapture();
     require(!runtime.lastCaptureRequest.restoreOriginalScreenColors &&
-                !state.restoreOriginalScreenColors && !runtime.lastCaptureRequest.captureCursor &&
-                !state.captureCursor,
+                !state.restoreOriginalScreenColors && runtime.lastCaptureRequest.captureCursor &&
+                state.captureCursor && !displays.cursorVisible,
             "capture must propagate disabled screenshot settings");
     enabled = true;
     captureCursor = true;
-    require(!state.restoreOriginalScreenColors && !state.captureCursor,
+    require(!state.restoreOriginalScreenColors && state.captureCursor && !displays.cursorVisible,
             "active capture must retain its setting snapshot");
     workflow.startCapture();
     require(runtime.lastCaptureRequest.restoreOriginalScreenColors &&
                 state.restoreOriginalScreenColors && runtime.lastCaptureRequest.captureCursor &&
-                state.captureCursor,
+                state.captureCursor && displays.cursorVisible,
             "normal capture must honor the enabled cursor setting with smart selection");
     workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::ExternalDrag);
     require(runtime.lastCaptureRequest.restoreOriginalScreenColors &&
@@ -1471,7 +1471,12 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     original.image = QImage(64, 48, QImage::Format_RGBA8888);
     original.image.fill(Qt::red);
     original.active = true;
+    original.cursorPatch = QImage(3, 4, QImage::Format_RGBA8888);
+    original.cursorPatch.fill(Qt::green);
+    original.cursorPixelRect = QRect(5, 6, 3, 4);
     displays.appendDisplay(original);
+    displays.cursorVisible = true;
+    displays.cursorAvailable = true;
     ScreenshotGeometryMapper geometry;
     geometry.rebuild(displays);
     ScreenshotInteractionState interaction;
@@ -1485,7 +1490,7 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     bool lastSucceeded = false;
     ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
                                              interaction, selection, intelligent, {}};
-    context.captureCursor = [&captureCursor]() { return captureCursor; };
+    context.showCursor = [&captureCursor]() { return captureCursor; };
     context.recaptureCompleted = [&](bool succeeded, const QString&) {
         ++completions;
         lastSucceeded = succeeded;
@@ -1505,8 +1510,16 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
     const ScreenshotCaptureMode modeBefore = interaction.mode();
     CapturedDisplayModel replacement = original;
     replacement.image.fill(Qt::blue);
-    runtime.deliverResult(
-        successfulRecaptureResult(runtime.lastCaptureRequest.requestId, replacement));
+    replacement.cursorPatch.fill(Qt::yellow);
+    replacement.cursorPixelRect.moveTopLeft(QPoint(7, 8));
+    auto cursorResult =
+        successfulRecaptureResult(runtime.lastCaptureRequest.requestId, replacement);
+    cursorResult.cursorAvailable = true;
+    runtime.deliverResult(cursorResult);
+    require(displays.cursorVisible && displays.cursorAvailable &&
+                displays.displayAt(0).cursorPatch == replacement.cursorPatch &&
+                displays.displayAt(0).cursorPixelRect == replacement.cursorPixelRect,
+            "recapture must replace cursor pixels while retaining session visibility");
     require(runtime.createColorPickerCalls == 0 && runtime.releaseColorPickerCalls == 0,
             "recapture must leave the existing session picker lifetime unchanged");
     require(completions == 1 && lastSucceeded && !workflow.recaptureInProgress() &&
@@ -1518,9 +1531,9 @@ void recapturePreservesEditingStateAndRollsBackFailures() {
             "successful recapture must preserve selection, interaction, and canvas state");
 
     captureCursor = false;
-    require(workflow.startRecapture() && !runtime.lastCaptureRequest.captureCursor &&
+    require(workflow.startRecapture() && runtime.lastCaptureRequest.captureCursor &&
                 runtime.lastCaptureRequest.excludedWindowIds.isEmpty(),
-            "each recapture must read the latest cursor setting");
+            "recapture must retain acquisition independently of the visibility default");
     ScreenshotCaptureResult failed;
     failed.requestId = runtime.lastCaptureRequest.requestId;
     failed.purpose = ScreenshotCapturePurpose::Recapture;

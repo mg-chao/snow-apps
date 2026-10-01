@@ -16,6 +16,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -30,6 +31,19 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+bool equalPixels(const QImage& left, const QImage& right) {
+    if (left.size() != right.size())
+        return false;
+    const auto a = left.convertToFormat(QImage::Format_RGBA8888);
+    const auto b = right.convertToFormat(QImage::Format_RGBA8888);
+    for (int y = 0; y < a.height(); ++y) {
+        if (std::memcmp(a.constScanLine(y), b.constScanLine(y),
+                        static_cast<size_t>(a.width()) * 4) != 0)
+            return false;
+    }
+    return true;
 }
 
 void writeBytes(const QString& path, const QByteArray& bytes) {
@@ -135,10 +149,26 @@ void pointGeometryRoundTripsAndLegacyIndexRemainsReadable() {
     require(file.open(QIODevice::WriteOnly), "legacy index write failed");
     file.write(QJsonDocument(index).toJson());
     file.close();
-    auto repository = storage::makeCaptureHistoryRepository(temporary.path());
-    require(repository->records().size() == 1 &&
-                !repository->records().front().displays.front().canvasUsesPoints,
-            "legacy pixel-space history was rejected");
+    for (int version : {1, 2}) {
+        index.insert(QStringLiteral("format_version"), version);
+        auto legacyRecords = index.value(QStringLiteral("records")).toArray();
+        auto legacyRecord = legacyRecords[0].toObject();
+        legacyRecord.remove(QStringLiteral("cursor_visible"));
+        legacyRecord.remove(QStringLiteral("cursor_available"));
+        legacyRecords[0] = legacyRecord;
+        index.insert(QStringLiteral("records"), legacyRecords);
+        writeBytes(indexPath(temporary.path()), QJsonDocument(index).toJson());
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        require(repository->records().size() == 1 &&
+                    !repository->records().front().displays.front().canvasUsesPoints &&
+                    !repository->records().front().cursorAvailable,
+                "legacy pixel-space history must load without offering cursor toggles");
+        const auto payload = repository->load(repository->records().front());
+        require(payload &&
+                    equalPixels(payload->displayImages.front(), draft.displays.front().image) &&
+                    payload->cursorPatches.front().isNull(),
+                "legacy entries must preserve their original pixels without synthesizing cursors");
+    }
 }
 
 void sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates() {
@@ -194,6 +224,62 @@ void sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates() {
         writeBytes(indexPath(temporary.path()), QJsonDocument(invalidIndex).toJson());
         auto repository = storage::makeCaptureHistoryRepository(temporary.path());
         require(repository->records().isEmpty(), "invalid source origin was accepted on load");
+    }
+}
+
+void cursorPatchesRoundTripWithoutChangingDesktopPixels() {
+    QTemporaryDir directory;
+    auto draft = draftAt(QDateTime::currentDateTimeUtc());
+    draft.cursorVisible = true;
+    draft.cursorAvailable = true;
+    draft.displays.front().cursorPixelRect = QRect(2, 3, 4, 5);
+    draft.displays.front().cursorPatch = QImage(4, 5, QImage::Format_RGBA8888);
+    draft.displays.front().cursorPatch.fill(Qt::red);
+    storage::CaptureHistoryRecord record;
+    {
+        auto repository = storage::makeCaptureHistoryRepository(directory.path());
+        const auto published = repository->publish(draft).get();
+        require(published.storage.success && published.record.displays.front().cursor,
+                "separate cursor history publication failed");
+        record = published.record;
+        const auto& cursor = *record.displays.front().cursor;
+        require(cursor.pixelRect == QRect(2, 3, 4, 5) && cursor.encodedBytes > 0 &&
+                    record.totalBytes == record.canvasBytes + record.displays.front().encodedBytes +
+                                             cursor.encodedBytes,
+                "cursor patch bytes must participate in history quota accounting");
+    }
+    {
+        auto repository = storage::makeCaptureHistoryRepository(directory.path());
+        require(repository->records().size() == 1 && repository->records().front() == record,
+                "cursor history metadata must survive reopening");
+        const auto payload = repository->load(record);
+        require(payload.has_value(), "cursor history payload must reopen");
+        require(record.cursorVisible && record.cursorAvailable,
+                "cursor history must preserve session visibility and availability");
+        require(equalPixels(payload->displayImages.front(), draft.displays.front().image),
+                "reopened cursor history must preserve clean desktop pixels");
+        require(equalPixels(payload->cursorPatches.front(), draft.displays.front().cursorPatch),
+                "reopened history must preserve separate cursor pixels");
+        const auto assetPath =
+            QDir(onlyRecordDirectory(directory.path())).filePath(QStringLiteral("cursor_0.png"));
+        QFile appendedPatch(assetPath);
+        require(appendedPatch.open(QIODevice::Append) && appendedPatch.write("x") == 1,
+                "append a trailing-byte cursor payload fixture");
+        appendedPatch.close();
+        require(!repository->load(record),
+                "cursor patch payload size must match the accounted manifest bytes");
+        require(repository->remove(record.id).get().success && !QFileInfo::exists(assetPath) &&
+                    repository->usage().entryCount == 0,
+                "removing history must delete cursor assets and release their accounted bytes");
+    }
+    require(readObject(indexPath(directory.path())).value(QStringLiteral("format_version")) == 3,
+            "new history must use format version 3");
+    for (const QRect invalid : {QRect(-1, 0, 4, 5), QRect(30, 20, 4, 5), QRect(2, 3, 5, 5)}) {
+        QTemporaryDir malformed;
+        draft.displays.front().cursorPixelRect = invalid;
+        auto repository = storage::makeCaptureHistoryRepository(malformed.path());
+        require(!repository->publish(draft).get().storage.success,
+                "cursor patch must fit the desktop and match its stored dimensions");
     }
 }
 
@@ -349,7 +435,7 @@ void publicationAndRecovery() {
         const QJsonObject manifest = firstRecord(temporary.path());
         require(readObject(indexPath(temporary.path()))
                             .value(QStringLiteral("format_version"))
-                            .toInt() == 2 &&
+                            .toInt() == 3 &&
                     manifest.value(QStringLiteral("id")).toString() == published.id &&
                     manifest.value(QStringLiteral("source")).toString() ==
                         QStringLiteral("pinned_to_screen") &&
@@ -1152,6 +1238,7 @@ int main(int argc, char** argv) {
         startupExpiresAgeButDoesNotEnforceCapacity();
         return 0;
     }
+    cursorPatchesRoundTripWithoutChangingDesktopPixels();
     compoundSelectionSurvivesRepositoryRestart();
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();

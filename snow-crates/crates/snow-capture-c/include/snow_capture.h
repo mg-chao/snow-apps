@@ -17,8 +17,9 @@ typedef struct SnowCaptureCancellationTokenImpl SnowCaptureCancellationToken;
 typedef struct SnowCaptureScreenshotResultImpl SnowCaptureScreenshotResult;
 typedef struct SnowCaptureCursorSnapshotImpl SnowCaptureCursorSnapshot;
 
-/* Copies the current global cursor, including its pixels, hotspot, physical position and
- * visibility. Immutable and safe to share across capture threads. Null reports a sampling error;
+/* Copies the current global cursor, including its pixels, hotspot, desktop position and
+ * visibility (physical pixels on Windows, desktop points on macOS).
+ * Immutable and safe to share across capture threads. Null reports a sampling error;
  * a hidden cursor is a valid snapshot. */
 SnowCaptureCursorSnapshot* snow_capture_cursor_snapshot_create(void);
 void snow_capture_cursor_snapshot_destroy(SnowCaptureCursorSnapshot* snapshot);
@@ -108,6 +109,16 @@ typedef struct SnowCaptureFrameInfo {
     const uint8_t* rgba_bytes;
     size_t rgba_len;
 } SnowCaptureFrameInfo;
+
+/* Retained cursor replacement pixels in display-local image coordinates. Desktop pixels and
+ *
+ * existing leases remain immutable. Success with a null lease means hidden/out-of-frame.
+ * Release
+ * a non-null lease with snow_capture_frame_lease_release. */
+uint8_t snow_capture_screenshot_result_cursor_patch(const SnowCaptureScreenshotResult* result,
+                                                    const SnowCaptureCursorSnapshot* snapshot,
+                                                    size_t index, SnowCaptureFrameInfo* out_info,
+                                                    SnowCaptureFrameLease** out_lease);
 
 /* Geometry belongs to the captured frame, not a later desktop enumeration.
  * coordinate_space: 0 = desktop pixels (Windows), 1 = desktop points (macOS).

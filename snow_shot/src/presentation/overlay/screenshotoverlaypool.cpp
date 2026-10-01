@@ -71,6 +71,8 @@ void ScreenshotOverlayPool::resetForNewCapture(ScreenshotDisplaySession& display
     displaySession.forEachMutableDisplayWithOverlay(
         [](qsizetype, CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
             display.image = QImage();
+            display.cursorPatch = {};
+            display.cursorPixelRect = {};
             if (overlay != nullptr) {
                 overlay->resetScreenshotRendering();
                 if (overlay->canvas() != nullptr) {

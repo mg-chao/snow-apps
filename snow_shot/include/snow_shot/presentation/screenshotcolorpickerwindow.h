@@ -21,7 +21,8 @@ class ScreenshotColorPickerWindow final : public QWidget {
     void setOwnerWindow(QWidget* owner);
     void prepareNativeSurface();
     void resetForNewCapture();
-    void setCaptureImage(const QImage& image, const QRect& physicalRect);
+    void setCaptureImage(const QImage& image, const QRect& physicalRect,
+                         const QImage& cursorPatch = {}, const QRect& cursorPixelRect = {});
     void
     updatePicker(const QPoint& physicalPoint, const QPointF& overlayLocalPosition, qreal opacity,
                  std::optional<ScreenshotCoordinateDisplayValues> displayValues = std::nullopt);
@@ -58,6 +59,8 @@ class ScreenshotColorPickerWindow final : public QWidget {
     QRectF colorTextRect() const;
 
     QImage m_captureImage;
+    QImage m_cursorPatch;
+    QRect m_cursorPixelRect;
     QRect m_physicalRect;
     QImage m_previewImage;
     QPoint m_currentPhysicalPoint;

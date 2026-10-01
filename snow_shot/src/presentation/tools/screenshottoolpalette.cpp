@@ -84,7 +84,8 @@ constexpr int kRecordingSettingsColorPickerWidth = 154;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto Filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Fill regions"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Capture cursor"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show Cursor"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cursor data is unavailable for this screenshot."),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recapture"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Hide selection toolbar"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter type"),
@@ -2365,13 +2366,20 @@ int ScreenshotToolPalette::scrollingAutoScrollIntervalMs() const {
     return m_scrollingAutoScrollIntervalMs;
 }
 
-void ScreenshotToolPalette::setCaptureCursorEnabled(bool enabled) {
-    m_captureCursorEnabled = enabled;
-    setScreenshotToolPaletteButtonActive(m_captureCursorButton, enabled);
+void ScreenshotToolPalette::setCursorVisible(bool enabled) {
+    m_cursorVisible = enabled;
+    setScreenshotToolPaletteButtonActive(m_cursorButton, enabled);
 }
 
-bool ScreenshotToolPalette::captureCursorEnabled() const {
-    return m_captureCursorEnabled;
+void ScreenshotToolPalette::setCursorAvailable(bool available) {
+    m_cursorAvailable = available;
+    if (m_cursorButton)
+        m_cursorButton->setEnabled(available && !m_recaptureBusy);
+    refreshShortcutTooltips();
+}
+
+bool ScreenshotToolPalette::cursorVisible() const {
+    return m_cursorVisible;
 }
 
 void ScreenshotToolPalette::setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit) {
@@ -2395,6 +2403,8 @@ bool ScreenshotToolPalette::selectionToolbarHidden() const {
 
 void ScreenshotToolPalette::setRecaptureBusy(bool busy) {
     m_recaptureBusy = busy;
+    if (m_cursorButton)
+        m_cursorButton->setEnabled(m_cursorAvailable && !busy);
     setQrCodeState(m_qrCodeAvailable, m_qrCodeVisible, m_qrCodeError);
     for (auto* button : {m_addRegionButton, m_subtractRegionButton})
         if (button)
@@ -3996,9 +4006,7 @@ void ScreenshotToolPalette::retranslateUi() {
     refreshRecordingExportSettingsText();
     updateRecordingControls();
     refreshShortcutTooltips();
-    if (m_captureCursorButton != nullptr) {
-        configureScreenshotToolPaletteTooltip(m_captureCursorButton, "Capture cursor");
-    }
+    setCursorAvailable(m_cursorAvailable);
     setQrCodeState(m_qrCodeAvailable, m_qrCodeVisible, m_qrCodeError);
 }
 
@@ -4064,6 +4072,19 @@ void ScreenshotToolPalette::refreshShortcutTooltips() {
     refreshActionToolGroups();
     refreshConfirmShortcutHint();
     refreshRecordingShortcutTooltips();
+    if (m_cursorButton) {
+        m_cursorButton->setAccessibleDescription(
+            m_cursorAvailable ? QString() : tr("Cursor data is unavailable for this screenshot."));
+        if (m_cursorAvailable)
+            applyScreenshotShortcutTooltip(m_cursorButton, QStringLiteral("Show Cursor"),
+                                           QStringLiteral("toggle_cursor_visibility"));
+        else {
+            configureScreenshotToolPaletteTooltip(
+                m_cursorButton, "Cursor data is unavailable for this screenshot.");
+            setScreenshotToolPaletteAccessibleNameSource(m_cursorButton, "Show Cursor");
+            m_cursorButton->setAccessibleName(tr("Show Cursor"));
+        }
+    }
     if (m_recaptureButton != nullptr) {
         applyScreenshotShortcutTooltip(m_recaptureButton, QStringLiteral("Recapture"),
                                        QStringLiteral("recapture"));
@@ -6879,7 +6900,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_rectangleStyleControlsWidget = nullptr;
     m_moveActionControls = nullptr;
     m_selectionDisplayUnitGroup = nullptr;
-    m_captureCursorButton = nullptr;
+    m_cursorButton = nullptr;
     m_recaptureButton = nullptr;
     m_showQrCodeButton = nullptr;
     m_addRegionButton = nullptr;
@@ -7934,11 +7955,11 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     layout->addWidget(regionActionsSeparator);
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
 
-    m_captureCursorButton = createScreenshotToolPaletteStyleActionButton(
-        m_moveActionControls, "Capture cursor", custom_outlined_icons::RecordingCursor(),
+    m_cursorButton = createScreenshotToolPaletteStyleActionButton(
+        m_moveActionControls, "Show Cursor", custom_outlined_icons::RecordingCursor(),
         actionButtonMetrics(m_physicalScale));
-    m_captureCursorButton->setObjectName(QStringLiteral("screenshotCaptureCursorButton"));
-    layout->addWidget(m_captureCursorButton);
+    m_cursorButton->setObjectName(QStringLiteral("screenshotCaptureCursorButton"));
+    layout->addWidget(m_cursorButton);
     addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
     m_recaptureButton = createScreenshotToolPaletteStyleActionButton(
         m_moveActionControls, "Recapture", custom_outlined_icons::RefreshCapture(),
@@ -7989,9 +8010,9 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     layout->addWidget(hideSelectionToolbarButton);
     m_hideSelectionToolbarButton = hideSelectionToolbarButton;
 
-    connect(m_captureCursorButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-        setCaptureCursorEnabled(!m_captureCursorEnabled);
-        emit captureCursorToggled(m_captureCursorEnabled);
+    connect(m_cursorButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        setCursorVisible(!m_cursorVisible);
+        emit cursorVisibilityToggled(m_cursorVisible);
     });
     connect(m_recaptureButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::recaptureRequested);
@@ -8006,7 +8027,8 @@ void ScreenshotToolPalette::createMoveActionFamily() {
                                   screenshotToolbarReferenceWidth(units.container) +
                                   STYLE_ITEM_SPACING * 3 + STYLE_GROUP_SPACING * 10 + 6 +
                                   TOOLBAR_SEPARATOR_WIDTH * 2);
-    setCaptureCursorEnabled(m_captureCursorEnabled);
+    setCursorVisible(m_cursorVisible);
+    setCursorAvailable(m_cursorAvailable);
     setSelectionToolbarHidden(m_selectionToolbarHidden);
     setRecaptureBusy(m_recaptureBusy);
 }

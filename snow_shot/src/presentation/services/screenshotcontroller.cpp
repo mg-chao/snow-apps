@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotcursorimagesource.h"
 #include "../pinned/screenshotclipboardplacementgeometry.h"
 #include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotqrcontroller.h"
@@ -284,6 +285,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void createCaptureRuntimeAdapter();
     void createCaptureWorkflow();
     void createHistoryService();
+    bool screenshotCursorVisible() const override {
+        return m_displaySession.cursorVisible;
+    }
+    bool screenshotCursorAvailable() const override;
+    bool setScreenshotCursorVisible(bool visible) override;
     void createDisplayConfigurationObserver();
     void createOverlayInputPipeline();
     void createToolbarCommands();
@@ -850,6 +856,7 @@ void ScreenshotController::Impl::createHistoryService() {
                 if (m_overlayCoordinator != nullptr) {
                     if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
                         toolbar->setActiveTool(ScreenshotToolPalette::Tool::Move);
+                        toolbar->synchronizeCursorState();
                     }
                 }
                 if (m_presentationServices != nullptr) {
@@ -866,7 +873,13 @@ void ScreenshotController::Impl::createHistoryService() {
                 m_colorPickerController->updateAtCurrentCursor(
                     m_presentationServices->colorPickerContext());
             },
-            [this](bool loading) { setHistoryLoadingMessageVisible(loading); },
+            [this](bool loading) {
+                setHistoryLoadingMessageVisible(loading);
+                if (!loading) {
+                    if (auto* toolbar = m_overlayCoordinator->toolbar())
+                        toolbar->synchronizeCursorState();
+                }
+            },
             [this]() {
                 if (m_selectorWorkflow == nullptr) {
                     return;
@@ -1569,7 +1582,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             []() { return snow_shot::storage::ScreenshotSettings().restoreOriginalScreenColors(); },
             [this]() {
                 return m_mcpOptions.value(QStringLiteral("capture_cursor"))
-                    .toBool(snow_shot::storage::ScreenshotSettings().captureCursor());
+                    .toBool(snow_shot::storage::ScreenshotSettings().showCursor());
             },
             [this]() { return m_selectionSettings->selectionTarget(); },
             [this](bool succeeded, const QString& errorMessage) {
@@ -1609,6 +1622,8 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {
+    if (auto* toolbar = m_overlayCoordinator->toolbar())
+        toolbar->synchronizeCursorState();
     if (m_pendingMcpDocument) {
         const auto entry = std::exchange(m_pendingMcpDocument, {});
         const bool ok = m_historyService && m_historyService->presentTransientEntry(*entry);
@@ -1905,6 +1920,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             }
         },
     };
+    actions.cursorVisibilityAvailable = [this] { return screenshotCursorAvailable(); };
+    actions.toggleCursorVisibility = [this] {
+        return setScreenshotCursorVisible(!m_displaySession.cursorVisible);
+    };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
             m_captureState,
@@ -2021,7 +2040,7 @@ void ScreenshotController::Impl::requestRecapture() {
         toolbar->setRecaptureBusy(true);
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    if (snow_shot::storage::ScreenshotSettings().captureCursor()) {
+    if (m_captureState.captureCursor) {
         m_recaptureCursorRefresh =
             std::make_unique<snow_shot::platform::windows::CursorRefresh>(&owner);
     }
@@ -2051,7 +2070,7 @@ void ScreenshotController::Impl::prepareRecaptureWindows(quint64 generation) {
         excludedWindowIds.push_back(*windowId);
     }
     m_recaptureKeyboardOwner = keyboardOwnerOverlay();
-    if (snow_shot::storage::ScreenshotSettings().captureCursor()) {
+    if (m_captureState.captureCursor) {
         m_recaptureFocus = snow_shot::platform::macos::createRecaptureFocus(visibleWindows);
         m_recaptureFocus->prepare([this, generation, excludedWindowIds](bool ready) {
             if (!m_recaptureBusy || generation != m_recaptureGeneration)
@@ -2214,6 +2233,7 @@ void ScreenshotController::Impl::finishRecapture(bool succeeded, bool reportFail
     if (ScreenshotToolbarWindow* toolbar =
             m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr) {
         toolbar->setRecaptureBusy(false);
+        toolbar->synchronizeCursorState();
     }
 
     if (succeeded) {
@@ -2236,6 +2256,46 @@ void ScreenshotController::Impl::finishRecapture(bool succeeded, bool reportFail
             QStringLiteral("recapture"),
             QCoreApplication::translate("ScreenshotController", "Could not recapture the screen"));
     }
+}
+
+bool ScreenshotController::Impl::screenshotCursorAvailable() const {
+    return m_displaySession.cursorAvailable && !m_captureState.captureInProgress &&
+           !m_recaptureBusy && !m_interaction.scrollingCapture() &&
+           (m_captureState.sessionState == ScreenshotSessionState::Editing ||
+            m_captureState.sessionState == ScreenshotSessionState::OverlayVisible) &&
+           (!m_historyService || !m_historyService->navigationInProgress());
+}
+
+bool ScreenshotController::Impl::setScreenshotCursorVisible(bool visible) {
+    if (!screenshotCursorAvailable())
+        return false;
+    if (visible == m_displaySession.cursorVisible)
+        return true;
+    m_displaySession.cursorVisible = visible;
+    QList<ScreenshotImageLayer> layers;
+    QRectF damage;
+    m_displaySession.forEachImageSource([&](qsizetype, const CapturedDisplayModel& display) {
+        layers.append(screenshotDisplayImageLayers(display, visible));
+        const QRectF cursor = screenshotCursorCanvasRect(display);
+        if (!cursor.isEmpty())
+            damage = damage.isEmpty() ? cursor : damage.united(cursor);
+    });
+    m_displaySession.forEachActiveOverlay([&](qsizetype, const CapturedDisplayModel& display,
+                                              ScreenshotOverlayWindow* overlay) {
+        if (m_displaySession.hasImageSources())
+            overlay->setScreenshotImageSource(ScreenshotImageSource::fromLayers(layers), damage);
+        else if (!display.cursorPatch.isNull())
+            overlay->setScreenshotImageSource(screenshotDisplayImageSource(display, visible),
+                                              screenshotCursorCanvasRect(display));
+    });
+    invalidateRecognitionSession();
+    if (m_autoFilterController)
+        m_autoFilterController->resetSession();
+    if (auto* toolbar = m_overlayCoordinator->toolbar())
+        toolbar->synchronizeCursorState();
+    m_colorPickerController->updateAtCurrentCursor(m_presentationServices->colorPickerContext());
+    emit owner.mcpCanvasChanged();
+    return true;
 }
 
 void ScreenshotController::Impl::createToolbarCommands() {
@@ -5931,7 +5991,9 @@ QJsonObject ScreenshotController::mcpState() const {
         {QStringLiteral("displays"), displays},
         {QStringLiteral("platform"), QSysInfo::productType()},
         {QStringLiteral("coordinate_space"), QStringLiteral("canvas_half_open")},
-        {QStringLiteral("capture_cursor"), s.m_captureState.captureCursor},
+        {QStringLiteral("capture_cursor"), s.m_displaySession.cursorVisible},
+        {QStringLiteral("show_cursor"), s.m_displaySession.cursorVisible},
+        {QStringLiteral("cursor_available"), s.m_displaySession.cursorAvailable},
         {QStringLiteral("restore_original_screen_colors"),
          s.m_captureState.restoreOriginalScreenColors},
         {QStringLiteral("presentation"), s.m_captureState.presentationSuppressed

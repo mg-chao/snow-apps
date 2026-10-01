@@ -284,9 +284,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 204,
+    require(itemIds.size() == 205,
             qPrintable(QStringLiteral(
-                           "catalog must contain 204 shared settings on every platform; found %1")
+                           "catalog must contain 205 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -413,12 +413,13 @@ void builtInCatalogIsCompleteAndValid() {
             screenshotCaptureSection->items.size() == 2 + precedingCount &&
             screenshotCaptureSection->items.at(precedingCount).id ==
                 QStringLiteral("screenshot.capture-cursor") &&
-            captureCursor->title.translated() == QStringLiteral("Capture cursor") &&
+            captureCursor->title.translated() == QStringLiteral("Show Cursor") &&
             captureCursor->description.translated() ==
-                QStringLiteral("Include the mouse cursor in normal screenshots.") &&
+                QStringLiteral(
+                    "Show the captured mouse cursor by default in new normal screenshots.") &&
             captureCursor->configurationKey == QStringLiteral("screenshot/capture_cursor") &&
             std::get<settings::SettingsSwitchDefinition>(captureCursor->payload).binding ==
-                settings::SettingsSwitchBinding::ScreenshotCaptureCursor &&
+                settings::SettingsSwitchBinding::ScreenshotShowCursor &&
             !storage::ConfigurationSchema::defaultValue(captureCursor->configurationKey).toBool(),
         "cursor capture must be the disabled switch that follows color restoration in system "
         "Screenshot settings");
@@ -1069,18 +1070,20 @@ void builtInCatalogIsCompleteAndValid() {
          "screenshot_shortcuts/next_screenshot_history"},
         {10, "screenshot-shortcut.select_previously_selected_area",
          "screenshot_shortcuts/select_previously_selected_area"},
-        {11, "screenshot-shortcut.recapture", "screenshot_shortcuts/recapture"},
-        {12, "screenshot-shortcut.copy_color", "screenshot_shortcuts/copy_color"},
-        {13, "screenshot-shortcut.toggle_coordinate_mode",
+        {11, "screenshot-shortcut.toggle_cursor_visibility",
+         "screenshot_shortcuts/toggle_cursor_visibility"},
+        {12, "screenshot-shortcut.recapture", "screenshot_shortcuts/recapture"},
+        {13, "screenshot-shortcut.copy_color", "screenshot_shortcuts/copy_color"},
+        {14, "screenshot-shortcut.toggle_coordinate_mode",
          "screenshot_shortcuts/toggle_coordinate_mode"},
-        {14, "screenshot-shortcut.pin_to_screen", "screenshot_shortcuts/pin_to_screen"},
-        {15, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
-        {16, "screenshot-shortcut.scrolling_screenshot",
+        {15, "screenshot-shortcut.pin_to_screen", "screenshot_shortcuts/pin_to_screen"},
+        {16, "screenshot-shortcut.video_recording", "screenshot_shortcuts/video_recording"},
+        {17, "screenshot-shortcut.scrolling_screenshot",
          "screenshot_shortcuts/scrolling_screenshot"},
-        {17, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
-        {18, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
-        {19, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
-        {20, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
+        {18, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
+        {19, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
+        {20, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
+        {21, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
     };
     bool newScreenshotShortcutContractsMatch = screenshotShortcuts != nullptr;
     for (const ScreenshotShortcutContract& contract : newScreenshotShortcutContracts) {
@@ -1094,7 +1097,7 @@ void builtInCatalogIsCompleteAndValid() {
     require(
         applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
-            screenshotShortcuts->items.size() == 21 &&
+            screenshotShortcuts->items.size() == 22 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             screenshotShortcuts->items.constFirst().id ==
                 QStringLiteral("screenshot-shortcut.move_tool") &&
@@ -1112,22 +1115,24 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("Next screenshot history") &&
             screenshotShortcuts->items.at(10).title.translated() ==
                 QStringLiteral("Select previously selected area") &&
-            screenshotShortcuts->items.at(11).title.translated() == QStringLiteral("Recapture") &&
-            screenshotShortcuts->items.at(12).title.translated() == QStringLiteral("Copy color") &&
-            screenshotShortcuts->items.at(13).title.translated() ==
-                QStringLiteral("Toggle Global/Relative Coordinates") &&
+            screenshotShortcuts->items.at(11).title.translated() ==
+                QStringLiteral("Toggle cursor visibility") &&
+            screenshotShortcuts->items.at(12).title.translated() == QStringLiteral("Recapture") &&
+            screenshotShortcuts->items.at(13).title.translated() == QStringLiteral("Copy color") &&
             screenshotShortcuts->items.at(14).title.translated() ==
-                QStringLiteral("Pin to screen") &&
+                QStringLiteral("Toggle Global/Relative Coordinates") &&
             screenshotShortcuts->items.at(15).title.translated() ==
-                QStringLiteral("Video recording") &&
+                QStringLiteral("Pin to screen") &&
             screenshotShortcuts->items.at(16).title.translated() ==
+                QStringLiteral("Video recording") &&
+            screenshotShortcuts->items.at(17).title.translated() ==
                 QStringLiteral("Scrolling screenshot") &&
-            screenshotShortcuts->items.at(17).title.translated() == QStringLiteral("Quick save") &&
-            screenshotShortcuts->items.at(18).title.translated() ==
-                QStringLiteral("Save as file") &&
+            screenshotShortcuts->items.at(18).title.translated() == QStringLiteral("Quick save") &&
             screenshotShortcuts->items.at(19).title.translated() ==
-                QStringLiteral("Cancel screenshot") &&
+                QStringLiteral("Save as file") &&
             screenshotShortcuts->items.at(20).title.translated() ==
+                QStringLiteral("Cancel screenshot") &&
+            screenshotShortcuts->items.at(21).title.translated() ==
                 QStringLiteral("Copy to clipboard") &&
             newScreenshotShortcutContractsMatch &&
             std::get<settings::SettingsLocalShortcutDefinition>(
@@ -2090,7 +2095,7 @@ void searchIndexIsGeneratedAndRanked() {
                 items == expectedNodes - pages - sections,
             "search node counts must match catalog page, section, and item counts");
 
-    const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
+    const auto captureCursor = index.search(QStringLiteral("Show Cursor"));
     require(!captureCursor.isEmpty() && captureCursor.constFirst().location.itemId ==
                                             QStringLiteral("screenshot.capture-cursor"),
             "search must find the cursor capture setting");

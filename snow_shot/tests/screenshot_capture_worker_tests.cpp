@@ -217,11 +217,10 @@ void cursorCaptureAppliesAcrossBackendChanges() {
         for (const bool captureCursor : {false, true}) {
             require(capture(worker, false, captureCursor).succeeded,
                     "cursor policy capture failed");
-            require(((capturedFlags & SNOW_CAPTURE_SCREENSHOT_REQUEST_INCLUDE_CURSOR) != 0) ==
-                            captureCursor &&
-                        (capturedFlags & SNOW_CAPTURE_SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS) ==
-                            0,
-                    "cursor policy must use its independent native request flag");
+            require(
+                ((capturedFlags & SNOW_CAPTURE_SCREENSHOT_REQUEST_INCLUDE_CURSOR) != 0) == false &&
+                    (capturedFlags & SNOW_CAPTURE_SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS) == 0,
+                "cursor policy must use its independent native request flag");
         }
     }
 }
@@ -316,8 +315,9 @@ void captureOwnsCursorBeforeDispatch(ScreenshotCapturePurpose purpose, bool canc
         require(!result.succeeded && cursorCompositions == compositionsBefore,
                 "canceled capture must not composite a cursor or publish an image");
     } else {
-        require(result.succeeded && result.displays.front().image.constBits()[0] == 71 &&
-                    cursorCompositions == compositionsBefore + 1,
+        require(result.succeeded && result.displays.front().image.constBits()[0] == 10 &&
+                    result.displays.front().cursorPatch.constBits()[0] == 71 &&
+                    result.cursorAvailable && cursorCompositions == compositionsBefore + 1,
                 "capture must use the saved cursor, never the cursor changed during capture");
     }
 }
@@ -326,23 +326,31 @@ void cursorSnapshotFailureDoesNotDispatchCapture() {
     for (const auto purpose :
          {ScreenshotCapturePurpose::Initial, ScreenshotCapturePurpose::Recapture}) {
         ScreenshotCaptureCoordinator coordinator;
-        bool failed = false;
-        QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &coordinator,
+        QEventLoop loop;
+        ScreenshotCaptureResult capturedResult;
+        bool received = false;
+        QObject::connect(&coordinator, &ScreenshotCaptureCoordinator::captureFinished, &loop,
                          [&](const ScreenshotCaptureResult& result) {
-                             failed = !result.succeeded && result.purpose == purpose &&
-                                      !result.errorMessage.isEmpty();
+                             capturedResult = result;
+                             received = true;
+                             loop.quit();
                          });
         ScreenshotCaptureRequest request;
         request.purpose = purpose;
         request.captureCursor = true;
-        const int capturedBefore = captured;
         failCursorSnapshot = true;
         coordinator.captureAsync(request);
         failCursorSnapshot = false;
-        require(failed && captured == capturedBefore && cursorSnapshots == 0,
-                "snapshot failure must not fall back to a stale live/backend cursor");
+        QTimer::singleShot(3000, &loop, &QEventLoop::quit);
+        loop.exec();
+        coordinator.shutdown();
+        require(received && capturedResult.succeeded && !capturedResult.cursorAvailable &&
+                    capturedResult.displays.front().image.constBits()[0] == 10 &&
+                    cursorSnapshots == 0,
+                "missing cursor data must preserve clean capture without backend substitution");
     }
 }
+
 #endif
 
 void cursorCompositionFailureDoesNotPublishAnImage() {
@@ -351,8 +359,9 @@ void cursorCompositionFailureDoesNotPublishAnImage() {
         snow_capture_cursor_snapshot_create(), snow_capture_cursor_snapshot_destroy);
     failCursorComposition = true;
     const auto failed = capture(worker, false, true, snapshot);
-    require(!failed.succeeded && failed.displays.isEmpty() && !failed.errorMessage.isEmpty(),
-            "failed snapshot composition must not publish a cursor-free or stale image");
+    require(failed.succeeded && !failed.cursorAvailable &&
+                failed.displays.front().image.constBits()[0] == 10,
+            "failed patch generation must preserve the clean screenshot");
     const auto disabled = capture(worker, false, false, snapshot);
     require(disabled.succeeded && disabled.displays.front().image.constBits()[0] == 10,
             "disabled cursor capture must ignore an attached snapshot");
@@ -480,6 +489,22 @@ uint8_t snow_capture_screenshot_result_composite_cursor(SnowCaptureScreenshotRes
     }
     ++cursorCompositions;
     (*result->frame.pixels)[0] = snapshot->pixel;
+    return 1;
+}
+
+uint8_t snow_capture_screenshot_result_cursor_patch(const SnowCaptureScreenshotResult* result,
+                                                    const SnowCaptureCursorSnapshot* snapshot,
+                                                    size_t index, SnowCaptureFrameInfo* info,
+                                                    SnowCaptureFrameLease** lease) {
+    *lease = nullptr;
+    if (failCursorComposition)
+        return 0;
+    ++cursorCompositions;
+    ++leases;
+    *lease = new SnowCaptureFrameLease;
+    (*(*lease)->pixels)[0] = snapshot->pixel;
+    snow_capture_screenshot_result_display_info(result, index, info);
+    info->rgba_bytes = (*lease)->pixels->data();
     return 1;
 }
 

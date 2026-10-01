@@ -1106,13 +1106,13 @@ SettingsItemDefinition screenshotRestoreOriginalScreenColorsItem() {
 
 #endif
 
-SettingsItemDefinition screenshotCaptureCursorItem() {
+SettingsItemDefinition screenshotShowCursorItem() {
     return switchItem(
         QStringLiteral("screenshot.capture-cursor"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Capture cursor"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Include the mouse cursor in normal screenshots."),
-        QStringLiteral("screenshot/capture_cursor"),
-        SettingsSwitchBinding::ScreenshotCaptureCursor);
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Show Cursor"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Show the captured mouse cursor by default in new normal screenshots."),
+        QStringLiteral("screenshot/capture_cursor"), SettingsSwitchBinding::ScreenshotShowCursor);
 }
 
 SettingsItemDefinition screenshotCaptureUiInScrollingScreenshotItem() {
@@ -1713,6 +1713,10 @@ QVector<SettingsItemDefinition> screenshotShortcutItems() {
                           QStringLiteral("select_previously_selected_area"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Select previously selected area"),
                           []() { return outlined_icons::Rest(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot,
+                          QStringLiteral("toggle_cursor_visibility"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Toggle cursor visibility"),
+                          []() { return custom_outlined_icons::RecordingCursor(); }),
         localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("recapture"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Recapture"),
                           []() { return custom_outlined_icons::RefreshCapture(); }),
@@ -2853,8 +2857,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         screenshotApiModeItem(), windowElementApiItem(),
                         screenshotRestoreOriginalScreenColorsItem(),
 #endif
-                        screenshotCaptureCursorItem(),
-                        screenshotCaptureUiInScrollingScreenshotItem()},
+                        screenshotShowCursorItem(), screenshotCaptureUiInScrollingScreenshotItem()},
                 },
                 {
                     QStringLiteral("screen-recording-capture"),
@@ -3920,7 +3923,7 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenshotQuickSelectionModification:
                         expectedKey = QStringLiteral("screenshot/quick_selection_modification");
                         break;
-                    case SettingsSwitchBinding::ScreenshotCaptureCursor:
+                    case SettingsSwitchBinding::ScreenshotShowCursor:
                         expectedKey = QStringLiteral("screenshot/capture_cursor");
                         break;
                     case SettingsSwitchBinding::ScreenshotCaptureUiInScrollingScreenshot:

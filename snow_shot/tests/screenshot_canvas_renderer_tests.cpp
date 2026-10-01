@@ -1314,6 +1314,7 @@ void shortcutHintStagesUseTheExactRequiredLines() {
         QStringLiteral("Select previously selected area: R"),
         QStringLiteral("Copy color: C"),
         QStringLiteral("Toggle Global/Relative Coordinates: Ctrl+P"),
+        QStringLiteral("Toggle cursor visibility: `"),
         QStringLiteral("Switch color format: Shift"),
         QStringLiteral("Switch screenshot history: , / ."),
     };
@@ -5649,8 +5650,23 @@ void overlayWindowHasNoNativeShadow() {
     }
 }
 
+void runScreenshotCursorTests();
+#if defined(SNOW_SHOT_CURSOR_BENCHMARK)
+void runScreenshotCursorBenchmark();
+#endif
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--cursor-only"))) {
+        runScreenshotCursorTests();
+        return 0;
+    }
+#if defined(SNOW_SHOT_CURSOR_BENCHMARK)
+    if (application.arguments().contains(QStringLiteral("--cursor-benchmark"))) {
+        runScreenshotCursorBenchmark();
+        return 0;
+    }
+#endif
     if (application.arguments().contains(QStringLiteral("--window-shadow-only"))) {
         QTemporaryDir directory;
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
