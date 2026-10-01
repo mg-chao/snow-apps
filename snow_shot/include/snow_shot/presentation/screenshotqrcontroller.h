@@ -1,5 +1,7 @@
 #pragma once
 
+#include "snow_shot/app/edition.h"
+
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
@@ -15,6 +17,7 @@ class ScreenshotQrPopover;
 class ScreenshotQrMarker;
 
 // Ephemeral editor UI. Never becomes part of the canvas document or export renderer.
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
 class ScreenshotQrController final : public QObject {
     Q_OBJECT
   public:
@@ -91,3 +94,5 @@ class ScreenshotQrController final : public QObject {
     bool m_editing = false;
     bool m_suspended = false;
 };
+
+#endif // SNOW_SHOT_ENABLE_QR_RECOGNITION

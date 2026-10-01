@@ -2,6 +2,12 @@ use std::time::Duration;
 
 use snow_selected_text::{CaptureOptions, CaptureStrategy, SelectedTextService, SelectionOutcome};
 
+#[cfg(feature = "host-application-qos")]
+#[unsafe(no_mangle)]
+extern "C" fn snow_application_qos_apply_current_thread() -> i32 {
+    snow_core::qos::apply_current_thread_result()
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = SelectedTextService::new()?;
     let mut options = CaptureOptions::default();

@@ -47,6 +47,17 @@ option(SNOW_APPS_BUILD_DRAW_ENGINE "Build the Snow Draw Engine Qt library." ON)
 option(SNOW_APPS_BUILD_DRAW_ENGINE_DEMO "Build the Snow Draw Engine Qt demo." OFF)
 option(SNOW_APPS_BUILD_IMAGE_VIEWER "Build Snow Image Viewer." ON)
 option(SNOW_APPS_BUILD_SNOW_SHOT "Build Snow Shot." ON)
+set(_snow_mini_default ${SNOW_APPS_BUILD_SNOW_SHOT})
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+    set(_snow_mini_default OFF)
+endif()
+option(SNOW_APPS_BUILD_SNOW_SHOT_MINI "Build Snow Shot Mini alongside Snow Shot." ${_snow_mini_default})
+if(SNOW_APPS_BUILD_SNOW_SHOT_MINI AND NOT SNOW_APPS_BUILD_SNOW_SHOT)
+    message(FATAL_ERROR "Snow Shot Mini requires SNOW_APPS_BUILD_SNOW_SHOT=ON")
+endif()
+if(SNOW_APPS_BUILD_SNOW_SHOT_MINI AND APPLE AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+    message(FATAL_ERROR "Snow Shot Mini supports Apple Silicon (arm64) only on macOS")
+endif()
 option(SNOW_APPS_BUILD_TESTS "Build tests for all enabled projects." ON)
 option(SNOW_APPS_BUILD_BENCHMARKS "Build opt-in benchmark targets." OFF)
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
@@ -162,7 +173,6 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
             snow_recording_c
             snow_recording_effects_c
             snow_ui_selector_c
-            snow_selected_text_c
             snow_stitch_images_c
             snow_draw_engine_c
             snow_visual_region_detector_c)
@@ -173,20 +183,6 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
     unset(_snow_rust_ffi_target)
     target_include_directories(snow_recording_effects_c INTERFACE
         "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-recording-effects-c/include")
-    target_include_directories(snow_selected_text_c INTERFACE
-        "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-selected-text-c/include")
-    if(APPLE)
-        find_library(SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK
-            NAMES ApplicationServices REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
-        target_link_libraries(snow_selected_text_c INTERFACE
-            "${SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK}")
-    endif()
 endif()
 
 if(SNOW_APPS_BUILD_IMAGE_VIEWER AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)
@@ -401,6 +397,8 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
         message(FATAL_ERROR "SNOW_APPS_PACKAGE_SNOW_SHOT requires SNOW_APPS_BUILD_SNOW_SHOT=ON")
     endif()
     set(CPACK_PACKAGE_NAME "snow-shot")
+    set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};${CMAKE_PROJECT_NAME};SnowShot;/")
+    set(CPACK_COMPONENTS_ALL SnowShot)
     set(CPACK_PACKAGE_VENDOR "${SNOW_SHOT_VENDOR}")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${SNOW_SHOT_PRODUCT_NAME} screenshot utility")
     set(CPACK_PACKAGE_DESCRIPTION "${SNOW_SHOT_DESCRIPTION}")
@@ -455,4 +453,8 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_VERBATIM_VARIABLES ON)
     include(cmake/SnowShotInstaller.cmake)
     include(CPack)
+endif()
+
+if(SNOW_APPS_PACKAGE_SNOW_SHOT)
+    include(cmake/SnowShotMiniPackage.cmake)
 endif()

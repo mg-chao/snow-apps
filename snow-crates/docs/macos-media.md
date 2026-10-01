@@ -404,15 +404,17 @@ carry the same filters through direct recording. Stream config version 2 and
 direct recording config version 6 include this structure. Recompile unversioned
 C desktop/monitor/region configuration callers after this layout change.
 
-Current direct recording callers use configuration version 11. Its appended
+Direct and deferred recording callers use configuration version 11. Its appended
 `system_audio_gain_db` and `microphone_gain_db` fields accept integer gains from
 -24 to 24 dB; versions 1 through 10 remain supported with 0 dB defaults. Gain is
 applied to each source before mixing or separate-track encoding. Live controls
 use `snow_recording_session_set_audio_gain`; opt-in metering uses
 `snow_recording_session_set_audio_metering` and
 `snow_recording_session_take_audio_levels` to read processed peaks and source status.
+Deferred capture writes the gained PCM to its source tracks; rendering reuses
+those samples without applying gain again.
 
-Direct recording can update exclusions without restarting video capture.
+Direct and deferred recording can update exclusions without restarting video capture.
 `snow_recording_session_request_exclusions` copies the new IDs and required popup
 IDs and returns a generation immediately. Content discovery runs on a separate
 worker, retries until required windows are available, and initiates asynchronous

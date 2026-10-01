@@ -12,10 +12,10 @@ $publisher = Join-Path $PSScriptRoot 'publish-snow-shot-release.ps1'
 $version = [regex]::Match((Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'CMakeLists.txt')), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
 $settings = @{ WhatIf = $true }
 $windows = @(& $publisher @settings)
-if ($windows.Count -ne 16 -or $windows -contains "snow-shot-$version-macos-arm64.dmg") { throw 'Windows preview changed unexpectedly.' }
+if ($windows.Count -ne 26 -or $windows -contains "snow-shot-$version-macos-arm64.dmg") { throw 'Windows preview changed unexpectedly.' }
 $combined = @(& $publisher @settings -MacHost 'mac.invalid' -MacUser 'test' -MacProjectDirectory '/Users/test/snow-apps')
-if ($combined.Count -ne 19 -or $combined[-1] -cne 'install-snow-shot-macos.sh') { throw 'Combined preview has the wrong file order/count.' }
-foreach ($name in @("snow-shot-$version-macos-arm64.dmg", "snow-shot-$version-macos-arm64.dmg.sha256", 'install-snow-shot-macos.sh')) {
+if ($combined.Count -ne 31 -or $combined[-1] -cne 'install-snow-shot-macos.sh') { throw 'Combined preview has the wrong file order/count.' }
+foreach ($name in @("snow-shot-$version-macos-arm64.dmg", "snow-shot-$version-macos-arm64.dmg.sha256", "snow-shot-mini-$version-macos-arm64.dmg", "snow-shot-mini-$version-macos-arm64.dmg.sha256", 'install-snow-shot-macos.sh')) {
     if ($combined -cnotcontains $name) { throw "Missing macOS artifact: $name" }
 }
 try {

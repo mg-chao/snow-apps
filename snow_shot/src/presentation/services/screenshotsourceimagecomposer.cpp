@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 
 #include <QPainter>
+#include <QColorSpace>
 
 QImage composeScreenshotSourceSelection(const ScreenshotDisplaySession& displaySession,
                                         const QRect& selection) {
@@ -17,6 +18,7 @@ QImage composeScreenshotSourceSelection(const ScreenshotDisplaySession& displayS
     QImage image(spec.pixelSize, QImage::Format_RGBA8888);
     if (image.isNull())
         return {};
+    image.setColorSpace(QColorSpace::SRgb);
     image.fill(Qt::transparent);
     QPainter painter(&image);
     painter.scale(spec.scale, spec.scale);

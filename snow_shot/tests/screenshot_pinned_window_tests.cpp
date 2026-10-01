@@ -48,6 +48,7 @@
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
+#include "snowimageqtcodec.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -69,6 +70,7 @@
 #include <QApplication>
 #include <QBackingStore>
 #include <QClipboard>
+#include <QColorSpace>
 #include <QCoreApplication>
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -12641,6 +12643,83 @@ QImage pinnedPixelPattern(const QSize& size) {
     return image;
 }
 
+void pinnedImportedColorsMatchLiveRendering() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    QTemporaryDir directory;
+    require(directory.isValid(), "profile fixture directory must exist");
+    const QString path = directory.filePath(QStringLiteral("profile.png"));
+    const QColorSpace srgb(QColorSpace::SRgb);
+    enum class Presentation { Immediate, Restored, Deferred };
+    for (const QColorSpace& space :
+         {QColorSpace{}, srgb, QColorSpace(QColorSpace::DisplayP3),
+          QColorSpace(QColorSpace::AdobeRgb), QColorSpace(QColorSpace::SRgbLinear)}) {
+        QImage source =
+            pinnedPixelPattern(QSize(200, 160)).convertToFormat(QImage::Format_RGBA8888);
+        source.setColorSpace(space);
+        source.setPixelColor(100, 80, QColor(200, 100, 50, 128));
+        require(source.save(path, "PNG"), "profiled pin fixture must encode");
+        const QImage imported = snow_shot::image_codec::decodeFile(path, snow::image::Format::png);
+        require(imported == source && imported.colorSpace() == space,
+                "pin import must preserve source pixels and profile");
+        const QImage expected =
+            space.isValid()
+                ? source.convertedToColorSpace(srgb, QImage::Format_ARGB32_Premultiplied)
+                : source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        require(!expected.isNull(), "profile fixture must convert to sRGB");
+        for (const auto presentation :
+             {Presentation::Immediate, Presentation::Restored, Presentation::Deferred}) {
+            const bool deferred = presentation == Presentation::Deferred;
+            const QRectF sourceRect(QPointF(30, 40), QSizeF(source.size()));
+            ScreenshotImageLoadCallback deliver;
+            ScreenshotPinnedWindow window;
+            ScreenshotPinnedWindow::Config config;
+            config.screen = screen;
+            config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), source.size());
+            config.initialWindowSize = source.size();
+            config.canvasSourceRect = sourceRect;
+            // Baked result images may extend beyond the editable content. Keep
+            // their source mapping while replacing only the rendering pixels.
+            config.contentCanvasRect =
+                deferred ? sourceRect : sourceRect.adjusted(20, 20, -20, -20);
+            config.surfaceCanvasRect = sourceRect;
+            config.automaticTextRecognition = false;
+            config.restorePersistentState = presentation == Presentation::Restored;
+            if (deferred) {
+                config.imageLoader = [&deliver](QObject*, ScreenshotImageLoadCallback callback) {
+                    deliver = std::move(callback);
+                };
+            } else {
+                config.imageSource = ScreenshotImageSource::fromImage(imported, sourceRect);
+            }
+            require(window.present(config), "profiled pin must present");
+            if (deferred) {
+                require(static_cast<bool>(deliver), "deferred profile loader must start");
+                deliver(imported);
+            }
+            const QImage persisted = window.persistenceSnapshot().image;
+            require(persisted == imported && persisted.colorSpace() == imported.colorSpace(),
+                    "rendering must preserve the original pixels and profile for persistence");
+            QImage painted(source.size(), QImage::Format_ARGB32_Premultiplied);
+            painted.setColorSpace(srgb);
+            painted.fill(Qt::transparent);
+            QTransform canvasToView;
+            canvasToView.translate(-sourceRect.x(), -sourceRect.y());
+            {
+                QPainter painter(&painted);
+                ScreenshotPinnedWindowTestAccess::renderer(window).renderBeforeCanvas(
+                    painter, {painted.rect(), QRegion(painted.rect()), canvasToView, 1.0});
+            }
+            for (int y = 0; y < expected.height(); ++y) {
+                for (int x = 0; x < expected.width(); ++x) {
+                    require(painted.pixel(x, y) == expected.pixel(x, y),
+                            "live pin pixels, alpha and source mapping must match sRGB conversion");
+                }
+            }
+        }
+    }
+}
+
 #if defined(Q_OS_WIN) || defined(_WIN32)
 void requirePinnedPixels(const QImage& actual, const QImage& expected, int inset,
                          const char* stage) {
@@ -14156,6 +14235,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--color-space-only"))) {
+            pinnedImportedColorsMatchLiveRendering();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--clipboard-publication-only"))) {
             selectionClipboardPublicationLifetime();
             return 0;
@@ -14767,6 +14850,7 @@ int main(int argc, char* argv[]) {
         pinnedDeferredPresentationSurvivesGroupSwitch(sourceRuntime);
         deferredPinUserCloseCancelsLateMaterialization();
         pinnedAsyncPresentationDefersContent(sourceRuntime);
+        pinnedImportedColorsMatchLiveRendering();
         pinnedControlsMatchReferenceStyle(sourceRuntime);
         pinnedThumbnailUsesOpaqueThemeBackground(sourceRuntime);
         pinnedControlsHideBelowMinimumNativeSize(sourceRuntime);

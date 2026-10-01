@@ -429,6 +429,7 @@ void ApplicationSearchWidget::populateResults(const QString& queryText) {
 
     QVector<snow_shot::presentation::settings::SettingsSearchEntry> results =
         m_index.search(queryText);
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     if (!snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
         results.erase(std::remove_if(results.begin(), results.end(),
                                      [](const auto& entry) {
@@ -439,6 +440,7 @@ void ApplicationSearchWidget::populateResults(const QString& queryText) {
                                      }),
                       results.end());
     }
+#endif
     if (queryText.trimmed().isEmpty()) {
         results.erase(
             std::remove_if(

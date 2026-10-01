@@ -73,6 +73,21 @@ constexpr int kWindowModeDwmFrameMargin = 1;
 #endif
 constexpr int kWindowModeFallbackDragHeight = 48;
 
+void activateWidgetLayouts(QWidget* widget) {
+  // A custom body/footer can contain several widget-owned layouts. Settle
+  // them from the leaves upwards so their current hints reach the surface
+  // before measuring it, rather than waiting for posted LayoutRequest events.
+  for (QObject* child : widget->children()) {
+    auto* childWidget = qobject_cast<QWidget*>(child);
+    if (childWidget && !childWidget->isWindow()) {
+      activateWidgetLayouts(childWidget);
+    }
+  }
+  if (QLayout* layout = widget->layout()) {
+    layout->activate();
+  }
+}
+
 QWidget* deepestChildAt(QWidget* root, const QPoint& rootLocalPos) {
   if (!root) {
     return nullptr;
@@ -1070,6 +1085,19 @@ void AdModal::setWindowScreen(QScreen* screen) {
   }
 }
 
+QRect AdModal::windowAnchorGeometry() const { return windowAnchorGeometry_; }
+
+void AdModal::setWindowAnchorGeometry(const QRect& geometry) {
+  if (windowAnchorGeometry_ == geometry) {
+    return;
+  }
+  windowAnchorGeometry_ = geometry;
+  if (!open_) {
+    windowGeometryInitialized_ = false;
+  }
+  syncOverlayGeometry();
+}
+
 QSize AdModal::windowPreferredSize() const { return windowPreferredSize_; }
 void AdModal::setWindowPreferredSize(const QSize& size) {
   if (windowPreferredSize_ == size) {
@@ -1995,6 +2023,9 @@ QRect AdModal::windowModeAvailableGeometry() const {
 }
 
 QRect AdModal::windowModeAnchorGeometry() const {
+  if (windowAnchorGeometry_.isValid() && !windowAnchorGeometry_.isEmpty()) {
+    return windowAnchorGeometry_;
+  }
   if (windowScreen_ || !ownerWindow_) {
     return windowModeAvailableGeometry();
   }
@@ -2414,15 +2445,10 @@ void AdModal::syncWindowModeGeometry() {
   overlay_->setMinimumSize(QSize(0, 0));
   overlay_->setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
 
-  if (overlayLayout_) {
-    overlayLayout_->activate();
-  }
-  if (panelLayout_) {
-    panelLayout_->activate();
-  }
-  if (panel_) {
-    panel_->adjustSize();
-  }
+  activateWidgetLayouts(overlay_);
+  // The overlay layout owns the panel geometry. adjustSize() would restore
+  // its width-independent hint height after wrapped content has been fitted
+  // to the window, and an unchanged window size would not relayout it.
 
   const QRect available = windowModeAvailableGeometry();
   const int horizontalPadding = 16;

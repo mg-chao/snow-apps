@@ -10,6 +10,10 @@
 
 namespace {
 struct StreamContext final {
+    explicit StreamContext(const uint8_t* source = nullptr, uint32_t imageWidth = 3,
+                           uint32_t imageHeight = 2)
+        : pixels(source), width(imageWidth), height(imageHeight) {}
+
     const uint8_t* pixels = nullptr;
     uint32_t width = 3;
     uint32_t height = 2;
@@ -128,6 +132,44 @@ SnowShotImageCodecEncodeResult encodeResult() {
     result.struct_size = sizeof(result);
     result.abi_version = SNOW_SHOT_IMAGE_CODEC_ABI_VERSION;
     return result;
+}
+
+bool pngDeclaresSrgb(const uint8_t* bytes, uint64_t size) {
+    for (uint64_t offset = 8; bytes != nullptr && offset <= size && size - offset >= 12;) {
+        const uint32_t length = (uint32_t(bytes[offset]) << 24) |
+                                (uint32_t(bytes[offset + 1]) << 16) |
+                                (uint32_t(bytes[offset + 2]) << 8) | bytes[offset + 3];
+        if (uint64_t(length) > size - offset - 12)
+            return false;
+        if (std::memcmp(bytes + offset + 4, "sRGB", 4) == 0)
+            return length == 1 && bytes[offset + 8] <= 3;
+        offset += uint64_t(length) + 12;
+    }
+    return false;
+}
+
+bool srgbEncodingsRetainColorDescription(const std::array<uint8_t, 3U * 2U * 4U>& pixels,
+                                         SnowShotImageCodecEncodeOptions options,
+                                         std::array<char, 512>* error) {
+    options.format = SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG;
+    options.preserve_metadata = 1;
+    SnowShotImageCodecBuffer encoded{};
+    const bool packed =
+        snow_shot_image_codec_encode_rgba8(pixels.data(), pixels.size(), 3, 2, 12, &options,
+                                           &encoded, error->data(), error->size()) != 0 &&
+        pngDeclaresSrgb(encoded.data, encoded.size);
+    snow_shot_image_codec_release_buffer(&encoded);
+    StreamContext context{pixels.data()};
+    const auto source = bridgeSource(&context);
+    const auto sink = bridgeSink(&context);
+    auto receipt = encodeResult();
+    const bool streamed =
+        snow_shot_image_codec_encode_rgba8_stream(&source, &sink, &options, &receipt, error->data(),
+                                                  error->size()) != 0 &&
+        pngDeclaresSrgb(context.output.data(), context.output.size());
+    if (!packed || !streamed)
+        std::cerr << "Packed and streamed screenshot PNGs must declare sRGB\n";
+    return packed && streamed;
 }
 
 bool roundTripRequiredFormats(const std::array<uint8_t, 3U * 2U * 4U>& pixels,
@@ -373,12 +415,13 @@ int main() {
     snow_shot_image_codec_release_buffer(&output);
     snow_shot_image_codec_release_buffer(&output);
     const bool requiredFormatsRoundTrip = roundTripRequiredFormats(pixels, options, &error);
+    const bool retainedSrgb = srgbEncodingsRetainColorDescription(pixels, options, &error);
     if (snow_shot_image_codec_abi_version() != SNOW_SHOT_IMAGE_CODEC_ABI_VERSION ||
         succeeded == 0 || !hasPngSignature || !rejectedUnsafeReuse || output.data != nullptr ||
         output.size != 0 || !rejectedInvalidResult || !rejectedInvalidSource ||
         !rejectedInvalidResizeSource || !tallResizeStreamed || !streamedPng ||
         !tallPngStreamedRows || !tallJpegStreamedRows || !propagatedCancellation ||
-        !requiredFormatsRoundTrip || !hasBgraPixels) {
+        !requiredFormatsRoundTrip || !hasBgraPixels || !retainedSrgb) {
         std::cerr << (error[0] == '\0' ? "The C ABI PNG smoke test failed." : error.data()) << '\n';
         return EXIT_FAILURE;
     }

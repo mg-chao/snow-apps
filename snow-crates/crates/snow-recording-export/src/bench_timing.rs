@@ -13,6 +13,7 @@ pub struct EncoderTimings {
     pub packets: Vec<(i64, Instant)>,
     pub copied_bytes: u64,
     pub cpu_conversions: u64,
+    pub cpu_reuse_checks: u64,
     pub gpu_surface_submissions: u64,
     started: Option<Instant>,
 }

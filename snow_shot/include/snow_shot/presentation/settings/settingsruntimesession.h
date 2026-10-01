@@ -139,10 +139,12 @@ class SettingsRuntimeSession final : public QObject {
                                     const SettingsGlobalMouseCombination& combination) const;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {});
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);
     [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
     bool applyTextTranslationConfigurations(const TextTranslationConfigurations& values);
+#endif
     bool
     importConfigurationSnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion,
                                 std::shared_future<storage::StorageResult>* completion = nullptr) {

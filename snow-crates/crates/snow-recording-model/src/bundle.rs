@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use crate::artifact::SessionManifest;
 use crate::error::{RecordingModelError, Result};
 
-const BUNDLE_FOOTER_MAGIC: &[u8; 16] = b"SNOWREC_BUNDLE\0\x02";
+const BUNDLE_FOOTER_MAGIC: &[u8; 16] = b"SNOWREC_BUNDLE\0\x03";
+const BUNDLE_FOOTER_MAGIC_V2: &[u8; 16] = b"SNOWREC_BUNDLE\0\x02";
+const MAX_BUNDLE_FOOTER_BYTES: u64 = 64 * 1024 * 1024;
 const BUNDLE_COPY_BUFFER_BYTES: usize = 256 * 1024;
 
 /// Kind of an auxiliary asset stored after the video payload of a bundle.
@@ -25,6 +27,12 @@ pub enum BundleAssetKind {
     AudioTrack,
     /// Serialized mouse/cursor event store.
     MouseStore,
+    /// Versioned, length-prefixed input observations with bounded-memory replay.
+    InputEvents,
+    /// Portable rendering policy and exact finalized media timeline.
+    RenderMetadata,
+    /// Export-owned, typed encoder/audio/loop snapshot for the deferred output.
+    OutputSettings,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -129,10 +137,10 @@ pub fn read_recording_bundle_footer(bundle_path: &Path) -> Result<RecordingBundl
     bundle.read_exact(&mut magic)?;
     if &magic == b"SNOWREC_BUNDLE\0\0" {
         return Err(RecordingModelError::Decode(
-            "unsupported recording format version 1; expected 2".into(),
+            "unsupported recording format version 1; expected 2 or 3".into(),
         ));
     }
-    if &magic != BUNDLE_FOOTER_MAGIC {
+    if &magic != BUNDLE_FOOTER_MAGIC && &magic != BUNDLE_FOOTER_MAGIC_V2 {
         return Err(RecordingModelError::Decode(format!(
             "invalid bundle footer magic in {}",
             bundle_path.display()
@@ -143,7 +151,7 @@ pub fn read_recording_bundle_footer(bundle_path: &Path) -> Result<RecordingBundl
     let mut footer_len_bytes = [0u8; 8];
     bundle.read_exact(&mut footer_len_bytes)?;
     let footer_len = u64::from_le_bytes(footer_len_bytes);
-    if footer_len > bundle_len.saturating_sub(trailer_len) {
+    if footer_len > bundle_len.saturating_sub(trailer_len) || footer_len > MAX_BUNDLE_FOOTER_BYTES {
         return Err(RecordingModelError::Decode(format!(
             "corrupt bundle footer length in {}",
             bundle_path.display()
@@ -154,15 +162,35 @@ pub fn read_recording_bundle_footer(bundle_path: &Path) -> Result<RecordingBundl
     bundle.seek(SeekFrom::Start(footer_offset))?;
     let mut footer_bytes = vec![0u8; footer_len as usize];
     bundle.read_exact(&mut footer_bytes)?;
-    let footer: RecordingBundleFooter = bincode::deserialize(&footer_bytes).map_err(|err| {
-        RecordingModelError::Decode(format!("failed to decode bundle footer: {err}"))
-    })?;
+    use bincode::Options;
+    let footer: RecordingBundleFooter = bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_limit(MAX_BUNDLE_FOOTER_BYTES)
+        .reject_trailing_bytes()
+        .deserialize(&footer_bytes)
+        .map_err(|err| {
+            RecordingModelError::Decode(format!("failed to decode bundle footer: {err}"))
+        })?;
     footer
         .manifest
         .media
         .validate()
         .map_err(RecordingModelError::Decode)?;
-    validate_bundle_footer(bundle_path, bundle_len, &footer)?;
+    if &magic == BUNDLE_FOOTER_MAGIC_V2
+        && footer.assets.iter().any(|asset| {
+            matches!(
+                asset.kind,
+                BundleAssetKind::InputEvents
+                    | BundleAssetKind::RenderMetadata
+                    | BundleAssetKind::OutputSettings
+            )
+        })
+    {
+        return Err(RecordingModelError::Decode(
+            "version-2 bundle contains version-3 assets".into(),
+        ));
+    }
+    validate_bundle_footer(bundle_path, footer_offset, &footer)?;
     Ok(footer)
 }
 
@@ -205,11 +233,10 @@ fn copy_asset_into_bundle(
 
 fn validate_bundle_footer(
     bundle_path: &Path,
-    bundle_len: u64,
+    footer_offset: u64,
     footer: &RecordingBundleFooter,
 ) -> Result<()> {
-    let trailer_len = bundle_footer_trailer_len();
-    if footer.video_payload_len > bundle_len.saturating_sub(trailer_len) {
+    if footer.video_payload_len > footer_offset {
         return Err(RecordingModelError::Decode(format!(
             "bundle video payload exceeds file length in {}",
             bundle_path.display()
@@ -224,10 +251,12 @@ fn validate_bundle_footer(
                 bundle_path.display()
             )));
         }
-        expected_offset = expected_offset.saturating_add(asset.len);
+        expected_offset = expected_offset
+            .checked_add(asset.len)
+            .ok_or_else(|| RecordingModelError::Decode("bundle asset length overflow".into()))?;
     }
 
-    if expected_offset > bundle_len.saturating_sub(trailer_len) {
+    if expected_offset != footer_offset {
         return Err(RecordingModelError::Decode(format!(
             "bundle asset payload exceeds footer boundary in {}",
             bundle_path.display()
@@ -346,5 +375,15 @@ mod tests {
                 .unwrap(),
             b"mouse-store"
         );
+        // Version 2 has the same original manifest/asset wire. Its reader remains
+        // explicit rather than accidentally depending on the current writer version.
+        let mut legacy = fs::read(&bundle_path).unwrap();
+        let magic_offset = legacy.len() - BUNDLE_FOOTER_MAGIC.len();
+        legacy[magic_offset..].copy_from_slice(BUNDLE_FOOTER_MAGIC_V2);
+        fs::write(&bundle_path, legacy).unwrap();
+        let legacy_footer = read_recording_bundle_footer(&bundle_path).unwrap();
+        assert_eq!(legacy_footer.assets, footer.assets);
+        assert_eq!(legacy_footer.manifest.width, 1920);
+        fs::remove_dir_all(root).unwrap();
     }
 }

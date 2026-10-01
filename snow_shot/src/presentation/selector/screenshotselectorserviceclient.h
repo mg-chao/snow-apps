@@ -51,6 +51,10 @@ class ScreenshotSelectorServiceClient final : public QObject {
     ScreenshotSelectorServiceClientCallbacks m_callbacks;
     SnowUiSelectorService* m_service = nullptr;
     int m_serviceBackend = -1;
+#ifdef Q_OS_MACOS
+    QVector<std::uintptr_t> m_excludedWindowIds;
+    QVector<CapturedDisplayModel> m_displays;
+#endif
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORSERVICECLIENT_H

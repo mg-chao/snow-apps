@@ -1,7 +1,7 @@
 //! A recording observation never implicitly downloads a GPU surface.
 use super::*;
 
-pub(super) enum DirectFrame {
+pub(crate) enum DirectFrame {
     Cpu(CapturedFrame),
     #[cfg(windows)]
     Gpu(snow_capture::gpu::GpuCapturedFrame),
@@ -50,7 +50,7 @@ impl DirectFrame {
     }
 }
 
-pub(super) enum DirectCaptureEvent {
+pub(crate) enum DirectCaptureEvent {
     Frame(DirectFrame),
     FramesDropped { count: u32 },
     Error(snow_capture::error::CaptureError),
@@ -83,7 +83,7 @@ impl From<snow_capture::gpu::GpuCaptureEvent> for DirectCaptureEvent {
     }
 }
 
-pub(super) enum DirectCapture {
+pub(crate) enum DirectCapture {
     Cpu(CaptureStream),
     #[cfg(windows)]
     Gpu(snow_capture::gpu::GpuCaptureStream),

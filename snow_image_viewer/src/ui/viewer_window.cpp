@@ -1066,6 +1066,23 @@ void ViewerWindow::connectSignals() {
                 }
                 Q_UNUSED(filePath)
             });
+    connect(rhiWindow_, &RhiImageWindow::editPerformanceStageCompleted, this,
+            [this](EditRequestId requestId, const QString& stage, qint64 nanoseconds) {
+                if (!editingActive_ || !editSession_ ||
+                    (performanceTestActive_ && requestId != performanceRequestId_))
+                    return;
+                recordPerformanceTiming(stage, nanoseconds);
+            });
+    connect(rhiWindow_, &RhiImageWindow::editResizeResourceCacheResult, this,
+            [this](quint64 requestId, bool cacheHit) {
+                if (!editingActive_ || !editSession_ || !performanceTestActive_ ||
+                    requestId != performanceRequestId_)
+                    return;
+                if (cacheHit)
+                    ++performanceResourceCacheHits_;
+                else
+                    ++performanceResourceCacheMisses_;
+            });
     connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
             &ViewerWindow::refreshTheme);
 }
@@ -1452,12 +1469,6 @@ void ViewerWindow::openSizeFormatEditor() {
                     return;
                 recordPerformanceTiming(stage, nanoseconds);
             });
-    connect(rhiWindow_, &RhiImageWindow::editPerformanceStageCompleted, this,
-            [this](EditRequestId requestId, const QString& stage, qint64 nanoseconds) {
-                if (performanceTestActive_ && requestId != performanceRequestId_)
-                    return;
-                recordPerformanceTiming(stage, nanoseconds);
-            });
     connect(editSession_, &EditPipelineController::visualRequested, this,
             [this](EditRequestId requestId, const EditExportSettings& settings) {
                 if (!editSession_)
@@ -1633,15 +1644,6 @@ void ViewerWindow::openSizeFormatEditor() {
                     editSession_->submitGpuResizeResult(generation, readback);
                 }
             });
-    connect(rhiWindow_, &RhiImageWindow::editResizeResourceCacheResult, this,
-            [this](quint64 requestId, bool cacheHit) {
-                if (!performanceTestActive_ || requestId != performanceRequestId_)
-                    return;
-                if (cacheHit)
-                    ++performanceResourceCacheHits_;
-                else
-                    ++performanceResourceCacheMisses_;
-            });
     connect(rhiWindow_, &RhiImageWindow::gpuOperationFailed, editSession_,
             [this](quint64 generation, const QString& message) {
                 if (!editSession_ || generation != editSession_->latestRequestId())
@@ -1709,6 +1711,9 @@ void ViewerWindow::closeSizeFormatEditor() {
     rhiWindow_->cancelEditRequests();
     rhiWindow_->clearComparison();
     if (editSession_) {
+        disconnect(rhiWindow_, nullptr, editSession_, nullptr);
+        disconnect(editSession_, nullptr, rhiWindow_, nullptr);
+        disconnect(editSession_, nullptr, this, nullptr);
         editSession_->cancel();
         editSession_->deleteLater();
         editSession_ = nullptr;

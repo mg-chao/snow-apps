@@ -1,5 +1,5 @@
-# Editable feature catalogs are merged only in the build tree. All consumers
-# share one lrelease rule and the same runtime resource names.
+# Editable feature catalogs are merged only in the build tree. Each edition
+# shares its lrelease rule while retaining the same runtime resource names.
 set(QT_I18N_SOURCE_LANGUAGE en_US)
 set(_snow_shot_catalog_dir "${CMAKE_CURRENT_SOURCE_DIR}/i18n")
 set(_snow_shot_catalog_tool "${CMAKE_CURRENT_SOURCE_DIR}/scripts/translation_catalogs.py")
@@ -38,13 +38,59 @@ qt_add_lrelease(
     OPTIONS -fail-on-unfinished
 )
 
+if(SNOW_APPS_BUILD_SNOW_SHOT_MINI)
+    set(_snow_shot_mini_merged_dir "${CMAKE_CURRENT_BINARY_DIR}/i18n/mini-merged")
+    set(_snow_shot_mini_qm_dir "${CMAKE_CURRENT_BINARY_DIR}/i18n/mini")
+    set(_snow_shot_mini_merged_ts)
+    foreach(_locale IN ITEMS en_US zh_CN zh_TW)
+        list(APPEND _snow_shot_mini_merged_ts
+            "${_snow_shot_mini_merged_dir}/snow_shot_${_locale}.ts")
+    endforeach()
+    set(_snow_shot_mini_catalog_arguments --exclude-module translation)
+    foreach(_context IN ITEMS SnowShotApiClient CustomAiModelsSettingsWidget
+            TextTranslationSettingsWidget ScreenshotQrController
+            ScreenshotImageConversionController ScreenshotImageConversionView
+            ScreenshotTableEditor ScreenshotRecognitionFileExport)
+        list(APPEND _snow_shot_mini_catalog_arguments --exclude-context "${_context}")
+    endforeach()
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" "${_snow_shot_catalog_tool}" merge
+            --catalog-dir "${_snow_shot_catalog_dir}" --output-dir "${_snow_shot_mini_merged_dir}"
+            ${_snow_shot_mini_catalog_arguments}
+        COMMAND_ERROR_IS_FATAL ANY)
+    add_custom_command(
+        OUTPUT ${_snow_shot_mini_merged_ts}
+        COMMAND "${Python3_EXECUTABLE}" "${_snow_shot_catalog_tool}" merge
+            --catalog-dir "${_snow_shot_catalog_dir}" --output-dir "${_snow_shot_mini_merged_dir}"
+            ${_snow_shot_mini_catalog_arguments}
+        DEPENDS ${TS_FILES} "${_snow_shot_catalog_dir}/modules.json" "${_snow_shot_catalog_tool}"
+        COMMENT "Merging Mini translation catalogs without excluded feature contexts"
+        VERBATIM)
+    qt_add_lrelease(
+        TS_FILES ${_snow_shot_mini_merged_ts}
+        LRELEASE_TARGET snow_shot_mini_release_translations
+        QM_FILES_OUTPUT_VARIABLE _snow_shot_mini_qm_files
+        QM_OUTPUT_DIRECTORY "${_snow_shot_mini_qm_dir}"
+        MERGE_QT_TRANSLATIONS
+        OPTIONS -fail-on-unfinished)
+endif()
+
 function(snow_shot_add_translations target)
+    if("MINI" IN_LIST ARGN)
+        set(_qm_files ${_snow_shot_mini_qm_files})
+        set(_qm_base "${_snow_shot_mini_qm_dir}")
+        set(_release_target snow_shot_mini_release_translations)
+    else()
+        set(_qm_files ${_snow_shot_qm_files})
+        set(_qm_base "${CMAKE_CURRENT_BINARY_DIR}")
+        set(_release_target snow_shot_release_translations)
+    endif()
     qt_add_resources(${target} "${target}_translations"
         PREFIX "/i18n"
-        BASE "${CMAKE_CURRENT_BINARY_DIR}"
-        FILES ${_snow_shot_qm_files}
+        BASE "${_qm_base}"
+        FILES ${_qm_files}
     )
-    add_dependencies(${target} snow_shot_release_translations)
+    add_dependencies(${target} ${_release_target})
 
     # Test targets consume the complete catalogs but must never extract their
     # partial source lists back into application translations.

@@ -709,7 +709,10 @@ fn http_request(client: &Client, url: Url, installed_version: &str) -> reqwest::
         .get(url)
         .header(CACHE_CONTROL, "no-cache")
         .header(ACCEPT_ENCODING, "identity")
-        .header(USER_AGENT, format!("SnowShot/{installed_version}"))
+        .header(
+            USER_AGENT,
+            format!("{}/{installed_version}", crate::edition::REGISTRY_NAME),
+        )
 }
 
 fn transport_error(code: &'static str, message: &'static str, error: UpdateError) -> UpdateError {
@@ -949,12 +952,14 @@ async fn source_metadata(
     for release in candidates {
         let attempt: Result<(UpdateRelease, Vec<u8>, ReleaseSource)> = async {
             let (url, files) = match source {
-                ReleaseSource::GitHub => (github::asset(&release, "latest-version.json")?, None),
+                ReleaseSource::GitHub => {
+                    (github::asset(&release, crate::edition::FEED_NAME)?, None)
+                }
                 ReleaseSource::Gitee => {
                     let files = gitee_assets(inputs, &release, cancellation).await?;
                     let tag = release["tag_name"].as_str().ok_or_else(gitee::error)?;
                     (
-                        gitee::asset(&files, tag, "latest-version.json")?,
+                        gitee::asset(&files, tag, crate::edition::FEED_NAME)?,
                         Some(files),
                     )
                 }
@@ -2317,7 +2322,7 @@ mod tests {
             },
             available: Some(AvailableUpdate {
                 version: "2.0.0".to_owned(),
-                path: "setup/snow-shot_windows-x64-portable.zip".to_owned(),
+                path: format!("{}portable.zip", crate::edition::PACKAGE_PREFIX),
                 size: 11,
                 sha256: hash,
             }),
@@ -2373,7 +2378,7 @@ mod tests {
             packages: vec![UpdatePackage {
                 variant: "portable".to_owned(),
                 kind: "portable".to_owned(),
-                path: "setup/snow-shot_windows-x64-portable.zip".to_owned(),
+                path: format!("{}portable.zip", crate::edition::PACKAGE_PREFIX),
                 size: 12,
                 sha256: "a".repeat(64),
                 files: Vec::new(),
@@ -2746,7 +2751,7 @@ mod tests {
     }
     fn github_fixture(version: &str, asset_names: &[&str]) -> Value {
         let mut names: Vec<String> = asset_names.iter().map(|name| (*name).to_owned()).collect();
-        if asset_names.contains(&"latest-version.json") {
+        if asset_names.contains(&crate::edition::FEED_NAME) {
             names.extend(
                 [
                     "online.exe",
@@ -2755,7 +2760,12 @@ mod tests {
                     "offline-update.zip",
                     "portable.zip",
                 ]
-                .map(|suffix| format!("snow-shot-{version}-windows-x64-{suffix}")),
+                .map(|suffix| {
+                    format!(
+                        "{product}-{version}-windows-x64-{suffix}",
+                        product = crate::edition::PRODUCT
+                    )
+                }),
             );
         }
         json!({"draft":false,"prerelease":false,"tag_name":format!("v{version}_snow-shot"),
@@ -2820,12 +2830,13 @@ mod tests {
         let (signed, keys) = signed_fixture();
         let github_list = format!("{}?per_page=100&page=1", github::API);
         let github_manifest = format!(
-            "{}/releases/download/v2.0.0_snow-shot/latest-version.json",
-            github::REPOSITORY
+            "{}/releases/download/v2.0.0_snow-shot/{feed}",
+            github::REPOSITORY,
+            feed = crate::edition::FEED_NAME
         );
         let releases = serde_json::to_vec(&json!([
             github_fixture("3.0.0", &[]),
-            github_fixture("2.0.0", &["latest-version.json"])
+            github_fixture("2.0.0", &[crate::edition::FEED_NAME])
         ]))
         .unwrap();
         let network = FakeNetwork::routed([
@@ -2856,12 +2867,13 @@ mod tests {
     #[tokio::test]
     async fn signed_release_without_an_exact_package_asset_cannot_win() {
         let (signed, keys) = signed_fixture();
-        let mut release = github_fixture("2.0.0", &["latest-version.json"]);
+        let mut release = github_fixture("2.0.0", &[crate::edition::FEED_NAME]);
         release["assets"].as_array_mut().unwrap().pop();
         let listing = serde_json::to_vec(&json!([release])).unwrap();
         let github_manifest = format!(
-            "{}/releases/download/v2.0.0_snow-shot/latest-version.json",
-            github::REPOSITORY
+            "{}/releases/download/v2.0.0_snow-shot/{feed}",
+            github::REPOSITORY,
+            feed = crate::edition::FEED_NAME
         );
         let network = FakeNetwork::routed([
             (
@@ -2926,16 +2938,18 @@ mod tests {
         for mutation in [false, true] {
             let mut rejected = payload.clone();
             if mutation {
-                rejected["packages"][4]["sha256"] = json!("6".repeat(64));
+                rejected["packages"][if crate::edition::MINI { 2 } else { 4 }]["sha256"] =
+                    json!("6".repeat(64));
             } else {
                 rejected["version"] = json!("1.9.0");
             }
             let version = rejected["version"].as_str().unwrap();
             let tag = format!("v{version}_snow-shot");
             let manifest = format!(
-                "https://gitee.com/mg-chao/snow-apps/releases/download/{tag}/latest-version.json"
+                "https://gitee.com/mg-chao/snow-apps/releases/download/{tag}/{feed}",
+                feed = crate::edition::FEED_NAME
             );
-            let mut files = github_fixture(version, &["latest-version.json"])["assets"].clone();
+            let mut files = github_fixture(version, &[crate::edition::FEED_NAME])["assets"].clone();
             for file in files.as_array_mut().unwrap() {
                 file["browser_download_url"] = json!(
                     file["browser_download_url"]
@@ -2946,8 +2960,8 @@ mod tests {
             }
             let rejected_signed = crate::contract::tests::sign_payload(&rejected, &private, 32);
             let network = FakeNetwork::routed([
-                (format!("{}?per_page=100&page=1", github::API), vec![reply(StatusCode::OK, &serde_json::to_vec(&json!([github_fixture("2.0.0", &["latest-version.json"])] )).unwrap())]),
-                (format!("{}/releases/download/v2.0.0_snow-shot/latest-version.json", github::REPOSITORY), vec![reply(StatusCode::OK, &signed)]),
+                (format!("{}?per_page=100&page=1", github::API), vec![reply(StatusCode::OK, &serde_json::to_vec(&json!([github_fixture("2.0.0", &[crate::edition::FEED_NAME])] )).unwrap())]),
+                (format!("{}/releases/download/v2.0.0_snow-shot/{feed}", github::REPOSITORY, feed = crate::edition::FEED_NAME), vec![reply(StatusCode::OK, &signed)]),
                 ("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1".to_owned(), vec![reply(StatusCode::OK, &serde_json::to_vec(&json!([{"id":123,"tag_name":tag}])).unwrap())]),
                 ("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/123/attach_files?per_page=100".to_owned(), vec![reply(StatusCode::OK, &serde_json::to_vec(&files).unwrap())]),
                 (manifest.clone(), vec![reply(StatusCode::OK, &rejected_signed)]),
@@ -2991,28 +3005,40 @@ mod tests {
         let gitee_api = "https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases";
         let gitee_list = format!("{gitee_api}?per_page=100&page=1");
         let gitee_assets = format!("{gitee_api}/123/attach_files?per_page=100");
-        let gitee_manifest = "https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/latest-version.json";
+        let gitee_manifest = format!(
+            "https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{}",
+            crate::edition::FEED_NAME
+        );
         let release = serde_json::to_vec(
             &json!([{"id":123,"tag_name":"v2.0.0_snow-shot","prerelease":false}]),
         )
         .unwrap();
         let names = [
-            "latest-version.json",
-            "snow-shot-2.0.0-windows-x64-online.exe",
-            "snow-shot-2.0.0-windows-x64-online-update.zip",
-            "snow-shot-2.0.0-windows-x64-offline.exe",
-            "snow-shot-2.0.0-windows-x64-offline-update.zip",
-            "snow-shot-2.0.0-windows-x64-portable.zip",
+            crate::edition::FEED_NAME,
+            &format!("{}-2.0.0-windows-x64-online.exe", crate::edition::PRODUCT),
+            &format!(
+                "{}-2.0.0-windows-x64-online-update.zip",
+                crate::edition::PRODUCT
+            ),
+            &format!("{}-2.0.0-windows-x64-offline.exe", crate::edition::PRODUCT),
+            &format!(
+                "{}-2.0.0-windows-x64-offline-update.zip",
+                crate::edition::PRODUCT
+            ),
+            &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT),
         ];
         let assets = serde_json::to_vec(&names.iter().map(|name| json!({"name":name,
             "browser_download_url":format!("https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{name}")})).collect::<Vec<_>>()).unwrap();
         for gitee_wins in [true, false] {
-            let github_release =
-                serde_json::to_vec(&json!([github_fixture("2.0.0", &["latest-version.json"])]))
-                    .unwrap();
+            let github_release = serde_json::to_vec(&json!([github_fixture(
+                "2.0.0",
+                &[crate::edition::FEED_NAME]
+            )]))
+            .unwrap();
             let github_manifest = format!(
-                "{}/releases/download/v2.0.0_snow-shot/latest-version.json",
-                github::REPOSITORY
+                "{}/releases/download/v2.0.0_snow-shot/{feed}",
+                github::REPOSITORY,
+                feed = crate::edition::FEED_NAME
             );
             let network = FakeNetwork::routed([
                 (
@@ -3085,9 +3111,11 @@ mod tests {
             ("3.0.0", signed.as_slice()),
             ("2.0.0", b"unsigned".as_slice()),
         ] {
-            let github =
-                serde_json::to_vec(&json!([github_fixture(version, &["latest-version.json"])]))
-                    .unwrap();
+            let github = serde_json::to_vec(&json!([github_fixture(
+                version,
+                &[crate::edition::FEED_NAME]
+            )]))
+            .unwrap();
             let network = FakeNetwork::new([
                 reply(StatusCode::SERVICE_UNAVAILABLE, b""),
                 reply(StatusCode::OK, &github),
@@ -3160,7 +3188,7 @@ mod tests {
     #[tokio::test]
     async fn failed_selected_package_uses_exact_version_on_other_channel() {
         let temporary = TempDir::new().unwrap();
-        let asset = "snow-shot-2.0.0-windows-x64-portable.zip";
+        let asset = &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT);
         let gitee_url = format!(
             "https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{asset}"
         );
@@ -3200,7 +3228,7 @@ mod tests {
             )),
             3,
         );
-        inputs.package.path = "setup/snow-shot_windows-x64-portable.zip".to_owned();
+        inputs.package.path = format!("{}portable.zip", crate::edition::PACKAGE_PREFIX);
         inputs.package.sha256 =
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned();
         inputs.saved_hash = inputs.package.sha256.clone();
@@ -3276,7 +3304,7 @@ mod tests {
     #[tokio::test]
     async fn github_package_hash_failure_never_reports_downloaded() {
         let temporary = TempDir::new().unwrap();
-        let asset = "snow-shot-2.0.0-windows-x64-portable.zip";
+        let asset = &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT);
         let metadata = serde_json::to_vec(&github_fixture("2.0.0", &[asset])).unwrap();
         let network = FakeNetwork::new([
             reply(StatusCode::OK, &metadata),
@@ -3294,7 +3322,7 @@ mod tests {
             3,
         );
         inputs.source = ReleaseSource::GitHub;
-        inputs.package.path = "setup/snow-shot_windows-x64-portable.zip".to_owned();
+        inputs.package.path = format!("{}portable.zip", crate::edition::PACKAGE_PREFIX);
         initialize_cache(&inputs);
         let (sender, mut receiver) = mpsc::channel(32);
         download_package(inputs, CancellationToken::new(), sender).await;

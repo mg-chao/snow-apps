@@ -180,7 +180,8 @@
         "DrawingToolbarEditor",
         "ScreenshotToolbarEditor",
         "PinnedToolbarEditor",
-        "TrayMenuOptions"
+        "TrayMenuOptions",
+        "TextTranslationConfigurations"
       ]
     },
     "canvas_style_sources": {
@@ -246,12 +247,14 @@
         "system_audio",
         "microphone_gain_db",
         "system_audio_gain_db",
+        "separate_audio_tracks",
         "frame_rate",
         "animated_frame_rate",
         "clarity",
         "animated_clarity",
         "encoder",
         "encoding_preset",
+        "quality",
         "loop",
         "capture_toolbar",
         "show_cursor",
@@ -264,7 +267,10 @@
         "keyboard_foreground",
         "mouse_trail",
         "mouse_click",
-        "mouse_highlight_color"
+        "mouse_highlight_color",
+        "post_processing",
+        "post_processing_effect",
+        "progress_bar_color"
       ]
     },
     "settings_shortcut_adjustments": {
@@ -277,8 +283,18 @@
     "recognition_actions": {
       "adapter": "Actual headless recognition text/table editing controller and typed Rust actions; covered by recognition IPC workflows",
       "members": [
-        "set_text", "reset_text", "format", "punctuation", "select_cells", "set_cell",
-        "merge_cells", "split_cells", "reset_table", "show_original", "undo", "redo"
+        "set_text",
+        "reset_text",
+        "format",
+        "punctuation",
+        "select_cells",
+        "set_cell",
+        "merge_cells",
+        "split_cells",
+        "reset_table",
+        "show_original",
+        "undo",
+        "redo"
       ]
     }
   }

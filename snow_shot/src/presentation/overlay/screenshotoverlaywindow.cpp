@@ -54,6 +54,9 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
                                                  SnowCanvasWidget* canvas, QWidget* parent)
     : QWidget(parent), m_eventSink(eventSink), m_canvas(canvas) {
     setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint);
+#ifdef Q_OS_MACOS
+    setWindowFlag(Qt::NoDropShadowWindowHint);
+#endif
     setAttribute(Qt::WA_DeleteOnClose, false);
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);

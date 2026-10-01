@@ -78,7 +78,7 @@ fn run() -> Result<i32> {
             transaction::validate_root(&root)?;
             Ok(
                 if snow_shot_updater::platform::launch_on_interactive_desktop(
-                    &root.join("bin/snow_shot.exe"),
+                    &root.join(snow_shot_updater::edition::APP_PATH),
                 )? {
                     0
                 } else {

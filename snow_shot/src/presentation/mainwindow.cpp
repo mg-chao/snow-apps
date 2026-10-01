@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/mainwindow.h"
 
@@ -75,8 +76,10 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
     setAttribute(Qt::WA_LayoutOnEntireRect);
 #endif
     setObjectName(QStringLiteral("snowShotMainWindow"));
-    setAccessibleName(QStringLiteral("SnowShot"));
-    setWindowTitle(QStringLiteral("SnowShot"));
+    setAccessibleName(snow_shot::app::edition::isMini ? snow_shot::app::edition::productName()
+                                                      : QStringLiteral("SnowShot"));
+    setWindowTitle(snow_shot::app::edition::isMini ? snow_shot::app::edition::productName()
+                                                   : QStringLiteral("SnowShot"));
     resize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
     setMinimumSize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT);
     setMouseTracking(true);

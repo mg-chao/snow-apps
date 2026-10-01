@@ -1343,6 +1343,38 @@ void shortcutSchemaMigrationAndPhysicalMetadataRoundTrip() {
             "structured shortcut bindings must round-trip without losing physical metadata");
 }
 
+void recordingPostProcessingPreferencesPersistAndValidate() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "create isolated post-processing settings storage");
+    const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executable), "create post-processing settings executable directory");
+    auto& applicationStorage = initialize(executable, temporary.path());
+    const storage::RecordingSettings recording;
+    require(!recording.postProcessingEnabled() &&
+                recording.postProcessingEffect() == QStringLiteral("progress_bar") &&
+                recording.progressBarColor() == QColor(22, 119, 255) &&
+                recording.setPostProcessingEnabled(true) &&
+                recording.setPostProcessingEffect(QStringLiteral("playback_time")) &&
+                recording.setProgressBarColor(QColor(12, 34, 56, 78)) &&
+                storage::RecordingSettings().postProcessingEnabled() &&
+                storage::RecordingSettings().postProcessingEffect() ==
+                    QStringLiteral("playback_time") &&
+                storage::RecordingSettings().progressBarColor() == QColor(12, 34, 56, 78) &&
+                !recording.setPostProcessingEffect(QStringLiteral("unsupported")) &&
+                !recording.setProgressBarColor(QColor()) &&
+                recording.postProcessingEffect() == QStringLiteral("playback_time") &&
+                recording.progressBarColor() == QColor(12, 34, 56, 78),
+            "post-processing preferences validate and persist including alpha");
+    require(applicationStorage.flushNow().success, "flush post-processing settings");
+    applicationStorage.shutdown();
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(recording.postProcessingEnabled() &&
+                recording.postProcessingEffect() == QStringLiteral("playback_time") &&
+                recording.progressBarColor() == QColor(12, 34, 56, 78),
+            "post-processing preferences survive storage restart");
+    applicationStorage.shutdown();
+}
+
 void settingsAdaptersRoundTripAndRejectInvalidValues() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create settings adapter directory");
@@ -1517,6 +1549,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             "invalid pin zoom modes must not replace the stored mode");
 
     const storage::RecordingSettings recording;
+
     require(recording.screenRecordingClarity() == QStringLiteral("1080p") &&
                 recording.frameRate() == 30 &&
                 recording.animatedImageClarity() == QStringLiteral("720p") &&
@@ -2192,12 +2225,44 @@ void appUsageScanAndCacheCleanup() {
 }
 } // namespace
 
-void applicationQuitPreservesStorageForConsumerDestruction() {
+class LifetimeObservedApplication final : public QCoreApplication {
+  public:
+    using QCoreApplication::QCoreApplication;
+
+    int quitObserverCount() const {
+        return receivers(SIGNAL(aboutToQuit()));
+    }
+};
+
+void applicationQuitPreservesStorageForConsumerDestruction(
+    LifetimeObservedApplication& application) {
     QTemporaryDir temporary;
     require(temporary.isValid(), "quit-lifetime storage directory unavailable");
     auto& applicationStorage = storage::ApplicationStorage::instance();
     const storage::StorageInitializationOptions options{temporary.filePath(QStringLiteral("bin")),
                                                         temporary.path(), 60000};
+    applicationStorage.shutdown();
+    int unrelatedQuitNotifications = 0;
+    QObject unrelatedObserver;
+    QObject::connect(&application, &QCoreApplication::aboutToQuit, &unrelatedObserver,
+                     [&unrelatedQuitNotifications] { ++unrelatedQuitNotifications; });
+    const int originalObservers = application.quitObserverCount();
+    for (int iteration = 0; iteration < 8; ++iteration) {
+        require(applicationStorage.initialize(options).success,
+                "repeated quit-lifetime initialization must succeed");
+        require(application.quitObserverCount() == originalObservers + 1,
+                "initialized storage must own exactly one application quit observer");
+        require(applicationStorage.initialize(options).success,
+                "quit-lifetime storage must support reinitialization");
+        require(application.quitObserverCount() == originalObservers + 1,
+                "reinitializing storage must replace its application quit observer");
+        applicationStorage.shutdown();
+        require(application.quitObserverCount() == originalObservers,
+                "storage shutdown must release only its application quit observer");
+        applicationStorage.shutdown();
+        require(application.quitObserverCount() == originalObservers,
+                "repeated storage shutdown must preserve unrelated quit observers");
+    }
     require(applicationStorage.initialize(options).success,
             "quit-lifetime storage must initialize");
     auto* history = &applicationStorage.captureHistory();
@@ -2207,6 +2272,8 @@ void applicationQuitPreservesStorageForConsumerDestruction() {
             "pending settings must be accepted");
     QTimer::singleShot(0, QCoreApplication::instance(), &QCoreApplication::quit);
     QCoreApplication::exec();
+    require(unrelatedQuitNotifications == 1,
+            "storage lifecycle changes must preserve unrelated application quit callbacks");
     require(applicationStorage.isInitialized(),
             "aboutToQuit must preserve initialized storage until consumers are destroyed");
     require(storage::ScreenshotSettings().captureCursor(), "destructors must still read settings");
@@ -2221,6 +2288,8 @@ void applicationQuitPreservesStorageForConsumerDestruction() {
                 .toBool(),
             "aboutToQuit must flush pending settings before the event loop exits");
     applicationStorage.shutdown();
+    require(application.quitObserverCount() == originalObservers,
+            "shutdown after quit must release its application quit observer");
 }
 
 void invalidTrayClickSettingsUseIndependentDefaults() {
@@ -2489,9 +2558,13 @@ void recordingGainSettingsPersistAndValidate() {
 }
 
 int main(int argc, char** argv) {
-    QCoreApplication application(argc, argv);
+    LifetimeObservedApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--recording-audio-only"))) {
         recordingGainSettingsPersistAndValidate();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--recording-post-processing-only"))) {
+        recordingPostProcessingPreferencesPersistAndValidate();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--scrolling-interval-only"))) {
@@ -2511,7 +2584,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--quit-lifetime-only"))) {
-        applicationQuitPreservesStorageForConsumerDestruction();
+        applicationQuitPreservesStorageForConsumerDestruction(application);
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
@@ -2556,6 +2629,7 @@ int main(int argc, char** argv) {
     screenshotUiAdaptersRoundTripTypedValues();
     screenshotTranslationSettingsRoundTripSupportedValues();
     settingsAdaptersRoundTripAndRejectInvalidValues();
+    recordingPostProcessingPreferencesPersistAndValidate();
     invalidCaptureCursorConfigurationFallsBackToDisabled();
     invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration();
     missingOcrModelConfigurationDefaultsToSmallWithoutAMigration();
@@ -2569,7 +2643,7 @@ int main(int argc, char** argv) {
     asynchronousMutationResultsAreObservable();
     pendingClosedPinsReceiveBackgroundRetentionCleanup();
     appUsageScanAndCacheCleanup();
-    applicationQuitPreservesStorageForConsumerDestruction();
+    applicationQuitPreservesStorageForConsumerDestruction(application);
     storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

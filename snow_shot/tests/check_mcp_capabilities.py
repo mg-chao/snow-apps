@@ -5,10 +5,21 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
+MINI = False
+REMOVED_MINI_TOOLS = {
+    "snow_shot_screenshot_translate", "snow_shot_translation_catalog",
+    "snow_shot_translation_start", "snow_shot_models_list",
+    "snow_shot_models_update", "snow_shot_credentials_set",
+}
 
 
 def read(path):
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = (ROOT / path).read_text(encoding="utf-8")
+    if MINI:
+        source = re.sub(r'#\[cfg\(not\(feature = "mini"\)\)\]\s*\w+\s*,?', "", source)
+        source = re.sub(r"#if SNOW_SHOT_ENABLE_[A-Z_]+\n.*?\n#endif", "", source,
+                        flags=re.S)
+    return source
 
 
 def block(source, pattern):
@@ -20,6 +31,8 @@ def block(source, pattern):
 def rust_catalog(path):
     declaration = block(read(path), r"const TOOLS:.*?=\s*&\[(.*?)\n\];")
     names = re.findall(r'\(\s*"([a-z0-9_]+)"\s*,', declaration)
+    if MINI:
+        names = [name for name in names if name not in REMOVED_MINI_TOOLS]
     assert len(names) == len(set(names)), f"Duplicate Rust tool in {path}"
     return set(names)
 
@@ -27,6 +40,7 @@ def rust_catalog(path):
 def enum_members(source, name):
     declaration = block(source, rf"enum(?: class)? {name}\s*\{{(.*?)\}}")
     declaration = re.sub(r"//[^\n]*", "", declaration)
+    declaration = re.sub(r"#\[[^\n]*\]\s*", "", declaration)
     return {item.split("=")[0].strip() for item in declaration.split(",") if item.strip()}
 
 
@@ -47,6 +61,8 @@ def check_surface_contracts(matrix):
     coverage = matrix["surface_contracts"]
     for name, (path, enum) in sources.items():
         actual = enum_members(read(path), enum)
+        if MINI and name == "settings_custom_renderers":
+            actual -= {"CustomAiModels", "TextTranslationConfigurations"}
         reviewed = set(coverage[name]["members"])
         assert actual == reviewed, f"{name}: review new={actual-reviewed}, removed={reviewed-actual}"
     rust_tools = enum_members(read("rust/snow-shot-mcp/src/schemas.rs"), "CanvasTool")
@@ -67,6 +83,8 @@ def check_surface_contracts(matrix):
     recognition = block(read("src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp"),
                         r"bool ScreenshotRecognitionSessionController::editWorkflow\(.*?\{(.*?)\nvoid ScreenshotRecognitionSessionController::cancelWorkflow")
     qt_actions = set(re.findall(r'action == QStringLiteral\("([a-z_]+)"\)', recognition))
+    if MINI:
+        qt_actions -= {"select_cells", "set_cell", "merge_cells", "split_cells", "reset_table", "show_original"}
     rust_actions = {re.sub(r"(?<!^)(?=[A-Z])", "_", action).lower()
                     for action in enum_members(read("rust/snow-shot-mcp/src/schemas.rs"), "RecognitionAction")}
     reviewed = set(coverage["recognition_actions"]["members"])
@@ -74,17 +92,20 @@ def check_surface_contracts(matrix):
 
 
 def main():
+    global MINI
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mini", action="store_true", help="Check the compiled Mini contract")
     parser.add_argument("--execution-reports", nargs="+", type=Path,
                         help="Require every tool and resource to appear in passing real-IPC driver reports")
     args = parser.parse_args()
+    MINI = args.mini
     declarations = {
         "screenshot": ("src/app/mcp/screenshotmcpsession.cpp", r"const QStringList tools\s*=\s*\{(.*?)\};"),
         "application": ("src/app/mcp/mcpapplicationservice.cpp", r"QStringList McpApplicationService::methods\(\).*?return\s*\{(.*?)\};"),
         "documents_jobs": ("src/app/mcp/mcpdocumentservice.cpp", r"const QStringList kTools\s*\{(.*?)\};"),
         "recording_pinned": ("src/app/mcp/mcpmediaservice.cpp", r"const QStringList methods\s*\{(.*?)\};"),
     }
-    matrix = json.loads(read("mcp-capabilities.json"))
+    matrix = json.loads(read("mcp-capabilities-mini.json" if MINI else "mcp-capabilities.json"))
     all_qt = set()
     for domain, (path, pattern) in declarations.items():
         qt_names = set(re.findall(r'QStringLiteral\("([a-z0-9_]+)"\)', block(read(path), pattern)))
@@ -96,7 +117,10 @@ def main():
     rust = screenshot | rust_catalog("rust/snow-shot-mcp/src/domain_schemas.rs")
     assert rust == all_qt, f"Rust-only={rust-all_qt}; Qt-only={all_qt-rust}"
     fixtures = json.loads(read("tests/mcp_contract_fixtures.json"))["fixtures"]
-    assert {case["name"] for case in fixtures} == screenshot and len(fixtures) == 28
+    if MINI:
+        fixtures = [case for case in fixtures if case["name"] not in REMOVED_MINI_TOOLS]
+    assert {case["name"] for case in fixtures} == screenshot
+    assert len(fixtures) == (27 if MINI else 28)
     check_surface_contracts(matrix)
     if args.execution_reports:
         reports = [json.loads(path.read_text(encoding="utf-8")) for path in args.execution_reports]
@@ -111,7 +135,7 @@ def main():
             pattern = "^" + "".join("[^/]+" if part.startswith("{") else re.escape(part) for part in parts) + "$"
             assert any(re.fullmatch(pattern, actual) for actual in read_uris), f"Resource missing real-IPC read: {uri}"
         print(f"MCP real-IPC execution coverage passed: {len(rust)} tools and {len(declared)} resource entries/templates.")
-    print(f"MCP capability agreement passed: {len(rust)} tools in {len(declarations)} domains, 28 screenshot input contracts and {len(matrix['surface_contracts'])} reviewed UI catalogs.")
+    print(f"MCP capability agreement passed: {len(rust)} tools in {len(declarations)} domains, {len(fixtures)} screenshot input contracts and {len(matrix['surface_contracts'])} reviewed UI catalogs.")
 
 
 if __name__ == "__main__":

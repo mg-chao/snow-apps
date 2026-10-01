@@ -11,6 +11,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
+#include <QBuffer>
 #include <QEventLoop>
 #include <QImage>
 #include <QMouseEvent>
@@ -18,6 +19,7 @@
 #include <QTimer>
 #include <QTemporaryDir>
 #include <QScopeGuard>
+#include <QColorSpace>
 
 #include <cstdlib>
 #include <iostream>
@@ -44,8 +46,19 @@ QImage patternedImage(const QSize& size, int seed) {
 }
 
 bool hasSamePixels(const QImage& actual, const QImage& expected) {
-    return actual.size() == expected.size() && actual.convertToFormat(QImage::Format_ARGB32) ==
-                                                   expected.convertToFormat(QImage::Format_ARGB32);
+    if (actual.size() != expected.size())
+        return false;
+    // Compare the same straight-alpha storage representation. Color-space
+    // metadata is checked independently by the color regression tests.
+    const auto actualPixels = actual.convertToFormat(QImage::Format_ARGB32);
+    const auto expectedPixels = expected.convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < actual.height(); ++y) {
+        for (int x = 0; x < actual.width(); ++x) {
+            if (actualPixels.pixel(x, y) != expectedPixels.pixel(x, y))
+                return false;
+        }
+    }
+    return true;
 }
 
 class ExportFixture final {
@@ -200,6 +213,73 @@ void styledClipboardResultRetainsPngTransparency() {
     require(!resultImage.isNull(), "styled clipboard export produced no image");
     require(resultImage.pixelColor(0, 0).alpha() == 0,
             "styled clipboard export did not retain rounded-corner transparency");
+}
+
+void screenshotExportsRetainSrgb() {
+    const QColorSpace srgb(QColorSpace::SRgb);
+    QImage source(40, 30, QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(200, 100, 50));
+    source.setColorSpace(srgb);
+    ScreenshotResultStyle compound;
+    compound.region = QRegion(source.rect()).subtracted(QRect(25, 20, 10, 5));
+    for (const auto& style :
+         {ScreenshotResultStyle{}, ScreenshotResultStyle{4, 3, Qt::black}, compound}) {
+        const auto result = ScreenshotResultCompositor::compose(source, style);
+        require(result.colorSpace() == srgb, "styled screenshot lost its sRGB working space");
+        const auto layout = ScreenshotResultCompositor::layoutForContent(source.size(), style);
+        require(result.pixelColor(layout.contentRect.center()) == QColor(200, 100, 50),
+                "sRGB composition changed captured pixel values");
+        const auto png = snow_shot::image_codec::encodePng(result, 1);
+        const auto decoded = QImage::fromData(png, "PNG");
+        require(decoded.colorSpace() == srgb, "PNG round-trip lost its sRGB profile");
+        require(hasSamePixels(decoded, result), "PNG round-trip changed screenshot pixels");
+    }
+    QImage p3 = source;
+    p3.setColorSpace(QColorSpace::DisplayP3);
+    const auto expected = p3.convertedToColorSpace(srgb, QImage::Format_ARGB32_Premultiplied);
+    const auto normalized = ScreenshotResultCompositor::normalizeImage(p3);
+    require(normalized.colorSpace() == srgb && hasSamePixels(normalized, expected) &&
+                normalized.pixelColor(0, 0) != p3.pixelColor(0, 0),
+            "profiled pin must convert its pixels into the raster working space");
+
+    QByteArray encodedP3;
+    QBuffer fixtureBuffer(&encodedP3);
+    require(fixtureBuffer.open(QIODevice::WriteOnly) && p3.save(&fixtureBuffer, "PNG"),
+            "Display P3 import fixture must encode");
+    const auto imported =
+        snow_shot::image_codec::decode(encodedP3, snow::image::Format::png, "image/png");
+    const auto importedResult = ScreenshotResultCompositor::compose(imported, {});
+    require(importedResult.colorSpace() == srgb && hasSamePixels(importedResult, expected),
+            "imported pin must convert the embedded profile before composition");
+    const auto importedExport =
+        QImage::fromData(snow_shot::image_codec::encodePng(imported), "PNG");
+    require(importedExport.colorSpace() == srgb && hasSamePixels(importedExport, expected),
+            "imported pin export must retain the correctly converted sRGB colors");
+
+    QImage largeSource(1200, 1000, QImage::Format_ARGB32_Premultiplied);
+    largeSource.setColorSpace(srgb);
+    largeSource.fill(QColor(200, 100, 50));
+    ScreenshotResultStyle sparse;
+    sparse.region = QRegion(QRect(0, 0, 20, 20)).united(QRect(1180, 980, 20, 20));
+    sparse.shadowWidth = 3;
+    ScreenshotResultStyle tiled;
+    tiled.region = QRegion(largeSource.rect()).subtracted(QRect(100, 100, 20, 20));
+    tiled.shadowWidth = 3;
+    for (const auto& style : {sparse, tiled}) {
+        const auto result = ScreenshotResultCompositor::compose(largeSource, style, 1.0, 0.5);
+        require(result.colorSpace() == srgb && result.pixelColor(13, 13).alpha() == 128,
+                "sparse and tiled region exports must retain sRGB through opacity composition");
+    }
+
+    ExportFixture fixture(true);
+    const auto exported = waitForResult(
+        [&](QObject* receiver, auto callback) {
+            return fixture.service().requestSelectionResult(QRect(0, 0, 40, 30), {}, receiver,
+                                                            std::move(callback));
+        },
+        [](QImage image) { return image; });
+    require(exported.colorSpace() == srgb && hasSamePixels(exported, fixture.displaySnapshot()),
+            "canvas export must retain sRGB without changing Retina capture pixels");
 }
 
 void selectionClipboardSnapshotsExportSettings() {
@@ -720,6 +800,7 @@ int main(int argc, char** argv) {
         fractionalDpiExportsPreserveCapturePixels();
         return EXIT_SUCCESS;
     }
+    screenshotExportsRetainSrgb();
     clipboardPlacementMatchesDirectPin();
     selectionClipboardSnapshotsExportSettings();
     fractionalDpiExportsPreserveCapturePixels();

@@ -230,48 +230,58 @@ def prepare_homebrew(release: dict, assets: dict[str, Path], output: Path) -> No
                     "prerelease": "-" in release["tag"][1:-len("_snow-shot")],
                     "assets": [{"name": name, "digest": "sha256:" + sha256(path)}
                                for name, path in assets.items()]}
-        dmg = next(path for name, path in assets.items() if name.endswith("-macos-arm64.dmg"))
-        archive, _ = homebrew.package(metadata, source, dmg.parent, output,
-                                      source / "absent-cask.rb")
-    descriptor = {"name": archive.name, "path": str(archive.resolve()),
-                  "size": archive.stat().st_size, "sha256": sha256(archive)}
-    old = next((item for item in release["assets"] if item["name"] == archive.name), None)
-    if old is not None:
-        if old["size"] != descriptor["size"] or old["sha256"] != descriptor["sha256"]:
-            raise ValueError("Existing local Homebrew archive differs from tagged source")
-    else:
-        release["assets"].append(descriptor)
+        for edition in homebrew.products_for_release(metadata):
+            archive, _ = homebrew.package(metadata, source, next(iter(assets.values())).parent,
+                                          output, source / ('absent-' + edition + '-cask.rb'), edition)
+            descriptor = {"name": archive.name, "path": str(archive.resolve()),
+                          "size": archive.stat().st_size, "sha256": sha256(archive)}
+            old = next((item for item in release["assets"] if item["name"] == archive.name), None)
+            if old is not None:
+                if old["size"] != descriptor["size"] or old["sha256"] != descriptor["sha256"]:
+                    raise ValueError("Existing local Homebrew archive differs from tagged source")
+            else:
+                release["assets"].append(descriptor)
 
 
-def verify_local_release(release: dict, assets: dict[str, Path], auditor: Path) -> None:
+def verify_local_release(release: dict, assets: dict[str, Path], auditor: Path,
+                         mini_auditor: Path | None = None) -> None:
     tag = release["tag"]
     version = tag[1:-len("_snow-shot")]
-    envelope = json.loads(assets["latest-version.json"].read_text(encoding="utf-8-sig"))
-    payload = json.loads(base64.b64decode(envelope["payload"], validate=True))
-    if payload.get("version") != version:
-        raise ValueError("Local signed metadata and release tag versions differ")
-    expected = {("online", "installer"), ("online", "update"),
-                ("offline", "installer"), ("offline", "update"), ("portable", "portable")}
-    packages = payload.get("packages", [])
-    if len(packages) != 5 or {(p["variant"], p["kind"]) for p in packages} != expected:
-        raise ValueError("Signed metadata must describe all five Windows packages")
-    for package in packages:
-        suffix = ".exe" if package["kind"] == "installer" else (
-            "-update.zip" if package["kind"] == "update" else ".zip")
-        name = f"snow-shot-{version}-windows-x64-{package['variant']}{suffix}"
-        if package["path"] != f"setup/snow-shot_windows-x64-{package['variant']}{suffix}":
-            raise ValueError("Unexpected signed package path")
-        if (name not in assets or assets[name].stat().st_size != package["size"] or
-                sha256(assets[name]) != package["sha256"]):
-            raise ValueError(f"Local Windows package differs from signed metadata: {name}")
+    paired = any(name.startswith('snow-shot-mini-') or name == 'latest-version-mini.json' for name in assets)
+    editions = [('snow-shot', 'latest-version.json', auditor)]
+    if paired:
+        if mini_auditor is None or 'latest-version-mini.json' not in assets:
+            raise ValueError('Paired release requires signed Mini metadata and its compiled auditor')
+        editions.append(('snow-shot-mini', 'latest-version-mini.json', mini_auditor))
+    for product, feed, helper in editions:
+        envelope = json.loads(assets[feed].read_text(encoding='utf-8-sig'))
+        payload = json.loads(base64.b64decode(envelope['payload'], validate=True))
+        if payload.get('version') != version:
+            raise ValueError('Local signed metadata and release tag versions differ')
+        if product == 'snow-shot-mini' and payload.get('product') != product:
+            raise ValueError('Mini signed metadata has an incorrect product')
+        expected = {('online', 'installer'), ('online', 'update'), ('portable', 'portable')}
+        if product == 'snow-shot':
+            expected |= {('offline', 'installer'), ('offline', 'update')}
+        packages = payload.get('packages', [])
+        if len(packages) != len(expected) or {(p['variant'], p['kind']) for p in packages} != expected:
+            raise ValueError('Signed metadata must describe all five Windows packages' if product == 'snow-shot'
+                             else 'Signed Mini metadata must describe three Windows packages')
+        for package in packages:
+            suffix = '.exe' if package['kind'] == 'installer' else ('-update.zip' if package['kind'] == 'update' else '.zip')
+            name = f"{product}-{version}-windows-x64-{package['variant']}{suffix}"
+            if package['path'] != f"setup/{product}_windows-x64-{package['variant']}{suffix}":
+                raise ValueError('Unexpected signed package path')
+            if name not in assets or assets[name].stat().st_size != package['size'] or sha256(assets[name]) != package['sha256']:
+                raise ValueError(f'Local Windows package differs from signed metadata: {name}')
+        if not helper.is_file():
+            raise ValueError('The compiled release auditor is required')
+        run(str(helper), '--verify-release', '--manifest', str(assets[feed]))
     for name, path in assets.items():
         if name.endswith(".dmg"):
             checksum = assets.get(name + ".sha256")
             if checksum is None or checksum.read_text().split()[0].lower() != sha256(path):
                 raise ValueError(f"Local macOS package checksum differs: {name}")
-    if not auditor.is_file():
-        raise ValueError("The compiled release auditor is required")
-    run(str(auditor), "--verify-release", "--manifest", str(assets["latest-version.json"]))
     commit = run("git", "rev-list", "-n", "1", tag)
     if commit != release["sourceCommit"]:
         raise ValueError("Local release tag differs from audited source commit")
@@ -321,7 +331,7 @@ def publish(release: dict, assets: dict[str, Path], token: str, username: str,
             raise ValueError("Published Gitee release is missing local assets")
         descriptors = {item["name"]: item for item in release["assets"]}
         for name in sorted(set(assets) - set(names),
-                           key=lambda item: (item == "latest-version.json", item)):
+                           key=lambda item: (item in ("latest-version.json", "latest-version-mini.json"), item)):
             if verify_only:
                 raise ValueError("Verification must not upload files")
             check_local_asset(descriptors[name], assets[name])
@@ -345,6 +355,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--auditor", type=Path)
+    parser.add_argument("--mini-auditor", type=Path)
     parser.add_argument("--check-auth", action="store_true")
     parser.add_argument("--verify-only", action="store_true")
     parser.add_argument("--prepare-homebrew", action="store_true",
@@ -358,7 +369,7 @@ if __name__ == "__main__":
                 raise ValueError("--manifest and --auditor are required")
             release = json.loads(arguments.manifest.read_text(encoding="utf-8-sig"))
             assets = local_assets(release)
-            verify_local_release(release, assets, arguments.auditor)
+            verify_local_release(release, assets, arguments.auditor, arguments.mini_auditor)
             if arguments.prepare_homebrew:
                 prepare_homebrew(release, assets, arguments.manifest.parent / "homebrew-local")
                 arguments.manifest.write_text(json.dumps(release, ensure_ascii=False, indent=2) + "\n",

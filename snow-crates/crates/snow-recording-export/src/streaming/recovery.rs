@@ -116,11 +116,12 @@ fn segment(
         path.clone(),
         false,
         fallback_threads,
+        false,
+        None,
         #[cfg(windows)]
         gpu,
         #[cfg(target_os = "macos")]
         None,
-        #[cfg(target_os = "macos")]
         false,
         true,
     ) {
@@ -256,7 +257,7 @@ impl StreamingEncoder {
         }
         if let Some(output) = self.audio_output.as_mut() {
             for audio in &mut self.audio {
-                let _ = audio.finish(output, &mut self.report);
+                let _ = audio.finish(output, &mut self.report, None);
             }
             let _ = output.write_trailer();
         }
@@ -322,7 +323,7 @@ impl StreamingEncoder {
         self.seal_segment(false)?;
         if let Some(output) = self.audio_output.as_mut() {
             for audio in &mut self.audio {
-                audio.finish(output, &mut self.report)?;
+                audio.finish(output, &mut self.report, self.final_duration_ms)?;
             }
             output.write_trailer().map_err(error)?;
         }
@@ -333,8 +334,13 @@ impl StreamingEncoder {
         let normalized;
         let video = if state.recovered {
             normalized = state.directory.join("normalized.mp4");
-            self.report.encoded_frames =
-                normalize(&state.segments, &state.config, &normalized, endpoint)?;
+            self.report.encoded_frames = normalize(
+                &state.segments,
+                &state.config,
+                &normalized,
+                endpoint,
+                self.final_duration_ms,
+            )?;
             self.report.video_encoder = "libx264".into();
             self.report.used_hardware_video_encoder = false;
             self.report.hardware_fallback = true;
@@ -359,6 +365,7 @@ impl StreamingEncoder {
             video_start,
             endpoint,
             state.config.fps,
+            self.final_duration_ms,
         )?;
         publish_unless_canceled(&assembled, &state.config.output_path, cancellation)?;
         Ok(())
@@ -447,6 +454,7 @@ fn remux(
     video_start: i64,
     video_end: i64,
     fps: u32,
+    duration_ms: Option<u64>,
 ) -> Result<()> {
     let mut inputs = vec![ffmpeg::format::input(video).map_err(error)?];
     if let Some(audio) = audio {
@@ -515,7 +523,10 @@ fn remux(
                 .stream(target_index)
                 .ok_or_else(|| error("missing video track"))?
                 .time_base();
-            let end = video_end.rescale((1, fps as i32), time_base);
+            let end = duration_ms.map_or_else(
+                || video_end.rescale((1, fps as i32), time_base),
+                |ms| (ms.min(i64::MAX as u64) as i64).rescale((1, 1000), time_base),
+            );
             video_packets.write_ready(&mut output, i64::MAX, Some(end))?;
         }
     }
@@ -529,6 +540,7 @@ fn normalize(
     config: &StreamingEncoderConfig,
     path: &Path,
     endpoint: i64,
+    duration_ms: Option<u64>,
 ) -> Result<u64> {
     let mut settings = config.clone();
     settings.output_path = path.to_owned();
@@ -653,7 +665,12 @@ fn normalize(
     if last_pts.is_none() {
         return Err(error("no decodable video remains"));
     }
-    Ok(output.finish_at_pts(endpoint as u64)?.encoded_frames)
+    Ok(if let Some(ms) = duration_ms {
+        output.finish_at_duration_ms(ms)?
+    } else {
+        output.finish_at_pts(endpoint as u64)?
+    }
+    .encoded_frames)
 }
 
 #[cfg(test)]

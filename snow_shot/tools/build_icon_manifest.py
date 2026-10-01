@@ -26,7 +26,7 @@ def main() -> int:
         if name == "screenshot-feature":
             variant, model = "twotone", "twoTone"
             defaults = {"secondary": "#9254DE"}
-        elif name == "snow-shot-logo":
+        elif name in {"snow-shot-logo", "snow-shot-mini-logo"}:
             variant = "brand"
         entry = {
             "variant": variant,

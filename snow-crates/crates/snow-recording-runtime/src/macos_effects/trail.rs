@@ -1,65 +1,10 @@
-use snow_recording_effects::{laser_trail::LaserTrail, surface::Surface};
-
-/// Adapts native movement events to the frame observations used by preview and
-/// the other recording compositors. LaserTrail's 50-point taper counts rendered
-/// movements, not mouse polling events.
-pub(super) struct FrameTrail {
-    trail: LaserTrail,
-    position: Option<(i32, i32)>,
-    pending: Option<Movement>,
-    path_broken: bool,
-}
-
-struct Movement {
-    position: Option<(i32, i32)>,
-    at_ms: u64,
-}
-
-impl FrameTrail {
-    pub fn new(lifetime_ms: u64) -> Self {
-        Self {
-            trail: LaserTrail::new(lifetime_ms),
-            position: None,
-            pending: None,
-            path_broken: false,
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.trail.clear();
-        self.position = None;
-        self.pending = None;
-        self.path_broken = false;
-    }
-
-    pub fn observe(&mut self, position: Option<(i32, i32)>, at_ms: u64) {
-        // Keep exits even if the mouse re-enters before the next video frame.
-        // Older visible geometry must fade naturally, without bridging the gap.
-        self.path_broken |= position.is_none();
-        self.pending = Some(Movement { position, at_ms });
-    }
-
-    pub fn draw_to(&mut self, surface: &mut impl Surface, now: u64, color: [u8; 4]) {
-        let size = surface.size();
-        if let Some(movement) = self.pending.take() {
-            if std::mem::take(&mut self.path_broken) {
-                self.trail.observe(None, size, size, movement.at_ms);
-            }
-            self.position = movement.position;
-            // Observation time belongs to the input, not the encoder. A delayed
-            // frame or an idle cursor must never renew the trail's lifetime.
-            self.trail
-                .observe(self.position, size, size, movement.at_ms);
-        }
-        self.trail.observe(self.position, size, size, now);
-        self.trail.draw_to(surface, now, color);
-    }
-}
+pub(super) use snow_recording_effects::CoalescedPointer as FrameTrail;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use snow_recording_effects::{
+        InputEffectsState,
         preview::{EffectsPreview, PreviewConfig},
         surface::{Tile, TileSurface},
     };
@@ -67,10 +12,36 @@ mod tests {
     const SIZE: (u32, u32) = (1024, 128);
     const COLOR: [u8; 4] = [255, 64, 80, 230];
 
+    // The native adapter only coalesces high-rate observations; all visible
+    // trail state and composition belong to the shared clocked state.
+    struct NativeTrail {
+        pending: FrameTrail,
+        effects: InputEffectsState,
+    }
+
+    impl NativeTrail {
+        fn new(lifetime_ms: u64) -> Self {
+            Self {
+                pending: FrameTrail::new(),
+                effects: InputEffectsState::new(lifetime_ms),
+            }
+        }
+
+        fn observe(&mut self, position: Option<(i32, i32)>, at: u64) {
+            self.pending.observe(position, at);
+        }
+
+        fn clear(&mut self) {
+            self.pending.clear();
+            self.effects.reset_inputs(0);
+        }
+    }
+
     fn preview(lifetime_ms: u64) -> EffectsPreview {
         EffectsPreview::new(
             PreviewConfig {
                 region: (0, 0, SIZE.0, SIZE.1),
+                canvas: SIZE,
                 output: SIZE,
                 trail: COLOR,
                 trail_duration_ms: lifetime_ms,
@@ -85,9 +56,10 @@ mod tests {
         )
     }
 
-    fn render(trail: &mut FrameTrail, now: u64) -> Vec<Tile> {
+    fn render(trail: &mut NativeTrail, now: u64) -> Vec<Tile> {
         let mut surface = TileSurface::new(SIZE);
-        trail.draw_to(&mut surface, now, COLOR);
+        trail.pending.advance(&mut trail.effects, SIZE, SIZE, now);
+        trail.effects.trail.draw_to(&mut surface, now, COLOR);
         surface.snapshot()
     }
 
@@ -103,7 +75,7 @@ mod tests {
     fn high_rate_native_movement_matches_preview_length_and_decay() {
         for lifetime in [100, 500, 2000] {
             for event_interval in [1, 2, 8] {
-                let mut native = FrameTrail::new(lifetime);
+                let mut native = NativeTrail::new(lifetime);
                 let mut preview = preview(lifetime);
                 // A 1,000 Hz mouse, a 500 Hz mouse and a 125 Hz mouse follow
                 // the same path while frames are rendered at preview cadence.
@@ -142,7 +114,7 @@ mod tests {
 
     #[test]
     fn coalesced_exit_and_reentry_preserve_the_tail_without_connecting_the_gap() {
-        let mut native = FrameTrail::new(500);
+        let mut native = NativeTrail::new(500);
         let mut preview = preview(500);
         for (at, x) in [(0, 20), (17, 60)] {
             native.observe(Some((x, 64)), at);
@@ -175,7 +147,7 @@ mod tests {
 
     #[test]
     fn delayed_frames_and_stationary_events_do_not_refresh_observation_time() {
-        let mut native = FrameTrail::new(100);
+        let mut native = NativeTrail::new(100);
         let mut preview = preview(100);
         for (at, x, rendered_at) in [(0, 20, 0), (20, 80, 50), (60, 80, 70), (100, 80, 120)] {
             native.observe(Some((x, 64)), at);
@@ -198,7 +170,7 @@ mod tests {
 
     #[test]
     fn reset_discards_both_visible_and_pending_movement() {
-        let mut native = FrameTrail::new(500);
+        let mut native = NativeTrail::new(500);
         native.observe(Some((20, 64)), 0);
         render(&mut native, 0);
         native.observe(Some((60, 64)), 17);

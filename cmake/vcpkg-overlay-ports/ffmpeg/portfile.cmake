@@ -650,11 +650,11 @@ if("snow-shot-minimal" IN_LIST FEATURES)
     endif()
     string(APPEND OPTIONS
         " --disable-network"
-        " --enable-decoder=h264,gif,png,apng,webp,webp_anim"
+        " --enable-decoder=h264,hevc,gif,png,apng,webp,webp_anim"
         " --enable-encoder=libx264,libx265,h264_mf,h264_nvenc,h264_amf,h264_qsv,mpeg4,gif,apng,libwebp_anim,aac,mp3_mf"
         " --enable-muxer=matroska,mp4,avi,gif,apng,webp"
         " --enable-demuxer=matroska,mov,gif,apng,webp,webp_anim"
-        " --enable-parser=h264,aac,mpegaudio"
+        " --enable-parser=h264,hevc,aac,mpegaudio"
         " --enable-bsf=h264_mp4toannexb,aac_adtstoasc"
         " --enable-protocol=file"
         " --enable-hwaccel=h264_d3d11va,h264_d3d11va2,h264_dxva2"

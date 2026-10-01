@@ -52,6 +52,10 @@ pub struct Point {
     pub x: i32,
     pub y: i32,
     pub display_id: u32,
+    /// Optional native mouse hit resolved by the UI thread on macOS. Some(0)
+    /// selects the desktop; None retains rectangle-based snapshot selection.
+    /// The ID must belong to the snapshot and contain this point. Ignored on Windows.
+    pub window_id: Option<usize>,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PixelRect {

@@ -7,6 +7,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "widgets/button.h"
+#include "widgets/color_picker.h"
 #include "widgets/select.h"
 #include <QApplication>
 #include <QDir>
@@ -42,6 +43,102 @@ void mouse(QWidget* widget, QEvent::Type type, QPointF point, Qt::MouseButton bu
            Qt::MouseButtons buttons) {
     QMouseEvent event(type, point, widget->mapToGlobal(point), button, buttons, Qt::NoModifier);
     QApplication::sendEvent(widget, &event);
+}
+class SignalConnectionProbe : public QObject {
+  public:
+    static int count(const QObject& object, const char* signal) {
+        const auto receivers = &SignalConnectionProbe::receivers;
+        return (object.*receivers)(signal);
+    }
+};
+
+void canvasColorSamplingLifecycle(QApplication& app) {
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    app.processEvents();
+    auto* canvas = controller.canvas();
+    auto* palette = controller.toolbar()->palette();
+    const Qt::CursorShape idleCursor = canvas->cursor().shape();
+    adqt::widgets::AdColorPicker picker;
+    adqt::widgets::AdColorPicker replacement;
+    int observerCalls = 0;
+    const auto observer =
+        QObject::connect(&picker, &QObject::destroyed, &app, [&]() { ++observerCalls; });
+    const char* signal = SIGNAL(destroyed(QObject*));
+    const int baseline = SignalConnectionProbe::count(picker, signal);
+    const int replacementBaseline = SignalConnectionProbe::count(replacement, signal);
+    const auto requireReleased = [&]() {
+        require(controller.active(), "ending sampling retains the canvas session");
+        require(SignalConnectionProbe::count(picker, signal) == baseline &&
+                    SignalConnectionProbe::count(replacement, signal) == replacementBaseline,
+                "completed sampling releases only its picker destruction observer");
+        require(canvas->cursor().shape() == idleCursor, "ending sampling releases the host cursor");
+    };
+    const auto begin = [&](adqt::widgets::AdColorPicker& target) {
+        palette->canvasColorSamplingRequested(&target);
+        require(canvas->cursor().shape() == Qt::BitmapCursor ||
+                    canvas->cursor().shape() == Qt::CrossCursor,
+                "sampling owns the host cursor while pending");
+    };
+    for (int iteration = 0; iteration < 32; ++iteration) {
+        begin(picker);
+        require(SignalConnectionProbe::count(picker, signal) == baseline + 1,
+                "sampling owns exactly one picker destruction observer");
+        begin(picker);
+        require(SignalConnectionProbe::count(picker, signal) == baseline + 1,
+                "restarting on the same picker replaces the pending observer");
+        begin(replacement);
+        require(SignalConnectionProbe::count(picker, signal) == baseline &&
+                    SignalConnectionProbe::count(replacement, signal) == replacementBaseline + 1,
+                "replacing the target releases the previous observer");
+        QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QApplication::sendEvent(canvas, &escape);
+        requireReleased();
+
+        begin(picker);
+        mouse(canvas, QEvent::MouseButtonPress, {100, 100}, Qt::LeftButton, Qt::LeftButton);
+        require(picker.value().isSolid() && picker.value().solidColor.alpha() == 0,
+                "successful sampling commits the transparent canvas color");
+        requireReleased();
+
+        begin(picker);
+        mouse(canvas, QEvent::MouseButtonPress, {100, 100}, Qt::RightButton, Qt::RightButton);
+        requireReleased();
+
+        begin(picker);
+        controller.activate();
+        require(controller.clickThrough(), "click-through begins after sampling cancellation");
+        requireReleased();
+        palette->canvasColorSamplingRequested(&picker);
+        requireReleased();
+        controller.activate();
+    }
+    auto* transient = new adqt::widgets::AdColorPicker;
+    begin(*transient);
+    delete transient;
+    requireReleased();
+    begin(picker);
+    controller.window()->close();
+    require(SignalConnectionProbe::count(picker, signal) == baseline,
+            "closing the canvas immediately ends pending sampling");
+    app.processEvents();
+    require(!controller.active(), "close destroys the sampling session");
+
+    controller.activate();
+    controller.toolbar()->palette()->canvasColorSamplingRequested(&picker);
+    controller.shutdown();
+    require(SignalConnectionProbe::count(picker, signal) == baseline,
+            "shutdown releases an observer on a picker that outlives the session");
+    {
+        presentation::GlobalCanvasController temporary(
+            nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+        temporary.activate();
+        temporary.toolbar()->palette()->canvasColorSamplingRequested(&picker);
+    }
+    require(SignalConnectionProbe::count(picker, signal) == baseline && observerCalls == 0,
+            "controller destruction releases only its pending observer");
+    QObject::disconnect(observer);
 }
 class CanvasTestScreen final : public QPlatformScreen {
   public:
@@ -239,9 +336,9 @@ void canvasCollectionBehavior() {
     const auto screenshotLevel = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey);
     require(captureWindowLevel({CaptureFamily::Screenshot, 0}) == screenshotLevel &&
                 captureWindowLevel({CaptureFamily::Recording, 0}) ==
-                    screenshotLevel - kRecordingBandSize &&
-                pinnedWindowLevel() == screenshotLevel - kRecordingBandSize - 1,
-            "original screenshot, recording, and pin levels remain unchanged");
+                    screenshotLevel - kCaptureBandSize &&
+                pinnedWindowLevel() == screenshotLevel - 2 * kCaptureBandSize,
+            "screenshot, recording, and pin windows use separate native level bands");
     QWindow canvas;
     canvas.setProperty(kScreenshotLayer, kOverlayLayer);
     canvas.setProperty(kCaptureFamily, static_cast<int>(CaptureFamily::GlobalCanvas));
@@ -332,6 +429,41 @@ void nativeCanvasLifecycle() {
 }
 #endif
 
+void canvasWindowHasNoNativeShadow() {
+    for (int session = 0; session < 2; ++session) {
+        presentation::GlobalCanvasController controller;
+        controller.activate();
+        QApplication::processEvents();
+        QWidget* window = controller.window();
+        const auto verify = [&]() {
+            require(window != nullptr && window->isVisible(), "canvas window is visible");
+#ifdef Q_OS_MACOS
+            require(window->windowFlags().testFlag(Qt::NoDropShadowWindowHint),
+                    "canvas must disable native shadows at opaque/transparent boundaries");
+            if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+                NSWindow* native = reinterpret_cast<NSView*>(window->winId()).window;
+                require(native != nil && !native.hasShadow,
+                        "canvas native surface must not cast a shadow");
+            }
+#endif
+        };
+        verify();
+        controller.activate();
+        QApplication::processEvents();
+        require(controller.clickThrough(), "canvas enters click-through mode");
+        verify();
+        controller.activate();
+        QApplication::processEvents();
+        require(!controller.clickThrough(), "canvas returns to editing mode");
+        verify();
+        window->hide();
+        window->show();
+        QApplication::processEvents();
+        verify();
+        controller.shutdown();
+    }
+}
+
 void toolbarPlacement(QApplication& app) {
     presentation::GlobalCanvasController controller(
         nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
@@ -355,6 +487,107 @@ void toolbarPlacement(QApplication& app) {
     requireStyleBelowMain();
     controller.window()->close();
     app.processEvents();
+}
+
+void canvasColorSampling(QApplication& app, QScreen* screen) {
+    presentation::GlobalCanvasController controller(
+        nullptr, {[screen]() { return screen; }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    auto* canvas = controller.canvas();
+    auto* palette = controller.toolbar()->palette();
+    palette->shapeRequested();
+    require(canvas->setViewportCamera(5000, -3000, 2.0), "pan and zoom the sampling fixture");
+    SnowCanvasShapeStyle style = canvas->canvasStyleToolbarState().shapeStyle;
+    const QColor color(32, 96, 192);
+    style.fill = color;
+    style.fillStyle = SnowCanvasFillStyle::Solid;
+    style.stroke = Qt::transparent;
+    require(canvas->setCanvasShapeStylePatch(style,
+                                             SnowCanvasShapeStylePropertyFillColor |
+                                                 SnowCanvasShapeStylePropertyFillStyle |
+                                                 SnowCanvasShapeStylePropertyStrokeColor,
+                                             SnowCanvasShapeKind::Rectangle),
+            "set sampling fixture color");
+    mouse(canvas, QEvent::MouseButtonPress, {140, 140}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseMove, {240, 240}, Qt::NoButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {240, 240}, Qt::LeftButton, Qt::NoButton);
+    app.processEvents();
+    adqt::widgets::AdColorPicker* picker = nullptr;
+    for (auto* candidate : palette->findChildren<adqt::widgets::AdColorPicker*>()) {
+        if (candidate->isVisible()) {
+            picker = candidate;
+            break;
+        }
+    }
+    require(picker != nullptr, "canvas exposes its style color picker");
+    picker->setPopupVisible(true);
+    auto* samplerButton = qobject_cast<QAbstractButton*>(picker->previewContent());
+    require(samplerButton != nullptr, "color picker exposes the canvas eyedropper");
+    samplerButton->click();
+    mouse(canvas, QEvent::MouseMove, {190, 190}, Qt::NoButton, Qt::NoButton);
+    QWidget* preview = nullptr;
+    for (QWidget* widget : app.topLevelWidgets()) {
+        if (widget->objectName() == QStringLiteral("screenshotCanvasColorSamplerWindow"))
+            preview = widget;
+    }
+    require(preview && preview->isVisible(),
+            "canvas eyedropper shows the magnified sampling window");
+    require(preview->windowHandle()->transientParent() == controller.toolbar()->windowHandle(),
+            "sampling window belongs to the canvas toolbar");
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const HWND handle = reinterpret_cast<HWND>(preview->winId());
+        require(GetWindow(handle, GW_OWNER) ==
+                        reinterpret_cast<HWND>(controller.toolbar()->winId()) &&
+                    (GetWindowLongPtr(handle, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0,
+                "sampling window joins the full-screen canvas native hierarchy");
+    }
+#endif
+    const QImage paintedPreview = preview->grab().toImage();
+    mouse(canvas, QEvent::MouseMove, {80, 80}, Qt::NoButton, Qt::NoButton);
+    require(preview->isVisible() && preview->grab().toImage() != paintedPreview,
+            "sampling window updates as the pointer crosses canvas colors");
+    mouse(canvas, QEvent::MouseButtonPress, {190, 190}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {190, 190}, Qt::LeftButton, Qt::NoButton);
+    require(picker->value().solidColor == color && !preview->isVisible(),
+            "eyedropper commits the canvas color and hides its preview");
+    const QColor committed = picker->value().solidColor;
+    palette->canvasColorSamplingRequested(picker);
+    mouse(canvas, QEvent::MouseMove, {80, 80}, Qt::NoButton, Qt::NoButton);
+    mouse(canvas, QEvent::MouseButtonPress, {80, 80}, Qt::RightButton, Qt::RightButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {80, 80}, Qt::RightButton, Qt::NoButton);
+    require(!preview->isVisible() && picker->value().solidColor == committed,
+            "right-click cancels sampling without changing the color");
+    palette->canvasColorSamplingRequested(picker);
+    mouse(canvas, QEvent::MouseMove, {190, 190}, Qt::NoButton, Qt::NoButton);
+    require(preview->isVisible(), "canvas sampling preview can reopen");
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &escape);
+    app.processEvents();
+    require(controller.active() && !preview->isVisible(),
+            "Escape cancels color sampling without closing the canvas");
+    PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &release);
+    palette->canvasColorSamplingRequested(picker);
+    mouse(canvas, QEvent::MouseMove, {190, 190}, Qt::NoButton, Qt::NoButton);
+    controller.activate();
+    require(!preview->isVisible(), "click-through cancels the sampling preview");
+    palette->canvasColorSamplingRequested(picker);
+    mouse(canvas, QEvent::MouseMove, {190, 190}, Qt::NoButton, Qt::NoButton);
+    require(!preview->isVisible(), "click-through does not start canvas sampling");
+    controller.activate();
+    auto* temporaryPicker = new adqt::widgets::AdColorPicker(controller.toolbar());
+    palette->canvasColorSamplingRequested(temporaryPicker);
+    mouse(canvas, QEvent::MouseMove, {190, 190}, Qt::NoButton, Qt::NoButton);
+    require(preview->isVisible(), "temporary picker starts sampling");
+    delete temporaryPicker;
+    require(!preview->isVisible(), "destroying the target cancels the sampling preview");
+    palette->canvasColorSamplingRequested(picker);
+    mouse(canvas, QEvent::MouseMove, {190, 190}, Qt::NoButton, Qt::NoButton);
+    controller.shutdown();
+    for (QWidget* widget : app.topLevelWidgets())
+        require(widget->objectName() != QStringLiteral("screenshotCanvasColorSamplerWindow"),
+                "closing the canvas destroys its sampling window");
 }
 
 void canvasNavigation(QApplication& app) {
@@ -447,17 +680,19 @@ void textEscapePreservesAnnotations(QApplication& app) {
     PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(canvas, &escape);
     app.processEvents();
-    require(controller.active(), "Escape cancels text without destroying annotations");
+    require(controller.active(), "Escape commits text without destroying annotations");
     require(!canvas->hasActiveTextEditing() && canvas->canvasHistoryState().canUndo,
             "Escape ends the draft and retains annotation history");
+    require(canvas->undo() && canvas->canvasHistoryState().canUndo,
+            "undo removes committed text while retaining the original annotation");
     require(canvas->undo() && !canvas->canvasHistoryState().canUndo,
-            "cancelled text adds no history entry");
+            "a second undo removes the original annotation");
     PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(canvas, &release);
     PhysicalKeyEvent exit(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(canvas, &exit);
     app.processEvents();
-    require(!controller.active(), "Escape still closes canvas after text cancellation");
+    require(!controller.active(), "Escape still closes canvas after text commitment");
 }
 
 void savedToolbarLayout(QApplication& app) {
@@ -577,8 +812,29 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--window-shadow-only"))) {
+        canvasWindowHasNoNativeShadow();
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--text-escape-only"))) {
         textEscapePreservesAnnotations(app);
+        storage.shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--color-sampling-only"))) {
+        canvasColorSamplingLifecycle(app);
+        canvasColorSampling(app, app.primaryScreen());
+        auto* native = new CanvasTestScreen;
+        QWindowSystemInterface::handleScreenAdded(native);
+        canvasColorSampling(app, native->screen());
+        QWindowSystemInterface::handleScreenRemoved(native);
+        storage.shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--color-sampling-native-only"))) {
+        for (QScreen* screen : app.screens())
+            canvasColorSampling(app, screen);
         storage.shutdown();
         return 0;
     }
@@ -592,6 +848,7 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    canvasColorSamplingLifecycle(app);
     textEscapePreservesAnnotations(app);
     savedToolbarLayout(app);
     templateInsertionAfterNavigation(app);

@@ -1,4 +1,6 @@
+use crate::codec::*;
 use crate::resize::{NearestResizePlan, resize_rgba_fast_into};
+use snow_core::cancellation::CancellationToken;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -7,8 +9,8 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::ptr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -17,26 +19,22 @@ use ffmpeg_next as ffmpeg;
 use rayon::prelude::*;
 use snow_audio_recorder::duration_to_frames_round;
 use snow_recording_model::{
-    AudioSampleFormat, BundleAssetKind, CursorShapeCompositionMode, CursorShapeRecord, MouseStore,
-    RecordingArtifact, RecordingBundleFooter, SessionManifest, StoredFrame, decode_mouse_records,
-    read_recording_bundle_footer,
+    AudioSampleFormat, BundleAssetKind, CursorShapeCompositionMode, CursorShapeRecord,
+    FinalizedTimeline, MouseStore, RecordingArtifact, RecordingBundleFooter, SessionManifest,
+    SourceDescription, StoredFrame, decode_mouse_records, read_recording_bundle_footer,
 };
 
 use crate::config::{
     ExportAudioTrackRequest, ExportExecutionMode, ExportFormat, ExportPerformanceConfig,
-    ExportRequest, MouseEditConfig, SoftwareH264Priority, VideoCodec, VideoEncodeConfig,
-    VideoEncodingSpeed,
+    ExportRequest, MouseEditConfig, VideoCodec, VideoEncodeConfig, VideoEncodingSpeed,
 };
 use crate::error::{RecordingExportError as ScreenRecorderError, Result};
 use crate::export::{
     ExportPathKind, ExportProgress, ExportResult, ExportRuntimeReport, ExportStage,
     ExportStageDurationsMs, ExportTask,
 };
-use crate::ffmpeg_util::{
-    VideoPacketDurations, copy_rgba_into_frame, ensure_ffmpeg_initialized, is_eagain,
-};
-use crate::streaming::{StreamingEncoder, StreamingEncoderConfig};
-use crate::video_quality::{quality_to_h264_crf, smart_quality_bitrate_bps};
+use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized, is_eagain};
+use crate::streaming::{StreamingAudioConfig, StreamingEncoder, StreamingEncoderConfig};
 
 const VIDEO_INDEX_MAGIC: &[u8] = b"SVIDX\0\0";
 
@@ -70,6 +68,61 @@ impl EditingSession {
     }
 
     pub fn export_request(&self) -> ExportRequest {
+        if let Ok(config) =
+            crate::deferred::read_deferred_output_settings(&self.artifact.bundle_path)
+        {
+            let mouse =
+                snow_recording_model::read_bundle_render_metadata(&self.artifact.bundle_path)
+                    .ok()
+                    .flatten()
+                    .and_then(|metadata| {
+                        SourceDescription::deferred(&self.manifest, &metadata).ok()
+                    })
+                    .and_then(|source| source.render)
+                    .map(|render| {
+                        let effects = render.effects;
+                        MouseEditConfig {
+                            visible: effects.show_cursor,
+                            trail_enabled: effects.mouse_trail_rgba[3] != 0,
+                            trail_window_ms: effects.mouse_trail_duration_ms,
+                            trail_max_alpha: effects.mouse_trail_rgba[3],
+                            trail_color: effects.mouse_trail_rgba[..3].try_into().unwrap(),
+                            click_enabled: effects.mouse_click_rgba[3] != 0,
+                            ..MouseEditConfig::default()
+                        }
+                    })
+                    .unwrap_or_default();
+            return ExportRequest {
+                audio_tracks: self
+                    .manifest
+                    .audio_tracks
+                    .iter()
+                    .map(|track| ExportAudioTrackRequest {
+                        track_id: track.track_id.clone(),
+                        enabled: config.audio.iter().any(|output| {
+                            output.track_id == "mixed" || output.track_id == track.track_id
+                        }),
+                        ..ExportAudioTrackRequest::default()
+                    })
+                    .collect(),
+                audio_output: crate::config::ExportAudioOutputConfig {
+                    bitrate_kbps: config.audio.first().map_or(192, |audio| audio.bitrate_kbps),
+                },
+                mouse,
+                output_path: config.output_path,
+                format: config.format,
+                video: config.video,
+                codec: config.codec,
+                prefer_hardware_h264: config.prefer_hardware_h264,
+                performance: ExportPerformanceConfig {
+                    mode: config.execution_mode,
+                    software_h264_priority: config.software_h264_priority,
+                    encode_threads: config.encode_threads,
+                    ..ExportPerformanceConfig::default()
+                },
+                ..ExportRequest::default()
+            };
+        }
         ExportRequest {
             playback_speed: 1.0,
             audio_tracks: self
@@ -78,12 +131,15 @@ impl EditingSession {
                 .iter()
                 .map(|track| ExportAudioTrackRequest {
                     track_id: track.track_id.clone(),
-                    enabled: false,
+                    enabled: true,
                     ..ExportAudioTrackRequest::default()
                 })
                 .collect(),
             audio_output: crate::config::ExportAudioOutputConfig::default(),
-            mouse: crate::config::MouseEditConfig::default(),
+            mouse: MouseEditConfig {
+                visible: true,
+                ..MouseEditConfig::default()
+            },
             format: ExportFormat::Mp4,
             output_path: self
                 .manifest
@@ -103,43 +159,136 @@ impl EditingSession {
     }
 
     pub fn export(self, request: ExportRequest) -> Result<ExportResult> {
-        self.export_with_request(request, None, Arc::new(AtomicBool::new(false)))
+        self.export_with_request(
+            request,
+            None,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::default(),
+        )
     }
 
     pub fn export_async(self, request: ExportRequest) -> Result<ExportTask> {
-        let (progress_tx, progress_rx) = crossbeam_channel::unbounded::<ExportProgress>();
+        let (progress_tx, progress_rx) = ProgressReporter::channel();
+        let cancellation = CancellationToken::default();
+        let worker_cancellation = cancellation.clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel_for_worker = Arc::clone(&cancel_flag);
         let handle = thread::Builder::new()
             .name("snow-screen-recorder-export".to_string())
             .spawn(move || {
                 snow_core::qos::apply_current_thread();
-                self.export_with_request(request, Some(progress_tx), cancel_for_worker)
+                self.export_with_request(
+                    request,
+                    Some(progress_tx),
+                    cancel_for_worker,
+                    worker_cancellation,
+                )
             })
             .map_err(|err| ScreenRecorderError::Io(std::io::Error::other(err)))?;
 
-        Ok(ExportTask::new(cancel_flag, progress_rx, handle))
+        Ok(ExportTask::new(
+            cancel_flag,
+            cancellation,
+            progress_rx,
+            handle,
+        ))
     }
 
     fn export_with_request(
         self,
         request: ExportRequest,
-        progress_tx: Option<Sender<ExportProgress>>,
+        progress_tx: Option<Arc<ProgressReporter>>,
         cancel_flag: Arc<AtomicBool>,
+        cancellation: CancellationToken,
     ) -> Result<ExportResult> {
         request
             .validate()
             .map_err(ScreenRecorderError::InvalidConfig)?;
         let request = normalize_export_request(request, &self.manifest);
 
-        self.export_inner(request, &progress_tx, &cancel_flag)
+        if let Some(metadata) =
+            snow_recording_model::read_bundle_render_metadata(&self.artifact.bundle_path)?
+        {
+            let source = SourceDescription::deferred(&self.manifest, &metadata)?;
+            return self.export_finalized_source(request, source, &progress_tx, &cancellation);
+        }
+        self.export_inner(request, &progress_tx, &cancel_flag, &cancellation)
+    }
+
+    fn export_finalized_source(
+        self,
+        request: ExportRequest,
+        source: SourceDescription,
+        progress_tx: &Option<Arc<ProgressReporter>>,
+        cancellation: &CancellationToken,
+    ) -> Result<ExportResult> {
+        let metadata = snow_recording_model::RenderMetadata {
+            render: source.render.ok_or_else(|| {
+                ScreenRecorderError::InvalidConfig(
+                    "finalized source rendering policy is missing".into(),
+                )
+            })?,
+            timeline: source.timeline,
+            coded_width: source.coded_width,
+            coded_height: source.coded_height,
+        };
+        if (request.playback_speed - 1.0).abs() > f32::EPSILON
+            || request
+                .target_fps
+                .is_some_and(|fps| fps != metadata.timeline.fps())
+            || request
+                .maximum_width
+                .is_some_and(|width| width < metadata.render.output_width)
+            || request
+                .maximum_height
+                .is_some_and(|height| height < metadata.render.output_height)
+        {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "a finalized recording uses its captured timeline and output canvas".into(),
+            ));
+        }
+        let mut config =
+            crate::deferred::read_deferred_output_settings(&self.artifact.bundle_path)?;
+        config.output_path = request.output_path;
+        config.format = request.format;
+        config.video = request.video;
+        config.codec = request.codec;
+        config.prefer_hardware_h264 = request.prefer_hardware_h264;
+        config.execution_mode = request.performance.mode;
+        config.software_h264_priority = request.performance.software_h264_priority;
+        config.encode_threads = request.performance.encode_threads;
+        if config.format.is_animated_image() {
+            config.audio.clear();
+        }
+        // Looping, fonts, labels, effects and audio routing remain the immutable
+        // source snapshot because the legacy request cannot represent them.
+        let result = crate::deferred::render_bundle(
+            &self.artifact.bundle_path,
+            config,
+            metadata,
+            cancellation,
+            |stage, completed, total, started| {
+                let percent = if stage == ExportStage::Plan {
+                    0.0
+                } else if stage == ExportStage::Finalize {
+                    98.0
+                } else {
+                    5.0 + (completed as f64 / total.max(1) as f64 * 90.0) as f32
+                };
+                let fps = completed as f32 / started.elapsed().as_secs_f32().max(0.001);
+                emit_progress(progress_tx, stage, percent, fps, None);
+            },
+        )?;
+        emit_progress(progress_tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
+        Ok(result)
     }
 
     fn export_inner(
         self,
         mut request: ExportRequest,
-        progress_tx: &Option<Sender<ExportProgress>>,
+        progress_tx: &Option<Arc<ProgressReporter>>,
         cancel_flag: &Arc<AtomicBool>,
+        cancellation: &CancellationToken,
     ) -> Result<ExportResult> {
         let output_path = request.output_path.clone();
         let output_directory = output_path
@@ -160,19 +309,22 @@ impl EditingSession {
             .into_temp_path();
         request.output_path = staging_path.to_path_buf();
 
-        let mut result = self.export_inner_impl(request, progress_tx, cancel_flag)?;
-        staging_path
-            .persist(&output_path)
+        let mut result = self.export_inner_impl(request, progress_tx, cancel_flag, cancellation)?;
+        cancellation
+            .commit(|| staging_path.persist(&output_path))
+            .map_err(|_| ScreenRecorderError::ExportCanceled)?
             .map_err(|err| ScreenRecorderError::Io(err.error))?;
         result.output_path = output_path;
+        emit_progress(progress_tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
         Ok(result)
     }
 
     fn export_inner_impl(
         self,
         request: ExportRequest,
-        progress_tx: &Option<Sender<ExportProgress>>,
+        progress_tx: &Option<Arc<ProgressReporter>>,
         cancel_flag: &Arc<AtomicBool>,
+        cancellation: &CancellationToken,
     ) -> Result<ExportResult> {
         check_canceled(cancel_flag)?;
         emit_progress(progress_tx, ExportStage::Plan, 1.0, 0.0, None);
@@ -194,17 +346,29 @@ impl EditingSession {
                 "no frames available for export".to_string(),
             ));
         }
-        let source_duration_ms = video_index_duration_ms(&source_index);
 
-        let (source_w, source_h) = if self.manifest.width > 0 && self.manifest.height > 0 {
-            (self.manifest.width, self.manifest.height)
-        } else {
-            probe_intermediate_video_dimensions(
-                &self.artifact.local_paths.video_intermediate_path,
-                self.manifest.width.max(1),
-                self.manifest.height.max(1),
-            )
-        };
+        let (resolved_width, resolved_height) =
+            if self.manifest.width > 0 && self.manifest.height > 0 {
+                (self.manifest.width, self.manifest.height)
+            } else {
+                probe_intermediate_video_dimensions(
+                    &self.artifact.local_paths.video_intermediate_path,
+                    self.manifest.width.max(1),
+                    self.manifest.height.max(1),
+                )
+            };
+        // The legacy version adapter resolves older dimension-less manifests;
+        // timing and media policy then use the same normalized source model.
+        let mut source_manifest = self.manifest.clone();
+        source_manifest.width = resolved_width;
+        source_manifest.height = resolved_height;
+        let timeline = FinalizedTimeline::new(
+            video_index_duration_ms(&source_index).max(1),
+            self.manifest.fps,
+        )
+        .map_err(ScreenRecorderError::InvalidConfig)?;
+        let source = SourceDescription::legacy(&source_manifest, timeline)?;
+        let (source_w, source_h) = (source.logical_width, source.logical_height);
         let (output_w, output_h) = output_dimensions(
             source_w,
             source_h,
@@ -223,13 +387,13 @@ impl EditingSession {
             MouseTracks::default()
         };
         let needs_overlay = !mouse_tracks.samples.is_empty() && wants_mouse_overlay;
-        let source_hdr = self.manifest.media.color == snow_media::ColorDescription::HDR10;
+        let source_hdr = source.media.color == snow_media::ColorDescription::HDR10;
         if source_hdr && needs_overlay && request.mouse.visible {
             validate_hdr_cursor_shapes(&mouse_tracks)?;
         }
         if !source_hdr
             && matches!(
-                self.manifest.media.color.transfer,
+                source.media.color.transfer,
                 snow_media::TransferFunction::Pq
                     | snow_media::TransferFunction::Hlg
                     | snow_media::TransferFunction::Linear
@@ -240,43 +404,15 @@ impl EditingSession {
             ));
         }
 
-        if can_use_direct_video_passthrough_copy_path(&self.manifest, &request, needs_overlay) {
-            emit_progress(progress_tx, ExportStage::Decode, 2.0, 0.0, None);
-            let duration_ms = source_duration_ms;
-            match try_direct_video_passthrough_export(
-                &self.artifact.local_paths.video_intermediate_path,
-                &output_path,
-                cancel_flag,
-            ) {
-                Ok(()) => {
-                    runtime_report.path = ExportPathKind::DirectCopy;
-                    emit_progress(progress_tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
-                    return Ok(ExportResult {
-                        output_path,
-                        duration_ms,
-                        format: request.format,
-                        runtime_report,
-                    });
-                }
-                Err(ScreenRecorderError::ExportCanceled) => {
-                    let _ = fs::remove_file(&output_path);
-                    return Err(ScreenRecorderError::ExportCanceled);
-                }
-                Err(_) => {
-                    // Fall back to remux/re-encode path when direct passthrough cannot be used.
-                }
-            }
-        }
-
         let retime =
             build_retime_plan_from_index(&source_index, request.playback_speed, export_fps)?;
-        if retime.frame_count == 0 {
+        if retime.frame_count() == 0 {
             return Err(ScreenRecorderError::Export(
                 "retiming produced no frames".to_string(),
             ));
         }
 
-        let duration_ms = retime.output_duration_ms.max(1);
+        let duration_ms = retime.output_duration_ms().max(1);
 
         emit_progress(progress_tx, ExportStage::Compose, 25.0, 0.0, None);
         let mixed_audio = if request.format.is_animated_image() {
@@ -317,47 +453,6 @@ impl EditingSession {
         }
         let overlay_tracks_ref = overlay_tracks.as_ref().unwrap_or(&mouse_tracks);
 
-        if can_use_video_packet_copy_path(
-            request.format,
-            request.playback_speed,
-            self.manifest.fps,
-            export_fps,
-            needs_overlay,
-            needs_resize,
-            request.codec == self.manifest.video_codec && !request.prefer_hardware_h264,
-        ) {
-            match export_video_packet_copy_with_generated_audio(
-                &self.artifact.local_paths.video_intermediate_path,
-                &output_path,
-                request.format,
-                request.playback_speed,
-                mixed_audio.as_ref(),
-                request.audio_output.bitrate_kbps.max(8),
-                &request.performance,
-                cancel_flag,
-                progress_tx,
-            ) {
-                Ok(telemetry) => {
-                    runtime_report.path = ExportPathKind::PacketCopy;
-                    apply_codec_telemetry(&mut runtime_report, telemetry);
-                    emit_progress(progress_tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
-                    return Ok(ExportResult {
-                        output_path,
-                        duration_ms,
-                        format: request.format,
-                        runtime_report,
-                    });
-                }
-                Err(ScreenRecorderError::ExportCanceled) => {
-                    let _ = fs::remove_file(&output_path);
-                    return Err(ScreenRecorderError::ExportCanceled);
-                }
-                Err(_) => {
-                    // Fall back to full decode/compose/re-encode path when remuxing is unsupported.
-                }
-            }
-        }
-
         if !needs_overlay || source_hdr {
             emit_progress(progress_tx, ExportStage::Decode, 20.0, 0.0, None);
             let telemetry = match export_video_generated_from_source(
@@ -377,6 +472,7 @@ impl EditingSession {
                 &request.video,
                 &request.performance,
                 cancel_flag,
+                Some(cancellation),
                 progress_tx,
             ) {
                 Ok(telemetry) => telemetry,
@@ -389,7 +485,7 @@ impl EditingSession {
             };
             runtime_report.path = ExportPathKind::FullTranscode;
             apply_codec_telemetry(&mut runtime_report, telemetry);
-            emit_progress(progress_tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
+            emit_progress(progress_tx, ExportStage::Finalize, 98.0, 0.0, Some(0));
             return Ok(ExportResult {
                 output_path,
                 duration_ms,
@@ -416,12 +512,13 @@ impl EditingSession {
             overlay_tracks_ref,
             &request.mouse,
             cancel_flag,
+            Some(cancellation),
             progress_tx,
         ) {
             Ok(telemetry) => {
                 runtime_report.path = ExportPathKind::FullTranscode;
                 apply_codec_telemetry(&mut runtime_report, telemetry);
-                emit_progress(progress_tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
+                emit_progress(progress_tx, ExportStage::Finalize, 98.0, 0.0, Some(0));
                 return Ok(ExportResult {
                     output_path,
                     duration_ms,
@@ -444,7 +541,7 @@ impl EditingSession {
             source_w,
             source_h,
         );
-        let required_source_indices = collect_required_source_indices(&retime.source_indices);
+        let required_source_indices = collect_required_source_indices(retime.source_indices());
         let mut frame_source = StreamingVideoFrameSource::spawn(
             &self.artifact.local_paths.video_intermediate_path,
             required_source_indices,
@@ -473,8 +570,7 @@ impl EditingSession {
             &output_path,
             output_w,
             output_h,
-            retime.frame_count,
-            export_fps,
+            retime.timeline,
             request.format,
             request.codec,
             request.prefer_hardware_h264,
@@ -483,14 +579,15 @@ impl EditingSession {
             &request.video,
             &request.performance,
             cancel_flag,
+            Some(cancellation),
             progress_tx,
             |index, output_rgba| {
                 check_canceled(cancel_flag)?;
                 debug_assert_eq!(output_rgba.len(), output_len);
 
-                let src_idx = retime.source_indices[index];
+                let src_idx = retime.source_index(index);
                 let source = frame_source.frame_at(src_idx)?;
-                let output_ts = retime.output_timestamps_ms[index];
+                let output_ts = retime.timestamp_ms(index);
                 prepare_overlay_base_rgba(
                     source,
                     src_idx,
@@ -529,7 +626,7 @@ impl EditingSession {
         };
         runtime_report.path = ExportPathKind::FullTranscode;
         apply_codec_telemetry(&mut runtime_report, telemetry);
-        emit_progress(progress_tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
+        emit_progress(progress_tx, ExportStage::Finalize, 98.0, 0.0, Some(0));
 
         Ok(ExportResult {
             output_path,
@@ -657,37 +754,6 @@ fn probe_intermediate_video_dimensions(
     let width = decoder.width().max(1);
     let height = decoder.height().max(1);
     (width, height)
-}
-
-fn can_use_video_packet_copy_path(
-    format: ExportFormat,
-    playback_speed: f32,
-    source_fps: u32,
-    export_fps: u32,
-    needs_overlay: bool,
-    needs_resize: bool,
-    codec_matches_source: bool,
-) -> bool {
-    !format.is_animated_image()
-        && !needs_overlay
-        && !needs_resize
-        && codec_matches_source
-        && playback_speed.is_finite()
-        && playback_speed > 0.0
-        && source_fps.max(1) == export_fps.max(1)
-}
-
-#[inline]
-fn hardware_video_encode_allowed(mode: ExportExecutionMode) -> bool {
-    matches!(
-        mode,
-        ExportExecutionMode::HardwarePreferred | ExportExecutionMode::HardwareOnly
-    )
-}
-
-#[inline]
-fn software_encode_fallback_allowed(mode: ExportExecutionMode) -> bool {
-    mode == ExportExecutionMode::HardwarePreferred
 }
 
 #[inline]
@@ -985,77 +1051,6 @@ fn normalize_decoded_video_frame<'a>(
     Ok(transferred)
 }
 
-fn can_use_direct_video_passthrough_copy_path(
-    manifest: &SessionManifest,
-    request: &ExportRequest,
-    needs_overlay: bool,
-) -> bool {
-    if request.audio_tracks.iter().any(|track| track.enabled) {
-        return false;
-    }
-    if (request.playback_speed - 1.0).abs() > f32::EPSILON {
-        return false;
-    }
-    if !matches!(request.format, ExportFormat::Mp4) {
-        return false;
-    }
-    if request.codec != manifest.video_codec
-        || request.target_fps.is_some()
-        || request.maximum_width.is_some()
-        || request.maximum_height.is_some()
-    {
-        return false;
-    }
-    if !path_has_extension(&request.output_path, "mp4") {
-        return false;
-    }
-
-    can_use_video_packet_copy_path(
-        request.format,
-        request.playback_speed,
-        manifest.fps,
-        manifest.fps,
-        needs_overlay,
-        false,
-        true,
-    )
-}
-
-fn path_has_extension(path: &Path, expected: &str) -> bool {
-    path.extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.eq_ignore_ascii_case(expected))
-        .unwrap_or(false)
-}
-
-fn try_direct_video_passthrough_export(
-    input_video_path: &Path,
-    output_path: &Path,
-    cancel_flag: &Arc<AtomicBool>,
-) -> Result<()> {
-    check_canceled(cancel_flag)?;
-    if input_video_path == output_path {
-        return Err(ScreenRecorderError::Export(
-            "output path must differ from intermediate video path for direct passthrough export"
-                .to_string(),
-        ));
-    }
-
-    let _ = fs::remove_file(output_path);
-    if fs::hard_link(input_video_path, output_path).is_err() {
-        fs::copy(input_video_path, output_path).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to copy passthrough source video {} into {}: {err}",
-                input_video_path.display(),
-                output_path.display()
-            ))
-        })?;
-    }
-
-    check_canceled(cancel_flag)?;
-    Ok(())
-}
-
 fn video_index_duration_ms(index: &[VideoIndexEntry]) -> u64 {
     index
         .iter()
@@ -1093,20 +1088,6 @@ fn effective_decode_queue_depth(
     depth.min(max_depth_by_budget.min(u16::MAX as usize) as u16)
 }
 
-#[inline]
-fn auto_thread_count_from_physical_cores() -> usize {
-    let logical = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .max(1);
-    let physical = num_cpus::get_physical();
-    if physical == 0 {
-        logical
-    } else {
-        physical.min(logical).max(1)
-    }
-}
-
 fn build_process_pool(process_threads: u8) -> Option<rayon::ThreadPool> {
     let count = match process_threads {
         0 => auto_thread_count_from_physical_cores(),
@@ -1130,17 +1111,57 @@ fn check_canceled(cancel_flag: &Arc<AtomicBool>) -> Result<()> {
     Ok(())
 }
 
+/// A single latest update avoids an unbounded queue for unattended exporters.
+struct ProgressReporter {
+    sender: Sender<ExportProgress>,
+    stale: Receiver<ExportProgress>,
+    percent: Mutex<f32>,
+}
+
+impl ProgressReporter {
+    fn channel() -> (Arc<Self>, Receiver<ExportProgress>) {
+        let (sender, receiver) = crossbeam_channel::bounded(1);
+        (
+            Arc::new(Self {
+                sender,
+                stale: receiver.clone(),
+                percent: Mutex::new(0.0),
+            }),
+            receiver,
+        )
+    }
+    fn emit(&self, mut progress: ExportProgress) {
+        let mut percent = self
+            .percent
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        progress.percent = if progress.percent.is_finite() {
+            progress.percent.clamp(*percent, 100.0)
+        } else {
+            *percent
+        };
+        *percent = progress.percent;
+        match self.sender.try_send(progress) {
+            Err(crossbeam_channel::TrySendError::Full(progress)) => {
+                let _ = self.stale.try_recv();
+                let _ = self.sender.try_send(progress);
+            }
+            Ok(()) | Err(crossbeam_channel::TrySendError::Disconnected(_)) => {}
+        }
+    }
+}
+
 fn emit_progress(
-    progress_tx: &Option<Sender<ExportProgress>>,
+    progress_tx: &Option<Arc<ProgressReporter>>,
     stage: ExportStage,
     percent: f32,
     video_fps: f32,
     eta_ms: Option<u64>,
 ) {
     if let Some(tx) = progress_tx {
-        let _ = tx.send(ExportProgress {
+        tx.emit(ExportProgress {
             stage,
-            percent: percent.clamp(0.0, 100.0),
+            percent,
             video_fps: video_fps.max(0.0),
             eta_ms,
             queue_utilization: 0.0,
@@ -1151,10 +1172,43 @@ fn emit_progress(
 
 #[derive(Clone, Debug)]
 struct RetimePlan {
-    source_indices: Vec<usize>,
-    output_timestamps_ms: Vec<u64>,
-    frame_count: usize,
-    output_duration_ms: u64,
+    source_starts_ms: Vec<u64>,
+    speed: f32,
+    timeline: FinalizedTimeline,
+}
+
+impl RetimePlan {
+    fn frame_count(&self) -> usize {
+        self.timeline.frame_count() as usize
+    }
+    fn output_duration_ms(&self) -> u64 {
+        self.timeline.duration_ms()
+    }
+    fn timestamp_ms(&self, index: usize) -> u64 {
+        self.timeline
+            .frame(index as u64)
+            .expect("retimed observation must be in range")
+            .timestamp_ms
+    }
+    fn source_index(&self, index: usize) -> usize {
+        let source_ms = (self.timestamp_ms(index) as f64 * f64::from(self.speed)).round() as u64;
+        self.source_starts_ms
+            .partition_point(|timestamp| *timestamp <= source_ms)
+            .saturating_sub(1)
+    }
+    fn source_indices(&self) -> impl Iterator<Item = usize> + '_ {
+        let mut source = 0;
+        (0..self.frame_count()).map(move |index| {
+            let source_ms =
+                (self.timestamp_ms(index) as f64 * f64::from(self.speed)).round() as u64;
+            while source + 1 < self.source_starts_ms.len()
+                && self.source_starts_ms[source + 1] <= source_ms
+            {
+                source += 1;
+            }
+            source
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1170,49 +1224,34 @@ fn build_retime_plan_from_index(
 ) -> Result<RetimePlan> {
     if source_index.is_empty() {
         return Err(ScreenRecorderError::Export(
-            "cannot retime an empty source frame sequence".to_string(),
+            "cannot retime an empty source frame sequence".into(),
         ));
     }
-
-    let mut starts = Vec::with_capacity(source_index.len());
-    let mut accumulated = 0u64;
-    for entry in source_index {
-        starts.push(entry.timestamp_ms);
-        accumulated = accumulated.max(
-            entry
-                .timestamp_ms
-                .saturating_add(u64::from(entry.duration_ms.max(1))),
-        );
-    }
-    if accumulated == 0 {
-        return Err(ScreenRecorderError::Export(
-            "source frame duration is zero".to_string(),
+    if source_index
+        .windows(2)
+        .any(|entries| entries[0].timestamp_ms > entries[1].timestamp_ms)
+    {
+        return Err(ScreenRecorderError::Decode(
+            "source frame timestamps run backwards".into(),
         ));
     }
-
+    let source_starts_ms = source_index
+        .iter()
+        .map(|entry| entry.timestamp_ms)
+        .collect();
+    let accumulated = video_index_duration_ms(source_index);
     let speed = playback_speed.clamp(0.25, 4.0);
-    let interval_ms = (1000.0 / export_fps.max(1) as f64).max(1.0);
-    let output_duration_ms = ((accumulated as f64) / speed as f64).ceil().max(1.0) as u64;
-    let frame_count = ((output_duration_ms as f64) / interval_ms).ceil().max(1.0) as usize;
-    let mut source_indices = Vec::with_capacity(frame_count);
-    let mut output_timestamps_ms = Vec::with_capacity(frame_count);
-    let mut src_idx = 0usize;
-
-    for frame_idx in 0..frame_count {
-        let output_ts = (frame_idx as f64 * interval_ms).round() as u64;
-        let source_ts = (output_ts as f64 * speed as f64).round() as u64;
-        while src_idx + 1 < starts.len() && source_ts >= starts[src_idx + 1] {
-            src_idx += 1;
-        }
-        source_indices.push(src_idx);
-        output_timestamps_ms.push(output_ts);
-    }
-
+    let fps = export_fps.max(1);
+    let output_duration_ms = (accumulated as f64 / f64::from(speed)).ceil().max(1.0) as u64;
+    let timeline = FinalizedTimeline::new(output_duration_ms, fps)
+        .map_err(ScreenRecorderError::InvalidConfig)?;
+    usize::try_from(timeline.frame_count()).map_err(|_| {
+        ScreenRecorderError::Export("retimed frame count exceeds addressable range".into())
+    })?;
     Ok(RetimePlan {
-        source_indices,
-        output_timestamps_ms,
-        frame_count,
-        output_duration_ms,
+        source_starts_ms,
+        speed,
+        timeline,
     })
 }
 
@@ -1635,9 +1674,9 @@ fn decode_video_stream_worker(
     }
 }
 
-fn collect_required_source_indices(source_indices: &[usize]) -> Vec<usize> {
-    let mut required = Vec::with_capacity(source_indices.len());
-    for &index in source_indices {
+fn collect_required_source_indices(source_indices: impl Iterator<Item = usize>) -> Vec<usize> {
+    let mut required = Vec::new();
+    for index in source_indices {
         if required.last().copied() != Some(index) {
             required.push(index);
         }
@@ -3757,17 +3796,6 @@ fn try_apply_mouse_overlays_native_from_decision(
     )
 }
 
-pub(crate) fn ensure_video_frame_writable(frame: &mut ffmpeg::frame::Video) -> Result<()> {
-    let status = unsafe { ffmpeg::ffi::av_frame_make_writable(frame.as_mut_ptr()) };
-    if status < 0 {
-        return Err(ScreenRecorderError::Export(format!(
-            "failed to make video frame writable: {}",
-            ffmpeg::Error::from(status)
-        )));
-    }
-    Ok(())
-}
-
 fn yuv420p_frame_view_mut(frame: &mut ffmpeg::frame::Video) -> Result<Yuv420pFrameViewMut<'_>> {
     if frame.format() != ffmpeg::format::Pixel::YUV420P {
         return Err(ScreenRecorderError::Export(
@@ -5025,6 +5053,9 @@ const fn bundle_asset_label(kind: BundleAssetKind) -> &'static str {
         BundleAssetKind::VideoIndex => "video-index",
         BundleAssetKind::AudioTrack => "audio-track",
         BundleAssetKind::MouseStore => "mouse-store",
+        BundleAssetKind::InputEvents => "input-events",
+        BundleAssetKind::RenderMetadata => "render-metadata",
+        BundleAssetKind::OutputSettings => "output-settings",
     }
 }
 
@@ -5227,544 +5258,239 @@ fn retime_audio_i16_interleaved_owned(
     out
 }
 
-fn choose_video_codec_id(format: ExportFormat, video_codec: VideoCodec) -> ffmpeg::codec::Id {
-    match format {
-        ExportFormat::Mp4 => match video_codec {
-            VideoCodec::H264 => ffmpeg::codec::Id::H264,
-            VideoCodec::H265 => ffmpeg::codec::Id::HEVC,
-        },
-        ExportFormat::Avi => ffmpeg::codec::Id::MPEG4,
-        ExportFormat::Gif => ffmpeg::codec::Id::GIF,
-        ExportFormat::Apng => ffmpeg::codec::Id::APNG,
-        // FFmpeg 9's animated libwebp encoder advertises AV_CODEC_ID_WEBP;
-        // AV_CODEC_ID_WEBP_ANIM is used only by the native decoder.
-        ExportFormat::Webp => ffmpeg::codec::Id::WEBP,
-    }
+/// Legacy editable recordings keep their decode/retime/composition choices while
+/// using the same encoder, bounded audio admission and transactional muxing as
+/// live capture and finalized-source replay.
+struct EditingVideoEncoder<'a> {
+    encoder: StreamingEncoder,
+    audio: Option<AudioMixRenderer>,
+    audio_cursor: usize,
+    audio_samples: Vec<i16>,
+    pending_frame: Option<ffmpeg::frame::Video>,
+    pending_pts: usize,
+    total_frames: usize,
+    fps: u32,
+    started: Instant,
+    audio_elapsed: Duration,
+    cancel: &'a Arc<AtomicBool>,
+    cancellation: Option<&'a CancellationToken>,
+    progress_tx: &'a Option<Arc<ProgressReporter>>,
 }
 
-pub(crate) fn choose_video_pixel_format(
-    format: ExportFormat,
-    codec: ffmpeg::codec::Video,
-    source_hint: Option<ffmpeg::format::Pixel>,
-    mode: ExportExecutionMode,
-) -> ffmpeg::format::Pixel {
-    let preferred = match format {
-        // GIF must use the adaptive palette converter even for RGB8 sources.
-        ExportFormat::Gif => return ffmpeg::format::Pixel::PAL8,
-        ExportFormat::Apng => [
-            ffmpeg::format::Pixel::RGBA,
-            ffmpeg::format::Pixel::RGB24,
-            ffmpeg::format::Pixel::BGRA,
-        ]
-        .as_slice(),
-        ExportFormat::Webp => [
-            ffmpeg::format::Pixel::YUVA420P,
-            ffmpeg::format::Pixel::YUV420P,
-            ffmpeg::format::Pixel::RGBA,
-        ]
-        .as_slice(),
-        ExportFormat::Mp4 | ExportFormat::Avi
-            if matches!(mode, ExportExecutionMode::SoftwareOnly) =>
-        {
-            [
-                ffmpeg::format::Pixel::YUV420P,
-                ffmpeg::format::Pixel::NV12,
-                ffmpeg::format::Pixel::YUV422P,
-                ffmpeg::format::Pixel::RGB24,
-            ]
-            .as_slice()
-        }
-        ExportFormat::Mp4 | ExportFormat::Avi => [
-            ffmpeg::format::Pixel::NV12,
-            ffmpeg::format::Pixel::YUV420P,
-            ffmpeg::format::Pixel::YUV422P,
-            ffmpeg::format::Pixel::RGB24,
-        ]
-        .as_slice(),
-    };
-
-    if let Some(formats) = codec.formats() {
-        let available: Vec<_> = formats.collect();
-        if let Some(source_pixel) = source_hint
-            && available.contains(&source_pixel)
-        {
-            return source_pixel;
-        }
-        for pixel in preferred {
-            if available.contains(pixel) {
-                return *pixel;
-            }
-        }
-        if let Some(first) = available.first().copied() {
-            return first;
-        }
-    }
-
-    source_hint.unwrap_or(match format {
-        ExportFormat::Gif => ffmpeg::format::Pixel::PAL8,
-        ExportFormat::Apng => ffmpeg::format::Pixel::RGBA,
-        ExportFormat::Webp => ffmpeg::format::Pixel::YUVA420P,
-        ExportFormat::Mp4 | ExportFormat::Avi => ffmpeg::format::Pixel::YUV420P,
-    })
-}
-
-pub(crate) fn choose_audio_codec(format: ExportFormat) -> Option<ffmpeg::Codec> {
-    match format {
-        ExportFormat::Mp4 => ffmpeg::encoder::find(ffmpeg::codec::Id::AAC),
-        ExportFormat::Avi => ffmpeg::encoder::find_by_name("libmp3lame")
-            .or_else(|| ffmpeg::encoder::find_by_name("libshine"))
-            .or_else(|| ffmpeg::encoder::find(ffmpeg::codec::Id::MP3))
-            .or_else(|| ffmpeg::encoder::find(ffmpeg::codec::Id::AAC)),
-        ExportFormat::Gif | ExportFormat::Apng | ExportFormat::Webp => None,
-    }
-}
-
-pub(crate) fn choose_audio_sample_rate(codec: ffmpeg::codec::Audio, requested_hz: u32) -> u32 {
-    if let Some(rates) = codec.rates() {
-        let available: Vec<u32> = rates.map(|rate| rate.max(1) as u32).collect();
-        if available.is_empty() {
-            return requested_hz.max(1);
-        }
-        if available.contains(&requested_hz) {
-            return requested_hz;
-        }
-        return available
-            .into_iter()
-            .min_by_key(|rate| rate.abs_diff(requested_hz))
-            .unwrap_or(requested_hz.max(1));
-    }
-    requested_hz.max(1)
-}
-
-pub(crate) fn choose_audio_channel_layout(
-    codec: ffmpeg::codec::Audio,
-    requested_channels: u16,
-) -> ffmpeg::ChannelLayout {
-    let requested_layout = ffmpeg::ChannelLayout::default(i32::from(requested_channels.max(1)));
-    if let Some(layouts) = codec.channel_layouts() {
-        let available: Vec<_> = layouts.collect();
-        if available.contains(&requested_layout) {
-            return requested_layout;
-        }
-        if requested_channels >= 2 && available.contains(&ffmpeg::ChannelLayout::STEREO) {
-            return ffmpeg::ChannelLayout::STEREO;
-        }
-        if available.contains(&ffmpeg::ChannelLayout::MONO) {
-            return ffmpeg::ChannelLayout::MONO;
-        }
-        if let Some(first) = available.first().copied() {
-            return first;
-        }
-    }
-    requested_layout
-}
-
-pub(crate) fn effective_audio_bitrate_kbps(requested_kbps: u16) -> u16 {
-    requested_kbps.clamp(128, 192)
-}
-
-pub(crate) fn choose_audio_sample_format(codec: ffmpeg::codec::Audio) -> ffmpeg::format::Sample {
-    let preferred = [
-        ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Planar),
-        ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Packed),
-        ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Planar),
-        ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Packed),
-    ];
-
-    if let Some(formats) = codec.formats() {
-        let available: Vec<_> = formats.collect();
-        for candidate in preferred {
-            if available.contains(&candidate) {
-                return candidate;
-            }
-        }
-        if let Some(first) = available.first().copied() {
-            return first;
-        }
-    }
-
-    ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Packed)
-}
-
-pub(crate) fn open_audio_encoder(
-    audio_encoder: ffmpeg::codec::encoder::audio::Audio,
-    audio_codec: ffmpeg::Codec,
-) -> Result<ffmpeg::encoder::audio::Encoder> {
-    if audio_codec.name().eq_ignore_ascii_case("aac") {
-        return audio_encoder
-            .open_as_with(audio_codec, {
-                let mut options = ffmpeg::Dictionary::new();
-                options.set("profile", "aac_low");
-                options
-            })
-            .map_err(|err| {
-                ScreenRecorderError::Export(format!("failed to open audio encoder: {err}"))
-            });
-    }
-
-    audio_encoder
-        .open_as(audio_codec)
-        .map_err(|err| ScreenRecorderError::Export(format!("failed to open audio encoder: {err}")))
-}
-
-fn export_video_packet_copy_with_generated_audio(
-    input_video_path: &Path,
-    output_path: &Path,
-    format: ExportFormat,
-    playback_speed: f32,
-    mixed_audio: Option<&AudioMixPlan>,
-    audio_bitrate_kbps: u16,
-    perf_config: &ExportPerformanceConfig,
-    cancel_flag: &Arc<AtomicBool>,
-    progress_tx: &Option<Sender<ExportProgress>>,
-) -> Result<ExportCodecTelemetry> {
-    ensure_ffmpeg_initialized()?;
-    check_canceled(cancel_flag)?;
-    let mut telemetry = ExportCodecTelemetry::default();
-    let speed = playback_speed.clamp(0.25, 4.0);
-    let adjust_packet_timestamps = (speed - 1.0).abs() > f32::EPSILON;
-    let speed_scale = 1.0f64 / f64::from(speed);
-
-    let mut input = ffmpeg::format::input(input_video_path).map_err(|err| {
-        ScreenRecorderError::Export(format!(
-            "failed to open source video for packet-copy export {}: {err}",
-            input_video_path.display()
-        ))
-    })?;
-    let source_video = input
-        .streams()
-        .best(ffmpeg::media::Type::Video)
-        .ok_or_else(|| {
-            ScreenRecorderError::Export(format!(
-                "source video {} has no video stream",
-                input_video_path.display()
-            ))
-        })?;
-    let source_video_stream_index = source_video.index();
-    let source_video_time_base = source_video.time_base();
-    let source_video_rate = source_video.rate();
-    let source_video_avg_rate = source_video.avg_frame_rate();
-    let source_video_frames = source_video.frames().max(0) as usize;
-    let source_video_parameters = source_video.parameters();
-
-    let mut output = ffmpeg::format::output(output_path).map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to create ffmpeg output context: {err}"))
-    })?;
-    let global_header = output
-        .format()
-        .flags()
-        .contains(ffmpeg::format::Flags::GLOBAL_HEADER);
-
-    let video_stream_index = {
-        let mut stream = output.add_stream(None::<ffmpeg::Codec>).map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to add output video stream: {err}"))
-        })?;
-        stream.set_time_base(source_video_time_base);
-        if source_video_rate.numerator() > 0 && source_video_rate.denominator() > 0 {
-            stream.set_rate(source_video_rate);
-        }
-        if source_video_avg_rate.numerator() > 0 && source_video_avg_rate.denominator() > 0 {
-            stream.set_avg_frame_rate(source_video_avg_rate);
-        }
-        stream.set_parameters(source_video_parameters);
-        // SAFETY:
-        // - `stream` is a valid mutable output stream created by FFmpeg.
-        // - Clearing codec_tag is required when remuxing into some containers (especially MP4).
-        unsafe {
-            (*(*stream.as_mut_ptr()).codecpar).codec_tag = 0;
-        }
-        stream.index()
-    };
-
-    let mut audio_state = None;
-    if let Some(mixed) = mixed_audio
-        && !format.is_animated_image()
-    {
-        let container_audio_codec = output
-            .format()
-            .codec(output_path, ffmpeg::media::Type::Audio);
-        let audio_codec = choose_audio_codec(format)
-            .or_else(|| ffmpeg::encoder::find(container_audio_codec))
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "no audio encoder available for {format:?} (container={container_audio_codec:?})"
-                ))
-            })?;
-        telemetry.audio_encoder = Some(audio_codec.name().to_string());
-        let codec_audio_info = audio_codec.audio().map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "selected audio codec is not usable as audio: {err}"
-            ))
-        })?;
-        let output_rate_hz = choose_audio_sample_rate(codec_audio_info, mixed.sample_rate_hz);
-        let output_layout = choose_audio_channel_layout(codec_audio_info, mixed.channels);
-        let output_sample_format = choose_audio_sample_format(codec_audio_info);
-
-        let mut audio_encoder = ffmpeg::codec::context::Context::new_with_codec(audio_codec)
-            .encoder()
-            .audio()
-            .map_err(|err| {
-                ScreenRecorderError::Export(format!(
-                    "failed to create audio encoder context: {err}"
-                ))
-            })?;
-        audio_encoder.set_rate(output_rate_hz as i32);
-        audio_encoder.set_channel_layout(output_layout);
-        audio_encoder.set_format(output_sample_format);
-        audio_encoder
-            .set_bit_rate(usize::from(effective_audio_bitrate_kbps(audio_bitrate_kbps)) * 1000);
-        audio_encoder.set_time_base((1, output_rate_hz as i32));
-        configure_codec_threads(
-            &mut audio_encoder,
-            perf_config.encode_threads,
-            ffmpeg::codec::threading::Type::Frame,
-        );
-        if global_header {
-            audio_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-        }
-
-        let audio_encoder = open_audio_encoder(audio_encoder, audio_codec)?;
-
-        let audio_stream_index = {
-            let mut stream = output.add_stream(audio_codec).map_err(|err| {
-                ScreenRecorderError::Export(format!("failed to add output audio stream: {err}"))
-            })?;
-            stream.set_time_base(ffmpeg::Rational(1, output_rate_hz as i32));
-            stream.set_rate(ffmpeg::Rational(output_rate_hz as i32, 1));
-            stream.set_parameters(&audio_encoder);
-            stream.index()
-        };
-
-        audio_state = Some((
-            audio_encoder,
-            audio_stream_index,
-            ffmpeg::Rational(1, output_rate_hz as i32),
-        ));
-    }
-
-    output.write_header().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output header: {err}"))
-    })?;
-
-    let video_stream_time_base = output
-        .stream(video_stream_index)
-        .map(|stream| stream.time_base())
-        .ok_or_else(|| {
-            ScreenRecorderError::Export(format!(
-                "failed to resolve output video stream {} after header",
-                video_stream_index
-            ))
-        })?;
-
-    if let Some((_, stream_index, stream_time_base)) = audio_state.as_mut() {
-        *stream_time_base = output
-            .stream(*stream_index)
-            .map(|stream| stream.time_base())
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "failed to resolve output audio stream {} after header",
-                    stream_index
-                ))
-            })?;
-    }
-
-    let audio_worker = if let (Some(audio), Some((audio_encoder, stream_index, stream_time_base))) =
-        (mixed_audio.cloned(), audio_state.take())
-    {
-        Some(spawn_audio_packet_worker(
-            audio_encoder,
-            stream_index,
-            stream_time_base,
-            audio,
-            Arc::clone(cancel_flag),
-        )?)
-    } else {
-        None
-    };
-    let mut audio_worker = AudioPacketWorkerGuard::new(audio_worker, Arc::clone(cancel_flag));
-
-    let video_result = (|| -> Result<()> {
-        let started = Instant::now();
-        let video_copy_start = Instant::now();
-        let mut copied_packets = 0usize;
-        let mut timestamp_scale_state = PacketTimestampScaleState::default();
-        for (stream, mut packet) in input.packets() {
-            check_canceled(cancel_flag)?;
-            if stream.index() != source_video_stream_index {
-                continue;
-            }
-
-            packet.set_stream(video_stream_index);
-            packet.rescale_ts(source_video_time_base, video_stream_time_base);
-            if adjust_packet_timestamps {
-                scale_packet_timestamps_for_speed(
-                    &mut packet,
-                    speed_scale,
-                    &mut timestamp_scale_state,
-                );
-            }
-            packet.set_position(-1);
-            packet.write_interleaved(&mut output).map_err(|err| {
-                ScreenRecorderError::Export(format!("failed to write copied video packet: {err}"))
-            })?;
-            copied_packets = copied_packets.saturating_add(1);
-
-            if copied_packets.is_multiple_of(32) {
-                let elapsed = started.elapsed().as_secs_f32().max(0.001);
-                let packets_per_sec = copied_packets as f32 / elapsed;
-                let eta_ms = if source_video_frames > copied_packets && packets_per_sec > 0.0 {
-                    Some(
-                        (((source_video_frames - copied_packets) as f32 / packets_per_sec) * 1000.0)
-                            as u64,
-                    )
-                } else {
-                    None
-                };
-                let percent = if source_video_frames > 0 {
-                    35.0 + ((copied_packets as f32 / source_video_frames as f32) * 50.0)
-                } else {
-                    35.0
-                };
-                emit_progress(
-                    progress_tx,
-                    ExportStage::VideoEncode,
-                    percent.clamp(35.0, 85.0),
-                    packets_per_sec,
-                    eta_ms,
-                );
-            }
-        }
-
-        if copied_packets == 0 {
+impl<'a> EditingVideoEncoder<'a> {
+    fn create(
+        output_path: &Path,
+        width: u32,
+        height: u32,
+        fps: u32,
+        format: ExportFormat,
+        codec: VideoCodec,
+        prefer_hardware_h264: bool,
+        mixed_audio: Option<&AudioMixPlan>,
+        audio_bitrate_kbps: u16,
+        video: &VideoEncodeConfig,
+        performance: &ExportPerformanceConfig,
+        output_hdr: bool,
+        source_hint: Option<ffmpeg::format::Pixel>,
+        total_frames: usize,
+        cancel: &'a Arc<AtomicBool>,
+        cancellation: Option<&'a CancellationToken>,
+        progress_tx: &'a Option<Arc<ProgressReporter>>,
+    ) -> Result<Self> {
+        check_canceled(cancel)?;
+        if total_frames == 0 {
             return Err(ScreenRecorderError::Export(
-                "packet-copy export found no video packets in source stream".to_string(),
+                "retiming produced no frames".into(),
             ));
         }
+        // The outer export transaction reserves an empty temporary destination.
+        // It is private to this job, so release it for the shared encoder's
+        // create-new publication policy. The public destination stays untouched.
+        if output_path.exists() {
+            fs::remove_file(output_path)?;
+        }
+        let mixed_audio = mixed_audio.filter(|_| !format.is_animated_image());
+        let audio = mixed_audio.map(AudioMixRenderer::new).transpose()?;
+        let audio_config = mixed_audio
+            .map(|plan| StreamingAudioConfig {
+                track_id: "mixed".into(),
+                title: "Audio".into(),
+                default: true,
+                sample_rate_hz: plan.sample_rate_hz,
+                channels: plan.channels,
+                bitrate_kbps: audio_bitrate_kbps,
+            })
+            .into_iter()
+            .collect();
+        let builder = StreamingEncoder::builder(StreamingEncoderConfig {
+            loop_animated_images: true,
+            output_path: output_path.to_path_buf(),
+            format,
+            width,
+            height,
+            fps: fps.max(1),
+            codec,
+            prefer_hardware_h264,
+            execution_mode: performance.mode,
+            software_h264_priority: performance.software_h264_priority,
+            video: *video,
+            encode_threads: performance.encode_threads,
+            audio: audio_config,
+        });
+        let builder = if let Some(format) = source_hint {
+            builder.cpu_input_format_hint(format)
+        } else {
+            builder
+        };
+        let encoder = if output_hdr {
+            builder.hdr10_cpu_input()
+        } else {
+            builder
+        }
+        .create()?;
+        Ok(Self {
+            encoder,
+            audio,
+            audio_cursor: 0,
+            audio_samples: Vec::new(),
+            pending_frame: None,
+            pending_pts: 0,
+            total_frames,
+            fps: fps.max(1),
+            started: Instant::now(),
+            audio_elapsed: Duration::ZERO,
+            cancel,
+            cancellation,
+            progress_tx,
+        })
+    }
 
-        emit_progress(progress_tx, ExportStage::VideoEncode, 85.0, 0.0, Some(0));
-        telemetry.stage_durations_ms.video_encode = video_copy_start
-            .elapsed()
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64;
+    fn queue_prepared_frame(
+        &mut self,
+        frame: &ffmpeg::frame::Video,
+        duration_ticks: usize,
+        allow_repeat_collapse: bool,
+        scheduled: &Cell<usize>,
+    ) -> Result<()> {
+        check_canceled(self.cancel)?;
+        let pts = scheduled.get();
+        let next = pts.saturating_add(duration_ticks.max(1));
+        let same = allow_repeat_collapse
+            && can_collapse_repeated_video_frames(frame)
+            && self
+                .pending_frame
+                .as_ref()
+                .is_some_and(|pending| video_frames_match(pending, frame));
+        if !same {
+            self.flush_prepared_frame()?;
+            let mut retained = ffmpeg::frame::Video::empty();
+            // Keep a bounded immutable lease; decoder/scaler scratch buffers use
+            // make_writable before reuse instead of a full frame copy here.
+            let result =
+                unsafe { ffmpeg::ffi::av_frame_ref(retained.as_mut_ptr(), frame.as_ptr()) };
+            if result < 0 {
+                return Err(ScreenRecorderError::Export(format!(
+                    "failed to reference prepared output frame: {}",
+                    ffmpeg::Error::from(result)
+                )));
+            }
+            self.pending_frame = Some(retained);
+            self.pending_pts = pts;
+        }
+        scheduled.set(next);
+        self.pump_audio(next)?;
+        self.progress(next);
         Ok(())
-    })();
-    if video_result.is_err() {
-        cancel_flag.store(true, Ordering::Release);
-    }
-    let buffered_audio = if let Some(audio_worker) = audio_worker.take() {
-        emit_progress(progress_tx, ExportStage::AudioEncode, 90.0, 0.0, None);
-        let audio_encode_start = Instant::now();
-        Some((audio_encode_start, join_audio_packet_worker(audio_worker)))
-    } else {
-        None
-    };
-    video_result?;
-    if let Some((audio_encode_start, buffered_audio)) = buffered_audio {
-        let (mut buffered_audio, stream_index, stream_time_base) = buffered_audio?;
-        write_buffered_audio_packets(
-            &mut output,
-            stream_index,
-            stream_time_base,
-            buffered_audio.encoder_time_base,
-            &mut buffered_audio.packets,
-        )?;
-        telemetry.stage_durations_ms.audio_encode = audio_encode_start
-            .elapsed()
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64;
     }
 
-    emit_progress(progress_tx, ExportStage::Mux, 95.0, 0.0, None);
-    let mux_start = Instant::now();
-    output.write_trailer().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output trailer: {err}"))
-    })?;
-    telemetry.stage_durations_ms.mux =
-        mux_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-    Ok(telemetry)
-}
-
-#[derive(Clone, Copy, Debug)]
-struct PacketTimestampScaleState {
-    last_pts: Option<i64>,
-    last_dts: Option<i64>,
-    last_duration: i64,
-}
-
-impl Default for PacketTimestampScaleState {
-    fn default() -> Self {
-        Self {
-            last_pts: None,
-            last_dts: None,
-            last_duration: 1,
+    fn flush_prepared_frame(&mut self) -> Result<()> {
+        if let Some(frame) = self.pending_frame.take() {
+            self.encoder
+                .push_prepared_video_frame_at_pts(self.pending_pts as u64, frame)?;
         }
-    }
-}
-
-#[inline]
-fn scale_packet_timestamps_for_speed(
-    packet: &mut ffmpeg::Packet,
-    speed_scale: f64,
-    state: &mut PacketTimestampScaleState,
-) {
-    let scaled_duration =
-        scale_packet_duration_ticks(packet.duration(), speed_scale, state.last_duration);
-    packet.set_duration(scaled_duration);
-    state.last_duration = scaled_duration;
-
-    if let Some(pts) = packet.pts() {
-        let mut scaled_pts = scale_packet_tick(pts, speed_scale);
-        if let Some(prev) = state.last_pts
-            && scaled_pts <= prev
-        {
-            scaled_pts = prev.saturating_add(scaled_duration.max(1));
-        }
-        packet.set_pts(Some(scaled_pts));
-        state.last_pts = Some(scaled_pts);
+        Ok(())
     }
 
-    if let Some(dts) = packet.dts() {
-        let mut scaled_dts = scale_packet_tick(dts, speed_scale);
-        if let Some(prev) = state.last_dts
-            && scaled_dts <= prev
-        {
-            scaled_dts = prev.saturating_add(1);
+    fn pump_audio(&mut self, completed_pts: usize) -> Result<()> {
+        let Some(renderer) = self.audio.as_mut() else {
+            return Ok(());
+        };
+        let end = (completed_pts as u128 * u128::from(renderer.plan.sample_rate_hz)
+            / u128::from(self.fps))
+        .min(usize::MAX as u128) as usize;
+        let end = end.min(renderer.plan.target_frames);
+        let started = Instant::now();
+        while self.audio_cursor < end {
+            check_canceled(self.cancel)?;
+            let take = (end - self.audio_cursor).min(4096);
+            renderer.render(self.audio_cursor, take, &mut self.audio_samples)?;
+            self.encoder.push_audio_track_pcm_i16_at_frame(
+                "mixed",
+                self.audio_cursor as u64,
+                &self.audio_samples,
+            )?;
+            self.audio_cursor += take;
         }
-        packet.set_dts(Some(scaled_dts));
-        state.last_dts = Some(scaled_dts);
-
-        if let Some(pts) = packet.pts()
-            && pts < scaled_dts
-        {
-            packet.set_pts(Some(scaled_dts));
-            state.last_pts = Some(scaled_dts);
-        }
+        self.audio_elapsed += started.elapsed();
+        Ok(())
     }
-}
 
-#[inline]
-fn scale_packet_duration_ticks(duration: i64, speed_scale: f64, fallback: i64) -> i64 {
-    let base = if duration > 0 {
-        duration
-    } else {
-        fallback.max(1)
-    };
-    scale_packet_tick(base, speed_scale).max(1)
-}
+    fn progress(&self, completed: usize) {
+        if !completed.is_multiple_of(10) && completed != self.total_frames {
+            return;
+        }
+        let fps = completed as f32 / self.started.elapsed().as_secs_f32().max(0.001);
+        let eta = (fps > 0.0)
+            .then(|| (self.total_frames.saturating_sub(completed) as f32 / fps * 1000.0) as u64);
+        emit_progress(
+            self.progress_tx,
+            ExportStage::VideoEncode,
+            35.0 + completed as f32 / self.total_frames.max(1) as f32 * 55.0,
+            fps,
+            eta,
+        );
+    }
 
-#[inline]
-fn scale_packet_tick(tick: i64, speed_scale: f64) -> i64 {
-    ((tick as f64) * speed_scale)
-        .round()
-        .clamp(i64::MIN as f64, i64::MAX as f64) as i64
+    fn finish(mut self, duration_ms: u64) -> Result<ExportCodecTelemetry> {
+        check_canceled(self.cancel)?;
+        self.flush_prepared_frame()?;
+        // Audio is rendered only on demand up to the exact retimed endpoint;
+        // no complete recording or encoded packet collection lives in memory.
+        if self.audio.is_some() {
+            emit_progress(self.progress_tx, ExportStage::AudioEncode, 90.0, 0.0, None);
+            self.pump_audio(self.total_frames)?;
+        }
+        let video_elapsed = self.started.elapsed().saturating_sub(self.audio_elapsed);
+        check_canceled(self.cancel)?;
+        emit_progress(self.progress_tx, ExportStage::Mux, 95.0, 0.0, None);
+        let mux_started = Instant::now();
+        let report = if let Some(cancellation) = self.cancellation {
+            self.encoder
+                .finish_at_duration_ms_cancelable(duration_ms.max(1), cancellation)?
+        } else {
+            self.encoder.finish_at_duration_ms(duration_ms.max(1))?
+        };
+        check_canceled(self.cancel)?;
+        Ok(ExportCodecTelemetry {
+            video_encoder: Some(report.video_encoder),
+            audio_encoder: report.audio_encoder,
+            used_hardware_encode: report.used_hardware_video_encoder,
+            stage_durations_ms: ExportStageDurationsMs {
+                video_encode: video_elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+                audio_encode: self.audio_elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+                mux: mux_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                ..ExportStageDurationsMs::default()
+            },
+            ..ExportCodecTelemetry::default()
+        })
+    }
 }
 
 fn export_video_generated<F>(
     output_path: &Path,
     width: u32,
     height: u32,
-    frame_count: usize,
-    export_fps: u32,
+    timeline: FinalizedTimeline,
     format: ExportFormat,
     requested_codec: VideoCodec,
     prefer_hardware_h264: bool,
@@ -5773,454 +5499,56 @@ fn export_video_generated<F>(
     video_config: &VideoEncodeConfig,
     perf_config: &ExportPerformanceConfig,
     cancel_flag: &Arc<AtomicBool>,
-    progress_tx: &Option<Sender<ExportProgress>>,
+    cancellation: Option<&CancellationToken>,
+    progress_tx: &Option<Arc<ProgressReporter>>,
     mut rgba_provider: F,
 ) -> Result<ExportCodecTelemetry>
 where
     F: FnMut(usize, &mut [u8]) -> Result<()>,
 {
-    if mixed_audio.is_none() {
-        check_canceled(cancel_flag)?;
-        if output_path.exists() {
-            fs::remove_file(output_path)?;
-        }
-        let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
-            loop_animated_images: true,
-            output_path: output_path.to_path_buf(),
-            format,
-            width,
-            height,
-            fps: export_fps.max(1),
-            codec: requested_codec,
-            prefer_hardware_h264,
-            execution_mode: perf_config.mode,
-            software_h264_priority: perf_config.software_h264_priority,
-            video: *video_config,
-            encode_threads: perf_config.encode_threads,
-            audio: Vec::new(),
-        })?;
-        let rgba_len = width as usize * height as usize * 4;
-        let mut rgba = vec![0u8; rgba_len];
-        let started_at = Instant::now();
-        for index in 0..frame_count {
-            check_canceled(cancel_flag)?;
-            rgba_provider(index, &mut rgba)?;
-            let timestamp_ms = ((index as u128 * 1_000) / u128::from(export_fps.max(1)))
-                .min(u128::from(u64::MAX)) as u64;
-            encoder.push_rgba_frame(timestamp_ms, &rgba)?;
-            if index % 10 == 0 || index + 1 == frame_count {
-                let elapsed = started_at.elapsed().as_secs_f32().max(0.001);
-                let completed = index + 1;
-                let current_fps = completed as f32 / elapsed;
-                let remaining = frame_count.saturating_sub(completed) as f32;
-                let eta_ms =
-                    (current_fps > 0.0).then(|| ((remaining / current_fps) * 1_000.0) as u64);
-                let percent = 35.0 + (completed as f32 / frame_count.max(1) as f32) * 55.0;
-                emit_progress(
-                    progress_tx,
-                    ExportStage::VideoEncode,
-                    percent,
-                    current_fps,
-                    eta_ms,
-                );
-            }
-        }
-        let report = encoder.finish()?;
-        return Ok(ExportCodecTelemetry {
-            video_encoder: Some(report.video_encoder),
-            used_hardware_encode: report.used_hardware_video_encoder,
-            stage_durations_ms: ExportStageDurationsMs {
-                video_encode: started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-                ..ExportStageDurationsMs::default()
-            },
-            ..ExportCodecTelemetry::default()
-        });
-    }
-
-    ensure_ffmpeg_initialized()?;
-    validate_export_dimensions(width, height, format.requires_even_dimensions())?;
-
-    let mut output = ffmpeg::format::output(output_path).map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to create ffmpeg output context: {err}"))
+    let frame_count = usize::try_from(timeline.frame_count()).map_err(|_| {
+        ScreenRecorderError::Export("output timeline contains too many frames".into())
     })?;
-    let global_header = output
-        .format()
-        .flags()
-        .contains(ffmpeg::format::Flags::GLOBAL_HEADER);
-
-    let fps = export_fps.max(1).min(i32::MAX as u32) as i32;
-    let video_time_base = ffmpeg::Rational(1, fps);
-    let video_frame_rate = ffmpeg::Rational(fps, 1);
-
-    let mut video_codec = select_video_codec(
-        &output,
+    let export_fps = timeline.fps();
+    check_canceled(cancel_flag)?;
+    let mut encoder = EditingVideoEncoder::create(
         output_path,
+        width,
+        height,
+        export_fps,
         format,
         requested_codec,
         prefer_hardware_h264,
-        perf_config.mode,
-        perf_config.software_h264_priority,
-    )?;
-    let codec_video_info = video_codec.video().map_err(|err| {
-        ScreenRecorderError::Export(format!(
-            "selected video codec is not usable as video: {err}"
-        ))
-    })?;
-    let mut pixel_format =
-        choose_video_pixel_format(format, codec_video_info, None, perf_config.mode);
-    let mut video_encoder = ffmpeg::codec::context::Context::new_with_codec(video_codec)
-        .encoder()
-        .video()
-        .map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to create video encoder context: {err}"))
-        })?;
-    video_encoder.set_width(width);
-    video_encoder.set_height(height);
-    video_encoder.set_format(pixel_format);
-    video_encoder.set_time_base(video_time_base);
-    video_encoder.set_frame_rate(Some(video_frame_rate));
-    configure_codec_threads(
-        &mut video_encoder,
-        perf_config.encode_threads,
-        ffmpeg::codec::threading::Type::Frame,
-    );
-
-    let effective_video = effective_video_config(video_config);
-    if !format.is_animated_image() {
-        video_encoder.set_bit_rate(smart_quality_bitrate_bps(
-            width,
-            height,
-            export_fps,
-            &effective_video,
-            false,
-        ));
-    }
-    if global_header {
-        video_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-    }
-
-    let mut video_encoder = match open_video_encoder(video_encoder, &video_codec, &effective_video)
-    {
-        Ok(encoder) => encoder,
-        Err(primary_error) => {
-            // If hardware auto-select picked an encoder that fails to open,
-            // transparently fall back to software H.264.
-            if software_encode_fallback_allowed(perf_config.mode)
-                && is_hardware_video_encoder(&video_codec)
-            {
-                video_codec = select_video_codec(
-                    &output,
-                    output_path,
-                    format,
-                    requested_codec,
-                    false,
-                    ExportExecutionMode::SoftwareOnly,
-                    perf_config.software_h264_priority,
-                )?;
-                let fallback_video_info = video_codec.video().map_err(|err| {
-                    ScreenRecorderError::Export(format!(
-                        "fallback software codec is not usable as video: {err}"
-                    ))
-                })?;
-                pixel_format = choose_video_pixel_format(
-                    format,
-                    fallback_video_info,
-                    None,
-                    ExportExecutionMode::SoftwareOnly,
-                );
-
-                let mut fallback_encoder =
-                    ffmpeg::codec::context::Context::new_with_codec(video_codec)
-                        .encoder()
-                        .video()
-                        .map_err(|err| {
-                            ScreenRecorderError::Export(format!(
-                                "failed to create fallback video encoder context: {err}"
-                            ))
-                        })?;
-                fallback_encoder.set_width(width);
-                fallback_encoder.set_height(height);
-                fallback_encoder.set_format(pixel_format);
-                fallback_encoder.set_time_base(video_time_base);
-                fallback_encoder.set_frame_rate(Some(video_frame_rate));
-                configure_codec_threads(
-                    &mut fallback_encoder,
-                    perf_config.encode_threads,
-                    ffmpeg::codec::threading::Type::Frame,
-                );
-                if !format.is_animated_image() {
-                    fallback_encoder.set_bit_rate(smart_quality_bitrate_bps(
-                        width,
-                        height,
-                        export_fps,
-                        &effective_video,
-                        false,
-                    ));
-                }
-                if global_header {
-                    fallback_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-                }
-
-                open_video_encoder(fallback_encoder, &video_codec, &effective_video)
-                    .map_err(|_| primary_error)?
-            } else {
-                return Err(primary_error);
-            }
-        }
-    };
-
-    let video_stream_index = {
-        let mut stream = output.add_stream(video_codec).map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to add output video stream: {err}"))
-        })?;
-        stream.set_time_base(video_time_base);
-        stream.set_rate(video_frame_rate);
-        stream.set_avg_frame_rate(video_frame_rate);
-        stream.set_parameters(&video_encoder);
-        stream.index()
-    };
-    let mut telemetry = ExportCodecTelemetry {
-        video_encoder: Some(video_codec.name().to_string()),
-        used_hardware_encode: opened_video_encoder_uses_hardware(&video_encoder),
-        ..ExportCodecTelemetry::default()
-    };
-
-    let mut audio_state = None;
-    if let Some(mixed) = mixed_audio
-        && !format.is_animated_image()
-    {
-        let container_audio_codec = output
-            .format()
-            .codec(output_path, ffmpeg::media::Type::Audio);
-        let audio_codec = choose_audio_codec(format)
-            .or_else(|| ffmpeg::encoder::find(container_audio_codec))
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "no audio encoder available for {format:?} (container={container_audio_codec:?})"
-                ))
-            })?;
-        telemetry.audio_encoder = Some(audio_codec.name().to_string());
-        let codec_audio_info = audio_codec.audio().map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "selected audio codec is not usable as audio: {err}"
-            ))
-        })?;
-        let output_rate_hz = choose_audio_sample_rate(codec_audio_info, mixed.sample_rate_hz);
-        let output_layout = choose_audio_channel_layout(codec_audio_info, mixed.channels);
-        let output_sample_format = choose_audio_sample_format(codec_audio_info);
-
-        let mut audio_encoder = ffmpeg::codec::context::Context::new_with_codec(audio_codec)
-            .encoder()
-            .audio()
-            .map_err(|err| {
-                ScreenRecorderError::Export(format!(
-                    "failed to create audio encoder context: {err}"
-                ))
-            })?;
-        audio_encoder.set_rate(output_rate_hz as i32);
-        audio_encoder.set_channel_layout(output_layout);
-        audio_encoder.set_format(output_sample_format);
-        audio_encoder
-            .set_bit_rate(usize::from(effective_audio_bitrate_kbps(audio_bitrate_kbps)) * 1000);
-        audio_encoder.set_time_base((1, output_rate_hz as i32));
-        configure_codec_threads(
-            &mut audio_encoder,
-            perf_config.encode_threads,
-            ffmpeg::codec::threading::Type::Frame,
-        );
-        if global_header {
-            audio_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-        }
-
-        let audio_encoder = open_audio_encoder(audio_encoder, audio_codec)?;
-
-        let audio_stream_index = {
-            let mut stream = output.add_stream(audio_codec).map_err(|err| {
-                ScreenRecorderError::Export(format!("failed to add output audio stream: {err}"))
-            })?;
-            stream.set_time_base(ffmpeg::Rational(1, output_rate_hz as i32));
-            stream.set_rate(ffmpeg::Rational(output_rate_hz as i32, 1));
-            stream.set_parameters(&audio_encoder);
-            stream.index()
-        };
-
-        audio_state = Some((
-            audio_encoder,
-            audio_stream_index,
-            ffmpeg::Rational(1, output_rate_hz as i32),
-        ));
-    }
-
-    output.write_header().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output header: {err}"))
-    })?;
-
-    let video_stream_time_base = output
-        .stream(video_stream_index)
-        .map(|stream| stream.time_base())
-        .ok_or_else(|| {
-            ScreenRecorderError::Export(format!(
-                "failed to resolve output video stream {} after header",
-                video_stream_index
-            ))
-        })?;
-
-    if let Some((_, stream_index, stream_time_base)) = audio_state.as_mut() {
-        *stream_time_base = output
-            .stream(*stream_index)
-            .map(|stream| stream.time_base())
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "failed to resolve output audio stream {} after header",
-                    stream_index
-                ))
-            })?;
-    }
-
-    let mut scaler = crate::output_scaler::OutputScaler::get(
-        ffmpeg::format::Pixel::RGBA,
-        width,
-        height,
-        pixel_format,
-        width,
-        height,
-        ffmpeg::software::scaling::flag::Flags::BICUBIC,
-    )
-    .map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to create RGBA video scaler: {err}"))
-    })?;
-
-    let mut rgba_frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, width, height);
-    let mut encode_frame = ffmpeg::frame::Video::new(pixel_format, width, height);
-    let rgba_row_bytes = width as usize * 4;
-    let rgba_len = rgba_row_bytes * height as usize;
-    let rgba_stride = rgba_frame.stride(0);
-    let can_write_direct_rgba = rgba_stride == rgba_row_bytes;
-    let mut generated_rgba = if can_write_direct_rgba {
-        Vec::new()
-    } else {
-        vec![0u8; rgba_len]
-    };
-    let start = Instant::now();
-    let video_encode_start = Instant::now();
-    let encoded_output_count = Cell::new(0usize);
-    let scheduled_output_count = Cell::new(0usize);
-    let mut pending_video_packet_durations = VideoPacketDurations::default();
-    let mut pending_collapsed_video_frame = VideoFrameState::default();
-
-    for index in 0..frame_count {
-        check_canceled(cancel_flag)?;
-        if can_write_direct_rgba {
-            {
-                let plane = rgba_frame.data_mut(0);
-                rgba_provider(index, &mut plane[..rgba_len])?;
-            }
-        } else {
-            rgba_provider(index, &mut generated_rgba)?;
-            copy_rgba_into_frame(&mut rgba_frame, width, &generated_rgba);
-        }
-        ensure_video_frame_writable(&mut encode_frame)?;
-        scaler.run(&rgba_frame, &mut encode_frame).map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to convert frame for video export: {err}"))
-        })?;
-
-        queue_video_frame_with_repeat_collapse(
-            &mut video_encoder,
-            &mut output,
-            video_stream_index,
-            video_stream_time_base,
-            &mut encode_frame,
-            1,
-            true,
-            &mut pending_collapsed_video_frame,
-            &mut pending_video_packet_durations,
-            &encoded_output_count,
-            &scheduled_output_count,
-            frame_count,
-            &start,
-            progress_tx,
-        )?;
-
-        if index % 10 == 0 || index + 1 == frame_count {
-            let elapsed = start.elapsed().as_secs_f32().max(0.001);
-            let fps = (index + 1) as f32 / elapsed;
-            let remaining_frames = frame_count.saturating_sub(index + 1) as f32;
-            let eta_ms = if fps > 0.0 {
-                Some(((remaining_frames / fps) * 1000.0) as u64)
-            } else {
-                None
-            };
-            let percent = 35.0 + (((index + 1) as f32 / frame_count.max(1) as f32) * 55.0);
-            emit_progress(progress_tx, ExportStage::VideoEncode, percent, fps, eta_ms);
-        }
-    }
-
-    flush_pending_collapsed_video_frame(
-        &mut video_encoder,
-        &mut output,
-        video_stream_index,
-        video_stream_time_base,
-        &mut pending_collapsed_video_frame,
-        &mut pending_video_packet_durations,
-        &encoded_output_count,
+        mixed_audio,
+        audio_bitrate_kbps,
+        video_config,
+        perf_config,
+        false,
+        None,
         frame_count,
-        &start,
+        cancel_flag,
+        cancellation,
         progress_tx,
     )?;
-
-    video_encoder.send_eof().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to finalize video encoder: {err}"))
-    })?;
-    drain_video_packets_with_durations(
-        &mut video_encoder,
-        &mut output,
-        video_stream_index,
-        video_stream_time_base,
-        true,
-        &mut pending_video_packet_durations,
-    )?;
-    telemetry.stage_durations_ms.video_encode = video_encode_start
-        .elapsed()
-        .as_millis()
-        .min(u128::from(u64::MAX)) as u64;
-
-    if let (Some(audio), Some((audio_encoder, stream_index, stream_time_base))) =
-        (mixed_audio, audio_state.as_mut())
-    {
-        emit_progress(progress_tx, ExportStage::AudioEncode, 90.0, 0.0, None);
-        let audio_encode_start = Instant::now();
-        encode_audio_samples(
-            &mut output,
-            audio_encoder,
-            *stream_index,
-            *stream_time_base,
-            audio,
-        )?;
-        telemetry.stage_durations_ms.audio_encode = audio_encode_start
-            .elapsed()
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64;
+    let rgba_len = width as usize * height as usize * 4;
+    let mut rgba = vec![0u8; rgba_len];
+    for index in 0..frame_count {
+        check_canceled(cancel_flag)?;
+        rgba.resize(rgba_len, 0);
+        rgba_provider(index, &mut rgba)?;
+        rgba = encoder
+            .encoder
+            .push_owned_rgba_frame_at_pts(index as u64, rgba)?;
+        encoder.pump_audio(index.saturating_add(1))?;
+        encoder.progress(index.saturating_add(1));
     }
-
-    emit_progress(progress_tx, ExportStage::Mux, 95.0, 0.0, None);
-    let mux_start = Instant::now();
-    output.write_trailer().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output trailer: {err}"))
-    })?;
-    telemetry.stage_durations_ms.mux =
-        mux_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-    Ok(telemetry)
+    encoder.finish(timeline.duration_ms())
 }
 
 fn build_source_frame_repeat_counts(retime: &RetimePlan) -> Vec<usize> {
-    let Some(&max_source_index) = retime.source_indices.last() else {
-        return Vec::new();
-    };
-    let mut repeat_counts = vec![0usize; max_source_index.saturating_add(1)];
-    for &source_index in &retime.source_indices {
-        if let Some(slot) = repeat_counts.get_mut(source_index) {
-            *slot = slot.saturating_add(1);
-        }
+    let mut repeat_counts = vec![0usize; retime.source_starts_ms.len()];
+    for source_index in retime.source_indices() {
+        repeat_counts[source_index] = repeat_counts[source_index].saturating_add(1);
     }
     repeat_counts
 }
@@ -6242,14 +5570,14 @@ fn export_video_generated_from_source(
     video_config: &VideoEncodeConfig,
     perf_config: &ExportPerformanceConfig,
     cancel_flag: &Arc<AtomicBool>,
-    progress_tx: &Option<Sender<ExportProgress>>,
+    cancellation: Option<&CancellationToken>,
+    progress_tx: &Option<Arc<ProgressReporter>>,
 ) -> Result<ExportCodecTelemetry> {
     ensure_ffmpeg_initialized()?;
-    let output_hdr =
-        source_hdr && requested_codec == VideoCodec::H265 && !format.is_animated_image();
+    let output_hdr = crate::preserves_hdr_output(source_hdr, format, requested_codec);
     validate_export_dimensions(width, height, format.requires_even_dimensions())?;
 
-    if retime.frame_count == 0 {
+    if retime.frame_count() == 0 {
         return Err(ScreenRecorderError::Export(
             "retiming produced no frames".to_string(),
         ));
@@ -6284,284 +5612,36 @@ fn export_video_generated_from_source(
         hardware: hw_decode_state,
     } = &mut source_decoder;
 
-    let mut output = ffmpeg::format::output(output_path).map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to create ffmpeg output context: {err}"))
-    })?;
-    let global_header = output
-        .format()
-        .flags()
-        .contains(ffmpeg::format::Flags::GLOBAL_HEADER);
-
-    let fps = export_fps.max(1).min(i32::MAX as u32) as i32;
-    let video_time_base = ffmpeg::Rational(1, fps);
-    let video_frame_rate = ffmpeg::Rational(fps, 1);
-
-    let mut video_codec = select_video_codec(
-        &output,
+    let mut encoder = EditingVideoEncoder::create(
         output_path,
+        width,
+        height,
+        export_fps,
         format,
         requested_codec,
         prefer_hardware_h264,
-        perf_config.mode,
-        perf_config.software_h264_priority,
+        mixed_audio,
+        audio_bitrate_kbps,
+        video_config,
+        perf_config,
+        output_hdr,
+        Some(if source_hdr && !output_hdr {
+            ffmpeg::format::Pixel::RGBA
+        } else {
+            decoder_software_output_format(decoder, hw_decode_state.as_ref())
+        }),
+        retime.frame_count(),
+        cancel_flag,
+        cancellation,
+        progress_tx,
     )?;
-    let codec_video_info = video_codec.video().map_err(|err| {
-        ScreenRecorderError::Export(format!(
-            "selected video codec is not usable as video: {err}"
-        ))
-    })?;
-    let decoder_output_format = if source_hdr && !output_hdr {
-        ffmpeg::format::Pixel::RGBA
-    } else {
-        decoder_software_output_format(decoder, hw_decode_state.as_ref())
-    };
-    let mut pixel_format = choose_video_pixel_format(
-        format,
-        codec_video_info,
-        Some(decoder_output_format),
-        perf_config.mode,
-    );
-    if output_hdr {
-        pixel_format = crate::hdr::pixel_format(codec_video_info)?;
-    }
-    let mut video_encoder = ffmpeg::codec::context::Context::new_with_codec(video_codec)
-        .encoder()
-        .video()
-        .map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to create video encoder context: {err}"))
-        })?;
-    if source_hdr {
-        crate::hdr::context(&mut video_encoder, output_hdr);
-    }
-    video_encoder.set_width(width);
-    video_encoder.set_height(height);
-    video_encoder.set_format(pixel_format);
-    video_encoder.set_time_base(video_time_base);
-    video_encoder.set_frame_rate(Some(video_frame_rate));
-    configure_codec_threads(
-        &mut video_encoder,
-        perf_config.encode_threads,
-        ffmpeg::codec::threading::Type::Frame,
-    );
-
-    let effective_video = effective_video_config(video_config);
-    if !format.is_animated_image() {
-        video_encoder.set_bit_rate(smart_quality_bitrate_bps(
-            width,
-            height,
-            export_fps,
-            &effective_video,
-            false,
-        ));
-    }
-    if global_header {
-        video_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-    }
-
-    let mut video_encoder = match open_video_encoder(video_encoder, &video_codec, &effective_video)
-    {
-        Ok(encoder) => encoder,
-        Err(primary_error) => {
-            if software_encode_fallback_allowed(perf_config.mode)
-                && is_hardware_video_encoder(&video_codec)
-            {
-                video_codec = select_video_codec(
-                    &output,
-                    output_path,
-                    format,
-                    requested_codec,
-                    false,
-                    ExportExecutionMode::SoftwareOnly,
-                    perf_config.software_h264_priority,
-                )?;
-                let fallback_video_info = video_codec.video().map_err(|err| {
-                    ScreenRecorderError::Export(format!(
-                        "fallback software codec is not usable as video: {err}"
-                    ))
-                })?;
-                pixel_format = choose_video_pixel_format(
-                    format,
-                    fallback_video_info,
-                    Some(decoder_output_format),
-                    ExportExecutionMode::SoftwareOnly,
-                );
-
-                if output_hdr {
-                    pixel_format = crate::hdr::pixel_format(fallback_video_info)?;
-                }
-                let mut fallback_encoder =
-                    ffmpeg::codec::context::Context::new_with_codec(video_codec)
-                        .encoder()
-                        .video()
-                        .map_err(|err| {
-                            ScreenRecorderError::Export(format!(
-                                "failed to create fallback video encoder context: {err}"
-                            ))
-                        })?;
-                if source_hdr {
-                    crate::hdr::context(&mut fallback_encoder, output_hdr);
-                }
-                fallback_encoder.set_width(width);
-                fallback_encoder.set_height(height);
-                fallback_encoder.set_format(pixel_format);
-                fallback_encoder.set_time_base(video_time_base);
-                fallback_encoder.set_frame_rate(Some(video_frame_rate));
-                configure_codec_threads(
-                    &mut fallback_encoder,
-                    perf_config.encode_threads,
-                    ffmpeg::codec::threading::Type::Frame,
-                );
-                if !format.is_animated_image() {
-                    fallback_encoder.set_bit_rate(smart_quality_bitrate_bps(
-                        width,
-                        height,
-                        export_fps,
-                        &effective_video,
-                        false,
-                    ));
-                }
-                if global_header {
-                    fallback_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-                }
-
-                open_video_encoder(fallback_encoder, &video_codec, &effective_video)
-                    .map_err(|_| primary_error)?
-            } else {
-                return Err(primary_error);
-            }
-        }
-    };
-
-    let video_stream_index = {
-        let mut stream = output.add_stream(video_codec).map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to add output video stream: {err}"))
-        })?;
-        stream.set_time_base(video_time_base);
-        stream.set_rate(video_frame_rate);
-        stream.set_avg_frame_rate(video_frame_rate);
-        stream.set_parameters(&video_encoder);
-        stream.index()
-    };
-    let mut telemetry = ExportCodecTelemetry {
-        video_decoder: Some(
-            hw_decode_state
-                .as_ref()
-                .map(|state| state.device_name)
-                .unwrap_or("software_decode")
-                .to_string(),
-        ),
-        video_encoder: Some(video_codec.name().to_string()),
-        used_hardware_decode: hw_decode_state.is_some(),
-        used_hardware_encode: opened_video_encoder_uses_hardware(&video_encoder),
-        ..ExportCodecTelemetry::default()
-    };
-
-    let mut audio_state = None;
-    if let Some(mixed) = mixed_audio
-        && !format.is_animated_image()
-    {
-        let container_audio_codec = output
-            .format()
-            .codec(output_path, ffmpeg::media::Type::Audio);
-        let audio_codec = choose_audio_codec(format)
-            .or_else(|| ffmpeg::encoder::find(container_audio_codec))
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "no audio encoder available for {format:?} (container={container_audio_codec:?})"
-                ))
-            })?;
-        telemetry.audio_encoder = Some(audio_codec.name().to_string());
-        let codec_audio_info = audio_codec.audio().map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "selected audio codec is not usable as audio: {err}"
-            ))
-        })?;
-        let output_rate_hz = choose_audio_sample_rate(codec_audio_info, mixed.sample_rate_hz);
-        let output_layout = choose_audio_channel_layout(codec_audio_info, mixed.channels);
-        let output_sample_format = choose_audio_sample_format(codec_audio_info);
-
-        let mut audio_encoder = ffmpeg::codec::context::Context::new_with_codec(audio_codec)
-            .encoder()
-            .audio()
-            .map_err(|err| {
-                ScreenRecorderError::Export(format!(
-                    "failed to create audio encoder context: {err}"
-                ))
-            })?;
-        audio_encoder.set_rate(output_rate_hz as i32);
-        audio_encoder.set_channel_layout(output_layout);
-        audio_encoder.set_format(output_sample_format);
-        audio_encoder
-            .set_bit_rate(usize::from(effective_audio_bitrate_kbps(audio_bitrate_kbps)) * 1000);
-        audio_encoder.set_time_base((1, output_rate_hz as i32));
-        configure_codec_threads(
-            &mut audio_encoder,
-            perf_config.encode_threads,
-            ffmpeg::codec::threading::Type::Frame,
-        );
-        if global_header {
-            audio_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-        }
-
-        let audio_encoder = open_audio_encoder(audio_encoder, audio_codec)?;
-
-        let audio_stream_index = {
-            let mut stream = output.add_stream(audio_codec).map_err(|err| {
-                ScreenRecorderError::Export(format!("failed to add output audio stream: {err}"))
-            })?;
-            stream.set_time_base(ffmpeg::Rational(1, output_rate_hz as i32));
-            stream.set_rate(ffmpeg::Rational(output_rate_hz as i32, 1));
-            stream.set_parameters(&audio_encoder);
-            stream.index()
-        };
-
-        audio_state = Some((
-            audio_encoder,
-            audio_stream_index,
-            ffmpeg::Rational(1, output_rate_hz as i32),
-        ));
-    }
-
-    output.write_header().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output header: {err}"))
-    })?;
-
-    let video_stream_time_base = output
-        .stream(video_stream_index)
-        .map(|stream| stream.time_base())
-        .ok_or_else(|| {
-            ScreenRecorderError::Export(format!(
-                "failed to resolve output video stream {} after header",
-                video_stream_index
-            ))
-        })?;
-
-    if let Some((_, stream_index, stream_time_base)) = audio_state.as_mut() {
-        *stream_time_base = output
-            .stream(*stream_index)
-            .map(|stream| stream.time_base())
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "failed to resolve output audio stream {} after header",
-                    stream_index
-                ))
-            })?;
-    }
-
-    let audio_worker = if let (Some(audio), Some((audio_encoder, stream_index, stream_time_base))) =
-        (mixed_audio.cloned(), audio_state.take())
-    {
-        Some(spawn_audio_packet_worker(
-            audio_encoder,
-            stream_index,
-            stream_time_base,
-            audio,
-            Arc::clone(cancel_flag),
-        )?)
-    } else {
-        None
-    };
-    let mut audio_worker = AudioPacketWorkerGuard::new(audio_worker, Arc::clone(cancel_flag));
+    let pixel_format = encoder.encoder.input_pixel_format();
+    let video_decoder = hw_decode_state
+        .as_ref()
+        .map(|state| state.device_name)
+        .unwrap_or("software_decode")
+        .to_string();
+    let used_hardware_decode = hw_decode_state.is_some();
 
     let mut hdr_overlay_scaler = None::<ffmpeg::software::scaling::Context>;
     let mut hdr_overlay_base = ffmpeg::frame::Video::empty();
@@ -6573,13 +5653,8 @@ fn export_video_generated_from_source(
     let mut decoded = ffmpeg::frame::Video::empty();
     let mut transferred_decoded = ffmpeg::frame::Video::empty();
     let mut source_frame_index = 0usize;
-    let encoded_output_count = Cell::new(0usize);
     let scheduled_output_count = Cell::new(0usize);
     let mut decode_complete = false;
-    let start = Instant::now();
-    let video_encode_start = Instant::now();
-    let mut pending_video_packet_durations = VideoPacketDurations::default();
-    let mut pending_collapsed_video_frame = VideoFrameState::default();
 
     let mut process_decoded_frame = |decoded: &mut ffmpeg::frame::Video| -> Result<()> {
         check_canceled(cancel_flag)?;
@@ -6642,7 +5717,7 @@ fn export_video_generated_from_source(
                 ensure_video_frame_writable(&mut hdr_overlay_frame)?;
                 let stride = hdr_overlay_frame.stride(0);
                 let mut surface = FrameSurfaceMut {
-                    timestamp_ms: retime.output_timestamps_ms[scheduled_output_count.get()],
+                    timestamp_ms: retime.timestamp_ms(scheduled_output_count.get()),
                     width,
                     height,
                     rgba: &mut [],
@@ -6676,21 +5751,11 @@ fn export_video_generated_from_source(
                 && source_height == height
                 && decoded.format() == pixel_format;
             if direct_frame_passthrough {
-                queue_video_frame_with_repeat_collapse(
-                    &mut video_encoder,
-                    &mut output,
-                    video_stream_index,
-                    video_stream_time_base,
+                encoder.queue_prepared_frame(
                     decoded,
                     repeats,
                     overlays.is_none(),
-                    &mut pending_collapsed_video_frame,
-                    &mut pending_video_packet_durations,
-                    &encoded_output_count,
                     &scheduled_output_count,
-                    retime.frame_count,
-                    &start,
-                    progress_tx,
                 )?;
                 continue;
             }
@@ -6745,28 +5810,18 @@ fn export_video_generated_from_source(
             if source_hdr {
                 crate::hdr::frame(encode_frame_ref, output_hdr);
             }
-            queue_video_frame_with_repeat_collapse(
-                &mut video_encoder,
-                &mut output,
-                video_stream_index,
-                video_stream_time_base,
+            encoder.queue_prepared_frame(
                 encode_frame_ref,
                 repeats,
                 overlays.is_none(),
-                &mut pending_collapsed_video_frame,
-                &mut pending_video_packet_durations,
-                &encoded_output_count,
                 &scheduled_output_count,
-                retime.frame_count,
-                &start,
-                progress_tx,
             )?;
         }
         Ok(())
     };
 
     for (stream, packet) in input.packets() {
-        if decode_complete || scheduled_output_count.get() >= retime.frame_count {
+        if decode_complete || scheduled_output_count.get() >= retime.frame_count() {
             break;
         }
         if stream.index() != input_video_stream_index {
@@ -6785,7 +5840,7 @@ fn export_video_generated_from_source(
                         hw_decode_state.as_ref(),
                     )?;
                     process_decoded_frame(decoded_frame)?;
-                    if scheduled_output_count.get() >= retime.frame_count {
+                    if scheduled_output_count.get() >= retime.frame_count() {
                         decode_complete = true;
                         break;
                     }
@@ -6815,7 +5870,7 @@ fn export_video_generated_from_source(
                         hw_decode_state.as_ref(),
                     )?;
                     process_decoded_frame(decoded_frame)?;
-                    if scheduled_output_count.get() >= retime.frame_count {
+                    if scheduled_output_count.get() >= retime.frame_count() {
                         break;
                     }
                 }
@@ -6833,76 +5888,17 @@ fn export_video_generated_from_source(
     #[allow(clippy::drop_non_drop)]
     drop(process_decoded_frame);
 
-    if scheduled_output_count.get() != retime.frame_count {
+    if scheduled_output_count.get() != retime.frame_count() {
         return Err(ScreenRecorderError::Export(format!(
             "source decode ended before all retimed frames were produced (scheduled {}, expected {})",
             scheduled_output_count.get(),
-            retime.frame_count
+            retime.frame_count()
         )));
     }
 
-    flush_pending_collapsed_video_frame(
-        &mut video_encoder,
-        &mut output,
-        video_stream_index,
-        video_stream_time_base,
-        &mut pending_collapsed_video_frame,
-        &mut pending_video_packet_durations,
-        &encoded_output_count,
-        retime.frame_count,
-        &start,
-        progress_tx,
-    )?;
-
-    if encoded_output_count.get() != retime.frame_count {
-        return Err(ScreenRecorderError::Export(format!(
-            "source encode ended before all retimed frames were produced (encoded {}, expected {})",
-            encoded_output_count.get(),
-            retime.frame_count
-        )));
-    }
-
-    video_encoder.send_eof().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to finalize video encoder: {err}"))
-    })?;
-    drain_video_packets_with_durations(
-        &mut video_encoder,
-        &mut output,
-        video_stream_index,
-        video_stream_time_base,
-        true,
-        &mut pending_video_packet_durations,
-    )?;
-    telemetry.stage_durations_ms.video_encode = video_encode_start
-        .elapsed()
-        .as_millis()
-        .min(u128::from(u64::MAX)) as u64;
-
-    if let Some(audio_worker) = audio_worker.take() {
-        emit_progress(progress_tx, ExportStage::AudioEncode, 90.0, 0.0, None);
-        let audio_encode_start = Instant::now();
-        let (mut buffered_audio, stream_index, stream_time_base) =
-            join_audio_packet_worker(audio_worker)?;
-        write_buffered_audio_packets(
-            &mut output,
-            stream_index,
-            stream_time_base,
-            buffered_audio.encoder_time_base,
-            &mut buffered_audio.packets,
-        )?;
-        telemetry.stage_durations_ms.audio_encode = audio_encode_start
-            .elapsed()
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64;
-    }
-
-    emit_progress(progress_tx, ExportStage::Mux, 95.0, 0.0, None);
-    let mux_start = Instant::now();
-    output.write_trailer().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output trailer: {err}"))
-    })?;
-    telemetry.stage_durations_ms.mux =
-        mux_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let mut telemetry = encoder.finish(retime.output_duration_ms())?;
+    telemetry.video_decoder = Some(video_decoder);
+    telemetry.used_hardware_decode = used_hardware_decode;
     Ok(telemetry)
 }
 
@@ -6923,12 +5919,13 @@ fn export_video_generated_from_source_with_overlay(
     overlay_tracks: &MouseTracks,
     mouse_config: &MouseEditConfig,
     cancel_flag: &Arc<AtomicBool>,
-    progress_tx: &Option<Sender<ExportProgress>>,
+    cancellation: Option<&CancellationToken>,
+    progress_tx: &Option<Arc<ProgressReporter>>,
 ) -> Result<ExportCodecTelemetry> {
     ensure_ffmpeg_initialized()?;
     validate_export_dimensions(width, height, format.requires_even_dimensions())?;
 
-    if retime.frame_count == 0 {
+    if retime.frame_count() == 0 {
         return Err(ScreenRecorderError::Export(
             "retiming produced no frames".to_string(),
         ));
@@ -6964,258 +5961,32 @@ fn export_video_generated_from_source_with_overlay(
         hardware: hw_decode_state,
     } = &mut source_decoder;
 
-    let mut output = ffmpeg::format::output(output_path).map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to create ffmpeg output context: {err}"))
-    })?;
-    let global_header = output
-        .format()
-        .flags()
-        .contains(ffmpeg::format::Flags::GLOBAL_HEADER);
-
-    let fps = export_fps.max(1).min(i32::MAX as u32) as i32;
-    let video_time_base = ffmpeg::Rational(1, fps);
-    let video_frame_rate = ffmpeg::Rational(fps, 1);
-
-    let mut video_codec = select_video_codec(
-        &output,
+    let mut encoder = EditingVideoEncoder::create(
         output_path,
+        width,
+        height,
+        export_fps,
         format,
         requested_codec,
         prefer_hardware_h264,
-        perf_config.mode,
-        perf_config.software_h264_priority,
+        mixed_audio,
+        audio_bitrate_kbps,
+        video_config,
+        perf_config,
+        false,
+        None,
+        retime.frame_count(),
+        cancel_flag,
+        cancellation,
+        progress_tx,
     )?;
-    let codec_video_info = video_codec.video().map_err(|err| {
-        ScreenRecorderError::Export(format!(
-            "selected video codec is not usable as video: {err}"
-        ))
-    })?;
-    let mut pixel_format =
-        choose_video_pixel_format(format, codec_video_info, None, perf_config.mode);
-    let mut video_encoder = ffmpeg::codec::context::Context::new_with_codec(video_codec)
-        .encoder()
-        .video()
-        .map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to create video encoder context: {err}"))
-        })?;
-    video_encoder.set_width(width);
-    video_encoder.set_height(height);
-    video_encoder.set_format(pixel_format);
-    video_encoder.set_time_base(video_time_base);
-    video_encoder.set_frame_rate(Some(video_frame_rate));
-    configure_codec_threads(
-        &mut video_encoder,
-        perf_config.encode_threads,
-        ffmpeg::codec::threading::Type::Frame,
-    );
-
-    let effective_video = effective_video_config(video_config);
-    if !format.is_animated_image() {
-        video_encoder.set_bit_rate(smart_quality_bitrate_bps(
-            width,
-            height,
-            export_fps,
-            &effective_video,
-            false,
-        ));
-    }
-    if global_header {
-        video_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-    }
-
-    let mut video_encoder = match open_video_encoder(video_encoder, &video_codec, &effective_video)
-    {
-        Ok(encoder) => encoder,
-        Err(primary_error) => {
-            if software_encode_fallback_allowed(perf_config.mode)
-                && is_hardware_video_encoder(&video_codec)
-            {
-                video_codec = select_video_codec(
-                    &output,
-                    output_path,
-                    format,
-                    requested_codec,
-                    false,
-                    ExportExecutionMode::SoftwareOnly,
-                    perf_config.software_h264_priority,
-                )?;
-                let fallback_video_info = video_codec.video().map_err(|err| {
-                    ScreenRecorderError::Export(format!(
-                        "fallback software codec is not usable as video: {err}"
-                    ))
-                })?;
-                pixel_format = choose_video_pixel_format(
-                    format,
-                    fallback_video_info,
-                    None,
-                    ExportExecutionMode::SoftwareOnly,
-                );
-
-                let mut fallback_encoder =
-                    ffmpeg::codec::context::Context::new_with_codec(video_codec)
-                        .encoder()
-                        .video()
-                        .map_err(|err| {
-                            ScreenRecorderError::Export(format!(
-                                "failed to create fallback video encoder context: {err}"
-                            ))
-                        })?;
-                fallback_encoder.set_width(width);
-                fallback_encoder.set_height(height);
-                fallback_encoder.set_format(pixel_format);
-                fallback_encoder.set_time_base(video_time_base);
-                fallback_encoder.set_frame_rate(Some(video_frame_rate));
-                configure_codec_threads(
-                    &mut fallback_encoder,
-                    perf_config.encode_threads,
-                    ffmpeg::codec::threading::Type::Frame,
-                );
-                if !format.is_animated_image() {
-                    fallback_encoder.set_bit_rate(smart_quality_bitrate_bps(
-                        width,
-                        height,
-                        export_fps,
-                        &effective_video,
-                        false,
-                    ));
-                }
-                if global_header {
-                    fallback_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-                }
-
-                open_video_encoder(fallback_encoder, &video_codec, &effective_video)
-                    .map_err(|_| primary_error)?
-            } else {
-                return Err(primary_error);
-            }
-        }
-    };
-
-    let video_stream_index = {
-        let mut stream = output.add_stream(video_codec).map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to add output video stream: {err}"))
-        })?;
-        stream.set_time_base(video_time_base);
-        stream.set_rate(video_frame_rate);
-        stream.set_avg_frame_rate(video_frame_rate);
-        stream.set_parameters(&video_encoder);
-        stream.index()
-    };
-    let mut telemetry = ExportCodecTelemetry {
-        video_decoder: Some(
-            hw_decode_state
-                .as_ref()
-                .map(|state| state.device_name)
-                .unwrap_or("software_decode")
-                .to_string(),
-        ),
-        video_encoder: Some(video_codec.name().to_string()),
-        used_hardware_decode: hw_decode_state.is_some(),
-        used_hardware_encode: opened_video_encoder_uses_hardware(&video_encoder),
-        ..ExportCodecTelemetry::default()
-    };
-
-    let mut audio_state = None;
-    if let Some(mixed) = mixed_audio
-        && !format.is_animated_image()
-    {
-        let container_audio_codec = output
-            .format()
-            .codec(output_path, ffmpeg::media::Type::Audio);
-        let audio_codec = choose_audio_codec(format)
-            .or_else(|| ffmpeg::encoder::find(container_audio_codec))
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "no audio encoder available for {format:?} (container={container_audio_codec:?})"
-                ))
-            })?;
-        telemetry.audio_encoder = Some(audio_codec.name().to_string());
-        let codec_audio_info = audio_codec.audio().map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "selected audio codec is not usable as audio: {err}"
-            ))
-        })?;
-        let output_rate_hz = choose_audio_sample_rate(codec_audio_info, mixed.sample_rate_hz);
-        let output_layout = choose_audio_channel_layout(codec_audio_info, mixed.channels);
-        let output_sample_format = choose_audio_sample_format(codec_audio_info);
-
-        let mut audio_encoder = ffmpeg::codec::context::Context::new_with_codec(audio_codec)
-            .encoder()
-            .audio()
-            .map_err(|err| {
-                ScreenRecorderError::Export(format!(
-                    "failed to create audio encoder context: {err}"
-                ))
-            })?;
-        audio_encoder.set_rate(output_rate_hz as i32);
-        audio_encoder.set_channel_layout(output_layout);
-        audio_encoder.set_format(output_sample_format);
-        audio_encoder
-            .set_bit_rate(usize::from(effective_audio_bitrate_kbps(audio_bitrate_kbps)) * 1000);
-        audio_encoder.set_time_base((1, output_rate_hz as i32));
-        configure_codec_threads(
-            &mut audio_encoder,
-            perf_config.encode_threads,
-            ffmpeg::codec::threading::Type::Frame,
-        );
-        if global_header {
-            audio_encoder.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-        }
-
-        let audio_encoder = open_audio_encoder(audio_encoder, audio_codec)?;
-
-        let stream_index = {
-            let mut stream = output.add_stream(audio_codec).map_err(|err| {
-                ScreenRecorderError::Export(format!("failed to add output audio stream: {err}"))
-            })?;
-            stream.set_time_base((1, output_rate_hz as i32));
-            stream.set_rate((output_rate_hz as i32, 1));
-            stream.set_parameters(&audio_encoder);
-            stream.index()
-        };
-        audio_state = Some((audio_encoder, stream_index, ffmpeg::Rational(0, 1)));
-    }
-
-    output.write_header().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output header: {err}"))
-    })?;
-
-    let video_stream_time_base = output
-        .stream(video_stream_index)
-        .map(|stream| stream.time_base())
-        .ok_or_else(|| {
-            ScreenRecorderError::Export(format!(
-                "failed to resolve output video stream {} after header",
-                video_stream_index
-            ))
-        })?;
-
-    if let Some((_, stream_index, stream_time_base)) = audio_state.as_mut() {
-        *stream_time_base = output
-            .stream(*stream_index)
-            .map(|stream| stream.time_base())
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(format!(
-                    "failed to resolve output audio stream {} after header",
-                    stream_index
-                ))
-            })?;
-    }
-
-    let audio_worker = if let (Some(audio), Some((audio_encoder, stream_index, stream_time_base))) =
-        (mixed_audio.cloned(), audio_state.take())
-    {
-        Some(spawn_audio_packet_worker(
-            audio_encoder,
-            stream_index,
-            stream_time_base,
-            audio,
-            Arc::clone(cancel_flag),
-        )?)
-    } else {
-        None
-    };
-    let mut audio_worker = AudioPacketWorkerGuard::new(audio_worker, Arc::clone(cancel_flag));
+    let pixel_format = encoder.encoder.input_pixel_format();
+    let video_decoder = hw_decode_state
+        .as_ref()
+        .map(|state| state.device_name)
+        .unwrap_or("software_decode")
+        .to_string();
+    let used_hardware_decode = hw_decode_state.is_some();
 
     let mut encode_scaler = crate::output_scaler::OutputScaler::get(
         ffmpeg::format::Pixel::RGBA,
@@ -7253,13 +6024,8 @@ fn export_video_generated_from_source_with_overlay(
     let mut decoded = ffmpeg::frame::Video::empty();
     let mut transferred_decoded = ffmpeg::frame::Video::empty();
     let mut source_frame_index = 0usize;
-    let encoded_output_count = Cell::new(0usize);
     let scheduled_output_count = Cell::new(0usize);
     let mut decode_complete = false;
-    let start = Instant::now();
-    let video_encode_start = Instant::now();
-    let mut pending_video_packet_durations = VideoPacketDurations::default();
-    let mut pending_collapsed_video_frame = VideoFrameState::default();
 
     let mut process_decoded_frame = |decoded: &mut ffmpeg::frame::Video| -> Result<()> {
         check_canceled(cancel_flag)?;
@@ -7285,7 +6051,7 @@ fn export_video_generated_from_source_with_overlay(
 
         while repeat_index < repeats {
             let output_index = scheduled_output_count.get();
-            let output_ts = retime.output_timestamps_ms[output_index];
+            let output_ts = retime.timestamp_ms(output_index);
             let decision =
                 advance_overlay_state(output_ts, overlay_tracks, mouse_config, &mut overlay_state);
             let repeat_key = repeatable_overlay_frame_key(decision);
@@ -7295,7 +6061,7 @@ fn export_video_generated_from_source_with_overlay(
                 let mut scan_state = overlay_state.clone();
                 while repeat_index + frame_duration_ticks < repeats {
                     let next_output_index = output_index + frame_duration_ticks;
-                    let next_output_ts = retime.output_timestamps_ms[next_output_index];
+                    let next_output_ts = retime.timestamp_ms(next_output_index);
                     let mut candidate_state = scan_state.clone();
                     let next_decision = advance_overlay_state(
                         next_output_ts,
@@ -7338,21 +6104,11 @@ fn export_video_generated_from_source_with_overlay(
                     false,
                 )? {
                     if pixel_format == native_frame.format() {
-                        queue_video_frame_with_repeat_collapse(
-                            &mut video_encoder,
-                            &mut output,
-                            video_stream_index,
-                            video_stream_time_base,
+                        encoder.queue_prepared_frame(
                             native_frame,
                             frame_duration_ticks,
                             allow_repeat_collapse,
-                            &mut pending_collapsed_video_frame,
-                            &mut pending_video_packet_durations,
-                            &encoded_output_count,
                             &scheduled_output_count,
-                            retime.frame_count,
-                            &start,
-                            progress_tx,
                         )?;
                     } else {
                         scale_decoded_frame_to_output_format(
@@ -7369,21 +6125,11 @@ fn export_video_generated_from_source_with_overlay(
                                 "source output frame buffer is uninitialized".to_string(),
                             )
                         })?;
-                        queue_video_frame_with_repeat_collapse(
-                            &mut video_encoder,
-                            &mut output,
-                            video_stream_index,
-                            video_stream_time_base,
+                        encoder.queue_prepared_frame(
                             direct_frame,
                             frame_duration_ticks,
                             allow_repeat_collapse,
-                            &mut pending_collapsed_video_frame,
-                            &mut pending_video_packet_durations,
-                            &encoded_output_count,
                             &scheduled_output_count,
-                            retime.frame_count,
-                            &start,
-                            progress_tx,
                         )?;
                     }
                     repeat_index += frame_duration_ticks;
@@ -7393,21 +6139,11 @@ fn export_video_generated_from_source_with_overlay(
 
             if !decision.needs_draw() {
                 if direct_frame_passthrough {
-                    queue_video_frame_with_repeat_collapse(
-                        &mut video_encoder,
-                        &mut output,
-                        video_stream_index,
-                        video_stream_time_base,
+                    encoder.queue_prepared_frame(
                         decoded,
                         frame_duration_ticks,
                         allow_repeat_collapse,
-                        &mut pending_collapsed_video_frame,
-                        &mut pending_video_packet_durations,
-                        &encoded_output_count,
                         &scheduled_output_count,
-                        retime.frame_count,
-                        &start,
-                        progress_tx,
                     )?;
                 } else {
                     if !prepared_direct_output {
@@ -7428,21 +6164,11 @@ fn export_video_generated_from_source_with_overlay(
                             "source output frame buffer is uninitialized".to_string(),
                         )
                     })?;
-                    queue_video_frame_with_repeat_collapse(
-                        &mut video_encoder,
-                        &mut output,
-                        video_stream_index,
-                        video_stream_time_base,
+                    encoder.queue_prepared_frame(
                         direct_frame,
                         frame_duration_ticks,
                         allow_repeat_collapse,
-                        &mut pending_collapsed_video_frame,
-                        &mut pending_video_packet_durations,
-                        &encoded_output_count,
                         &scheduled_output_count,
-                        retime.frame_count,
-                        &start,
-                        progress_tx,
                     )?;
                 }
                 repeat_index += frame_duration_ticks;
@@ -7485,21 +6211,11 @@ fn export_video_generated_from_source_with_overlay(
                             "failed to convert overlay frame for video export: {err}"
                         ))
                     })?;
-                queue_video_frame_with_repeat_collapse(
-                    &mut video_encoder,
-                    &mut output,
-                    video_stream_index,
-                    video_stream_time_base,
-                    &mut encode_frame,
+                encoder.queue_prepared_frame(
+                    &encode_frame,
                     1,
                     allow_repeat_collapse,
-                    &mut pending_collapsed_video_frame,
-                    &mut pending_video_packet_durations,
-                    &encoded_output_count,
                     &scheduled_output_count,
-                    retime.frame_count,
-                    &start,
-                    progress_tx,
                 )?;
                 repeat_index += 1;
                 continue;
@@ -7562,21 +6278,11 @@ fn export_video_generated_from_source_with_overlay(
                         "failed to convert overlay frame for video export: {err}"
                     ))
                 })?;
-            queue_video_frame_with_repeat_collapse(
-                &mut video_encoder,
-                &mut output,
-                video_stream_index,
-                video_stream_time_base,
-                &mut encode_frame,
+            encoder.queue_prepared_frame(
+                &encode_frame,
                 frame_duration_ticks,
                 allow_repeat_collapse,
-                &mut pending_collapsed_video_frame,
-                &mut pending_video_packet_durations,
-                &encoded_output_count,
                 &scheduled_output_count,
-                retime.frame_count,
-                &start,
-                progress_tx,
             )?;
             repeat_index += frame_duration_ticks;
         }
@@ -7584,7 +6290,7 @@ fn export_video_generated_from_source_with_overlay(
     };
 
     for (stream, packet) in input.packets() {
-        if decode_complete || scheduled_output_count.get() >= retime.frame_count {
+        if decode_complete || scheduled_output_count.get() >= retime.frame_count() {
             break;
         }
         if stream.index() != input_video_stream_index {
@@ -7603,7 +6309,7 @@ fn export_video_generated_from_source_with_overlay(
                         hw_decode_state.as_ref(),
                     )?;
                     process_decoded_frame(decoded_frame)?;
-                    if scheduled_output_count.get() >= retime.frame_count {
+                    if scheduled_output_count.get() >= retime.frame_count() {
                         decode_complete = true;
                         break;
                     }
@@ -7633,7 +6339,7 @@ fn export_video_generated_from_source_with_overlay(
                         hw_decode_state.as_ref(),
                     )?;
                     process_decoded_frame(decoded_frame)?;
-                    if scheduled_output_count.get() >= retime.frame_count {
+                    if scheduled_output_count.get() >= retime.frame_count() {
                         break;
                     }
                 }
@@ -7651,76 +6357,17 @@ fn export_video_generated_from_source_with_overlay(
     #[allow(clippy::drop_non_drop)]
     drop(process_decoded_frame);
 
-    if scheduled_output_count.get() != retime.frame_count {
+    if scheduled_output_count.get() != retime.frame_count() {
         return Err(ScreenRecorderError::Export(format!(
             "source decode ended before all overlay frames were produced (scheduled {}, expected {})",
             scheduled_output_count.get(),
-            retime.frame_count
+            retime.frame_count()
         )));
     }
 
-    flush_pending_collapsed_video_frame(
-        &mut video_encoder,
-        &mut output,
-        video_stream_index,
-        video_stream_time_base,
-        &mut pending_collapsed_video_frame,
-        &mut pending_video_packet_durations,
-        &encoded_output_count,
-        retime.frame_count,
-        &start,
-        progress_tx,
-    )?;
-
-    if encoded_output_count.get() != retime.frame_count {
-        return Err(ScreenRecorderError::Export(format!(
-            "source encode ended before all overlay frames were produced (encoded {}, expected {})",
-            encoded_output_count.get(),
-            retime.frame_count
-        )));
-    }
-
-    video_encoder.send_eof().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to finalize video encoder: {err}"))
-    })?;
-    drain_video_packets_with_durations(
-        &mut video_encoder,
-        &mut output,
-        video_stream_index,
-        video_stream_time_base,
-        true,
-        &mut pending_video_packet_durations,
-    )?;
-    telemetry.stage_durations_ms.video_encode = video_encode_start
-        .elapsed()
-        .as_millis()
-        .min(u128::from(u64::MAX)) as u64;
-
-    if let Some(audio_worker) = audio_worker.take() {
-        emit_progress(progress_tx, ExportStage::AudioEncode, 90.0, 0.0, None);
-        let audio_encode_start = Instant::now();
-        let (mut buffered_audio, stream_index, stream_time_base) =
-            join_audio_packet_worker(audio_worker)?;
-        write_buffered_audio_packets(
-            &mut output,
-            stream_index,
-            stream_time_base,
-            buffered_audio.encoder_time_base,
-            &mut buffered_audio.packets,
-        )?;
-        telemetry.stage_durations_ms.audio_encode = audio_encode_start
-            .elapsed()
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64;
-    }
-
-    emit_progress(progress_tx, ExportStage::Mux, 95.0, 0.0, None);
-    let mux_start = Instant::now();
-    output.write_trailer().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to write output trailer: {err}"))
-    })?;
-    telemetry.stage_durations_ms.mux =
-        mux_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let mut telemetry = encoder.finish(retime.output_duration_ms())?;
+    telemetry.video_decoder = Some(video_decoder);
+    telemetry.used_hardware_decode = used_hardware_decode;
     Ok(telemetry)
 }
 
@@ -7848,217 +6495,6 @@ fn scale_decoded_frame_to_output_format(
     })
 }
 
-fn send_video_frame_with_duration_and_progress(
-    video_encoder: &mut ffmpeg::encoder::video::Encoder,
-    output: &mut ffmpeg::format::context::Output,
-    video_stream_index: usize,
-    video_stream_time_base: ffmpeg::Rational,
-    frame: &mut ffmpeg::frame::Video,
-    frame_duration_ticks: usize,
-    pending_packet_durations: &mut VideoPacketDurations,
-    gif_delta: &mut crate::gif_palette::GifDeltaState,
-    encoded_output_count: &Cell<usize>,
-    total_frame_count: usize,
-    start: &Instant,
-    progress_tx: &Option<Sender<ExportProgress>>,
-) -> Result<()> {
-    let frame_duration_ticks = frame_duration_ticks.max(1);
-    let output_index = encoded_output_count.get();
-    frame.set_pts(Some(output_index as i64));
-    gif_delta.prepare(video_encoder, frame)?;
-    video_encoder.send_frame(frame).map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to send frame to video encoder: {err}"))
-    })?;
-    pending_packet_durations.push_back((output_index as i64, frame_duration_ticks as i64));
-    drain_video_packets_with_durations(
-        video_encoder,
-        output,
-        video_stream_index,
-        video_stream_time_base,
-        false,
-        pending_packet_durations,
-    )?;
-
-    let next_count = output_index.saturating_add(frame_duration_ticks);
-    encoded_output_count.set(next_count);
-
-    if output_index.is_multiple_of(10) || next_count == total_frame_count {
-        let elapsed = start.elapsed().as_secs_f32().max(0.001);
-        let fps = next_count as f32 / elapsed;
-        let remaining_frames = total_frame_count.saturating_sub(next_count) as f32;
-        let eta_ms = if fps > 0.0 {
-            Some(((remaining_frames / fps) * 1000.0) as u64)
-        } else {
-            None
-        };
-        let percent = 35.0 + ((next_count as f32 / total_frame_count.max(1) as f32) * 55.0);
-        emit_progress(progress_tx, ExportStage::VideoEncode, percent, fps, eta_ms);
-    }
-
-    Ok(())
-}
-
-#[derive(Default)]
-struct VideoFrameState {
-    // Palette history belongs to submitted frames and survives repeat flushes.
-    gif_delta: crate::gif_palette::GifDeltaState,
-    frame: Option<ffmpeg::frame::Video>,
-    duration_ticks: usize,
-}
-
-impl VideoFrameState {
-    fn store(&mut self, source: &ffmpeg::frame::Video, duration_ticks: usize) -> Result<()> {
-        let needs_reallocate = self.frame.as_ref().is_none_or(|frame| {
-            frame.format() != source.format()
-                || frame.width() != source.width()
-                || frame.height() != source.height()
-        });
-        if needs_reallocate {
-            self.frame = Some(ffmpeg::frame::Video::new(
-                source.format(),
-                source.width(),
-                source.height(),
-            ));
-        }
-
-        let frame = self.frame.as_mut().ok_or_else(|| {
-            ScreenRecorderError::Export(
-                "pending collapsed video frame is uninitialized".to_string(),
-            )
-        })?;
-        copy_video_frame_into_matching(frame, source)?;
-        self.duration_ticks = duration_ticks.max(1);
-        Ok(())
-    }
-
-    fn is_empty(&self) -> bool {
-        self.duration_ticks == 0
-    }
-
-    fn clear(&mut self) {
-        self.duration_ticks = 0;
-    }
-}
-
-fn queue_video_frame_with_repeat_collapse(
-    video_encoder: &mut ffmpeg::encoder::video::Encoder,
-    output: &mut ffmpeg::format::context::Output,
-    video_stream_index: usize,
-    video_stream_time_base: ffmpeg::Rational,
-    frame: &mut ffmpeg::frame::Video,
-    frame_duration_ticks: usize,
-    allow_repeat_collapse: bool,
-    pending_collapsed_frame: &mut VideoFrameState,
-    pending_packet_durations: &mut VideoPacketDurations,
-    encoded_output_count: &Cell<usize>,
-    scheduled_output_count: &Cell<usize>,
-    total_frame_count: usize,
-    start: &Instant,
-    progress_tx: &Option<Sender<ExportProgress>>,
-) -> Result<()> {
-    let frame_duration_ticks = frame_duration_ticks.max(1);
-    scheduled_output_count.set(
-        scheduled_output_count
-            .get()
-            .saturating_add(frame_duration_ticks),
-    );
-
-    if !allow_repeat_collapse || !can_collapse_repeated_video_frames(frame) {
-        flush_pending_collapsed_video_frame(
-            video_encoder,
-            output,
-            video_stream_index,
-            video_stream_time_base,
-            pending_collapsed_frame,
-            pending_packet_durations,
-            encoded_output_count,
-            total_frame_count,
-            start,
-            progress_tx,
-        )?;
-        return send_video_frame_with_duration_and_progress(
-            video_encoder,
-            output,
-            video_stream_index,
-            video_stream_time_base,
-            frame,
-            frame_duration_ticks,
-            pending_packet_durations,
-            &mut pending_collapsed_frame.gif_delta,
-            encoded_output_count,
-            total_frame_count,
-            start,
-            progress_tx,
-        );
-    }
-
-    if pending_collapsed_frame.is_empty() {
-        return pending_collapsed_frame.store(frame, frame_duration_ticks);
-    }
-
-    let pending_frame = pending_collapsed_frame.frame.as_ref().ok_or_else(|| {
-        ScreenRecorderError::Export("pending collapsed video frame is uninitialized".to_string())
-    })?;
-    if video_frames_match(pending_frame, frame) {
-        pending_collapsed_frame.duration_ticks = pending_collapsed_frame
-            .duration_ticks
-            .saturating_add(frame_duration_ticks);
-        return Ok(());
-    }
-
-    flush_pending_collapsed_video_frame(
-        video_encoder,
-        output,
-        video_stream_index,
-        video_stream_time_base,
-        pending_collapsed_frame,
-        pending_packet_durations,
-        encoded_output_count,
-        total_frame_count,
-        start,
-        progress_tx,
-    )?;
-    pending_collapsed_frame.store(frame, frame_duration_ticks)
-}
-
-fn flush_pending_collapsed_video_frame(
-    video_encoder: &mut ffmpeg::encoder::video::Encoder,
-    output: &mut ffmpeg::format::context::Output,
-    video_stream_index: usize,
-    video_stream_time_base: ffmpeg::Rational,
-    pending_collapsed_frame: &mut VideoFrameState,
-    pending_packet_durations: &mut VideoPacketDurations,
-    encoded_output_count: &Cell<usize>,
-    total_frame_count: usize,
-    start: &Instant,
-    progress_tx: &Option<Sender<ExportProgress>>,
-) -> Result<()> {
-    if pending_collapsed_frame.is_empty() {
-        return Ok(());
-    }
-
-    let duration_ticks = pending_collapsed_frame.duration_ticks;
-    let frame = pending_collapsed_frame.frame.as_mut().ok_or_else(|| {
-        ScreenRecorderError::Export("pending collapsed video frame is uninitialized".to_string())
-    })?;
-    send_video_frame_with_duration_and_progress(
-        video_encoder,
-        output,
-        video_stream_index,
-        video_stream_time_base,
-        frame,
-        duration_ticks,
-        pending_packet_durations,
-        &mut pending_collapsed_frame.gif_delta,
-        encoded_output_count,
-        total_frame_count,
-        start,
-        progress_tx,
-    )?;
-    pending_collapsed_frame.clear();
-    Ok(())
-}
-
 fn can_collapse_repeated_video_frames(frame: &ffmpeg::frame::Video) -> bool {
     match frame.format() {
         ffmpeg::format::Pixel::YUV420P
@@ -8142,27 +6578,6 @@ fn video_frames_match(lhs: &ffmpeg::frame::Video, rhs: &ffmpeg::frame::Video) ->
     true
 }
 
-fn copy_video_frame_into_matching(
-    dst: &mut ffmpeg::frame::Video,
-    src: &ffmpeg::frame::Video,
-) -> Result<()> {
-    if dst.format() != src.format() || dst.width() != src.width() || dst.height() != src.height() {
-        return Err(ScreenRecorderError::Export(
-            "video frame copy requires matching format and dimensions".to_string(),
-        ));
-    }
-
-    ensure_video_frame_writable(dst)?;
-    let status = unsafe { ffmpeg::ffi::av_frame_copy(dst.as_mut_ptr(), src.as_ptr()) };
-    if status < 0 {
-        return Err(ScreenRecorderError::Export(format!(
-            "failed to copy video frame: {}",
-            ffmpeg::Error::from(status)
-        )));
-    }
-    Ok(())
-}
-
 fn validate_export_dimensions(width: u32, height: u32, require_even: bool) -> Result<()> {
     if width == 0 || height == 0 {
         return Err(ScreenRecorderError::Export(
@@ -8177,760 +6592,6 @@ fn validate_export_dimensions(width: u32, height: u32, require_even: bool) -> Re
     }
 
     Ok(())
-}
-
-pub(crate) fn select_video_codec(
-    output: &ffmpeg::format::context::Output,
-    output_path: &Path,
-    format: ExportFormat,
-    requested_codec: VideoCodec,
-    prefer_hardware_h264: bool,
-    mode: ExportExecutionMode,
-    software_h264_priority: SoftwareH264Priority,
-) -> Result<ffmpeg::Codec> {
-    if matches!(format, ExportFormat::Webp) {
-        return ffmpeg::encoder::find_by_name("libwebp_anim")
-            .or_else(|| ffmpeg::encoder::find(ffmpeg::codec::Id::WEBP))
-            .ok_or_else(|| {
-                ScreenRecorderError::Export(
-                    "no animated WebP encoder is available; FFmpeg must include libwebp"
-                        .to_string(),
-                )
-            });
-    }
-
-    if matches!(format, ExportFormat::Mp4) {
-        if prefer_hardware_h264
-            && hardware_video_encode_allowed(mode)
-            && let Some(hardware_codec) = select_hardware_codec(requested_codec)
-        {
-            return Ok(hardware_codec);
-        }
-        let (encoder_name, codec_name) = exact_mp4_encoder(requested_codec);
-        if matches!(mode, ExportExecutionMode::HardwareOnly) {
-            return Err(ScreenRecorderError::Export(format!(
-                "HardwareOnly mode cannot satisfy the requested {codec_name} export; SnowShot requires {encoder_name}"
-            )));
-        }
-        return ffmpeg::encoder::find_by_name(encoder_name).ok_or_else(|| {
-            ScreenRecorderError::Export(format!(
-                "requested {codec_name} encoder {encoder_name} is unavailable; rebuild FFmpeg with {encoder_name} support"
-            ))
-        });
-    }
-
-    let container_video_codec = output
-        .format()
-        .codec(output_path, ffmpeg::media::Type::Video);
-    let preferred_video_codec = choose_video_codec_id(format, requested_codec);
-    let codec = ffmpeg::encoder::find(preferred_video_codec)
-        .or_else(|| ffmpeg::encoder::find(container_video_codec))
-        .ok_or_else(|| {
-            ScreenRecorderError::Export(format!(
-                "no video encoder available for {format:?} (preferred={preferred_video_codec:?}, container={container_video_codec:?})"
-            ))
-        })?;
-
-    if matches!(mode, ExportExecutionMode::SoftwareOnly) && is_hardware_video_encoder(&codec) {
-        if let Some(software_codec) = select_software_h264_codec(software_h264_priority) {
-            return Ok(software_codec);
-        }
-        return Err(ScreenRecorderError::Export(
-            "SoftwareOnly mode requested, but no software H.264 encoder is available".to_string(),
-        ));
-    }
-
-    if matches!(mode, ExportExecutionMode::HardwareOnly)
-        && matches!(format, ExportFormat::Mp4)
-        && !is_hardware_video_encoder(&codec)
-    {
-        return Err(ScreenRecorderError::Export(
-            "HardwareOnly mode requested, but selected codec is not hardware accelerated"
-                .to_string(),
-        ));
-    }
-
-    Ok(codec)
-}
-
-fn exact_mp4_encoder(codec: VideoCodec) -> (&'static str, &'static str) {
-    match codec {
-        VideoCodec::H264 => ("libx264", "H.264"),
-        VideoCodec::H265 => ("libx265", "H.265"),
-    }
-}
-
-pub(crate) fn effective_video_config(video_config: &VideoEncodeConfig) -> VideoEncodeConfig {
-    *video_config
-}
-
-pub(crate) fn configure_codec_threads(
-    context: &mut ffmpeg::codec::context::Context,
-    configured_threads: u8,
-    kind: ffmpeg::codec::threading::Type,
-) {
-    let count = match configured_threads {
-        0 => auto_thread_count_from_physical_cores(),
-        value => usize::from(value),
-    };
-
-    let threading = ffmpeg::codec::threading::Config {
-        kind,
-        count: count.max(1),
-    };
-    context.set_threading(threading);
-}
-
-fn should_use_x264_options(codec: &ffmpeg::Codec) -> bool {
-    codec.name().eq_ignore_ascii_case("libx264")
-}
-
-fn should_use_x265_options(codec: &ffmpeg::Codec) -> bool {
-    codec.name().eq_ignore_ascii_case("libx265")
-}
-
-pub(crate) fn is_hardware_h264_encoder(codec: &ffmpeg::Codec) -> bool {
-    let name = codec.name().to_ascii_lowercase();
-    name.contains("nvenc")
-        || name.contains("qsv")
-        || name.contains("amf")
-        || name.contains("mf")
-        || name.ends_with("_videotoolbox")
-}
-
-/// Report the successfully opened mode, including MF's explicit hardware option.
-pub(crate) fn opened_video_encoder_uses_hardware(
-    encoder: &ffmpeg::encoder::video::Encoder,
-) -> bool {
-    let Some(codec) = encoder.codec() else {
-        return false;
-    };
-    let name = codec.name();
-    if name.ends_with("_mf") {
-        let mut enabled = 0i64;
-        // SAFETY: the opened encoder owns its live private options for this call.
-        unsafe {
-            let private = (*encoder.as_ptr()).priv_data;
-            return !private.is_null()
-                && ffmpeg::ffi::av_opt_get_int(private, c"hw_encoding".as_ptr(), 0, &mut enabled)
-                    >= 0
-                && enabled == 1;
-        }
-    }
-    is_hardware_h264_encoder(&codec)
-}
-
-fn is_hardware_video_encoder(codec: &ffmpeg::Codec) -> bool {
-    is_hardware_h264_encoder(codec)
-}
-
-fn select_software_h264_codec(priority: SoftwareH264Priority) -> Option<ffmpeg::Codec> {
-    let preferred = match priority {
-        SoftwareH264Priority::OpenH264First => ["libopenh264", "libx264"],
-        SoftwareH264Priority::X264First => ["libx264", "libopenh264"],
-    };
-    preferred
-        .into_iter()
-        .find_map(ffmpeg::encoder::find_by_name)
-}
-
-fn select_hardware_codec(codec: VideoCodec) -> Option<ffmpeg::Codec> {
-    #[cfg(target_os = "macos")]
-    {
-        ffmpeg::encoder::find_by_name(match codec {
-            VideoCodec::H264 => "h264_videotoolbox",
-            VideoCodec::H265 => "hevc_videotoolbox",
-        })
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        match codec {
-            VideoCodec::H264 => select_hardware_h264_codec(),
-            VideoCodec::H265 => None,
-        }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn select_hardware_h264_codec() -> Option<ffmpeg::Codec> {
-    // Preserve the CPU-input callers' Media Foundation preference. Direct GPU
-    // recording separately selects the encoder matching its D3D11 adapter.
-    ["h264_mf", "h264_nvenc", "h264_qsv", "h264_amf"]
-        .into_iter()
-        .find_map(ffmpeg::encoder::find_by_name)
-}
-
-pub(crate) fn open_video_encoder(
-    video_encoder: ffmpeg::codec::encoder::video::Video,
-    codec: &ffmpeg::Codec,
-    video_config: &VideoEncodeConfig,
-) -> Result<ffmpeg::encoder::video::Encoder> {
-    // Recording exports while capture runs, but is not a network livestream.
-    // Let the selected preset use B-frames, lookahead and frame workers; stop
-    // drains that finite codec tail instead of re-encoding the whole recording.
-    if should_use_x264_options(codec) {
-        let mut options = ffmpeg::Dictionary::new();
-        options.set("preset", x264_preset_for(video_config.speed));
-        options.set(
-            "crf",
-            &quality_to_h264_crf(video_config.quality).to_string(),
-        );
-        return video_encoder.open_as_with(*codec, options).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to open video encoder with h264 options: {err}"
-            ))
-        });
-    }
-    if should_use_x265_options(codec) {
-        let mut options = ffmpeg::Dictionary::new();
-        options.set("preset", video_config.speed.as_x264_preset());
-        options.set(
-            "crf",
-            &quality_to_h264_crf(video_config.quality).to_string(),
-        );
-        return video_encoder.open_as_with(*codec, options).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to open video encoder with h265 options: {err}"
-            ))
-        });
-    }
-    let mut options = ffmpeg::Dictionary::new();
-    if apply_hardware_encoder_options(&mut options, codec, video_config.quality) {
-        return video_encoder.open_as_with(*codec, options).map_err(|err| {
-            ScreenRecorderError::Export(format!(
-                "failed to open hardware video encoder with recording options: {err}"
-            ))
-        });
-    }
-    video_encoder
-        .open_as(*codec)
-        .map_err(|err| ScreenRecorderError::Export(format!("failed to open video encoder: {err}")))
-}
-
-fn apply_hardware_encoder_options(
-    options: &mut ffmpeg::Dictionary<'_>,
-    codec: &ffmpeg::Codec,
-    quality: u8,
-) -> bool {
-    let name = codec.name().to_ascii_lowercase();
-    let qp = quality_to_h264_crf(quality).to_string();
-    // Preserve each live encoder's speed policy while passing the requested
-    // quality. Hardware queues remain bounded and non-reordering for recovery.
-    if name.ends_with("_videotoolbox") {
-        options.set("allow_sw", "0");
-        options.set("require_sw", "0");
-        options.set("realtime", "1");
-        options.set("bf", "0");
-        return true;
-    }
-    if name.contains("nvenc") {
-        options.set("preset", "p1");
-        options.set("tune", "ull");
-        options.set("rc", "constqp");
-        options.set("qp", &qp);
-        options.set("bf", "0");
-        options.set("delay", "0");
-        return true;
-    }
-    if name.contains("qsv") {
-        options.set("preset", "veryfast");
-        options.set("global_quality", &qp);
-        options.set("look_ahead", "0");
-        options.set("async_depth", "1");
-        options.set("bf", "0");
-        return true;
-    }
-    if name.contains("amf") {
-        options.set("usage", "ultralowlatency");
-        options.set("quality", "speed");
-        options.set("rc", "cqp");
-        options.set("qp_i", &qp);
-        options.set("qp_p", &qp);
-        options.set("bf", "0");
-        return true;
-    }
-    if name.contains("mf") {
-        // FFmpeg Media Foundation defaults to a software MFT unless requested.
-        options.set("hw_encoding", "1");
-        options.set("bf", "0");
-        options.set("g", "60");
-        return true;
-    }
-    false
-}
-
-fn x264_preset_for(speed: VideoEncodingSpeed) -> &'static str {
-    speed.as_x264_preset()
-}
-
-pub(crate) fn drain_video_packets_with_durations(
-    encoder: &mut ffmpeg::encoder::video::Encoder,
-    output: &mut ffmpeg::format::context::Output,
-    stream_index: usize,
-    stream_time_base: ffmpeg::Rational,
-    draining: bool,
-    pending_packet_durations: &mut VideoPacketDurations,
-) -> Result<()> {
-    drain_video_packets_observed(
-        encoder,
-        output,
-        stream_index,
-        stream_time_base,
-        draining,
-        pending_packet_durations,
-        |_| {},
-    )
-}
-
-pub(crate) fn drain_video_packets_observed(
-    encoder: &mut ffmpeg::encoder::video::Encoder,
-    output: &mut ffmpeg::format::context::Output,
-    stream_index: usize,
-    stream_time_base: ffmpeg::Rational,
-    draining: bool,
-    pending_packet_durations: &mut VideoPacketDurations,
-    mut packet_received: impl FnMut(&mut ffmpeg::Packet),
-) -> Result<()> {
-    loop {
-        let mut packet = ffmpeg::Packet::empty();
-        match encoder.receive_packet(&mut packet) {
-            Ok(()) => {
-                pending_packet_durations.apply(&mut packet, draining);
-                packet_received(&mut packet);
-                packet.set_stream(stream_index);
-                packet.rescale_ts(encoder.time_base(), stream_time_base);
-                packet.write_interleaved(output).map_err(|err| {
-                    ScreenRecorderError::Export(format!(
-                        "failed to write encoded video packet: {err}"
-                    ))
-                })?;
-            }
-            Err(ffmpeg::Error::Eof) => break,
-            Err(err) if is_eagain(&err) && !draining => break,
-            Err(err) if is_eagain(&err) && draining => continue,
-            Err(err) => {
-                return Err(ScreenRecorderError::Export(format!(
-                    "failed to receive encoded video packet: {err}"
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn drain_audio_packets_with_callback<F>(
-    encoder: &mut ffmpeg::encoder::audio::Encoder,
-    draining: bool,
-    mut on_packet: F,
-) -> Result<()>
-where
-    F: FnMut(ffmpeg::Packet) -> Result<()>,
-{
-    loop {
-        let mut packet = ffmpeg::Packet::empty();
-        match encoder.receive_packet(&mut packet) {
-            Ok(()) => on_packet(packet)?,
-            Err(ffmpeg::Error::Eof) => break,
-            Err(err) if is_eagain(&err) && !draining => break,
-            Err(err) if is_eagain(&err) && draining => continue,
-            Err(err) => {
-                return Err(ScreenRecorderError::Export(format!(
-                    "failed to receive encoded audio packet: {err}"
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-struct BufferedAudioPackets {
-    encoder_time_base: ffmpeg::Rational,
-    packets: Vec<ffmpeg::Packet>,
-}
-
-struct AudioPacketWorker {
-    stream_index: usize,
-    stream_time_base: ffmpeg::Rational,
-    handle: thread::JoinHandle<Result<BufferedAudioPackets>>,
-}
-
-struct AudioPacketWorkerGuard {
-    worker: Option<AudioPacketWorker>,
-    cancel_flag: Arc<AtomicBool>,
-}
-
-impl AudioPacketWorkerGuard {
-    fn new(worker: Option<AudioPacketWorker>, cancel_flag: Arc<AtomicBool>) -> Self {
-        Self {
-            worker,
-            cancel_flag,
-        }
-    }
-
-    fn take(&mut self) -> Option<AudioPacketWorker> {
-        self.worker.take()
-    }
-}
-
-impl Drop for AudioPacketWorkerGuard {
-    fn drop(&mut self) {
-        if let Some(worker) = self.worker.take() {
-            self.cancel_flag.store(true, Ordering::Release);
-            let _ = join_audio_packet_worker(worker);
-        }
-    }
-}
-
-fn spawn_audio_packet_worker(
-    audio_encoder: ffmpeg::encoder::audio::Encoder,
-    stream_index: usize,
-    stream_time_base: ffmpeg::Rational,
-    mixed: AudioMixPlan,
-    cancel_flag: Arc<AtomicBool>,
-) -> Result<AudioPacketWorker> {
-    let handle = thread::Builder::new()
-        .name("snow-export-audio-encode".to_string())
-        .spawn(move || {
-            snow_core::qos::apply_current_thread();
-            let mut audio_encoder = audio_encoder;
-            let encoder_time_base = audio_encoder.time_base();
-            let packets =
-                collect_encoded_audio_packets(&mut audio_encoder, &mixed, Some(&cancel_flag))?;
-            Ok(BufferedAudioPackets {
-                encoder_time_base,
-                packets,
-            })
-        })
-        .map_err(|err| ScreenRecorderError::Io(std::io::Error::other(err)))?;
-    Ok(AudioPacketWorker {
-        stream_index,
-        stream_time_base,
-        handle,
-    })
-}
-
-fn join_audio_packet_worker(
-    worker: AudioPacketWorker,
-) -> Result<(BufferedAudioPackets, usize, ffmpeg::Rational)> {
-    let stream_index = worker.stream_index;
-    let stream_time_base = worker.stream_time_base;
-    let buffered = worker.handle.join().map_err(|panic| {
-        let message = if let Some(msg) = panic.downcast_ref::<&str>() {
-            (*msg).to_string()
-        } else if let Some(msg) = panic.downcast_ref::<String>() {
-            msg.clone()
-        } else {
-            "audio encode worker panicked".to_string()
-        };
-        ScreenRecorderError::Export(message)
-    })??;
-    Ok((buffered, stream_index, stream_time_base))
-}
-
-fn collect_encoded_audio_packets(
-    encoder: &mut ffmpeg::encoder::audio::Encoder,
-    mixed: &AudioMixPlan,
-    cancel_flag: Option<&Arc<AtomicBool>>,
-) -> Result<Vec<ffmpeg::Packet>> {
-    let input_layout = ffmpeg::ChannelLayout::default(i32::from(mixed.channels.max(1)));
-    let encoder_format = encoder.format();
-    let direct_render_target = if encoder.rate() == mixed.sample_rate_hz.max(1)
-        && encoder.channel_layout() == input_layout
-    {
-        match encoder_format {
-            ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Packed) => {
-                Some(AudioDirectRenderTarget::I16Packed)
-            }
-            _ => None,
-        }
-    } else {
-        None
-    };
-    let mut resampler = if direct_render_target.is_none() {
-        Some(
-            ffmpeg::software::resampling::Context::get(
-                ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Packed),
-                input_layout,
-                mixed.sample_rate_hz.max(1),
-                encoder_format,
-                encoder.channel_layout(),
-                encoder.rate(),
-            )
-            .map_err(|err| {
-                ScreenRecorderError::Export(format!("failed to create encode resampler: {err}"))
-            })?,
-        )
-    } else {
-        None
-    };
-
-    let frame_samples = {
-        let fs = encoder.frame_size() as usize;
-        if fs == 0 { 1024 } else { fs }
-    };
-    let variable_frame_size = encoder.frame_size() == 0;
-    let input_channels = usize::from(mixed.channels.max(1));
-    let frames_per_chunk = if variable_frame_size {
-        (mixed.sample_rate_hz as usize / 25).max(1)
-    } else {
-        frame_samples
-    };
-
-    let mut next_pts = 0i64;
-    let mut frame_cursor = 0usize;
-    let mut renderer = AudioMixRenderer::new(mixed)?;
-    let mut source = ffmpeg::frame::Audio::new(
-        direct_render_target
-            .map(AudioDirectRenderTarget::sample_format)
-            .unwrap_or(ffmpeg::format::Sample::I16(
-                ffmpeg::format::sample::Type::Packed,
-            )),
-        frames_per_chunk,
-        if direct_render_target.is_some() {
-            encoder.channel_layout()
-        } else {
-            input_layout
-        },
-    );
-    source.set_rate(if direct_render_target.is_some() {
-        encoder.rate()
-    } else {
-        mixed.sample_rate_hz.max(1)
-    });
-    let mut converted = ffmpeg::frame::Audio::empty();
-    #[cfg(target_endian = "big")]
-    let mut rendered_chunk = vec![0i16; frames_per_chunk * input_channels];
-    let estimated_packet_count = mixed
-        .target_frames
-        .div_ceil(frame_samples.max(1))
-        .saturating_add(8);
-    let mut packets = Vec::with_capacity(estimated_packet_count);
-
-    while frame_cursor < mixed.target_frames {
-        if let Some(flag) = cancel_flag {
-            check_canceled(flag)?;
-        }
-        let remaining_frames = mixed.target_frames - frame_cursor;
-        let take_frames = remaining_frames.min(frames_per_chunk);
-        let render_frames = if variable_frame_size {
-            take_frames
-        } else {
-            frames_per_chunk
-        };
-        if render_frames == 0 {
-            break;
-        }
-        frame_cursor += take_frames;
-
-        source.set_samples(render_frames);
-        let render_sample_count = render_frames * input_channels;
-        let direct_frame_ready = if let Some(target) = direct_render_target {
-            render_audio_chunk_direct(
-                &mut renderer,
-                frame_cursor - take_frames,
-                render_frames,
-                input_channels,
-                target,
-                &mut source,
-                #[cfg(target_endian = "big")]
-                &mut rendered_chunk,
-            )?;
-            true
-        } else {
-            let expected_bytes = render_sample_count * 2;
-            let source_data = source.data_mut(0);
-            if source_data.len() < expected_bytes {
-                return Err(ScreenRecorderError::Export(
-                    "allocated source audio frame is too small".to_string(),
-                ));
-            }
-
-            #[cfg(target_endian = "little")]
-            {
-                let source_samples = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        source_data.as_mut_ptr() as *mut i16,
-                        source_data.len() / std::mem::size_of::<i16>(),
-                    )
-                };
-                renderer.render_into(
-                    frame_cursor - take_frames,
-                    render_frames,
-                    &mut source_samples[..render_sample_count],
-                )?;
-            }
-            #[cfg(target_endian = "big")]
-            {
-                rendered_chunk.resize(render_sample_count, 0);
-                renderer.render_into(
-                    frame_cursor - take_frames,
-                    render_frames,
-                    &mut rendered_chunk,
-                )?;
-                for (i, sample) in rendered_chunk.iter().enumerate() {
-                    let bytes = sample.to_le_bytes();
-                    source_data[i * 2] = bytes[0];
-                    source_data[i * 2 + 1] = bytes[1];
-                }
-            }
-
-            resampler
-                .as_mut()
-                .ok_or_else(|| {
-                    ScreenRecorderError::Export(
-                        "audio encode resampler is unexpectedly uninitialized".to_string(),
-                    )
-                })?
-                .run(&source, &mut converted)
-                .map_err(|err| {
-                    ScreenRecorderError::Export(format!(
-                        "failed to resample audio for encoding: {err}"
-                    ))
-                })?;
-
-            if converted.samples() == 0 {
-                continue;
-            }
-            false
-        };
-
-        let sample_count = if direct_frame_ready {
-            source.samples()
-        } else {
-            converted.samples()
-        };
-        let current_pts = next_pts;
-        next_pts = next_pts.saturating_add(sample_count as i64);
-        if direct_frame_ready {
-            source.set_pts(Some(current_pts));
-            encoder.send_frame(&source)
-        } else {
-            converted.set_pts(Some(current_pts));
-            encoder.send_frame(&converted)
-        }
-        .map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to send audio frame to encoder: {err}"))
-        })?;
-        drain_audio_packets_with_callback(encoder, false, |packet| {
-            packets.push(packet);
-            Ok(())
-        })?;
-    }
-
-    if let Some(flag) = cancel_flag {
-        check_canceled(flag)?;
-    }
-    encoder.send_eof().map_err(|err| {
-        ScreenRecorderError::Export(format!("failed to finalize audio encoder: {err}"))
-    })?;
-    drain_audio_packets_with_callback(encoder, true, |packet| {
-        packets.push(packet);
-        Ok(())
-    })?;
-    Ok(packets)
-}
-
-#[derive(Clone, Copy, Debug)]
-enum AudioDirectRenderTarget {
-    I16Packed,
-}
-
-impl AudioDirectRenderTarget {
-    fn sample_format(self) -> ffmpeg::format::Sample {
-        match self {
-            Self::I16Packed => ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Packed),
-        }
-    }
-}
-
-#[allow(unused_variables)]
-fn render_audio_chunk_direct(
-    renderer: &mut AudioMixRenderer,
-    start_output_frame: usize,
-    render_frames: usize,
-    input_channels: usize,
-    target: AudioDirectRenderTarget,
-    source: &mut ffmpeg::frame::Audio,
-    #[cfg(target_endian = "big")] rendered_chunk_i16: &mut Vec<i16>,
-) -> Result<()> {
-    match target {
-        AudioDirectRenderTarget::I16Packed => {
-            let render_sample_count = render_frames * input_channels;
-            let expected_bytes = render_sample_count * 2;
-            let source_data = source.data_mut(0);
-            if source_data.len() < expected_bytes {
-                return Err(ScreenRecorderError::Export(
-                    "allocated source audio frame is too small".to_string(),
-                ));
-            }
-
-            #[cfg(target_endian = "little")]
-            {
-                let source_samples = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        source_data.as_mut_ptr() as *mut i16,
-                        source_data.len() / std::mem::size_of::<i16>(),
-                    )
-                };
-                renderer.render_into(
-                    start_output_frame,
-                    render_frames,
-                    &mut source_samples[..render_sample_count],
-                )?;
-            }
-            #[cfg(target_endian = "big")]
-            {
-                rendered_chunk_i16.resize(render_sample_count, 0);
-                renderer.render_into(
-                    start_output_frame,
-                    render_frames,
-                    &mut rendered_chunk_i16[..render_sample_count],
-                )?;
-                for (i, sample) in rendered_chunk_i16.iter().enumerate() {
-                    let bytes = sample.to_le_bytes();
-                    source_data[i * 2] = bytes[0];
-                    source_data[i * 2 + 1] = bytes[1];
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn write_buffered_audio_packets(
-    output: &mut ffmpeg::format::context::Output,
-    stream_index: usize,
-    stream_time_base: ffmpeg::Rational,
-    encoder_time_base: ffmpeg::Rational,
-    packets: &mut [ffmpeg::Packet],
-) -> Result<()> {
-    for packet in packets {
-        packet.set_stream(stream_index);
-        packet.rescale_ts(encoder_time_base, stream_time_base);
-        packet.write_interleaved(output).map_err(|err| {
-            ScreenRecorderError::Export(format!("failed to write encoded audio packet: {err}"))
-        })?;
-    }
-    Ok(())
-}
-
-fn encode_audio_samples(
-    output: &mut ffmpeg::format::context::Output,
-    encoder: &mut ffmpeg::encoder::audio::Encoder,
-    stream_index: usize,
-    stream_time_base: ffmpeg::Rational,
-    mixed: &AudioMixPlan,
-) -> Result<()> {
-    let encoder_time_base = encoder.time_base();
-    let mut packets = collect_encoded_audio_packets(encoder, mixed, None)?;
-    write_buffered_audio_packets(
-        output,
-        stream_index,
-        stream_time_base,
-        encoder_time_base,
-        &mut packets,
-    )
 }
 
 fn validate_bundle_artifact(
@@ -9421,6 +7082,15 @@ mod tests {
     }
 
     #[test]
+    fn legacy_export_defaults_keep_historical_cursor_and_recorded_audio() {
+        let editing = test_editing_session(true, true);
+        let request = editing.export_request();
+        assert!(request.mouse.visible);
+        assert!(request.audio_tracks.iter().all(|track| track.enabled));
+        assert!(!request.mouse.trail_enabled && !request.mouse.click_enabled);
+    }
+
+    #[test]
     fn normalize_request_disables_unrecorded_audio_tracks() {
         let editing = test_editing_session(false, false);
         let mut request = editing.export_request();
@@ -9477,10 +7147,10 @@ mod tests {
     #[test]
     fn collect_required_source_indices_deduplicates_adjacent_indices() {
         assert_eq!(
-            collect_required_source_indices(&[0, 0, 1, 1, 1, 3, 3, 8]),
+            collect_required_source_indices([0, 0, 1, 1, 1, 3, 3, 8].into_iter()),
             vec![0, 1, 3, 8]
         );
-        assert!(collect_required_source_indices(&[]).is_empty());
+        assert!(collect_required_source_indices([].into_iter()).is_empty());
     }
 
     #[test]
@@ -9518,8 +7188,7 @@ mod tests {
             &source,
             128,
             96,
-            3,
-            10,
+            FinalizedTimeline::new(300, 10).unwrap(),
             ExportFormat::Apng,
             VideoCodec::H264,
             false,
@@ -9528,6 +7197,7 @@ mod tests {
             &VideoEncodeConfig::default(),
             &performance,
             &cancel,
+            None,
             &None,
             |index, rgba| {
                 for pixel in rgba.chunks_exact_mut(4) {
@@ -9538,10 +7208,9 @@ mod tests {
         )
         .unwrap();
         let retime = RetimePlan {
-            source_indices: vec![0, 0, 1, 2],
-            output_timestamps_ms: vec![0, 100, 200, 300],
-            frame_count: 4,
-            output_duration_ms: 400,
+            source_starts_ms: vec![0, 200, 300],
+            speed: 1.0,
+            timeline: FinalizedTimeline::new(400, 10).unwrap(),
         };
         let tracks = MouseTracks {
             click_downs: vec![MouseClickDown {
@@ -9575,6 +7244,7 @@ mod tests {
                     &tracks,
                     &mouse,
                     &cancel,
+                    None,
                     &None,
                 )
                 .unwrap();
@@ -9596,6 +7266,7 @@ mod tests {
                     &VideoEncodeConfig::default(),
                     &performance,
                     &cancel,
+                    None,
                     &None,
                 )
                 .unwrap();
@@ -9612,7 +7283,7 @@ mod tests {
                 }
                 assert_eq!(
                     corner,
-                    colors[retime.source_indices[usize::from(delay / 10)]],
+                    colors[retime.source_index(usize::from(delay / 10))],
                     "overlay={overlay}, frame={count}"
                 );
                 delay += frame.delay;
@@ -9674,8 +7345,7 @@ mod tests {
                 &output_path,
                 16,
                 16,
-                2,
-                10,
+                FinalizedTimeline::new(200, 10).unwrap(),
                 format,
                 codec,
                 false,
@@ -9684,6 +7354,7 @@ mod tests {
                 &VideoEncodeConfig::default(),
                 &performance,
                 &cancel_flag,
+                None,
                 &None,
                 |index, rgba| {
                     for (pixel_index, pixel) in rgba.chunks_exact_mut(4).enumerate() {
@@ -9747,8 +7418,7 @@ mod tests {
             &output_path,
             640,
             360,
-            2,
-            10,
+            FinalizedTimeline::new(200, 10).unwrap(),
             ExportFormat::Mp4,
             VideoCodec::H264,
             true,
@@ -9757,6 +7427,7 @@ mod tests {
             &VideoEncodeConfig::default(),
             &ExportPerformanceConfig::default(),
             &cancel_flag,
+            None,
             &None,
             |index, rgba| {
                 for pixel in rgba.chunks_exact_mut(4) {
@@ -9809,19 +7480,6 @@ mod tests {
     }
 
     #[test]
-    fn hardware_only_never_allows_software_encoder_fallback() {
-        assert!(!software_encode_fallback_allowed(
-            ExportExecutionMode::HardwareOnly
-        ));
-        assert!(!software_encode_fallback_allowed(
-            ExportExecutionMode::SoftwareOnly
-        ));
-        assert!(software_encode_fallback_allowed(
-            ExportExecutionMode::HardwarePreferred
-        ));
-    }
-
-    #[test]
     fn hardware_video_encode_allowed_matches_mode() {
         assert!(hardware_video_encode_allowed(
             ExportExecutionMode::HardwarePreferred
@@ -9835,146 +7493,166 @@ mod tests {
     }
 
     #[test]
-    fn packet_copy_path_requires_non_overlay_and_matching_fps() {
-        assert!(can_use_video_packet_copy_path(
-            ExportFormat::Mp4,
+    fn retiming_uses_a_rational_iterator_without_output_sized_storage() {
+        let index = [
+            VideoIndexEntry {
+                timestamp_ms: 0,
+                duration_ms: 1000,
+            },
+            VideoIndexEntry {
+                timestamp_ms: 1000,
+                duration_ms: 1000,
+            },
+        ];
+        let plan = build_retime_plan_from_index(&index, 0.25, 144).unwrap();
+        assert_eq!(plan.frame_count(), 1152);
+        assert_eq!(plan.source_starts_ms.len(), 2);
+        assert_eq!(plan.timestamp_ms(144), 1000);
+        assert_eq!(plan.source_index(576), 1);
+        assert_eq!(
+            plan.source_indices().collect::<Vec<_>>(),
+            (0..plan.frame_count())
+                .map(|index| plan.source_index(index))
+                .collect::<Vec<_>>()
+        );
+        let invalid = [
+            VideoIndexEntry {
+                timestamp_ms: 50,
+                duration_ms: 1,
+            },
+            VideoIndexEntry {
+                timestamp_ms: 40,
+                duration_ms: 1,
+            },
+        ];
+        assert!(build_retime_plan_from_index(&invalid, 1.0, 30).is_err());
+        let fractional = build_retime_plan_from_index(
+            &[VideoIndexEntry {
+                timestamp_ms: 0,
+                duration_ms: 1001,
+            }],
             1.0,
-            60,
-            60,
-            false,
-            false,
-            true,
-        ));
-        assert!(can_use_video_packet_copy_path(
-            ExportFormat::Avi,
-            0.5,
-            24,
-            24,
-            false,
-            false,
-            true,
-        ));
-
-        assert!(!can_use_video_packet_copy_path(
-            ExportFormat::Mp4,
-            1.0,
-            60,
-            60,
-            true,
-            false,
-            true,
-        ));
-        assert!(!can_use_video_packet_copy_path(
-            ExportFormat::Gif,
-            1.0,
-            20,
-            20,
-            false,
-            false,
-            true,
-        ));
-        assert!(!can_use_video_packet_copy_path(
-            ExportFormat::Mp4,
-            1.0,
-            60,
-            30,
-            false,
-            false,
-            true,
-        ));
-        assert!(!can_use_video_packet_copy_path(
-            ExportFormat::Mp4,
-            0.0,
-            60,
-            60,
-            false,
-            false,
-            true,
-        ));
-        assert!(!can_use_video_packet_copy_path(
-            ExportFormat::Mp4,
-            f32::NAN,
-            60,
-            60,
-            false,
-            false,
-            true,
-        ));
-        assert!(!can_use_video_packet_copy_path(
-            ExportFormat::Mp4,
-            1.0,
-            60,
-            60,
-            false,
-            true,
-            true
-        ));
-        assert!(!can_use_video_packet_copy_path(
-            ExportFormat::Mp4,
-            1.0,
-            60,
-            60,
-            false,
-            false,
-            false
-        ));
+            83,
+        )
+        .unwrap();
+        let canonical = FinalizedTimeline::new(1001, 83).unwrap();
+        assert_eq!(fractional.timeline, canonical);
+        assert_eq!(fractional.timestamp_ms(11), 132);
+        for frame in canonical.iter() {
+            assert_eq!(
+                fractional.timestamp_ms(frame.index as usize),
+                frame.timestamp_ms
+            );
+        }
     }
 
     #[test]
-    fn direct_passthrough_requires_mp4_no_audio_unity_speed_and_no_overlay() {
-        let editing = test_editing_session(false, false);
+    fn progress_retains_only_the_latest_monotonic_update() {
+        let (reporter, receiver) = ProgressReporter::channel();
+        let tx = Some(reporter);
+        for index in 0..1000 {
+            emit_progress(
+                &tx,
+                ExportStage::VideoEncode,
+                index as f32 / 10.0,
+                30.0,
+                None,
+            );
+        }
+        assert_eq!(receiver.len(), 1);
+        assert_eq!(receiver.try_recv().unwrap().percent, 99.9);
+        emit_progress(&tx, ExportStage::Decode, 20.0, 0.0, None);
+        assert_eq!(receiver.try_recv().unwrap().percent, 99.9);
+        emit_progress(&tx, ExportStage::Finalize, 100.0, 0.0, Some(0));
+        assert_eq!(receiver.try_recv().unwrap().percent, 100.0);
+        emit_progress(&tx, ExportStage::Finalize, f32::NAN, 0.0, None);
+        assert_eq!(receiver.try_recv().unwrap().percent, 100.0);
+    }
+
+    #[test]
+    fn bundled_media_exports_real_mp4_with_requested_encoder_quality() {
+        use snow_recording_model::{
+            RecordingBundleAsset, write_mouse_records, write_recording_bundle,
+        };
+        let directory = tempdir().unwrap();
+        let bundle = directory.path().join("source.snowrec");
+        let index = directory.path().join("index.bin");
+        let mouse = directory.path().join("mouse.bin");
+        let source = directory.path().join("source.mp4");
+        let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+            loop_animated_images: true,
+            output_path: source.clone(),
+            format: ExportFormat::Mp4,
+            width: 64,
+            height: 48,
+            fps: 10,
+            codec: VideoCodec::H264,
+            prefer_hardware_h264: false,
+            execution_mode: ExportExecutionMode::SoftwareOnly,
+            software_h264_priority: crate::SoftwareH264Priority::X264First,
+            video: VideoEncodeConfig {
+                quality: 20,
+                speed: VideoEncodingSpeed::UltraFast,
+            },
+            encode_threads: 1,
+            audio: Vec::new(),
+        })
+        .unwrap();
+        encoder.push_rgba_frame(0, &vec![80; 64 * 48 * 4]).unwrap();
+        encoder
+            .push_rgba_frame(100, &vec![160; 64 * 48 * 4])
+            .unwrap();
+        encoder.finish_at_pts(2).unwrap();
+        fs::rename(&source, &bundle).unwrap();
+        let mut bytes = VIDEO_INDEX_MAGIC.to_vec();
+        for frame in 0..2u64 {
+            bytes.extend_from_slice(&frame.to_le_bytes());
+            bytes.extend_from_slice(&(frame * 100).to_le_bytes());
+            bytes.extend_from_slice(&100u32.to_le_bytes());
+        }
+        fs::write(&index, bytes).unwrap();
+        write_mouse_records(&mouse, &MouseStore::new()).unwrap();
+        let mut fixture = test_editing_session(false, false);
+        fixture.manifest.width = 64;
+        fixture.manifest.height = 48;
+        fixture.manifest.fps = 10;
+        fixture.manifest.audio_tracks.clear();
+        write_recording_bundle(
+            &bundle,
+            &fixture.manifest,
+            &[
+                RecordingBundleAsset {
+                    kind: BundleAssetKind::VideoIndex,
+                    asset_id: None,
+                    path: &index,
+                },
+                RecordingBundleAsset {
+                    kind: BundleAssetKind::MouseStore,
+                    asset_id: None,
+                    path: &mouse,
+                },
+            ],
+        )
+        .unwrap();
+        fixture.artifact.bundle_path = bundle.clone();
+        fixture.artifact.local_paths.video_intermediate_path = bundle;
+        let editing = EditingSession::open(fixture.artifact).unwrap();
         let mut request = editing.export_request();
-        request.format = ExportFormat::Mp4;
-        request.output_path = PathBuf::from("recordings/output.mp4");
-        request.playback_speed = 1.0;
-
-        assert!(can_use_direct_video_passthrough_copy_path(
-            &editing.manifest,
-            &request,
-            false
-        ));
-
-        request.audio_tracks.push(ExportAudioTrackRequest {
-            track_id: "system".to_string(),
-            enabled: true,
-            volume: 1.0,
-        });
-        assert!(!can_use_direct_video_passthrough_copy_path(
-            &editing.manifest,
-            &request,
-            false
-        ));
-        request.audio_tracks.clear();
-
-        request.playback_speed = 1.25;
-        assert!(!can_use_direct_video_passthrough_copy_path(
-            &editing.manifest,
-            &request,
-            false
-        ));
-        request.playback_speed = 1.0;
-
-        request.format = ExportFormat::Avi;
-        assert!(!can_use_direct_video_passthrough_copy_path(
-            &editing.manifest,
-            &request,
-            false
-        ));
-        request.format = ExportFormat::Mp4;
-
-        request.output_path = PathBuf::from("recordings/output.avi");
-        assert!(!can_use_direct_video_passthrough_copy_path(
-            &editing.manifest,
-            &request,
-            false
-        ));
-        request.output_path = PathBuf::from("recordings/output.mp4");
-
-        assert!(!can_use_direct_video_passthrough_copy_path(
-            &editing.manifest,
-            &request,
-            true
-        ));
+        request.output_path = directory.path().join("published.mp4");
+        request.video.quality = 95;
+        request.performance.mode = ExportExecutionMode::SoftwareOnly;
+        request.performance.encode_threads = 1;
+        let result = editing.export(request).unwrap();
+        assert_eq!(result.runtime_report.path, ExportPathKind::FullTranscode);
+        assert_eq!(
+            result.runtime_report.video_encoder.as_deref(),
+            Some("libx264")
+        );
+        let bytes = fs::read(&result.output_path).unwrap();
+        assert_eq!(&bytes[4..8], b"ftyp");
+        let input = ffmpeg::format::input(&result.output_path).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        assert_eq!(stream.parameters().id(), ffmpeg::codec::Id::H264);
     }
 
     #[test]
@@ -10135,6 +7813,145 @@ mod tests {
         assert_eq!(reader.sample_at(0, 1), samples[1]);
         assert_eq!(reader.sample_at(1, 0), samples[2]);
         assert_eq!(reader.sample_at(1, 1), samples[3]);
+    }
+
+    #[test]
+    fn generated_export_keeps_the_accepted_endpoint_and_cancels_before_publication() {
+        let directory = tempdir().unwrap();
+        let timeline = FinalizedTimeline::new(1001, 83).unwrap();
+        let performance = ExportPerformanceConfig {
+            mode: ExportExecutionMode::SoftwareOnly,
+            encode_threads: 1,
+            ..Default::default()
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let path = directory.path().join("exact.mp4");
+        export_video_generated(
+            &path,
+            32,
+            24,
+            timeline,
+            ExportFormat::Mp4,
+            VideoCodec::H264,
+            false,
+            None,
+            192,
+            &VideoEncodeConfig::default(),
+            &performance,
+            &cancel,
+            None,
+            &None,
+            |_, rgba| {
+                rgba.chunks_exact_mut(4)
+                    .for_each(|pixel| pixel.copy_from_slice(&[20, 80, 120, 255]));
+                Ok(())
+            },
+        )
+        .unwrap();
+        let input = ffmpeg::format::input(&path).unwrap();
+        let video = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        use ffmpeg::Rescale;
+        let represented_ms = video.duration().rescale(video.time_base(), (1, 1000));
+        assert!(
+            (represented_ms - 1001).abs() <= 1,
+            "container time-base quantization must stay within one millisecond of accepted Stop"
+        );
+
+        let canceled_path = directory.path().join("canceled.mp4");
+        let cancellation = CancellationToken::default();
+        let result = export_video_generated(
+            &canceled_path,
+            32,
+            24,
+            timeline,
+            ExportFormat::Mp4,
+            VideoCodec::H264,
+            false,
+            None,
+            192,
+            &VideoEncodeConfig::default(),
+            &performance,
+            &cancel,
+            Some(&cancellation),
+            &None,
+            |index, rgba| {
+                rgba.fill(80);
+                if index as u64 + 1 == timeline.frame_count() {
+                    cancellation.cancel();
+                }
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(ScreenRecorderError::ExportCanceled)));
+        assert!(!canceled_path.exists());
+    }
+
+    #[test]
+    fn legacy_streaming_audio_preserves_positions_with_bounded_retimed_chunks() {
+        let directory = tempdir().unwrap();
+        let bundle = directory.path().join("audio.bundle");
+        let input_frames = 66_150;
+        let mut file = fs::File::create(&bundle).unwrap();
+        write_pcm_i16_le(&mut file, &vec![1000; input_frames * 2]);
+        file.flush().unwrap();
+        let plan = AudioMixPlan {
+            bundle_path: bundle,
+            sample_rate_hz: 44_100,
+            channels: 2,
+            playback_speed: 1.5,
+            target_frames: 44_100,
+            input_frame_count: input_frames,
+            tracks: vec![AudioTrackPlan {
+                asset_offset: 0,
+                frame_count: input_frames,
+                volume: 0.75,
+            }],
+        };
+        let path = directory.path().join("audio.mp4");
+        let cancel = Arc::new(AtomicBool::new(false));
+        let progress = None;
+        let mut encoder = EditingVideoEncoder::create(
+            &path,
+            32,
+            24,
+            83,
+            ExportFormat::Mp4,
+            VideoCodec::H264,
+            false,
+            Some(&plan),
+            192,
+            &VideoEncodeConfig::default(),
+            &ExportPerformanceConfig {
+                mode: ExportExecutionMode::SoftwareOnly,
+                encode_threads: 1,
+                ..Default::default()
+            },
+            false,
+            None,
+            83,
+            &cancel,
+            None,
+            &progress,
+        )
+        .unwrap();
+        let mut frame = ffmpeg::frame::Video::new(encoder.encoder.input_pixel_format(), 32, 24);
+        frame.data_mut(0).fill(80);
+        frame.data_mut(1).fill(128);
+        frame.data_mut(2).fill(128);
+        let scheduled = Cell::new(0);
+        for _ in 0..83 {
+            encoder
+                .queue_prepared_frame(&frame, 1, true, &scheduled)
+                .unwrap();
+            assert!(encoder.audio_samples.len() <= 4096 * 2);
+        }
+        assert_eq!(encoder.audio_cursor, 44_100);
+        let telemetry = encoder.finish(1000).unwrap();
+        assert_eq!(telemetry.audio_encoder.as_deref(), Some("aac"));
+        let input = ffmpeg::format::input(&path).unwrap();
+        let audio = input.streams().best(ffmpeg::media::Type::Audio).unwrap();
+        use ffmpeg::Rescale;
+        assert!((1000..=1030).contains(&audio.duration().rescale(audio.time_base(), (1, 1000))));
     }
 
     #[test]
@@ -10858,95 +8675,77 @@ mod tests {
         assert_eq!(optimized.data(1), reference.data(1));
     }
     #[test]
-    fn buffered_export_matches_reordered_packets_to_submitted_durations() {
-        ensure_ffmpeg_initialized().unwrap();
+    fn prepared_export_preserves_reordered_pts_and_final_hold_duration() {
         let directory = tempdir().unwrap();
         let path = directory.path().join("reordered.mp4");
-        let mut output = ffmpeg::format::output(&path).unwrap();
-        let codec = ffmpeg::encoder::find_by_name("libx264").unwrap();
-        let mut video = ffmpeg::codec::context::Context::new_with_codec(codec)
-            .encoder()
-            .video()
-            .unwrap();
-        video.set_width(64);
-        video.set_height(64);
-        video.set_format(ffmpeg::format::Pixel::YUV420P);
-        video.set_time_base((1, 30));
-        video.set_frame_rate(Some((30, 1)));
-        video.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
-        configure_codec_threads(&mut video, 1, ffmpeg::codec::threading::Type::Frame);
-        let mut encoder = open_video_encoder(
-            video,
-            &codec,
+        let cancel = Arc::new(AtomicBool::new(false));
+        let progress = None;
+        let mut encoder = EditingVideoEncoder::create(
+            &path,
+            64,
+            64,
+            30,
+            ExportFormat::Mp4,
+            VideoCodec::H264,
+            false,
+            None,
+            192,
             &VideoEncodeConfig {
                 quality: 80,
                 speed: VideoEncodingSpeed::VeryFast,
             },
+            &ExportPerformanceConfig {
+                mode: ExportExecutionMode::SoftwareOnly,
+                encode_threads: 1,
+                ..Default::default()
+            },
+            false,
+            None,
+            35,
+            &cancel,
+            None,
+            &progress,
         )
         .unwrap();
-        {
-            let mut stream = output.add_stream(codec).unwrap();
-            stream.set_time_base((1, 30));
-            stream.set_parameters(&encoder);
-        }
-        output.write_header().unwrap();
-        let time_base = output.stream(0).unwrap().time_base();
-        let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, 64, 64);
+        let mut frame = ffmpeg::frame::Video::new(encoder.encoder.input_pixel_format(), 64, 64);
         frame.data_mut(0).fill(80);
         frame.data_mut(1).fill(128);
         frame.data_mut(2).fill(128);
-        let mut pending = VideoPacketDurations::default();
-        let mut gif_delta = crate::gif_palette::GifDeltaState::default();
         let count = Cell::new(0);
-        let start = Instant::now();
         let mut expected = Vec::new();
         for duration in [1, 4, 2, 7, 3, 5, 2, 11] {
             expected.push((count.get() as i64, duration as i64));
-            send_video_frame_with_duration_and_progress(
-                &mut encoder,
-                &mut output,
-                0,
-                time_base,
-                &mut frame,
-                duration,
-                &mut pending,
-                &mut gif_delta,
-                &count,
-                35,
-                &start,
-                &None,
-            )
-            .unwrap();
+            encoder
+                .queue_prepared_frame(&frame, duration, false, &count)
+                .unwrap();
         }
-        assert_eq!(
-            pending.len(),
-            expected.len(),
-            "fixture must remain in lookahead"
-        );
-        encoder.send_eof().unwrap();
-        let mut packets = Vec::new();
-        drain_video_packets_observed(
-            &mut encoder,
-            &mut output,
-            0,
-            time_base,
-            true,
-            &mut pending,
-            |packet| packets.push((packet.pts().unwrap(), packet.duration())),
-        )
-        .unwrap();
-        output.write_trailer().unwrap();
-        assert!(packets.windows(2).any(|pair| pair[0].0 > pair[1].0));
-        // Only the last decode packet may be extended to cover the track tail.
-        let tail = packets.pop().unwrap();
-        let original_tail = expected.iter().position(|(pts, _)| *pts == tail.0).unwrap();
-        assert!(tail.1 >= expected.remove(original_tail).1);
-        packets.sort_unstable();
-        assert_eq!(packets, expected);
-        assert!(pending.is_empty());
-        drop(output);
-        let input = ffmpeg::format::input(&path).unwrap();
+        encoder.finish(1167).unwrap();
         use ffmpeg::Rescale;
+        let mut input = ffmpeg::format::input(&path).unwrap();
+        let stream = input.streams().best(ffmpeg::media::Type::Video).unwrap();
+        let time_base = stream.time_base();
+        let index = stream.index();
+        let mut packets: Vec<_> = input
+            .packets()
+            .filter_map(|(stream, packet)| {
+                (stream.index() == index).then(|| {
+                    (
+                        packet.pts().unwrap().rescale(time_base, (1, 30)),
+                        packet.duration().rescale(time_base, (1, 30)),
+                    )
+                })
+            })
+            .collect();
+        assert!(packets.windows(2).any(|pair| pair[0].0 > pair[1].0));
+        // MP4 stores decode-order sample durations; reordered B-frame packet
+        // durations after demux need not equal the submitted presentation holds.
+        // Every presentation PTS and the exclusive final endpoint must survive.
+        assert!(packets.iter().all(|(_, duration)| *duration > 0));
+        packets.sort_unstable();
+        assert_eq!(
+            packets.iter().map(|(pts, _)| *pts).collect::<Vec<_>>(),
+            expected.iter().map(|(pts, _)| *pts).collect::<Vec<_>>()
+        );
         assert_eq!(input.duration().rescale((1, 1_000_000), (1, 30)), 35);
     }
 

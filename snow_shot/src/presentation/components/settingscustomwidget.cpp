@@ -1,6 +1,13 @@
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION && SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/presentation/components/texttranslationsettingswidget.h"
+#endif
+
+#include "snow_shot/presentation/editionfeatures.h"
 
 #include "snow_shot/presentation/components/toolbareditorsettingswidget.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
@@ -1216,6 +1223,7 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
         heading->addWidget(m_copy);
         layout->addLayout(heading);
         m_help = new QLabel(this);
+        m_help->setObjectName(QStringLiteral("settings-mcp-help"));
         m_help->setWordWrap(true);
         layout->addWidget(m_help);
         m_config = new adqt::widgets::AdTextEdit(this);
@@ -1235,6 +1243,7 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
         m_config->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
         layout->addWidget(m_config);
         m_endpoint = new QLabel(this);
+        m_endpoint->setObjectName(QStringLiteral("settings-mcp-endpoint"));
         m_endpoint->setTextFormat(Qt::PlainText);
         m_endpoint->setWordWrap(true);
         m_endpoint->setTextInteractionFlags(Qt::TextSelectableByMouse |
@@ -1270,30 +1279,34 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
     void retranslateUi() override {
         m_title->setText(
             QCoreApplication::translate("ScreenshotMcpSettings", "MCP client configuration"));
+#if SNOW_SHOT_EDITION_MINI
+        m_help->setText(
+            QCoreApplication::translate(
+                "ScreenshotMcpSettings",
+                "Add this configuration to your MCP client, then restart the client to connect. "
+                "Keep %1 running while using MCP.")
+                .arg(snow_shot::app::edition::productName()));
+#else
         m_help->setText(QCoreApplication::translate(
             "ScreenshotMcpSettings",
             "Add this configuration to your MCP client, then restart the client to connect. "
             "Keep Snow Shot running while using MCP."));
+#endif
         updateCopyText();
         const QString executable = QDir(QCoreApplication::applicationDirPath())
-                                       .filePath(
-#ifdef Q_OS_WIN
-                                           QStringLiteral("snow-shot-mcp.exe")
-#else
-                                           QStringLiteral("snow-shot-mcp")
-#endif
-                                       );
+                                       .filePath(snow_shot::app::edition::mcpName());
         QJsonObject server;
         server.insert(QStringLiteral("command"), executable);
         server.insert(QStringLiteral("args"), QJsonArray{});
         QJsonObject servers;
-        servers.insert(QStringLiteral("snow-shot"), server);
+        servers.insert(snow_shot::app::edition::productId(), server);
         QJsonObject config;
         config.insert(QStringLiteral("mcpServers"), servers);
         m_config->setPlainText(QString::fromUtf8(QJsonDocument(config).toJson()));
         const QString endpoint =
             QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
-                .filePath(QStringLiteral("SnowShot/mcp/snow-shot-mcp.json"));
+                .filePath(snow_shot::app::edition::registryName() + QStringLiteral("/mcp/") +
+                          snow_shot::app::edition::productId() + QStringLiteral("-mcp.json"));
         m_endpoint->setText(
             QCoreApplication::translate("ScreenshotMcpSettings", "Local endpoint descriptor: %1")
                 .arg(QDir::toNativeSeparators(endpoint)));
@@ -1353,9 +1366,17 @@ SettingsCustomWidget* createSettingsCustomWidget(
     case SettingsCustomRenderer::PermissionMicrophone:
         return nullptr;
     case SettingsCustomRenderer::TextTranslationConfigurations:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION && SNOW_SHOT_ENABLE_API_CONFIGURATION
         return new TextTranslationSettingsWidget(runtimeSession, parent);
+#else
+        return nullptr;
+#endif
     case SettingsCustomRenderer::CustomAiModels:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
         return new CustomAiModelsSettingsWidget(runtimeSession, parent);
+#else
+        return nullptr;
+#endif
     case SettingsCustomRenderer::StorageStatus:
         return new StorageStatusSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::DrawingToolbarEditor:

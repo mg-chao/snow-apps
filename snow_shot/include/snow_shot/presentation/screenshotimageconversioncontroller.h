@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSIONCONTROLLER_H
 
 #include "snow_shot/presentation/screenshotimageconversion.h"
+#include "snow_shot/app/edition.h"
 
 #include <QTimer>
 
@@ -10,6 +11,7 @@ namespace adqt::widgets {
 class AdModal;
 }
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 class ScreenshotImageConversionController final : public QObject {
     Q_OBJECT
   public:
@@ -25,6 +27,7 @@ class ScreenshotImageConversionController final : public QObject {
     void openSettings(QWidget* owner);
     void seed(const QString& key, const QVector<ScreenshotImageConversionEntry>& entries);
     [[nodiscard]] QVector<ScreenshotImageConversionEntry> entries(const QString& key) const;
+
     [[nodiscard]] State state() const {
         return m_state;
     }
@@ -70,5 +73,7 @@ class ScreenshotImageConversionController final : public QObject {
     SnowShotApiClient::RequestToken m_conversionToken = 0;
     SnowShotApiClient::RequestToken m_settingsToken = 0;
 };
+
+#endif // SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSIONCONTROLLER_H

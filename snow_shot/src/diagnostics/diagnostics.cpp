@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "diagnosticsbridge.h"
@@ -1065,7 +1066,8 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
         impl.ownsHandler = true;
     }
     record(QtInfoMsg, QStringLiteral("snow_shot.app"), QStringLiteral("session.start"), {},
-           {{QStringLiteral("version"), impl.options.version},
+           {{QStringLiteral("product"), app::edition::productId()},
+            {QStringLiteral("version"), impl.options.version},
             {QStringLiteral("revision"), impl.options.revision},
             {QStringLiteral("build"), impl.options.buildConfiguration},
             {QStringLiteral("qt"), QString::fromLatin1(qVersion())},

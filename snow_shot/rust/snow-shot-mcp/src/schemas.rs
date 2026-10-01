@@ -466,9 +466,13 @@ struct Scrolling {
 #[serde(rename_all = "snake_case")]
 enum RecognitionKind {
     Text,
+    #[cfg(not(feature = "mini"))]
     Table,
+    #[cfg(not(feature = "mini"))]
     Qr,
+    #[cfg(not(feature = "mini"))]
     Markdown,
+    #[cfg(not(feature = "mini"))]
     Html,
 }
 #[derive(Deserialize, JsonSchema)]
@@ -552,11 +556,17 @@ enum RecognitionAction {
     ResetText,
     Format,
     Punctuation,
+    #[cfg(not(feature = "mini"))]
     SelectCells,
+    #[cfg(not(feature = "mini"))]
     SetCell,
+    #[cfg(not(feature = "mini"))]
     MergeCells,
+    #[cfg(not(feature = "mini"))]
     SplitCells,
+    #[cfg(not(feature = "mini"))]
     ResetTable,
+    #[cfg(not(feature = "mini"))]
     ShowOriginal,
     Undo,
     Redo,
@@ -567,14 +577,19 @@ struct EditRecognition {
     action: RecognitionAction,
     #[serde(default)]
     text: Option<String>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     value: Option<String>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     range: Option<[u32; 4]>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     row: Option<u32>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     column: Option<u32>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     enabled: Option<bool>,
 }
@@ -604,7 +619,9 @@ enum RecognitionOutput {
 #[serde(rename_all = "snake_case")]
 enum RecognitionFormat {
     Text,
+    #[cfg(not(feature = "mini"))]
     Html,
+    #[cfg(not(feature = "mini"))]
     Markdown,
     Json,
 }
@@ -808,6 +825,15 @@ fn model<T: JsonSchema + DeserializeOwned>(
         .clone())
 }
 pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, serde_json::Error> {
+    if !crate::edition::method_enabled(name)
+        || input
+            .as_ref()
+            .is_some_and(|value| !crate::edition::input_enabled(name, value))
+    {
+        return Err(serde::de::Error::custom(
+            "This operation is unavailable in the compiled edition",
+        ));
+    }
     match name {
         "snow_shot_mcp_status" => model::<Empty>(input),
         "snow_shot_screenshot_set_selection_style" => model::<Mutation<SelectionStyle>>(input),
@@ -817,6 +843,7 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
         "snow_shot_screenshot_scrolling" => model::<Mutation<Scrolling>>(input),
         "snow_shot_screenshot_scroll_once" => model::<Mutation<ScrollOnce>>(input),
         "snow_shot_screenshot_recognize" => model::<Mutation<Recognize>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_screenshot_translate" => model::<Mutation<Empty>>(input),
         "snow_shot_screenshot_auto_filter" => model::<Mutation<AutoFilter>>(input),
         "snow_shot_screenshot_operation" => model::<Operation>(input),
@@ -846,6 +873,50 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn full_only_tools_and_recognition_fields_follow_the_compiled_edition() {
+        for name in [
+            "snow_shot_screenshot_translate",
+            "snow_shot_models_list",
+            "snow_shot_models_update",
+            "snow_shot_credentials_set",
+            "snow_shot_translation_catalog",
+            "snow_shot_translation_start",
+        ] {
+            assert_eq!(schema(name, None).is_ok(), !crate::edition::MINI, "{name}");
+            let included = crate::server::TOOLS
+                .iter()
+                .chain(domains::TOOLS.iter())
+                .any(|(tool, _, _)| *tool == name);
+            assert_eq!(included, !crate::edition::MINI, "{name}");
+        }
+        for name in [
+            "snow_shot_screenshot_edit_recognition",
+            "snow_shot_document_edit_recognition",
+        ] {
+            let published = schema(name, None).unwrap();
+            for (field, value) in [
+                ("value", json!("cell")),
+                ("range", json!([0, 0, 1, 1])),
+                ("row", json!(0)),
+                ("column", json!(0)),
+                ("enabled", json!(true)),
+            ] {
+                assert_eq!(
+                    published["properties"].get(field).is_some(),
+                    !crate::edition::MINI,
+                    "{name}: {field}"
+                );
+                let mut arguments = if name.contains("screenshot") {
+                    json!({"session_id":"s","expected_revision":1,"action":"set_text","text":"edited"})
+                } else {
+                    json!({"document_id":"d","expected_revision":1,"expected_recognition_revision":1,"action":"set_text","text":"edited"})
+                };
+                arguments[field] = value;
+                assert_eq!(schema(name, Some(arguments)).is_ok(), !crate::edition::MINI);
+            }
+        }
+    }
+    #[test]
     fn every_screenshot_tool_accepts_its_checked_input_contract() {
         let fixture: Value =
             serde_json::from_str(include_str!("../../../tests/mcp_contract_fixtures.json"))
@@ -853,6 +924,9 @@ mod tests {
         let mut covered = std::collections::HashSet::new();
         for case in fixture["fixtures"].as_array().unwrap() {
             let name = case["name"].as_str().unwrap();
+            if !crate::edition::method_enabled(name) {
+                continue;
+            }
             assert!(covered.insert(name), "duplicate contract: {name}");
             assert!(
                 schema(name, Some(case["arguments"].clone())).is_ok(),
@@ -871,6 +945,7 @@ mod tests {
             covered,
             crate::server::TOOLS
                 .iter()
+                .filter(|(name, _, _)| crate::edition::method_enabled(name))
                 .map(|(name, _, _)| *name)
                 .collect()
         );
@@ -911,7 +986,7 @@ mod tests {
             )
             .is_err()
         );
-        assert!(schema("snow_shot_screenshot_edit_recognition", Some(json!({"session_id":"s","expected_revision":1,"action":"set_cell","row":0,"column":1,"text":"value"}))).is_ok());
+        assert_eq!(schema("snow_shot_screenshot_edit_recognition", Some(json!({"session_id":"s","expected_revision":1,"action":"set_cell","row":0,"column":1,"text":"value"}))).is_ok(), !crate::edition::MINI);
         assert!(
             schema(
                 "snow_shot_screenshot_undo",

@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 #include "snow_shot/presentation/screenshotocrtextlayer.h"
 #include "snow_shot/presentation/screenshotimageconversion.h"
+#include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
 #include <optional>
 
@@ -188,11 +189,23 @@ class ScreenshotRecognitionWindow final : public QWidget {
     QWidget* m_textEditorContainer = nullptr;
     QTextEdit* m_textEditor = nullptr;
     adqt::widgets::AdSpin* m_textEditorSpin = nullptr;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     QTextBrowser* m_qrBrowser = nullptr;
     bool m_qrDetectLinks = true;
+#else
+    static constexpr QWidget* m_qrBrowser = nullptr;
+#endif
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     ScreenshotImageConversionView* m_conversionView = nullptr;
+#else
+    static constexpr QWidget* m_conversionView = nullptr;
+#endif
     ScreenshotFormattedTextLayer* m_formattedTextLayer = nullptr;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     ScreenshotTableEditor* m_tableEditor = nullptr;
+#else
+    static constexpr QWidget* m_tableEditor = nullptr;
+#endif
     QRectF m_canvasSelection;
     qreal m_formattedTextDevicePixelRatio = 1.0;
     PresentationMode m_presentationMode = PresentationMode::TopLevelWindow;

@@ -187,8 +187,8 @@ pub fn parse_file_inventory(value: Option<&Value>) -> Result<Vec<UpdateFile>> {
             safe_relative_path(&path)
                 && seen.insert(lower.clone())
                 && (path.starts_with("bin/")
-                    || path.starts_with("share/snow-shot/")
-                    || path == "snow-shot-installation.json")
+                    || path.starts_with(crate::edition::SHARE_PREFIX)
+                    || path == crate::edition::INSTALLATION_RECORD)
                 && !lower.starts_with("bin/portable/"),
             "unsafe_update_inventory",
             "Unsafe update file inventory",
@@ -300,6 +300,11 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
     let object = signed.as_object().ok_or_else(|| {
         UpdateError::new("unsupported_update_release", "Unsupported update release")
     })?;
+    require(
+        crate::edition::product_matches(object.get("product")),
+        "update_product_mismatch",
+        "The update belongs to a different product",
+    )?;
     let published_at = string(object, "publishedAt");
     require(
         object.get("schema").and_then(Value::as_u64) == Some(1)
@@ -316,15 +321,15 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
         .ok_or_else(|| {
             UpdateError::new(
                 "incomplete_windows_release",
-                "The release must contain all five Windows packages",
+                "The release does not contain all required Windows packages",
             )
         })?;
     require(
-        packages.len() == 5,
+        packages.len() == if crate::edition::MINI { 3 } else { 5 },
         "incomplete_windows_release",
-        "The release must contain all five Windows packages",
+        "The release does not contain all required Windows packages",
     )?;
-    let mut parsed = Vec::with_capacity(5);
+    let mut parsed = Vec::with_capacity(packages.len());
     let mut paths = HashSet::new();
     let mut identities = HashSet::new();
     for value in packages {
@@ -339,17 +344,17 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
         let portable = variant == "portable" && kind == "portable";
         require(
             portable
-                || (matches!(variant.as_str(), "online" | "offline")
+                || ((variant == "online" || (!crate::edition::MINI && variant == "offline"))
                     && matches!(kind.as_str(), "installer" | "update")),
             "unknown_package_variant",
             "Unknown update package variant",
         )?;
         let expected = if portable {
-            format!("setup/snow-shot_windows-x64-{variant}.zip")
+            format!("{}{variant}.zip", crate::edition::PACKAGE_PREFIX)
         } else if kind == "installer" {
-            format!("setup/snow-shot_windows-x64-{variant}.exe")
+            format!("{}{variant}.exe", crate::edition::PACKAGE_PREFIX)
         } else {
-            format!("setup/snow-shot_windows-x64-{variant}-update.zip")
+            format!("{}{variant}-update.zip", crate::edition::PACKAGE_PREFIX)
         };
         let identity = format!("{variant}/{kind}");
         require(
@@ -364,9 +369,9 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
         };
         if kind != "installer" {
             for required in [
-                "bin/snow_shot.exe",
-                "bin/snow-shot-updater.exe",
-                "snow-shot-installation.json",
+                crate::edition::APP_PATH,
+                crate::edition::UPDATER_PATH,
+                crate::edition::INSTALLATION_RECORD,
             ] {
                 require(
                     files.iter().any(|file| file.path == required),
@@ -413,15 +418,15 @@ pub(crate) mod tests {
 
     fn inventory() -> Vec<Value> {
         vec![
-            file("bin/snow_shot.exe"),
-            file("bin/snow-shot-updater.exe"),
-            file("snow-shot-installation.json"),
+            file(crate::edition::APP_PATH),
+            file(crate::edition::UPDATER_PATH),
+            file(crate::edition::INSTALLATION_RECORD),
         ]
     }
 
     pub(crate) fn valid_payload() -> Value {
         let files = inventory();
-        json!({
+        let mut payload = json!({
             "schema": 1,
             "platform": "windows-x64",
             "publishedAt": "2026-09-19T00:00:00Z",
@@ -434,7 +439,23 @@ pub(crate) mod tests {
                 {"variant":"offline", "kind":"update", "path":"setup/snow-shot_windows-x64-offline-update.zip", "size":1, "sha256":"4".repeat(64), "files":inventory()},
                 {"variant":"portable", "kind":"portable", "path":"setup/snow-shot_windows-x64-portable.zip", "size":1, "sha256":"5".repeat(64), "files":inventory()}
             ]
-        })
+        });
+        if crate::edition::MINI {
+            payload["product"] = json!(crate::edition::PRODUCT);
+            payload["packages"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|p| p["variant"] != "offline");
+            for package in payload["packages"].as_array_mut().unwrap() {
+                package["path"] = json!(
+                    package["path"]
+                        .as_str()
+                        .unwrap()
+                        .replace("setup/snow-shot_", "setup/snow-shot-mini_")
+                );
+            }
+        }
+        payload
     }
 
     pub(crate) fn trusted_key(private: &RsaPrivateKey, exponent: Option<Vec<u8>>) -> Vec<u8> {
@@ -543,7 +564,33 @@ pub(crate) mod tests {
         let envelope = sign_payload(&payload, &private, 32);
         let release = verify_release(&envelope, Some(&trusted)).unwrap();
         assert_eq!(release.version, "2.0.0");
-        assert_eq!(release.packages.len(), 5);
+        assert_eq!(
+            release.packages.len(),
+            if crate::edition::MINI { 3 } else { 5 }
+        );
+
+        let mut other_product = payload.clone();
+        other_product["product"] = json!(if crate::edition::MINI {
+            "snow-shot"
+        } else {
+            "snow-shot-mini"
+        });
+        assert_eq!(
+            verify_release(&sign_payload(&other_product, &private, 32), Some(&trusted))
+                .unwrap_err()
+                .code,
+            "update_product_mismatch"
+        );
+        if crate::edition::MINI {
+            let mut unbound = payload.clone();
+            unbound.as_object_mut().unwrap().remove("product");
+            assert_eq!(
+                verify_release(&sign_payload(&unbound, &private, 32), Some(&trusted))
+                    .unwrap_err()
+                    .code,
+                "update_product_mismatch"
+            );
+        }
 
         let wrong_salt = sign_payload(&payload, &private, 20);
         assert_eq!(
@@ -615,7 +662,8 @@ pub(crate) mod tests {
         );
 
         let mut payload = valid_payload();
-        payload["packages"][4]["variant"] = Value::String("online".to_owned());
+        payload["packages"][if crate::edition::MINI { 2 } else { 4 }]["variant"] =
+            Value::String("online".to_owned());
         assert!(verify_release(&sign_payload(&payload, &private, 32), Some(&trusted)).is_err());
     }
 

@@ -46,6 +46,8 @@ struct EncodeResult final {
                                    int compressionLevel = 0);
 [[nodiscard]] ScreenshotImageRowSource srgbRowSource(const QImage& image);
 [[nodiscard]] QByteArray encodeWebp(const QImage& image, int quality = 75);
+// Decoded RGB images retain their source color space. Convert to sRGB at the
+// rendering/encoding boundary; merely assigning an sRGB tag changes their meaning.
 [[nodiscard]] QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
                             const char* nameHint);
 [[nodiscard]] QImage decodeIconFile(const QString& path, uint32_t preferredExtent);

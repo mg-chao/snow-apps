@@ -1,3 +1,4 @@
+#include "snow_shot/app/mcp/mcpedition.h"
 #include "snow_shot/app/mcp/mcpapplicationservice.h"
 #include "snow_shot/app/mcp/mcpjobregistry.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
@@ -6,8 +7,10 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/configurationarchive.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/translation/translationlanguages.h"
+#endif
 #include "snow_shot/update/updateservice.h"
 #include "snow_shot/platform/windows/monitorgeometry.h"
 #include <QBuffer>
@@ -126,7 +129,9 @@ struct McpApplicationService::Impl {
     Ports ports;
     QThreadPool workers;
     bool stopping = false;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QHash<QString, QPointer<translation::TranslationJob>> translations;
+#endif
     QString activeUpdateJob;
     quint64 activeUpdateOwner = 0;
     int admittedWork = 0;
@@ -305,6 +310,7 @@ struct McpApplicationService::Impl {
 
     void handle(const ScreenshotMcpRequest&, ScreenshotMcpServer::Completion);
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     void translate(const QString& id, const QStringList& texts,
                    const translation::TranslationPreferences& preferences) {
         if (!ports.jobs->retainInput(
@@ -360,6 +366,8 @@ struct McpApplicationService::Impl {
         job->start();
     }
 
+#endif
+
     void storageJob(const ScreenshotMcpRequest& request,
                     const std::function<std::shared_future<storage::StorageResult>()>& start,
                     ScreenshotMcpServer::Completion completion) {
@@ -400,33 +408,39 @@ McpApplicationService::~McpApplicationService() {
 }
 
 QStringList McpApplicationService::methods() {
-    return {QStringLiteral("snow_shot_app_status"),
-            QStringLiteral("snow_shot_app_displays"),
-            QStringLiteral("snow_shot_app_action"),
-            QStringLiteral("snow_shot_settings_get"),
-            QStringLiteral("snow_shot_settings_update"),
-            QStringLiteral("snow_shot_settings_reset"),
-            QStringLiteral("snow_shot_settings_action"),
-            QStringLiteral("snow_shot_models_list"),
-            QStringLiteral("snow_shot_models_update"),
-            QStringLiteral("snow_shot_credentials_set"),
-            QStringLiteral("snow_shot_history_list"),
-            QStringLiteral("snow_shot_history_get"),
-            QStringLiteral("snow_shot_history_delete"),
-            QStringLiteral("snow_shot_history_clear"),
-            QStringLiteral("snow_shot_history_action"),
-            QStringLiteral("snow_shot_configuration_export"),
-            QStringLiteral("snow_shot_configuration_import"),
-            QStringLiteral("snow_shot_storage_status"),
-            QStringLiteral("snow_shot_storage_cleanup"),
-            QStringLiteral("snow_shot_permissions_get"),
-            QStringLiteral("snow_shot_permissions_request"),
-            QStringLiteral("snow_shot_updates_status"),
-            QStringLiteral("snow_shot_updates_action"),
-            QStringLiteral("snow_shot_templates_list"),
-            QStringLiteral("snow_shot_templates_update"),
-            QStringLiteral("snow_shot_translation_catalog"),
-            QStringLiteral("snow_shot_translation_start")};
+    return {
+        QStringLiteral("snow_shot_app_status"),
+        QStringLiteral("snow_shot_app_displays"),
+        QStringLiteral("snow_shot_app_action"),
+        QStringLiteral("snow_shot_settings_get"),
+        QStringLiteral("snow_shot_settings_update"),
+        QStringLiteral("snow_shot_settings_reset"),
+        QStringLiteral("snow_shot_settings_action"),
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+        QStringLiteral("snow_shot_models_list"),
+        QStringLiteral("snow_shot_models_update"),
+        QStringLiteral("snow_shot_credentials_set"),
+#endif
+        QStringLiteral("snow_shot_history_list"),
+        QStringLiteral("snow_shot_history_get"),
+        QStringLiteral("snow_shot_history_delete"),
+        QStringLiteral("snow_shot_history_clear"),
+        QStringLiteral("snow_shot_history_action"),
+        QStringLiteral("snow_shot_configuration_export"),
+        QStringLiteral("snow_shot_configuration_import"),
+        QStringLiteral("snow_shot_storage_status"),
+        QStringLiteral("snow_shot_storage_cleanup"),
+        QStringLiteral("snow_shot_permissions_get"),
+        QStringLiteral("snow_shot_permissions_request"),
+        QStringLiteral("snow_shot_updates_status"),
+        QStringLiteral("snow_shot_updates_action"),
+        QStringLiteral("snow_shot_templates_list"),
+        QStringLiteral("snow_shot_templates_update"),
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        QStringLiteral("snow_shot_translation_catalog"),
+        QStringLiteral("snow_shot_translation_start"),
+#endif
+    };
 }
 bool McpApplicationService::handles(const QString& method) const {
     return methods().contains(method);
@@ -540,6 +554,10 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
     auto error = [&](const QString& code, const QString& field = QString()) {
         completion(failure(request, code, field));
     };
+    if (!editionRequestEnabled(method, params)) {
+        error(QStringLiteral("unsupported"));
+        return;
+    }
     auto change = [&](const std::function<bool()>& mutation) {
         if (!expected) {
             error(QStringLiteral("revision_required"));
@@ -729,6 +747,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
         response.revision = configuration().revision();
         observeSettings(request, job, pending, applied, response);
         completion(std::move(response));
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     } else if (method == u"snow_shot_models_list") {
         finish({{QStringLiteral("models"), publicModels(ports.settings->customAiModels())},
                 {QStringLiteral("revision"), static_cast<qint64>(configuration().revision())}});
@@ -767,6 +786,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
             }
         }
         change([&] { return ports.settings->applyCustomAiModels(models); });
+#endif
     } else if (method == u"snow_shot_storage_status") {
         auto result = storageJson(ports.storage->status());
         result.insert(QStringLiteral("revision"), static_cast<qint64>(configuration().revision()));
@@ -1056,7 +1076,9 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                 const bool ok = configuration().mutateIfRevision(
                     revision,
                     [&] {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                         read.preserveOmittedCredentials(configuration().snapshot());
+#endif
                         return ports.settings->importConfigurationSnapshot(
                             read.values, read.schemaVersion, &runtimeCompletion);
                     },
@@ -1287,6 +1309,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                        ? storage::DrawTemplateSettings().setTemplates(drawings)
                        : storage::WatermarkTemplateSettings().setTemplates(watermarks);
         });
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     } else if (method == u"snow_shot_translation_catalog") {
         if (!ports.translation) {
             error(QStringLiteral("unavailable"));
@@ -1392,6 +1415,7 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                 });
         } else
             translate(id, texts, preferences);
+#endif
     } else {
         error(QStringLiteral("method_not_found"));
     }

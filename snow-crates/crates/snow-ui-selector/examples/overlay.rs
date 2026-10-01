@@ -230,6 +230,7 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                                     x: cursor.x,
                                     y: cursor.y,
                                     display_id: 0,
+                                    window_id: None,
                                 },
                                 state.hit_test_mode,
                                 &QueryControl::foreground(),

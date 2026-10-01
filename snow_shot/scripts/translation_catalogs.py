@@ -168,9 +168,18 @@ def merged_catalogs(directory):
     return catalogs
 
 
-def merge(directory, output):
+def merge(directory, output, excluded_modules=(), excluded_contexts=()):
     catalogs = merged_catalogs(directory)
+    modules, owners = read_modules(directory)
+    unknown = set(excluded_modules) - modules.keys()
+    if unknown:
+        raise ValueError(f"Unknown excluded modules: {sorted(unknown)}")
+    excluded_contexts = set(excluded_contexts)
     for locale, root in catalogs.items():
+        for context in root.findall("context"):
+            name = context.findtext("name")
+            if name in excluded_contexts or owners[name] in excluded_modules:
+                root.remove(context)
         write_if_changed(output / f"snow_shot_{locale}.ts", canonical_bytes(root))
 
 
@@ -236,12 +245,14 @@ def main():
     parser.add_argument("--catalog-dir", type=Path, default=DEFAULT_CATALOG_DIR)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--input-dir", type=Path)
+    parser.add_argument("--exclude-module", action="append", default=[])
+    parser.add_argument("--exclude-context", action="append", default=[])
     args = parser.parse_args()
     try:
         if args.command == "merge":
             if args.output_dir is None:
                 parser.error("merge requires --output-dir")
-            merge(args.catalog_dir, args.output_dir)
+            merge(args.catalog_dir, args.output_dir, args.exclude_module, args.exclude_context)
         elif args.command == "split":
             if args.input_dir is None:
                 parser.error("split requires --input-dir")

@@ -1,6 +1,9 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTTABLEDOCUMENT_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTABLEDOCUMENT_H
 
+#include "snow_shot/app/edition.h"
+
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
 #include <QPoint>
 #include <QString>
 #include <QVector>
@@ -110,5 +113,7 @@ class ScreenshotTableDocument final {
 
     QVector<QVector<Slot>> m_slots;
 };
+
+#endif // SNOW_SHOT_ENABLE_TABLE_RECOGNITION
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTTABLEDOCUMENT_H

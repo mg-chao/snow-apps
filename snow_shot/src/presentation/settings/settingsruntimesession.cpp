@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/serverconfiguration.h"
+#endif
 
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/presentation/globalmousegesture.h"
@@ -963,9 +965,17 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 case SettingsCustomRenderer::TrayMenuOptions:
                     return m_backend.multiSelectValue(SettingsMultiSelectBinding::TrayMenuOptions);
                 case SettingsCustomRenderer::CustomAiModels:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     return QVariant::fromValue(m_backend.customAiModels());
+#else
+                    return {};
+#endif
                 case SettingsCustomRenderer::TextTranslationConfigurations:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     return QVariant::fromValue(m_backend.textTranslationConfigurations());
+#else
+                    return {};
+#endif
                 case SettingsCustomRenderer::StorageStatus:
                     return QVariant::fromValue(m_backend.storageStatus());
                 }
@@ -1043,12 +1053,20 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                     return m_backend.applyMultiSelectValue(
                         SettingsMultiSelectBinding::TrayMenuOptions, value.toList());
                 case SettingsCustomRenderer::CustomAiModels:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     return value.canConvert<CustomAiModels>() &&
                            m_backend.applyCustomAiModels(value.value<CustomAiModels>());
+#else
+                    return false;
+#endif
                 case SettingsCustomRenderer::TextTranslationConfigurations:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     return value.canConvert<TextTranslationConfigurations>() &&
                            m_backend.applyTextTranslationConfigurations(
                                value.value<TextTranslationConfigurations>());
+#else
+                    return false;
+#endif
                 case SettingsCustomRenderer::StorageStatus:
                     return false;
                 }
@@ -1089,12 +1107,14 @@ bool SettingsRuntimeSession::isPending(const SettingsFieldDescriptor& descriptor
 }
 
 QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descriptor) const {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url") &&
         !normalizedServerUrl(state(descriptor.id).draftValue.toString())) {
         return QCoreApplication::translate("SettingsBackend",
                                            "Enter a valid HTTP or HTTPS server address without "
                                            "credentials, a query, or a fragment.");
     }
+#endif
     const QString currentError = backendError(descriptor);
     if (!currentError.isEmpty()) {
         return currentError;
@@ -1104,11 +1124,13 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,
                                          const QVariant& first, const QVariant& second) const {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url")) {
         const auto a = normalizedServerUrl(first.toString());
         const auto b = normalizedServerUrl(second.toString());
         return a && b && *a == *b;
     }
+#endif
     if (descriptor.definition == nullptr) {
         return first == second;
     }
@@ -1518,6 +1540,7 @@ bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding, const 
     return m_backend.triggerAction(binding, filePath);
 }
 
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 CustomAiModels SettingsRuntimeSession::customAiModels() const {
     return state(QStringLiteral("api.custom-models")).acceptedValue.value<CustomAiModels>();
 }
@@ -1541,6 +1564,7 @@ bool SettingsRuntimeSession::applyTextTranslationConfigurations(
                        QVariant::fromValue(valid ? normalized : models));
 }
 
+#endif
 storage::StorageStatus SettingsRuntimeSession::storageStatus() const {
     return m_backend.storageStatus();
 }

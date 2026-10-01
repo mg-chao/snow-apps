@@ -3,6 +3,8 @@
 #include "../recording/recordingaudiogainpopover.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "screenshottoolbarperfinstrumentation.h"
 #include "../recording/screenrecordingperfinstrumentation.h"
 
@@ -336,6 +338,7 @@ bool toolUsesStandardStyleToolbar(ScreenshotToolPalette::Tool tool) {
 
 namespace toolbar_settings = snow_shot::storage;
 
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_QR_RECOGNITION
 ScreenshotToolPalette::Tool tableQrToolFromSetting(const QString& value) {
     return value == QStringLiteral("qr") ? ScreenshotToolPalette::Tool::Qr
                                          : ScreenshotToolPalette::Tool::Table;
@@ -345,6 +348,7 @@ QString tableQrToolSetting(ScreenshotToolPalette::Tool tool) {
     return tool == ScreenshotToolPalette::Tool::Qr ? QStringLiteral("qr") : QStringLiteral("table");
 }
 
+#endif
 ScreenshotToolPalette::Tool filterToolFromSetting(const QString& value) {
     if (value == QStringLiteral("rectangle-filter")) {
         return ScreenshotToolPalette::Tool::RectangleFilter;
@@ -844,7 +848,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
       m_actionToolsLayout(initialActionToolsLayout(options)),
       m_actionToolsLayoutExplicit(options.actionToolsLayout.has_value()) {
     const toolbar_settings::ScreenshotToolbarSettings settings;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_QR_RECOGNITION
     m_tableQrEntryTool = tableQrToolFromSetting(settings.tableQrTool());
+#endif
     m_lastFilterTool = filterToolFromSetting(settings.lastFilterTool());
     m_lastHighlightTool = highlightToolFromSetting(settings.lastHighlightTool());
 
@@ -1578,6 +1584,7 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
     updateRecordingExportSettingsControls();
     refreshRecordingMouseOptions();
     updateRecordingControlMetrics();
+    refreshRecordingPostProcessingOptions();
 }
 
 void ScreenshotToolPalette::updatePenFilterStrokeWidthControls() {
@@ -1653,6 +1660,8 @@ bool ScreenshotToolPalette::finishStyleControlsActivation(Tool destinationTool) 
 }
 
 void ScreenshotToolPalette::setActiveTool(Tool tool) {
+    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
+        return;
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_active_tool");
     if (m_releasingSecondaryResources) {
         return;
@@ -1825,6 +1834,7 @@ bool ScreenshotToolPalette::activateTableQrTool(Tool tool, bool toggleVisibleBut
 }
 
 void ScreenshotToolPalette::setTableQrEntryTool(Tool tool) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (tool != Tool::Table && tool != Tool::Qr) {
         return;
     }
@@ -1839,6 +1849,9 @@ void ScreenshotToolPalette::setTableQrEntryTool(Tool tool) {
     refreshTableQrTrigger();
     selectActionToolGroupEntry(tool == Tool::Qr ? QStringLiteral("barcode-recognition")
                                                 : QStringLiteral("table-recognition"));
+#else
+    Q_UNUSED(tool);
+#endif
 }
 
 void ScreenshotToolPalette::refreshTableQrTrigger() {
@@ -2196,6 +2209,37 @@ QColor ScreenshotToolPalette::recordingMouseHighlightColor() const {
     return m_recordingMouseHighlightColor;
 }
 
+void ScreenshotToolPalette::setRecordingPostProcessingEnabled(bool enabled) {
+    m_recordPostProcessingEnabled = enabled;
+    if (m_recordPostProcessingButton) {
+        const QSignalBlocker blocker(m_recordPostProcessingButton);
+        m_recordPostProcessingButton->setChecked(enabled);
+        setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton, enabled);
+    }
+}
+bool ScreenshotToolPalette::recordingPostProcessingEnabled() const {
+    return m_recordPostProcessingEnabled;
+}
+void ScreenshotToolPalette::setRecordingPostProcessingEffect(const QString& effect) {
+    m_recordPlaybackTimeSelected = effect == QStringLiteral("playback_time");
+    refreshRecordingPostProcessingOptions();
+}
+QString ScreenshotToolPalette::recordingPostProcessingEffect() const {
+    return m_recordPlaybackTimeSelected ? QStringLiteral("playback_time")
+                                        : QStringLiteral("progress_bar");
+}
+void ScreenshotToolPalette::setRecordingProgressBarColor(const QColor& color) {
+    m_recordProgressBarColor = color.isValid() ? color : QColor(22, 119, 255);
+    if (m_recordProgressBarColorPicker) {
+        const QSignalBlocker blocker(m_recordProgressBarColorPicker);
+        m_recordProgressBarColorPicker->setValue(
+            adqt::widgets::AdColorValue::solid(m_recordProgressBarColor));
+    }
+}
+QColor ScreenshotToolPalette::recordingProgressBarColor() const {
+    return m_recordProgressBarColor;
+}
+
 void ScreenshotToolPalette::refreshRecordingMouseOptions() {
     if (!m_recordHighlightCheckbox || !m_recordClicksCheckbox) {
         return;
@@ -2219,6 +2263,34 @@ void ScreenshotToolPalette::refreshRecordingMouseOptions() {
         checkbox->setFont(textFont);
     }
     if (auto* content = m_recordCursorPopover->contentWidget()) {
+        content->layout()->setSpacing(scaledMetric(8));
+    }
+}
+
+void ScreenshotToolPalette::refreshRecordingPostProcessingOptions() {
+    if (!m_recordProgressBarRadio || !m_recordPlaybackTimeRadio) {
+        return;
+    }
+    const QSignalBlocker progressBlocker(m_recordProgressBarRadio);
+    const QSignalBlocker playbackBlocker(m_recordPlaybackTimeRadio);
+    m_recordProgressBarRadio->setText(tr("Show Progress Bar"));
+    m_recordProgressBarRadio->setAccessibleName(tr("Show Progress Bar"));
+    m_recordPlaybackTimeRadio->setText(tr("Show Playback Time"));
+    m_recordPlaybackTimeRadio->setAccessibleName(tr("Show Playback Time"));
+    m_recordProgressBarRadio->setChecked(!m_recordPlaybackTimeSelected);
+    m_recordPlaybackTimeRadio->setChecked(m_recordPlaybackTimeSelected);
+    for (auto* radio : {m_recordProgressBarRadio.data(), m_recordPlaybackTimeRadio.data()}) {
+        auto tokens = adqt::widgets::AdRadio::ComponentTokens{};
+        tokens.metrics.radioSize = scaledMetric(16);
+        tokens.metrics.dotSize = scaledMetric(8);
+        tokens.metrics.labelPaddingInlineStart = scaledMetric(8);
+        tokens.metrics.textLineHeight = scaledMetric(22);
+        radio->setComponentTokens(tokens);
+        QFont textFont = font();
+        textFont.setPixelSize(scaledMetric(14));
+        radio->setFont(textFont);
+    }
+    if (auto* content = m_recordPostProcessingPopover->contentWidget()) {
         content->layout()->setSpacing(scaledMetric(8));
     }
 }
@@ -2333,6 +2405,7 @@ void ScreenshotToolPalette::setRecaptureBusy(bool busy) {
 }
 
 void ScreenshotToolPalette::setQrCodeState(bool available, bool visible, const QString& error) {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     m_qrCodeAvailable = available;
     m_qrCodeVisible = visible;
     m_qrCodeError = error;
@@ -2346,6 +2419,11 @@ void ScreenshotToolPalette::setQrCodeState(bool available, bool visible, const Q
         m_showQrCodeButton->setAccessibleName(tr("Show QR Code"));
         m_showQrCodeButton->setToolTip(error.isEmpty() ? tr("Show QR Code") : error);
     }
+#else
+    Q_UNUSED(available);
+    Q_UNUSED(visible);
+    Q_UNUSED(error);
+#endif
 }
 
 bool ScreenshotToolPalette::recaptureBusy() const {
@@ -2408,33 +2486,50 @@ void ScreenshotToolPalette::updateScrollingRecognitionButtons() {
 }
 
 void ScreenshotToolPalette::setTableBusy(bool busy) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     m_tableBusy = busy;
     updateTableQrBusy();
+#else
+    Q_UNUSED(busy);
+#endif
 }
 
 void ScreenshotToolPalette::setTableEnabled(bool enabled) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (m_tableEnabled == enabled) {
         return;
     }
     m_tableEnabled = enabled;
     updateTableQrEnabled();
+#else
+    Q_UNUSED(enabled);
+#endif
 }
 
 void ScreenshotToolPalette::setQrBusy(bool busy) {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     m_qrBusy = busy;
     updateTableQrBusy();
+#else
+    Q_UNUSED(busy);
+#endif
 }
 
 void ScreenshotToolPalette::setQrEnabled(bool enabled) {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrEnabled == enabled) {
         return;
     }
     m_qrEnabled = enabled;
     updateTableQrEnabled();
+#else
+    Q_UNUSED(enabled);
+#endif
 }
 
 void ScreenshotToolPalette::setTableEditingState(bool available, bool canUndo, bool canRedo,
                                                  bool canMerge, bool canSplit, bool canReset) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     m_tableEditingAvailable = available;
     m_tableCanUndo = canUndo;
     m_tableCanRedo = canRedo;
@@ -2451,6 +2546,14 @@ void ScreenshotToolPalette::setTableEditingState(bool available, bool canUndo, b
         m_tableResetButton->setEnabled(available && canReset);
     }
     updateHistoryActionAvailability();
+#else
+    Q_UNUSED(available);
+    Q_UNUSED(canUndo);
+    Q_UNUSED(canRedo);
+    Q_UNUSED(canMerge);
+    Q_UNUSED(canSplit);
+    Q_UNUSED(canReset);
+#endif
 }
 
 void ScreenshotToolPalette::setTextEditingState(bool available, bool editing, bool canUndo,
@@ -2487,6 +2590,7 @@ void ScreenshotToolPalette::setTextEditingState(bool available, bool editing, bo
 void ScreenshotToolPalette::setTextTranslationState(bool available, bool translating,
                                                     bool streaming, bool canUndo, bool canRedo,
                                                     bool canReset, bool originalImage) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     m_textResultAvailable = available;
     m_textTranslating = translating;
     m_textTranslationStreaming = streaming;
@@ -2528,13 +2632,23 @@ void ScreenshotToolPalette::setTextTranslationState(bool available, bool transla
         updateTextRecognitionBusy();
     }
     updateHistoryActionAvailability();
+#else
+    Q_UNUSED(available);
+    Q_UNUSED(translating);
+    Q_UNUSED(streaming);
+    Q_UNUSED(canUndo);
+    Q_UNUSED(canRedo);
+    Q_UNUSED(canReset);
+    Q_UNUSED(originalImage);
+#endif
 }
 
 void ScreenshotToolPalette::setJumpToTranslationPageVisible(bool visible) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (m_jumpToTranslationPageVisible == visible) {
         return;
     }
-    m_jumpToTranslationPageVisible = visible;
+    m_jumpToTranslationPageVisible = visible && snow_shot::app::edition::textTranslation;
     if (m_jumpToTranslationPageButton == nullptr) {
         return;
     }
@@ -2543,6 +2657,9 @@ void ScreenshotToolPalette::setJumpToTranslationPageVisible(bool visible) {
         update();
         emit visibleContentChanged();
     }
+#else
+    Q_UNUSED(visible);
+#endif
 }
 
 void ScreenshotToolPalette::setTextTransformSelections(const QString& formatting,
@@ -3264,6 +3381,12 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                                                   "Show keystrokes in recording",
                                                   styleButtonMetrics(m_physicalScale));
     }
+    if (m_recordPostProcessingButton != nullptr) {
+        configureScreenshotToolPaletteStyleButton(m_recordPostProcessingButton,
+                                                  "Post-processing effects",
+                                                  styleButtonMetrics(m_physicalScale));
+    }
+    refreshRecordingPostProcessingOptions();
     if (m_recordPreferencesButton != nullptr) {
         configureScreenshotToolPaletteStyleButton(m_recordPreferencesButton, "Recording settings",
                                                   styleButtonMetrics(m_physicalScale));
@@ -3796,6 +3919,7 @@ bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
         }
     }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     // Translation remains a navigation action while its background requests are busy.
     auto* watchedButton = qobject_cast<adqt::widgets::AdButton*>(watched);
     const bool translationTrigger =
@@ -3833,6 +3957,7 @@ bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
             }
         }
     }
+#endif
     if (event != nullptr && event->type() == QEvent::Wheel &&
         handleToolbarWheel(static_cast<QWheelEvent*>(event))) {
         return true;
@@ -4006,8 +4131,11 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
 
     const bool hasEditingTools = addMainToolButtons(options, panelLayout);
     const bool hasSecondaryTools =
-        options.showScreenRecordButton || options.showOcrTool || options.showTextTranslationTool ||
-        options.showTableTool || options.showQrTool || options.showImageConversionTools ||
+        options.showScreenRecordButton || options.showOcrTool ||
+        (options.showTextTranslationTool && snow_shot::app::edition::textTranslation) ||
+        (options.showTableTool && snow_shot::app::edition::tableRecognition) ||
+        (options.showQrTool && snow_shot::app::edition::qrRecognition) ||
+        (options.showImageConversionTools && snow_shot::app::edition::imageConversion) ||
         options.showScrollingScreenshotTool ||
         (options.showSaveButton && !options.saveButtonWithResultActions) ||
         (!options.showRecordingControls && (options.actions & PinAction) != 0);
@@ -4177,22 +4305,34 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
         emit ocrRequested();
         break;
     case Tool::TextTranslation:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         emit textTranslationRequested();
+#endif
         break;
     case Tool::Table:
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         emit tableRequested();
+#endif
         break;
     case Tool::Qr:
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
         emit qrRequested();
+#endif
         break;
     case Tool::Latex:
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
         emit latexRequested();
+#endif
         break;
     case Tool::Markdown:
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
         emit markdownRequested();
+#endif
         break;
     case Tool::Html:
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
         emit htmlRequested();
+#endif
         break;
     case Tool::ScrollingScreenshot:
         emit scrollingScreenshotRequested();
@@ -4322,6 +4462,8 @@ bool ScreenshotToolPalette::canActivateToolShortcut(Tool tool) const {
 }
 
 bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
+    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
+        return false;
     tool = rememberedDrawingMode(tool);
     if (!canActivateToolShortcut(tool)) {
         return false;
@@ -4582,11 +4724,13 @@ adqt::widgets::AdButton* ScreenshotToolPalette::actionToolEntryButton(const QStr
 }
 
 bool ScreenshotToolPalette::actionToolAvailable(const QString& itemId) const {
+    if (!snow_shot::presentation::editionActionToolAvailable(itemId))
+        return false;
     if (itemId == QStringLiteral("barcode-recognition")) {
-        return m_options.showQrTool;
+        return (m_options.showQrTool && snow_shot::app::edition::qrRecognition);
     }
     if (itemId == QStringLiteral("table-recognition")) {
-        return m_options.showTableTool;
+        return (m_options.showTableTool && snow_shot::app::edition::tableRecognition);
     }
     return actionToolSourceButton(itemId) != nullptr;
 }
@@ -4840,7 +4984,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
         availableItemIds.size() == 1 &&
         (availableItemIds.constFirst() == QStringLiteral("barcode-recognition") ||
          availableItemIds.constFirst() == QStringLiteral("table-recognition")) &&
-        m_options.showTableTool && m_options.showQrTool;
+        (m_options.showTableTool && snow_shot::app::edition::tableRecognition) &&
+        (m_options.showQrTool && snow_shot::app::edition::qrRecognition);
 
     if (nativeRecognitionGroup) {
         group.trigger = m_tableButton;
@@ -5347,7 +5492,8 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         hasButton = true;
     };
 
-    if (options.showTableTool && options.showQrTool) {
+    if ((options.showTableTool && snow_shot::app::edition::tableRecognition) &&
+        (options.showQrTool && snow_shot::app::edition::qrRecognition)) {
         m_tableButton =
             addToolButton("Table recognition", custom_outlined_icons::TableRecognition());
         applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("Table recognition"),
@@ -5365,7 +5511,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateActionTool(actionToolItemId(m_tableQrEntryTool)); });
         refreshTableQrTrigger();
         updateTableQrBusy();
-    } else if (options.showTableTool) {
+    } else if ((options.showTableTool && snow_shot::app::edition::tableRecognition)) {
         m_tableQrEntryTool = Tool::Table;
         m_tableButton =
             addToolButton("Table recognition", custom_outlined_icons::TableRecognition());
@@ -5376,7 +5522,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         addButton(m_tableButton);
         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("table-recognition")); });
-    } else if (options.showQrTool) {
+    } else if ((options.showQrTool && snow_shot::app::edition::qrRecognition)) {
         m_tableQrEntryTool = Tool::Qr;
         m_tableButton = addToolButton("Barcode recognition", custom_outlined_icons::ScanQrcode());
         applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("Barcode recognition"),
@@ -5388,7 +5534,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateActionTool(QStringLiteral("barcode-recognition")); });
     }
 
-    if (options.showImageConversionTools) {
+    if ((options.showImageConversionTools && snow_shot::app::edition::imageConversion)) {
         m_latexButton =
             addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "LaTeX Formula Recognition"),
                           adqt::icons::antd::outlined::Function());
@@ -5444,7 +5590,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateActionTool(QStringLiteral("text-recognition")); });
     }
 
-    if (options.showTextTranslationTool) {
+    if ((options.showTextTranslationTool && snow_shot::app::edition::textTranslation)) {
         m_textTranslationButton =
             addToolButton("Text translation", custom_outlined_icons::OcrTranslate());
         applyScreenshotShortcutTooltip(m_textTranslationButton, QStringLiteral("Text translation"),
@@ -5547,6 +5693,8 @@ bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
 }
 
 bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
+    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
+        return false;
     const QString actionId = actionToolItemId(tool);
     // Named shortcuts select the same item as the corresponding toolbar menu option.
     return actionId.isEmpty() ? activateToolFromToolbar(tool, false)
@@ -6111,6 +6259,52 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingKeyboard(), styleButtonMetrics(m_physicalScale));
     m_recordKeyboardButton->setObjectName(QStringLiteral("screenRecordingShowKeyboard"));
     layout->addWidget(m_recordKeyboardButton);
+    m_recordPostProcessingButton = createScreenshotToolPaletteStyleActionButton(
+        m_recordExportSettingsPanel, "Post-processing effects",
+        custom_outlined_icons::RecordingPostProcessing(), styleButtonMetrics(m_physicalScale));
+    m_recordPostProcessingButton->setObjectName(QStringLiteral("screenRecordingPostProcessing"));
+    m_recordPostProcessingButton->setCheckable(true);
+    m_recordPostProcessingButton->setChecked(m_recordPostProcessingEnabled);
+    m_recordPostProcessingButton->setCheckedUsesActiveStyle(false);
+    layout->addWidget(m_recordPostProcessingButton);
+    connect(m_recordPostProcessingButton, &adqt::widgets::AdButton::toggled, this,
+            [this](bool checked) {
+                m_recordPostProcessingEnabled = checked;
+                setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton, checked);
+                emit recordingPostProcessingEnabledChanged(checked);
+            });
+    m_recordPostProcessingPopover = new adqt::widgets::AdPopover(m_recordPostProcessingButton);
+    m_recordPostProcessingPopover->setObjectName(
+        QStringLiteral("screenRecordingPostProcessingPopover"));
+    m_recordPostProcessingPopover->setSourceWidget(m_recordPostProcessingButton);
+    m_recordPostProcessingPopover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    m_recordPostProcessingPopover->setPlacement(adqt::widgets::AdPopover::Placement::Bottom);
+    m_recordPostProcessingPopover->setPopupLayerMode(
+        adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    m_recordPostProcessingPopover->setContentFactory(
+        [this]() -> QWidget* {
+            auto* content = new QWidget;
+            content->setObjectName(QStringLiteral("screenRecordingPostProcessingOptions"));
+            auto* options = new QVBoxLayout(content);
+            options->setContentsMargins(0, 0, 0, 0);
+            options->setSpacing(scaledMetric(8));
+            m_recordProgressBarRadio = new adqt::widgets::AdRadio(content);
+            m_recordProgressBarRadio->setObjectName(
+                QStringLiteral("screenRecordingShowProgressBar"));
+            m_recordPlaybackTimeRadio = new adqt::widgets::AdRadio(content);
+            m_recordPlaybackTimeRadio->setObjectName(
+                QStringLiteral("screenRecordingShowPlaybackTime"));
+            options->addWidget(m_recordProgressBarRadio);
+            options->addWidget(m_recordPlaybackTimeRadio);
+            refreshRecordingPostProcessingOptions();
+            connect(m_recordPlaybackTimeRadio, &QAbstractButton::toggled, this,
+                    [this](bool checked) {
+                        m_recordPlaybackTimeSelected = checked;
+                        emit recordingPostProcessingEffectChanged(recordingPostProcessingEffect());
+                    });
+            return content;
+        },
+        adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
     addSeparator(QStringLiteral("screenRecordingExportSettingsSeparator"));
     m_recordDelayButton = createScreenshotToolPaletteRecordingDelayEditor(
         m_recordExportSettingsPanel, "Delay recording (scroll to adjust)",
@@ -6243,6 +6437,10 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
                 if (m_recordHighlightColorPicker) {
                     m_recordHighlightColorPicker->setPopupVisible(false);
                 }
+                if (m_recordProgressBarColorPicker) {
+                    m_recordProgressBarColorPicker->setPopupVisible(false);
+                }
+                m_recordProgressBarColorPicker = nullptr;
                 m_recordHighlightColorPicker = nullptr;
                 m_recordHighlightSwatch = nullptr;
                 m_recordSettingsModal = nullptr;
@@ -6365,6 +6563,16 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
                     emit recordingMouseHighlightColorChanged(m_recordingMouseHighlightColor);
                 }
             });
+    m_recordProgressBarColorPicker = addKeyboardPicker(
+        QStringLiteral("screenRecordingProgressBarColor"), tr("Progress Bar Color"),
+        QStringLiteral("progressBarColor"), m_recordProgressBarColor);
+    connect(m_recordProgressBarColorPicker, &adqt::widgets::AdColorPicker::valueChanged, this,
+            [this](const adqt::widgets::AdColorValue& value) {
+                if (value.isSolid() && value.solidColor.isValid()) {
+                    setRecordingProgressBarColor(value.solidColor);
+                    emit recordingProgressBarColorChanged(m_recordProgressBarColor);
+                }
+            });
     for (auto* item : form->items()) {
         item->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     }
@@ -6374,6 +6582,7 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     form->field(QStringLiteral("foreground"))->setFixedWidth(kRecordingSettingsColumnWidth);
     form->field(QStringLiteral("highlightColor"))->setFixedWidth(kRecordingSettingsColumnWidth);
     form->field(QStringLiteral("highlightPreview"))->setFixedWidth(kRecordingSettingsColumnWidth);
+    form->field(QStringLiteral("progressBarColor"))->setFixedWidth(kRecordingSettingsContentWidth);
     modal->setContentWidget(form);
     modal->setInitialFocusWidget(m_recordTrailDurationInput);
     m_recordSettingsForm = form;
@@ -6432,6 +6641,9 @@ void ScreenshotToolPalette::refreshRecordingEffectSettingsModalText() {
     m_recordTrailDurationInput->setAccessibleName(tr("Mouse Trail Duration"));
     m_recordKeyboardBackgroundPicker->setAccessibleName(tr("Keyboard Background Color"));
     m_recordKeyboardForegroundPicker->setAccessibleName(tr("Keyboard Foreground Color"));
+    m_recordProgressBarColorPicker->setAccessibleName(tr("Progress Bar Color"));
+    m_recordSettingsForm->field(QStringLiteral("progressBarColor"))
+        ->setLabel(tr("Progress Bar Color"));
     m_recordSettingsForm->field(QStringLiteral("keyboardSize"))->setLabel(tr("Keyboard Size"));
     m_recordSettingsForm->field(QStringLiteral("duration"))->setLabel(tr("Mouse Trail Duration"));
     m_recordSettingsForm->field(QStringLiteral("background"))
@@ -6446,6 +6658,12 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
         m_recordPreferencesButton->setAccessibleName(tr("Recording settings"));
     }
     refreshRecordingMouseOptions();
+    refreshRecordingPostProcessingOptions();
+    if (m_recordPostProcessingButton != nullptr) {
+        configureScreenshotToolPaletteTooltip(m_recordPostProcessingButton,
+                                              "Post-processing effects");
+        m_recordPostProcessingButton->setAccessibleName(tr("Post-processing effects"));
+    }
     if (m_recordSettingsButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordSettingsButton, "Settings");
         m_recordSettingsButton->setAccessibleName(tr("Settings"));
@@ -6485,6 +6703,9 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
 }
 
 void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
+    if (!visible && m_recordPostProcessingPopover) {
+        m_recordPostProcessingPopover->hide();
+    }
     if (!visible && m_recordCursorPopover) {
         m_recordCursorPopover->hide();
     }
@@ -6513,6 +6734,12 @@ void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
 
 void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     const bool editable = m_recordingSession.state() == RecordingState::Idle && !recordingBusy();
+    if (m_recordPostProcessingPopover) {
+        m_recordPostProcessingPopover->setEnabled(editable);
+        if (!editable) {
+            m_recordPostProcessingPopover->hide();
+        }
+    }
     if (m_recordCursorPopover) {
         m_recordCursorPopover->setEnabled(editable);
         if (!editable) {
@@ -6527,6 +6754,7 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
             }
             m_recordKeyboardBackgroundPicker->setPopupVisible(false);
             m_recordKeyboardForegroundPicker->setPopupVisible(false);
+            m_recordProgressBarColorPicker->setPopupVisible(false);
             // close() destroys the dialog and nulls every member above, so it has
             // to stay last in this block.
             m_recordSettingsModal->close();
@@ -6561,6 +6789,11 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     if (m_recordKeyboardButton != nullptr) {
         m_recordKeyboardButton->setEnabled(editable);
         setScreenshotToolPaletteButtonActive(m_recordKeyboardButton, m_recordingKeyboardVisible);
+    }
+    if (m_recordPostProcessingButton != nullptr) {
+        m_recordPostProcessingButton->setEnabled(editable);
+        setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton,
+                                             m_recordPostProcessingButton->isChecked());
     }
 }
 
@@ -6945,6 +7178,14 @@ void ScreenshotToolPalette::registerStyleFamily(QWidget* controls,
 }
 
 bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
+#if !SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (family == ActionFamily::TableRecognition)
+        return false;
+#endif
+#if !SNOW_SHOT_ENABLE_IMAGE_CONVERSION
+    if (family == ActionFamily::ImageConversion)
+        return false;
+#endif
     if (!m_options.enableStyleToolbar || m_releasingSecondaryResources) {
         return false;
     }
@@ -6974,13 +7215,21 @@ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
         createTextRecognitionActionFamily();
         break;
     case ActionFamily::TableRecognition:
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         createTableRecognitionActionFamily();
+#else
+        return false;
+#endif
         break;
     case ActionFamily::ScrollingRecognition:
         createScrollingRecognitionActionFamily();
         break;
     case ActionFamily::ImageConversion:
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
         createImageConversionActionFamily();
+#else
+        return false;
+#endif
         break;
     }
     initializeStyleLayoutProfiles();
@@ -7470,6 +7719,7 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     };
     m_textEditButton =
         addButton("Edit", outlined_icons::Edit(), QStringLiteral("screenshotOcrTextEditButton"));
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textTranslateButton = addButton("Text translation", custom_outlined_icons::OcrTranslate(),
                                       QStringLiteral("screenshotOcrTextTranslateButton"));
@@ -7479,6 +7729,8 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
         addButton("Jump to Translation Page", custom_outlined_icons::JumpTranslate(),
                   QStringLiteral("screenshotOcrJumpToTranslationPageButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
+#endif
+
     ScreenshotToolPaletteSelectEditorConfig formattingConfig;
     formattingConfig.objectName = QStringLiteral("screenshotOcrTextFormattingSelect");
     formattingConfig.placeholder = QStringLiteral("Formatting");
@@ -7511,19 +7763,30 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),
                                   QStringLiteral("screenshotOcrTextResetButton"));
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textSettingsButton = addButton("Translation settings", outlined_icons::Setting(),
                                      QStringLiteral("screenshotOcrTextSettingsButton"));
+#endif
+
     connect(m_textEditButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textEditRequested);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     connect(m_textTranslateButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textTranslateRequested);
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     connect(m_jumpToTranslationPageButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::jumpToTranslationPageRequested);
+#endif
+
     connect(m_textResetButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textResetRequested);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     connect(m_textSettingsButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::textSettingsRequested);
+#endif
+
     connect(m_textFormattingSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
             [this](const QVariant& value) {
                 if (!m_replayingMaterializedState) {
@@ -7544,15 +7807,20 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
 }
 
 void ScreenshotToolPalette::setImageConversionEnabled(bool enabled) {
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     for (auto* button : {m_markdownButton, m_htmlButton}) {
         if (button != nullptr) {
             button->setEnabled(enabled);
         }
     }
     refreshActionToolGroups();
+#else
+    Q_UNUSED(enabled);
+#endif
 }
 
 void ScreenshotToolPalette::setImageConversionBusy(bool markdownBusy, bool htmlBusy) {
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     if (m_markdownButton != nullptr) {
         m_markdownButton->setBusy(markdownBusy);
     }
@@ -7560,8 +7828,13 @@ void ScreenshotToolPalette::setImageConversionBusy(bool markdownBusy, bool htmlB
         m_htmlButton->setBusy(htmlBusy);
     }
     refreshActionToolGroups();
+#else
+    Q_UNUSED(markdownBusy);
+    Q_UNUSED(htmlBusy);
+#endif
 }
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 void ScreenshotToolPalette::createImageConversionActionFamily() {
     if (m_selectActionLayout == nullptr || m_conversionSettingsButton != nullptr) {
         return;
@@ -7575,7 +7848,9 @@ void ScreenshotToolPalette::createImageConversionActionFamily() {
     connect(m_conversionSettingsButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::imageConversionSettingsRequested);
 }
+#endif
 
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
 void ScreenshotToolPalette::createTableRecognitionActionFamily() {
     if (m_selectActionLayout == nullptr || m_tableMergeButton != nullptr) {
         return;
@@ -7607,6 +7882,7 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
     setTableEditingState(m_tableEditingAvailable, m_tableCanUndo, m_tableCanRedo, m_tableCanMerge,
                          m_tableCanSplit, m_tableCanReset);
 }
+#endif
 
 void ScreenshotToolPalette::createMoveActionFamily() {
     if (!m_options.showMoveOptionsToolbar || m_selectActionLayout == nullptr ||
@@ -8881,11 +9157,16 @@ void ScreenshotToolPalette::setAutoFilterAvailable(bool available) {
 }
 
 void ScreenshotToolPalette::setLatexState(bool enabled, bool busy) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_latexButton) {
         m_latexButton->setEnabled(enabled);
         m_latexButton->setBusy(busy);
     }
     refreshActionToolGroups();
+#else
+    Q_UNUSED(enabled);
+    Q_UNUSED(busy);
+#endif
 }
 
 void ScreenshotToolPalette::setRecordingMicrophoneGainDb(int gainDb) {

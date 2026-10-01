@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
 
 #include <QCoreApplication>
@@ -17,7 +18,10 @@ namespace snow_shot::platform::windows {
 namespace {
 #if defined(Q_OS_WIN) || defined(_WIN32)
 constexpr wchar_t RUN_KEY[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t VALUE_NAME[] = L"SnowShot";
+const wchar_t* startupValueName() {
+    static const std::wstring value = app::edition::registryName().toStdWString();
+    return value.c_str();
+}
 
 QString windowsErrorMessage(const QString& operation, LSTATUS status) {
     return QStringLiteral("%1 failed with Windows error %2").arg(operation).arg(status);
@@ -37,7 +41,7 @@ bool deleteRegistration(QString* error) {
         return false;
     }
 
-    const LSTATUS deleteStatus = RegDeleteValueW(key, VALUE_NAME);
+    const LSTATUS deleteStatus = RegDeleteValueW(key, startupValueName());
     RegCloseKey(key);
     if (deleteStatus == ERROR_SUCCESS || deleteStatus == ERROR_FILE_NOT_FOUND) {
         return true;
@@ -72,8 +76,8 @@ bool writeRegistration(quint32 type, const QByteArray& data, QString* error) {
         return false;
     }
     const auto* bytes = reinterpret_cast<const BYTE*>(data.constData());
-    const LSTATUS writeStatus = RegSetValueExW(key, VALUE_NAME, 0, static_cast<DWORD>(type), bytes,
-                                               static_cast<DWORD>(data.size()));
+    const LSTATUS writeStatus = RegSetValueExW(key, startupValueName(), 0, static_cast<DWORD>(type),
+                                               bytes, static_cast<DWORD>(data.size()));
     RegCloseKey(key);
     if (writeStatus == ERROR_SUCCESS) {
         return true;
@@ -123,7 +127,8 @@ AutoStartRegistrationSnapshot AutoStartRegistration::snapshot() {
 
     DWORD type = 0;
     DWORD byteCount = 0;
-    LSTATUS queryStatus = RegQueryValueExW(key, VALUE_NAME, nullptr, &type, nullptr, &byteCount);
+    LSTATUS queryStatus =
+        RegQueryValueExW(key, startupValueName(), nullptr, &type, nullptr, &byteCount);
     if (queryStatus == ERROR_FILE_NOT_FOUND) {
         RegCloseKey(key);
         result.valid = true;
@@ -137,7 +142,7 @@ AutoStartRegistrationSnapshot AutoStartRegistration::snapshot() {
     }
 
     result.nativeData.resize(static_cast<qsizetype>(byteCount));
-    queryStatus = RegQueryValueExW(key, VALUE_NAME, nullptr, &type,
+    queryStatus = RegQueryValueExW(key, startupValueName(), nullptr, &type,
                                    reinterpret_cast<BYTE*>(result.nativeData.data()), &byteCount);
     RegCloseKey(key);
     if (queryStatus != ERROR_SUCCESS) {

@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QToolButton>
 #include <QWidget>
+#include <QVBoxLayout>
 #include <QWindow>
 #include <QtTest>
 #include <memory>
@@ -104,6 +105,16 @@ class ModalityObserver : public QObject {
   }
 };
 
+// Model wrapped content whose preferred height decreases at the modal width,
+// without depending on the platform's font metrics.
+class HeightForWidthContent : public QWidget {
+ public:
+  QSize sizeHint() const override { return QSize(180, 90); }
+  QSize minimumSizeHint() const override { return QSize(20, 30); }
+  bool hasHeightForWidth() const override { return true; }
+  int heightForWidth(int width) const override { return width >= 300 ? 30 : 90; }
+};
+
 // Returns the modal dialog surface the way an external observer would find
 // it: as a top-level widget. A window-mode overlay with no owner window is a
 // parentless top-level dialog, so findChild() cannot be used here.
@@ -186,6 +197,70 @@ class TstModalWindow : public QObject {
     modal.setMode(AdModal::Mode::Window);
     modal.setWindowModeDetached(true);
     requireOpenProducesVisibleWindow(modal, QStringLiteral("Ownerless detached"));
+  }
+
+  void windowModeRefreshPreservesHeightForWidthGeometry() {
+    AdModal modal;
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModeDetached(true);
+    modal.setWindowTitle(QStringLiteral("Wrapped content"));
+    modal.setPreferredWidth(500);
+    auto* content = new HeightForWidthContent;
+    modal.setContentWidget(content);
+    auto* footer = new QPushButton(QStringLiteral("Keep Source"));
+    modal.setFooterWidget(footer);
+    modal.open();
+    QWidget* surface = visibleOverlaySurface(modal.windowTitle());
+    QVERIFY(surface);
+    QWidget* panel = modalSection(surface, "ad-modal-panel");
+    QVERIFY(panel);
+
+    for (const int width : {500, 240, 500}) {
+      modal.setPreferredWidth(width);
+      for (int refresh = 0; refresh < 3; ++refresh) {
+        modal.open();
+        qApp->processEvents();
+        QVERIFY(surface->rect().contains(panel->geometry()));
+        QCOMPARE(content->height(), content->heightForWidth(content->width()));
+        const int footerBottom = footer->mapTo(surface, QPoint()).y() + footer->height();
+        const int bottomInset = sectionMargins(surface, "ad-modal-footer").bottom();
+        QVERIFY(bottomInset > 0);
+        QVERIFY(surface->height() - footerBottom >= bottomInset);
+      }
+    }
+    modal.close();
+  }
+
+  void windowModeFitsNestedContentVisibilityChanges() {
+    AdModal modal;
+    modal.setMode(AdModal::Mode::Window);
+    modal.setWindowModeDetached(true);
+    modal.setWindowTitle(QStringLiteral("Changing content"));
+    modal.setPreferredWidth(500);
+    auto* body = new QWidget;
+    auto* bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    auto* status = new QLabel(QStringLiteral("Rendering"), body);
+    bodyLayout->addWidget(status);
+    auto* details = new HeightForWidthContent;
+    bodyLayout->addWidget(details);
+    modal.setContentWidget(body);
+    modal.open();
+    QWidget* surface = visibleOverlaySurface(modal.windowTitle());
+    QVERIFY(surface);
+
+    for (int transition = 0; transition < 3; ++transition) {
+      details->show();
+      modal.open();
+      const QSize expanded = surface->size();
+      details->hide();
+      modal.open();
+      QVERIFY(surface->height() < expanded.height());
+      details->show();
+      modal.open();
+      QCOMPARE(surface->size(), expanded);
+    }
+    modal.close();
   }
 
 #ifdef Q_OS_MACOS
@@ -1055,6 +1130,65 @@ class TstModalWindow : public QObject {
     QCOMPARE(surface->minimumSize(), available.size());
     QVERIFY(available.contains(surface->geometry()));
     modal.close();
+  }
+
+  void explicitAnchorCentersDetachedWindow() {
+    for (QScreen* screen : qApp->screens()) {
+      const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
+      const QPoint center =
+          available.topLeft() + QPoint(available.width() * 2 / 5, available.height() * 2 / 5);
+      const QRect anchor(center - QPoint(40, 30), QSize(81, 61));
+      for (bool resizable : {false, true}) {
+        AdModal modal;
+        modal.setMode(AdModal::Mode::Window);
+        modal.setWindowModeDetached(true);
+        modal.setWindowModality(Qt::NonModal);
+        modal.setWindowScreen(screen);
+        modal.setWindowAnchorGeometry(anchor);
+        modal.setWindowPreferredSize(QSize(200, 120));
+        modal.setWindowResizable(resizable);
+        modal.setCentered(true);
+        modal.open();
+        auto* surface = visibleOverlaySurface();
+        QVERIFY(surface);
+        QCOMPARE(modal.windowAnchorGeometry(), anchor);
+        QVERIFY(!modal.ownerWindow());
+        QVERIFY(!surface->parentWidget());
+        QVERIFY((surface->geometry().center() - center).manhattanLength() <= 2);
+        if (!resizable) {
+          modal.setWindowPreferredSize(QSize(240, 160));
+          QVERIFY((surface->geometry().center() - center).manhattanLength() <= 2);
+        }
+        modal.close();
+        modal.setWindowAnchorGeometry({});
+        modal.open();
+        surface = visibleOverlaySurface();
+        QVERIFY(surface);
+        QVERIFY((surface->geometry().center() - available.center()).manhattanLength() <= 2);
+        modal.close();
+      }
+    }
+  }
+
+  void explicitAnchorClampsToAvailableScreen() {
+    QScreen* screen = qApp->primaryScreen();
+    const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
+    for (bool resizable : {false, true}) {
+      AdModal modal;
+      modal.setMode(AdModal::Mode::Window);
+      modal.setWindowModeDetached(true);
+      modal.setWindowScreen(screen);
+      modal.setWindowAnchorGeometry(QRect(available.topLeft(), QSize(10, 10)));
+      modal.setWindowPreferredSize(QSize(200, 120));
+      modal.setWindowResizable(resizable);
+      modal.setCentered(true);
+      modal.open();
+      auto* surface = visibleOverlaySurface();
+      QVERIFY(surface);
+      QCOMPARE(surface->geometry().topLeft(), available.topLeft());
+      QVERIFY(available.contains(surface->geometry()));
+      modal.close();
+    }
   }
 
   void detachedWindowDoesNotAcquireAmbientOwner() {

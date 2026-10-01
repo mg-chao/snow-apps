@@ -5,6 +5,7 @@
 #include <QEventLoop>
 #include <QMimeData>
 #include <QTimer>
+#include <QColorSpace>
 
 #import <AppKit/AppKit.h>
 #include <ImageIO/ImageIO.h>
@@ -69,6 +70,7 @@ bool hasSamePixels(const QImage& actual, const QImage& expected) {
 
 void nativeImageFormatsRoundTrip() {
     QImage source(17, 11, QImage::Format_ARGB32);
+    source.setColorSpace(QColorSpace::SRgb);
     source.fill(QColor(40, 80, 120, 255));
     source.setPixelColor(0, 0, QColor(0, 0, 0, 0));
     source.setPixelColor(8, 5, QColor(40, 80, 120, 128));
@@ -92,6 +94,10 @@ void nativeImageFormatsRoundTrip() {
                     [board.types containsObject:NSPasteboardTypeTIFF],
                 "native clipboard must retain both PNG and TIFF compatibility");
         const NSData* png = [board dataForType:NSPasteboardTypePNG];
+        require(QImage::fromData(static_cast<const uchar*>(png.bytes), static_cast<int>(png.length),
+                                 "PNG")
+                        .colorSpace() == QColorSpace(QColorSpace::SRgb),
+                "native PNG must declare the screenshot's sRGB color space");
         require(hasSamePixels(QImage::fromData(static_cast<const uchar*>(png.bytes),
                                                static_cast<int>(png.length), "PNG"),
                               source),

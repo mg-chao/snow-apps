@@ -2,7 +2,7 @@
 set -euo pipefail
 source "$(dirname "$0")/snow-build-environment.sh"
 if [[ "${1:-}" == --help ]]; then
-    echo 'Usage: run-snow-shot.sh [macOS-preset] [--clean] [--no-build] [--codesign-identity IDENTITY] [-- APP_ARGUMENTS...]'
+    echo 'Usage: run-snow-shot.sh [macOS-preset] [--edition full|mini] [--clean] [--no-build] [--codesign-identity IDENTITY] [-- APP_ARGUMENTS...]'
     echo '--no-build launches the existing deployed app without reinstalling or signing it.'
     echo '--codesign-identity overrides the automatically provisioned local signing identity.'
     exit 0
@@ -11,12 +11,14 @@ snow_require_macos
 preset=''
 if [[ $# -gt 0 && "$1" != --* ]]; then preset="$1"; shift; fi
 snow_select_preset "$preset"
+edition=full
 clean=false
 build=true
 codesign_identity=''
 codesign_identity_set=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --edition) [[ $# -ge 2 ]] || snow_die "--edition needs full or mini"; edition="$2"; shift 2 ;;
         --clean) clean=true; shift ;;
         --no-build) build=false; shift ;;
         --codesign-identity)
@@ -30,7 +32,8 @@ while [[ $# -gt 0 ]]; do
         *) snow_die "Unknown argument: $1" ;;
     esac
 done
-deployed_app="$snow_build_dir/run/snow_shot.app"
+case "$edition" in full) target=snow_shot; component=SnowShot ;; mini) target=snow_shot_mini; component=SnowShotMini ;; *) snow_die "--edition needs full or mini" ;; esac
+deployed_app="$snow_build_dir/run/$target.app"
 wait_for_process_exit() {
     local pid="$1"
     local attempts="$2"
@@ -47,7 +50,7 @@ stop_running_build_instances() {
     local pid
     local executable_path
     while read -r pid executable_path; do
-        [[ -n "$pid" && "${executable_path##*/}" == snow_shot ]] || continue
+        [[ -n "$pid" && "${executable_path##*/}" == "$target" ]] || continue
         case "$executable_path" in
             "$snow_build_dir"/*) ;;
             *) continue ;;
@@ -73,24 +76,24 @@ if [[ "$build" == false && "$codesign_identity_set" == true ]]; then
     snow_die '--codesign-identity cannot be combined with --no-build'
 fi
 if [[ "$build" == false ]]; then
-    [[ -x "$deployed_app/Contents/MacOS/snow_shot" ]] || snow_die "The deployed Snow Shot was not found for $snow_preset. Run without --no-build to create it."
+    [[ -x "$deployed_app/Contents/MacOS/$target" ]] || snow_die "The deployed Snow Shot was not found for $snow_preset. Run without --no-build to create it."
     # Preserve the exact signed bundle to which the user granted permissions.
     exec open -n "$deployed_app" --args "$@"
 fi
 stop_running_build_instances
-build_args=("$snow_preset" --target snow_shot)
+build_args=("$snow_preset" --target "$target")
 if [[ "$clean" == true ]]; then build_args+=(--clean); fi
 if [[ "$codesign_identity_set" == false ]]; then
     codesign_identity="$("$(dirname "$0")/ensure-macos-codesign-identity.sh")"
 fi
 build_args+=(-- "-DSNOW_MACOS_CODESIGN_IDENTITY=$codesign_identity")
 "$(dirname "$0")/build.sh" "${build_args[@]}"
-app="$snow_build_dir/snow_shot/snow_shot.app"
-[[ -x "$app/Contents/MacOS/snow_shot" ]] || snow_die "Snow Shot was not found for $snow_preset. Run without --no-build to create it."
+app="$snow_build_dir/$target/$target.app"
+[[ -x "$app/Contents/MacOS/$target" ]] || snow_die "Snow Shot was not found for $snow_preset. Run without --no-build to create it."
 # Deploy a separate development copy so dlopen-only OCR dependencies and Qt
 # plugins resolve exactly as they do in a package. Leave build products intact.
 export PATH="$snow_repo_root/.tools/macos-dev/bin:$PATH"
-cmake --install "$snow_build_dir" --component SnowShot --prefix "$snow_build_dir/run"
+cmake --install "$snow_build_dir" --component "$component" --prefix "$snow_build_dir/run"
 # The development bundle keeps the same path and version between builds. Force
 # LaunchServices to discard stale metadata (including a previously missing icon)
 # before Finder and the Dock resolve the bundle for the next launch.

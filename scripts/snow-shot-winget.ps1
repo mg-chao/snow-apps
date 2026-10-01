@@ -1,6 +1,7 @@
 # Shared release/manifest operations. Dot-sourcing this file performs no network or disk writes.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'snow-shot-editions.ps1')
 
 function Get-SnowShotWingetVersion([string]$Tag) {
     if ($Tag -cnotmatch '^v(?<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?)(?:_snow-shot)?\z') {
@@ -15,7 +16,8 @@ function Invoke-SnowShotWingetApi([string]$Path) {
     Invoke-RestMethod -Uri "https://api.github.com/$Path" -Headers $headers
 }
 
-function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory) {
+function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory, [string]$Edition = 'Full') {
+    $product = Get-SnowShotEdition $Edition
     $version = Get-SnowShotWingetVersion $Tag
     $repository = 'mg-chao/snow-apps'
     $release = Invoke-SnowShotWingetApi "repos/$repository/releases/tags/$Tag"
@@ -27,7 +29,8 @@ function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory) {
     }
     # Explicit indentation keeps Markdown, YAML-looking text and leading spaces literal.
     $releaseNotes = ($notes.Split("`n") | ForEach-Object { "  $_" }) -join "`n"
-    $name = "snow-shot-$version-windows-x64-offline.exe"
+    $variant = if ($Edition -eq 'Mini') { 'online' } else { 'offline' }
+    $name = "$($product.Product)-$version-windows-x64-$variant.exe"
     $assets = @($release.assets | Where-Object { $_.name -ceq $name })
     if ($assets.Count -ne 1) { throw "Expected exactly one release asset named $name." }
     $url = "https://github.com/$repository/releases/download/$Tag/$name"
@@ -43,18 +46,18 @@ function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory) {
     } finally {
         if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download }
     }
-    $directory = Join-Path $OutputDirectory "manifests/m/mg-chao/snow-shot/$version"
+    $directory = Join-Path $OutputDirectory "manifests/m/mg-chao/$($product.Product)/$version"
     $null = New-Item -ItemType Directory -Force -Path $directory
-    $common = "PackageIdentifier: mg-chao.snow-shot`nPackageVersion: '$version'"
+    $common = "PackageIdentifier: $($product.Winget)`nPackageVersion: '$version'"
     $documents = [ordered]@{
-        'mg-chao.snow-shot.yaml' = @"
+        "$($product.Winget).yaml" = @"
 # yaml-language-server: `$schema=https://aka.ms/winget-manifest.version.1.12.0.schema.json
 $common
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.12.0
 "@
-        'mg-chao.snow-shot.installer.yaml' = @"
+        "$($product.Winget).installer.yaml" = @"
 # yaml-language-server: `$schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
 $common
 InstallerLocale: en-US
@@ -69,14 +72,14 @@ InstallerSwitches:
   SilentWithProgress: /S
 UpgradeBehavior: install
 ElevationRequirement: elevationRequired
-ProductCode: SnowShot
+ProductCode: $($product.Registry)
 ReleaseDate: $releaseDate
 InstallationMetadata:
-  DefaultInstallLocation: '%ProgramFiles%\SnowShot'
+  DefaultInstallLocation: '%ProgramFiles%\$($product.Registry)'
 AppsAndFeaturesEntries:
-  - DisplayName: Snow Shot
+  - DisplayName: $($product.Name)
     Publisher: Snow Apps
-    ProductCode: SnowShot
+    ProductCode: $($product.Registry)
 ExpectedReturnCodes:
   - InstallerReturnCode: 10
     ReturnResponse: packageInUse
@@ -87,19 +90,19 @@ Installers:
 ManifestType: installer
 ManifestVersion: 1.12.0
 "@
-        'mg-chao.snow-shot.locale.en-US.yaml' = @"
+        "$($product.Winget).locale.en-US.yaml" = @"
 # yaml-language-server: `$schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
 $common
 PackageLocale: en-US
 Publisher: Snow Apps
 PublisherUrl: https://github.com/mg-chao
 PublisherSupportUrl: https://github.com/$repository/issues
-PackageName: Snow Shot
+PackageName: $($product.Name)
 PackageUrl: https://snowshot.top
 License: GPL-3.0-or-later
 LicenseUrl: https://github.com/$repository/blob/$Tag/snow_shot/COPYRIGHT
 ShortDescription: A screenshot utility for capturing, annotating, pinning, and recognizing screen content.
-Moniker: snowshot
+Moniker: $($product.Scoop)
 Tags:
   - chatbot
   - screen-capture
@@ -116,14 +119,16 @@ ManifestVersion: 1.12.0
 "@
     }
     foreach ($entry in $documents.GetEnumerator()) {
+        if ($Edition -eq 'Mini') { $entry.Value = $entry.Value.Replace("  - chatbot`n", '').Replace("  - translate`n", '') }
         [IO.File]::WriteAllText((Join-Path $directory $entry.Key),
             $entry.Value.Replace("`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
     }
     return [IO.Path]::GetFullPath($directory)
 }
 
-function Get-SnowShotWingetSubmission([string]$Version) {
-    $path = "manifests/m/mg-chao/snow-shot/$Version"
+function Get-SnowShotWingetSubmission([string]$Version, [string]$Edition = 'Full') {
+    $product = Get-SnowShotEdition $Edition
+    $path = "manifests/m/mg-chao/$($product.Product)/$Version"
     try {
         $null = Invoke-SnowShotWingetApi "repos/microsoft/winget-pkgs/contents/$path"
         return "Already merged: https://github.com/microsoft/winget-pkgs/tree/master/$path"
@@ -131,13 +136,13 @@ function Get-SnowShotWingetSubmission([string]$Version) {
         # Authentication, rate limits and server failures must not masquerade as absence.
         if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw }
     }
-    $query = [uri]::EscapeDataString('repo:microsoft/winget-pkgs is:pr is:open in:title "mg-chao.snow-shot"')
+    $query = [uri]::EscapeDataString("repo:microsoft/winget-pkgs is:pr is:open in:title `"$($product.Winget)`"")
     $page = 1
     do {
         $response = Invoke-SnowShotWingetApi "search/issues?q=$query&per_page=100&page=$page"
         if ($response.incomplete_results) { throw 'GitHub returned an incomplete submission search.' }
         foreach ($item in $response.items) {
-            if ($item.title -match ('(?i)(?<![\w.])mg-chao\.snow-shot(?![\w.]).*?(?<![\w.+-])' +
+            if ($item.title -match ('(?i)(?<![\w.])' + [regex]::Escape($product.Winget) + '(?![\w.-]).*?(?<![\w.+-])' +
                     [regex]::Escape($Version) + '(?![\w.+-])')) {
                 return "Submission already open: $($item.html_url)"
             }
@@ -149,13 +154,14 @@ function Get-SnowShotWingetSubmission([string]$Version) {
     return $null
 }
 
-function Submit-SnowShotWingetManifest([string]$Tag, [string]$ManifestDirectory, [string]$WingetCreate) {
+function Submit-SnowShotWingetManifest([string]$Tag, [string]$ManifestDirectory, [string]$WingetCreate, [string]$Edition = 'Full') {
+    $product = Get-SnowShotEdition $Edition
     $version = Get-SnowShotWingetVersion $Tag
-    $existing = Get-SnowShotWingetSubmission $version
+    $existing = Get-SnowShotWingetSubmission $version $Edition
     if ($existing) { Write-Output $existing; return }
     if (-not $env:WINGET_CREATE_GITHUB_TOKEN) {
         throw 'Set the WINGET_CREATE_GITHUB_TOKEN repository secret (classic PAT, public_repo scope). Generated manifests remain available as workflow artifacts.'
     }
-    & $WingetCreate submit --no-open --prtitle "New version: mg-chao.snow-shot version $version" $ManifestDirectory
+    & $WingetCreate submit --no-open --prtitle "New version: $($product.Winget) version $version" $ManifestDirectory
     if ($LASTEXITCODE -ne 0) { throw "WinGetCreate submission failed with exit code $LASTEXITCODE." }
 }

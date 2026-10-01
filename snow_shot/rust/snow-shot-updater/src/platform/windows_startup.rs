@@ -68,7 +68,7 @@ fn task_name(executable: &Path, sid: &str) -> String {
         .replace('\\', "/")
         .to_lowercase();
     let digest = format!("{:x}", Sha256::digest(identity.as_bytes()));
-    format!("SnowShot-{sid}-{}", &digest[..24])
+    format!("{}-{sid}-{}", crate::edition::REGISTRY_NAME, &digest[..24])
 }
 
 struct ComApartment(bool);
@@ -385,7 +385,7 @@ impl TaskManager {
                 Ok(name) => name.to_string(),
                 Err(_) => continue,
             };
-            if !candidate.starts_with("SnowShot-") {
+            if !candidate.starts_with(&format!("{}-", crate::edition::REGISTRY_NAME)) {
                 continue;
             }
             let definition = match unsafe { task.Definition() } {
@@ -414,7 +414,7 @@ impl TaskManager {
                 security: unsafe { task.GetSecurityDescriptor(DACL_SECURITY_INFORMATION.0 as i32) }
                     .map_err(update_error)?,
             };
-            let destination = replacement.map(|path| path.join("bin/snow_shot.exe"));
+            let destination = replacement.map(|path| path.join(crate::edition::APP_PATH));
             let destination_name = destination.as_deref().map(|path| task_name(path, &sid));
             if let Some(name) = destination_name.as_deref() {
                 self.destination_absent(name)?;
@@ -440,7 +440,7 @@ impl TaskManager {
 fn startup_command(root: &Path) -> String {
     format!(
         "\"{}\" --autostart",
-        root.join("bin/snow_shot.exe").display()
+        root.join(crate::edition::APP_PATH).display()
     )
 }
 
@@ -474,7 +474,7 @@ fn reconcile_run_value(
         return Ok(false);
     }
     let read = RegistryKey(read);
-    let name = wide("SnowShot");
+    let name = wide(crate::edition::REGISTRY_NAME);
     let mut command = vec![0_u16; 32_768];
     let mut bytes = (command.len() * size_of::<u16>()) as u32;
     let status = unsafe {
@@ -676,7 +676,7 @@ fn update_run_keys(root: &Path, replacement: Option<&Path>) -> Result<()> {
 }
 
 fn update_installation_startup(root: &Path, replacement: Option<&Path>) -> Result<()> {
-    let executable = root.join("bin/snow_shot.exe");
+    let executable = root.join(crate::edition::APP_PATH);
     TaskManager::new()?.update_tasks(&executable, replacement)?;
     update_run_keys(root, replacement)
 }

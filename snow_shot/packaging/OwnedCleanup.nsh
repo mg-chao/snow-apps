@@ -1,6 +1,12 @@
 !ifndef SNOW_SHOT_OWNED_CLEANUP_INCLUDED
 !define SNOW_SHOT_OWNED_CLEANUP_INCLUDED
 !include "FileFunc.nsh"
+!ifndef SNOW_SHOT_INSTALLER_EXECUTABLE
+!define SNOW_SHOT_INSTALLER_EXECUTABLE "snow_shot"
+!endif
+!ifndef SNOW_SHOT_INSTALLER_UPDATER
+!define SNOW_SHOT_INSTALLER_UPDATER "snow-shot-updater"
+!endif
 
 ; The update helper tracks files that self-updates added after this
 ; uninstaller was built, plus the startup registrations. Run a copy of it
@@ -14,17 +20,17 @@
 ; because its failure (running application, active update, access denied)
 ; is recoverable before files are removed.
 !macro SnowShotUninstallOwnedCleanup
-  Push "$INSTDIR\bin\snow_shot.exe"
+  Push "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_EXECUTABLE}.exe"
   Call un.SnowShotEnsureAppClosed
   Push "$INSTDIR\bin\crashpad_handler.exe"
   Call un.SnowShotEnsureAppClosed
-  IfFileExists "$INSTDIR\bin\snow-shot-updater.exe" 0 snowOwnedDone
+  IfFileExists "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_UPDATER}.exe" 0 snowOwnedDone
     InitPluginsDir
-    StrCpy $4 "$INSTDIR\bin\snow-shot-updater.exe"
+    StrCpy $4 "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_UPDATER}.exe"
     ClearErrors
-    CopyFiles /SILENT "$INSTDIR\bin\snow-shot-updater.exe" "$PLUGINSDIR\snow-shot-updater.exe"
+    CopyFiles /SILENT "$INSTDIR\bin\${SNOW_SHOT_INSTALLER_UPDATER}.exe" "$PLUGINSDIR\${SNOW_SHOT_INSTALLER_UPDATER}.exe"
     IfErrors snowOwnedRun
-    StrCpy $4 "$PLUGINSDIR\snow-shot-updater.exe"
+    StrCpy $4 "$PLUGINSDIR\${SNOW_SHOT_INSTALLER_UPDATER}.exe"
   snowOwnedRun:
     StrCpy $1 ""
     ${GetParameters} $2

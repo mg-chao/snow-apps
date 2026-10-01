@@ -716,6 +716,14 @@
             <translation>Polyline region</translation>
         </message>
         <message>
+            <source>Post-processing effects</source>
+            <translation>Post-processing effects</translation>
+        </message>
+        <message>
+            <source>Progress Bar Color</source>
+            <translation>Progress Bar Color</translation>
+        </message>
+        <message>
             <source>Punctuation</source>
             <translation>Punctuation</translation>
         </message>
@@ -862,6 +870,14 @@
         <message>
             <source>Shape</source>
             <translation>Shape</translation>
+        </message>
+        <message>
+            <source>Show Playback Time</source>
+            <translation>Show Playback Time</translation>
+        </message>
+        <message>
+            <source>Show Progress Bar</source>
+            <translation>Show Progress Bar</translation>
         </message>
         <message>
             <source>Show QR Code</source>

@@ -1,3 +1,4 @@
+#include "snow_shot/app/mcp/mcpedition.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 
@@ -488,24 +489,26 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
 QString ScreenshotMcpServer::defaultRuntimeDirectory() {
 #ifdef Q_OS_WIN
     return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
-        .filePath(QStringLiteral("SnowShot/mcp"));
+        .filePath(edition::registryName() + QStringLiteral("/mcp"));
 #else
     return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
-        .filePath(QStringLiteral("SnowShot/mcp"));
+        .filePath(edition::registryName() + QStringLiteral("/mcp"));
 #endif
 }
 ScreenshotMcpServer::ScreenshotMcpServer(QObject* parent, QString runtimeDirectory)
     : QObject(parent) {
     if (!runtimeDirectory.isEmpty()) {
         m_runtimeDirectory = std::move(runtimeDirectory);
-        m_descriptorPath = QDir(m_runtimeDirectory).filePath(QStringLiteral("snow-shot-mcp.json"));
+        m_descriptorPath =
+            QDir(m_runtimeDirectory).filePath(edition::productId() + QStringLiteral("-mcp.json"));
     } else if (qEnvironmentVariableIsSet("SNOW_SHOT_MCP_DESCRIPTOR")) {
         m_descriptorPath = qEnvironmentVariable("SNOW_SHOT_MCP_DESCRIPTOR");
         if (!m_descriptorPath.isEmpty())
             m_runtimeDirectory = QFileInfo(m_descriptorPath).absolutePath();
     } else {
         m_runtimeDirectory = defaultRuntimeDirectory();
-        m_descriptorPath = QDir(m_runtimeDirectory).filePath(QStringLiteral("snow-shot-mcp.json"));
+        m_descriptorPath =
+            QDir(m_runtimeDirectory).filePath(edition::productId() + QStringLiteral("-mcp.json"));
     }
 }
 ScreenshotMcpServer::~ScreenshotMcpServer() {
@@ -537,13 +540,14 @@ bool ScreenshotMcpServer::start(QString* error) {
     m_generation = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_token = randomToken();
 #ifdef Q_OS_WIN
-    m_socketName = QStringLiteral("snow-shot-mcp-") + m_generation;
+    m_socketName = edition::productId() + QStringLiteral("-mcp-") + m_generation;
 #else
 #ifdef Q_OS_MACOS
     // Keep sun_path below macOS's 104-byte capacity, independent of HOME/TMPDIR.
     // QTemporaryDir atomically creates a new 0700 directory; never reuse a PID path.
-    m_socketDirectory = std::make_unique<QTemporaryDir>(QStringLiteral("/tmp/snow-shot-mcp-") +
-                                                        m_generation + QStringLiteral("-XXXXXX"));
+    m_socketDirectory = std::make_unique<QTemporaryDir>(
+        QStringLiteral("/tmp/") + edition::productId() + QStringLiteral("-mcp-") + m_generation +
+        QStringLiteral("-XXXXXX"));
     if (!m_socketDirectory->isValid()) {
         if (error)
             *error = tr("Could not secure the MCP runtime directory.");
@@ -757,6 +761,7 @@ bool ScreenshotMcpServer::writeDescriptor(QString* error) {
         {QStringLiteral("socket"), m_socketName},
         {QStringLiteral("token"), m_token},
         {QStringLiteral("pid"), QCoreApplication::applicationPid()},
+        {QStringLiteral("product"), edition::productId()},
         {QStringLiteral("generation"), m_generation},
         {QStringLiteral("max_frame_bytes"), static_cast<qint64>(kMaximumFrameBytes)}};
     const QByteArray bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);

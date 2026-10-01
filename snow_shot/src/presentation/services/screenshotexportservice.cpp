@@ -21,6 +21,7 @@
 #include <QPointer>
 #include <QThread>
 #include <QScopeGuard>
+#include <QColorSpace>
 
 #include <optional>
 #include <utility>
@@ -72,6 +73,9 @@ QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect
         SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.render_canvas", 1);
         return {};
     }
+    // The canvas paints canonical sRGB capture sources and annotation colors.
+    // Its generic renderer allocates a new raster without color metadata.
+    content.setColorSpace(QColorSpace::SRgb);
     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.rendered_bytes", content.sizeInBytes());
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.compose_result");
     SNOW_SHOT_PIN_PERF_SCOPE("export.compose_result");

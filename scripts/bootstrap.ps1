@@ -200,7 +200,7 @@ if (-not $SkipDependencyInstall) {
               "--clean-after-build"
           )
         if ($variant -eq "Dynamic") {
-            $vcpkgArguments += "--x-feature=full-codecs"
+            $vcpkgArguments += @("--x-feature=full-codecs", "--x-feature=image-viewer")
         }
         Invoke-Checked -Command $vcpkgExe -Arguments $vcpkgArguments -WorkingDirectory $repoRoot
     }

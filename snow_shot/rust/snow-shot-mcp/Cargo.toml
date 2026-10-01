@@ -9,6 +9,9 @@ publish = false
 name = "snow-shot-mcp"
 path = "src/main.rs"
 
+[features]
+mini = []
+
 [dependencies]
 anyhow = "1.0.102"
 base64 = "0.22.1"

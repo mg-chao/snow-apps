@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 snow-core = { path = "../snow-core" }
+snow-recording-model = { path = "../snow-recording-model" }
 crossbeam-channel.workspace = true
 
 [target.'cfg(windows)'.dependencies]

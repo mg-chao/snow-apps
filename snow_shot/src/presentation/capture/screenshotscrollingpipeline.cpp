@@ -9,6 +9,7 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QThread>
+#include <QColorSpace>
 
 #include <algorithm>
 #include <atomic>
@@ -1084,6 +1085,8 @@ QImage ScreenshotScrollingSnapshot::materialize() const {
                   &releaseSnapshotImage, image);
     if (result.isNull()) {
         snow_stitch_owned_image_destroy(image);
+    } else {
+        result.setColorSpace(QColorSpace::SRgb);
     }
     return result;
 }

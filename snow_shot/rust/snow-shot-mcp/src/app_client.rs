@@ -219,9 +219,13 @@ impl AppClient {
             .parent()
             .ok_or(AppClientError::Unavailable)?
             .join(if cfg!(windows) {
-                "snow_shot.exe"
+                if crate::edition::MINI {
+                    "snow_shot_mini.exe"
+                } else {
+                    "snow_shot.exe"
+                }
             } else {
-                "snow_shot"
+                crate::edition::APP_NAME
             });
         if !application.is_file() {
             return Err(AppClientError::Unavailable);
@@ -519,7 +523,7 @@ fn validate_socket_directory(d: &Descriptor, descriptor_owner: u32) -> Result<()
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let socket = PathBuf::from(&d.socket);
     let directory = socket.parent().ok_or(AppClientError::InvalidDescriptor)?;
-    let prefix = format!("snow-shot-mcp-{}-", d.generation);
+    let prefix = format!("{}-{}-", crate::edition::MCP_NAME, d.generation);
     let suffix = directory
         .file_name()
         .and_then(|name| name.to_str())
@@ -543,7 +547,12 @@ fn validate_socket_directory(d: &Descriptor, descriptor_owner: u32) -> Result<()
 }
 
 fn validate_descriptor(d: &Descriptor) -> Result<(), AppClientError> {
-    if d.protocol != PROTOCOL
+    if d.product
+        .as_deref()
+        .map_or(crate::edition::MINI, |product| {
+            product != crate::edition::PRODUCT
+        })
+        || d.protocol != PROTOCOL
         || d.max_frame_bytes != MAX_FRAME_BYTES
         || d.pid == 0
         || (d.generation.len() != 36
@@ -562,7 +571,9 @@ fn validate_descriptor(d: &Descriptor) -> Result<(), AppClientError> {
         return Err(AppClientError::InvalidDescriptor);
     }
     #[cfg(windows)]
-    if !d.socket.starts_with("snow-shot-mcp-")
+    if !d
+        .socket
+        .starts_with(&format!("{}-", crate::edition::MCP_NAME))
         || !d
             .socket
             .bytes()
@@ -608,12 +619,20 @@ fn default_descriptor_path() -> PathBuf {
         std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or_default()
-            .join("SnowShot/mcp/snow-shot-mcp.json")
+            .join(format!(
+                "{}/mcp/{}.json",
+                crate::edition::REGISTRY_NAME,
+                crate::edition::MCP_NAME
+            ))
     } else if cfg!(target_os = "macos") {
         std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_default()
-            .join("Library/Application Support/SnowShot/mcp/snow-shot-mcp.json")
+            .join(format!(
+                "Library/Application Support/{}/mcp/{}.json",
+                crate::edition::REGISTRY_NAME,
+                crate::edition::MCP_NAME
+            ))
     } else {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
@@ -623,7 +642,11 @@ fn default_descriptor_path() -> PathBuf {
                     .unwrap_or_default()
                     .join(".local/share")
             })
-            .join("SnowShot/mcp/snow-shot-mcp.json")
+            .join(format!(
+                "{}/mcp/{}.json",
+                crate::edition::REGISTRY_NAME,
+                crate::edition::MCP_NAME
+            ))
     }
 }
 
@@ -659,7 +682,11 @@ mod tests {
             &id[20..]
         );
         #[cfg(target_os = "macos")]
-        let directory = PathBuf::from(format!("/tmp/snow-shot-mcp-{generation}-{}", &id[..6]));
+        let directory = PathBuf::from(format!(
+            "/tmp/{}-{generation}-{}",
+            crate::edition::MCP_NAME,
+            &id[..6]
+        ));
         #[cfg(not(target_os = "macos"))]
         let directory = std::env::temp_dir().join(format!("snow-shot-mcp-test-{id}"));
         #[cfg(unix)]
@@ -673,7 +700,7 @@ mod tests {
         #[cfg(not(unix))]
         fs::create_dir(&directory).unwrap();
         #[cfg(windows)]
-        let socket = format!("snow-shot-mcp-{id}");
+        let socket = format!("{}-{id}", crate::edition::MCP_NAME);
         #[cfg(unix)]
         let socket = directory.join("socket").to_string_lossy().into_owned();
         let name = if cfg!(windows) {
@@ -684,6 +711,7 @@ mod tests {
         .unwrap();
         let listener = ListenerOptions::new().name(name).create_sync().unwrap();
         let descriptor = Descriptor {
+            product: Some(crate::edition::PRODUCT.to_owned()),
             protocol: PROTOCOL.into(),
             socket,
             token: "a".repeat(64),
@@ -936,13 +964,17 @@ mod tests {
             &id[16..20],
             &id[20..]
         );
-        let directory = PathBuf::from(format!("/tmp/snow-shot-mcp-{generation}-ABC123"));
+        let directory = PathBuf::from(format!(
+            "/tmp/{}-{generation}-ABC123",
+            crate::edition::MCP_NAME
+        ));
         fs::DirBuilder::new()
             .mode(0o700)
             .create(&directory)
             .unwrap();
         let uid = fs::metadata(&directory).unwrap().uid();
         let mut d = Descriptor {
+            product: Some(crate::edition::PRODUCT.to_owned()),
             protocol: PROTOCOL.into(),
             socket: directory.join("socket").to_string_lossy().into_owned(),
             token: "f".repeat(64),
@@ -1000,14 +1032,28 @@ mod tests {
             assert!(!valid_mime(invalid));
         }
         let mut d = Descriptor {
+            product: Some(crate::edition::PRODUCT.to_owned()),
             protocol: PROTOCOL.into(),
-            socket: "snow-shot-mcp-test".into(),
+            socket: format!("{}-test", crate::edition::MCP_NAME),
             token: "f".repeat(64),
             pid: 1,
             generation: "11111111-1111-4111-8111-111111111111".into(),
             max_frame_bytes: MAX_FRAME_BYTES,
         };
         assert!(validate_descriptor(&d).is_ok());
+        let own_product = d.product.clone();
+        d.product = Some(
+            if crate::edition::MINI {
+                "snow-shot"
+            } else {
+                "snow-shot-mini"
+            }
+            .to_owned(),
+        );
+        assert!(validate_descriptor(&d).is_err());
+        d.product = None;
+        assert_eq!(validate_descriptor(&d).is_ok(), !crate::edition::MINI);
+        d.product = own_product;
         d.token = "short".into();
         assert!(validate_descriptor(&d).is_err());
         let request = AppRequest {

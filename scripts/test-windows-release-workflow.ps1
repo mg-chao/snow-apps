@@ -45,8 +45,8 @@ try {
         ConvertFrom-Json
     foreach ($name in @("build-snow-shot-msvc-release", "build-snow-shot-msvc-fast")) {
         $preset = @($presetData.buildPresets | Where-Object { $_.name -ceq $name })
-        Require ($preset.Count -eq 1 -and @($preset[0].targets).Count -eq 1 -and
-            $preset[0].targets[0] -ceq "snow_shot") "$name must build Snow Shot by default."
+        Require ($preset.Count -eq 1 -and @($preset[0].targets).Count -eq 2 -and
+            $preset[0].targets[0] -ceq "snow_shot" -and $preset[0].targets[1] -ceq "snow_shot_mini") "$name must build both Snow Shot editions by default."
     }
 
     $fixtureScripts = Join-Path $testRoot "scripts"
@@ -67,8 +67,15 @@ $global:LASTEXITCODE = 0
 
     function global:cmake {
         $global:SnowBuildCalls += ,@($args)
+        if ($args -contains '-B') {
+            $configuredBuild = $args[[Array]::IndexOf($args, '-B') + 1]
+            $null = New-Item -ItemType Directory -Path $configuredBuild -Force
+            "SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=$global:SnowMiniEnabled" |
+                Set-Content -LiteralPath (Join-Path $configuredBuild 'CMakeCache.txt')
+        }
         $global:LASTEXITCODE = 0
     }
+    $global:SnowMiniEnabled = 'ON'
     $global:SnowBuildCalls = @()
     $global:SnowBootstrapVariants = @()
     & (Join-Path $fixtureScripts "build.ps1") -Preset snow-shot-msvc-release
@@ -78,6 +85,13 @@ $global:LASTEXITCODE = 0
     Require-Arguments $global:SnowBuildCalls[1] `
         @("--build", "--preset", "build-snow-shot-msvc-release", "--parallel") `
         "Release build must use the preset's Snow Shot target."
+
+    $global:SnowMiniEnabled = 'OFF'
+    $global:SnowBuildCalls = @()
+    & (Join-Path $fixtureScripts "build.ps1") -Preset snow-shot-msvc-release -SkipBootstrap
+    Require-Arguments $global:SnowBuildCalls[1] `
+        @('--build', '--preset', 'build-snow-shot-msvc-release', '--parallel', '--target', 'snow_shot') `
+        'Default release wrapper must respect an explicitly disabled Mini target.'
 
     $global:SnowBuildCalls = @()
     & (Join-Path $fixtureScripts "build.ps1") -Preset windows-msvc-debug -Target snow_shot
@@ -89,7 +103,7 @@ $global:LASTEXITCODE = 0
 }
 finally {
     Remove-Item Function:\cmake -ErrorAction SilentlyContinue
-    Remove-Variable SnowBuildCalls, SnowBootstrapVariants -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable SnowBuildCalls, SnowBootstrapVariants, SnowMiniEnabled -Scope Global -ErrorAction SilentlyContinue
     $resolvedTestRoot = [System.IO.Path]::GetFullPath($testRoot)
     $resolvedBuildRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "build"))
     if (-not $resolvedTestRoot.StartsWith($resolvedBuildRoot.TrimEnd('\') + '\',

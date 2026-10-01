@@ -1,5 +1,8 @@
 #![allow(clippy::missing_safety_doc)]
 use snow_audio_recorder::{AudioControlHandle, AudioLevelsSnapshot, AudioMonitor, AudioSourceKind};
+mod deferred;
+#[cfg(test)]
+static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use snow_capture::{backend::CaptureBackendKind, exclusions::SnowCaptureExclusions};
 #[cfg(not(target_os = "macos"))]
 use snow_screen_recorder::DirectRecordingSession;
@@ -117,10 +120,6 @@ pub unsafe extern "C" fn snow_recording_session_request_exclusions(
     let Some(session) = recording_session_ref(session) else {
         return 0;
     };
-    let Some(RecordingSessionKind::Direct(recording)) = session.recording.as_ref() else {
-        set_last_error("capture exclusions require an available direct recording session");
-        return 0;
-    };
     let (windows, processes) = match unsafe { (*exclusions).to_owned() } {
         Ok(ids) => ids,
         Err(error) => {
@@ -133,7 +132,19 @@ pub unsafe extern "C" fn snow_recording_session_request_exclusions(
     } else {
         unsafe { std::slice::from_raw_parts(required_windows, required_count as usize) }.to_vec()
     };
-    match recording.request_exclusions(windows.to_vec(), processes.to_vec(), required) {
+    let result = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => {
+            recording.request_exclusions(windows.to_vec(), processes.to_vec(), required)
+        }
+        Some(RecordingSessionKind::Deferred(recording)) => {
+            recording.request_exclusions(windows.to_vec(), processes.to_vec(), required)
+        }
+        _ => {
+            set_last_error("capture exclusions require an available recording session");
+            return 0;
+        }
+    };
+    match result {
         Ok(value) => {
             unsafe {
                 *generation = value;
@@ -159,11 +170,14 @@ pub unsafe extern "C" fn snow_recording_session_exclusion_status(
     let Some(session) = recording_session_ref(session) else {
         return 0;
     };
-    let Some(RecordingSessionKind::Direct(recording)) = session.recording.as_ref() else {
-        set_last_error("capture exclusions require an available direct recording session");
-        return 0;
+    let (requested_generation, applied_generation, state) = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => recording.exclusion_status(),
+        Some(RecordingSessionKind::Deferred(recording)) => recording.exclusion_status(),
+        _ => {
+            set_last_error("capture exclusions require an available recording session");
+            return 0;
+        }
     };
-    let (requested_generation, applied_generation, state) = recording.exclusion_status();
     unsafe {
         *status = SnowRecordingExclusionStatus {
             requested_generation,
@@ -182,13 +196,15 @@ fn audio_source(value: u32) -> Result<AudioSourceKind, String> {
         _ => Err("invalid recording audio source".into()),
     }
 }
-fn direct_audio_control(session: *const SnowRecordingSessionImpl) -> Option<AudioControlHandle> {
+fn recording_audio_control(session: *const SnowRecordingSessionImpl) -> Option<AudioControlHandle> {
     let session = recording_session_ref(session)?;
-    if let Some(RecordingSessionKind::Direct(recording)) = session.recording.as_ref() {
-        Some(recording.audio_control())
-    } else {
-        set_last_error("audio controls require an available direct recording session");
-        None
+    match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => Some(recording.audio_control()),
+        Some(RecordingSessionKind::Deferred(recording)) => Some(recording.audio_control()),
+        _ => {
+            set_last_error("audio controls require an available recording session");
+            None
+        }
     }
 }
 
@@ -205,7 +221,7 @@ pub extern "C" fn snow_recording_session_set_audio_gain(
             return 0;
         }
     };
-    let Some(control) = direct_audio_control(session) else {
+    let Some(control) = recording_audio_control(session) else {
         return 0;
     };
     match control.set_gain_db(source, gain_db) {
@@ -228,7 +244,7 @@ pub extern "C" fn snow_recording_session_set_audio_metering(
         set_last_error("invalid audio metering mask");
         return 0;
     }
-    let Some(control) = direct_audio_control(session) else {
+    let Some(control) = recording_audio_control(session) else {
         return 0;
     };
     control.set_metering(AudioSourceKind::System, source_mask & 1 != 0);
@@ -245,7 +261,7 @@ pub unsafe extern "C" fn snow_recording_session_take_audio_levels(
         set_last_error("audio levels output is null");
         return 0;
     }
-    let Some(control) = direct_audio_control(session) else {
+    let Some(control) = recording_audio_control(session) else {
         return 0;
     };
     unsafe {
@@ -387,6 +403,7 @@ pub unsafe extern "C" fn snow_recording_audio_monitor_take_levels(
 enum RecordingSessionKind {
     Legacy(Box<RecordingSession>),
     Direct(Box<DirectRecordingSession>),
+    Deferred(Box<snow_screen_recorder::DeferredRecordingSession>),
 }
 
 #[repr(C)]
@@ -717,6 +734,7 @@ pub unsafe extern "C" fn snow_recording_session_destroy(session: *mut SnowRecord
                 let _ = (*recording).stop();
             }
             RecordingSessionKind::Direct(recording) => drop(recording),
+            RecordingSessionKind::Deferred(recording) => drop(recording),
         }
     }
 }
@@ -733,6 +751,7 @@ pub extern "C" fn snow_recording_session_start(session: *mut SnowRecordingSessio
     let result = match recording {
         RecordingSessionKind::Legacy(recording) => recording.start(),
         RecordingSessionKind::Direct(recording) => recording.start(),
+        RecordingSessionKind::Deferred(recording) => recording.start(),
     };
     match result {
         Ok(()) => {
@@ -759,6 +778,7 @@ pub extern "C" fn snow_recording_session_pause(session: *mut SnowRecordingSessio
     let result = match recording {
         RecordingSessionKind::Legacy(recording) => recording.pause(),
         RecordingSessionKind::Direct(recording) => recording.pause(),
+        RecordingSessionKind::Deferred(recording) => recording.pause(),
     };
     match result {
         Ok(()) => {
@@ -785,6 +805,7 @@ pub extern "C" fn snow_recording_session_resume(session: *mut SnowRecordingSessi
     let result = match recording {
         RecordingSessionKind::Legacy(recording) => recording.resume(),
         RecordingSessionKind::Direct(recording) => recording.resume(),
+        RecordingSessionKind::Deferred(recording) => recording.resume(),
     };
     match result {
         Ok(()) => {
@@ -813,6 +834,7 @@ pub unsafe extern "C" fn snow_recording_session_state(
     };
     let state = match session.recording.as_ref() {
         Some(RecordingSessionKind::Direct(recording)) => recording.state(),
+        Some(RecordingSessionKind::Deferred(recording)) => recording.state(),
         Some(RecordingSessionKind::Legacy(_)) | None => session.state,
     };
     unsafe { *out_state = ffi_recording_state(state) };
@@ -1244,6 +1266,41 @@ pub unsafe extern "C" fn snow_recording_session_create_direct(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn snow_recording_session_request_stop(
+    session: *mut SnowRecordingSessionImpl,
+) -> SnowRecordingResult {
+    let Some(session) = recording_session_ref(session) else {
+        return SnowRecordingResult::InvalidArgument;
+    };
+    if !matches!(
+        session.state,
+        RecordingState::Running | RecordingState::Paused
+    ) {
+        set_last_error("request_stop requires a running or paused recording");
+        return SnowRecordingResult::InvalidState;
+    }
+    let result = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => recording.request_stop(),
+        Some(RecordingSessionKind::Deferred(recording)) => recording.request_stop(),
+        _ => {
+            set_last_error("request_stop is available for direct and deferred sessions");
+            return SnowRecordingResult::Unsupported;
+        }
+    };
+    match result {
+        Ok(()) => {
+            clear_last_error();
+            SnowRecordingResult::Ok
+        }
+        Err(error) => {
+            let result = direct_result_for_error(&error);
+            set_last_error(error);
+            result
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn snow_recording_session_stop(
     session: *mut SnowRecordingSessionImpl,
 ) -> SnowRecordingResult {
@@ -1473,10 +1530,6 @@ fn configure_recording_export_request(
     request.codec = options.codec;
     request.video.speed = options.preset;
     request.prefer_hardware_h264 = options.prefer_hardware_h264;
-    request.mouse.visible = true;
-    for track in &mut request.audio_tracks {
-        track.enabled = true;
-    }
     request
 }
 
@@ -1510,22 +1563,27 @@ fn stop_and_export_recording(
     let editing = match EditingSession::open(artifact) {
         Ok(editing) => editing,
         Err(error) => {
-            let _ = std::fs::remove_file(bundle_path);
-            set_last_error(error);
+            set_last_error(format!(
+                "{error}; recoverable media is retained in {}",
+                bundle_path.display()
+            ));
             return 0;
         }
     };
     let request = configure_recording_export_request(editing.export_request(), options);
 
     let result = editing.export(request);
-    let _ = std::fs::remove_file(bundle_path);
     match result {
         Ok(_) => {
+            let _ = std::fs::remove_file(bundle_path);
             clear_last_error();
             1
         }
         Err(error) => {
-            set_last_error(error);
+            set_last_error(format!(
+                "{error}; recoverable media is retained in {}",
+                bundle_path.display()
+            ));
             0
         }
     }
@@ -1676,6 +1734,7 @@ mod tests {
 
     #[test]
     fn audio_ffi_controls_validate_and_share_recording_targets() {
+        let _guard = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut config = direct_config(c"recording.mp4");
         config.system_audio_gain_db = -9;
         config.microphone_gain_db = 6;
@@ -1684,7 +1743,7 @@ mod tests {
             unsafe { snow_recording_session_create_direct(&config, &mut session) },
             SnowRecordingResult::Ok
         );
-        let control = direct_audio_control(session).unwrap();
+        let control = recording_audio_control(session).unwrap();
         assert_eq!(control.gain_db(AudioSourceKind::System), -9);
         assert_eq!(control.gain_db(AudioSourceKind::Microphone), 6);
         assert_eq!(snow_recording_session_set_audio_gain(session, 0, 12), 1);
@@ -1732,6 +1791,7 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn exclusion_ffi_generations_validate_required_windows() {
+        let _guard = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let config = direct_config(c"recording.mp4");
         let mut session = ptr::null_mut();
         assert_eq!(
@@ -1972,7 +2032,7 @@ mod tests {
         );
     }
     #[test]
-    fn immediate_gif_export_includes_recorded_cursor_motion() {
+    fn compatibility_export_adapter_preserves_cursor_visibility() {
         let output_path = PathBuf::from("recording.gif");
         let request = configure_recording_export_request(
             ExportRequest::default(),
@@ -1990,7 +2050,7 @@ mod tests {
 
         assert_eq!(request.output_path, output_path);
         assert_eq!(request.format, ExportFormat::Gif);
-        assert!(request.mouse.visible);
+        assert!(!request.mouse.visible);
     }
     #[test]
     fn versioned_export_config_maps_all_fields() {
@@ -2154,7 +2214,7 @@ mod tests {
         assert!(!parsed.record_mouse_clicks && parsed.keyboard.is_none());
         assert_eq!(parsed.mouse_highlight_rgba, [0; 4]);
     }
-    fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
+    pub(super) fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
         SnowCaptureDirectRecordingConfig {
             exclusions: Default::default(),
             audio_mode: 0,
@@ -2394,6 +2454,9 @@ mod tests {
     }
     #[test]
     fn recording_session_live_count_tracks_create_and_destroy_exactly_once() {
+        let _guard = SESSION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let output = CString::new("recording.mp4").unwrap();
         let mut config = direct_config(&output);
         config.capture_backend = 0;

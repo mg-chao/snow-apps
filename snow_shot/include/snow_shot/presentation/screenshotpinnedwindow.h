@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOW_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOW_H
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
@@ -141,7 +143,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         ScreenshotImageLoader imageLoader;
         QScreen* screen = nullptr;
         bool enableEditing = true;
-        bool automaticTextRecognition = true;
+        bool automaticTextRecognition = !snow_shot::app::edition::isMini;
         std::shared_ptr<QTextDocument> formattedTextDocument;
         QString formattedPlainText;
         qreal formattedTextDevicePixelRatio = 1.0;
@@ -556,8 +558,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     qreal m_formattedTextDevicePixelRatio = 1.0;
     ScreenshotClipboardOriginalContent m_originalClipboardContent;
     QPointer<ScreenshotOcrRecognitionPort> m_recognition;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     QPointer<ScreenshotQrRecognitionPort> m_qrRecognition;
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QPointer<SnowShotApiClient> m_tableRecognition;
+#endif
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     ScreenshotRecognitionResults m_recognitionResults;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;
@@ -602,7 +609,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_initialRecognitionVisible = false;
     bool m_initialTranslationVisible = false;
     bool m_translateAfterRecognition = false;
-    bool m_automaticTextRecognition = true;
+    bool m_automaticTextRecognition = !snow_shot::app::edition::isMini;
     bool m_automationRecognition = false;
     bool m_editingEnabled = true;
     bool m_thumbnailMode = false;
