@@ -1,6 +1,10 @@
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/mainwindowskincontroller.h"
+#include "snow_shot/presentation/mainwindowskinwidget.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "../src/image/snowimageqtcodec.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 
 #include "widgets/button.h"
@@ -17,6 +21,8 @@
 #include <QEvent>
 #include <QFont>
 #include <QFrame>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QGraphicsDropShadowEffect>
 #include <QImage>
 #include <QLabel>
@@ -27,9 +33,13 @@
 #include <QPixmap>
 #include <QPointer>
 #include <QVector>
+#include <QTemporaryDir>
+#include <QThread>
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
+#include <vector>
 
 namespace {
 class LayoutRequestCounter final : public QObject {
@@ -1028,10 +1038,152 @@ void spotlightConfigSurvivesStyleRowEviction() {
             "Spotlight updates must not modify an opacity editor reused by Watermark");
 }
 
+void toolbarSkinProfilesAndLifecycle() {
+    namespace presentation = snow_shot::presentation;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    QTemporaryDir temporary;
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "initialize isolated toolbar skin configuration");
+    const auto waitUntil = [](const auto& condition) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!condition() && timer.elapsed() < 15000) {
+            flushEvents();
+            QThread::msleep(1);
+        }
+        require(condition(), "toolbar skin operation must complete");
+    };
+    const auto writeFixture = [&temporary](const QString& name, const QColor& color) {
+        QImage source(96, 64, QImage::Format_ARGB32_Premultiplied);
+        source.fill(color);
+        const QString path = temporary.filePath(name);
+        QFile file(path);
+        const QByteArray encoded = snow_shot::image_codec::encodePng(source);
+        require(file.open(QIODevice::WriteOnly) && file.write(encoded) == encoded.size(),
+                "write toolbar skin fixture");
+        return path;
+    };
+    const QString toolbarPath = writeFixture(QStringLiteral("toolbar.png"), Qt::magenta);
+    const QString mainPath = writeFixture(QStringLiteral("main.png"), Qt::green);
+    auto& configuration = storage.configuration();
+    require(configuration.setValues({{QStringLiteral("interface/skin_mask_opacity"), 0},
+                                     {QStringLiteral("interface/skin_blur_level"), 0}}),
+            "prepare unmasked deterministic skin rendering");
+
+    ScreenshotToolbarPanel first;
+    ScreenshotToolbarPanel second;
+    first.setGraphicsEffect(nullptr);
+    second.setGraphicsEffect(nullptr);
+    first.resize(160, 48);
+    second.resize(220, 36);
+    first.show();
+    second.show();
+    flushEvents();
+    require(presentation::MainWindowSkinController::existingInstance() == nullptr,
+            "unskinned toolbar rows must not allocate a skin controller");
+    require(configuration.setValues({{QStringLiteral("interface/toolbar_skin_path"), toolbarPath},
+                                     {QStringLiteral("interface/skin_path"), mainPath}}),
+            "configure independent main-window and toolbar images");
+    auto& controller = presentation::MainWindowSkinController::instance();
+    presentation::MainWindowSkinWidget main;
+    main.resize(80, 64);
+    main.show();
+    waitUntil([&] {
+        return !controller.diagnostics().busy && controller.skinActive(&first) &&
+               controller.skinActive(&second) && controller.skinActive(&main);
+    });
+    require(renderedCenterColor(first) == QColor(Qt::magenta) &&
+                renderedCenterColor(second) == QColor(Qt::magenta) &&
+                renderedCenterColor(main) == QColor(Qt::green),
+            "unequal toolbar viewports and the main interface must retain independent skins");
+    QImage clipped(first.size(), QImage::Format_ARGB32_Premultiplied);
+    clipped.fill(Qt::transparent);
+    QPainter painter(&clipped);
+    first.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+    painter.end();
+    require(clipped.pixelColor(0, 0).alpha() == 0 &&
+                clipped.pixelColor(first.rect().center()) == QColor(Qt::magenta),
+            "toolbar skins must respect transparent rounded corners");
+
+    const auto beforeEffects = controller.diagnostics();
+    require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 100),
+            "make the shared theme mask opaque");
+    waitUntil([&] { return controller.maskOpacity() == 1.0; });
+    require(renderedCenterColor(first) == presentation::styles::ThemeManager::instance()
+                                              .themeColorScheme()
+                                              .map.colorBgContainer &&
+                controller.diagnostics().preparationJobs == beforeEffects.preparationJobs,
+            "mask changes must restore the themed surface without preparing images");
+    require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 0),
+            "restore the skin fixture mask");
+    waitUntil([&] { return controller.maskOpacity() == 0.0; });
+
+    std::vector<std::unique_ptr<ScreenshotToolPalette>> workflows;
+    for (int index = 0; index < 4; ++index) {
+        ScreenshotToolPalette::Options options;
+        options.showDragHandle = true;
+        options.enableStyleToolbar = true;
+        options.showRecordingControls = index == 3;
+        auto palette = std::make_unique<ScreenshotToolPalette>(options);
+        prepare(*palette);
+        palette->show();
+        palette->setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        flushEvents();
+        workflows.push_back(std::move(palette));
+    }
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    for (const auto& palette : workflows) {
+        for (QWidget* row : {palette->mainPanel(), palette->stylePanel()}) {
+            require(row != nullptr && controller.skinActive(row),
+                    "every workflow must skin its main and secondary drawing-toolbar rows");
+            require(controller.frame(row).image.pixelColor(0, 0) == QColor(Qt::magenta),
+                    "every workflow must use the shared toolbar image");
+        }
+    }
+    workflows.front()->setActiveTool(ScreenshotToolPalette::Tool::Move);
+    QWidget* action = workflows.front()->actionPanel();
+    QWidget* recordingExport = workflows.back()->recordingExportSettingsPanel();
+    require(action != nullptr && recordingExport != nullptr,
+            "action and recording export rows must exist");
+    action->show();
+    recordingExport->show();
+    waitUntil([&] {
+        return !controller.diagnostics().busy && controller.skinActive(action) &&
+               controller.skinActive(recordingExport);
+    });
+
+    const auto cached = controller.diagnostics();
+    second.hide();
+    require(!controller.skinActive(&second), "hidden toolbar rows must release their active frame");
+    second.show();
+    waitUntil([&] { return !controller.diagnostics().busy && controller.skinActive(&second); });
+    require(controller.diagnostics().decodeJobs == cached.decodeJobs &&
+                controller.diagnostics().preparationJobs == cached.preparationJobs,
+            "reopening a cached toolbar must reuse its source and prepared frame");
+    require(configuration.setValue(QStringLiteral("interface/toolbar_skin_path"), QString()),
+            "remove only the toolbar image");
+    waitUntil([&] { return !controller.skinActive(&first); });
+    require(controller.skinActive(&main) &&
+                renderedCenterColor(first) == presentation::styles::ThemeManager::instance()
+                                                  .themeColorScheme()
+                                                  .map.colorBgContainer,
+            "clearing toolbar skin must preserve the main skin and restore the normal toolbar");
+    require(configuration.setValue(QStringLiteral("interface/skin_path"), QString()),
+            "clear isolated main-window fixture");
+    flushEvents();
+    require(storage.flushNow().success,
+            "flush isolated skin settings before removing their directory");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--skin-only"))) {
+        toolbarSkinProfilesAndLifecycle();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--icon-centering-only"))) {
         smallToolbarIconStaysVerticallyCentered();
         return 0;

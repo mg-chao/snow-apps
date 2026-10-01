@@ -2623,6 +2623,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-system-tray-controller-tests
         COMMAND snow-shot-system-tray-controller-tests
     )
+    add_test(NAME snow-shot-tray-skin-tests
+        COMMAND snow-shot-system-tray-controller-tests --skin-only -platform offscreen)
+    snow_shot_import_offscreen_platform(snow-shot-system-tray-controller-tests)
+    set_tests_properties(snow-shot-tray-skin-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     if(WIN32)
         set_tests_properties(snow-shot-system-tray-controller-tests PROPERTIES
             ENVIRONMENT
@@ -5665,6 +5671,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(NAME snow-shot-toolbar-skin-tests
+        COMMAND snow-shot-toolbar-main-panel-tests --skin-only -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-skin-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-toolbar-icon-centering-hidpi-tests
         COMMAND snow-shot-toolbar-main-panel-tests --icon-centering-only
@@ -8820,5 +8831,36 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-recording-audio-gain-popover-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
+if(SNOW_SHOT_BUILD_TESTS)
+    # This isolated skin test exercises portable widget surfaces, including
+    # builds where the legacy toolbar executable's other cases are Windows-only.
+    set_tests_properties(snow-shot-toolbar-skin-tests PROPERTIES LABELS "unit")
+endif()
+
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-skin-surface-performance-benchmark
+        tests/skin_surface_performance_benchmark.cpp
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/tools/screenshottoolbarmainpanel.cpp
+        src/presentation/tools/screenshottoolpalettebuttons.cpp
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp)
+    target_include_directories(snow-shot-skin-surface-performance-benchmark PRIVATE include)
+    target_link_libraries(snow-shot-skin-surface-performance-benchmark PRIVATE
+        snow_shot_storage snow_shot_image_codec snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-skin-surface-performance-benchmark)
+endif()
+
+# Toolbar and tray sources are also compiled directly by focused tests and
+# benchmarks. Keep the skin dependency identical for every consumer.
+get_property(_snow_skin_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_target IN LISTS _snow_skin_consumers)
+    get_target_property(_snow_sources ${_snow_target} SOURCES)
+    if("${_snow_sources}" MATCHES "(screenshottoolbarmainpanel|systemtraycontroller)\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_main_window_skin)
+    endif()
+endforeach()
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotReleaseOptimization.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

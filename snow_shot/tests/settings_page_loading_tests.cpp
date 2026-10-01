@@ -440,6 +440,41 @@ void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry
                 session.selectValue(settings::SettingsSelectBinding::SkinDisplayMode).toString() ==
                     QStringLiteral("contain"),
             "path editing must normalize the skin path and commit with mode selection");
+    for (const auto& id : {QStringLiteral("toolbar-path"), QStringLiteral("tray-menu-path")}) {
+        auto* surfacePath =
+            page.findChild<FilePathInput*>(QStringLiteral("settings-control-interface-skin-") + id);
+        const auto binding = id == QStringLiteral("toolbar-path")
+                                 ? settings::SettingsFilePathBinding::ToolbarSkinPath
+                                 : settings::SettingsFilePathBinding::TrayMenuSkinPath;
+        const QString value = QStringLiteral("/skins/") + id + QStringLiteral(".png");
+        require(surfacePath != nullptr && surfacePath->isEnabled() && surfacePath->allowClear(),
+                "Skin must expose independent editable toolbar and tray image paths");
+        surfacePath->setText(QStringLiteral("  ") + value + QStringLiteral("  "));
+        require(QMetaObject::invokeMethod(surfacePath, "editingFinished", Qt::DirectConnection),
+                "commit each surface image path through its settings widget");
+        drainEvents();
+        require(
+            session.filePathValue(binding) == value && surfacePath->text() == value &&
+                session.filePathValue(settings::SettingsFilePathBinding::SkinPath) ==
+                    QStringLiteral("/skins/settings-preview.webp"),
+            "toolbar and tray path editing must trim whitespace without replacing the main skin");
+    }
+    for (const auto& id : {QStringLiteral("position"), QStringLiteral("toolbar-position"),
+                           QStringLiteral("tray-menu-position")}) {
+        auto* position = page.findChild<adqt::widgets::AdSelect*>(
+            QStringLiteral("settings-control-interface-skin-") + id);
+        const auto binding = id == QStringLiteral("position")
+                                 ? settings::SettingsSelectBinding::SkinPosition
+                             : id == QStringLiteral("toolbar-position")
+                                 ? settings::SettingsSelectBinding::ToolbarSkinPosition
+                                 : settings::SettingsSelectBinding::TrayMenuSkinPosition;
+        require(position != nullptr && position->isEnabled() && position->model()->rowCount() == 9,
+                "each skin position selector must display nine editable alignment choices");
+        position->setCurrentValue(QStringLiteral("bottom_right"));
+        drainEvents();
+        require(session.selectValue(binding).toString() == QStringLiteral("bottom_right"),
+                "each surface position must commit through its own settings selector");
+    }
     for (const auto& id : {QStringLiteral("opacity"), QStringLiteral("blur-level"),
                            QStringLiteral("mask-opacity")}) {
         auto* slider = page.findChild<adqt::widgets::AdSlider*>(
@@ -457,14 +492,15 @@ void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry
     QCoreApplication::installTranslator(&translator);
     drainEvents();
     require(
-        path->lineEdit()->accessibleName() == QStringLiteral("Translated: Skin Path") &&
+        path->lineEdit()->accessibleName() ==
+                QStringLiteral("Translated: Main Interface Skin Path") &&
             mode->accessibleName() == QStringLiteral("Translated: Skin Display Mode") &&
             path->browseButtonText() == QStringLiteral("Translated: Browse") &&
             path->lineEdit()->accessibleDescription().startsWith(QStringLiteral("Translated: ")),
         "skin controls and descriptions must retranslate after LanguageChange");
     QCoreApplication::removeTranslator(&translator);
     drainEvents();
-    require(path->lineEdit()->accessibleName() == QStringLiteral("Skin Path") &&
+    require(path->lineEdit()->accessibleName() == QStringLiteral("Main Interface Skin Path") &&
                 session.reset(settings::SettingsSectionReset::Skin),
             "skin controls must restore English and the independent Skin defaults");
 }

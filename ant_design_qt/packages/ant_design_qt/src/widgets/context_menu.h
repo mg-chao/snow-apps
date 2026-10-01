@@ -4,6 +4,8 @@
 #include <QKeySequence>
 #include <QMenu>
 #include <QPointer>
+#include <QPixmap>
+#include <QRectF>
 #include <memory>
 #include <optional>
 
@@ -58,6 +60,15 @@ class AdContextMenu final : public QMenu {
     std::optional<QColor> checkmark;
   };
 
+  // A prepared background only affects the shared widget surface. Image decoding,
+  // scaling and filtering remain the caller's responsibility.
+  struct BackgroundFrame {
+    QPixmap image;
+    QRectF normalizedPlacement;
+    qreal imageOpacity = 1.0;
+    qreal maskOpacity = 0.8;
+  };
+
   explicit AdContextMenu(QWidget* parent = nullptr);
   explicit AdContextMenu(const QString& title, QWidget* parent = nullptr);
   ~AdContextMenu() override;
@@ -78,6 +89,10 @@ class AdContextMenu final : public QMenu {
   ComponentTokens componentTokens() const;
   void setComponentTokens(const ComponentTokens& tokens);
   void resetComponentTokens();
+
+  BackgroundFrame backgroundFrame() const;
+  void setBackgroundFrame(const BackgroundFrame& frame);
+  void resetBackgroundFrame();
 
   QWidget* triggerWidget() const;
   void setTriggerWidget(QWidget* widget);

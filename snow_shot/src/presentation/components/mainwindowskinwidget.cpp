@@ -17,8 +17,11 @@ MainWindowSkinWidget::MainWindowSkinWidget(QWidget* parent, MainWindowSkinContro
     if (parent != nullptr) {
         parent->installEventFilter(this);
     }
-    connect(m_controller, &MainWindowSkinController::frameChanged, this,
-            &MainWindowSkinWidget::syncFrame);
+    connect(m_controller, &MainWindowSkinController::viewFrameChanged, this, [this](QObject* view) {
+        if (view == this) {
+            syncFrame();
+        }
+    });
     connect(m_controller, &MainWindowSkinController::appearanceChanged, this, [this] {
         update();
         emit skinAppearanceChanged();
@@ -49,8 +52,8 @@ void MainWindowSkinWidget::setBaseColor(const QColor& color) {
 }
 
 void MainWindowSkinWidget::syncFrame() {
-    const auto frame = m_controller ? m_controller->frame() : MainWindowSkinFrame{};
-    m_frame = QPixmap::fromImage(frame.image);
+    const auto frame = m_controller ? m_controller->frame(this) : MainWindowSkinFrame{};
+    m_frame = m_controller ? m_controller->pixmap(this) : QPixmap{};
     m_placement = frame.normalizedPlacement;
     update();
     emit skinAppearanceChanged();
@@ -76,10 +79,27 @@ void MainWindowSkinWidget::resizeEvent(QResizeEvent* event) {
 }
 
 bool MainWindowSkinWidget::event(QEvent* event) {
+    if (event->type() != QEvent::Show && event->type() != QEvent::Hide &&
+        event->type() != QEvent::DevicePixelRatioChange) {
+        return QWidget::event(event);
+    }
+    const QPointer<MainWindowSkinWidget> lifetime(this);
     const bool handled = QWidget::event(event);
+    if (!lifetime) {
+        return handled;
+    }
     if (m_controller && event->type() == QEvent::Show && !m_attached) {
         m_attached = true;
         m_controller->attach(this, size(), devicePixelRatioF());
+        if (lifetime) {
+            syncFrame();
+        }
+    } else if (m_controller && event->type() == QEvent::Hide && m_attached) {
+        m_attached = false;
+        m_controller->detach(this);
+        if (lifetime) {
+            syncFrame();
+        }
     } else if (m_controller && m_attached &&
                (event->type() == QEvent::DevicePixelRatioChange || event->type() == QEvent::Show)) {
         m_controller->setViewport(this, size(), devicePixelRatioF(), true);
