@@ -159,9 +159,11 @@ endfunction()
 _snow_add_mini_helpers()
 if(WIN32)
     set(_mini_bindir bin)
+    set(_mini_libdir lib)
     set(_mini_datadir share)
 else()
     set(_mini_bindir "snow_shot_mini.app/Contents/MacOS")
+    set(_mini_libdir "snow_shot_mini.app/Contents/Frameworks")
     set(_mini_datadir "snow_shot_mini.app/Contents/Resources")
 endif()
 install(TARGETS snow_shot_mini BUNDLE DESTINATION . COMPONENT SnowShotMini
@@ -198,9 +200,15 @@ else()
 endif()
 install(PROGRAMS "${SNOW_CRASHPAD_HANDLER}" DESTINATION "${_mini_bindir}" COMPONENT SnowShotMini)
 if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
+    if(APPLE)
+        # Remove the library left in MacOS by earlier Mini install rules.
+        install(CODE [[
+            file(REMOVE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/snow_shot_mini.app/Contents/MacOS/$<TARGET_FILE_NAME:snow_shot_image_codec_backend>")
+        ]] COMPONENT SnowShotMini)
+    endif()
     install(TARGETS snow_shot_image_codec_backend
         RUNTIME_DEPENDENCY_SET snow_shot_mini_image_runtime_dependencies
-        LIBRARY DESTINATION "${_mini_bindir}" COMPONENT SnowShotMini
+        LIBRARY DESTINATION "${_mini_libdir}" COMPONENT SnowShotMini
         RUNTIME DESTINATION "${_mini_bindir}" COMPONENT SnowShotMini)
     if(WIN32)
         install(RUNTIME_DEPENDENCY_SET snow_shot_mini_image_runtime_dependencies
