@@ -25,6 +25,13 @@ def symbols_inventory(build, products):
     symbols = []
     for name in names:
         path = build / 'symbols' / (name + '.dSYM') / 'Contents/Resources/DWARF' / name
+        if name == 'snow-ocr-process':
+            # Cargo's packed dSYM retains its hashed executable filename when
+            # copied out of deps/. Record that actual file without renaming it.
+            files = list(path.parent.glob('*'))
+            if len(files) != 1:
+                raise ValueError(f'Release diagnostics symbols are missing or ambiguous: {name}')
+            path = files[0]
         if not path.is_file() or not path.stat().st_size:
             raise ValueError(f'Release diagnostics symbols are missing: {name}')
         symbols.append({'file': str(path.relative_to(build)), 'sha256': digest(path),

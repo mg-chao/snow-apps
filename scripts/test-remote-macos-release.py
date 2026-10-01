@@ -69,6 +69,23 @@ class RemotePackageTests(unittest.TestCase):
             remote.package(self.request)
         self.run.assert_not_called()
 
+    def test_cargo_worker_symbols_retain_the_hashed_executable_name(self):
+        self.write_package()
+        path = self.build / 'symbols/snow-ocr-process.dSYM/Contents/Resources/DWARF/snow-ocr-process'
+        hashed = path.with_name('snow_ocr_process-2682fb017056abac')
+        path.rename(hashed)
+        symbols = remote.symbols_inventory(self.build, ['snow-shot', 'snow-shot-mini'])
+        self.assertEqual(symbols[1]['file'], str(hashed.relative_to(self.build)))
+        self.assertEqual(symbols[1]['sha256'], remote.digest(hashed))
+        self.assertEqual(symbols[1]['size'], hashed.stat().st_size)
+
+    def test_worker_symbols_require_exactly_one_dwarf_file(self):
+        self.write_package()
+        path = self.build / 'symbols/snow-ocr-process.dSYM/Contents/Resources/DWARF/unexpected'
+        path.write_bytes(b'extra DWARF')
+        with self.assertRaisesRegex(ValueError, 'symbols'):
+            remote.symbols_inventory(self.build, ['snow-shot'])
+
     def test_paired_images_are_audited_and_recorded_together(self):
         self.request['editions'] = ['Full', 'Mini']
         mini = self.build / 'snow-shot-mini-1.2.3-beta-macos-arm64.dmg'
