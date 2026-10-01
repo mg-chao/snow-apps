@@ -173,7 +173,6 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
             snow_recording_c
             snow_recording_effects_c
             snow_ui_selector_c
-            snow_selected_text_c
             snow_stitch_images_c
             snow_draw_engine_c
             snow_visual_region_detector_c)
@@ -184,20 +183,6 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
     unset(_snow_rust_ffi_target)
     target_include_directories(snow_recording_effects_c INTERFACE
         "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-recording-effects-c/include")
-    target_include_directories(snow_selected_text_c INTERFACE
-        "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-selected-text-c/include")
-    if(APPLE)
-        find_library(SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK
-            NAMES ApplicationServices REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
-        target_link_libraries(snow_selected_text_c INTERFACE
-            "${SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK}")
-    endif()
 endif()
 
 if(SNOW_APPS_BUILD_IMAGE_VIEWER AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)

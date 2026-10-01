@@ -581,8 +581,12 @@ class ScreenshotToolPalette final : public QWidget,
     void retranslateDrawTemplateUi();
     void createShowOriginalImageButton();
     void createTextRecognitionActionFamily();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     void createTableRecognitionActionFamily();
+#endif
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     void createImageConversionActionFamily();
+#endif
     void createScrollingRecognitionActionFamily();
     void createStyleFamily(Tool tool);
     void registerStyleFamily(QWidget* controls, std::initializer_list<Tool> tools);

@@ -40,7 +40,7 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixe
         return {};
     }
 
-    constexpr qreal aspectRatio = 95.0 / 17.0;
+    constexpr qreal aspectRatio = snow_shot::app::edition::isMini ? 137.0 / 17.0 : 95.0 / 17.0;
     const int logicalWidth =
         static_cast<int>(std::llround(static_cast<qreal>(logicalHeight) * aspectRatio));
     if (logicalWidth <= 0) {
@@ -50,8 +50,11 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixe
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(logicalWidth, logicalHeight);
     request.devicePixelRatio = devicePixelRatio;
-    return adqt::icons::renderIconPixmap(
-        custom_icons::brand::SnowShotLogo(adqt::icons::IconColors::primary(color)), request);
+    const auto colors = adqt::icons::IconColors::primary(color);
+    const auto logo = snow_shot::app::edition::isMini
+                          ? custom_icons::brand::SnowShotMiniLogo(colors)
+                          : custom_icons::brand::SnowShotLogo(colors);
+    return adqt::icons::renderIconPixmap(logo, request);
 }
 
 #ifndef Q_OS_MACOS
@@ -338,21 +341,6 @@ void TitleBarWidget::paintEvent(QPaintEvent* event) {
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    if (snow_shot::app::edition::isMini) {
-        QFont brandFont = font();
-        brandFont.setPixelSize(m_logoHeight + 3);
-        brandFont.setWeight(QFont::DemiBold);
-        painter.setFont(brandFont);
-        painter.setPen(m_logoColor);
-#ifdef Q_OS_WIN
-        painter.drawText(QRect(48, 0, std::max(0, m_minimizeButton->x() - 64), height()),
-                         Qt::AlignLeft | Qt::AlignVCenter, snow_shot::app::edition::productName());
-#else
-        painter.drawText(rect(), Qt::AlignCenter, snow_shot::app::edition::productName());
-#endif
-        return;
-    }
-
 #ifdef Q_OS_WIN
     const QColor color = window()->isActiveWindow()
                              ? m_logoColor

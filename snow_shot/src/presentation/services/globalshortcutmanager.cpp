@@ -135,7 +135,11 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
     case GlobalShortcutAction::ScreenshotOcr:
         return settings.screenshotOcr();
     case GlobalShortcutAction::ScreenshotTranslation:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.screenshotTranslation();
+#else
+        return {};
+#endif
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.screenshotCopy();
     case GlobalShortcutAction::ScreenshotFullScreen:
@@ -165,7 +169,11 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
     case GlobalShortcutAction::RestoreLastClosedWindows:
         return settings.restoreLastClosedWindows();
     case GlobalShortcutAction::TranslateSelectedText:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.translateSelectedText();
+#else
+        return {};
+#endif
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.toggleGlobalHotkeys();
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
@@ -186,7 +194,11 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
     case GlobalShortcutAction::ScreenshotOcr:
         return settings.setScreenshotOcr(bindings);
     case GlobalShortcutAction::ScreenshotTranslation:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.setScreenshotTranslation(bindings);
+#else
+        return false;
+#endif
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.setScreenshotCopy(bindings);
     case GlobalShortcutAction::ScreenshotFullScreen:
@@ -216,7 +228,11 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
     case GlobalShortcutAction::RestoreLastClosedWindows:
         return settings.setRestoreLastClosedWindows(bindings);
     case GlobalShortcutAction::TranslateSelectedText:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.setTranslateSelectedText(bindings);
+#else
+        return false;
+#endif
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.setToggleGlobalHotkeys(bindings);
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
@@ -266,9 +282,12 @@ class GlobalShortcutManager::Impl {
             // disablement and fullscreen suppression so either can be undone
             // from the keyboard.
             const bool gateControl = controlsGlobalHotkeyGates(active->action);
-            if ((!m_globalHotkeysEnabled && !gateControl) ||
-                (active->action == GlobalShortcutAction::TranslateSelectedText &&
-                 !storage::ExtendedFeaturesSettings().translationPageEnabled())) {
+            if ((!m_globalHotkeysEnabled && !gateControl)
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
+                || (active->action == GlobalShortcutAction::TranslateSelectedText &&
+                    !storage::ExtendedFeaturesSettings().translationPageEnabled())
+#endif
+            ) {
                 return;
             }
             if (gateControl ||
@@ -419,8 +438,12 @@ class GlobalShortcutManager::Impl {
         if (!m_initialized || !m_suspensions.isEmpty()) {
             return;
         }
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         const bool translationEnabled =
             storage::ExtendedFeaturesSettings().translationPageEnabled();
+#else
+        constexpr bool translationEnabled = false;
+#endif
         QHash<QString, QString> winnerByIdentity;
         QSet<QString> desiredOwnerKeys;
         QSet<QString> duplicateOwnerKeys;

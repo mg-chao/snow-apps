@@ -22,6 +22,11 @@ function Assert-SnowShotMiniPayload([string]$Stage) {
             $relative -notin $allowedBinFiles) {
             throw "Mini Windows contains an unexpected runtime or resource file: $relative"
         }
+        if (-not $relative.StartsWith('bin/', [StringComparison]::OrdinalIgnoreCase) -and
+            -not $relative.StartsWith('share/snow-shot-mini/licenses/', [StringComparison]::Ordinal) -and
+            $relative -cne 'snow-shot-mini-installation.json') {
+            throw "Mini Windows contains a file outside its runtime and license bundle: $relative"
+        }
     }
     $manifest = Join-Path $Stage 'bin/assets/ocr/asset-manifest.json'
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw 'Mini is missing its trusted OCR descriptor.' }

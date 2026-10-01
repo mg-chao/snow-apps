@@ -1,11 +1,21 @@
 #include "snow_shot/app/mcp/mcpedition.h"
+#include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 
 #include <QCoreApplication>
 #include <QJsonObject>
 #include <cstdlib>
 #include <iostream>
+#include <type_traits>
 
 namespace {
+template <class T, class = void> struct IsComplete : std::false_type {};
+template <class T> struct IsComplete<T, std::void_t<decltype(sizeof(T))>> : std::true_type {};
+
+static_assert(IsComplete<ScreenshotRecognitionFileExport>::value ==
+              (snow_shot::app::edition::imageConversion ||
+               snow_shot::app::edition::latexRecognition ||
+               snow_shot::app::edition::qrRecognition));
+
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';

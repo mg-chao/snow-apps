@@ -39,7 +39,9 @@
 #include <QStackedLayout>
 #include <QStyleOptionGraphicsItem>
 #include <QTimer>
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
 #include <QTextBrowser>
+#endif
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -78,6 +80,7 @@ void applyTextEditorContainerBackground(QWidget* container) {
     container->setAutoFillBackground(true);
 }
 
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
 bool isHttpUrl(const QString& text, QUrl* result = nullptr) {
     const QUrl url(text, QUrl::StrictMode);
     const QString scheme = url.scheme().toLower();
@@ -88,6 +91,7 @@ bool isHttpUrl(const QString& text, QUrl* result = nullptr) {
     }
     return valid;
 }
+#endif
 
 QList<QKeyCombination> standardCombinations(QKeySequence::StandardKey standardKey) {
     QList<QKeyCombination> combinations;
@@ -731,10 +735,12 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
             return true;
         }
 #endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
         if (m_qrBrowser != nullptr) {
             m_qrBrowser->selectAll();
             return true;
         }
+#endif
         if (m_ocrPresentation == nullptr) {
             return false;
         }
@@ -991,12 +997,16 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
         const QTextCursor cursor = m_textEditor->textCursor();
         text = cursor.hasSelection() ? QTextDocumentFragment(cursor).toPlainText()
                                      : m_textEditor->toPlainText();
-    } else if (m_qrBrowser != nullptr) {
+    }
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    else if (m_qrBrowser != nullptr) {
         contentAvailable = true;
         const QTextCursor cursor = m_qrBrowser->textCursor();
         text = cursor.hasSelection() ? QTextDocumentFragment(cursor).toPlainText()
                                      : m_qrBrowser->toPlainText();
-    } else if (m_ocrPresentation != nullptr) {
+    }
+#endif
+    else if (m_ocrPresentation != nullptr) {
         contentAvailable = true;
         if (m_ocrPresentation->hasTextSelection()) {
             text = m_ocrPresentation->selectedText();
@@ -1054,6 +1064,7 @@ void ScreenshotRecognitionWindow::showOcrContextMenu(const QPoint& globalPositio
 }
 
 void ScreenshotRecognitionWindow::showQrContextMenu(const QPoint& globalPosition) {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (m_qrBrowser == nullptr) {
         return;
     }
@@ -1066,6 +1077,9 @@ void ScreenshotRecognitionWindow::showQrContextMenu(const QPoint& globalPosition
             [this]() { static_cast<void>(copyVisibleContentToClipboard()); });
     connect(selectAll, &QAction::triggered, m_qrBrowser, &QTextBrowser::selectAll);
     menu.execAt(globalPosition);
+#else
+    Q_UNUSED(globalPosition)
+#endif
 }
 
 void ScreenshotRecognitionWindow::showTextEditorContextMenu(const QPoint& globalPosition) {
@@ -1437,8 +1451,10 @@ void ScreenshotRecognitionWindow::updateTextEditorSpinGeometry() {
 
 void ScreenshotRecognitionWindow::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (event->type() == QEvent::LanguageChange && m_qrBrowser) {
         m_qrBrowser->setAccessibleName(m_qrDetectLinks ? tr("Barcode recognition result")
                                                        : tr("LaTeX formula source"));
     }
+#endif
 }

@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_STORAGE_CONFIGURATIONARCHIVE_H
 #define SNOW_SHOT_STORAGE_CONFIGURATIONARCHIVE_H
 
+#include "snow_shot/app/edition.h"
+
 #include <QJsonValue>
 #include <QMap>
 #include <QString>
@@ -12,8 +14,10 @@ struct ConfigurationArchiveReadResult {
     QMap<QString, QJsonValue> values;
     int schemaVersion = 0;
     QString error;
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     QStringList redactedCredentialIds;
     void preserveOmittedCredentials(const QMap<QString, QJsonValue>& current);
+#endif
 
     [[nodiscard]] bool isValid() const {
         return error.isEmpty();

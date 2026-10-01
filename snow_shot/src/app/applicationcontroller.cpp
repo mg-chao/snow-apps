@@ -9,7 +9,9 @@
 #include "snow_shot/presentation/permissionguidecontroller.h"
 #endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/translation/translationservice.h"
+#endif
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/update/updateservice.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
@@ -26,8 +28,12 @@
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/selectedtexttranslationcoordinator.h"
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/selectedtexttranslationcontroller.h"
+#endif
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenrecordingfolder.h"
@@ -530,7 +536,9 @@ class ApplicationController::Impl {
             appPorts.storage = &storage::ApplicationStorage::instance();
             appPorts.settings = runtimeSession.get();
             appPorts.permissions = &permissions;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             appPorts.translation = translationService;
+#endif
             appPorts.updates = updates;
             appPorts.jobs = mcpJobs.get();
             appPorts.artifactWriter = [this](quint64 owner, QByteArray bytes, QString mime) {
@@ -1341,11 +1349,13 @@ class ApplicationController::Impl {
     void applyRuntimeConfiguration(const QJsonValue& value, const QString& key) {
         if (key == QStringLiteral("screen_recording/enable_microphone"))
             permissions.setMicrophoneEnabled(value.toBool());
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         if (key == QStringLiteral("extended_features/translation_page_enabled")) {
             systemTray.setMenuOptions(
                 stringList(storage::ApplicationStorage::instance().configuration().value(
                     kTrayMenuOptionsKey)));
         }
+#endif
         if (key == u"updates/mode" && updates != nullptr) {
             updates->setMode(value.toString());
         } else if (key == u"network/proxy" && updates != nullptr) {
@@ -1756,7 +1766,9 @@ class ApplicationController::Impl {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     std::unique_ptr<SnowShotApiClient> translationClient;
 #endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     translation::TranslationService* translationService = nullptr;
+#endif
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
     std::unique_ptr<presentation::GlobalCanvasController> globalCanvasController;

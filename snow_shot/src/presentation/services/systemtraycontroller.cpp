@@ -516,9 +516,12 @@ class SystemTrayController::Impl {
                  groups.at(groupIndex).options) {
                 QAction* action = actions.value(option.id);
                 const bool visible =
-                    action != nullptr && requested.contains(option.id) &&
-                    (option.shortcutAction != GlobalShortcutAction::TranslateSelectedText ||
-                     snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled());
+                    action != nullptr && requested.contains(option.id)
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
+                    && (option.shortcutAction != GlobalShortcutAction::TranslateSelectedText ||
+                        snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())
+#endif
+                    ;
                 if (action != nullptr) {
                     action->setVisible(visible);
                 }

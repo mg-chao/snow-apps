@@ -558,8 +558,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     qreal m_formattedTextDevicePixelRatio = 1.0;
     ScreenshotClipboardOriginalContent m_originalClipboardContent;
     QPointer<ScreenshotOcrRecognitionPort> m_recognition;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     QPointer<ScreenshotQrRecognitionPort> m_qrRecognition;
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QPointer<SnowShotApiClient> m_tableRecognition;
+#endif
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     ScreenshotRecognitionResults m_recognitionResults;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;

@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/presentation/components/titlebarwidget.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
@@ -12,6 +13,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 
 #include "widgets/input_text_edit.h"
+#include "icon_renderer.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -22,7 +24,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QImage>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -30,6 +34,7 @@
 #include <QTranslator>
 
 #include <cstdlib>
+#include <algorithm>
 #include <iostream>
 #include <memory>
 
@@ -55,6 +60,58 @@ template <typename T> T* child(QObject& owner, const char* name) {
     auto* result = owner.findChild<T*>(QString::fromLatin1(name));
     require(result != nullptr, name);
     return result;
+}
+
+void titleBarRendersTheEditionSvg(TitleBarWidget& titleBar) {
+    namespace styles = snow_shot::presentation::styles;
+    namespace icons = snow_shot::presentation::icons::custom;
+    auto& manager = styles::ThemeManager::instance();
+    const auto originalAppearance = manager.themeColorScheme().appearance;
+    for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
+        manager.setThemeAppearance(appearance);
+        flushEvents();
+        const auto scheme = manager.themeColorScheme();
+        const QImage actual = titleBar.grab().toImage();
+        const qreal scale = actual.devicePixelRatio();
+        QColor ink = scheme.map.colorText;
+#ifdef Q_OS_WIN
+        if (!titleBar.window()->isActiveWindow()) {
+            ink = scheme.map.colorTextTertiary;
+        }
+#endif
+        const auto colors = adqt::icons::IconColors::primary(ink);
+        const auto logo = edition::isMini ? icons::brand::SnowShotMiniLogo(colors)
+                                          : icons::brand::SnowShotLogo(colors);
+        const int height = std::clamp(scheme.metricAlias.fontSizeSM, 10, 14);
+        adqt::icons::IconRenderRequest request;
+        request.logicalSize =
+            QSize(qRound(height * (edition::isMini ? 137.0 : 95.0) / 17.0), height);
+        request.devicePixelRatio = scale;
+        const QPixmap pixmap = adqt::icons::renderIconPixmap(logo, request);
+        QImage expected(actual.size(), QImage::Format_ARGB32_Premultiplied);
+        expected.setDevicePixelRatio(scale);
+        expected.fill(titleBar.palette().color(QPalette::Window));
+#ifdef Q_OS_WIN
+        const QPointF position(48,
+                               qRound((titleBar.height() * scale - pixmap.height()) / 2.0) / scale);
+#else
+        const QPointF position((titleBar.width() - qRound(pixmap.width() / scale)) / 2.0,
+                               (titleBar.height() - qRound(pixmap.height() / scale)) / 2.0);
+#endif
+        {
+            QPainter painter(&expected);
+#ifndef Q_OS_WIN
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+#endif
+            painter.drawPixmap(position, pixmap);
+        }
+        const QRect bounds = QRectF(position * scale, QSizeF(pixmap.size())).toAlignedRect();
+        require(
+            actual.copy(bounds).convertToFormat(expected.format()) == expected.copy(bounds),
+            "both title bars must render their vector wordmark exactly in light and dark themes");
+    }
+    manager.setThemeAppearance(originalAppearance);
+    flushEvents();
 }
 
 void brandingRetranslatesWithoutChangingIdentifiers() {
@@ -96,6 +153,7 @@ void brandingRetranslatesWithoutChangingIdentifiers() {
     auto* titleBar = window.findChild<TitleBarWidget*>();
     require(embedded != nullptr && titleBar != nullptr,
             "main window constructs About and title bar");
+    titleBarRendersTheEditionSvg(*titleBar);
     AboutPageWidget standalone;
 
     struct Case {

@@ -2,7 +2,10 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONSESSIONCONTROLLER_H
 
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/translation/translationservice.h"
+#endif
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
@@ -170,6 +173,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
 
   private:
     struct TextCacheEntry {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         enum class TranslationStatus { Absent, Streaming, Completed, Failed };
         struct OverlayTranslation {
             std::shared_ptr<ScreenshotOcrPresentation> presentation;
@@ -177,11 +181,13 @@ class ScreenshotRecognitionSessionController final : public QObject {
             bool failureReported = false;
             bool captured = false;
         };
+#endif
         ScreenshotOcrRecognitionResult recognitionResult;
         std::shared_ptr<ScreenshotOcrPresentation> presentation;
         std::shared_ptr<QTextDocument> formattedDocument;
         bool formatted = false;
         std::shared_ptr<ScreenshotOcrTextEditingSession> editingSession;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         std::shared_ptr<ScreenshotOcrTextEditingSession> translationSession;
         QPointer<snow_shot::translation::TranslationJob> translationJob;
         bool jobInImage = false;
@@ -189,12 +195,24 @@ class ScreenshotRecognitionSessionController final : public QObject {
         QString successfulTranslation;
         TranslationStatus translationStatus = TranslationStatus::Absent;
         bool hasSuccessfulTranslation = false;
+#endif
         bool editing = false;
         bool defaultTransformsApplied = false;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         OverlayTranslation overlayTranslation;
         snow_shot::storage::ScreenshotTranslationConfiguration translationConfiguration;
         bool hasTranslationConfiguration = false;
+#endif
     };
+
+    [[nodiscard]] std::shared_ptr<ScreenshotOcrTextEditingSession>
+    currentEditingSession(const TextCacheEntry& entry) const {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        if (m_translating)
+            return entry.translationSession;
+#endif
+        return entry.editingSession;
+    }
 
     void startTextRecognition(ScreenshotOcrRequestPriority priority);
     void startTextRender();
@@ -246,40 +264,77 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] ScreenshotRecognitionWindow* content() const;
 
     QPointer<ScreenshotOcrRecognitionPort> m_recognition;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     QPointer<ScreenshotQrRecognitionPort> m_qrRecognition;
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QPointer<SnowShotApiClient> m_tableRecognition;
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QPointer<snow_shot::translation::TranslationService> m_translationService;
+#endif
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     ScreenshotImageConversionController* m_conversion = nullptr;
     bool m_conversionMessageShown = false;
+#endif
     ScreenshotRecognitionSessionActions m_actions;
     ScreenshotRecognitionTarget m_target;
     QPointer<ScreenshotRecognitionWindow> m_content;
     QHash<QString, TextCacheEntry> m_textCache;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     QHash<QString, std::shared_ptr<ScreenshotTableEditingSession>> m_tableCache;
+#endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     QHash<QString, QStringList> m_qrCache;
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     QHash<QString, SnowShotLatexResult> m_latexResults;
     SnowShotApiClient::RequestToken m_latexRequestToken = 0;
     quint64 m_latexGeneration = 0;
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     QHash<QString, SnowShotTableResult> m_tableResults;
+#endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     QHash<QString, ScreenshotQrRecognitionResult> m_qrResults;
+#endif
     std::shared_ptr<ScreenshotOcrPresentation> m_presentation;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     std::shared_ptr<ScreenshotTableEditingSession> m_tableSession;
+#endif
     QString m_textCacheKey;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     QString m_tableCacheKey;
+#endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     QString m_qrCacheKey;
     QStringList m_qrContents;
+#endif
     QPointer<QTextDocument> m_textDocument;
     QString m_editingKey;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QString m_translationKey;
+#endif
     ScreenshotOcrRecognitionPort::RequestToken m_textRequestToken = 0;
     ScreenshotOcrRecognitionPort::RequestToken m_textRenderRequestToken = 0;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     SnowShotApiClient::RequestToken m_tableRequestToken = 0;
+#endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     ScreenshotQrRecognitionPort::RequestToken m_qrRequestToken = 0;
+#endif
     quint64 m_textGeneration = 0;
     quint64 m_textRenderGeneration = 0;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     quint64 m_tableGeneration = 0;
+#endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     quint64 m_qrGeneration = 0;
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     quint64 m_translationGeneration = 0;
+#endif
     mutable QString m_workflowError;
     Mode m_mode = Mode::Text;
     bool m_active = false;
@@ -290,9 +345,16 @@ class ScreenshotRecognitionSessionController final : public QObject {
     bool m_textModelDownloadShown = false;
     bool m_textModelDownloadInProgress = false;
     bool m_editing = false;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     bool m_translating = false;
     bool m_translationInImage = false;
+#else
+    static constexpr bool m_translating = false;
+    static constexpr bool m_translationInImage = false;
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     QPointer<adqt::widgets::AdModal> m_translationSettingsModal;
+#endif
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONSESSIONCONTROLLER_H

@@ -577,14 +577,19 @@ struct EditRecognition {
     action: RecognitionAction,
     #[serde(default)]
     text: Option<String>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     value: Option<String>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     range: Option<[u32; 4]>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     row: Option<u32>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     column: Option<u32>,
+    #[cfg(not(feature = "mini"))]
     #[serde(default)]
     enabled: Option<bool>,
 }
@@ -838,6 +843,7 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
         "snow_shot_screenshot_scrolling" => model::<Mutation<Scrolling>>(input),
         "snow_shot_screenshot_scroll_once" => model::<Mutation<ScrollOnce>>(input),
         "snow_shot_screenshot_recognize" => model::<Mutation<Recognize>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_screenshot_translate" => model::<Mutation<Empty>>(input),
         "snow_shot_screenshot_auto_filter" => model::<Mutation<AutoFilter>>(input),
         "snow_shot_screenshot_operation" => model::<Operation>(input),
@@ -866,6 +872,50 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn full_only_tools_and_recognition_fields_follow_the_compiled_edition() {
+        for name in [
+            "snow_shot_screenshot_translate",
+            "snow_shot_models_list",
+            "snow_shot_models_update",
+            "snow_shot_credentials_set",
+            "snow_shot_translation_catalog",
+            "snow_shot_translation_start",
+        ] {
+            assert_eq!(schema(name, None).is_ok(), !crate::edition::MINI, "{name}");
+            let included = crate::server::TOOLS
+                .iter()
+                .chain(domains::TOOLS.iter())
+                .any(|(tool, _, _)| *tool == name);
+            assert_eq!(included, !crate::edition::MINI, "{name}");
+        }
+        for name in [
+            "snow_shot_screenshot_edit_recognition",
+            "snow_shot_document_edit_recognition",
+        ] {
+            let published = schema(name, None).unwrap();
+            for (field, value) in [
+                ("value", json!("cell")),
+                ("range", json!([0, 0, 1, 1])),
+                ("row", json!(0)),
+                ("column", json!(0)),
+                ("enabled", json!(true)),
+            ] {
+                assert_eq!(
+                    published["properties"].get(field).is_some(),
+                    !crate::edition::MINI,
+                    "{name}: {field}"
+                );
+                let mut arguments = if name.contains("screenshot") {
+                    json!({"session_id":"s","expected_revision":1,"action":"set_text","text":"edited"})
+                } else {
+                    json!({"document_id":"d","expected_revision":1,"expected_recognition_revision":1,"action":"set_text","text":"edited"})
+                };
+                arguments[field] = value;
+                assert_eq!(schema(name, Some(arguments)).is_ok(), !crate::edition::MINI);
+            }
+        }
+    }
     #[test]
     fn every_screenshot_tool_accepts_its_checked_input_contract() {
         let fixture: Value =

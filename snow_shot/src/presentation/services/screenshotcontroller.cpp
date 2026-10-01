@@ -556,13 +556,18 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::unique_ptr<ScreenshotToolCommandWorkflow> m_toolCommandWorkflow;
     ScreenshotOcrRecognitionService* m_ocrRecognition = nullptr;
     std::unique_ptr<ScreenshotOcrRecognitionService> m_ownedOcrRecognition;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     std::unique_ptr<ScreenshotQrRecognitionPort> m_qrRecognition;
     std::unique_ptr<ScreenshotQrController> m_qrController;
     std::optional<quint64> m_qrConfirmationSession;
     QPointer<ScreenshotToolPalette> m_qrPalette;
+#endif
     std::unique_ptr<ScreenshotMessageService> m_messages;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     std::unique_ptr<QObject> m_ownedApiClient;
     QPointer<SnowShotApiClient> m_tableRecognition;
+#endif
     std::unique_ptr<ScreenshotOcrController> m_ocrController;
     std::unique_ptr<ScreenshotSelectionResizeWorkflow> m_selectionResizeWorkflow;
     std::unique_ptr<ScreenshotScrollingCaptureController> m_scrollingCaptureController;
@@ -656,9 +661,16 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                                  ScreenshotOcrRecognitionService* sharedOcrRecognition,
                                  SnowShotApiClient* sharedApiClient)
     : owner(controller), m_groupManager(groupManager), m_ocrRecognition(sharedOcrRecognition),
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
       m_tableRecognition(sharedApiClient),
+#endif
       m_canvasRuntime(
           SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()}) {
+#if !SNOW_SHOT_ENABLE_TABLE_RECOGNITION && !SNOW_SHOT_ENABLE_LATEX_RECOGNITION &&                  \
+    !SNOW_SHOT_ENABLE_IMAGE_CONVERSION && !SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    Q_UNUSED(sharedApiClient)
+#endif
     createPresentationInfrastructure();
     reloadUiPreferences();
     reloadDrawingPreferences();
@@ -670,8 +682,10 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                 if (key == QStringLiteral("screenshot_selection/smart_selection")) {
                     updateSmartSelectionSettingForCurrentSession(value.toBool());
                 } else if (key == QStringLiteral("screenshot/auto_recognize_qr_code")) {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
                     if (m_qrController)
                         m_qrController->setEnabled(value.toBool());
+#endif
                     if (value.toBool())
                         startAutomaticQrRecognition();
                     synchronizeQrToolbar();
@@ -816,8 +830,10 @@ void ScreenshotController::Impl::createHistoryService() {
             m_interaction,
             m_intelligentSelection,
             [this]() {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
                 if (m_qrController)
                     m_qrController->invalidate();
+#endif
                 if (m_ocrController != nullptr) {
                     m_ocrController->invalidateSession();
                 }
@@ -1167,8 +1183,17 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
             m_geometry,
             *m_overlayCoordinator,
             *m_ocrRecognition,
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
             m_qrRecognition.get(),
+#else
+            nullptr,
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             m_tableRecognition.data(),
+#else
+            nullptr,
+#endif
             [this]() { m_colorPickerController->hide(); },
             [this]() { cancelCapture(); },
             [this](const QPointF& canvasPosition) {
@@ -1270,8 +1295,10 @@ void ScreenshotController::Impl::deactivateRecognition() {
 }
 
 void ScreenshotController::Impl::invalidateRecognitionSession() {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrController)
         m_qrController->invalidate();
+#endif
     if (m_ocrController != nullptr) {
         m_ocrController->invalidateSession();
     }
@@ -1328,7 +1355,18 @@ bool ScreenshotController::Impl::ensureExportFeature() {
         m_geometry,
     });
     auto exportUiServices = std::make_unique<ScreenshotSelectionExportUiServices>(
-        m_ocrRecognition, m_qrRecognition.get(), m_tableRecognition.data(),
+        m_ocrRecognition,
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+        m_qrRecognition.get(),
+#else
+        nullptr,
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        m_tableRecognition.data(),
+#else
+        nullptr,
+#endif
         [controller = QPointer<ScreenshotController>(&owner)]() {
             if (controller != nullptr) {
                 emit controller->showMainWindowRequested();
@@ -1341,8 +1379,13 @@ bool ScreenshotController::Impl::ensureExportFeature() {
                 return providers;
             }
             providers.recognition = controller->m_impl->m_ocrRecognition;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
             providers.qrRecognition = controller->m_impl->m_qrRecognition.get();
+#endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                    \
+    SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             providers.tableRecognition = controller->m_impl->m_tableRecognition.data();
+#endif
             return providers;
         },
         m_groupManager);
@@ -1492,8 +1535,10 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 m_mcpOptions = {};
                 emit owner.mcpCaptureTerminated();
                 resetPendingCaptureRequest();
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
                 if (m_qrController)
                     m_qrController->invalidate();
+#endif
                 QTimer::singleShot(0, &owner, [this]() {
                     emit owner.captureAvailabilityChanged(canBeginCapture());
                 });
@@ -1663,8 +1708,10 @@ void ScreenshotController::Impl::handleCapturePresented() {
 void ScreenshotController::Impl::createDisplayConfigurationObserver() {
     m_displayConfigurationObserver = std::make_unique<ScreenshotDisplayConfigurationObserver>(
         [this]() {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
             if (m_qrController)
                 m_qrController->invalidate();
+#endif
             if (auto cancel = std::exchange(m_cancelSaveDialog, {}))
                 cancel();
             const bool scrollingStopped = stopScrollingCapture(false);
@@ -1723,8 +1770,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this]() { copySelectionToClipboard(); },
         [this]() {
             QWidget* focus = QApplication::focusWidget();
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
             if (m_qrController && m_qrController->ownsInput(focus))
                 return false;
+#endif
             if (snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(focus)) {
                 return false;
             }
@@ -1963,8 +2012,10 @@ void ScreenshotController::Impl::requestRecapture() {
     }
 
     m_recaptureBusy = true;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrController)
         m_qrController->setSuspended(true);
+#endif
     const quint64 generation = ++m_recaptureGeneration;
     if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
         toolbar->setRecaptureBusy(true);
@@ -2156,8 +2207,10 @@ void ScreenshotController::Impl::finishRecapture(bool succeeded, bool reportFail
     ++m_recaptureGeneration;
     restoreRecaptureWindows();
     m_recaptureBusy = false;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrController)
         m_qrController->setSuspended(false);
+#endif
     if (ScreenshotToolbarWindow* toolbar =
             m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr) {
         toolbar->setRecaptureBusy(false);
@@ -2728,8 +2781,10 @@ void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
         m_scrollingCaptureController->detachPendingResultRequest();
     }
     static_cast<void>(stopScrollingCapture(false));
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrController)
         m_qrController->invalidate();
+#endif
     if (m_ocrController != nullptr) {
         m_ocrController->invalidateSession();
     }
@@ -3799,6 +3854,8 @@ ScreenshotController::Impl::recognitionFileSaveArtifact() const {
 }
 
 void ScreenshotController::Impl::quickSaveSelection() {
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION
     const auto textSnapshot =
         m_ocrController != nullptr ? m_ocrController->fileExportSnapshot() : std::nullopt;
     if (textSnapshot) {
@@ -3820,6 +3877,7 @@ void ScreenshotController::Impl::quickSaveSelection() {
         detachCaptureForExport();
         return;
     }
+#endif
     auto recognitionArtifact = recognitionFileSaveArtifact();
     const bool scrolling = m_scrollingCaptureController && m_scrollingCaptureController->active();
     if ((!scrolling && !m_selection.hasPixelSelection()) || !ensureExportFeature() ||
@@ -3889,12 +3947,15 @@ void ScreenshotController::Impl::quickSaveSelection() {
 }
 
 void ScreenshotController::Impl::saveSelectionToFile() {
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION
     const auto textSnapshot =
         m_ocrController != nullptr ? m_ocrController->fileExportSnapshot() : std::nullopt;
     if (textSnapshot) {
         saveRecognitionTextWithSystemDialog(*textSnapshot);
         return;
     }
+#endif
     if (snow_shot::storage::ScreenshotSettings().saveAsFileDialog() ==
         QStringLiteral("snow_shot")) {
         saveSelectionWithSnowDialog();
@@ -4002,6 +4063,8 @@ void ScreenshotController::Impl::saveSelectionToFile() {
 
 void ScreenshotController::Impl::saveRecognitionTextWithSystemDialog(
     const ScreenshotRecognitionFileSnapshot& snapshot) {
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (owner.property("saveDialogOpen").toBool() || !m_selection.hasPixelSelection() ||
         !ensureExportFeature() || !resetCanvasEditingState())
         return;
@@ -4051,6 +4114,9 @@ void ScreenshotController::Impl::saveRecognitionTextWithSystemDialog(
     }
     static_cast<void>(settings.setLastManualSaveDirectory(QFileInfo(result.path).absolutePath()));
     detachCaptureForExport();
+#else
+    Q_UNUSED(snapshot)
+#endif
 }
 
 void ScreenshotController::Impl::saveSelectionWithSnowDialog() {
@@ -5157,6 +5223,7 @@ bool ScreenshotController::Impl::restoreSelectionAspectRatioLock() {
 }
 
 void ScreenshotController::Impl::synchronizeQrToolbar() {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     auto* toolbar = m_overlayCoordinator ? m_overlayCoordinator->toolbar() : nullptr;
     auto* palette = toolbar ? toolbar->palette() : nullptr;
     if (!palette)
@@ -5168,17 +5235,21 @@ void ScreenshotController::Impl::synchronizeQrToolbar() {
         m_qrPalette = palette;
         QObject::connect(palette, &ScreenshotToolPalette::qrCodeVisibilityRequested, &owner,
                          [this](bool visible) {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
                              if (m_qrController)
                                  m_qrController->setMarkersVisible(visible);
+#endif
                          });
     }
     palette->setQrCodeState(snow_shot::storage::ScreenshotSettings().autoRecognizeQrCode() &&
                                 m_qrController && m_qrController->available(),
                             !m_qrController || m_qrController->markersVisible(),
                             m_qrController ? m_qrController->error() : QString());
+#endif
 }
 
 void ScreenshotController::Impl::synchronizeAutomaticQr() {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrController) {
         const bool editing = m_captureState.sessionState == ScreenshotSessionState::Editing &&
                              !m_interaction.inactive();
@@ -5188,13 +5259,16 @@ void ScreenshotController::Impl::synchronizeAutomaticQr() {
                 !m_selection.regionOperationActive() && !m_selection.constructionActive());
     }
     synchronizeQrToolbar();
+#endif
 }
 
 void ScreenshotController::Impl::startAutomaticQrRecognition() {
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (!snow_shot::storage::ScreenshotSettings().autoRecognizeQrCode()) {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
         if (m_qrController)
             m_qrController->invalidate();
+#endif
         synchronizeQrToolbar();
         return;
     }
@@ -5234,6 +5308,7 @@ void ScreenshotController::Impl::startAutomaticQrRecognition() {
 }
 
 void ScreenshotController::Impl::scheduleAutomaticQrRecognition() {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrConfirmationSession != m_captureState.sessionId) {
         m_qrConfirmationSession = m_captureState.sessionId;
         const quint64 session = m_captureState.sessionId;
@@ -5245,6 +5320,7 @@ void ScreenshotController::Impl::scheduleAutomaticQrRecognition() {
                 startAutomaticQrRecognition();
         });
     }
+#endif
 }
 
 void ScreenshotController::Impl::handleSelectionConfirmed() {
@@ -5329,7 +5405,9 @@ void ScreenshotController::Impl::shutdown() {
     m_activeImageExports.clear();
     m_imageExportCaptureEpochs.clear();
     resetPendingCaptureRequest();
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     m_qrController.reset();
+#endif
     m_ocrController.reset();
     static_cast<void>(stopScrollingCapture(false));
     if (m_captureWorkflow != nullptr) {
@@ -6109,7 +6187,11 @@ ScreenRecordingController* ScreenshotController::automationRecordingController()
 }
 
 ScreenshotQrRecognitionPort* ScreenshotController::mcpQrRecognition() {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     return m_impl->ensureRecognitionFeature() ? m_impl->m_qrRecognition.get() : nullptr;
+#else
+    return nullptr;
+#endif
 }
 
 void ScreenshotController::mcpPinnedImage(const QString& id,

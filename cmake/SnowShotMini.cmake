@@ -1,6 +1,7 @@
 # Instantiate a second product from the same source lists and build settings.
 # Edition-sensitive libraries are recompiled; codecs, Qt, canvas and native FFI
 # remain shared. No full-edition static library may leak into the Mini graph.
+include("${CMAKE_CURRENT_LIST_DIR}/SnowShotMiniBuildContract.cmake")
 add_library(snow_shot_edition_full INTERFACE)
 target_compile_definitions(snow_shot_edition_full INTERFACE SNOW_SHOT_EDITION_MINI=0)
 foreach(_feature IN ITEMS QR_RECOGNITION TABLE_RECOGNITION IMAGE_CONVERSION
@@ -63,19 +64,22 @@ function(_snow_mini_copy_build_properties original target)
     foreach(_property IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
         get_target_property(_value ${original} ${_property})
         if(NOT _value STREQUAL "_value-NOTFOUND")
-            list(FILTER _value EXCLUDE REGEX "^(snow_shot_translation|opencv_wechat_qrcode|opencv_objdetect)$")
+            foreach(_excluded IN LISTS SNOW_SHOT_MINI_EXCLUDED_LINK_TARGETS)
+                list(FILTER _value EXCLUDE REGEX "(^|[:;])${_excluded}($|[>;])")
+            endforeach()
             _snow_mini_rewrite(_value "${_value}")
             set_property(TARGET ${target} PROPERTY ${_property} "${_value}")
         endif()
     endforeach()
 endfunction()
 
-# Generated resources are edition-neutral. Give their custom commands one
-# owning target so concurrent builds never write or compile the same rcc output.
+# Share only edition-neutral resources. Full translations retain their original
+# owner; Mini embeds its own catalogs without Full-only feature contexts.
 function(_snow_mini_share_resources target)
     get_target_property(_sources ${target} SOURCES)
     set(_resources ${_sources})
     list(FILTER _resources INCLUDE REGEX "/qrc_[^/]+\\.cpp$")
+    list(FILTER _resources EXCLUDE REGEX "/qrc_snow_shot_translations\\.cpp$")
     if(_resources)
         list(REMOVE_ITEM _sources ${_resources})
         set_property(TARGET ${target} PROPERTY SOURCES "${_sources}")
@@ -89,9 +93,7 @@ endfunction()
 foreach(_original IN LISTS _snow_mini_libraries)
     _snow_mini_share_resources(${_original})
     get_target_property(_sources ${_original} SOURCES)
-    # Translation/API configuration views are leaf sources of settings.
-    list(FILTER _sources EXCLUDE REGEX
-        "(selectedtexttranslationcoordinator|standalonetranslationwindow|translationpagewidget|texttranslationsettingswidget|customaimodelssettingswidget)\\.(cpp|h)$")
+    snow_shot_mini_filter_sources(_sources ${_sources})
     add_library(${_original}_mini STATIC ${_sources})
     _snow_mini_copy_build_properties(${_original} ${_original}_mini)
     target_link_libraries(${_original}_mini PUBLIC snow_shot_edition_mini)
@@ -103,12 +105,11 @@ _snow_mini_share_resources(snow_shot)
 get_target_property(_sources snow_shot SOURCES)
 list(FILTER _sources EXCLUDE REGEX "/packaging/macos/[^/]+\\.lproj/InfoPlist\\.strings$")
 list(FILTER _sources EXCLUDE REGEX "windows-app-resource\\.rc$|_plugin_import\\.cpp$")
-list(FILTER _sources EXCLUDE REGEX
-    "(screenshotqrrecognitionservice|selectedtexttranslationcontroller|screenshottranslationsettingsdialog|screenshotimageconversionview|screenshottableeditor)\\.(cpp|h)$")
-list(FILTER _sources EXCLUDE REGEX "(screenshotimageconversioncontroller|screenshottabledocument)\\.cpp$")
+snow_shot_mini_filter_sources(_sources ${_sources})
 qt_add_executable(snow_shot_mini MANUAL_FINALIZATION ${_sources})
 _snow_mini_copy_build_properties(snow_shot snow_shot_mini)
 target_link_libraries(snow_shot_mini PRIVATE snow_shot_edition_mini)
+snow_shot_add_translations(snow_shot_mini MINI)
 set_target_properties(snow_shot_mini PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/snow_shot_mini"
     MACOSX_BUNDLE TRUE WIN32_EXECUTABLE TRUE
@@ -258,7 +259,7 @@ elseif(NOT SNOW_SHOT_QT_STATIC)
     install(SCRIPT "${_mini_qt_deploy}" COMPONENT SnowShotMini)
 endif()
 if(SNOW_SHOT_QT_STATIC)
-    qt_import_plugins(snow_shot_mini INCLUDE ${_snow_shot_static_qt_plugins})
+    qt_import_plugins(snow_shot_mini NO_DEFAULT INCLUDE ${_snow_shot_static_qt_plugins})
 endif()
 qt_finalize_executable(snow_shot_mini)
 
@@ -270,6 +271,9 @@ target_link_libraries(snow_shot PRIVATE snow_shot_edition_full)
 target_sources(snow_shot PRIVATE include/snow_shot/app/edition.h)
 
 if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-mini-build-contract-tests
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mini_build_contract_tests.py")
+    set_tests_properties(snow-shot-mini-build-contract-tests PROPERTIES LABELS unit TIMEOUT 60)
     add_executable(snow-shot-mini-edition-tests tests/mini_edition_tests.cpp)
     target_include_directories(snow-shot-mini-edition-tests PRIVATE include)
     target_link_libraries(snow-shot-mini-edition-tests PRIVATE
@@ -285,17 +289,18 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-mini-settings-reset-tests)
 
-    get_target_property(_mini_test_sources snow-shot-recognition-session-controller-tests SOURCES)
-    list(FILTER _mini_test_sources EXCLUDE REGEX "(^tests/|/qrc_[^/]+\\.cpp$|(screenshotimageconversioncontroller|screenshottabledocument)\\.cpp$|(screenshottableeditor|screenshotimageconversionview)\\.(cpp|h)$)")
-    list(FILTER _mini_test_sources EXCLUDE REGEX
-        "(screenshotqrrecognitionservice|selectedtexttranslationcontroller|screenshottranslationsettingsdialog)\\.(cpp|h)$")
+    # The Mini regression also restores legacy pins and exercises palette
+    # controls, so use the complete pinned-window fixture rather than only the
+    # recognition-session sources.
+    get_target_property(_mini_test_sources snow-shot-pinned-window-tests SOURCES)
+    list(FILTER _mini_test_sources EXCLUDE REGEX "(^tests/|/qrc_[^/]+\\.cpp$)")
+    snow_shot_mini_filter_sources(_mini_test_sources ${_mini_test_sources})
     add_executable(snow-shot-mini-recognition-tests ${_mini_test_sources}
-        tests/mini_recognition_tests.cpp
-        include/snow_shot/presentation/screenshotimageconversioncontroller.h)
-    _snow_mini_copy_build_properties(snow-shot-recognition-session-controller-tests
+        tests/mini_recognition_tests.cpp)
+    _snow_mini_copy_build_properties(snow-shot-pinned-window-tests
         snow-shot-mini-recognition-tests)
     target_link_libraries(snow-shot-mini-recognition-tests PRIVATE snow_shot_edition_mini)
-    snow_shot_add_translations(snow-shot-mini-recognition-tests)
+    snow_shot_add_translations(snow-shot-mini-recognition-tests MINI)
     snow_shot_import_offscreen_platform(snow-shot-mini-recognition-tests)
 
     foreach(_edition IN ITEMS full mini)
@@ -308,14 +313,18 @@ if(SNOW_SHOT_BUILD_TESTS)
     list(REMOVE_ITEM _branding_sources tests/about_page_tests.cpp)
     foreach(_edition IN ITEMS full mini)
         set(_suffix "")
+        set(_branding_qm_directory "${CMAKE_CURRENT_BINARY_DIR}")
+        set(_branding_translation_target snow_shot_release_translations)
         if(_edition STREQUAL mini)
             set(_suffix _mini)
+            set(_branding_qm_directory "${_snow_shot_mini_qm_dir}")
+            set(_branding_translation_target snow_shot_mini_release_translations)
         endif()
         add_executable(snow-shot-${_edition}-branding-tests ${_branding_sources}
             tests/mini_branding_tests.cpp src/app/updateconfirmationdialog.cpp)
         target_include_directories(snow-shot-${_edition}-branding-tests PRIVATE include)
         target_compile_definitions(snow-shot-${_edition}-branding-tests PRIVATE
-            SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+            SNOW_SHOT_TEST_TRANSLATIONS_DIR="${_branding_qm_directory}")
         target_link_libraries(snow-shot-${_edition}-branding-tests PRIVATE
             snow_shot_edition_${_edition} snow_shot_settings${_suffix}
             snow_shot_updates${_suffix} snow_shot_image_codec snow_shot_clipboard_placement Qt6::Widgets)
@@ -324,7 +333,12 @@ if(SNOW_SHOT_BUILD_TESTS)
                 snow_shot_macos_clipboard "-framework AppKit")
         endif()
         snow_shot_import_offscreen_platform(snow-shot-${_edition}-branding-tests)
-        add_dependencies(snow-shot-${_edition}-branding-tests snow_shot_release_translations)
+        add_dependencies(snow-shot-${_edition}-branding-tests ${_branding_translation_target})
+    endforeach()
+    foreach(_test IN ITEMS snow-shot-mini-edition-tests snow-shot-mini-recognition-tests
+            snow-shot-mini-settings-reset-tests snow-shot-mini-mcp-edition-tests
+            snow-shot-mini-branding-tests)
+        snow_shot_assert_mini_build_contract(${_test})
     endforeach()
     foreach(_test IN ITEMS snow-shot-mini-edition-tests snow-shot-mini-recognition-tests
             snow-shot-mini-settings-reset-tests
@@ -345,3 +359,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-mini-mcp-capabilities-tests PROPERTIES LABELS unit TIMEOUT 30)
     endif()
 endif()
+
+# Keep this after helpers, resources and finalization so transitive link and
+# build dependencies are audited as well as the application's copied sources.
+snow_shot_assert_mini_build_contract(snow_shot_mini)

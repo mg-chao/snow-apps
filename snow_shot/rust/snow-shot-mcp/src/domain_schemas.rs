@@ -2,10 +2,10 @@
 use super::*;
 
 macro_rules! input {
-    ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
+    ($name:ident { $($(#[$attribute:meta])* $field:ident : $ty:ty),* $(,)? }) => {
         #[derive(Deserialize, JsonSchema)]
         #[serde(deny_unknown_fields)]
-        struct $name { $($field: $ty),* }
+        struct $name { $($(#[$attribute])* $field: $ty),* }
     };
 }
 macro_rules! choices {
@@ -116,8 +116,11 @@ input!(SettingsReset {
     section_id: String
 });
 input!(SettingsAction { field_id: String, path: Option<String> });
+#[cfg(not(feature = "mini"))]
 input!(Model { id: String, name: String, base_url: String, model: String, supports_vision: Option<bool>, supports_reasoning: Option<bool>, api_key: Option<String>, credential_set: Option<bool> });
+#[cfg(not(feature = "mini"))]
 input!(ModelsUpdate { models: Vec<Model> });
+#[cfg(not(feature = "mini"))]
 input!(Credential {
     provider: String,
     secret: String
@@ -152,7 +155,9 @@ choices!(TemplateKind { Drawing, Watermark });
 input!(TemplateList { kind: TemplateKind });
 input!(Template { name: String, payload: Option<Map<String, Value>>, text: Option<String> });
 input!(TemplateUpdate { kind: TemplateKind, templates: Vec<Template> });
+#[cfg(not(feature = "mini"))]
 choices!(TranslationSource { Selection });
+#[cfg(not(feature = "mini"))]
 input!(TranslationStart { texts: Option<Vec<String>>, source: Option<TranslationSource>, source_language: Option<String>, target_language: Option<String>, model_id: Option<String>, retry_job_id: Option<String>, idempotency_key: Option<String> });
 
 choices!(DocumentSource {
@@ -231,9 +236,21 @@ struct DocumentElementEdit {
     #[schemars(length(min = 1, max = 8192))]
     points: Option<Vec<[f64; 2]>>,
 }
-input!(DocumentRecognitionEdit { expected_recognition_revision: u64, action: RecognitionAction,
-    text: Option<String>, value: Option<String>, range: Option<[u32;4]>, row: Option<u32>,
-    column: Option<u32>, enabled: Option<bool> });
+input!(DocumentRecognitionEdit {
+    expected_recognition_revision: u64,
+    action: RecognitionAction,
+    text: Option<String>,
+    #[cfg(not(feature = "mini"))]
+    value: Option<String>,
+    #[cfg(not(feature = "mini"))]
+    range: Option<[u32;4]>,
+    #[cfg(not(feature = "mini"))]
+    row: Option<u32>,
+    #[cfg(not(feature = "mini"))]
+    column: Option<u32>,
+    #[cfg(not(feature = "mini"))]
+    enabled: Option<bool>
+});
 choices!(OriginalContentFormat { Json, Text, Html });
 input!(OriginalContentOutput { output: RecognitionOutput, format: Option<OriginalContentFormat>, path: Option<String> });
 input!(DocumentSelection { operation: Option<RegionOperation>, r#type: Option<RegionType>, bounds: Option<[f64; 4]>, points: Option<Vec<[f64; 2]>> });
@@ -418,7 +435,7 @@ enum PinnedPayload {
     TemplateInsert(TemplateInsert),
     AutoFilter(PinnedAutoFilter),
     Tool(DocumentTool),
-    ToolStyle(ToolStyle),
+    ToolStyle(Box<ToolStyle>),
     Editing(Editing),
 }
 input!(PinnedEdit { id: String, action: PinnedEditAction, payload: Option<PinnedPayload> });
@@ -482,16 +499,19 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
         "Run a settings action with explicit arguments.",
         false,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_models_list",
         "Read configured model metadata without credentials.",
         true,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_models_update",
         "Update model definitions, retaining omitted credentials.",
         false,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_credentials_set",
         "Replace a model credential without returning its value.",
@@ -572,11 +592,13 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
         "Replace a validated drawing or watermark template collection.",
         false,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_translation_catalog",
         "Read translation models, languages, and preferences without credentials.",
         true,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_translation_start",
         "Translate explicit text using configured providers and return an owned job handle.",
@@ -704,7 +726,11 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
     ),
     (
         "snow_shot_document_edit_recognition",
-        "Edit retained text or table recognition using its own revision.",
+        if crate::edition::MINI {
+            "Edit retained text recognition using its own revision."
+        } else {
+            "Edit retained text or table recognition using its own revision."
+        },
         false,
     ),
     (
@@ -811,21 +837,23 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
         "snow_shot_artifact_release" => model::<ArtifactRelease>(input),
         "snow_shot_app_status"
         | "snow_shot_app_displays"
-        | "snow_shot_models_list"
         | "snow_shot_storage_status"
         | "snow_shot_permissions_get"
         | "snow_shot_updates_status"
         | "snow_shot_document_list"
         | "snow_shot_job_list"
         | "snow_shot_recording_state"
-        | "snow_shot_group_list"
-        | "snow_shot_translation_catalog" => model::<Empty>(input),
+        | "snow_shot_group_list" => model::<Empty>(input),
+        #[cfg(not(feature = "mini"))]
+        "snow_shot_models_list" | "snow_shot_translation_catalog" => model::<Empty>(input),
         "snow_shot_app_action" => model::<AppActionInput>(input),
         "snow_shot_settings_get" => model::<Section>(input),
         "snow_shot_settings_update" => model::<Revision<SettingsUpdate>>(input),
         "snow_shot_settings_reset" => model::<Revision<SettingsReset>>(input),
         "snow_shot_settings_action" => model::<Revision<SettingsAction>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_models_update" => model::<Revision<ModelsUpdate>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_credentials_set" => model::<Revision<Credential>>(input),
         "snow_shot_history_list" => model::<HistoryList>(input),
         "snow_shot_history_get" => model::<HistoryGet>(input),
@@ -839,6 +867,7 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
         "snow_shot_updates_action" => model::<UpdateInput>(input),
         "snow_shot_templates_list" => model::<TemplateList>(input),
         "snow_shot_templates_update" => model::<Revision<TemplateUpdate>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_translation_start" => {
             let exclusive = [
                 "texts",

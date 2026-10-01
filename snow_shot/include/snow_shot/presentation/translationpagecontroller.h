@@ -1,18 +1,25 @@
 #ifndef SNOW_SHOT_PRESENTATION_TRANSLATIONPAGECONTROLLER_H
 #define SNOW_SHOT_PRESENTATION_TRANSLATIONPAGECONTROLLER_H
 
+#include "snow_shot/app/edition.h"
+
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/translation/translationservice.h"
 
 #include <QLocale>
 #include <QObject>
 #include <QTimer>
+#endif
 
 namespace snow_shot::storage {
 class ConfigurationStore;
 }
 
 namespace snow_shot::presentation {
+class TranslationPageController;
+
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 class TranslationPageController final : public QObject {
     Q_OBJECT
 
@@ -75,6 +82,7 @@ class TranslationPageController final : public QObject {
     bool m_requestDue = false;
     bool m_retryRequired = false;
 };
+#endif
 } // namespace snow_shot::presentation
 
 #endif

@@ -505,6 +505,32 @@ For a website-only retry, rerun `publish-snow-shot-website.ps1` without republis
 release packages. Server settings can be overridden on that command. Focused website
 workflow tests and their commands are documented in the website repository README.
 
+### Snow Shot Mini website downloads
+
+The official website deploys both editions in one operation. Publish and verify
+the paired release on GitHub and Gitee first, including Mini's online installer,
+portable archive, and Apple Silicon DMG listed above. Both editions share
+`SNOW_SHOT_VERSION` and `v<version>_snow-shot`; Mini needs no separate deployment
+command or version setting.
+
+The website's Windows Mini card links to
+`snow-shot-mini-<version>-windows-x64-online.exe` and offers
+`snow-shot-mini-<version>-windows-x64-portable.zip` as a second download.
+The macOS Mini card links to `snow-shot-mini-<version>-macos-arm64.dmg`.
+English uses GitHub download URLs and Chinese uses Gitee. Mini cards use `#f759ab`
+and describe the lighter feature set; no Mini offline installer or Intel DMG is
+advertised.
+
+Commit the website changes in `D:/snow-apps-site`, then run
+`scripts/publish-snow-shot-website.ps1` or the publisher with `-DeployWebsite`.
+The website workflow synchronizes both editions' links through its single
+`releaseVersion`, checks the generated Windows download anchors before packing
+and before replacing server files, then checks the public English and Chinese
+download anchors against the target release. The platform-specific component
+tests cover both macOS DMG links. Mini's existing `setup/` files and
+`latest-version-mini.json` are outside the website replacement set and remain
+intact. Website-only retries use the same entry point and do not republish packages.
+
 ## Signing keys and rotation
 
 `scripts/new-snow-shot-release-key.ps1` generates an RSA-3072 key outside the repository and

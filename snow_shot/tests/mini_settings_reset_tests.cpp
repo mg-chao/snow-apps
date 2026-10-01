@@ -1,9 +1,14 @@
 #include "snow_shot/app/edition.h"
+#include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
+#include "snow_shot/presentation/translationpagecontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationarchive.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/translation/translationservice.h"
 
 #include <QApplication>
 #include <QDir>
@@ -42,6 +47,65 @@ class InertShortcutBackend final : public presentation::GlobalShortcutBackend {
     }
     void unregisterShortcut(int) override {}
 };
+
+template <typename T>
+concept CompleteType = requires { sizeof(T); };
+static_assert(!CompleteType<SnowShotApiClient>);
+static_assert(!CompleteType<snow_shot::translation::TranslationService>);
+static_assert(!CompleteType<snow_shot::translation::TranslationJob>);
+static_assert(!CompleteType<presentation::TranslationPageController>);
+
+template <typename T>
+concept HasApiModelConfiguration = requires(const T& settings) { settings.customAiModels(); };
+template <typename T>
+concept HasTranslationConfiguration =
+    requires(const T& settings) { settings.textTranslationConfigurations(); };
+template <typename T>
+concept HasTranslationShortcut = requires(const T& settings) { settings.screenshotTranslation(); };
+template <typename T>
+concept HasAutomaticQrRecognition = requires(const T& settings) { settings.autoRecognizeQrCode(); };
+template <typename T>
+concept HasTableQrEntry = requires(const T& settings) { settings.tableQrTool(); };
+template <typename T>
+concept HasCredentialPreservation = requires(T& result, const QMap<QString, QJsonValue>& snapshot) {
+    result.preserveOmittedCredentials(snapshot);
+};
+static_assert(!HasCredentialPreservation<storage::ConfigurationArchiveReadResult>);
+static_assert(!HasApiModelConfiguration<settings::SettingsBackend>);
+static_assert(!HasApiModelConfiguration<settings::SettingsRuntimeSession>);
+static_assert(!HasTranslationConfiguration<settings::SettingsBackend>);
+static_assert(!HasTranslationConfiguration<settings::SettingsRuntimeSession>);
+static_assert(!HasTranslationShortcut<storage::ShortcutSettings>);
+static_assert(!HasAutomaticQrRecognition<storage::ScreenshotSettings>);
+static_assert(!HasTableQrEntry<storage::ScreenshotToolbarSettings>);
+
+void unsupportedSettingsRemainInert(settings::BuiltInSettingsBackend& backend) {
+    const auto before = storage::ApplicationStorage::instance().configuration().snapshot();
+    for (const auto binding : {settings::SettingsSwitchBinding::TranslationPageEnabled,
+                               settings::SettingsSwitchBinding::JumpToTranslationPage,
+                               settings::SettingsSwitchBinding::StandaloneTranslationWindow,
+                               settings::SettingsSwitchBinding::OriginalImageTranslation,
+                               settings::SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode}) {
+        require(!backend.switchEnabled(binding) && !backend.switchValue(binding) &&
+                    !backend.applySwitchValue(binding, true),
+                "Mini backend must reject unsupported switches even when addressed directly");
+    }
+    require(!backend.applySelectValue(settings::SettingsSelectBinding::TranslationLayoutProcessing,
+                                      QStringLiteral("smart_merge")) &&
+                !backend.applyTextValue(settings::SettingsTextBinding::ServerUrl,
+                                        QStringLiteral("https://example.test")),
+            "Mini backend must reject unavailable translation and API configuration writes");
+    for (const auto reset :
+         {settings::SettingsSectionReset::Translation, settings::SettingsSectionReset::Server,
+          settings::SettingsSectionReset::CustomAiModels,
+          settings::SettingsSectionReset::TextTranslationConfigurations,
+          settings::SettingsSectionReset::ExtendedTranslation}) {
+        require(!backend.resetSection(reset),
+                "Mini backend must reject resets of unavailable configuration sections");
+    }
+    require(storage::ApplicationStorage::instance().configuration().snapshot() == before,
+            "unsupported settings requests must leave Mini configuration unchanged");
+}
 
 void requireDefault(const QString& key) {
     const auto expected = storage::ConfigurationSchema::normalize(
@@ -169,6 +233,7 @@ int main(int argc, char** argv) {
     {
         presentation::GlobalShortcutManager shortcuts(std::make_unique<InertShortcutBackend>());
         settings::BuiltInSettingsBackend backend(shortcuts);
+        unsupportedSettingsRemainInert(backend);
         shortcutAndMouseResets(backend);
         screenshotBehaviorReset(backend);
         recognitionOptInResets(backend);

@@ -270,11 +270,22 @@ if(NOT TARGET snow_visual_region_detector_c)
 endif()
 
 if(NOT TARGET snow_selected_text_c)
+    # Selected-text capture is Full-only. Keep it outside the shared capture /
+    # recording / canvas archive so Mini never compiles or links its engines.
+    set(_snow_selected_text_features)
+    if(TARGET snow_shot_rust_ffi_bundle)
+        list(APPEND _snow_selected_text_features host-application-qos)
+    endif()
     snow_add_rust_static_library(snow_selected_text_c
         PACKAGE snow-selected-text-c
         MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         OUTPUT_NAME snow_selected_text_c
+        FEATURES ${_snow_selected_text_features}
         STRIP_MSVC_DIRECTIVES)
+    if(TARGET snow_shot_rust_ffi_bundle)
+        target_link_libraries(snow_selected_text_c INTERFACE snow_shot_rust_ffi_bundle)
+    endif()
+    unset(_snow_selected_text_features)
     target_include_directories(snow_selected_text_c INTERFACE
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-selected-text-c/include")
     if(APPLE)

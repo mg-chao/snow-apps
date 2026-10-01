@@ -1,6 +1,11 @@
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION && SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/presentation/components/texttranslationsettingswidget.h"
+#endif
 
 #include "snow_shot/presentation/editionfeatures.h"
 
@@ -1361,7 +1366,7 @@ SettingsCustomWidget* createSettingsCustomWidget(
     case SettingsCustomRenderer::PermissionMicrophone:
         return nullptr;
     case SettingsCustomRenderer::TextTranslationConfigurations:
-#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION && SNOW_SHOT_ENABLE_API_CONFIGURATION
         return new TextTranslationSettingsWidget(runtimeSession, parent);
 #else
         return nullptr;

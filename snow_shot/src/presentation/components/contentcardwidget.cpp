@@ -3,7 +3,9 @@
 #include "snow_shot/presentation/editionfeatures.h"
 
 #include "snow_shot/presentation/components/aboutpagewidget.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/components/translationpagewidget.h"
+#endif
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
@@ -42,6 +44,7 @@ ContentCardWidget::ContentCardWidget(
 
     cardLayout->addWidget(m_stack, 1);
     navigateTo(m_registry.defaultLocation());
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
     if (!applicationStorage.isInitialized()) {
         static_cast<void>(applicationStorage.initialize());
@@ -57,6 +60,7 @@ ContentCardWidget::ContentCardWidget(
                 }
             });
 
+#endif
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             &ContentCardWidget::applyTheme);
@@ -104,11 +108,13 @@ void ContentCardWidget::activateSection(const QString& sectionId) {
 void ContentCardWidget::navigateTo(
     const snow_shot::presentation::settings::SettingsLocation& requested) {
     auto resolved = m_registry.catalog().resolveLocation(requested);
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     if (resolved.pageId == QStringLiteral("translation") &&
         !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
         resolved = m_registry.catalog().resolveLocation(
             {QStringLiteral("extended-features"), QStringLiteral("translation"), {}});
     }
+#endif
     const auto* pageDefinition = m_registry.catalog().page(resolved.pageId);
     if (pageDefinition == nullptr || m_stack == nullptr) {
         return;

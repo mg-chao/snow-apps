@@ -27,8 +27,12 @@ try {
     # The current OCR runtime archive and completion records are not PE files.
     # They must also be rejected when accidentally staged elsewhere inside bin.
     foreach ($name in @('bin/snow-ocr-runtime-1.0.8-windows-x64.zip',
-            'bin/runtime-manifest.json', 'bin/.complete.json')) {
+            'bin/runtime-manifest.json', 'bin/.complete.json',
+            'share/snow-shot/assets/qrcode/detect.prototxt',
+            'share/snow-shot-mini/assets/ocr/models/engine.onnx',
+            'snow-ocr-runtime.zip')) {
         $forbidden = Join-Path $fixture $name
+        $null = New-Item -ItemType Directory -Force (Split-Path $forbidden)
         [IO.File]::WriteAllText($forbidden, 'forbidden OCR runtime payload')
         Must-Fail { Assert-SnowShotMiniPayload $fixture }
         Remove-Item -LiteralPath $forbidden

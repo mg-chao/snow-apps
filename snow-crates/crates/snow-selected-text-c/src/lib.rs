@@ -525,6 +525,12 @@ pub unsafe extern "C" fn snow_selected_text_result_rect(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "host-application-qos")]
+    #[unsafe(no_mangle)]
+    extern "C" fn snow_application_qos_apply_current_thread() -> i32 {
+        0
+    }
+
     fn result() -> SnowSelectedTextResult {
         SnowSelectedTextResult(Arc::new(Ok(SelectionOutcome::Selected(SelectedText {
             text: "中文\0😀".into(),

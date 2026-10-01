@@ -103,6 +103,86 @@ class MacOSBundleMetadata(unittest.TestCase):
                     self.assertEqual((stage / (product + '.app') / name).read_bytes(), content)
                 self.assertTrue(os.access(stage / (product + '.app') / 'Contents/MacOS' / target, os.X_OK))
 
+    def test_mini_payload_contains_only_its_helpers_and_default_text_model(self):
+        cmake = shutil.which('cmake')
+        self.assertIsNotNone(cmake)
+        manifest = ROOT / 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json'
+        model = next(item for item in json.loads(manifest.read_text())['models']
+                     if item['type'] == 'small')
+        with tempfile.TemporaryDirectory(prefix='snow mini payload ') as directory:
+            bundle = Path(directory) / 'snow_shot_mini.app'
+            runtime = bundle / 'Contents/MacOS'
+            assets = bundle / 'Contents/Resources/assets'
+            files = [runtime / name for name in ('snow_shot_mini', 'snow-shot-mini-mcp',
+                                                'snow-ocr-process', 'crashpad_handler')]
+            files.extend(assets / ('ocr/models/' + model['id']) / item['name']
+                         for item in model['files'])
+            files.extend([assets / 'ocr/asset-manifest.json',
+                          assets / ('ocr/models/' + model['id']) / '.complete.json',
+                          bundle / 'Contents/Resources/audios/camera_shutter.mp3',
+                          bundle / 'Contents/Resources/snow-shot.icns'])
+            files.extend(bundle / ('Contents/Resources/' + language + '.lproj/InfoPlist.strings')
+                         for language in ('en', 'zh-Hans', 'zh-Hant'))
+            files.extend(bundle / ('Contents/Resources/snow-shot-mini/licenses/' + relative)
+                         for relative in ('LICENSE', 'components/snow_rust_ffi/COPYRIGHT',
+                                          'third-party/qt/LICENSES/Qt-GPL-exception-1.0.txt',
+                                          'third-party/vcpkg/zlib/copyright'))
+            for path in files:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('fixture')
+
+            def verify(static=True):
+                return subprocess.run([
+                    cmake, '-DSNOW_SHOT_MINI_APP=' + str(bundle),
+                    '-DSNOW_SHOT_MINI_STATIC=' + ('ON' if static else 'OFF'),
+                    '-DSNOW_SHOT_MINI_MCP=ON',
+                    '-DSNOW_SHOT_MINI_OCR_MANIFEST=' + str(manifest), '-P',
+                    str(ROOT / 'cmake/AssertSnowShotMiniMacOSPayload.cmake')],
+                    text=True, capture_output=True)
+
+            result = verify()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for relative in ('Contents/MacOS/snow_shot', 'Contents/MacOS/snow-shot-mcp',
+                             'Contents/MacOS/libonnxruntime.dylib',
+                             'Contents/Frameworks/Unused.framework/Unused',
+                             'Contents/PlugIns/imageformats/unused.dylib',
+                             'Contents/Resources/assets/qrcode/detect.prototxt',
+                             'Contents/Resources/assets/ocr/models/unused/engine.onnx',
+                             'Contents/Resources/assets/ocr/development-libraries.json',
+                             'Contents/Resources/audios/unused.mp3',
+                             'Contents/Resources/unused-model.zip',
+                             'Contents/Resources/snow_shot_en_US.qm',
+                             'Contents/Resources/en.lproj/snow_shot_en_US.qm',
+                             'Contents/Resources/snow-shot/licenses/LICENSE',
+                             'Contents/Resources/snow-shot-mini/unused-model.zip'):
+                with self.subTest(relative=relative):
+                    forbidden = bundle / relative
+                    forbidden.parent.mkdir(parents=True, exist_ok=True)
+                    forbidden.write_text('forbidden')
+                    self.assertNotEqual(verify().returncode, 0)
+                    forbidden.unlink()
+                    parent = forbidden.parent
+                    while parent != bundle:
+                        try:
+                            parent.rmdir()
+                        except OSError:
+                            break
+                        parent = parent.parent
+                    self.assertEqual(verify().returncode, 0)
+            unused_directory = bundle / 'Contents/Resources/models'
+            unused_directory.mkdir()
+            self.assertNotEqual(verify().returncode, 0)
+            unused_directory.rmdir()
+            qt_config = bundle / 'Contents/Resources/qt.conf'
+            qt_config.write_text('[Paths]\nPlugins = PlugIns\n')
+            self.assertNotEqual(verify().returncode, 0)
+            result = verify(static=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            qt_config.unlink()
+            self.assertEqual(verify().returncode, 0)
+            files[4].unlink()
+            self.assertNotEqual(verify().returncode, 0)
+
     def test_finder_automation_has_usage_description(self):
         plist = plistlib.loads((ROOT / 'snow_shot/packaging/macos/Info.plist.in').read_bytes())
         self.assertEqual(plist['NSAppleEventsUsageDescription'],

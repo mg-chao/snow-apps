@@ -1,4 +1,5 @@
 #include "snow_shot/storage/configurationarchive.h"
+#include "snow_shot/app/edition.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/platform/minizippath.h"
 
@@ -115,6 +116,7 @@ QString ConfigurationArchive::write(const QString& archivePath,
         configuration.insert(it.key(), it.value());
     }
     QJsonObject manifest;
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (redactCredentials) {
         QJsonArray omitted;
         for (const auto& key : {QStringLiteral("api_configuration/custom_models"),
@@ -133,6 +135,9 @@ QString ConfigurationArchive::write(const QString& archivePath,
         }
         manifest.insert(QStringLiteral("redacted_credentials"), omitted);
     }
+#else
+    Q_UNUSED(redactCredentials);
+#endif
     manifest.insert(QStringLiteral("format"), QStringLiteral("snow-shot-configuration"));
     manifest.insert(QStringLiteral("format_version"), kConfigArchiveFormatVersion);
     manifest.insert(QStringLiteral("schema_version"), schemaVersion);
@@ -286,11 +291,13 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
             "The configuration archive was created by a newer version of Snow Shot.")));
     }
     result.schemaVersion = schemaVersion;
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     for (const auto& id : manifest.value(QStringLiteral("redacted_credentials")).toArray()) {
         if (!id.isString())
             return fail(invalidArchive);
         result.redactedCredentialIds.append(id.toString());
     }
+#endif
 
     bool configurationOk = false;
     const QJsonObject configuration = configArchiveJsonObject(configurationBytes, &configurationOk);
@@ -316,6 +323,7 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
     return result;
 }
 
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 void ConfigurationArchiveReadResult::preserveOmittedCredentials(
     const QMap<QString, QJsonValue>& current) {
     for (const auto& key : {QStringLiteral("api_configuration/custom_models"),
@@ -351,5 +359,6 @@ void ConfigurationArchiveReadResult::preserveOmittedCredentials(
             values.insert(key, models);
     }
 }
+#endif
 
 } // namespace snow_shot::storage

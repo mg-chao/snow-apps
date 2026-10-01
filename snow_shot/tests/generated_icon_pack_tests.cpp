@@ -96,8 +96,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 149,
-            "Snow Shot pack should contain all 149 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 150,
+            "Snow Shot pack should contain all 150 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -203,6 +203,43 @@ void projectIconColorsAndModelsArePreserved() {
     require(appMetadata.colorModel == adqt::icons::IconColorModel::FullColor &&
                 opaqueColors.size() > 4,
             "Snow Shot application icon should preserve full-color source pixels");
+}
+
+void miniLogoPreservesTheWordmarkAndAddsRoundedVectorLettering() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const auto mini = icons::brand::SnowShotMiniLogo();
+    const auto svg = mini.descriptor()->svg;
+    require(svg.find("<text") == std::string_view::npos &&
+                svg.find("<image") == std::string_view::npos,
+            "Mini branding must scale without installed fonts or embedded raster images");
+    for (const QColor color : {QColor(32, 34, 38), QColor(240, 240, 242)}) {
+        const auto colors = adqt::icons::IconColors::primary(color);
+        for (const qreal scale : {1.0, 2.0, 3.0}) {
+            const QImage original =
+                render(icons::brand::SnowShotLogo(colors), QSize(95, 17), scale).toImage();
+            const QImage extended =
+                render(icons::brand::SnowShotMiniLogo(colors), QSize(137, 17), scale).toImage();
+            require(extended.copy(original.rect()) == original,
+                    "Mini must preserve the original Snow Shot artwork and its themed text");
+        }
+    }
+    for (const qreal scale : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+        const QImage image = render(mini, QSize(113, 14), scale).toImage();
+        int letterCount = 0;
+        bool previousColumnHasInk = false;
+        for (int x = qRound(image.width() * 99.0 / 137.0); x < image.width(); ++x) {
+            bool columnHasInk = false;
+            for (int y = 0; y < image.height(); ++y) {
+                columnHasInk |= image.pixelColor(x, y).alpha() >= 80;
+            }
+            if (columnHasInk && !previousColumnHasInk) {
+                ++letterCount;
+            }
+            previousColumnHasInk = columnHasInk;
+        }
+        require(letterCount == 4,
+                "all four Mini letters must remain separated at the small title bar size");
+    }
 }
 
 void ocrTranslateIconUsesTheSuppliedProjectAsset() {
@@ -381,6 +418,7 @@ int main(int argc, char** argv) {
         indentedTriangleCornersAreSymmetric();
         conversionIconsUseTheSuppliedProjectAssets();
         projectIconColorsAndModelsArePreserved();
+        miniLogoPreservesTheWordmarkAndAddsRoundedVectorLettering();
         ocrTranslateIconUsesTheSuppliedProjectAsset();
         scrollingIconsUseTheRequestedOrientations();
         flipVerticalIconUsesTheRotatedProjectAsset();

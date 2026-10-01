@@ -764,7 +764,10 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
                                        });
                 return;
             }
-        } else if (!original) {
+        }
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION
+        else if (!original) {
             if (const auto snapshot = window->automationFileSnapshot()) {
                 const auto path = p.value(QStringLiteral("path")).toString();
                 if (!QFileInfo(path).isAbsolute() ||
@@ -804,6 +807,7 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
                 return;
             }
         }
+#endif
         auto artifact = window->automationArtifact(original, output == QStringLiteral("copy"));
         if (!artifact) {
             reply({}, QStringLiteral("not_ready"));

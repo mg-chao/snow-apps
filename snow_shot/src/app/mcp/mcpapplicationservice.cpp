@@ -1076,7 +1076,9 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
                 const bool ok = configuration().mutateIfRevision(
                     revision,
                     [&] {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                         read.preserveOmittedCredentials(configuration().snapshot());
+#endif
                         return ports.settings->importConfigurationSnapshot(
                             read.values, read.schemaVersion, &runtimeCompletion);
                     },

@@ -159,6 +159,16 @@ impl Runtime {
         std::thread::Builder::new()
             .name("snow-selected-text".into())
             .spawn(move || {
+                #[cfg(feature = "host-application-qos")]
+                {
+                    unsafe extern "C" {
+                        fn snow_application_qos_apply_current_thread() -> i32;
+                    }
+                    // SAFETY: This feature is used when the application provides
+                    // its shared process policy through the native C ABI.
+                    let _ = unsafe { snow_application_qos_apply_current_thread() };
+                }
+                #[cfg(not(feature = "host-application-qos"))]
                 snow_core::qos::apply_current_thread();
                 let mut backend = factory();
                 while let Ok(job) = receiver.recv() {
@@ -267,6 +277,36 @@ mod tests {
     use super::*;
     use crate::policy::Probe;
     use std::time::Duration;
+
+    #[cfg(feature = "host-application-qos")]
+    thread_local! {
+        static HOST_QOS_APPLIED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    #[cfg(feature = "host-application-qos")]
+    #[unsafe(no_mangle)]
+    extern "C" fn snow_application_qos_apply_current_thread() -> i32 {
+        HOST_QOS_APPLIED.with(|applied| applied.set(true));
+        0
+    }
+
+    #[cfg(feature = "host-application-qos")]
+    #[test]
+    fn separated_application_archive_applies_host_qos_before_creating_its_backend() {
+        let (observed, receive) = mpsc::channel();
+        let runtime = Runtime::spawn::<BlockedBackend>(move || {
+            observed
+                .send(HOST_QOS_APPLIED.with(std::cell::Cell::get))
+                .unwrap();
+            Err(SelectionError::new(
+                ErrorKind::WorkerUnavailable,
+                "fixture backend",
+            ))
+        })
+        .unwrap();
+        assert!(receive.recv_timeout(Duration::from_secs(2)).unwrap());
+        drop(runtime);
+    }
 
     struct BlockedBackend {
         entered: mpsc::Sender<()>,

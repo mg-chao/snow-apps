@@ -131,9 +131,14 @@ pub(crate) const TOOLS: &[(&str, &str, bool)] = &[
     ),
     (
         "snow_shot_screenshot_recognize",
-        "Start text, table, QR, Markdown, or HTML recognition; poll the returned operation ID.",
+        if crate::edition::MINI {
+            "Start local text recognition; poll the returned operation ID."
+        } else {
+            "Start text, table, QR, Markdown, or HTML recognition; poll the returned operation ID."
+        },
         false,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_screenshot_translate",
         "Translate recognized text with the configured provider; poll the returned operation ID.",
@@ -151,7 +156,11 @@ pub(crate) const TOOLS: &[(&str, &str, bool)] = &[
     ),
     (
         "snow_shot_screenshot_edit_recognition",
-        "Edit recognized text and table cells.",
+        if crate::edition::MINI {
+            "Edit recognized text."
+        } else {
+            "Edit recognized text and table cells."
+        },
         false,
     ),
     (
@@ -193,13 +202,7 @@ impl SnowShotMcp {
                 .map(|(name, description, read_only)| {
                     let mut tool = Tool::new(
                         Cow::Borrowed(*name),
-                        if crate::edition::MINI && *name == "snow_shot_screenshot_recognize" {
-                            Cow::Borrowed(
-                                "Start local text recognition; poll the returned operation ID.",
-                            )
-                        } else {
-                            Cow::Borrowed(*description)
-                        },
+                        Cow::Borrowed(*description),
                         Arc::new(schemas::schema(name, None).expect("static tool schema")),
                     )
                     .with_annotations(ToolAnnotations::from_raw(
