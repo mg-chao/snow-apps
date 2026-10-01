@@ -18,6 +18,25 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def write_static_qt_feature_targets(prefix):
+    core = prefix / 'lib/cmake/Qt6Core/Qt6CoreTargets.cmake'
+    core.parent.mkdir(parents=True, exist_ok=True)
+    core.write_text('QT_ENABLED_PUBLIC_FEATURES "timezone;static"\n'
+                    'QT_ENABLED_PRIVATE_FEATURES "ltcg;system_zlib"\n'
+                    'QT_DISABLED_PRIVATE_FEATURES "timezone_locale"\n')
+    gui = prefix / 'lib/cmake/Qt6Gui/Qt6GuiTargets.cmake'
+    gui.parent.mkdir(parents=True, exist_ok=True)
+    gui.write_text('QT_ENABLED_PRIVATE_FEATURES "system_png"\n')
+
+
+def static_qt_feature_fingerprint():
+    policy_bytes = (ROOT / 'scripts/static-qt-features.json').read_bytes()
+    hashes = [hashlib.sha256(policy_bytes).hexdigest()]
+    hashes.extend(hashlib.sha256((ROOT / 'scripts' / name).read_bytes()).hexdigest()
+                  for name in json.loads(policy_bytes)['windowsSourcePatches'])
+    return hashlib.sha256('|'.join(hashes).encode('utf-8')).hexdigest()
+
+
 class MacOSBundleMetadata(unittest.TestCase):
     def test_mini_product_metadata_and_native_translations(self):
         resources = ROOT / 'snow_shot/packaging/macos'
@@ -313,11 +332,14 @@ if name == 'openssl':
         (qt / "Qt6Config.cmake").touch()
         stamp = self.root / "Qt kit/share/snow-apps/static-qt-build.json"
         stamp.parent.mkdir(parents=True)
-        stamp.write_text(json.dumps({"SchemaVersion": 1, "QtVersion": "6.11.1",
+        stamp.write_text(json.dumps({"SchemaVersion": 2, "QtVersion": "6.11.1",
                                      "Architecture": "arm64", "Configuration": "Release",
                                      "DeploymentTarget": "14.0",
                                      "Dup3": False,
-                                     "Ltcg": True, "SystemPng": True, "SystemZlib": True}))
+                                     "Ltcg": True, "SystemPng": True, "SystemZlib": True,
+                                     "Timezone": True, "TimezoneLocale": False,
+                                     "FeatureFingerprint": static_qt_feature_fingerprint()}))
+        write_static_qt_feature_targets(self.root / 'Qt kit')
         (self.root / "Qt kit/share/snow-apps/qt-licenses").mkdir()
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
                         Qt6_DIR=str(qt), SNOW_TEST_LOG=str(self.log),
@@ -493,16 +515,49 @@ if name == 'openssl':
         (prefix / 'share/snow-apps/qt-licenses').mkdir(parents=True)
         stamp = prefix / 'share/snow-apps/static-qt-build.json'
         stamp.write_text(json.dumps({
-            'SchemaVersion': 1, 'QtVersion': '6.11.1', 'Architecture': 'arm64',
+            'SchemaVersion': 2, 'QtVersion': '6.11.1', 'Architecture': 'arm64',
             'Configuration': 'Release', 'DeploymentTarget': '14.0',
             'Dup3': False,
             'DependencyFingerprint': fingerprint,
             'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
+            'Timezone': True, 'TimezoneLocale': False,
+            'FeatureFingerprint': static_qt_feature_fingerprint(),
         }, indent=2))
+        write_static_qt_feature_targets(prefix)
         calls = self.run_script('build-static-qt.sh', '--install-prefix', str(prefix),
                                 '--dependency-prefix', str(dependencies))
         self.assertFalse(any(call[0] == 'cmake' for call in calls))
         self.assertIn('Validated static Qt 6.11.1 (arm64)', self.last_result.stdout)
+
+    def test_release_build_rejects_stale_or_untrimmed_static_qt_stamps(self):
+        stamp = self.root / 'Qt kit/share/snow-apps/static-qt-build.json'
+        original = json.loads(stamp.read_text())
+        for name, value in (('SchemaVersion', 1), ('Timezone', False),
+                            ('TimezoneLocale', True), ('TimezoneLocale', 'false'),
+                            ('FeatureFingerprint', 'stale-policy')):
+            with self.subTest(field=name, value=value):
+                stamp.write_text(json.dumps(dict(original, **{name: value})))
+                if self.log.exists():
+                    self.log.unlink()
+                calls = self.run_script('build.sh', 'snow-shot-macos-arm64-release',
+                                        '--skip-bootstrap', success=False)
+                self.assertFalse(any('--preset' in call or '--build' in call for call in calls))
+                self.assertIn('Invalid static Qt kit', self.last_result.stderr)
+
+    def test_release_build_verifies_installed_qt_features_independently_of_stamp(self):
+        targets = self.root / 'Qt kit/lib/cmake/Qt6Core/Qt6CoreTargets.cmake'
+        original = targets.read_text()
+        for text in (original.replace('timezone;static', 'static'),
+                     original.replace('ltcg;system_zlib', 'ltcg;system_zlib;timezone_locale'),
+                     original.replace('system_zlib', 'system_zlib_extra')):
+            with self.subTest(targets=text):
+                targets.write_text(text)
+                if self.log.exists():
+                    self.log.unlink()
+                calls = self.run_script('build.sh', 'snow-shot-macos-arm64-release',
+                                        '--skip-bootstrap', success=False)
+                self.assertFalse(any('--preset' in call or '--build' in call for call in calls))
+                self.assertIn('The installed Qt targets', self.last_result.stderr)
 
     def test_static_qt_builder_supports_command_line_tools_without_full_xcode(self):
         builder = (ROOT / 'scripts/build-static-qt.sh').read_text()

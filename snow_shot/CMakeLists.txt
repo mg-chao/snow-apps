@@ -1546,6 +1546,11 @@ if(SNOW_SHOT_BUILD_TESTS)
                 -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-installer-i18n.ps1")
         set_tests_properties(snow-shot-installer-i18n-tests PROPERTIES
             LABELS "unit;windows" TIMEOUT 180)
+        add_test(NAME snow-shot-package-compression-tests
+            COMMAND "${SNOW_SHOT_INSTALLER_TEST_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-package-compression.ps1")
+        set_tests_properties(snow-shot-package-compression-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 60)
     endif()
     if(DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY)
         set(_SNOW_SHOT_RUNTIME_OUTPUT_DIRECTORY_WAS_DEFINED TRUE)
@@ -7568,9 +7573,6 @@ foreach(_qr_host_target IN ITEMS snow_shot snow-shot-qr-recognition-service-test
 endforeach()
 unset(_qr_host_target)
 
-if(SNOW_SHOT_ENABLE_AGGRESSIVE_RELEASE_OPTIMIZATION OR SNOW_SHOT_RELEASE_STATIC)
-    snow_apply_release_options(snow_shot)
-endif()
 if(MSVC AND SNOW_SHOT_RELEASE_STATIC)
     target_link_options(snow_shot PRIVATE
         $<$<CONFIG:Release>:/MAP>
@@ -8718,4 +8720,5 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-recording-audio-gain-popover-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotReleaseOptimization.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

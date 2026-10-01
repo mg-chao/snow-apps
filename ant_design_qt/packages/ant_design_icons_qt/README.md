@@ -8,6 +8,17 @@ external project-owned packs and cannot enter the `antd` namespace.
 Normal builds use checked-in generated C++ and do not require Python, resource initialization, or
 runtime file access. Applications never download icons.
 
+Application-only package builds can set the CMake `ADQT_ICON_USAGE_ROOTS` list to C++ source
+directories. This generates a smaller pack under the build directory while preserving the
+checked-in library and complete public header. The scan always includes widget defaults and
+retains all upstream variants of each referenced helper or canonical name. It recognizes namespace
+aliases, unqualified helper calls and function pointers. Requests to enumerate or register the
+`antd` pack keep the full pack, so computed runtime keys remain supported. Source file additions,
+source changes, manifest changes and SVG changes all regenerate the subset. Python is required for
+this opt-in mode; normal builds still use the checked-in C++. Tests and benchmark builds require
+the full pack. The generated `usage.json` lists retained icons and raw SVG bytes; it is not an
+estimate of compressed installer savings.
+
 ## Public API
 
 An icon is identified by `IconKey { pack, variant, name }`. `IconRef` is an immutable value created

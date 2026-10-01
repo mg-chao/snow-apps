@@ -110,9 +110,10 @@ function Get-ValidatedStaticQtStamp {
     }
 
     $expectedValues = [ordered]@{
-        SchemaVersion = 3
+        SchemaVersion = $script:SnowStaticQtSchemaVersion
         QtVersion = $ExpectedVersion
         Configuration = $ExpectedConfiguration
+        FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
     }
     foreach ($property in $expectedValues.Keys) {
         if ($stamp.PSObject.Properties.Name -notcontains $property -or
@@ -120,11 +121,27 @@ function Get-ValidatedStaticQtStamp {
             throw "Static Qt build stamp '$property' is '$($stamp.$property)'; expected '$($expectedValues[$property])'."
         }
     }
-    foreach ($property in @("Ltcg", "SystemPng", "SystemZlib")) {
+    foreach ($property in @("Ltcg", "SystemPng", "SystemZlib", "Timezone")) {
         if ($stamp.PSObject.Properties.Name -notcontains $property -or
             $stamp.$property -isnot [bool] -or
             $stamp.$property -ne $true) {
             throw "Static Qt build stamp '$property' must be the JSON boolean true."
+        }
+    }
+
+    if (-not (Test-SnowStaticQtStamp -Stamp $stamp -Version $ExpectedVersion `
+            -Configuration $ExpectedConfiguration)) {
+        throw "The static Qt build stamp must describe the current feature policy with timezone_locale disabled."
+    }
+    if (-not (Test-SnowQtSystemCodecKit -Qt6Dir (Join-Path $Prefix "lib\cmake\Qt6"))) {
+        throw "The installed Qt targets do not match the audited system-codec/LTCG/timezone feature policy."
+    }
+    foreach ($patch in $script:SnowStaticQtSourcePatches) {
+        $patchPath = Join-Path $Prefix "share\snow-apps\qt-licenses\patches\$($patch.File)"
+        if (-not (Test-Path -LiteralPath $patchPath -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $patchPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+                $patch.SHA256) {
+            throw "The installed Qt source-patch provenance is missing or altered: $patchPath"
         }
     }
 
@@ -256,12 +273,16 @@ elseif (-not (Test-Path -LiteralPath $cachePath)) {
 $requiredCacheEntries = @(
     "SNOW_APPS_BUILD_TESTS:BOOL=OFF",
     "SNOW_APPS_BUILD_BENCHMARKS:BOOL=OFF",
+    "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION:BOOL=ON",
+    "SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION:BOOL=ON",
     "SNOW_APPS_RELEASE_STATIC:BOOL=ON",
     "SNOW_APPS_QT_STATIC:BOOL=ON",
     "SNOW_APPS_PACKAGE_SNOW_SHOT:BOOL=ON",
     "SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=ON",
     "SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC:INTERNAL=ON",
-    "QT_FEATURE_static:INTERNAL=ON"
+    "QT_FEATURE_static:INTERNAL=ON",
+    "QT_FEATURE_timezone:INTERNAL=ON",
+    "QT_FEATURE_timezone_locale:INTERNAL=OFF"
 )
 $cache = Get-Content -LiteralPath $cachePath
 foreach ($entry in $requiredCacheEntries) {
@@ -863,7 +884,7 @@ function New-DeterministicZip {
             $files = @(Get-ChildItem -LiteralPath $SourceDirectory -File -Recurse | Sort-Object FullName)
             foreach ($file in $files) {
                 $name = [System.IO.Path]::GetRelativePath($SourceDirectory, $file.FullName).Replace('\', '/')
-                $entry = $archive.CreateEntry($name, [System.IO.Compression.CompressionLevel]::Optimal)
+                $entry = $archive.CreateEntry($name, [System.IO.Compression.CompressionLevel]::SmallestSize)
                 $entry.LastWriteTime = $epoch
                 $input = [System.IO.File]::OpenRead($file.FullName)
                 $output = $entry.Open()

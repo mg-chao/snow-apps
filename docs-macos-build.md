@@ -363,6 +363,12 @@ reuses a matching installation; pass `--force` only when intentionally replacing
 that prefix. Release and fast entry points reject a shared, unstamped, wrong-arch,
 or wrong-version Qt kit.
 
+The feature-policy fingerprint and installed Qt target exports are also checked
+before reusing a production kit. Time-zone handling remains enabled; Cocoa
+continues to provide native time-zone names, and Qt's optional CLDR name tables
+remain disabled on Apple platforms. Use a distinct install prefix to preserve
+an older kit when refreshing the audited schema.
+
 ## Presets and targeted checks
 
 Names follow `snow-shot-macos-{arm64|x64}-{debug|performance|release|fast}`.

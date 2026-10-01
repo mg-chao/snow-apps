@@ -54,9 +54,13 @@ function(_snow_mini_copy_build_properties original target)
             INTERFACE_COMPILE_FEATURES LINK_OPTIONS INTERFACE_LINK_OPTIONS
             PRECOMPILE_HEADERS CXX_STANDARD CXX_STANDARD_REQUIRED CXX_EXTENSIONS
             MSVC_RUNTIME_LIBRARY UNITY_BUILD UNITY_BUILD_BATCH_SIZE
-            INTERPROCEDURAL_OPTIMIZATION_RELEASE STATIC_LIBRARY_OPTIONS)
+            INTERPROCEDURAL_OPTIMIZATION_RELEASE STATIC_LIBRARY_OPTIONS
+            SNOW_RELEASE_OPTIMIZATION_POLICY SNOW_RELEASE_SIZE_SOURCES)
         get_target_property(_value ${original} ${_property})
         if(NOT _value STREQUAL "_value-NOTFOUND")
+            if(_property STREQUAL "SNOW_RELEASE_SIZE_SOURCES")
+                snow_shot_mini_filter_sources(_value ${_value})
+            endif()
             _snow_mini_rewrite(_value "${_value}")
             set_property(TARGET ${target} PROPERTY ${_property} "${_value}")
         endif()

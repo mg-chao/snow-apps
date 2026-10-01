@@ -83,6 +83,54 @@ all referenced files until both public release pages and asset downloads are ver
 
 ## Release contract
 
+### Production Qt feature policy
+
+Windows production Qt 6.11.1 keeps time-zone handling and native Windows zone
+mappings and daylight-saving rules, while omitting the bundled CLDR localized
+time-zone display-name tables. The audited source patch preserves the native
+registry's long names in the system language and supplies unambiguous UTC-offset
+fallbacks for short and offset names in every requested locale. Numeric timestamps,
+UTC storage, local conversions, and daylight-saving transitions retain their behavior.
+
+`scripts/build-static-qt.ps1` pins the Qt version supported by the patch, applies
+it idempotently, and installs it under the kit's source-license bundle. The build
+stamp fingerprints the feature policy and patch contents. Bootstrap and packaging
+verify the installed feature exports as well as the stamp; packaging also checks
+the installed patch hashes. Rebuild into a distinct installation prefix when
+upgrading an older kit. Development and performance presets can still use their
+existing kits.
+
+macOS continues using Cocoa time-zone names; Qt already excludes these CLDR
+tables on Apple platforms. Its static kit uses the same feature policy and
+validates both its build stamp and installed exports.
+
+The standalone `test-support/qt-timezone` fixture can be built against the exact
+production kit to verify timestamp round trips, named zones, daylight-saving
+boundaries, and name fallbacks without starting the application.
+
+### Production size policy
+
+Full and Mini Windows installers share `/SOLID lzma` compression with a 32 MiB
+dictionary. Their deterministic update and portable ZIP archives use .NET
+`CompressionLevel.SmallestSize`, preserving standard Deflate compatibility.
+
+`SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION` is enabled by the shipping Release
+presets and disabled in Debug, performance/benchmark, and fast presets. It
+generates the Ant icon subset from application sources, public headers, drawing
+code, and widget defaults under the build directory. Every theme of a referenced
+icon is retained; pack enumeration or registration triggers a complete-pack
+fallback for dynamic lookups. Changes to sources, headers, manifests, or SVGs
+regenerate the subset without altering the checked-in library or public API.
+
+Cold configuration, settings forms, import/export, and shell code use `/O1 /Os`
+on MSVC or `-Os` on Clang. Capture, recording, drawing, image processing, history
+thumbnails, clipboard decoding, and shortcut dispatch retain their speed policy.
+Optimized Release targets keep LTO; MSVC `/Gw` and `/Gy` allow `/OPT:REF` and
+`/OPT:ICF` to discard unused data/functions and fold identical code. macOS enables
+`-dead_strip` only for Release builds with the shipping size option enabled.
+The source and target policies are centralized in
+`cmake/SnowShotReleaseOptimization.cmake` for both editions.
+
 ### Snow Shot Mini paired releases
 
 Snow Shot and Snow Shot Mini are built from one CMake configuration and published

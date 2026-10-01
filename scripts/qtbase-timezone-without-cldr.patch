@@ -1,0 +1,51 @@
+diff --git a/qtbase/src/corelib/time/qtimezoneprivate_win.cpp b/qtbase/src/corelib/time/qtimezoneprivate_win.cpp
+--- a/qtbase/src/corelib/time/qtimezoneprivate_win.cpp
++++ b/qtbase/src/corelib/time/qtimezoneprivate_win.cpp
+@@ -15,7 +15,7 @@
+ 
+ #include <private/qwinregistry_p.h>
+ 
+-QT_REQUIRE_CONFIG(timezone_locale);
++QT_REQUIRE_CONFIG(timezone);
+ 
+ QT_BEGIN_NAMESPACE
+ 
+@@ -593,7 +593,8 @@ QString QWinTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
+                                          const QLocale &locale) const
+ {
+     // Registry gave us long names for the system locale:
+-    if (nameType == QTimeZone::LongName && locale == QLocale::system()) {
++    if (nameType == QTimeZone::LongName
++        && (locale == QLocale::system() || !QT_CONFIG(timezone_locale))) {
+         switch (timeType) {
+         case  QTimeZone::DaylightTime :
+             return m_daylightName;
+@@ -603,6 +604,14 @@ QString QWinTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
+             return m_standardName;
+         }
+     }
++#if !QT_CONFIG(timezone_locale)
++    // The Windows registry has no short names; an offset is unambiguous.
++    if (nameType != QTimeZone::LongName) {
++        const Data tran = data(timeType);
++        return tran.atMSecsSinceEpoch == invalidMSecs()
++            ? QString() : isoOffsetFormat(tran.offsetFromUtc);
++    }
++#endif
+     // Fall back to base class for everything else.
+     return QTimeZonePrivate::displayName(timeType, nameType, locale);;
+ }
+@@ -868,8 +877,13 @@ QTimeZonePrivate::Data QWinTimeZonePrivate::ruleToData(const QWinTransitionRule &rule,
+         tran.daylightTimeOffset = 0;
+     }
+     tran.offsetFromUtc = tran.standardTimeOffset + tran.daylightTimeOffset;
++#if QT_CONFIG(timezone_locale)
+     tran.abbreviation = localeName(atMSecsSinceEpoch, tran.offsetFromUtc,
+                                    type, QTimeZone::ShortName, QLocale::system());
++#else
++    // Keep transition data independent of the optional localized-name tables.
++    tran.abbreviation = isoOffsetFormat(tran.offsetFromUtc);
++#endif
+     return tran;
+ }
+ 

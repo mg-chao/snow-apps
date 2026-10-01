@@ -2211,7 +2211,8 @@ void addingCatalogNodesAutomaticallyExpandsSearch() {
     navigation.push_back(settings::SettingsNavigationPageDefinition{
         QStringLiteral("nav.extra-page"),
         QStringLiteral("extra-page"),
-        []() { return adqt::icons::antd::outlined::Appstore(); },
+        // This search fixture also links against the production icon subset.
+        []() { return adqt::icons::antd::outlined::Setting(); },
     });
     const settings::SettingsCatalog expanded(std::move(pages), std::move(navigation),
                                              builtIn.defaultLocation());

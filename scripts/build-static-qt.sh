@@ -72,7 +72,7 @@ install_prefix="$(canonical_path "$install_prefix")"
 dependency_prefix="$(canonical_path "$dependency_prefix")"
 work_root="${TMPDIR:-/tmp}"
 [[ -n "$source_dir" ]] || source_dir="$work_root/qt-everywhere-src-$qt_version"
-[[ -n "$build_dir" ]] || build_dir="$work_root/qt-build-$qt_version-macos-$arch-static"
+[[ -n "$build_dir" ]] || build_dir="$work_root/qt-build-$qt_version-macos-$arch-static-no-timezone-locale"
 source_dir="$(canonical_path "$source_dir")"
 build_dir="$(canonical_path "$build_dir")"
 
@@ -98,19 +98,10 @@ dependency_fingerprint="$(
 )"
 qt_config="$install_prefix/lib/cmake/Qt6/Qt6Config.cmake"
 stamp="$install_prefix/share/snow-apps/static-qt-build.json"
+feature_fingerprint="$(python3 "$snow_repo_root/scripts/validate-static-qt.py" --print-feature-fingerprint)"
 if [[ -f "$qt_config" && "$force" == 0 ]]; then
-    if [[ -f "$stamp" ]] &&
-        grep -Eq '"SchemaVersion"[[:space:]]*:[[:space:]]*1' "$stamp" &&
-        grep -Eq '"QtVersion"[[:space:]]*:[[:space:]]*"6\.11\.1"' "$stamp" &&
-        grep -Eq '"Architecture"[[:space:]]*:[[:space:]]*"'"$arch"'"' "$stamp" &&
-        grep -Eq '"Configuration"[[:space:]]*:[[:space:]]*"Release"' "$stamp" &&
-        grep -Eq '"DeploymentTarget"[[:space:]]*:[[:space:]]*"14\.0"' "$stamp" &&
-        grep -Eq '"Dup3"[[:space:]]*:[[:space:]]*false' "$stamp" &&
-        grep -Eq '"Ltcg"[[:space:]]*:[[:space:]]*true' "$stamp" &&
-        grep -Eq '"SystemPng"[[:space:]]*:[[:space:]]*true' "$stamp" &&
-        grep -Eq '"SystemZlib"[[:space:]]*:[[:space:]]*true' "$stamp" &&
-        grep -Fq "\"DependencyFingerprint\": \"$dependency_fingerprint\"" "$stamp" &&
-        [[ -d "$install_prefix/share/snow-apps/qt-licenses" ]]; then
+    if python3 "$snow_repo_root/scripts/validate-static-qt.py" --prefix "$install_prefix" \
+        --arch "$arch" --dependency-fingerprint "$dependency_fingerprint"; then
         printf 'Validated static Qt %s (%s) at %s\n' "$qt_version" "$arch" "$install_prefix"
         exit 0
     fi
@@ -151,6 +142,7 @@ mkdir -p "$build_dir"
         -DCMAKE_PREFIX_PATH="$dependency_prefix" \
         -DZLIB_ROOT="$dependency_prefix" -DPNG_ROOT="$dependency_prefix" \
         -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
+        -DFEATURE_timezone=ON -DFEATURE_timezone_locale=OFF \
         -DFEATURE_dup3=OFF \
         -DQT_FEATURE_concurrent=OFF -DQT_FEATURE_dbus=OFF \
         -DQT_FEATURE_linguist=ON -DQT_FEATURE_printsupport=OFF \
@@ -168,12 +160,15 @@ for entry in \
     'FEATURE_dup3:BOOL=OFF' 'QT_FEATURE_dup3:INTERNAL=OFF' \
     'FEATURE_ltcg:BOOL=ON' 'QT_FEATURE_ltcg:INTERNAL=ON' \
     'FEATURE_system_png:BOOL=ON' 'QT_FEATURE_system_png:INTERNAL=ON' \
-    'FEATURE_system_zlib:BOOL=ON' 'QT_FEATURE_system_zlib:INTERNAL=ON'; do
+    'FEATURE_system_zlib:BOOL=ON' 'QT_FEATURE_system_zlib:INTERNAL=ON' \
+    'FEATURE_timezone:BOOL=ON' 'QT_FEATURE_timezone:INTERNAL=ON' \
+    'FEATURE_timezone_locale:BOOL=OFF' 'QT_FEATURE_timezone_locale:INTERNAL=OFF'; do
     grep -Fqx "$entry" "$cache" || snow_die "Qt configuration is missing $entry"
 done
 cmake --build "$build_dir" --parallel "$parallelism"
 cmake --install "$build_dir"
 [[ -f "$qt_config" ]] || snow_die "Qt installation did not produce $qt_config"
+python3 "$snow_repo_root/scripts/validate-static-qt.py" --prefix "$install_prefix" --features-only
 
 license_root="$install_prefix/share/snow-apps/qt-licenses"
 mkdir -p "$license_root"
@@ -187,14 +182,16 @@ for component in root qtbase qtsvg qttools; do
 done
 mkdir -p "$(dirname "$stamp")"
 python3 - "$stamp" "$qt_version" "$arch" "$qt_deployment_target" \
-    "$dependency_fingerprint" "$source_url" "$parallelism" <<'PY'
+    "$dependency_fingerprint" "$feature_fingerprint" "$source_url" "$parallelism" <<'PY'
 import json, pathlib, sys
-path, version, arch, deployment_target, fingerprint, source, parallelism = sys.argv[1:]
+path, version, arch, deployment_target, fingerprint, features, source, parallelism = sys.argv[1:]
 value = {
-    'SchemaVersion': 1, 'QtVersion': version, 'Architecture': arch,
+    'SchemaVersion': 2, 'QtVersion': version, 'Architecture': arch,
     'Configuration': 'Release', 'DeploymentTarget': deployment_target, 'Dup3': False,
     'DependencyFingerprint': fingerprint,
+    'FeatureFingerprint': features,
     'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
+    'Timezone': True, 'TimezoneLocale': False,
     'LicenseBundle': 'share/snow-apps/qt-licenses', 'SourceArchive': source,
     'Submodules': ['qtbase', 'qtsvg', 'qttools'], 'Parallelism': int(parallelism),
 }
