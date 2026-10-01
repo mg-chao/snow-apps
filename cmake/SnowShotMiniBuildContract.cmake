@@ -21,7 +21,7 @@ set(SNOW_SHOT_MINI_EXCLUDED_LINK_TARGETS
 set(SNOW_SHOT_MINI_EXCLUDED_TARGETS
     ${SNOW_SHOT_MINI_EXCLUDED_LINK_TARGETS}
     snow_shot snow_shot_edition_full
-    snow_shot_storage snow_shot_settings_catalog snow_shot_settings_search
+    snow_shot_storage snow_shot_main_window_skin snow_shot_settings_catalog snow_shot_settings_search
     snow_shot_settings snow_shot_global_mouse snow_shot_login_item
     snow_shot_administrator snow_shot_permissions snow_shot_updates
     snow_shot_diagnostics snow_shot_crash_bridge

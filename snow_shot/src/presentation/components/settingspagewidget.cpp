@@ -339,7 +339,9 @@ class SettingsPageWidget::Impl {
         // Populate a hidden body, then attach it once. Initializing each row in
         // an already visible shell would repeatedly run show/layout work.
         auto* list = new QWidget(shell);
-        list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        const bool wrappingCopy = section.reset == settings::SettingsSectionReset::Skin;
+        list->setSizePolicy(QSizePolicy::Expanding,
+                            wrappingCopy ? QSizePolicy::Preferred : QSizePolicy::Fixed);
         list->hide();
         const auto metric = colorScheme.metricAlias;
         const auto itemLayout = section.itemLayout;
@@ -400,6 +402,9 @@ class SettingsPageWidget::Impl {
         shell->setFocusPolicy(Qt::NoFocus);
         shell->setMinimumHeight(0);
         shell->setMaximumHeight(QWIDGETSIZE_MAX);
+        if (wrappingCopy) {
+            shell->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        }
         list->show();
         rebuildTabOrder();
     }
@@ -993,6 +998,12 @@ class SettingsPageWidget::Impl {
             },
             definition.payload);
 
+        if (descriptor != nullptr && descriptor->reset == settings::SettingsSectionReset::Skin &&
+            runtime.anchor != nullptr) {
+            // Skin copy can include a loading or error line. Fixed vertical
+            // policies clamp height-for-width to the unwrapped size hint.
+            runtime.anchor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        }
         if (runtime.focusTarget != nullptr && runtime.focusTarget != runtime.anchor) {
             runtime.focusTarget->setObjectName(
                 settings::generatedObjectName(QStringLiteral("settings-control"), definition.id));
@@ -1078,6 +1089,18 @@ class SettingsPageWidget::Impl {
                                  return;
                              }
                              syncField(*item, &state);
+                         });
+        QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::filePathStatusChanged,
+                         &q, [this](settings::SettingsFilePathBinding binding) {
+                             if (binding != settings::SettingsFilePathBinding::SkinPath)
+                                 return;
+                             const auto* descriptor = registry.fieldForFilePath(binding);
+                             RuntimeItem* item =
+                                 descriptor == nullptr ? nullptr : runtimeItem(descriptor->id);
+                             if (item != nullptr) {
+                                 syncFilePathStatus(*item);
+                                 requestVisibleSectionSync();
+                             }
                          });
         QObject::connect(
             &runtimeSession, &settings::SettingsRuntimeSession::optionsChanged, &q,
@@ -1405,6 +1428,7 @@ class SettingsPageWidget::Impl {
                         runtimeSession.filePathValue(definition->binding));
                 }
                 runtime.filePathControl->setEnabled(fieldEnabled);
+                syncFilePathStatus(runtime);
             }
             if (runtime.directoryPathControl != nullptr) {
                 const QSignalBlocker blocker(runtime.directoryPathControl);
@@ -1636,6 +1660,33 @@ class SettingsPageWidget::Impl {
         }
     }
 
+    void syncFilePathStatus(RuntimeItem& runtime) {
+        if (runtime.filePathControl == nullptr || runtime.definition == nullptr)
+            return;
+        const auto* definition =
+            std::get_if<settings::SettingsFilePathDefinition>(&runtime.definition->payload);
+        if (definition == nullptr ||
+            definition->binding != settings::SettingsFilePathBinding::SkinPath)
+            return;
+        const QString status = runtimeSession.filePathStatus(definition->binding);
+        const bool error = runtimeSession.filePathStatusError(definition->binding);
+        QString description = runtime.definition->description.translated();
+        if (!status.isEmpty())
+            description += QStringLiteral("\n") + status;
+        runtime.filePathControl->lineEdit()->setStatus(
+            error ? adqt::widgets::AdLineEdit::Status::Error
+                  : adqt::widgets::AdLineEdit::Status::None);
+        runtime.filePathControl->lineEdit()->setAccessibleDescription(description);
+        if (runtime.description != nullptr) {
+            runtime.description->setTextFormat(Qt::PlainText);
+            runtime.description->setText(description);
+            QPalette palette = runtime.description->palette();
+            palette.setColor(QPalette::WindowText, error ? colorScheme.map.colorErrorText
+                                                         : colorScheme.map.colorTextSecondary);
+            runtime.description->setPalette(palette);
+        }
+    }
+
     void retranslateUi(int firstItem = 0) {
         if (firstItem == 0) {
             for (RuntimeSection& runtime : sections) {
@@ -1786,6 +1837,7 @@ class SettingsPageWidget::Impl {
             if (runtime.customControl != nullptr) {
                 runtime.customControl->applyTheme(scheme);
             }
+            syncFilePathStatus(runtime);
         }
         requestVisibleSectionSync();
         q.update();

@@ -1,6 +1,7 @@
 #include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/mainwindow.h"
+#include "snow_shot/presentation/mainwindowskinwidget.h"
 
 #include "snow_shot/platform/windows/windowchrome.h"
 #ifdef Q_OS_MACOS
@@ -14,6 +15,8 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "theme/theme_manager.h"
 #include "widgets/message.h"
 
 #include <QCloseEvent>
@@ -179,6 +182,8 @@ void MainWindow::buildUi() {
     const auto metric =
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias;
 
+    // Keep Qt's original opaque widget path when no skin is configured. The
+    // optional background owns all skin paint and viewport hooks while enabled.
     auto* root = new QWidget(this);
     root->setAutoFillBackground(true);
     setCentralWidget(root);
@@ -208,6 +213,7 @@ void MainWindow::buildUi() {
     m_titleBar = titleBar;
 
     auto* body = new QWidget(root);
+    m_body = body;
     body->setAutoFillBackground(true);
     auto* bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
@@ -218,6 +224,7 @@ void MainWindow::buildUi() {
     m_sidebar = sidebar;
 
     auto* contentShell = new QWidget(body);
+    m_contentShell = contentShell;
     contentShell->setAutoFillBackground(true);
     auto* contentShellLayout = new QVBoxLayout(contentShell);
     contentShellLayout->setContentsMargins(0, 0, 0, 0);
@@ -228,6 +235,7 @@ void MainWindow::buildUi() {
     m_contentHeader = contentHeader;
 
     auto* contentArea = new QWidget(contentShell);
+    m_contentArea = contentArea;
     contentArea->setAutoFillBackground(true);
     auto* contentAreaLayout = new QVBoxLayout(contentArea);
     contentAreaLayout->setContentsMargins(metric.padding, metric.padding, metric.padding,
@@ -276,6 +284,75 @@ void MainWindow::buildUi() {
     m_contentCard->setCurrentRoute(m_sidebar->currentRoute());
     m_contentHeader->setSections(m_contentCard->currentSections());
     m_contentHeader->setCurrentSection(m_contentCard->currentLocation().sectionId);
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this](const QString& key) {
+                if (key == QStringLiteral("interface/skin_path")) {
+                    syncSkinBackground();
+                }
+            });
+    syncSkinBackground();
+}
+
+void MainWindow::syncSkinBackground() {
+    const bool configured = !snow_shot::storage::ApplicationStorage::instance()
+                                 .configuration()
+                                 .value(QStringLiteral("interface/skin_path"))
+                                 .toString()
+                                 .isEmpty();
+    if (!configured) {
+        if (m_skinBackground != nullptr) {
+            delete m_skinBackground;
+            m_skinBackground = nullptr;
+            applySkinAppearance();
+        }
+        return;
+    }
+    if (m_skinBackground == nullptr) {
+        m_skinBackground = new snow_shot::presentation::MainWindowSkinWidget(centralWidget());
+        m_skinBackground->setBaseColor(snow_shot::presentation::styles::ThemeManager::instance()
+                                           .themeColorScheme()
+                                           .map.colorBgLayout);
+        connect(m_skinBackground,
+                &snow_shot::presentation::MainWindowSkinWidget::skinAppearanceChanged, this,
+                &MainWindow::applySkinAppearance);
+        m_skinBackground->setGeometry(centralWidget()->rect());
+        m_skinBackground->lower();
+        m_skinBackground->show();
+        applySkinAppearance();
+    }
+}
+
+void MainWindow::applySkinAppearance() {
+    const bool skinActive = m_skinBackground != nullptr && m_skinBackground->skinActive();
+    const qreal maskOpacity = skinActive ? m_skinBackground->maskOpacity() : 1.0;
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    auto overrideValue = controlTheme.scopeOverride(centralWidget());
+    if (maskOpacity < 1.0) {
+        overrideValue.backgroundOpacity = maskOpacity;
+    } else {
+        overrideValue.backgroundOpacity.reset();
+    }
+    controlTheme.setScopeOverride(centralWidget(), overrideValue);
+    centralWidget()->setAutoFillBackground(!skinActive);
+    for (QWidget* surface : {m_body, m_contentShell, m_contentArea}) {
+        if (surface != nullptr) {
+            surface->setAutoFillBackground(!skinActive);
+            surface->update();
+        }
+    }
+    if (m_titleBar != nullptr) {
+        m_titleBar->setSkinMaskOpacity(maskOpacity);
+    }
+    if (m_sidebar != nullptr) {
+        m_sidebar->setSkinMaskOpacity(maskOpacity, skinActive);
+    }
+    if (m_contentHeader != nullptr) {
+        m_contentHeader->setSkinMaskOpacity(maskOpacity);
+    }
+    if (m_contentCard != nullptr) {
+        m_contentCard->setSkinMaskOpacity(maskOpacity);
+    }
 }
 
 void MainWindow::showAppPermissions(const QString& permissionId) {
@@ -398,10 +475,8 @@ void MainWindow::applyTheme(const snow_shot::presentation::styles::ThemeColorSch
     palette.setColor(QPalette::WindowText, scheme.map.colorText);
     setPalette(palette);
 
-    if (QWidget* centerWidget = centralWidget(); centerWidget != nullptr) {
-        QPalette centerPalette = centerWidget->palette();
-        centerPalette.setColor(QPalette::Window, scheme.map.colorBgLayout);
-        centerWidget->setPalette(centerPalette);
+    if (m_skinBackground != nullptr) {
+        m_skinBackground->setBaseColor(scheme.map.colorBgLayout);
     }
 
     if (m_titleBar != nullptr) {

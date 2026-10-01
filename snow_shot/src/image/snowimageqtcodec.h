@@ -17,6 +17,24 @@ class QIODevice;
 
 namespace snow_shot::image_codec {
 
+enum class SkinDecodeError {
+    None,
+    UnsupportedFormat,
+    UnreadableFile,
+    InputTooLarge,
+    InvalidImage,
+    ResourceLimit,
+};
+
+struct SkinDecodeResult final {
+    QImage image;
+    SkinDecodeError error = SkinDecodeError::None;
+};
+
+// Decodes one static preview, including the first composited animation frame.
+// Skin decoding has independent resource limits and never uses Qt image plugins.
+[[nodiscard]] SkinDecodeResult decodeSkinFile(const QString& path);
+
 struct EncodeResult final {
     quint64 bytesWritten = 0;
     snow::image::Format format = snow::image::Format::unknown;

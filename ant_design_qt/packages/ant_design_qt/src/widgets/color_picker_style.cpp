@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 namespace adqt::widgets::detail {
 
@@ -290,6 +291,12 @@ ColorPickerVisualStyle resolveColorPickerVisualStyle(const ColorPickerStyleInput
     style.triggerBorderActive = style.triggerBorder;
   }
 
+  if (map.backgroundOpacity != 1.0) {
+    style.triggerBackground =
+        adqt::theme::applyBackgroundOpacity(style.triggerBackground, map.backgroundOpacity);
+    style.triggerBackgroundDisabled =
+        adqt::theme::applyBackgroundOpacity(style.triggerBackgroundDisabled, map.backgroundOpacity);
+  }
   return style;
 }
 

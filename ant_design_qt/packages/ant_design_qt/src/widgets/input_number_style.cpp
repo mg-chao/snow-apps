@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 namespace adqt::widgets::detail {
 
@@ -372,6 +373,18 @@ InputNumberVisualStyle resolveInputNumberVisualStyle(const InputNumberStyleInput
     style.handleBg = style.disabledBg;
     style.handleActiveBg = style.disabledBg;
     style.handleBorderColor = style.disabledBorderColor;
+  }
+
+  if (input.variant == AdInputNumber::Variant::Filled) {
+    style.selectorBg = compositeOn(style.selectorBg, containerBg);
+    style.selectorHoverBg = compositeOn(style.selectorHoverBg, containerBg);
+    style.selectorActiveBg = compositeOn(style.selectorActiveBg, containerBg);
+  }
+  if (map.backgroundOpacity != 1.0) {
+    for (QColor* background : {&style.selectorBg, &style.selectorHoverBg, &style.selectorActiveBg,
+                               &style.disabledBg, &style.handleBg, &style.handleActiveBg}) {
+      *background = adqt::theme::applyBackgroundOpacity(*background, map.backgroundOpacity);
+    }
   }
 
   return style;

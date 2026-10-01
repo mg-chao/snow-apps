@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 namespace adqt::widgets::detail {
 
@@ -87,6 +88,7 @@ SliderVisualStyle resolveSliderVisualStyle(const SliderStyleInput& input,
   const adqt::theme::ThemeSeedToken& seed = resolved.config;
 
   SliderVisualStyle style;
+  style.backgroundOpacity = map.backgroundOpacity;
   style.rootBg = QColor(0, 0, 0, 0);
   style.railBg = toColor(map.colorFillTertiary, QColor("#f5f5f5"));
   style.railHoverBg = toColor(map.colorFillSecondary, QColor("#f0f0f0"));
@@ -205,7 +207,9 @@ SliderVisualStyle resolveSliderVisualStyle(const SliderStyleInput& input,
       resolveTokenColor(tokens.dotActiveBorderColor, style.dotActiveBorderColor);
   style.trackBgDisabled = resolveTokenColor(tokens.trackBgDisabled, style.trackBgDisabled);
 
-  return applySliderSemanticStyles(style, input.semanticStyles, input.disabled);
+  return input.deferSemanticStyles
+             ? style
+             : applySliderSemanticStyles(style, input.semanticStyles, input.disabled);
 }
 
 SliderVisualStyle applySliderSemanticStyles(const SliderVisualStyle& baseStyle,
@@ -267,6 +271,20 @@ SliderVisualStyle applySliderSemanticStyles(const SliderVisualStyle& baseStyle,
     style.useHandleBrush = false;
   }
 
+  if (style.backgroundOpacity != 1.0) {
+    for (QColor* background : {&style.rootBg, &style.railBg, &style.railHoverBg, &style.trackBg,
+                               &style.trackHoverBg, &style.trackBgDisabled}) {
+      *background = adqt::theme::applyBackgroundOpacity(*background, style.backgroundOpacity);
+    }
+    // Color-channel gradients and checkerboard textures are content, while solid
+    // semantic brushes are another way to customize the control background.
+    for (QBrush* brush : {&style.railBrush, &style.tracksBrush}) {
+      if (!brush->gradient() && brush->style() != Qt::TexturePattern) {
+        brush->setColor(
+            adqt::theme::applyBackgroundOpacity(brush->color(), style.backgroundOpacity));
+      }
+    }
+  }
   return style;
 }
 

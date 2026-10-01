@@ -127,6 +127,22 @@ typedef struct SnowShotImageCodecImageInfo {
     uint32_t height;
 } SnowShotImageCodecImageInfo;
 
+enum SnowShotImageCodecSkinError {
+    SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_NONE = 0,
+    SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_UNSUPPORTED_FORMAT = 1,
+    SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INPUT_TOO_LARGE = 2,
+    SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_INVALID_IMAGE = 3,
+    SNOW_SHOT_IMAGE_CODEC_SKIN_ERROR_RESOURCE_LIMIT = 4,
+};
+
+typedef struct SnowShotImageCodecSkinInfo {
+    uint32_t canvas_width;
+    uint32_t canvas_height;
+    uint32_t frame_x;
+    uint32_t frame_y;
+    uint32_t orientation;
+} SnowShotImageCodecSkinInfo;
+
 typedef int32_t(SNOW_SHOT_IMAGE_CODEC_CALL* SnowShotImageCodecReadRowsCallback)(
     void* context, uint32_t first_row, uint32_t row_count, uint64_t destination_stride,
     uint8_t* destination, uint64_t destination_size);
@@ -221,6 +237,14 @@ SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL
 snow_shot_image_codec_decode_icon_rgba8(const uint8_t* encoded, uint64_t encoded_size,
                                         uint32_t preferred_extent, SnowShotImageCodecBuffer* output,
                                         char* error, uint64_t error_capacity);
+
+// Bounded PNG/JPEG/WebP preview decoding. The encoded storage is borrowed only
+// for this synchronous call. Orientation is applied after preview reduction by
+// the Qt adapter; canvas coordinates describe an APNG first-frame subrectangle.
+SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL
+snow_shot_image_codec_decode_skin_rgba8(const uint8_t* encoded, uint64_t encoded_size,
+                                        SnowShotImageCodecBuffer* output,
+                                        SnowShotImageCodecSkinInfo* info, uint32_t* failure);
 
 SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_codec_decode_bgra8(
     const uint8_t* encoded, uint64_t encoded_size, uint32_t expected_format,

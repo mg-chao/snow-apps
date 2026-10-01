@@ -249,7 +249,8 @@ using AdThemeDensity = ThemeDensity;
   X(controlHeightLG)                \
   X(sizeUnit)                       \
   X(sizeStep)                       \
-  X(opacityImage)
+  X(opacityImage)                   \
+  X(backgroundOpacity)
 
 #define ADQT_THEME_INT_FIELDS(X) \
   X(motionDurationFast)          \
@@ -352,6 +353,7 @@ struct ThemeConfig : public ThemeAccents {
   double controlHeight = 32.0;
   double zIndexPopupBase = 1000.0;
   double opacityImage = 1.0;
+  double backgroundOpacity = 1.0;
 
   bool wireframe = false;
   bool motion = true;
@@ -384,6 +386,7 @@ struct ThemeOverride {
   std::optional<double> controlHeight;
   std::optional<double> zIndexPopupBase;
   std::optional<double> opacityImage;
+  std::optional<double> backgroundOpacity;
 
   std::optional<bool> wireframe;
   std::optional<bool> motion;

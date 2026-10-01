@@ -23,6 +23,7 @@ struct DescriptionsMetrics {
 };
 
 struct DescriptionsAppearance {
+  qreal backgroundOpacity = 1.0;
   QColor rootBackground;
   QColor labelBackground;
   QColor labelColor;

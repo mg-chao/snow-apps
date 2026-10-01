@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
+#include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/components/toolbareditorsettingswidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/languagemanager.h"
@@ -10,6 +11,7 @@
 #include "widgets/color_picker.h"
 #include "widgets/select.h"
 #include "widgets/multi_select.h"
+#include "widgets/slider.h"
 #include <QListView>
 #include <QLineEdit>
 #include "widgets/switch.h"
@@ -412,6 +414,59 @@ void unchangedPresentation(const settings::SettingsRegistry& registry,
     require(style.polishes == 0, "unchanged field state must not repolish its control");
     require(select->model() == model, "identical options must retain the selector model");
 }
+
+void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry,
+                                      settings::SettingsRuntimeSession& session) {
+    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    page.resize(880, 520);
+    page.show();
+    page.reveal({page.pageId(), QStringLiteral("skin"), QStringLiteral("interface.skin.path")});
+    drainEvents();
+    auto* path =
+        page.findChild<FilePathInput*>(QStringLiteral("settings-control-interface-skin-path"));
+    auto* mode = page.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("settings-control-interface-skin-display-mode"));
+    require(path != nullptr && mode != nullptr && path->isEnabled() && mode->isEnabled() &&
+                path->allowClear() && path->browseButtonText() == QStringLiteral("Browse"),
+            "revealing Skin must create an editable path with browse/clear and a display mode");
+    path->setText(QStringLiteral("/skins/settings-preview.webp"));
+    require(QMetaObject::invokeMethod(path, "editingFinished", Qt::DirectConnection),
+            "commit the skin path through the settings widget");
+    mode->setCurrentValue(QStringLiteral("contain"));
+    drainEvents();
+    require(session.filePathValue(settings::SettingsFilePathBinding::SkinPath) ==
+                    QStringLiteral("/skins/settings-preview.webp") &&
+                session.selectValue(settings::SettingsSelectBinding::SkinDisplayMode).toString() ==
+                    QStringLiteral("contain"),
+            "path editing and mode selection must commit through the runtime session");
+    for (const auto& id : {QStringLiteral("opacity"), QStringLiteral("blur-level"),
+                           QStringLiteral("mask-opacity")}) {
+        auto* slider = page.findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("settings-control-interface-skin-") + id);
+        require(slider != nullptr && slider->isEnabled(),
+                "Skin must expose three editable sliders");
+        slider->setValue(37);
+    }
+    drainEvents();
+    require(session.sliderValue(settings::SettingsSliderBinding::SkinOpacity) == 37 &&
+                session.sliderValue(settings::SettingsSliderBinding::SkinBlurLevel) == 37 &&
+                session.sliderValue(settings::SettingsSliderBinding::SkinMaskOpacity) == 37,
+            "skin slider values must commit through the runtime session");
+    TestTranslator translator;
+    QCoreApplication::installTranslator(&translator);
+    drainEvents();
+    require(
+        path->lineEdit()->accessibleName() == QStringLiteral("Translated: Skin Path") &&
+            mode->accessibleName() == QStringLiteral("Translated: Skin Display Mode") &&
+            path->browseButtonText() == QStringLiteral("Translated: Browse") &&
+            path->lineEdit()->accessibleDescription().startsWith(QStringLiteral("Translated: ")),
+        "skin controls and descriptions must retranslate after LanguageChange");
+    QCoreApplication::removeTranslator(&translator);
+    drainEvents();
+    require(path->lineEdit()->accessibleName() == QStringLiteral("Skin Path") &&
+                session.reset(settings::SettingsSectionReset::Skin),
+            "skin controls must restore English and the independent Skin defaults");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -446,6 +501,7 @@ int main(int argc, char** argv) {
     deferredStateAndKeyboard(registry, session);
     scrollingLoadsSections(registry, session);
     unchangedPresentation(registry, session);
+    skinControlsCommitAndRetranslate(registry, session);
     storage.shutdown();
     return 0;
 }

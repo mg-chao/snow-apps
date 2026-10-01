@@ -580,9 +580,23 @@ AdMultiSlider::AdMultiSlider(QWidget* parent) : QWidget(parent) {
   lastDisabledState_ = disabled();
   syncInteractionCursor();
   syncAccessibleState();
+  connect(
+      &adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+      [this, currentTheme = adqt::theme::ThemeManager::instance().resolve(this).config]() mutable {
+        const auto nextTheme = adqt::theme::ThemeManager::instance().resolve(this).config;
+        if (nextTheme == currentTheme) {
+          return;
+        }
+        auto previousTheme = currentTheme;
+        previousTheme.backgroundOpacity = nextTheme.backgroundOpacity;
+        const bool backgroundOnly = previousTheme == nextTheme;
+        currentTheme = nextTheme;
+        refreshAfterPropertyChange(!backgroundOnly);
+      });
 }
 
 AdMultiSlider::~AdMultiSlider() {
+  disconnect(&adqt::theme::ThemeManager::instance(), nullptr, this, nullptr);
   tooltipSyncPending_ = false;
   clearTooltipHosts();
 }
@@ -1861,6 +1875,7 @@ AdMultiSlider::LayoutInfo AdMultiSlider::buildLayout() const {
     input.reverse = invertedAppearance_;
     input.baseFont = font();
     input.componentTokens = componentTokens_;
+    input.deferSemanticStyles = true;
     const adqt::theme::ResolvedTheme resolvedTheme =
         adqt::theme::ThemeManager::instance().resolve(this);
     return detail::resolveSliderVisualStyle(input, resolvedTheme);

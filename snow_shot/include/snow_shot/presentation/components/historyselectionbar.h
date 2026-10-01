@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_HISTORYSELECTIONBAR_H
 
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 
 #include <QPainter>
 #include <QWidget>
@@ -23,7 +24,8 @@ class HistorySelectionBar final : public QWidget {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(m_background);
+        painter.setBrush(
+            snow_shot::presentation::styles::mainWindowBackgroundColor(this, m_background));
         painter.drawRoundedRect(QRectF(rect()), m_radius, m_radius);
     }
 

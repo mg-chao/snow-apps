@@ -418,6 +418,12 @@ TagVisualStyle resolveTagVisualStyle(const TagStyleInput& input,
 
   applySemanticStyles(input.semanticStyles, &style);
   style.focusOutlineColor = style.metrics.focusOutlineColor;
+  if (map.backgroundOpacity != 1.0) {
+    style.backgroundColor =
+        adqt::theme::applyBackgroundOpacity(style.backgroundColor, map.backgroundOpacity);
+    style.closeHoverBackground =
+        adqt::theme::applyBackgroundOpacity(style.closeHoverBackground, map.backgroundOpacity);
+  }
   return style;
 }
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "theme/theme_types.h"
+#include "theme/theme_color_utils.h"
 
 namespace adqt::widgets::detail {
 
@@ -104,6 +105,13 @@ SpinVisualStyle resolveSpinVisualStyle(const SpinStyleInput& input,
     style.containerOverlay = *input.semanticStyles.container.backgroundColor;
   }
 
+  if (values.backgroundOpacity != 1.0) {
+    for (QColor* background :
+         {&style.rootBackground, &style.sectionBackground, &style.indicatorBackground,
+          &style.descriptionBackground, &style.progressTrack, &style.containerOverlay}) {
+      *background = adqt::theme::applyBackgroundOpacity(*background, values.backgroundOpacity);
+    }
+  }
   return style;
 }
 

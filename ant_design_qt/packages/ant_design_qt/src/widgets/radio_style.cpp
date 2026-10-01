@@ -1,6 +1,7 @@
 #include "radio_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 
@@ -158,6 +159,14 @@ RadioVisualStyle resolveRadioVisualStyle(const RadioStyleInput& input,
 
   style.metrics.waveColor =
       input.componentTokens.colors.waveColor.value_or(style.checked.borderColor);
+  if (map.backgroundOpacity != 1.0) {
+    for (RadioDotStateStyle* state :
+         {&style.normal, &style.hover, &style.active, &style.checked, &style.checkedHover,
+          &style.disabled, &style.checkedDisabled}) {
+      state->backgroundColor =
+          adqt::theme::applyBackgroundOpacity(state->backgroundColor, map.backgroundOpacity);
+    }
+  }
   return style;
 }
 
@@ -210,6 +219,14 @@ RadioButtonVisualStyle resolveRadioButtonVisualStyle(const RadioButtonStyleInput
 
   style.metrics.waveColor =
       input.componentTokens.colors.waveColor.value_or(style.checked.borderColor);
+  if (map.backgroundOpacity != 1.0) {
+    for (RadioButtonStateStyle* state :
+         {&style.normal, &style.hover, &style.active, &style.checked, &style.checkedHover,
+          &style.checkedActive, &style.disabled, &style.checkedDisabled}) {
+      state->backgroundColor =
+          adqt::theme::applyBackgroundOpacity(state->backgroundColor, map.backgroundOpacity);
+    }
+  }
   return style;
 }
 

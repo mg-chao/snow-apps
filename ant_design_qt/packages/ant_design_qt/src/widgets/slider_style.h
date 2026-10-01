@@ -33,6 +33,7 @@ struct SliderMetrics {
 };
 
 struct SliderVisualStyle {
+  qreal backgroundOpacity = 1.0;
   QColor rootBg;
   QColor railBg;
   QColor railHoverBg;
@@ -71,6 +72,7 @@ struct SliderStyleInput {
   bool focused = false;
   bool disabled = false;
   bool reverse = false;
+  bool deferSemanticStyles = false;
   QFont baseFont;
   AdMultiSlider::ComponentTokens componentTokens;
   AdMultiSlider::SemanticStyles semanticStyles;

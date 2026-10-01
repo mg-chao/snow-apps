@@ -7,6 +7,7 @@
 #include "input_style.h"
 #include "interaction_overlay_manager.h"
 #include "theme/theme_manager.h"
+#include "theme/theme_color_utils.h"
 
 #include <QDynamicPropertyChangeEvent>
 #include <QEnterEvent>
@@ -172,7 +173,8 @@ void applyDynamicColor(QColor* target, const QObject* object, const char* name) 
   }
 }
 
-InputVisualStyle applyDynamicOverrides(InputVisualStyle style, const QObject* object) {
+InputVisualStyle applyDynamicOverrides(InputVisualStyle style, const QObject* object,
+                                       qreal backgroundOpacity) {
   const QVariant heightValue = dynamicProperty(object, kCompactHeightProperty);
   if (heightValue.isValid()) {
     style.metrics.height = std::max(18, heightValue.toInt());
@@ -197,14 +199,23 @@ InputVisualStyle applyDynamicOverrides(InputVisualStyle style, const QObject* ob
     style.metrics.affixIconSize = std::max(8, style.metrics.font.pixelSize());
   }
 
-  const QColor backgroundColor = dynamicColorProperty(object, kSemanticBackgroundColorProperty);
+  // Base styles already carry the scoped mask. Only replacement fills need the
+  // alpha multiplier here, after resolving the semantic color for each state.
+  const QColor backgroundColor = adqt::theme::applyBackgroundOpacity(
+      dynamicColorProperty(object, kSemanticBackgroundColorProperty), backgroundOpacity);
   if (backgroundColor.isValid()) {
     style.selectorBg = backgroundColor;
     style.selectorHoverBg = backgroundColor;
     style.selectorActiveBg = backgroundColor;
   }
-  applyDynamicColor(&style.selectorHoverBg, object, kSemanticHoverBackgroundColorProperty);
-  applyDynamicColor(&style.selectorActiveBg, object, kSemanticActiveBackgroundColorProperty);
+  const auto applyBackground = [object, backgroundOpacity](QColor* target, const char* name) {
+    const QColor color = dynamicColorProperty(object, name);
+    if (color.isValid()) {
+      *target = adqt::theme::applyBackgroundOpacity(color, backgroundOpacity);
+    }
+  };
+  applyBackground(&style.selectorHoverBg, kSemanticHoverBackgroundColorProperty);
+  applyBackground(&style.selectorActiveBg, kSemanticActiveBackgroundColorProperty);
 
   const QColor borderColor = dynamicColorProperty(object, kSemanticBorderColorProperty);
   if (borderColor.isValid()) {
@@ -1234,9 +1245,9 @@ InputVisualStyle AdLineEdit::resolvedStyle() const {
   input.focused = focused_;
   input.hovered = detail::widgetHovered(this);
   input.baseFont = font();
-  return applyDynamicOverrides(adqt::widgets::detail::resolveInputVisualStyle(
-                                   input, adqt::theme::ThemeManager::instance().resolve(this)),
-                               this);
+  const auto resolvedTheme = adqt::theme::ThemeManager::instance().resolve(this);
+  return applyDynamicOverrides(adqt::widgets::detail::resolveInputVisualStyle(input, resolvedTheme),
+                               this, resolvedTheme.values.backgroundOpacity);
 }
 
 void AdLineEdit::updateCursorForRole() {

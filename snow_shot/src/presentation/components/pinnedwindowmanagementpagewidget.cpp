@@ -9,9 +9,11 @@
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/storage/applicationstorage.h"
 
 #include "antd_icons.h"
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
 #include "widgets/date_picker.h"
@@ -533,6 +535,8 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
             &PinnedWindowManagementPageWidget::refresh);
     connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, this,
             [this]() { applyTheme(styles::ThemeManager::instance().themeColorScheme()); });
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this] { applyTheme(m_scheme); });
 
     retranslateUi();
     refresh();
@@ -962,7 +966,8 @@ void PinnedWindowManagementPageWidget::applyTheme(const styles::ThemeColorScheme
     const QString cardStyle =
         QStringLiteral("QFrame#pinnedManagementRecord { background: %1; border: %2px solid %3; "
                        "border-radius: %4px; }")
-            .arg(scheme.map.colorBgContainer.name())
+            .arg(styles::mainWindowBackgroundColor(m_entries, scheme.map.colorBgContainer)
+                     .name(QColor::HexArgb))
             .arg(std::max<qreal>(1.0, scheme.metricAlias.lineWidth))
             .arg(scheme.map.colorBorderSecondary.name())
             .arg(scheme.metricAlias.borderRadius);
@@ -972,7 +977,9 @@ void PinnedWindowManagementPageWidget::applyTheme(const styles::ThemeColorScheme
         badge->setStyleSheet(
             QStringLiteral("QLabel { color: %1; background: %2; border: 1px solid %3; "
                            "border-radius: 4px; padding: 2px 7px; }")
-                .arg(scheme.map.colorPrimaryText.name(), scheme.map.colorPrimaryBg.name(),
+                .arg(scheme.map.colorPrimaryText.name(),
+                     styles::mainWindowBackgroundColor(badge, scheme.map.colorPrimaryBg)
+                         .name(QColor::HexArgb),
                      scheme.map.colorPrimaryBorder.name()));
         auto* checkbox = row->findChild<adqt::widgets::AdCheckbox*>();
         QFont dateFont = checkbox->font();

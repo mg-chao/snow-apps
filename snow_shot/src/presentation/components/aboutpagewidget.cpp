@@ -118,8 +118,8 @@ class AboutHeroSurface final : public QFrame {
         path.addRect(QRectF(0, m_radius, width(), height() - m_radius));
         path.setFillRule(Qt::WindingFill);
         QLinearGradient gradient(rect().topLeft(), QPointF(rect().left(), rect().bottom()));
-        gradient.setColorAt(0, m_start);
-        gradient.setColorAt(1, m_end);
+        gradient.setColorAt(0, styles::mainWindowBackgroundColor(this, m_start));
+        gradient.setColorAt(1, styles::mainWindowBackgroundColor(this, m_end));
         painter.fillPath(path, gradient);
     }
 
@@ -645,6 +645,8 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     connect(m_ui->resources[4], &QAbstractButton::clicked, this,
             [this]() { openProjectLink(QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_3_URL))); });
     connect(&themeManager, &styles::ThemeManager::themeChanged, this, &AboutPageWidget::applyTheme);
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this] { applyTheme(m_ui->scheme); });
     applyTheme(m_ui->scheme);
     content->installEventFilter(this);
     m_ui->container->scrollArea()->viewport()->installEventFilter(this);
@@ -703,8 +705,11 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
             QStringLiteral("QProgressBar#aboutUpdateProgress { background: %1; border: none; "
                            "border-radius: %3px; } QProgressBar#aboutUpdateProgress::chunk { "
                            "background: %2; border-radius: %3px; }")
-                .arg(colors.colorFillSecondary.name(QColor::HexArgb),
-                     colors.colorPrimary.name(QColor::HexArgb))
+                .arg(styles::mainWindowBackgroundColor(m_ui->updateProgress,
+                                                       colors.colorFillSecondary)
+                         .name(QColor::HexArgb),
+                     styles::mainWindowBackgroundColor(m_ui->updateProgress, colors.colorPrimary)
+                         .name(QColor::HexArgb))
                 .arg(progressHeight / 2));
     }
     const QColor versionBackground =
@@ -712,13 +717,16 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     m_ui->versionPanel->setStyleSheet(
         QStringLiteral("QFrame#aboutVersionPanel { background-color: %1; border: 1px solid %2; "
                        "border-radius: %3px; }")
-            .arg(versionBackground.name(QColor::HexArgb),
+            .arg(styles::mainWindowBackgroundColor(m_ui->versionPanel, versionBackground)
+                     .name(QColor::HexArgb),
                  colors.colorBorderSecondary.name(QColor::HexArgb))
             .arg(metric.borderRadiusLG));
     const QString badgeStyle =
         QStringLiteral("QLabel { background-color: %1; border: 1px solid %2; "
                        "border-radius: %3px; padding: 1px 8px; }")
-            .arg(blendAboutColor(violet, colors.colorBgContainer, 0.08).name(QColor::HexArgb),
+            .arg(styles::mainWindowBackgroundColor(
+                     m_ui->openSource, blendAboutColor(violet, colors.colorBgContainer, 0.08))
+                     .name(QColor::HexArgb),
                  blendAboutColor(violet, colors.colorBgContainer, 0.22).name(QColor::HexArgb))
             .arg(metric.borderRadiusSM);
     m_ui->openSource->setStyleSheet(badgeStyle);

@@ -794,6 +794,11 @@ void SettingsRuntimeSession::refreshAll() {
     for (const SettingsFieldDescriptor& descriptor : m_registry.fields()) {
         refreshField(descriptor.id);
         refreshOptions(descriptor);
+        if (descriptor.definition != nullptr) {
+            if (const auto* file =
+                    std::get_if<SettingsFilePathDefinition>(&descriptor.definition->payload))
+                refreshFilePathStatus(file->binding);
+        }
     }
     refreshAuxiliaryInteger(SettingsIntegerBinding::ScreenshotDelaySeconds);
     refreshCommandStates();
@@ -806,6 +811,18 @@ void SettingsRuntimeSession::refreshAll() {
         emit storageStateChanged(currentStatus);
     }
     emit refreshed();
+}
+
+void SettingsRuntimeSession::refreshFilePathStatus(SettingsFilePathBinding binding) {
+    const int key = static_cast<int>(binding);
+    const FilePathStatus next{m_backend.filePathStatus(binding),
+                              m_backend.filePathStatusError(binding)};
+    const auto current = m_filePathStatuses.constFind(key);
+    if (current != m_filePathStatuses.cend() && current->text == next.text &&
+        current->error == next.error)
+        return;
+    m_filePathStatuses.insert(key, next);
+    emit filePathStatusChanged(binding);
 }
 
 void SettingsRuntimeSession::refreshAuxiliaryInteger(SettingsIntegerBinding binding) {
@@ -1392,7 +1409,26 @@ QString SettingsRuntimeSession::filePathValue(SettingsFilePathBinding binding) c
 bool SettingsRuntimeSession::applyFilePathValue(SettingsFilePathBinding binding,
                                                 const QString& value) {
     const auto* descriptor = descriptorForFile(binding);
-    return descriptor != nullptr && submitDraft(descriptor->id, value);
+    if (descriptor == nullptr)
+        return false;
+    const QString normalizedValue =
+        binding == SettingsFilePathBinding::SkinPath ? value.trimmed() : value;
+    const QString previousValue = m_backend.filePathValue(binding);
+    const bool accepted = submitDraft(descriptor->id, normalizedValue);
+    // Re-entering the same skin path explicitly reloads the file, including a
+    // file that was replaced or repaired without changing its name.
+    if (accepted && binding == SettingsFilePathBinding::SkinPath &&
+        previousValue == normalizedValue)
+        m_backend.reloadFilePathValue(binding);
+    return accepted;
+}
+
+QString SettingsRuntimeSession::filePathStatus(SettingsFilePathBinding binding) const {
+    return m_backend.filePathStatus(binding);
+}
+
+bool SettingsRuntimeSession::filePathStatusError(SettingsFilePathBinding binding) const {
+    return m_backend.filePathStatusError(binding);
 }
 
 QString SettingsRuntimeSession::directoryPathValue(SettingsDirectoryPathBinding binding) const {

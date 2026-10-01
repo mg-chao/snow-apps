@@ -67,6 +67,15 @@ QVector<QColor> toMappedDark(const QVector<QString>& colors) {
 
 }  // namespace
 
+QColor applyBackgroundOpacity(QColor color, qreal opacity) {
+  if (!color.isValid() || opacity == 1.0) {
+    return color;
+  }
+  const qreal normalized = std::isfinite(opacity) ? std::clamp(opacity, qreal(0), qreal(1)) : 1.0;
+  color.setAlphaF(static_cast<float>(static_cast<qreal>(color.alphaF()) * normalized));
+  return color;
+}
+
 qreal colorContrastRatio(const QColor& first, const QColor& second) {
   const qreal firstLuminance = relativeLuminance(first);
   const qreal secondLuminance = relativeLuminance(second);

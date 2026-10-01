@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/presentation/components/thumbnailcache.h"
+#include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "theme/theme_manager.h"
 #include "widgets/select.h"
 #include "widgets/date_picker.h"
 #include "widgets/button.h"
@@ -13,6 +15,7 @@
 #include <QThread>
 #include <QUuid>
 #include <QFile>
+#include <QDir>
 #include <QApplication>
 #include <QTemporaryDir>
 #include <QLabel>
@@ -23,6 +26,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QPainter>
 #include <QStackedWidget>
 #include <algorithm>
 #include <cstdlib>
@@ -72,6 +76,63 @@ class Fixture final : public PinnedWindowManagementDataSource {
         removed = ids;
     }
 };
+
+class SkinBackdrop final : public QWidget {
+  public:
+    QColor color = QColor(35, 90, 145);
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.fillRect(rect(), color);
+    }
+};
+
+void pinnedRowsRespectSkinMask(const QVector<storage::PinnedWindowSummary>& records) {
+    Fixture fixture;
+    fixture.items = records;
+    SkinBackdrop backdrop;
+    backdrop.resize(980, 640);
+    PinnedWindowManagementPageWidget page(&fixture, &backdrop);
+    page.resize(backdrop.size());
+    backdrop.show();
+    page.show();
+    QCoreApplication::processEvents();
+    auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+    require(row != nullptr && row->width() > 100, "seeded pinned mask fixture has a visible row");
+    const QColor fill =
+        presentation::styles::ThemeManager::instance().themeColorScheme().map.colorBgContainer;
+    auto& manager = adqt::theme::ThemeManager::instance();
+    for (const qreal opacity : {0.4, 0.0, 1.0}) {
+        adqt::theme::ThemeOverride overrideValue;
+        overrideValue.backgroundOpacity = opacity;
+        manager.setScopeOverride(&backdrop, overrideValue);
+        QCoreApplication::processEvents();
+        QImage rendered(backdrop.size(), QImage::Format_ARGB32_Premultiplied);
+        rendered.fill(Qt::transparent);
+        backdrop.render(&rendered);
+        const QPoint sample = row->mapTo(&backdrop, QPoint(row->width() / 2, 5));
+        const QColor actual = rendered.pixelColor(sample);
+        const qreal alpha = static_cast<qreal>(fill.alphaF()) * opacity;
+        require(std::abs(actual.red() -
+                         qRound(fill.red() * alpha + backdrop.color.red() * (1 - alpha))) <= 1 &&
+                    std::abs(actual.green() - qRound(fill.green() * alpha +
+                                                     backdrop.color.green() * (1 - alpha))) <= 1 &&
+                    std::abs(actual.blue() - qRound(fill.blue() * alpha +
+                                                    backdrop.color.blue() * (1 - alpha))) <= 1,
+                "pinned row background must paint one mask and expose the backdrop at zero");
+        const QString reviewDirectory = qEnvironmentVariable("SNOW_SKIN_PAGE_REVIEW_DIR");
+        if (!reviewDirectory.isEmpty()) {
+            require(QDir().mkpath(reviewDirectory), "create seeded pinned review directory");
+            require(rendered.save(QDir(reviewDirectory)
+                                      .filePath(QStringLiteral("seeded-pinned-mask-%1.png")
+                                                    .arg(qRound(opacity * 100)))),
+                    "save seeded pinned skin review");
+        }
+    }
+    manager.clearScopeOverride(&backdrop);
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir directory;
@@ -93,6 +154,7 @@ int main(int argc, char** argv) {
     second.ignored = true;
     second.creationSource = storage::PinnedWindowCreationSource::Screenshot;
     fixture.items = {first, second};
+    pinnedRowsRespectSkinMask(fixture.items);
     {
         Fixture many;
         for (int index = 0; index < 15; ++index) {

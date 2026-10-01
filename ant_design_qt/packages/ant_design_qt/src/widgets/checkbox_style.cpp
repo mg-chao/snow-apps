@@ -1,6 +1,7 @@
 #include "checkbox_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 
@@ -111,6 +112,15 @@ CheckboxVisualStyle resolveCheckboxVisualStyle(const CheckboxStyleInput& input,
   applyColors(input.componentTokens.colors, &style.indeterminateDisabled);
   style.metrics.waveColor =
       input.componentTokens.colors.waveColor.value_or(style.checked.borderColor);
+  if (map.backgroundOpacity != 1.0) {
+    for (CheckboxStateStyle* state :
+         {&style.normal, &style.hover, &style.checked, &style.checkedHover, &style.indeterminate,
+          &style.indeterminateHover, &style.disabled, &style.checkedDisabled,
+          &style.indeterminateDisabled}) {
+      state->backgroundColor =
+          adqt::theme::applyBackgroundOpacity(state->backgroundColor, map.backgroundOpacity);
+    }
+  }
   return style;
 }
 
