@@ -1968,6 +1968,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
     actions.toggleCursorVisibility = [this] {
         return setScreenshotCursorVisible(!m_displaySession.cursorVisible);
     };
+    actions.persistSelectionAspectRatioPreference =
+        [this](ScreenshotSelectionAspectRatioPreset preset, bool locked) {
+            m_selectionSettings->setAspectRatioPreference(preset, locked);
+        };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
             m_captureState,

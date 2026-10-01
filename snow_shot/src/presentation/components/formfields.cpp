@@ -150,10 +150,21 @@ struct FormField::Impl {
     QStringList errors;
     QStringList warnings;
     QString descriptionOverride;
+    bool descriptionError = false;
 
     [[nodiscard]] QString descriptionText() const {
         return !descriptionOverride.isEmpty() ? descriptionOverride
                                               : metadata.description.translated();
+    }
+
+    void applyDescriptionTheme(const styles::ThemeColorScheme& scheme) const {
+        if (description) {
+            QPalette palette = description->palette();
+            palette.setColor(QPalette::WindowText, descriptionError
+                                                       ? scheme.map.colorErrorText
+                                                       : scheme.map.colorTextSecondary);
+            description->setPalette(palette);
+        }
     }
 
     void refreshAccessibility() const {
@@ -373,11 +384,13 @@ void FormField::setMetadata(const Metadata& metadata) {
     retranslateUi();
 }
 
-void FormField::setDescriptionOverride(const QString& description) {
+void FormField::setDescriptionOverride(const QString& description, bool error) {
     m_impl->clearingDescriptionOverride =
         !m_impl->descriptionOverride.isEmpty() && description.isEmpty();
     m_impl->descriptionOverride = description;
+    m_impl->descriptionError = error;
     retranslateUi();
+    m_impl->applyDescriptionTheme(styles::ThemeManager::instance().themeColorScheme());
 }
 
 void FormField::setChoices(const QVector<Choice>& choices) {
@@ -503,6 +516,7 @@ void FormField::retranslateUi() {
 void FormField::applyTheme(const styles::ThemeColorScheme& scheme) {
     if (m_impl->title && m_impl->description) {
         components::applySettingItemTheme(m_impl->title, m_impl->description, scheme);
+        m_impl->applyDescriptionTheme(scheme);
         if (auto* layout = qobject_cast<QHBoxLayout*>(m_impl->view->layout())) {
             layout->setSpacing(scheme.metricAlias.marginLG);
         }

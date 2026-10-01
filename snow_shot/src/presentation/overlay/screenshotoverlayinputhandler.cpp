@@ -280,6 +280,7 @@ void ScreenshotOverlayInputHandler::beginSelectionDrag(ScreenshotOverlayWindow* 
     if (!m_context.interaction.enterSelectionDrag(dragMode)) {
         return;
     }
+    m_snappedDuringSelectionDrag = false;
     if (m_keepSelectionAspectRatioShortcut) {
         m_aspectShortcutUsedForSelectionDrag = true;
     }
@@ -712,6 +713,38 @@ bool ScreenshotOverlayInputHandler::activateKeepSelectionAspectRatioShortcut(
     return true;
 }
 
+bool ScreenshotOverlayInputHandler::activateSelectionAspectRatioSnapShortcut() {
+    if (!(m_context.interaction.movingSelection() || m_context.interaction.modifyingSelection() ||
+          m_context.interaction.manualSelecting() || m_context.interaction.editing() ||
+          m_context.interaction.intelligentSelecting()) ||
+        m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
+        m_context.selection.regionOperationActive() ||
+        recognitionTool(m_context.interaction.activeTool()) ||
+        !m_context.actions.localShortcutInputAllowed()) {
+        return false;
+    }
+    if (m_selectionAspectRatioSnapShortcut) {
+        return true;
+    }
+    m_selectionAspectRatioSnapShortcut = true;
+    if (m_context.interaction.dragging()) {
+        updateSelectionDrag(m_lastMoveDragPosition);
+    }
+    return true;
+}
+
+bool ScreenshotOverlayInputHandler::releaseSelectionAspectRatioSnapShortcut() {
+    if (!m_selectionAspectRatioSnapShortcut) {
+        return false;
+    }
+    m_selectionAspectRatioSnapShortcut = false;
+    return true;
+}
+
+void ScreenshotOverlayInputHandler::cancelSelectionAspectRatioSnapShortcut() {
+    static_cast<void>(releaseSelectionAspectRatioSnapShortcut());
+}
+
 bool ScreenshotOverlayInputHandler::releaseMoveEntireSelectionShortcut() {
     if (!m_moveEntireSelectionShortcut) {
         return false;
@@ -987,27 +1020,56 @@ bool ScreenshotOverlayInputHandler::outsideClickRecreatesSelection() const {
 }
 
 QRectF ScreenshotOverlayInputHandler::selectionRectForDrag(ScreenshotSelectionDragMode dragMode,
-                                                           const QPointF& position) const {
+                                                           const QPointF& position) {
+    const QRectF bounds = m_context.geometry.canvasBounds();
+    constexpr qreal minimumSize = snow_shot::presentation::kScreenshotSelectionMinimumSize;
+    const bool resizingRectangle =
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+        !m_context.selection.regionOperationActive() &&
+        (dragMode == ScreenshotSelectionDragMode::Marquee || m_context.selection.rectangular());
+    if (m_selectionAspectRatioSnapShortcut && resizingRectangle &&
+        dragMode != ScreenshotSelectionDragMode::All &&
+        dragMode != ScreenshotSelectionDragMode::None) {
+        const QRectF unconstrained =
+            m_context.selection.selectionRectForDrag(dragMode, position, bounds, minimumSize, 0.0);
+        const auto preset = screenshotSelectionClosestAspectRatioPreset(unconstrained);
+        if (preset != ScreenshotSelectionAspectRatioPreset::Free) {
+            const qreal ratio = screenshotSelectionAspectRatioHeightOverWidth(preset);
+            const QRectF snapped = m_context.selection.selectionRectForDrag(
+                dragMode, position, bounds, minimumSize, ratio);
+            if (snapped.isValid() && !snapped.isEmpty()) {
+                m_snappedDuringSelectionDrag = true;
+                if (m_context.selection.setDraggedAspectRatioPreset(preset)) {
+                    m_context.actions.persistSelectionAspectRatioPreference(preset, true);
+                }
+                return snapped;
+            }
+        }
+    }
+    if (m_snappedDuringSelectionDrag && resizingRectangle &&
+        dragMode != ScreenshotSelectionDragMode::All &&
+        dragMode != ScreenshotSelectionDragMode::None) {
+        return m_context.selection.selectionRectForDrag(
+            dragMode, position, bounds, minimumSize,
+            screenshotSelectionAspectRatioHeightOverWidth(m_context.selection.aspectRatioPreset()));
+    }
     if (m_keepSelectionAspectRatioShortcut && dragMode != ScreenshotSelectionDragMode::All &&
         dragMode != ScreenshotSelectionDragMode::None) {
         const QRectF origin = m_context.selection.moveOriginalSelection();
         if (dragMode == ScreenshotSelectionDragMode::Marquee ||
             (origin.width() > 0.0 && origin.height() > 0.0)) {
-            return m_context.selection.selectionRectForDrag(
-                dragMode, position, m_context.geometry.canvasBounds(),
-                snow_shot::presentation::kScreenshotSelectionMinimumSize,
-                kEqualWidthHeightAspectRatio);
+            return m_context.selection.selectionRectForDrag(dragMode, position, bounds, minimumSize,
+                                                            kEqualWidthHeightAspectRatio);
         }
     }
-    return m_context.selection.selectionRectForDrag(
-        dragMode, position, m_context.geometry.canvasBounds(),
-        snow_shot::presentation::kScreenshotSelectionMinimumSize);
+    return m_context.selection.selectionRectForDrag(dragMode, position, bounds, minimumSize);
 }
 
 void ScreenshotOverlayInputHandler::finishTransientDrag() {
     m_moveDragModeBeforeShortcut = ScreenshotSelectionDragMode::None;
     m_marqueeAnchor = QPointF();
     m_lastMoveDragPosition = QPointF();
+    m_snappedDuringSelectionDrag = false;
 }
 
 void ScreenshotOverlayInputHandler::restoreToolAfterSelectionResize() {
@@ -1040,6 +1102,7 @@ void ScreenshotOverlayInputHandler::resetTransientShortcuts() {
     restoreScrollingCaptureAfterFailedResize();
     m_moveEntireSelectionShortcut = false;
     m_keepSelectionAspectRatioShortcut = false;
+    m_selectionAspectRatioSnapShortcut = false;
     m_aspectShortcutUsedForSelectionDrag = false;
     m_cycleColorFormatIfAspectShortcutUnused = false;
     finishTransientDrag();

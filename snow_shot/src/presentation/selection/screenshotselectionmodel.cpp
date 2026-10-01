@@ -95,7 +95,7 @@ QRectF ScreenshotSelectionModel::selectionRectForDrag(ScreenshotSelectionDragMod
                                                       qreal lockedAspectRatioOverride) const {
     qreal lockedAspectRatio =
         lockedAspectRatioOverride >= 0.0 ? lockedAspectRatioOverride : m_lockedAspectRatio;
-    if (lockedAspectRatio <= 0.0 && m_aspectRatioLockEnabled &&
+    if (lockedAspectRatioOverride < 0.0 && lockedAspectRatio <= 0.0 && m_aspectRatioLockEnabled &&
         dragMode == ScreenshotSelectionDragMode::Marquee) {
         lockedAspectRatio = kNewMarqueeAspectRatio;
     }
@@ -274,6 +274,20 @@ bool ScreenshotSelectionModel::setAspectRatioPreset(ScreenshotSelectionAspectRat
     if (geometryChanged) {
         setSelectionRect(resized);
     }
+    m_aspectRatioPreset = preset;
+    m_aspectRatioLockEnabled = true;
+    m_lockedAspectRatio = ratio;
+    return changed;
+}
+
+bool ScreenshotSelectionModel::setDraggedAspectRatioPreset(
+    ScreenshotSelectionAspectRatioPreset preset) {
+    const qreal ratio = screenshotSelectionAspectRatioHeightOverWidth(preset);
+    if (ratio <= 0.0) {
+        return false;
+    }
+    const bool changed = m_aspectRatioPreset != preset || !m_aspectRatioLockEnabled ||
+                         !qFuzzyCompare(1.0 + m_lockedAspectRatio, 1.0 + ratio);
     m_aspectRatioPreset = preset;
     m_aspectRatioLockEnabled = true;
     m_lockedAspectRatio = ratio;

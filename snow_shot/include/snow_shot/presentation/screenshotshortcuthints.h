@@ -48,6 +48,7 @@ struct ScreenshotShortcutHintRow {
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch color format"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch screenshot history"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Maintain aspect ratio"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Selection Aspect Ratio Snap"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Fixed-angle rotation"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Scale from center"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Auto-align"),
@@ -142,6 +143,9 @@ screenshotShortcutHintSelectionModeForContext(const ScreenshotShortcutHintContex
     }
     if (sourceText == QStringLiteral("Maintain aspect ratio: Shift")) {
         return row("Maintain aspect ratio", display.modifierText(Qt::ShiftModifier));
+    }
+    if (sourceText == QStringLiteral("Selection Aspect Ratio Snap: Ctrl")) {
+        return row("Selection Aspect Ratio Snap", display.modifierText(Qt::ControlModifier));
     }
     if (sourceText == QStringLiteral("Fixed-angle rotation: Shift")) {
         return row("Fixed-angle rotation", display.modifierText(Qt::ShiftModifier));
@@ -259,6 +263,7 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
             rows, configuredShortcuts, QStringLiteral("keep_selection_width_and_height_consistent"),
             "Keep selection width and height consistent");
     }
+    rows.push_back(screenshotFixedShortcutHintRow("Selection Aspect Ratio Snap: Ctrl"));
     appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
                                               QStringLiteral("select_previously_selected_area"),
                                               "Select previously selected area");

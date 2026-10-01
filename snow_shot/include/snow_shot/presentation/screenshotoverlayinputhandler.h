@@ -3,6 +3,7 @@
 
 #include "snow_shot/platform/physicalcursor.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
+#include "snow_shot/presentation/screenshotselectionaspectratio.h"
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 
 #include "snow_shot/image/screenshotregiongeometry.h"
@@ -120,6 +121,8 @@ struct ScreenshotOverlayInputActions {
     std::function<bool()> toggleGuidesForCurrentSession = []() { return false; };
     std::function<bool()> cursorVisibilityAvailable = [] { return false; };
     std::function<bool()> toggleCursorVisibility = [] { return false; };
+    std::function<void(ScreenshotSelectionAspectRatioPreset, bool)>
+        persistSelectionAspectRatioPreference = [](ScreenshotSelectionAspectRatioPreset, bool) {};
 };
 
 struct ScreenshotOverlayInputHandlerContext {
@@ -178,9 +181,12 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] bool shouldBlockUnhandledKeyInput() const;
     [[nodiscard]] bool activateMoveEntireSelectionShortcut();
     [[nodiscard]] bool activateKeepSelectionAspectRatioShortcut(bool cycleColorFormatIfUnused);
+    [[nodiscard]] bool activateSelectionAspectRatioSnapShortcut();
     bool releaseMoveEntireSelectionShortcut();
     bool releaseKeepSelectionAspectRatioShortcut();
+    bool releaseSelectionAspectRatioSnapShortcut();
     void cancelKeepSelectionAspectRatioShortcut();
+    void cancelSelectionAspectRatioSnapShortcut();
     [[nodiscard]] bool toggleIntelligentSelectionTargetShortcut();
     void resetTransientShortcuts();
     [[nodiscard]] bool canvasColorSamplingActive() const;
@@ -228,7 +234,7 @@ class ScreenshotOverlayInputHandler final {
                         bool borderOnly) const;
     [[nodiscard]] bool outsideClickRecreatesSelection() const;
     [[nodiscard]] QRectF selectionRectForDrag(ScreenshotSelectionDragMode dragMode,
-                                              const QPointF& position) const;
+                                              const QPointF& position);
     void restoreToolAfterSelectionResize();
     void restoreScrollingCaptureAfterFailedResize();
     void finishTransientDrag();
@@ -250,6 +256,8 @@ class ScreenshotOverlayInputHandler final {
     bool m_scrollingCaptureSelectionResize = false;
     bool m_moveEntireSelectionShortcut = false;
     bool m_keepSelectionAspectRatioShortcut = false;
+    bool m_selectionAspectRatioSnapShortcut = false;
+    bool m_snappedDuringSelectionDrag = false;
     bool m_aspectShortcutUsedForSelectionDrag = false;
     bool m_cycleColorFormatIfAspectShortcutUnused = false;
     ScreenshotSelectionDragMode m_moveDragModeBeforeShortcut = ScreenshotSelectionDragMode::None;

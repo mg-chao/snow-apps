@@ -99,7 +99,7 @@ class FormField final : public QObject {
     void syncValue(const QVariant& value);
     void synchronize(const std::function<void()>& update);
     void setMetadata(const Metadata& metadata);
-    void setDescriptionOverride(const QString& description);
+    void setDescriptionOverride(const QString& description, bool error = false);
     void setChoices(const QVector<Choice>& choices);
     void setFeedback(const QStringList& errors = {}, const QStringList& warnings = {},
                      bool busy = false);

@@ -1344,12 +1344,18 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     selectionLines.append({
         QStringLiteral("Move entire selection: Space"),
         QStringLiteral("Keep selection width and height consistent: Shift"),
+        QStringLiteral("Selection Aspect Ratio Snap: %1")
+            .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                Qt::ControlModifier)),
     });
     selectionLines.append(commonLines);
     QStringList smartLines = cursorLines;
     smartLines.append({
         QStringLiteral("Switch element level: mouse wheel"),
         QStringLiteral("Select window/window sub-element: Tab"),
+        QStringLiteral("Selection Aspect Ratio Snap: %1")
+            .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                Qt::ControlModifier)),
     });
     smartLines.append(commonLines);
 

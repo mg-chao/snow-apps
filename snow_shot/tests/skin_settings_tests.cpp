@@ -375,8 +375,8 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
     drainEvents();
     auto* generalRow = page.findChild<QWidget*>(QStringLiteral("settings-item-interface-theme"));
     require(generalRow != nullptr &&
-                generalRow->sizePolicy().verticalPolicy() == QSizePolicy::Fixed,
-            "wrapping Skin copy must preserve the existing General row sizing policy");
+                generalRow->sizePolicy().verticalPolicy() == QSizePolicy::Preferred,
+            "General rows must retain the shared form field's wrapping sizing policy");
 
     auto& languages = presentation::LanguageManager::instance();
     auto& themes = presentation::styles::ThemeManager::instance();

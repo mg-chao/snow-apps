@@ -175,6 +175,13 @@ struct SettingsFormField::Impl {
                              syncChoices();
                              sync();
                          });
+        QObject::connect(&session, &SettingsRuntimeSession::filePathStatusChanged, &q,
+                         [this](SettingsFilePathBinding binding) {
+                             const auto* file = std::get_if<SettingsFilePathDefinition>(
+                                 &descriptor.definition->payload);
+                             if (file != nullptr && file->binding == binding)
+                                 sync();
+                         });
         retranslateUi();
         sync();
     }
@@ -287,6 +294,21 @@ struct SettingsFormField::Impl {
         field->setFieldVisible(state.visible);
         const QString error = !state.error.isEmpty() ? state.error : optionsError;
         field->setFeedback(error.isEmpty() ? QStringList() : QStringList{error}, {}, state.busy);
+        if (const auto* file =
+                std::get_if<SettingsFilePathDefinition>(&descriptor.definition->payload)) {
+            const QString status = session.filePathStatus(file->binding);
+            const bool statusError = session.filePathStatusError(file->binding);
+            QString description;
+            if (!status.isEmpty()) {
+                description = descriptor.definition->description.translated();
+                if (!description.isEmpty())
+                    description += QLatin1Char('\n');
+                description += status;
+            }
+            field->setDescriptionOverride(description, statusError);
+            if (statusError)
+                field->item()->setValidateStatus(adqt::widgets::AdFormItem::ValidateStatus::Error);
+        }
         const auto applyProperties = [&state](QWidget* target) {
             bool changed = false;
             const auto setProperty = [target, &changed](const char* name, const QVariant& value) {

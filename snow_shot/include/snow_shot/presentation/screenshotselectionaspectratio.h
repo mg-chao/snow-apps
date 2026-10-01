@@ -2,7 +2,11 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONASPECTRATIO_H
 
 #include <QString>
+#include <QRectF>
 #include <QtGlobal>
+
+#include <cmath>
+#include <limits>
 
 enum class ScreenshotSelectionAspectRatioPreset {
     Free = 0,
@@ -80,6 +84,40 @@ screenshotSelectionAspectRatioHeightOverWidth(ScreenshotSelectionAspectRatioPres
     default:
         return 0.0;
     }
+}
+
+// Compare conventional width / height ratios. Strictly improving the distance
+// makes ties deterministic in the same order as the toolbar's preset list.
+[[nodiscard]] inline ScreenshotSelectionAspectRatioPreset
+screenshotSelectionClosestAspectRatioPreset(const QRectF& selection) {
+    if (!selection.isValid() || selection.width() <= 0.0 || selection.height() <= 0.0 ||
+        !std::isfinite(selection.width()) || !std::isfinite(selection.height())) {
+        return ScreenshotSelectionAspectRatioPreset::Free;
+    }
+    const qreal ratio = selection.width() / selection.height();
+    if (!std::isfinite(ratio)) {
+        return ScreenshotSelectionAspectRatioPreset::Free;
+    }
+    constexpr ScreenshotSelectionAspectRatioPreset presets[] = {
+        ScreenshotSelectionAspectRatioPreset::Square,
+        ScreenshotSelectionAspectRatioPreset::Landscape3x2,
+        ScreenshotSelectionAspectRatioPreset::Landscape4x3,
+        ScreenshotSelectionAspectRatioPreset::Landscape16x9,
+        ScreenshotSelectionAspectRatioPreset::Portrait2x3,
+        ScreenshotSelectionAspectRatioPreset::Portrait3x4,
+        ScreenshotSelectionAspectRatioPreset::Portrait9x16,
+    };
+    auto closest = ScreenshotSelectionAspectRatioPreset::Free;
+    qreal distance = std::numeric_limits<qreal>::infinity();
+    for (const auto preset : presets) {
+        const qreal candidate = 1.0 / screenshotSelectionAspectRatioHeightOverWidth(preset);
+        const qreal candidateDistance = std::abs(ratio - candidate);
+        if (candidateDistance < distance) {
+            closest = preset;
+            distance = candidateDistance;
+        }
+    }
+    return closest;
 }
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONASPECTRATIO_H
