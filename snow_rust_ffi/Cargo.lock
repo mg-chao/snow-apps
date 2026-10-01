@@ -1432,6 +1432,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "snow-selected-text"
+version = "0.1.0"
+dependencies = [
+ "accessibility-sys",
+ "core-foundation",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "snow-core",
+ "windows",
+]
+
+[[package]]
+name = "snow-selected-text-c"
+version = "0.1.0"
+dependencies = [
+ "snow-selected-text",
+]
+
+[[package]]
 name = "snow-shot-rust-ffi"
 version = "0.1.0"
 dependencies = [
@@ -1441,6 +1463,7 @@ dependencies = [
  "snow-draw-engine-c",
  "snow-recording-c",
  "snow-recording-effects-c",
+ "snow-selected-text-c",
  "snow-stitch-images-c",
  "snow-ui-selector-c",
  "snow-visual-region-detector-c",

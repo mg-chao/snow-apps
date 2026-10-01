@@ -64,7 +64,7 @@ target_sources(snow_shot_storage_mini INTERFACE screenshotocrcontroller.h)
 ''')
 
     def test_disabled_packages_cannot_enter_transitively_or_conditionally(self):
-        targets = ["snow_shot_translation", "snow_selected_text_c",
+        targets = ["snow_shot_translation", "snow_selected_text_c", "snow_shot_full_rust_ffi_bundle",
                    "opencv_wechat_qrcode", "opencv_objdetect", "opencv_dnn",
                    "snow_shot_storage", "snow_shot_edition_full"]
         if sys.platform == "win32":

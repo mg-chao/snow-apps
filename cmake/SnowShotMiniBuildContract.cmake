@@ -16,7 +16,7 @@ list(JOIN SNOW_SHOT_MINI_EXCLUDED_SOURCE_NAMES "|" _snow_mini_source_names)
 set(SNOW_SHOT_MINI_EXCLUDED_SOURCE_PATTERN
     "(^|[/,:])(${_snow_mini_source_names})\\.(cpp|h|mm)($|>)")
 set(SNOW_SHOT_MINI_EXCLUDED_LINK_TARGETS
-    snow_shot_translation snow_selected_text_c
+    snow_shot_translation snow_selected_text_c snow_shot_full_rust_ffi_bundle
     opencv_wechat_qrcode opencv_objdetect opencv_dnn)
 set(SNOW_SHOT_MINI_EXCLUDED_TARGETS
     ${SNOW_SHOT_MINI_EXCLUDED_LINK_TARGETS}

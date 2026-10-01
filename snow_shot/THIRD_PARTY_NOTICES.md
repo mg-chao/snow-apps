@@ -67,6 +67,8 @@ and the existing objc2 framework bindings (Zlib OR Apache-2.0 OR MIT) for
 Accessibility and pasteboard interoperability. Their resolved notices are
 included in the generated Rust dependency bundle. Apple system frameworks are
 provided by macOS and are not redistributed.
+Full includes these components in its unified Rust FFI archive; Mini's archive
+does not enable the selected-text dependency.
 
 macOS application QoS uses the repository's Apache-2.0 `snow-core` scheduling
 policy and the existing Rayon worker pools (MIT OR Apache-2.0). Native pthread

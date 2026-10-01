@@ -6,8 +6,13 @@ pub extern "C" fn snow_diagnostics_install_panic_hook(callback: snow_diagnostics
 }
 
 // Public module re-exports keep shared C-ABI entry points reachable while Cargo
-// packages the FFI crates and the Rust runtime into one static archive. Full's
-// selected-text acquisition is a separate archive using the host QoS C ABI.
+// packages the FFI crates and the Rust runtime into one static archive. Full
+// enables selected-text here; Mini keeps the default feature-free archive.
+#[cfg(feature = "selected-text")]
+pub mod selected_text {
+    pub use snow_selected_text_c::*;
+}
+
 pub mod capture {
     pub use snow_capture_c::*;
 }
